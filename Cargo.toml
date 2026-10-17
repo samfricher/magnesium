@@ -5,6 +5,8 @@ edition = "2024"
 rust-version = "1.95.0"
 publish = false
 description = "Local workspace-attached learning support for the individual human learner"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/samfricher/magnesium"
 
 [features]
 default = []

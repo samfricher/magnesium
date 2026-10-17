@@ -44,3 +44,7 @@ Magnesium stores your learning history in `.magnesium/` inside the study folder.
 | Understand the design | [Architecture](docs/architecture/learner-model.md) |
 | Work with the tools and data | [API reference](docs/architecture/learner-model-contracts.md) · [Database schema](src/learner/schema.sql) |
 | Understand privacy and trust boundaries | [Security model](docs/security/threat-model.md) |
+
+## License
+
+Magnesium is licensed under either of the [MIT license](LICENSE-MIT) or the [Apache License, Version 2.0](LICENSE-APACHE), at your option. Unless you say otherwise, any contribution you submit for inclusion is dual-licensed the same way, without extra terms.
