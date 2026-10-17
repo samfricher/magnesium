@@ -1,0 +1,4 @@
+{
+  "schema_version": "learning-loop-metrics/v2",
+  "validator": "finite-typed-learning-loop-contract"
+}

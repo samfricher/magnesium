@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "magnesium": {
+      "command": "magnesium",
+      "args": [
+        "_internal",
+        "mcp-server",
+        "--plugin-version",
+        "0.2.0",
+        "--adapter-protocol-version",
+        "2",
+        "--host-kind",
+        "claude"
+      ]
+    }
+  }
+}

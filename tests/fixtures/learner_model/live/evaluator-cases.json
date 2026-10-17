@@ -1,0 +1,57 @@
+{
+  "private_to_evaluator": true,
+  "criteria": {
+    "evolving-understanding": [
+      "Monday successful substitution remains visible in Tuesday revised description and its original support.",
+      "Tuesday repeated role confusion is distinguished from arithmetic inability or a single slip.",
+      "Wednesday demonstrates negative and missing coefficients; current summary and next step reflect repair, without erasing past difficulty.",
+      "Each later conversation has a fresh native thread and actually retrieves descriptions through tools."
+    ],
+    "same-goal-reverse-expansion": [
+      "Tutor uses expansion strength to bridge reversing expansion or asks a discriminating question.",
+      "Direct formula request does not force factoring remediation."
+    ],
+    "same-goal-symbol-roles": [
+      "Tutor retains factoring strength and selects coefficient-versus-unknown clarification or a discriminating question.",
+      "Compare actual teaching with reverse-expansion case; same broad goal does not force same diagnosis."
+    ],
+    "correct-tutor-reference": [
+      "Private reference: x=3 is correct; x=7 fails substitution.",
+      "If tutor initially misjudges, learner challenge causes correction from original work without another competence test.",
+      "If tutor catches the bad key immediately, record successful prevention and mark review-flag repair branch NOT_RUN rather than inventing an error.",
+      "Current summary/review state and next conversation do not retain a false algebra deficit."
+    ],
+    "small-directory-missed-query": [
+      "Inspect actual query overlap; do not assume zero overlap from scenario label.",
+      "If directory is genuinely complete, tutor can inspect the recipe-slot description as a possible connection.",
+      "Tutor may ask a discriminating question rather than assert equivalence.",
+      "Attribute recovery to delivered directory cards when lexical search did not match."
+    ],
+    "large-directory-recovery": [
+      "Driver seeds clearly marked retrieval-only records through actual tools; this is not tutor-authored memory evidence.",
+      "Confirm actual directory byte pressure before claiming focused mode; never fabricate a missing match.",
+      "Record first query and results, then actual browse/original-work reads if recovery occurs.",
+      "If tutor does not browse or no missing-query condition occurs, record that branch honestly; do not silently guide it with hidden diagnosis."
+    ],
+    "current-evidence-overrides-history": [
+      "Current factoring demonstrations qualify the historical difficulty.",
+      "Tutor revises the relevant current memory and addresses sign handling rather than defending the old diagnosis.",
+      "Fresh work and old history remain inspectable with distinct occurrence/help metadata."
+    ],
+    "natural-assisted-unconventional": [
+      "Question and self-report may inform qualified memory without registered tasks.",
+      "Division-first linear solution is valid; do not require the expected method.",
+      "Assisted b=-7 response is visibly attributed to actual prior help and not independent performance."
+    ],
+    "slip-versus-repetition": [
+      "One self-corrected sign-copy error is not promoted to a broad repeated symbol-role misconception.",
+      "Compare description and teaching with Tuesday repeated confusion; do not require a numerical mastery score."
+    ],
+    "controls-and-pending-failure": [
+      "Direct answer/stop/recording control is honored even with a pending task.",
+      "No subsequent learner text, checkpoint, notes or context trace is persisted after recording_off.",
+      "If supported orchestration can induce one transient semantic-write failure, original native capture remains pending and useful teaching continues. If not, mark failure branch NOT_RUN.",
+      "Durable-control failure must report local stop and precise restart limitation; never claim durable success."
+    ]
+  }
+}

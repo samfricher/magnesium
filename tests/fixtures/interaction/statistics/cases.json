@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "fixture_version": "statistics/v1",
+  "audit_baseline": "8824c8267ea0b05c2acad55d10b9955709477754",
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "cdf-notation",
+      "pair": "cdf",
+      "source": "sources.md",
+      "goal": "Relate a density to an interval probability",
+      "learner_history": "I can sum small density times width contributions and subtract endpoint CDF values.",
+      "prompt": "Why does this integral give the probability?",
+      "evaluator": {
+        "demonstrated": "I can sum small density times width contributions and subtract endpoint CDF values.",
+        "unresolved_link": "Meaning of the integration variable and bounds",
+        "acceptable_actions": [
+          "Map the symbols to the already explained accumulation."
+        ],
+        "forbidden_overclaims": [
+          "Needs elementary probability instruction",
+          "Independent retention verified"
+        ],
+        "expected_durable_state": "Preserve demonstrated accumulation; notation explanation remains supplied assistance."
+      },
+      "followups": []
+    },
+    {
+      "id": "cdf-accumulation",
+      "pair": "cdf",
+      "source": "sources.md",
+      "goal": "Relate a density to an interval probability",
+      "learner_history": "F(b)-F(a) gives the interval probability, but I do not see what density has to do with those two values.",
+      "prompt": "Why does this integral give the probability?",
+      "evaluator": {
+        "demonstrated": "F(b)-F(a) gives the interval probability, but I do not see what density has to do with those two values.",
+        "unresolved_link": "Local density to CDF increments",
+        "acceptable_actions": [
+          "Explain a small increment as density times width and accumulate increments."
+        ],
+        "forbidden_overclaims": [
+          "Cannot subtract CDF values",
+          "Formula repetition alone resolves the gap"
+        ],
+        "expected_durable_state": "Exact subtraction reasoning, assistance, accumulation unresolved until learner work."
+      },
+      "followups": []
+    },
+    {
+      "id": "sum-locus",
+      "pair": "sum",
+      "source": "sources.md",
+      "goal": "Derive a transformed distribution from an input event region",
+      "learner_history": "I can subtract CDF values and plot a pair. I drew one point for a sum of 0.8.",
+      "prompt": "How do I get the probability from this picture?",
+      "evaluator": {
+        "demonstrated": "I can subtract CDF values and plot a pair. I drew one point for a sum of 0.8.",
+        "unresolved_link": "One outcome versus fixed-threshold locus",
+        "acceptable_actions": [
+          "Show several pairs summing to 0.8, then the boundary and inequality region before all formulas.",
+          "Use a static square diagram or a table of pairs."
+        ],
+        "forbidden_overclaims": [
+          "Mastered transformations",
+          "Must learn probability from scratch"
+        ],
+        "expected_durable_state": "CDF subtraction retained; locus repaired with assistance; clipping unresolved; return to transformed density."
+      },
+      "followups": [
+        "So (0.1,0.7) and (0.6,0.2) are two points on the same boundary, and smaller sums fill one side. What changes above one?",
+        "I think I called the upper-threshold region a quadrilateral, but counting its corners gives five.",
+        "Let me try a different support before you show the solution."
+      ]
+    },
+    {
+      "id": "sum-weighting",
+      "pair": "sum",
+      "source": "sources.md",
+      "goal": "Derive a transformed distribution from an input event region",
+      "learner_history": "I can draw the boundary and selected region, but I think every distribution on that square gives the same probability for that region.",
+      "prompt": "How do I get the probability from this picture?",
+      "evaluator": {
+        "demonstrated": "I can draw the boundary and selected region, but I think every distribution on that square gives the same probability for that region.",
+        "unresolved_link": "Support versus density weighting",
+        "acceptable_actions": [
+          "Contrast two densities on the same support and integrate their weights."
+        ],
+        "forbidden_overclaims": [
+          "Cannot draw a threshold boundary",
+          "Area always equals probability"
+        ],
+        "expected_durable_state": "Preserve geometry; density-weighting hypothesis remains qualified."
+      },
+      "followups": []
+    },
+    {
+      "id": "clt-foundations",
+      "pair": "clt",
+      "source": "sources.md",
+      "goal": "Explain how a sample mean varies over repeated samples",
+      "learner_history": "I have never worked with a mean, spread, or a distribution.",
+      "prompt": "What does n mean here?",
+      "evaluator": {
+        "demonstrated": "I have never worked with a mean, spread, or a distribution.",
+        "unresolved_link": "Observations, mean and distribution lack operational meaning",
+        "acceptable_actions": [
+          "Use a tiny concrete sample and its mean, then repeat samples; reconnect n to observations."
+        ],
+        "forbidden_overclaims": [
+          "Ready for Normal approximation proof",
+          "Unknown means failed"
+        ],
+        "expected_durable_state": "Self-report, concrete foundation and original sampling-distribution target; ability unverified."
+      },
+      "followups": []
+    },
+    {
+      "id": "clt-repetitions",
+      "pair": "clt",
+      "source": "sources.md",
+      "goal": "Explain how a sample mean varies over repeated samples",
+      "learner_history": "Each repeated sample gives one average. The distribution is over those averages; I know mean and spread. I thought n counted how many averages I simulated.",
+      "prompt": "What does n mean here?",
+      "evaluator": {
+        "demonstrated": "Each repeated sample gives one average. The distribution is over those averages; I know mean and spread. I thought n counted how many averages I simulated.",
+        "unresolved_link": "Observations per sample versus number of repetitions",
+        "acceptable_actions": [
+          "Distinguish n observations from R repetitions; vary each separately."
+        ],
+        "forbidden_overclaims": [
+          "Needs a full introduction to means",
+          "Independent CLT use established"
+        ],
+        "expected_durable_state": "Preserve learner explanation, unresolved n/R distinction, application and retention untested."
+      },
+      "followups": []
+    },
+    {
+      "id": "program-binding",
+      "pair": null,
+      "source": "sources.md",
+      "goal": "Trace mutation and rebinding",
+      "learner_history": "Append changes the list shared by a and b. I think b=[3] also replaces what a sees.",
+      "prompt": "Why is a still [1,2]?",
+      "evaluator": {
+        "demonstrated": "Append changes the list shared by a and b. I think b=[3] also replaces what a sees.",
+        "unresolved_link": "Mutation versus rebinding",
+        "acceptable_actions": [
+          "Trace object identity and bindings across the final assignment."
+        ],
+        "forbidden_overclaims": [
+          "Cannot program",
+          "Agent execution proves learner skill"
+        ],
+        "expected_durable_state": "Correct append step retained; rebinding conflict is provisional; next changed alias trace."
+      },
+      "followups": []
+    },
+    {
+      "id": "argument-inference",
+      "pair": null,
+      "source": "sources.md",
+      "goal": "Separate a source report from causal and evaluative conclusions",
+      "learner_history": "The report says visits increased after hours changed, so the hours caused the increase and were worthwhile.",
+      "prompt": "Is that conclusion supported?",
+      "evaluator": {
+        "demonstrated": "The report says visits increased after hours changed, so the hours caused the increase and were worthwhile.",
+        "unresolved_link": "Temporal, causal and evaluative claims have different support",
+        "acceptable_actions": [
+          "Preserve source accuracy, identify missing causal comparison, separate value judgment."
+        ],
+        "forbidden_overclaims": [
+          "One compulsory political conclusion",
+          "Source says causation"
+        ],
+        "expected_durable_state": "Accurate report distinguished from contested inference; source and learner claims attributed."
+      },
+      "followups": []
+    },
+    {
+      "id": "unavailable-performance",
+      "pair": null,
+      "source": "sources.md",
+      "goal": "Produce a speech sound distinguishably",
+      "learner_history": "I can describe tongue placement in words. No audio input is available.",
+      "prompt": "Can you assess my pronunciation?",
+      "evaluator": {
+        "demonstrated": "I can describe tongue placement in words. No audio input is available.",
+        "unresolved_link": "Relevant sound cannot be observed",
+        "acceptable_actions": [
+          "State observation limit; offer feasible recording or external feedback without claiming assessment."
+        ],
+        "forbidden_overclaims": [
+          "Correct pronunciation from prose",
+          "Failure due to unavailable microphone"
+        ],
+        "expected_durable_state": "Text explanation observed; pronunciation not observable; no punitive evidence."
+      },
+      "followups": []
+    },
+    {
+      "id": "input-space",
+      "pair": null,
+      "source": "sources.md",
+      "goal": "Translate a transformation event into its input space",
+      "learner_history": "A square appeared when two independent inputs were added. I assumed squaring one input also needs a square.",
+      "prompt": "Why is Y squared not a square here?",
+      "evaluator": {
+        "demonstrated": "A square appeared when two independent inputs were added. I assumed squaring one input also needs a square.",
+        "unresolved_link": "Number of random inputs versus graph of transformation",
+        "acceptable_actions": [
+          "Compare one input coordinate with two; translate the squared event to an interval."
+        ],
+        "forbidden_overclaims": [
+          "All transformations mastered"
+        ],
+        "expected_durable_state": "Representation repair assisted; next changed transformation remains untested."
+      },
+      "followups": []
+    }
+  ],
+  "controls": [
+    {
+      "id": "answer-only",
+      "prompt": "Just show the complete solution."
+    },
+    {
+      "id": "no-quiz",
+      "prompt": "Explain the connection, but do not quiz me."
+    },
+    {
+      "id": "stop",
+      "prompt": "Stop this lesson for today."
+    },
+    {
+      "id": "question-only",
+      "prompt": "What does the lecturer mean by density?"
+    },
+    {
+      "id": "quotation",
+      "prompt": "The slide says \"all regions with the same area have equal probability\". Is that always true?"
+    },
+    {
+      "id": "self-report",
+      "prompt": "That makes sense now."
+    },
+    {
+      "id": "submitted-solution",
+      "prompt": "Here is my derivation: for 0<u<1, the region is a right triangle of area u*u/2, with density one, so F(u)=u*u/2. Please assess it."
+    },
+    {
+      "id": "ordinary-work",
+      "prompt": "Fix the parser error in this repository."
+    },
+    {
+      "id": "tracking-off",
+      "prompt": "Do not record the rest of this session."
+    },
+    {
+      "id": "forget",
+      "prompt": "Forget this Magnesium lesson."
+    }
+  ],
+  "continuation": {
+    "query_miss": "advanced-course next-unit preparation after transformed random inputs",
+    "fresh_process_prompt": "Continue the lesson.",
+    "practice_prompt": "Give me a fresh practice problem on that.",
+    "expected": "Restore the selected lesson, assistance and unresolved link; retain original goal. Practice resume withholds answer-bearing recap. A query miss does not imply no history."
+  }
+}

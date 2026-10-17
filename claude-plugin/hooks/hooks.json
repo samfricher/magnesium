@@ -1,0 +1,77 @@
+{
+  "description": "Self-gating Magnesium lifecycle hooks backed by the native magnesium runtime. The installed command line supplies host_kind=claude because the official Claude Code event JSON carries session, cwd, and prompt but no host-kind field.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook session-start --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 2,
+            "additionalContextLimit": 1024
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook user-prompt-submit --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 2,
+            "additionalContextLimit": 512
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook stop --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook pre-compact --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook post-compact --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "other|clear|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook session-end --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

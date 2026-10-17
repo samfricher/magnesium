@@ -1,0 +1,115 @@
+{
+  "bundle_version": 2,
+  "status": "active",
+  "minimum_learning_step_schema": 2,
+  "entrypoint": "MAGNESIUM.md",
+  "files": [
+    {
+      "path": "MAGNESIUM.md",
+      "role": "orchestrator",
+      "required_for_activation": true,
+      "sha256": "b5b9662f0cedd2d1ff0bbe3df43e95d934c4739b57716eca7aff0adffd20958e"
+    },
+    {
+      "path": "teaching-policy.md",
+      "role": "policy",
+      "required_for_activation": true,
+      "sha256": "a893e085d8b2e374de015e097f4bca663264d122d85ea77a0ac76bdd436bd001"
+    },
+    {
+      "path": "contracts/state-and-evidence.md",
+      "role": "contract",
+      "required_for_activation": true,
+      "sha256": "ced486cf0ed29f0a639b82eccfe4fb45f396d9bfe295051e00f2c064e7e53508"
+    },
+    {
+      "path": "contracts/source-use.md",
+      "role": "contract",
+      "required_for_activation": true,
+      "sha256": "c4a0ee3751dec96a943d2d03d9cff49a9b4d335f387cb046f8df248183e76620"
+    },
+    {
+      "path": "contracts/tool-recipes.md",
+      "role": "contract",
+      "required_for_activation": true,
+      "sha256": "d65893949475e4fc8efc86f19bf43539467976a36c36493fbf7a38ebef3c45d0"
+    },
+    {
+      "path": "workflows/orient-and-probe.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "035c35f28ba9ed490ab9e042e422004a0039acd0bb66fae291b510879c1e3a07",
+      "stage": "orient-and-probe"
+    },
+    {
+      "path": "workflows/plan-and-route.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "12b1035e170ec4b2a4495fe2108c3c9f3512a6839ba06a4b4f82802db9186bee",
+      "stage": "plan-and-route"
+    },
+    {
+      "path": "workflows/teach-and-practice.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "a834a32d0f82f7e72797b2f57080dbeedeb06967c4be0488c7d7da78f154b86a",
+      "stage": "teach-and-practice"
+    },
+    {
+      "path": "workflows/interpret-and-repair.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "f06125594f1308549161e9fa34684cf5b843b82f46c36b5e8cd1ca8eb1576fbf",
+      "stage": "interpret-and-repair"
+    },
+    {
+      "path": "workflows/review-and-transfer.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "e0f2d74d69f53fc2f207e6f7ee4fab9935ecd8c9e193cf8bd7a30cb17a98b2e2",
+      "stage": "review-and-transfer"
+    },
+    {
+      "path": "workflows/consolidate-and-resume.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "bfb1575cae16ffccc5444fa13b7f8c7f85945f7d14acaf25a692ff46b4f51cc2",
+      "stage": "consolidate-and-resume"
+    },
+    {
+      "path": "workflows/papers.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "c155cfa6e67a0001fe85134fd91f325efa69931a56e4591ef56b63bb507e3890",
+      "stage": "papers"
+    },
+    {
+      "path": "workflows/papers-loop.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "sha256": "69b751cf0334dd0272f605345f924782453ff35a70f2e89fba0f0e36e2e94353",
+      "stage": "papers-loop"
+    },
+    {
+      "path": "adapters/codex.md",
+      "role": "adapter",
+      "required_for_activation": true,
+      "sha256": "3a1b136e8f965d6a1c6bdd631d0690f253f0df16d9b25e18c892e143a8cb9e53",
+      "host": "codex"
+    },
+    {
+      "path": "adapters/claude.md",
+      "role": "adapter",
+      "required_for_activation": true,
+      "sha256": "98b3bc5967f76e3909efa58b057cc0ac35765e72d3fd15bb03a7cf02ec92a627",
+      "host": "claude"
+    },
+    {
+      "path": "adapters/opencode.md",
+      "role": "adapter",
+      "required_for_activation": true,
+      "sha256": "e3f3c8f6ca8ddc470101d9588a940a6f1ac350b84beaa699e4a49d6d7ae74442",
+      "host": "opencode"
+    }
+  ]
+}

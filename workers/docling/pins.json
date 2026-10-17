@@ -1,0 +1,28 @@
+{
+  "docling": {
+    "version": "2.126.0",
+    "sdist": "docling-2.126.0.tar.gz",
+    "sha256": "8a7f0f7767eea5a4dcdd2adce08c236c4d58e95e5025cae6657c619ca29efbca"
+  },
+  "docling-slim": {
+    "version": "2.126.0",
+    "sdist": "docling_slim-2.126.0.tar.gz",
+    "sha256": "f965e5d6289e444015f452f051e1562eb1da637002d66b350a5bc308d198524a"
+  },
+  "docling-core": {
+    "version": "2.96.0",
+    "sdist": "docling_core-2.96.0.tar.gz",
+    "sha256": "6285b2a461a830a7b4da052fef5253a08a141be46ef8a1ce9b4b47b92323b700"
+  },
+  "docling-ibm-models": {
+    "version": "4.0.2",
+    "sdist": "docling_ibm_models-4.0.2.tar.gz",
+    "sha256": "cfc2e265d9ee5dc7bc4fe001916851adedba1d8020584d170b35da2d79321f8d"
+  },
+  "docling-parse": {
+    "version": "7.19.1",
+    "sdist": "docling_parse-7.19.1.tar.gz",
+    "sha256": "265330b0b02595a6656a030fda2f623c89b7a7316672daa607ec6f94faca5b76"
+  },
+  "_note": "sdist sha256 from PyPI metadata 2026-09-11; verify at packaging time before bundling"
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "code_status": "POLICY_AUTHORED_AWAITING_LIVE_ACCEPTANCE",
+  "policy_status": "AUTHORED",
+  "actual_host_status": "FAIL",
+  "human_learning_status": "NOT_MEASURED",
+  "measured_claims": [],
+  "limitations": [
+    "This candidate is not a qualified published installer. Merging code does not establish installer, update, removal or rollback acceptance.",
+    "The conservative authored-policy/actual-host FAIL fields retain mixed broader acceptance; successful source-qualified targeted runs do not imply universal host acceptance.",
+    "Review, deterministic tests and native runs have separate scopes. Source-qualified receipts and original failures belong in pull-request summaries and attached evidence; they are not replaced by this compact packaging input.",
+    "Complete evidence-export acceptance remains deferred. Native Windows, complete hardware-I/O/corruption recovery and sudden power loss remain unverified.",
+    "Human learning, retention, transfer and general tutoring efficacy are unmeasured. Provider history is outside Magnesium recording-off privacy claims.",
+    "Runtime changes require new qualified verification; prior aggregate or native evidence cannot automatically qualify a later artifact."
+  ]
+}

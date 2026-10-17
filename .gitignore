@@ -1,0 +1,9 @@
+/target/
+
+# Personal product and domain notes stay local to each checkout.
+/VISION.md
+/CONTEXT.md
+
+# Python bytecode caches anywhere (worker harnesses, scripts).
+__pycache__/
+*.py[cod]

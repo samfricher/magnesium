@@ -1,0 +1,23 @@
+{
+  "name": "magnesium",
+  "version": "0.2.0",
+  "description": "Local Magnesium lifecycle and MCP integration for Codex",
+  "author": {
+    "name": "Magnesium contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Magnesium",
+    "shortDescription": "Attach local learning support to initialized workspaces.",
+    "longDescription": "Magnesium adds self-gating native lifecycle hooks and a local stdio MCP server to initialized workspaces.",
+    "developerName": "Magnesium contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Lifecycle hooks",
+      "Local MCP server"
+    ],
+    "defaultPrompt": "Use Magnesium for this initialized workspace."
+  },
+  "mcpServers": "./.mcp.json",
+  "repository": "https://github.com/samfricher/magnesium"
+}

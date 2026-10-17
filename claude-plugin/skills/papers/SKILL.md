@@ -1,0 +1,47 @@
+---
+name: papers
+description: Durable plans of timed practice papers in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild). Ordinary coding or repository work does not start it.
+---
+
+# Magnesium papers
+
+Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Read tool, not a shell command. Load `context(action:"instructions",host:"claude",stage:"papers")` in build mode and for the verbs new mock and rebuild, and `stage:"papers_loop"` for every other verb. Follow that stage; it holds the policy. Load the same call with `operation:"tool_recipes"`. Then, before you read materials or templates, start or resume the Magnesium session for the target, because native capture expires within minutes. Reload after context loss or a bundle change.
+
+## Choose the target and the mode
+
+The target slug is short, given or derived from the request: `midterm-1`, `test-1`, `final`, `ch6-7`, `computability`. If the request names no target and `Study/` holds one plan, use that plan. If it holds several, match the paper or tag the learner names, and ask only when that does not decide it.
+
+Start the Magnesium session with a goal that names the target slug, such as "midterm-1 practice papers". `/magnesium:help` finds the plan's session by that slug.
+
+- `Study/<target>/plan.md` does not exist: build mode.
+- `Study/<target>/plan.md` exists: run mode. Read `plan.md`, `gap-log.md` and `graph.yaml` and prepare current memory before you act. Do not rebuild.
+
+In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-21 (Wed) 12:30 to 14:00`. `magnesium digest` reads the date from there.
+
+## Loop verbs
+
+Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild. Only "rebuild" starts the plan over.
+
+## Templates
+
+When Claude Code loads this skill, it prints "Base directory for this skill: <path>". The templates are in `<path>/templates/`. `magnesium init` rewrites that directory and installs its files with mode 0600. The templates directory is outside the study folder. Magnesium's folder settings allow the Read tool there without a permission prompt, but the shell asks the learner each time. So read each template with the Read tool and write each filled copy with the Write tool, which also makes any missing folders. Do not use `ls`, `cat` or `cp` on the templates directory, also not inside a longer shell command. The table names every template, so you do not need to list the directory. Do not edit the originals.
+
+| Template | Copy to |
+|---|---|
+| `plan.md` | `Study/<target>/plan.md` |
+| `gap-log.md` | `Study/<target>/gap-log.md` |
+| `graph.yaml` | `Study/<target>/graph.yaml` |
+| `drills.md` | `Study/<target>/drills.md` |
+| `past-papers-README.md` | `Study/<target>/past-papers/README.md` |
+| `paper.md` | `Study/<target>/papers/<Name>.md`, one per Markdown paper; its key is `<Name>-KEY.md` |
+| `preamble.tex`, `build.sh` | `Study/<target>/papers/src/`, for LaTeX papers; one `<Name>-body.tex` per paper |
+
+Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, as the ramp needs them. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
+
+## Optional tools
+
+Write LaTeX papers only when tectonic is available. Otherwise write Markdown or HTML papers, which also work. The study folder's `.magnesium/config.toml` records each answer in a `[tools]` table, as `tectonic = "installed"` or `tectonic = "declined"`. Read it with the Read tool before you choose a format.
+
+If there is no answer and the course needs math notation, check `command -v tectonic` once. If tectonic is absent, ask: "May I install tectonic? It lets me build your practice papers as PDFs with proper math notation. Without it I write them in Markdown or HTML, which also works." On yes, install it the way this operating system installs software, then record `"installed"`. On no, record `"declined"` and write Markdown or HTML. With the Edit tool, add the key to the `[tools]` table, or append the table at the end of the file if there is none. Keys below a table header belong to that table, so a table placed higher would capture `schema_version` and `workspace_id`. Each study folder keeps its own answer, so do not ask again in this folder after `"declined"` unless the learner raises it.
+
+If `heic = "declined"` and the learner sends iPhone photos in HEIC format, ask for PDF or JPEG instead.

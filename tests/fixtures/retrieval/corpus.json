@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "course-workspace",
+      "fixture": "course",
+      "queries": [
+        {
+          "id": "course-exact",
+          "kind": "exact",
+          "query": "continuity limits",
+          "relevant_paths": ["courses/calculus/continuity.md"]
+        },
+        {
+          "id": "course-paraphrase-lexical",
+          "kind": "paraphrased",
+          "query": "hidden variable distorts comparison",
+          "relevant_paths": ["courses/statistics/confounding.md"]
+        },
+        {
+          "id": "course-paraphrase-semantic-gap",
+          "kind": "paraphrased",
+          "query": "slope steepness",
+          "relevant_paths": ["courses/calculus/derivatives.md"]
+        }
+      ]
+    },
+    {
+      "id": "coding-workspace",
+      "fixture": "coding",
+      "queries": [
+        {
+          "id": "coding-exact",
+          "kind": "exact",
+          "query": "invalidate_cache_entry",
+          "relevant_paths": ["src/cache.py"]
+        },
+        {
+          "id": "coding-paraphrase-lexical",
+          "kind": "paraphrased",
+          "query": "remove stale cached value",
+          "relevant_paths": ["docs/cache.md", "src/cache.py"]
+        },
+        {
+          "id": "coding-paraphrase-semantic-gap",
+          "kind": "paraphrased",
+          "query": "evict expired lookup",
+          "relevant_paths": ["src/cache.py"]
+        }
+      ]
+    },
+    {
+      "id": "learner-memory-workspace",
+      "fixture": "learner-memory",
+      "queries": [
+        {
+          "id": "memory-exact",
+          "kind": "exact",
+          "query": "strategy observations",
+          "relevant_paths": ["journal/strategies.md"]
+        },
+        {
+          "id": "memory-paraphrase-lexical",
+          "kind": "paraphrased",
+          "query": "mixing practice reveals strategy choice",
+          "relevant_paths": ["journal/strategies.md"]
+        },
+        {
+          "id": "memory-paraphrase-semantic-gap",
+          "kind": "paraphrased",
+          "query": "remember prompts later",
+          "relevant_paths": ["journal/transfer.md"]
+        }
+      ]
+    }
+  ]
+}

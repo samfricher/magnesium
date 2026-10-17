@@ -1,0 +1,4 @@
+Practice sheet
+Task: Solve 3(x + 2) = 15.
+Printed answer key: x = 7.
+Show your algebra and check any proposed answer in the original equation.

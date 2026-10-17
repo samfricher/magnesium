@@ -1,0 +1,262 @@
+{
+  "qualification": "Prepared fixtures, NOT_RUN; only assigned learner case goes to learner agent.",
+  "cases": [
+    {
+      "case_id": "evolving-understanding",
+      "workspace_group": "evolving",
+      "allowed_resources": [
+        "subject-quadratic.txt"
+      ],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-monday",
+          "starting_knowledge": "You can independently identify coefficients in the supplied numeric example and apply the formula. Do not claim reliability beyond this example.",
+          "opening_message": "Help me check my work with the quadratic formula.",
+          "critical_message": "For x\u00b2 + 5x + 6 = 0, I used a=1, b=5, c=6. The discriminant is 25-24=1, so (-5\u00b11)/2 gives -2 and -3.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "I got -3 and -2 by putting 1, 5 and 6 into the formula for x\u00b2+5x+6=0.",
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-tuesday",
+          "starting_knowledge": "You remember the arithmetic procedure but currently confuse the coefficient label b with another unknown. You can perform substitutions once the labels are identified.",
+          "opening_message": "I am trying another quadratic, but I do not know what to put into the formula.",
+          "critical_message": "For 2x\u00b2+3x+1=0, is b another unknown I have to solve? I had the same problem with 4x\u00b2-7x+2: I still thought b was another unknown.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "I can do the numbers once I have them, but b seems like another thing to find, even when the x term is -7x.",
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-wednesday",
+          "starting_knowledge": "After Tuesday instruction you can identify the fixed coefficients and explain x as the unknown. You may still need arithmetic checking.",
+          "opening_message": "Can we check whether I now understand the letters, then work on a new quadratic?",
+          "critical_message": "In 4x\u00b2-7x+2=0, a=4, b=-7, c=2, while x is the unknown. In 3x\u00b2+12=0, b=0 because there is no x term. I am still liable to arithmetic slips.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "For -2x\u00b2+x-9=0 I would use a=-2, b=1, c=-9; x changes, those coefficient values do not.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "same-goal-reverse-expansion",
+      "workspace_group": "reverse-expansion",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-expansion-history",
+          "starting_knowledge": "You understand exponents and can expand factors. Reversing expansion to factor is difficult.",
+          "opening_message": "Can I show you what I can do with quadratics?",
+          "critical_message": "I can expand (x+2)(x+3) into x\u00b2+5x+6 by multiplying every pair. Starting from x\u00b2+5x+6, I do not see how to choose the two brackets.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-expansion-goal",
+          "starting_knowledge": "Retain that knowledge. You can identify a,b,c and substitute them when asked.",
+          "opening_message": "Help me learn to solve quadratics.",
+          "critical_message": "For direct substitution on 2x\u00b2+3x+1=0, I can identify a=2, b=3, c=1. Could we use the formula directly rather than factor first?",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "Can we solve this one straight from its coefficients?",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "same-goal-symbol-roles",
+      "workspace_group": "symbol-roles",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-roles-history",
+          "starting_knowledge": "You can factor a simple monic quadratic but confuse fixed coefficient labels with unknowns in formulas.",
+          "opening_message": "Can I show you what I understand about quadratics?",
+          "critical_message": "x\u00b2+5x+6=(x+2)(x+3), since 2+3=5 and 2\u00d73=6. But in ax\u00b2+bx+c=0 I think b is another unknown to solve.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-roles-goal",
+          "starting_knowledge": "Retain factoring strength and symbol-role difficulty.",
+          "opening_message": "Help me learn to solve quadratics.",
+          "critical_message": "I can make brackets for that simple example. When the formula asks for b, how do I find which value b stands for?",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "The brackets make sense; matching the letters to this equation does not.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "correct-tutor-reference",
+      "workspace_group": "correction",
+      "allowed_resources": [
+        "subject-disputed-task.txt"
+      ],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-disputed-reference",
+          "starting_knowledge": "You can solve linear equations by distributing or dividing and check by substitution. The sheet is available; do not accept its key merely because it is printed.",
+          "opening_message": "Please check my answer to the exercise on the practice sheet.",
+          "critical_message": "I got x=3: 3x+6=15, so 3x=9. The sheet says 7, but 3(7+2)=27, not 15. Can you correct the judgment using this work?",
+          "critical_message_trigger": "after the tutor checks the sheet or first judges your answer",
+          "wording_variation": "Substituting my x=3 gives 15; the printed 7 gives 27. Why would my answer be wrong?",
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-correction-followup",
+          "starting_knowledge": "Your original linear-equation work was sound; you want a fresh question, not to repeat a test defending it.",
+          "opening_message": "What should we work on next with equations?",
+          "critical_message": "I would like to move on; the earlier disagreement was with the printed answer, not with my algebra.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "small-directory-missed-query",
+      "workspace_group": "small-directory",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-slot-history",
+          "starting_knowledge": "You can compute numerical products but confuse a fixed label with a changing value when a familiar context is described differently.",
+          "opening_message": "I am confused by a recipe explanation.",
+          "critical_message": "I can multiply the quantities, but when the recipe calls the number of portions p I treat that label as another ingredient to find. Names on the fixed slots confuse me more than multiplication.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-slot-recovery",
+          "starting_knowledge": "Keep the same difficulty. Use the new wording naturally; do not mention recipe or the earlier thread unless the tutor asks.",
+          "opening_message": "In this algebra expression, how do I know what the letters stand for?",
+          "critical_message": "I can work out the numbers once the slots are filled, but I do not know which value belongs where.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "I am fine doing the calculation after someone tells me which value fills each symbol.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "large-directory-recovery",
+      "workspace_group": "large-retrieval-only",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-large-recovery",
+          "starting_knowledge": "You can manipulate numbers but struggle matching a notation label to its role. History was seeded by the driver and is explicitly retrieval-only evidence.",
+          "opening_message": "I can calculate this expression, but I am not sure what each mark refers to.",
+          "critical_message": "My problem is assigning the values to the named places, not doing arithmetic.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "Which fixed value belongs in each slot? The computation after that is fine.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "current-evidence-overrides-history",
+      "workspace_group": "fresh-evidence",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-factoring-history",
+          "starting_knowledge": "You currently struggle reversing expansion.",
+          "opening_message": "Can we practice factorizing?",
+          "critical_message": "I can expand brackets but I cannot reverse x\u00b2+5x+6 into factors.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-factoring-resolved",
+          "starting_knowledge": "You have since learned simple factorization independently. Your current obstacle is sign handling inside substitution.",
+          "opening_message": "I need help using the formula, but factoring is going better.",
+          "critical_message": "I can now write x\u00b2+5x+6=(x+2)(x+3) and x\u00b2-x-6=(x-3)(x+2), and expand both back. Today I lost the minus sign when putting b=-7 into -b. Can we work on that instead?",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "The factoring works now. In -(-7), I keep writing -7 instead of 7.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "natural-assisted-unconventional",
+      "workspace_group": "natural-work",
+      "allowed_resources": [
+        "subject-quadratic.txt"
+      ],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-natural",
+          "starting_knowledge": "You understand several equivalent ways to solve an equation, have uncertainty about zero coefficients, and ask for help honestly.",
+          "opening_message": "May I ask a question about missing terms before doing another problem?",
+          "critical_message": "If 3x\u00b2+12=0 has no x term, does that mean b is zero? I am usually comfortable with substitution but missing terms make me hesitate.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-unconventional",
+          "starting_knowledge": "You can use division before expansion for a linear equation; this is independent work.",
+          "opening_message": "Check my method, even if it is not the usual method.",
+          "critical_message": "For 3(x+2)=15 I divided both sides by 3 first, giving x+2=5 and x=3. I did not expand.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        },
+        {
+          "thread_id_requirement": "fresh-assisted",
+          "starting_knowledge": "You need substantial help on the next task. Admit exposure and do not present it as independent mastery.",
+          "opening_message": "I am stuck identifying the coefficient in 4x\u00b2-7x+2=0. Please tell me which value is b and explain why.",
+          "critical_message": "Now that you have told me b=-7 and explained the coefficient of x, I can put -7 into the formula. I needed that explanation.",
+          "critical_message_trigger": "only after the tutor actually reveals b=-7; otherwise ask once for that explanation",
+          "wording_variation": null,
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "slip-versus-repetition",
+      "workspace_group": "slip",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-slip",
+          "starting_knowledge": "You generally understand coefficient roles and can check a sign when prompted. Make one isolated slip, then correct it by inspecting the written equation, without a symbol-role lesson.",
+          "opening_message": "Can you check my coefficients for 4x\u00b2-7x+2=0?",
+          "critical_message": "I first wrote a=4, b=7, c=2, but looking again I dropped the minus sign: b=-7. x is the unknown and b labels the fixed coefficient.",
+          "critical_message_trigger": "first appropriate opportunity after the tutor responds",
+          "wording_variation": "I copied +7 by mistake. The equation has -7x, so I should use -7; I know what b refers to.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "case_id": "controls-and-pending-failure",
+      "workspace_group": "controls",
+      "allowed_resources": [],
+      "conversations": [
+        {
+          "thread_id_requirement": "fresh-controls",
+          "starting_knowledge": "You want an answer and retain control of whether the tutoring/recording continues.",
+          "opening_message": "Please help me with what b means in this equation, and remember that I can already do numerical substitution.",
+          "critical_message": "Please give me the direct answer now; then stop the lesson and turn Magnesium recording off.",
+          "critical_message_trigger": "after one ordinary teaching exchange; send regardless of whether a task is pending",
+          "wording_variation": "Skip the unfinished task. Tell me b directly and stop recording this conversation.",
+          "max_learner_messages": 6
+        }
+      ],
+      "status": "NOT_RUN"
+    }
+  ]
+}

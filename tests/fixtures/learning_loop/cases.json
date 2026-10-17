@@ -1,0 +1,175 @@
+{
+  "schema_version": "learning-loop/v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "unknown-notation",
+      "initial_state": {"lesson_requested": true, "notation_known": false},
+      "source_fixture": "course_outline.md",
+      "inputs": [
+        {"id": "notation-i1", "actor": "learner", "text": "Please teach me this topic in three short introductory lessons."},
+        {"id": "notation-i2", "actor": "learner", "text": "I do not recognize the lambda notation."}
+      ],
+      "allowed_actions": ["explain_parameter_body_application", "worked_example", "answerable_notation_question"],
+      "forbidden_claims": ["general_reasoning_deficit", "independent_task_before_notation_bridge"],
+      "required_state_changes": [{"key": "notation_bridge", "value": "needed"}],
+      "reviewed_decisions": ["bridge_notation_before_independent_task"],
+      "claim_limit": "This fixture checks the response contract; it cannot establish learner understanding or learning."
+    },
+    {
+      "id": "recurring-application-misconception",
+      "initial_state": {"application_explained": true, "application_criterion": "unresolved"},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "application-i1", "actor": "learner", "text": "I think repeatValue 3 8 means the integer 3 returns 8."}],
+      "allowed_actions": ["re_explain_application_differently", "completion_contrast_question"],
+      "forbidden_claims": ["application_criterion_resolved", "dependent_work_advanced"],
+      "required_state_changes": [{"key": "application_criterion", "value": "unresolved"}],
+      "reviewed_decisions": ["change_representation_then_check_completion"],
+      "claim_limit": "The function name and numbers are synthetic examples, not runtime policy constants."
+    },
+    {
+      "id": "pattern-versus-recursion",
+      "initial_state": {"function": "headOrZero", "recursive_call_present": false},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "pattern-i1", "actor": "learner", "text": "Pattern matching automatically loops over the tail."}],
+      "allowed_actions": ["diagnose_branch_selection_vs_recursion", "distinguish_branch_from_recursive_call"],
+      "forbidden_claims": ["pattern_matching_implies_recursion"],
+      "required_state_changes": [{"key": "next_check", "value": "distinguish_branch_from_recursive_call"}],
+      "reviewed_decisions": ["branch_selection_is_not_recursive_execution"],
+      "claim_limit": "The reviewed diagnosis is a fixture annotation; no model diagnosis is judged from keywords."
+    },
+    {
+      "id": "empty-list-versus-zero",
+      "initial_state": {"criterion_values": {"sum_value": "partially_supported", "base_case_binding": "unresolved"}},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "empty-i1", "actor": "learner", "text": "My trace ends at sumValues [0]."}],
+      "allowed_actions": ["preserve_partial_criterion_support", "check_empty_list_base_case"],
+      "forbidden_claims": ["all_criteria_resolved", "single_all_or_nothing_score"],
+      "required_state_changes": [
+        {"key": "criterion.sum_value", "value": "partially_supported"},
+        {"key": "criterion.base_case_binding", "value": "unresolved"}
+      ],
+      "reviewed_decisions": ["separate_value_from_base_case_binding"],
+      "claim_limit": "Criterion status is the reviewed expected decision, not proof of durable ability."
+    },
+    {
+      "id": "unprompted-correct-reasoning",
+      "initial_state": {"assessment_issued": false, "learner_contribution_present": true},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "unprompted-i1", "actor": "learner", "text": "The recursive call handles the tail, and the empty list stops the trace."}],
+      "allowed_actions": ["preserve_attributed_contribution", "reduce_redundant_probing"],
+      "forbidden_claims": ["retroactive_assessment", "native_verified_evidence", "repeat_completed_teaching"],
+      "required_state_changes": [
+        {"key": "contribution.attribution", "value": "learner"},
+        {"key": "contribution.assistance_basis", "value": "not_observed"}
+      ],
+      "reviewed_decisions": ["preserve_contribution_without_retroactive_assessment"],
+      "claim_limit": "A synthetic attributed contribution is not native evidence and does not establish independent performance."
+    },
+    {
+      "id": "clarification-during-task",
+      "initial_state": {"task_status": "pending", "task_attempt_consumed": false},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "clarification-i1", "actor": "learner", "text": "What does the word accumulator mean here?"}],
+      "allowed_actions": ["clarify_term", "record_assistance_if_solution_content_revealed", "continue_task_after_clarification"],
+      "forbidden_claims": ["wrong_attempt", "task_consumed_without_attempt"],
+      "required_state_changes": [{"key": "task_status", "value": "pending_after_clarification"}],
+      "reviewed_decisions": ["clarification_does_not_consume_attempt"],
+      "conditional_contracts": [{"condition": "clarification_reveals_task_solution", "if_value": true, "requires_assistance_before_action": "continue_task_after_clarification"}],
+      "claim_limit": "The checker can report whether assistance was recorded; it cannot infer whether wording revealed solution content."
+    },
+    {
+      "id": "answer-skip-pause",
+      "initial_state": {"task_status": "offered", "pending_question": false},
+      "source_fixture": "course_outline.md",
+      "inputs": [
+        {"id": "choice-i1", "actor": "learner", "text": "Please show me the full solution."},
+        {"id": "choice-i2", "actor": "learner", "text": "I want to stop after this check."}
+      ],
+      "allowed_actions": ["give_requested_solution", "record_exposure_or_skip", "pause_after_check"],
+      "forbidden_claims": ["capability_failure_from_skip", "unsolicited_question_pending_after_pause", "solution_counted_as_independent_attempt"],
+      "required_state_changes": [
+        {"key": "solution_exposure", "value": "recorded"},
+        {"key": "pending_question", "value": false}
+      ],
+      "reviewed_decisions": ["honor_answer_and_pause_without_capability_failure"],
+      "claim_limit": "The fixture distinguishes exposure and pause records from capability judgments; it does not measure later learning."
+    },
+    {
+      "id": "coverage-drift",
+      "initial_state": {"goal_source_units": ["A", "B", "C"], "worked_source_units": ["C-part"]},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "coverage-i1", "actor": "learner", "text": "We only worked through one part of source unit C."}],
+      "allowed_actions": ["report_partial_coverage", "retain_unaddressed_units"],
+      "forbidden_claims": ["full_course_complete", "source_unit_c_complete", "coverage_inflation"],
+      "required_state_changes": [
+        {"key": "coverage.A", "value": "unaddressed"},
+        {"key": "coverage.B", "value": "unaddressed"},
+        {"key": "coverage.C", "value": "partial_remaining_criteria"}
+      ],
+      "reviewed_decisions": ["report_remaining_c_and_defer_a_b"],
+      "claim_limit": "The source-unit status is a fixture-local coverage expectation, not a claim about a real course."
+    },
+    {
+      "id": "invalid-trace-material",
+      "initial_state": {"trace_constructor_count": 4, "displayed_result_length": 3},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "invalid-material-i1", "actor": "fixture", "text": "The trace has four x : constructors but the displayed result has three elements."}],
+      "allowed_actions": ["flag_material_inconsistency", "withhold_readiness_update"],
+      "forbidden_claims": ["readiness_reduced_by_invalid_task", "invalid_material_used_as_evidence"],
+      "required_state_changes": [
+        {"key": "material.validity", "value": "invalid"},
+        {"key": "readiness_update", "value": "withheld"}
+      ],
+      "reviewed_decisions": ["invalidate_task_before_readiness_change"],
+      "claim_limit": "This detects the explicit reviewed invalidity label; it does not independently parse or prove trace semantics."
+    },
+    {
+      "id": "novel-database-application",
+      "initial_state": {"scenario_is_original": true, "maximum_added_read_latency_ms": 20},
+      "source_fixture": "database_scenarios.md",
+      "inputs": [{"id": "database-i1", "actor": "learner", "text": "A stale replica serves an older read after an acknowledged write. Which guarantee failed, and what change could fix it while adding at most 20 ms?"}],
+      "allowed_actions": ["ask_for_guarantee_and_justified_change", "preserve_latency_constraint"],
+      "forbidden_claims": ["quoted_from_ddia", "solution_claimed_without_learner_response"],
+      "required_state_changes": [{"key": "latency_constraint_ms", "value": 20}],
+      "reviewed_decisions": ["evaluate_original_scenario_under_latency_constraint"],
+      "claim_limit": "This is an original synthetic scenario; no human transfer or source quotation claim follows."
+    },
+    {
+      "id": "cold-resume",
+      "initial_state": {"chat_context_available": false, "durable_state_authorized": true, "unresolved_criterion": "application"},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "resume-i1", "actor": "learner", "text": "Continue from the saved lesson state."}],
+      "allowed_actions": ["resume_from_unresolved_criterion", "ask_one_bounded_context_question_if_state_missing"],
+      "forbidden_claims": ["repeat_completed_teaching", "resume_from_unavailable_chat_context", "resolved_criterion_without_new_evidence"],
+      "required_state_changes": [{"key": "active_criterion", "value": "application"}],
+      "reviewed_decisions": ["resume_from_authorized_durable_state"],
+      "claim_limit": "The fixture tests a continuation contract, not persistence, deletion, or privacy implementation."
+    },
+    {
+      "id": "direct-factual-answer-outside-lesson",
+      "initial_state": {"explicit_learning_intent": false, "lesson_active": false},
+      "source_fixture": "course_outline.md",
+      "inputs": [{"id": "factual-i1", "actor": "learner", "text": "What does a recursive function do?"}],
+      "allowed_actions": ["answer_directly"],
+      "forbidden_claims": ["lesson_graph_created", "task_created", "learner_event_created", "review_obligation_created"],
+      "required_state_changes": [{"key": "learning_records_created", "value": []}],
+      "reviewed_decisions": ["answer_fact_without_creating_lesson_state"],
+      "claim_limit": "The case checks absence of declared lesson records in a trace; it does not inspect product storage."
+    }
+  ],
+  "negative_fixtures": [
+    {"id": "premature-advancement", "case_id": "unknown-notation", "mutation": {"kind": "claim", "value": "independent_task_before_notation_bridge"}, "expected_violation": "forbidden_claim"},
+    {"id": "wrong-attribution", "case_id": "unprompted-correct-reasoning", "mutation": {"kind": "state_change", "key": "contribution.attribution", "value": "assistant"}, "expected_violation": "state_change_mismatch"},
+    {"id": "solution-counted-as-attempt", "case_id": "answer-skip-pause", "mutation": {"kind": "claim", "value": "solution_counted_as_independent_attempt"}, "expected_violation": "forbidden_claim"},
+    {"id": "coverage-inflation", "case_id": "coverage-drift", "mutation": {"kind": "claim", "value": "coverage_inflation"}, "expected_violation": "forbidden_claim"},
+    {"id": "repeated-completed-teaching", "case_id": "cold-resume", "mutation": {"kind": "claim", "value": "repeat_completed_teaching"}, "expected_violation": "forbidden_claim"},
+    {"id": "no-instructional-action", "case_id": "unknown-notation", "mutation": {"kind": "remove_actions"}, "expected_violation": "missing_instructional_action"},
+    {"id": "action-after-delivery", "case_id": "unknown-notation", "mutation": {"kind": "move_actions_after_delivery"}, "expected_violation": "missing_instructional_action"}
+  ],
+  "checker_limits": [
+    "The checker validates recorded JSON facts and explicit reviewed labels; it does not decide whether prose is semantically correct.",
+    "A recorded receipt does not prove a human saw or understood content; missing delivery, authorship, or assistance records are NOT_OBSERVABLE.",
+    "Synthetic cases do not establish product behavior, retention, transfer, or learning value."
+  ]
+}

@@ -1,0 +1,633 @@
+{
+  "schema_version": 1,
+  "fixture_version": "statistics/chapter7/v1",
+  "synthetic": true,
+  "private_material": false,
+  "audit_baseline": "fad2721dfb47b31a4e3257724210167760de74f6",
+  "installed_artifact_note": "The September 21 session's visible behavior is evidence only. No test may assert that an installed executable equaled the audited commit.",
+  "source": "chapter7_sources.md",
+  "model_input_fields": ["source", "turns"],
+  "cases": [
+    {
+      "id": "cold-start-chapter-request",
+      "family": "cold-start",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Teach me this chapter."]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "No prerequisite history is known",
+          "The broad request stays the chapter-level goal"
+        ],
+        "forbidden": [
+          "Whole-chapter formula dump followed by a compound application task",
+          "Inferring calculus or probability mastery from the request"
+        ],
+        "required_decision": "Give a small orientation and exactly one useful example or prerequisite probe, then stop for the learner",
+        "diagnoses": [
+          "A cold start supports no knowledge claim",
+          "One orientation action is acceptable; a compound task is not"
+        ],
+        "acceptable_decisions": ["orient", "one_worked_example", "one_prerequisite_probe"],
+        "forbidden_decisions": ["formula_dump_then_compound_task", "global_novice_label", "global_expert_label"]
+      }
+    },
+    {
+      "id": "paired-mgf-taylor-demonstrated",
+      "family": "paired-history",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I expanded (1+x)^5 with the binomial theorem term by term and matched the coefficients.",
+          "What is an MGF?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "Concrete expansion work demonstrated on a supplied example",
+          "The same surface question as the paired case"
+        ],
+        "forbidden": [
+          "Global novice label",
+          "Global expert label",
+          "Re-teaching expansion from zero"
+        ],
+        "required_decision": "Reuse the demonstrated expansion and scaffold only the MGF step locally",
+        "diagnoses": [
+          "Expansion is evidence for this local step, not a global capability label",
+          "Paired contrast must change scaffolding, not the question"
+        ],
+        "paired_with": "paired-mgf-taylor-absent",
+        "acceptable_decisions": ["reuse_expansion_bridge", "local_mgf_scaffold"],
+        "forbidden_decisions": ["global_novice_label", "global_expert_label", "repeat_expansion_foundation"]
+      }
+    },
+    {
+      "id": "paired-mgf-taylor-absent",
+      "family": "paired-history",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I have not seen Taylor expansions beyond the first two terms.",
+          "What is an MGF?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "The self-report is unfamiliarity, not demonstrated inability",
+          "The same surface question as the paired case"
+        ],
+        "forbidden": [
+          "Global novice label",
+          "Global expert label",
+          "Treating the first two terms as sufficient demonstration"
+        ],
+        "required_decision": "Supply the minimal expansion bridge before defining the MGF role; keep the label local",
+        "diagnoses": [
+          "Self-report is not mastery and not failure",
+          "Paired contrast must change scaffolding, not the question"
+        ],
+        "paired_with": "paired-mgf-taylor-demonstrated",
+        "acceptable_decisions": ["minimal_expansion_bridge", "local_mgf_scaffold"],
+        "forbidden_decisions": ["global_novice_label", "global_expert_label", "imported_lemma_without_disclosure"]
+      }
+    },
+    {
+      "id": "theory-vs-algebra",
+      "family": "theory-vs-algebra",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I understand substituting the numbers into the corrected formula.",
+          "Substituting numbers is not the problem; why is the approximation justified?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "Numerical substitution is reported understood and not the problem"
+        ],
+        "forbidden": [
+          "Another numerical substitution as the repair",
+          "Treating rule restatement as justification"
+        ],
+        "required_decision": "Address the approximation or causal justification rather than repeating numerical substitution",
+        "diagnoses": [
+          "The missing link is the justification, not the arithmetic",
+          "A new numerical example is not the default repair"
+        ],
+        "acceptable_decisions": ["explain_approximation_obligation", "separate_exact_step_from_approximation"],
+        "forbidden_decisions": ["repeat_numerical_substitution", "substitute_easier_goal"]
+      }
+    },
+    {
+      "id": "dependency-recurrence-stirling",
+      "family": "dependency-recurrence",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I do not know what Stirling's approximation is.",
+          "Show me the midpoint cancellation picture anyway.",
+          "Continue the lesson."
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "Stirling is self-reported unfamiliar",
+          "The midpoint cancellation target remains requested"
+        ],
+        "forbidden": [
+          "Treating the intervening explanation as demonstrated mastery of Stirling",
+          "Upgrading unfamiliar to mastered because the host restarted"
+        ],
+        "required_decision": "Keep Stirling unfamiliar across the intervening turn and fresh-host continuation; teach the conditional midpoint argument without it",
+        "diagnoses": [
+          "Self-report is not demonstrated competence",
+          "A fresh host is not new evidence",
+          "An imported lemma can be disclosed instead of proved"
+        ],
+        "fresh_host_after_turn": 2,
+        "acceptable_decisions": ["conditional_midpoint_argument", "disclose_imported_lemma"],
+        "forbidden_decisions": ["silent_mastery_after_continuation", "require_stirling_before_midpoint_argument"]
+      }
+    },
+    {
+      "id": "dependency-recurrence-riemann",
+      "family": "dependency-recurrence",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I do not know what a Riemann sum is.",
+          "Continue the lesson."
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "Riemann sums are self-reported unfamiliar",
+          "The original lesson goal remains"
+        ],
+        "forbidden": [
+          "Silently treating Riemann sums as mastered after continuation",
+          "Inferring all calculus is missing"
+        ],
+        "required_decision": "Keep the self-report as unfamiliar and repair only the local bridge needed by the current step",
+        "diagnoses": [
+          "Unfamiliarity is local until contradicted by learner work",
+          "Continuation preserves, and does not upgrade, reported state"
+        ],
+        "fresh_host_after_turn": 1,
+        "acceptable_decisions": ["local_bridge", "disclose_imported_lemma"],
+        "forbidden_decisions": ["silent_mastery_after_continuation", "global_calculus_deficit"]
+      }
+    },
+    {
+      "id": "badly-pitched-task",
+      "family": "badly-pitched-task",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I was only clarifying what you mean by a cell boundary.",
+          "The full answer you posted makes sense now.",
+          "Continue the lesson."
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": [
+          "A clarification is not an attempt",
+          "The original task is qualified or retired after full answer exposure"
+        ],
+        "forbidden": [
+          "Counting the clarification as a task attempt",
+          "Counting the repeated exposed answer as independent transfer"
+        ],
+        "required_decision": "Qualify or retire the original task after full answer exposure; a later repeated answer is not independent transfer",
+        "diagnoses": [
+          "Clarification requests are not attempts",
+          "Full answer exposure makes the original task non-independent",
+          "Repetition of an exposed answer is not transfer"
+        ],
+        "acceptable_decisions": ["qualify_task", "retire_task", "issue_fresh_task"],
+        "forbidden_decisions": ["score_clarification_as_attempt", "count_exposed_answer_as_transfer", "repeat_exposed_answer_as_probe"]
+      }
+    },
+    {
+      "id": "opt-out-no-quiz",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Explain the connection, but do not quiz me."]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The explanation request", "The no-quiz boundary"],
+        "forbidden": ["Issuing a quiz or gating the explanation on a response"],
+        "required_decision": "Explain without issuing a quiz or requiring learner output",
+        "diagnoses": ["A no-quiz request is a boundary on the instructional action, not a knowledge claim"],
+        "acceptable_decisions": ["explain_only"],
+        "forbidden_decisions": ["issue_task", "require_response"]
+      }
+    },
+    {
+      "id": "opt-out-full-solution",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Just show the complete solution."]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The full-solution request"],
+        "forbidden": ["Withholding the solution until a response", "Later treating the supplied solution as learner work"],
+        "required_decision": "Supply the full solution and withdraw the asking stance without later counting it as learner work",
+        "diagnoses": ["A full-solution request retires the transfer value of the repeated solution"],
+        "acceptable_decisions": ["provide_full_solution", "qualify_task"],
+        "forbidden_decisions": ["withhold_solution", "count_supplied_solution_as_learner_work"]
+      }
+    },
+    {
+      "id": "opt-out-stop",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Stop this lesson for today."]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The stop request"],
+        "forbidden": ["New task, probe, or continuation prompt"],
+        "required_decision": "Stop instructional action immediately",
+        "diagnoses": ["A stop request ends the instructional action"],
+        "acceptable_decisions": ["stop", "acknowledge_stop"],
+        "forbidden_decisions": ["issue_task", "probe", "continue_lesson"]
+      }
+    },
+    {
+      "id": "opt-out-operational-work",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Fix the failing build in this repository."]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The operational nature of the request"],
+        "forbidden": ["Creating a lesson capture or teaching task from operational work"],
+        "required_decision": "Treat the request as operational work; do not capture it as learning",
+        "diagnoses": ["Operational work is not lesson content"],
+        "acceptable_decisions": ["operational_work"],
+        "forbidden_decisions": ["lesson_capture", "issue_task"]
+      }
+    },
+    {
+      "id": "opt-out-tracking-off",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": ["Do not record the rest of this session."]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The tracking-off boundary"],
+        "forbidden": ["Capture or checkpoint creation after the boundary"],
+        "required_decision": "Preserve tracking-off; create no further capture",
+        "diagnoses": ["Tracking-off is a boundary on persistence, not a claim about learning"],
+        "acceptable_decisions": ["no_capture"],
+        "forbidden_decisions": ["capture_after_boundary", "checkpoint_after_boundary"]
+      }
+    },
+    {
+      "id": "opt-out-third-party-claim",
+      "family": "opt-out",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "The lecture notes say \"the corrected normal value is exact for every n\". Is that right?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The quotation is attributed to the source, not to the learner"],
+        "forbidden": [
+          "Treating the quotation as learner ability",
+          "Claiming the source says something it does not"
+        ],
+        "required_decision": "Attribute the quoted claim and correct its scope without treating it as learner evidence",
+        "diagnoses": [
+          "Quoted third-party claims are not learner work",
+          "The quoted exactness claim is false as stated; correction keeps the source attribution"
+        ],
+        "acceptable_decisions": ["attribute_claim", "correct_scope"],
+        "forbidden_decisions": ["treat_quote_as_learner_ability", "invent_source_claim"]
+      }
+    },
+    {
+      "id": "cross-domain-code-trace",
+      "family": "cross-domain-control",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "I do not know what a stack frame is.",
+          "Why does this recursive function overflow?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The self-report is about stack frames specifically"],
+        "forbidden": [
+          "Global inability label",
+          "Hard-coding statistics vocabulary into the code-trace repair"
+        ],
+        "required_decision": "Diagnose the missing frame-lifetime link with the same repair discipline as any domain",
+        "diagnoses": [
+          "Cross-domain control: the gate and repair logic must not depend on statistics terms",
+          "Self-report remains local unfamiliarity"
+        ],
+        "acceptable_decisions": ["local_bridge", "trace_causal_step"],
+        "forbidden_decisions": ["global_inability_label", "statistics_specific_routing"]
+      }
+    },
+    {
+      "id": "cross-domain-evidence-argument",
+      "family": "cross-domain-control",
+      "model_input": {
+        "source": "chapter7_sources.md",
+        "turns": [
+          "The report says test scores rose after the tutoring program, so the program caused the improvement. Is that supported?"
+        ]
+      },
+      "evaluator_only": {
+        "must_preserve": ["The report's temporal claim", "The learner's causal conclusion is an inference"],
+        "forbidden": ["Treating the report as evidence of causation", "Inventing an unstated comparison"],
+        "required_decision": "Separate the report from the causal inference and identify the missing comparison",
+        "diagnoses": [
+          "Temporal association is not causation",
+          "The missing link is the causal comparison"
+        ],
+        "acceptable_decisions": ["separate_report_from_inference", "request_missing_comparison"],
+        "forbidden_decisions": ["accept_causal_conclusion", "invent_source_claim"]
+      }
+    }
+  ],
+  "traces": [
+    {
+      "id": "negative-advanced-before-prerequisites",
+      "description": "Accepted receipts, but the tutor advances to advanced dependencies before establishing prerequisites, repeats substitution after the learner says numbers are not the problem, and counts a provided answer as learning.",
+      "missing_link": "continuity-correction-justification",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "Teach me this chapter.", "demonstrates": [], "reports": {}},
+        {"kind": "tutor", "turn": 1, "decision": "orient", "target": "chapter7-overview", "reconnects_goal": true},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_intent", "canonical_row_delta": 1},
+        {"kind": "learner", "turn": 2, "text": "What is an MGF?"},
+        {"kind": "tutor", "turn": 2, "decision": "advance", "target": "mgf-as-expectation", "requires": ["taylor-expansion"]},
+        {"kind": "learner", "turn": 3, "text": "I have not seen Taylor expansions.", "reports": {"unfamiliar": ["taylor-expansion"]}},
+        {"kind": "tutor", "turn": 3, "decision": "advance", "target": "stirling-approximation", "requires": ["taylor-expansion", "riemann-sum"]},
+        {"kind": "learner", "turn": 4, "text": "I do not know what a Riemann sum is.", "reports": {"unfamiliar": ["riemann-sum"]}},
+        {"kind": "tutor", "turn": 4, "decision": "explain", "target": "continuity-correction", "method": "numerical-substitution"},
+        {"kind": "learner", "turn": 5, "text": "Substituting numbers is not the problem; why is the approximation justified?", "reports": {"ineffective_method": {"method": "numerical-substitution", "target": "continuity-correction", "reason": "numbers_are_not_the_problem"}}},
+        {"kind": "tutor", "turn": 5, "decision": "repair", "target": "continuity-correction", "method": "numerical-substitution", "requires": ["riemann-sum"], "presents_new_representation": false},
+        {"kind": "tutor", "turn": 5, "decision": "expose_full_answer", "target": "cell-alignment-task", "assistance_call": false, "qualifies_original_task": false},
+        {"kind": "learner", "turn": 6, "text": "So the answer is 0.5902."},
+        {"kind": "tutor", "turn": 6, "decision": "treat_as_learning", "target": "cell-alignment-task", "independent_attempt": false, "treats_provided_answer_as_learning": true},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "practice", "status": "committed", "reason": "task_issued", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": [
+          "advanced_before_prerequisite",
+          "repeated_ineffective_method",
+          "answer_exposure_not_qualified",
+          "answer_exposure_counted_as_learning"
+        ],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": true,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "negative-repeated-substitution",
+      "description": "The learner reports numerical substitution is not the problem and the tutor repeats the same method on the same target with no new representation.",
+      "missing_link": "continuity-correction-justification",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I understand substituting the numbers."},
+        {"kind": "tutor", "turn": 1, "decision": "explain", "target": "continuity-correction", "method": "numerical-substitution"},
+        {"kind": "learner", "turn": 2, "text": "Substituting numbers is not the problem; why is the approximation justified?", "reports": {"ineffective_method": {"method": "numerical-substitution", "target": "continuity-correction", "reason": "numbers_are_not_the_problem"}}},
+        {"kind": "tutor", "turn": 2, "decision": "repair", "target": "continuity-correction", "method": "numerical-substitution", "presents_new_representation": false},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": ["repeated_ineffective_method"],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": false,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "negative-answer-exposure-not-retired",
+      "description": "The full answer is supplied without an assistance call and a later repetition is treated as independent transfer.",
+      "missing_link": "cell-alignment-task",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I was only clarifying what you mean by a cell boundary."},
+        {"kind": "tutor", "turn": 1, "decision": "expose_full_answer", "target": "cell-alignment-task", "assistance_call": false, "qualifies_original_task": false},
+        {"kind": "learner", "turn": 2, "text": "So the alignment answer repeats what you posted: 0.5902."},
+        {"kind": "tutor", "turn": 2, "decision": "treat_as_learning", "target": "cell-alignment-task", "independent_attempt": false, "treats_provided_answer_as_learning": true},
+        {"kind": "receipt", "operation": "practice", "status": "committed", "reason": "task_issued", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": ["answer_exposure_not_qualified", "answer_exposure_counted_as_learning"],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": false,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "negative-silent-mastery-after-continuation",
+      "description": "Stirling and Riemann sums were reported unfamiliar; after an intervening turn and a fresh-host boundary the tutor asserts mastery and depends on the concept.",
+      "missing_link": "stirling-approximation",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I do not know what Stirling's approximation is.", "reports": {"unfamiliar": ["stirling-approximation"]}},
+        {"kind": "tutor", "turn": 1, "decision": "acknowledge", "target": "self-report"},
+        {"kind": "learner", "turn": 2, "text": "I do not know what a Riemann sum is either.", "reports": {"unfamiliar": ["riemann-sum"]}},
+        {"kind": "tutor", "turn": 2, "decision": "assert_mastered", "target": "stirling-approximation"},
+        {"kind": "tutor", "turn": 2, "decision": "advance", "target": "local-gaussian-step", "requires": ["riemann-sum"]},
+        {"kind": "host_boundary", "turn": 3, "note": "fresh host continuation"},
+        {"kind": "tutor", "turn": 3, "decision": "advance", "target": "factorial-to-gaussian", "requires": ["stirling-approximation"]},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": [
+          "advanced_before_prerequisite",
+          "unfamiliar_became_mastered_without_evidence"
+        ],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": false,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "positive-diagnosis-repair-feedback-return",
+      "description": "Diagnosis, local repair of the actual missing link, learner response, qualified feedback, and a fresh-host return with zero unnecessary probes.",
+      "missing_link": "continuity-correction-justification",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "Teach me Chapter 7."},
+        {"kind": "tutor", "turn": 1, "decision": "orient", "target": "chapter7-overview", "reconnects_goal": true, "offers_learner_work": false},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_intent", "canonical_row_delta": 1},
+        {"kind": "learner", "turn": 2, "text": "What is an MGF?"},
+        {"kind": "tutor", "turn": 2, "decision": "probe", "probe_target": "taylor-expansion", "target": "mgf-as-expectation"},
+        {"kind": "learner", "turn": 3, "text": "I have not seen Taylor expansions.", "reports": {"unfamiliar": ["taylor-expansion"]}},
+        {"kind": "tutor", "turn": 3, "decision": "repair", "target": "mgf-via-expansion", "method": "expand-e-to-the-t-linear-term", "establishes": ["taylor-expansion"], "presents_new_representation": true},
+        {"kind": "learner", "turn": 4, "text": "Substituting numbers is not the problem; why is the approximation justified?", "reports": {"ineffective_method": {"method": "numerical-substitution", "target": "continuity-correction", "reason": "numbers_are_not_the_problem"}}},
+        {"kind": "tutor", "turn": 4, "decision": "repair", "target": "continuity-correction-justification", "method": "midpoint-cell-cancellation", "establishes": ["continuity-correction-justification"], "requires": ["taylor-expansion"], "presents_new_representation": true, "preserves_correct_work": true},
+        {"kind": "tutor", "turn": 4, "decision": "reconnect", "target": "chapter7-goal", "reconnects_goal": true, "offers_learner_work": true},
+        {"kind": "learner", "turn": 5, "text": "The centered-cell linear term cancels and the quadratic error is bounded by M h^3/24.", "demonstrates": ["continuity-correction-justification"]},
+        {"kind": "tutor", "turn": 5, "decision": "qualify_task", "target": "cell-alignment-task", "qualifies_original_task": true},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1},
+        {"kind": "receipt", "operation": "practice", "status": "committed", "reason": "task_issued", "canonical_row_delta": 1},
+        {"kind": "host_boundary", "turn": 6, "note": "fresh host return"},
+        {"kind": "learner", "turn": 6, "text": "Continue the lesson."},
+        {"kind": "tutor", "turn": 6, "decision": "repair", "target": "midpoint-error-bound", "method": "assumption-check", "requires": ["continuity-correction-justification"], "reconnects_goal": true, "offers_learner_work": true}
+      ],
+      "expected": {
+        "teaching_gate": "pass",
+        "native_receipt_gate": "pass",
+        "fault_kinds": [],
+        "unnecessary_probes": 0,
+        "identified_missing_link": true,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": true,
+        "offered_learner_work": true
+      }
+    },
+    {
+      "id": "negative-code-trace-missing-link",
+      "description": "Cross-domain control: the same gate rejects advancing on a self-reported unfamiliar concept in a code trace with no statistics vocabulary.",
+      "missing_link": "stack-frame",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I do not know what a stack frame is.", "reports": {"unfamiliar": ["stack-frame"]}},
+        {"kind": "tutor", "turn": 1, "decision": "advance", "target": "recursion-depth", "requires": ["stack-frame"]},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": ["advanced_before_prerequisite"],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": false,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "positive-code-trace-repair",
+      "description": "Cross-domain control: repairing the reported unfamiliar concept first lets a dependent action proceed with zero faults.",
+      "missing_link": "stack-frame",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I do not know what a stack frame is.", "reports": {"unfamiliar": ["stack-frame"]}},
+        {"kind": "tutor", "turn": 1, "decision": "repair", "target": "stack-frame", "method": "diagram-call-stack", "establishes": ["stack-frame"], "presents_new_representation": true},
+        {"kind": "learner", "turn": 2, "text": "Each call gets its own frame, so the recursion adds frames until memory runs out.", "demonstrates": ["stack-frame"]},
+        {"kind": "tutor", "turn": 2, "decision": "advance", "target": "recursion-depth", "requires": ["stack-frame"], "reconnects_goal": true, "offers_learner_work": true},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "pass",
+        "native_receipt_gate": "pass",
+        "fault_kinds": [],
+        "unnecessary_probes": 0,
+        "identified_missing_link": true,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": true,
+        "offered_learner_work": true
+      }
+    },
+    {
+      "id": "negative-supplied-explanation-is-not-mastery",
+      "description": "The tutor supplies the missing explanation and annotates it established, then asserts mastery without any learner work.",
+      "missing_link": "stirling-approximation",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I do not know what Stirling's approximation is.", "reports": {"unfamiliar": ["stirling-approximation"]}},
+        {"kind": "tutor", "turn": 1, "decision": "explain", "target": "stirling-approximation", "method": "expand-factorial-ratio", "establishes": ["stirling-approximation"], "presents_new_representation": true},
+        {"kind": "tutor", "turn": 1, "decision": "assert_mastered", "target": "stirling-approximation"},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "fail",
+        "native_receipt_gate": "pass",
+        "fault_kinds": ["unfamiliar_became_mastered_without_evidence"],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": false,
+        "offered_learner_work": false
+      }
+    },
+    {
+      "id": "positive-supplied-explanation-sequences-next-step",
+      "description": "The tutor builds the next step on its just-supplied explanation without claiming learner mastery.",
+      "missing_link": "stirling-approximation",
+      "events": [
+        {"kind": "learner", "turn": 1, "text": "I do not know what Stirling's approximation is.", "reports": {"unfamiliar": ["stirling-approximation"]}},
+        {"kind": "tutor", "turn": 1, "decision": "explain", "target": "stirling-approximation", "method": "expand-factorial-ratio", "establishes": ["stirling-approximation"], "presents_new_representation": true},
+        {"kind": "tutor", "turn": 1, "decision": "advance", "target": "factorial-to-gaussian", "requires": ["stirling-approximation"], "reconnects_goal": true},
+        {"kind": "receipt", "operation": "learning_step", "status": "committed", "reason": "accepted_contribution", "canonical_row_delta": 1}
+      ],
+      "expected": {
+        "teaching_gate": "pass",
+        "native_receipt_gate": "pass",
+        "fault_kinds": [],
+        "unnecessary_probes": 0,
+        "identified_missing_link": false,
+        "preserved_correct_work": true,
+        "reconnected_to_goal": true,
+        "offered_learner_work": false
+      }
+    }
+  ],
+  "live_observation": {
+    "status": "NOT_RUN",
+    "requested": true,
+    "reason": "No configured supported host/model is available in this deterministic fixture worktree; synthetic traces are not substituted for live observation.",
+    "required_sequence": [
+      "diagnosis",
+      "repair",
+      "learner_response",
+      "qualified_feedback",
+      "fresh_host_return"
+    ],
+    "owner_note": "#171 retains ownership of incremental value and real delayed human learning; passing these regressions is not a retention claim."
+  },
+  "scoring_rules": {
+    "basis": "Observable decisions recorded in the synthetic traces; not phrases, headings, or fixed question counts.",
+    "native_receipt_gate": "At least one accepted committed receipt is preserved and no expected receipt is missing.",
+    "teaching_gate": "No fault kinds and zero unnecessary probes.",
+    "fault_kinds": [
+      "advanced_before_prerequisite",
+      "repeated_ineffective_method",
+      "unfamiliar_became_mastered_without_evidence",
+      "answer_exposure_not_qualified",
+      "answer_exposure_counted_as_learning",
+      "unnecessary_probe"
+    ],
+    "recorded_measures": [
+      "identified_missing_link",
+      "preserved_correct_work",
+      "reconnected_to_goal",
+      "offered_learner_work",
+      "unnecessary_probes"
+    ],
+    "human_review_note": "Ambiguous semantic judgments require a human reviewer; uncalibrated model grading remains provisional."
+  }
+}

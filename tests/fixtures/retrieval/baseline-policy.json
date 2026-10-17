@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "backend": "structural_fts5",
+  "regression": {
+    "minimum_recall_at_5": 0.66,
+    "minimum_recall_at_10": 0.66,
+    "minimum_mrr": 0.66,
+    "maximum_wrong_workspace_rate": 0.0
+  }
+}

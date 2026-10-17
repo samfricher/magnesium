@@ -1,0 +1,32 @@
+# Course graph: <target>
+#
+# Agent-owned. Course structure only. Learner state lives in the gap log and the learner record.
+#
+# One entry per gap tag, 20 to 40 for a course. The keys are the gap tags and
+# the topics label of each tag memory. Fields:
+#   covers    The skill or question type.
+#   pages     Slide or textbook pages to re-read. Optional for a foundation tag.
+#   kind      course, or foundation for a skill from a prerequisite course that this course's questions run through.
+#   needs     Prerequisite tags. No cycles.
+#   key_need  The one or two tags in needs that the work for this tag runs through. Repair of a repeated failure starts here.
+#   contains  Tags that a question on this tag fully exercises.
+#   touches   Tags that a question on this tag uses only in a routine step.
+# Use [] for an empty list. Quote a value that contains ": ", such as covers: "Theorem 7.2: ...".
+# No status, marks, dates, weights or scores.
+
+tags:
+  <TAG>:
+    covers: <skill or question type>
+    pages: <file> pages <pages>
+    kind: course
+    needs: [<FOUNDATION_TAG>]
+    key_need: [<FOUNDATION_TAG>]
+    contains: [<FOUNDATION_TAG>]
+    touches: []
+  <FOUNDATION_TAG>:
+    covers: <skill from a prerequisite course>
+    kind: foundation
+    needs: []
+    key_need: []
+    contains: []
+    touches: []

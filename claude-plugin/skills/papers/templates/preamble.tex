@@ -1,0 +1,55 @@
+% Shared preamble for every paper and key in this folder.
+% build.sh defines \SHOWKEY before \input{preamble} for a key build only.
+% Without \SHOWKEY, every solution environment is left out of the PDF.
+% Put \begin{solution} and \end{solution} each on a line of its own:
+% the comment package needs that to cut the environment.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{comment}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{microtype}
+\setlist[enumerate]{itemsep=3pt,topsep=4pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\pagestyle{fancy}
+\fancyhf{}
+\rfoot{Page \thepage}
+
+% Course notation: add \newcommand lines here, in the notation of the
+% course's slides and textbook.
+
+% \question{number}{title}: starts a question.
+\newcommand{\question}[2]{\section*{Q#1\quad #2}}
+% \pts{marks}: the marks for a question or part, set at the right margin.
+\newcommand{\pts}[1]{\hfill\textbf{[#1]}}
+
+\ifdefined\SHOWKEY
+  \includecomment{solution}
+  \newcommand{\keylabel}{ (key)}
+  % \solhead: opens the worked solution inside a solution environment.
+  \newcommand{\solhead}{\par\medskip\noindent\textcolor{blue!60!black}{\textbf{Solution.}}\ }
+  % \mk{marks}: the marks that one step of the solution earns.
+  \newcommand{\mk}[1]{\textcolor{red!70!black}{\textbf{[#1]}}}
+  % \markernote{text}: a half-credit rule or a common error, for the marker.
+  \newcommand{\markernote}[1]{\par\textcolor{green!40!black}{\textit{Marker's note: #1}}}
+\else
+  \excludecomment{solution}
+  \newcommand{\keylabel}{}
+  \newcommand{\solhead}{}
+  \newcommand{\mk}[1]{}
+  \newcommand{\markernote}[1]{}
+\fi
+
+% \paperheader{title}{level}{minutes}{marks}{aids}: the first line of a body.
+\newcommand{\paperheader}[5]{%
+  \lhead{#1\keylabel}%
+  \begin{center}
+    {\Large\bfseries #1\keylabel}\\[4pt]
+    \textbf{Level: #2. Time: #3 minutes. Total: #4 marks.}\\[2pt]
+    {\small\textit{Aids: #5. Nothing else.}}\\[2pt]
+    {\small Work timed, away from the conversation. If you do not know something, write your best attempt and a ? instead of looking it up.}
+  \end{center}}

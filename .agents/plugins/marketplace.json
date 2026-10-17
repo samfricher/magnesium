@@ -1,0 +1,20 @@
+{
+  "name": "magnesium",
+  "interface": {
+    "displayName": "Magnesium"
+  },
+  "plugins": [
+    {
+      "name": "magnesium",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

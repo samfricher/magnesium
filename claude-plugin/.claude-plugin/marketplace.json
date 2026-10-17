@@ -1,0 +1,14 @@
+{
+  "name": "magnesium",
+  "owner": {
+    "name": "Magnesium contributors"
+  },
+  "description": "Single-plugin marketplace that installs Magnesium into Claude Code from this directory",
+  "plugins": [
+    {
+      "name": "magnesium",
+      "source": "./",
+      "description": "Local workspace-attached learning support for Claude Code"
+    }
+  ]
+}

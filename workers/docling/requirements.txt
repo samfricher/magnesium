@@ -1,0 +1,24 @@
+# Magnesium Docling worker dependencies (LEARN-208).
+#
+# Direct == pins; this is not a complete or hashed dependency lock.
+# Historical sdist sha256 metadata is recorded in pins.json; it does not
+# provide pip hashes or cover transitive dependencies. For an unlocked
+# preparation install, run from the repository root into a dedicated
+# virtualenv on the packaging machine, never a user-managed pip environment:
+#
+#   python3 -m venv /opt/magnesium-docling
+#   /opt/magnesium-docling/bin/pip install -r workers/docling/requirements.txt
+#
+# The worker itself needs no third-party packages beyond Docling; the
+# requirements below are the conversion stack only. Model/asset downloads
+# (layout, table structure, optional OCR) happen once at packaging time
+# and are verified by checksum; offline conversion works afterwards.
+# Before distributing a package, resolve and hash all direct/transitive
+# artifacts in a separate per-target lock, then install that lock with
+# --require-hashes. No such lock is provided here.
+
+docling==2.126.0
+docling-slim==2.126.0
+docling-core==2.96.0
+docling-ibm-models==4.0.2
+docling-parse==7.19.1

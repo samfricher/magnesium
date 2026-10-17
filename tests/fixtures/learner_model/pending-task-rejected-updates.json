@@ -1,0 +1,62 @@
+{
+  "source_commit": "487142ff56064724f15abec69830819cac2a16c1",
+  "source_case": "supplemental-unrelated-no-bulk-attach",
+  "qualification": "Sanitized exact rejected argument objects. Local tests replace only transient ticket and captured event ID with their own actual runtime values. No tutor proposal event was available at either rejected call.",
+  "failed_calls": [
+    {
+      "schema": "learner-model/v2",
+      "action": "update",
+      "request_id": "halves-ten-apples-start-20261003-1",
+      "session": {
+        "operation": "start",
+        "client_ref": "halves_session",
+        "goal": "Understand a half as one of two equal groups using 10 apples"
+      },
+      "native_capture": {
+        "ticket": "[NATIVE_CAPTURE_TICKET_E35C4E2D1338BBC0]",
+        "text": "Help me understand halves using 10 apples. This is a new topic."
+      },
+      "checkpoint": {
+        "current_problem": "Introduce halves by splitting a collection of 10 apples into two equal groups of 5.",
+        "working_diagnosis": "Learner requests a new topic with a concrete example. No learner performance on halves is available. Earlier unbound algebra self-report is a separate topic and remains unprocessed.",
+        "next_action": "Explain that each group is one half when both contain 5 apples and together contain all 10, then ask whether groups of 4 and 6 are halves and why.",
+        "pending_task": {
+          "prompt": "If the 10 apples were split into groups of 4 and 6, would those groups be halves? Why?",
+          "conditions": "All 10 apples are used; judge whether the two groups form halves of the collection.",
+          "known_help": "Proposed explanation defines halves as two equal parts and shows 5 + 5 = 10 with two groups of five apples.",
+          "delivery_status": "proposed"
+        },
+        "memory_refs": []
+      }
+    },
+    {
+      "schema": "learner-model/v2",
+      "action": "update",
+      "request_id": "halves-ten-apples-start-20261003-2",
+      "session": {
+        "operation": "start",
+        "client_ref": "halves_session",
+        "goal": "Understand a half as one of two equal groups using 10 apples"
+      },
+      "event_dispositions": [
+        {
+          "event_id": "e-50eabbadb7d6b952801d65d8c99e7515",
+          "outcome": "processed"
+        }
+      ],
+      "checkpoint": {
+        "current_problem": "Introduce halves by splitting a collection of 10 apples into two equal groups of 5.",
+        "working_diagnosis": "Learner requests a new topic with a concrete example. No learner performance on halves is available. Earlier unbound algebra self-report is a separate topic and remains unprocessed.",
+        "next_action": "Explain that each group is one half when both contain 5 apples and together contain all 10, then ask whether groups of 4 and 6 are halves and why.",
+        "pending_task": {
+          "conditions": "Proposed, not yet delivered: If the 10 apples were split into groups of 4 and 6, would those groups be halves? Why? All 10 apples are used; judge whether the two groups form halves of the collection. Proposed help: explanation defines halves as two equal parts and shows 5 + 5 = 10 with two groups of five apples."
+        },
+        "memory_refs": []
+      }
+    }
+  ],
+  "expected_error_paths": [
+    "checkpoint.pending_task.delivery_status",
+    "checkpoint.pending_task"
+  ]
+}

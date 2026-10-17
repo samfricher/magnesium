@@ -1,0 +1,27 @@
+{
+  "baseline_version": "learning-loop-baseline/v1",
+  "issue": 274,
+  "source": "aggregate_issue_observations",
+  "inspected_source_sha": "c8f91230621b4c32e3d7407a1d7a8d3157a4ea51",
+  "provenance_limitations": ["aggregate_only", "no_transcript_or_private_host_data"],
+  "claim_boundaries": ["no_canonical_verified_evidence", "no_retention_or_transfer_measurement"],
+  "turns": 29,
+  "nested_executions": 69,
+  "learning_step_calls": 26,
+  "checkpoints": 18,
+  "general_practice": {
+    "total": 3,
+    "invalidated": 1,
+    "answered": 2
+  },
+  "provisional_interpretations": 2,
+  "calls_with_rejected_components": 7,
+  "continuation_message_numbers": [15, 24, 31, 52, 54, 58, 66, 68, 73],
+  "model_split": {
+    "gpt-5.6-terra/max": 24,
+    "gpt-5.6-sol/high": 5
+  },
+  "canonical_verified_evidence": 0,
+  "observations_nonempty": true,
+  "checkpoints_nonempty": true
+}

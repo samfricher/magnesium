@@ -1,0 +1,8 @@
+{
+  "name": "magnesium",
+  "version": "0.2.0",
+  "description": "Local workspace-attached learning support for Claude Code: lifecycle hooks, shared teaching skill, and local MCP server",
+  "author": {
+    "name": "Magnesium contributors"
+  }
+}

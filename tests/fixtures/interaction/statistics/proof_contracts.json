@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "fixture_version": "statistics/proof-contracts/v1",
+  "synthetic": true,
+  "private_material": false,
+  "issue_identity": {
+    "n": 20,
+    "p": 0.4,
+    "k": 8,
+    "exact_cdf": 0.5955987253122249,
+    "corrected_phi": 0.5902615116112394,
+    "tolerance": 1e-12,
+    "note": "Independently reproduced with std-only binomial coefficients and a normal CDF implemented without SciPy."
+  },
+  "rational_grid": {
+    "mu": [1, 2],
+    "sigma": [3, 2],
+    "spacings": [[1, 1], [2, 1], [1, 5]],
+    "lattice_indices": [0, 1, 2],
+    "note": "Exact rational unit and boundary checks. Original half-cell is d/2; standardized spacing is h = d / sigma; standardized half-cell is h/2 = d / (2 sigma). Standardization does not change the support."
+  },
+  "midpoint": {
+    "cells": [
+      {
+        "id": "linear-cancellation",
+        "a": [0, 1],
+        "b": [5, 1],
+        "c": [3, 1],
+        "h": [1, 2],
+        "M": 0,
+        "expected_error": [0, 1],
+        "expected_bound": [0, 1],
+        "note": "Symmetric-cell linear term cancels; the constant integrates exactly, so g'' = M = 0 and both error and bound are zero."
+      },
+      {
+        "id": "quadratic-bound",
+        "a": [4, 1],
+        "b": [-9, 1],
+        "c": [7, 1],
+        "h": [1, 2],
+        "M": 8,
+        "expected_error": [1, 24],
+        "expected_bound": [1, 24],
+        "note": "|exact - midpoint| = M h^3 / 24 with M = |g''| = 2a; equality holds for a pure quadratic, and the off-center linear coefficient does not change the error."
+      }
+    ]
+  },
+  "decomposition": {
+    "identity": {
+      "n": 20,
+      "p": 0.5,
+      "k": 10,
+      "tolerance": 1e-12,
+      "note": "F_Y(k) - Phi(z_k + h/2) = local mass sum + quadrature sum - lower tail extension."
+    },
+    "accumulation": {
+      "n": 20,
+      "p": 0.4,
+      "k": 6,
+      "tolerance": 1e-12,
+      "note": "Each pointwise mass difference is at most about 0.0044, yet the partial sum over j = 0..6 exceeds the largest single term: pointwise smallness does not bound the accumulated error."
+    }
+  },
+  "contracts": [
+    {
+      "id": "z-event-rewrite",
+      "kind": "exact_identity",
+      "statement": "If Z = (Y - mu) / sigma with sigma > 0, then {Y <= k} is the same event as {Z <= (k - mu)/sigma}."
+    },
+    {
+      "id": "binomial-cdf-definition",
+      "kind": "definition",
+      "statement": "P(Y <= k) is defined as the sum of the Binomial masses for j = 0..k."
+    },
+    {
+      "id": "normal-replacement",
+      "kind": "approximation",
+      "statement": "The exact distribution of the standardized count is replaced by the standard Normal CDF.",
+      "error_control": "pointwise",
+      "requires": ["iid observations", "finite variance", "large n"]
+    },
+    {
+      "id": "continuity-correction",
+      "kind": "approximation",
+      "statement": "P(Y <= k) is approximated by Phi((k + d/2 - mu)/sigma), aligning the event at the outer cell boundary.",
+      "error_control": "per_cell",
+      "requires": ["smooth density on each cell", "bounded second derivative"]
+    },
+    {
+      "id": "stirling-local-step",
+      "kind": "imported_lemma",
+      "statement": "n! ~ sqrt(2 pi n) (n/e)^n with a controlled relative error for large n.",
+      "proof_supplied": false,
+      "conditions": ["n large", "a bound on the relative error is supplied by the user of the lemma"]
+    },
+    {
+      "id": "midpoint-cancellation",
+      "kind": "approximation",
+      "statement": "On a centered cell of width h, |integral of g - h g(mid)| <= M h^3 / 24 when g is twice differentiable with |g''| <= M.",
+      "error_control": "per_cell",
+      "requires": ["g twice differentiable on the cell", "|g''| <= M on the cell"]
+    }
+  ],
+  "recorded_explanations": [
+    {
+      "id": "negative-silent-approximation-crossing",
+      "description": "Algebraically correct substitutions that present the Normal replacement as exact and summarize a pointwise bound over an expanding index set.",
+      "formulas_correct": true,
+      "claims": [
+        {
+          "contract": "z-event-rewrite",
+          "declared_kind": "exact_identity",
+          "asserts_exact": true
+        },
+        {
+          "contract": "normal-replacement",
+          "declared_kind": "exact_identity",
+          "asserts_exact": true,
+          "sums_over_expanding_index_set": false
+        },
+        {
+          "contract": "continuity-correction",
+          "declared_kind": "approximation",
+          "asserts_exact": false,
+          "sums_over_expanding_index_set": true,
+          "error_control_declared": "pointwise"
+        }
+      ],
+      "expected_verdict": "reject",
+      "expected_faults": [
+        "declared_kind_mismatch",
+        "approximation_declared_exact",
+        "pointwise_bound_summed_over_index_set"
+      ]
+    },
+    {
+      "id": "negative-summed-pointwise-bound",
+      "description": "A correct per-cell bound is summed over all included cells as if the pointwise bound controlled the total.",
+      "formulas_correct": true,
+      "claims": [
+        {
+          "contract": "midpoint-cancellation",
+          "declared_kind": "approximation",
+          "asserts_exact": false,
+          "sums_over_expanding_index_set": true,
+          "error_control_declared": "per_cell"
+        }
+      ],
+      "expected_verdict": "reject",
+      "expected_faults": ["pointwise_bound_summed_over_index_set"]
+    },
+    {
+      "id": "negative-undisclosed-imported-lemma",
+      "description": "A lemma is used as if it had been proved, with no disclosure that it was imported.",
+      "formulas_correct": true,
+      "claims": [
+        {
+          "contract": "stirling-local-step",
+          "declared_kind": "imported_lemma",
+          "discloses_imported_lemma": false
+        }
+      ],
+      "expected_verdict": "reject",
+      "expected_faults": ["imported_lemma_used_without_disclosure"]
+    },
+    {
+      "id": "positive-conditional-argument",
+      "description": "Every boundary is declared: exact rewrite, definition, approximation with error control, and an imported lemma that is disclosed as imported.",
+      "formulas_correct": true,
+      "claims": [
+        {
+          "contract": "z-event-rewrite",
+          "declared_kind": "exact_identity",
+          "asserts_exact": true
+        },
+        {
+          "contract": "binomial-cdf-definition",
+          "declared_kind": "definition"
+        },
+        {
+          "contract": "normal-replacement",
+          "declared_kind": "approximation",
+          "asserts_exact": false,
+          "sums_over_expanding_index_set": false
+        },
+        {
+          "contract": "continuity-correction",
+          "declared_kind": "approximation",
+          "asserts_exact": false,
+          "sums_over_expanding_index_set": false,
+          "error_control_declared": "per_cell"
+        },
+        {
+          "contract": "stirling-local-step",
+          "declared_kind": "imported_lemma",
+          "discloses_imported_lemma": true
+        },
+        {
+          "contract": "midpoint-cancellation",
+          "declared_kind": "approximation",
+          "asserts_exact": false,
+          "sums_over_expanding_index_set": false,
+          "error_control_declared": "per_cell"
+        }
+      ],
+      "expected_verdict": "accept",
+      "expected_faults": []
+    }
+  ],
+  "missing_link_fixtures": [
+    {
+      "id": "decomposition-sums-pointwise",
+      "domain": "error-decomposition",
+      "required_links": [
+        ["separate-sources", "bound-local-mass"],
+        ["separate-sources", "bound-quadrature"],
+        ["separate-sources", "bound-lower-tail"],
+        ["bound-local-mass", "control-accumulation"],
+        ["bound-quadrature", "control-accumulation"],
+        ["bound-lower-tail", "control-accumulation"]
+      ],
+      "recorded_explanations": [
+        {
+          "id": "skips-accumulation-control",
+          "explained_links": [
+            ["separate-sources", "bound-local-mass"],
+            ["separate-sources", "bound-quadrature"],
+            ["separate-sources", "bound-lower-tail"]
+          ],
+          "missing_links": [
+            ["bound-local-mass", "control-accumulation"],
+            ["bound-quadrature", "control-accumulation"],
+            ["bound-lower-tail", "control-accumulation"]
+          ],
+          "verdict": "reject"
+        },
+        {
+          "id": "controls-all-three-sources",
+          "explained_links": [
+            ["separate-sources", "bound-local-mass"],
+            ["separate-sources", "bound-quadrature"],
+            ["separate-sources", "bound-lower-tail"],
+            ["bound-local-mass", "control-accumulation"],
+            ["bound-quadrature", "control-accumulation"],
+            ["bound-lower-tail", "control-accumulation"]
+          ],
+          "missing_links": [],
+          "verdict": "accept"
+        }
+      ]
+    },
+    {
+      "id": "code-mutation-trace",
+      "domain": "code-trace",
+      "note": "Non-mathematical causal chain: aliasing, mutation, then observation. The same missing-link gate must reject the explanation that skips the mutation step.",
+      "required_links": [
+        ["y-binds-x", "shared-identity"],
+        ["shared-identity", "append-mutation"],
+        ["append-mutation", "x-observes-3"]
+      ],
+      "recorded_explanations": [
+        {
+          "id": "skips-mutation-link",
+          "explained_links": [["y-binds-x", "x-observes-3"]],
+          "missing_links": [
+            ["y-binds-x", "shared-identity"],
+            ["shared-identity", "append-mutation"],
+            ["append-mutation", "x-observes-3"]
+          ],
+          "verdict": "reject"
+        },
+        {
+          "id": "complete-causal-chain",
+          "explained_links": [
+            ["y-binds-x", "shared-identity"],
+            ["shared-identity", "append-mutation"],
+            ["append-mutation", "x-observes-3"]
+          ],
+          "missing_links": [],
+          "verdict": "accept"
+        }
+      ]
+    }
+  ]
+}

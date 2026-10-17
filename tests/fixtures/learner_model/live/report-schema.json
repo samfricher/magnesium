@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_id",
+    "simulation_validity",
+    "criteria",
+    "decisions",
+    "limitations"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "simulation_validity": {
+      "enum": [
+        "VALID",
+        "INVALID_SIMULATION",
+        "NOT_RUN"
+      ]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "criterion",
+          "status",
+          "evidence_refs"
+        ],
+        "properties": {
+          "criterion": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_RUN",
+              "INVALID_SIMULATION"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "request_ref",
+          "delivered_context_refs",
+          "selected_obstacle_or_uncertainty",
+          "teaching_ref",
+          "learner_work_refs",
+          "memory_change_refs"
+        ],
+        "properties": {
+          "request_ref": {
+            "type": "string"
+          },
+          "delivered_context_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selected_obstacle_or_uncertainty": {
+            "type": "string"
+          },
+          "teaching_ref": {
+            "type": "string"
+          },
+          "learner_work_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "memory_change_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
