@@ -1,7 +1,5 @@
 # Magnesium
 
-**The synaptic gatekeeper for understanding that lasts.**
-
 A harness-neutral learning engine for Claude Code, Codex and OpenCode. It works with whatever model your assistant runs.
 
 In the brain, a single magnesium ion (Mg²⁺) sits in the channel of a synapse's NMDA receptor and blocks it. Weak or one-sided signals leave it in place. It moves aside only when both neurons fire together, and that lets the connection strengthen. Magnesium brings the same rule to your learning. It finds the missing piece in your mental model through Socratic questions, diagrams when they help, and active recall. Then it remembers what you know across every session in your study folder.
