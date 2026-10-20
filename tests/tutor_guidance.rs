@@ -322,15 +322,12 @@ fn served_instructions_repair_sure_mistakes_first() {
                 .unwrap()
                 .to_owned()
         };
-        let papers_loop = served("papers_loop");
-        for required in [
-            "When you choose the next repair, take Conf S rows first, after any open key_need tag they need. Rule 6 still applies.",
-        ] {
-            assert!(
-                papers_loop.contains(required),
-                "{host}/papers_loop: {required}"
-            );
-        }
+        assert!(
+            served("papers_loop").contains(
+                "When you choose the next repair, take Conf S rows first, after any open key_need tag they need. Rule 6 still applies."
+            ),
+            "{host}/papers_loop"
+        );
         let repair = served("interpret_and_repair");
         for required in [
             "When the learner was sure of an answer that is wrong, repair that mistake before the others",
