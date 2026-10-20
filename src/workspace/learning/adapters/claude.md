@@ -9,3 +9,5 @@ Use the existing authorized supported host/provider route. Do not copy credentia
 The runtime alone writes .magnesium through learner-model/v2 tools. Supported specialists may suggest source/material improvements, but never maintain another learner profile. Explain operational limits accurately without treating missing native capture as a ban on visibly model-reported observations.
 
 An inactive native prompt notice may carry a transient capture ticket. On explicit session.start or session.resume, echo that ticket plus the exact current message through `native_capture` as described in the tool recipes. It verifies native origin only; no learner text is stored by the inactive hook. Missing native support remains visibly model-reported.
+
+During a lesson, each prompt notice repeats the teaching rule: one idea, under 200 words, end with one task. When the previous reply broke the rule, the notice says how, for example "Previous reply: 850 words, no task." The rule is for teaching replies. The stage workflow still decides when a reply skips the task or runs longer, as with an explanation the learner asked for, a marking report or a plan.

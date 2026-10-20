@@ -101,7 +101,7 @@
       "path": "adapters/claude.md",
       "role": "adapter",
       "required_for_activation": true,
-      "sha256": "2ae2f0e3d9ba883c25e19630957207e09d8b34fd11aeb9c9f81028b7d26c2124",
+      "sha256": "8b85db9178b889779d6551b1d589521bf140f01a5f47962846f6421fedb211d7",
       "host": "claude"
     },
     {
