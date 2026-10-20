@@ -22,9 +22,9 @@ Choose who performs the next operation:
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
-| Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Give no explanation in that message |
+| Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence.
+This is a branching menu, not a compulsory sequence. An explicit request for an explanation or a full solution wins over every other row.
 
 Find how many times the learner has met this type of question in the state_text of their memory for it. In the papers loop, that is the tag memory. After the learner's attempt, revise that state_text with the count and the help given, such as "met twice: a worked similar problem, then a partly worked one". The session checkpoint covers one session, so do not count from it.
 

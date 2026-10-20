@@ -8,13 +8,13 @@
       "path": "MAGNESIUM.md",
       "role": "orchestrator",
       "required_for_activation": true,
-      "sha256": "bae3474dc1103555c045a0699207a5a6a7dc026571917563aa4cda5403aa5434"
+      "sha256": "5fcf2820294d7a1c2b0fca97891cdfbd68ee3d3caa097832ff342c66a7d60761"
     },
     {
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "e900a6d8f5455e76a1081b50e16a7661be5cf501f77de8db875eb75dfcc4b54e"
+      "sha256": "9d82c124606950999d84a22a37d3127f5eec33558dfd78ac0a74f77225c08795"
     },
     {
       "path": "contracts/state-and-evidence.md",
@@ -38,7 +38,7 @@
       "path": "workflows/orient-and-probe.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "7db1c2fdf6cf405b2d176f94e225dd62cd49c2a6c4f086f82f66aa8d75dfaa68",
+      "sha256": "501f954602d6112da6f116226e98b3b9f5bf424eae864f0e41cae28cba1cde99",
       "stage": "orient-and-probe"
     },
     {
@@ -52,14 +52,14 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "8195dab1212523397d016f590c7c7c261a0acb1e10ea830d7af7478f44f4fbde",
+      "sha256": "140cede462867bf97490549df7530b6c29a60d58be83839893805679f9fce93e",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "56cc31e2cfb1bb9acf2b697856441b1e84651877618523dba1379065336afa18",
+      "sha256": "6c0ccbb707aea6053655334bc11c84dd414a4e7aa0a22785dad2e1987cb0adad",
       "stage": "interpret-and-repair"
     },
     {

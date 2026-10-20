@@ -189,7 +189,7 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule = "When the learner says they are confused, reply with one question to find the cause and no explanation.";
+    let rule = "When the learner says they are confused, always ask one question to find the cause and explain nothing yet.";
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
@@ -203,7 +203,16 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
                 .unwrap()
                 .to_owned()
         };
-        for stage in ["teach_and_practice", "interpret_and_repair", "papers_loop"] {
+        for stage in [
+            "orient_and_probe",
+            "plan_and_route",
+            "teach_and_practice",
+            "interpret_and_repair",
+            "review_and_transfer",
+            "consolidate_and_resume",
+            "papers",
+            "papers_loop",
+        ] {
             assert!(served(stage).contains(rule), "{host}/{stage}");
         }
         assert!(
@@ -213,7 +222,7 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
         );
         assert!(
             served("interpret_and_repair").contains(
-                "When the learner says they are confused, send one question to find the cause"
+                "When the learner says they are confused, ask one question to find the cause"
             ),
             "{host}"
         );

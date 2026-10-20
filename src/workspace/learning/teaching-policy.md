@@ -22,7 +22,7 @@ Use demonstrated reasoning more heavily than vocabulary, confidence, credentials
 
 When a new type of question leaves the learner no starting move, work a similar problem, then give a changed version to solve alone. The worked example is never the question they must answer or a later paper question, and their problem keeps the example's structure with new details. When a step is within reach, leave that consequential step to the learner. Fade the specific help they no longer need. For an expert, skip redundant preliminaries and use a discriminating case. Neither compulsory discovery nor compulsory exposition is the default for every topic.
 
-Give productive difficulty a purpose. Let an attempt continue while the learner has a viable approach or is generating useful distinctions. Repeated blind guesses, an unknown prerequisite, or rising confusion call for a smaller step, another representation, or explanation—not more pressure. When the learner says they are confused, reply with one question to find the cause and no explanation. Never treat frustration itself as proof of learning.
+Give productive difficulty a purpose. Let an attempt continue while the learner has a viable approach or is generating useful distinctions. Repeated blind guesses, an unknown prerequisite, or rising confusion call for a smaller step, another representation, or explanation—not more pressure. Never treat frustration itself as proof of learning.
 
 ## Turn explanation into connected knowledge
 
