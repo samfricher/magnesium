@@ -1,193 +1,175 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::learner::HostContext;
+use crate::workspace::Workspace;
 
 const WORD_LIMIT: usize = 200;
 
 pub(crate) fn reminder() -> String {
-    format!(" Teaching reply: one idea, under {WORD_LIMIT} words, end with one task.")
+    format!(
+        " Teaching reply: one idea, under {WORD_LIMIT} words, end with one task if the learner wants practice."
+    )
 }
 
-const TASK_STARTS: &[&str] = &[
-    "answer",
-    "apply",
-    "attempt",
-    "calculate",
-    "challenge",
-    "check",
-    "choose",
-    "classify",
-    "compare",
-    "complete",
-    "compute",
-    "convert",
-    "decide",
-    "define",
-    "derive",
-    "describe",
-    "determine",
-    "differentiate",
-    "draw",
-    "estimate",
-    "evaluate",
-    "exercise",
-    "expand",
-    "explain",
-    "factor",
-    "factorise",
-    "factorize",
-    "fill",
-    "find",
-    "give",
-    "graph",
-    "guess",
-    "have a go",
-    "identify",
-    "implement",
-    "integrate",
-    "justify",
-    "label",
-    "list",
-    "match",
-    "name",
-    "over to you",
-    "pick",
-    "plot",
-    "practice",
-    "practise",
-    "predict",
-    "prove",
-    "question",
-    "rank",
-    "read",
-    "recall",
-    "rewrite",
-    "show",
-    "simplify",
-    "sketch",
-    "solve",
-    "sort",
-    "spot",
-    "state",
-    "summarise",
-    "summarize",
-    "task",
-    "tell",
-    "test",
-    "trace",
-    "translate",
-    "try",
-    "use",
-    "work",
-    "write",
-    "your task",
-    "your turn",
+pub(crate) const ASK_WHY_CONFUSED: &str =
+    " If the learner is confused, ask one question to find the cause, with no explanation.";
+
+const CONFUSION_PHRASES: &[&str] = &[
+    "confus",
+    "do not get",
+    "do not understand",
+    "does not make sense",
+    "doesn't make sense",
+    "don't get",
+    "don't understand",
+    "i am lost",
+    "i'm lost",
+    "im lost",
+    "lost me",
+    "makes no sense",
 ];
 
-const OPENERS: &[&str] = &[
-    "and", "finally", "first", "let's", "let’s", "next", "now", "ok", "okay", "please", "so",
-    "then",
-];
+pub(crate) fn says_confused(prompt: &str) -> bool {
+    let prompt = prompt.to_lowercase().replace('’', "'");
+    CONFUSION_PHRASES
+        .iter()
+        .any(|phrase| prompt.contains(phrase))
+}
 
-const CHECK_INS: &[&str] = &[
-    "any questions",
-    "clear?",
-    "do you want",
-    "does it make sense",
-    "does that make sense",
-    "does this make sense",
-    "got it",
-    "is that clear",
-    "is this clear",
-    "make sense",
-    "makes sense",
-    "ok?",
-    "okay?",
-    "ready for",
-    "ready to",
-    "ready?",
-    "right?",
-    "shall i",
-    "shall we",
-    "should i",
-    "should we",
-    "sound good",
-    "sounds good",
-    "want me",
-    "would you like",
-];
+const PROMPT_TURNS: &str = "cache/prompt-turns";
+
+pub(crate) fn remember_prompt(
+    workspace: &Workspace,
+    host: &HostContext,
+    turn: &str,
+) -> Option<String> {
+    let path =
+        super::host::conversation_file(workspace, PROMPT_TURNS, &host.host_thread_id, "turns")
+            .ok()?;
+    let saved = std::fs::read(&path)
+        .ok()
+        .filter(|bytes| bytes.len() <= 4096)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default();
+    let (previous, current) = saved.split_once('\n').unwrap_or(("", ""));
+    if current == turn {
+        return (!previous.is_empty()).then(|| previous.to_owned());
+    }
+    crate::workspace::write_private_atomic(&path, format!("{current}\n{turn}").as_bytes()).ok()?;
+    (!current.is_empty()).then(|| current.to_owned())
+}
+
+pub(crate) fn forget_prompts(workspace: &Workspace, host: &HostContext) {
+    if let Ok(path) =
+        super::host::conversation_file(workspace, PROMPT_TURNS, &host.host_thread_id, "turns")
+    {
+        let _ = std::fs::remove_file(path);
+    }
+}
 
 pub(crate) fn feedback(
     conn: &Connection,
     host: &HostContext,
-    current_event: &str,
+    previous_turn: &str,
 ) -> rusqlite::Result<Option<String>> {
-    let mut statement = conn.prepare(
-        "SELECT speaker,kind,external_event_key,text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND event_no<(SELECT event_no FROM learning_events WHERE event_id=?3) ORDER BY event_no DESC LIMIT 2",
-    )?;
-    let latest = statement
-        .query_map(
-            params![host.host_kind, host.host_thread_id, current_event],
-            |row| {
-                Ok(Recorded {
-                    speaker: row.get(0)?,
-                    kind: row.get(1)?,
-                    key: row.get(2)?,
-                    text: row.get(3)?,
-                })
-            },
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(match latest.as_slice() {
-        [reply, prompt] if reply.answers(prompt) => ReplyCheck::of(&reply.text).feedback(),
-        _ => None,
-    })
+    let reply: Option<String> = conn
+        .query_row(
+            "SELECT text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND external_event_key=?3 AND kind='delivery' AND speaker='tutor' AND origin='host_observed'",
+            params![host.host_kind, host.host_thread_id, previous_turn],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(reply.and_then(|reply| ReplyCheck::of(&reply).feedback()))
 }
 
-struct Recorded {
-    speaker: String,
-    kind: String,
-    key: String,
-    text: String,
-}
-
-impl Recorded {
-    fn answers(&self, prompt: &Recorded) -> bool {
-        self.speaker == "tutor"
-            && self.kind == "delivery"
-            && prompt.speaker == "learner"
-            && prompt.kind == "message"
-            && prompt.key == super::native_capture::event_key(&self.key)
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ending {
+    Task,
+    NoTask,
+    NotJudged,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReplyCheck {
     words: usize,
-    ends_with_task: bool,
+    ending: Ending,
 }
 
 impl ReplyCheck {
     fn of(reply: &str) -> Self {
+        let lines = classify(reply);
+        let ending = if sets_work(&last_block(&lines)) {
+            Ending::Task
+        } else if reads_as_english(&lines) {
+            Ending::NoTask
+        } else {
+            Ending::NotJudged
+        };
         Self {
-            words: reply
-                .split_whitespace()
-                .filter(|token| token.chars().any(char::is_alphanumeric))
-                .count(),
-            ends_with_task: last_block(reply).into_iter().any(sets_work),
+            words: count_words(reply.split_whitespace()),
+            ending,
         }
     }
 
     fn feedback(self) -> Option<String> {
         let faults: Vec<String> = [
             (self.words >= WORD_LIMIT).then(|| format!("{} words", self.words)),
-            (!self.ends_with_task).then(|| "no task".to_owned()),
+            (self.ending == Ending::NoTask).then(|| "no task".to_owned()),
         ]
         .into_iter()
         .flatten()
         .collect();
         (!faults.is_empty()).then(|| format!(" Previous reply: {}.", faults.join(", ")))
     }
+}
+
+fn count_words<'a>(tokens: impl Iterator<Item = &'a str>) -> usize {
+    tokens
+        .filter(|token| token.chars().any(char::is_alphanumeric))
+        .count()
+}
+
+const ENGLISH_WORDS: &[&str] = &[
+    "and", "are", "be", "but", "by", "can", "do", "does", "for", "from", "has", "have", "how",
+    "if", "is", "it", "its", "not", "of", "or", "so", "that", "the", "then", "there", "they",
+    "this", "to", "was", "we", "what", "when", "which", "why", "will", "with", "you", "your",
+];
+
+const OTHER_LANGUAGE_WORDS: &[&str] = &[
+    "con", "das", "de", "del", "der", "des", "di", "die", "du", "ein", "eine", "el", "em", "es",
+    "est", "et", "ist", "la", "las", "le", "les", "los", "mit", "não", "nicht", "os", "para",
+    "por", "que", "uma", "un", "una", "und", "une", "y",
+];
+
+fn reads_as_english(lines: &[(Line, &str)]) -> bool {
+    let prose: Vec<String> = lines
+        .iter()
+        .filter(|(kind, _)| matches!(kind, Line::Text | Line::ListItem))
+        .flat_map(|(_, text)| text.split_whitespace())
+        .map(|token| {
+            token
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .collect();
+    let letters = prose
+        .iter()
+        .flat_map(|word| word.chars())
+        .filter(|c| c.is_alphabetic());
+    let (latin, other_script) = letters.fold((0, 0), |(latin, other), c| {
+        if (c as u32) < 0x250 {
+            (latin + 1, other)
+        } else {
+            (latin, other + 1)
+        }
+    });
+    let count = |list: &[&str]| {
+        prose
+            .iter()
+            .filter(|word| list.contains(&word.as_str()))
+            .count()
+    };
+    other_script <= latin && count(OTHER_LANGUAGE_WORDS) <= count(ENGLISH_WORDS)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -198,14 +180,37 @@ enum Line {
     Material,
 }
 
-fn last_block(reply: &str) -> Vec<&str> {
-    let lines = classify(reply);
-    let mut end = lines.len();
+fn last_block<'a>(lines: &[(Line, &'a str)]) -> Vec<&'a str> {
+    let end = before_material(lines, lines.len());
+    let mut start = with_the_question_of_trailing_options(lines, paragraph_start(lines, end), end);
+    let last: Vec<&str> = lines[start..end].iter().map(|(_, text)| *text).collect();
+    if is_sign_off(&last) {
+        let before = before_material(lines, start);
+        start =
+            with_the_question_of_trailing_options(lines, paragraph_start(lines, before), before);
+        return lines[start..before]
+            .iter()
+            .map(|(_, text)| *text)
+            .chain(last)
+            .collect();
+    }
+    last
+}
+
+fn before_material(lines: &[(Line, &str)], mut end: usize) -> usize {
     while end > 0 && matches!(lines[end - 1].0, Line::Blank | Line::Material) {
         end -= 1;
     }
-    let start = with_the_question_of_trailing_options(&lines, paragraph_start(&lines, end), end);
-    lines[start..end].iter().map(|(_, text)| *text).collect()
+    end
+}
+
+fn is_sign_off(paragraph: &[&str]) -> bool {
+    !paragraph.is_empty()
+        && count_words(paragraph.iter().flat_map(|line| line.split_whitespace())) <= 4
+        && !paragraph
+            .iter()
+            .any(|line| line.chars().any(|c| c.is_ascii_digit()))
+        && !sets_work(paragraph)
 }
 
 fn with_the_question_of_trailing_options(
@@ -284,49 +289,377 @@ fn strip_list_marker(line: &str) -> Option<&str> {
     (!label.is_empty() && short && rest.starts_with(' ')).then(|| rest.trim_start())
 }
 
-fn sets_work(line: &str) -> bool {
-    let plain: String = line
-        .chars()
+const QUESTION_MARKS: [char; 3] = ['?', '？', '؟'];
+const SENTENCE_ENDS: [char; 7] = ['.', '!', '?', '。', '！', '？', '؟'];
+const CLOSERS: &[char] = &[')', ']', '"', '\'', '’', '”', '»'];
+
+fn sets_work(block: &[&str]) -> bool {
+    let sentences: Vec<String> = block
+        .iter()
+        .flat_map(|line| sentences(&plain(line)))
+        .collect();
+    sentences.iter().enumerate().any(|(index, sentence)| {
+        let answered = sentences
+            .get(index + 1)
+            .is_some_and(|next| starts_with_phrase(next, "because"));
+        (asks(sentence) && !answered) || instructs(sentence)
+    })
+}
+
+fn plain(line: &str) -> String {
+    line.chars()
         .filter(|c| !matches!(c, '*' | '_' | '`' | '#' | '>'))
         .collect::<String>()
-        .to_lowercase();
-    plain
-        .split_inclusive(['.', '!', '?', ':', ';'])
-        .any(|sentence| asks(sentence) || instructs(sentence))
+        .to_lowercase()
+        .replace('’', "'")
 }
+
+fn sentences(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut sentences = Vec::new();
+    let mut start = 0;
+    let mut index = 0;
+    while index < chars.len() {
+        if SENTENCE_ENDS.contains(&chars[index]) {
+            let mut end = index + 1;
+            while end < chars.len() && CLOSERS.contains(&chars[end]) {
+                end += 1;
+            }
+            let wide = !chars[index].is_ascii();
+            if end == chars.len() || wide || chars[end].is_whitespace() {
+                sentences.push(
+                    chars[start..end]
+                        .iter()
+                        .collect::<String>()
+                        .trim()
+                        .to_owned(),
+                );
+                start = end;
+                index = end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    sentences.push(chars[start..].iter().collect::<String>().trim().to_owned());
+    sentences.retain(|sentence| !sentence.is_empty());
+    sentences
+}
+
+const CHECK_INS: &[&str] = &[
+    "any other questions",
+    "any questions",
+    "anything else",
+    "clear so far",
+    "clear?",
+    "do you want",
+    "does it help",
+    "does it make sense",
+    "does that help",
+    "does that make sense",
+    "does this help",
+    "does this make sense",
+    "got it",
+    "is that clear",
+    "is there anything else",
+    "is this clear",
+    "make sense",
+    "makes sense",
+    "need another",
+    "ok?",
+    "okay?",
+    "questions?",
+    "ready for",
+    "ready to",
+    "ready?",
+    "right?",
+    "shall i",
+    "shall we",
+    "should i",
+    "should we",
+    "sound good",
+    "sounds good",
+    "want another",
+    "want me",
+    "would you like",
+];
 
 fn asks(sentence: &str) -> bool {
     let start = sentence.trim_start_matches(|c: char| !c.is_alphanumeric());
-    sentence.trim_end().ends_with('?')
-        && !CHECK_INS
+    sentence.trim_end_matches(CLOSERS).ends_with(QUESTION_MARKS)
+        && (!CHECK_INS
             .iter()
             .any(|check_in| starts_with_phrase(start, check_in))
+            || mentions_a_task(start))
 }
 
+const TASK_LABELS: &[&str] = &[
+    "challenge",
+    "exercise",
+    "now you",
+    "over to you",
+    "practice",
+    "practise",
+    "problem",
+    "question",
+    "quick check",
+    "task",
+    "try it",
+    "try this",
+    "your problem",
+    "your task",
+    "your turn",
+];
+
+const OPENERS: &[&str] = &[
+    "and",
+    "first",
+    "if you like",
+    "if you want",
+    "next",
+    "now",
+    "ok",
+    "okay",
+    "please",
+    "so",
+    "then",
+    "when you are ready",
+    "when you're ready",
+];
+
+const TASK_PHRASES: &[&str] = &[
+    "figure out",
+    "find out",
+    "give it a go",
+    "have a go",
+    "it's your turn",
+    "let's practice",
+    "let's practise",
+    "let's try",
+    "now you",
+    "over to you",
+    "you try",
+    "your task",
+    "your turn",
+];
+
+const TASK_WORDS: &[&str] = &[
+    "apply",
+    "attempt",
+    "calculate",
+    "choose",
+    "classify",
+    "compare",
+    "complete",
+    "compute",
+    "convert",
+    "decide",
+    "define",
+    "derive",
+    "describe",
+    "determine",
+    "differentiate",
+    "divide",
+    "draw",
+    "estimate",
+    "evaluate",
+    "expand",
+    "explain",
+    "factor",
+    "factorise",
+    "factorize",
+    "fill",
+    "find",
+    "fix",
+    "guess",
+    "identify",
+    "implement",
+    "integrate",
+    "justify",
+    "label",
+    "match",
+    "multiply",
+    "pick",
+    "plot",
+    "predict",
+    "prove",
+    "rank",
+    "rearrange",
+    "rewrite",
+    "simplify",
+    "sketch",
+    "solve",
+    "sort",
+    "spot",
+    "substitute",
+    "subtract",
+    "summarise",
+    "summarize",
+    "trace",
+    "translate",
+    "try",
+    "write",
+];
+
+const MATH: &str = "<math>";
+const WORDS_WITH_FOLLOWERS: &[(&str, &[&str])] = &[
+    (
+        "add",
+        &[MATH, "a", "an", "both", "it", "the", "them", "these", "up"],
+    ),
+    (
+        "answer",
+        &[
+            "all",
+            "both",
+            "each",
+            "question",
+            "questions",
+            "the",
+            "these",
+            "this",
+        ],
+    ),
+    (
+        "check",
+        &[
+            "by", "each", "if", "it", "that", "the", "these", "this", "whether", "your",
+        ],
+    ),
+    (
+        "consider",
+        &[
+            MATH, "how", "these", "this", "what", "whether", "which", "why",
+        ],
+    ),
+    (
+        "give",
+        &[
+            "a", "an", "both", "each", "it", "me", "one", "the", "three", "two", "your",
+        ],
+    ),
+    (
+        "list",
+        &[
+            MATH, "all", "each", "every", "five", "four", "some", "the", "three", "two", "your",
+        ],
+    ),
+    (
+        "name",
+        &[
+            "a", "all", "an", "each", "every", "one", "the", "this", "three", "two", "your",
+        ],
+    ),
+    (
+        "practice",
+        &["by", "it", "on", "the", "these", "this", "using", "with"],
+    ),
+    (
+        "practise",
+        &["by", "it", "on", "the", "these", "this", "using", "with"],
+    ),
+    ("read", &["it", "the", "this", "through"]),
+    (
+        "recall",
+        &["a", "an", "how", "the", "what", "which", "why", "your"],
+    ),
+    (
+        "say",
+        &["how", "if", "it", "what", "whether", "which", "why"],
+    ),
+    ("see", &["if", "whether"]),
+    (
+        "show",
+        &[
+            "all", "each", "how", "it", "me", "that", "the", "what", "which", "why", "your",
+        ],
+    ),
+    (
+        "state",
+        &[
+            "a", "all", "an", "each", "the", "what", "whether", "which", "why", "your",
+        ],
+    ),
+    ("tell", &["me", "us"]),
+    (
+        "test",
+        &[
+            "all", "each", "if", "it", "the", "these", "this", "whether", "with", "your",
+        ],
+    ),
+    ("think", &["about", "through"]),
+    (
+        "use",
+        &[
+            MATH, "a", "an", "both", "each", "it", "the", "them", "these", "this", "those", "your",
+        ],
+    ),
+    ("work", &["out", "through", "on"]),
+];
+
 fn instructs(sentence: &str) -> bool {
-    let mut rest = sentence.trim_start_matches(|c: char| !c.is_alphanumeric());
+    let sentence = sentence.trim_start_matches(|c: char| !c.is_alphanumeric());
+    if starts_a_task(sentence) {
+        return true;
+    }
+    match sentence.split_once(':') {
+        Some((label, after)) if label.split_whitespace().count() <= 3 => {
+            TASK_LABELS.contains(&label.trim())
+                || starts_a_task(after.trim_start_matches(|c: char| !c.is_alphanumeric()))
+        }
+        _ => false,
+    }
+}
+
+fn starts_a_task(text: &str) -> bool {
+    let mut rest = text;
     while let Some(opener) = OPENERS
         .iter()
         .find(|opener| starts_with_phrase(rest, opener))
     {
         rest = rest[opener.len()..].trim_start_matches(|c: char| !c.is_alphanumeric());
     }
-    TASK_STARTS
+    let mut words = rest
+        .split_whitespace()
+        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '$' && c != '\\'));
+    let (Some(first), next) = (words.next(), words.next()) else {
+        return false;
+    };
+    TASK_PHRASES
         .iter()
-        .any(|start| starts_with_phrase(rest, start))
+        .any(|phrase| starts_with_phrase(rest, phrase))
+        || TASK_WORDS.contains(&first)
+        || WORDS_WITH_FOLLOWERS.iter().any(|(word, followers)| {
+            *word == first && next.is_some_and(|next| follows(next, followers))
+        })
+}
+
+fn follows(word: &str, followers: &[&str]) -> bool {
+    let math = word.chars().count() == 1 && word.chars().all(char::is_alphabetic)
+        || word.chars().any(|c| c.is_ascii_digit())
+        || word.starts_with(['$', '\\']);
+    followers.contains(&word) || (math && followers.contains(&MATH))
+}
+
+fn mentions_a_task(text: &str) -> bool {
+    TASK_PHRASES.iter().any(|phrase| text.contains(phrase))
+        || text
+            .split_whitespace()
+            .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
+            .any(|word| TASK_WORDS.contains(&word))
 }
 
 fn starts_with_phrase(text: &str, phrase: &str) -> bool {
     text.strip_prefix(phrase)
-        .is_some_and(|rest| !rest.starts_with(char::is_alphanumeric))
+        .is_some_and(|rest| phrase.ends_with('?') || !rest.starts_with(char::is_alphanumeric))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn task(reply: &str) -> bool {
-        ReplyCheck::of(reply).ends_with_task
+    fn ending(reply: &str) -> Ending {
+        ReplyCheck::of(reply).ending
     }
 
     #[test]
@@ -339,6 +672,17 @@ mod tests {
             "Here is the idea. Give it a go and tell me what you get.",
             "Your turn!",
             "Let's try one: 3/4 of 12.",
+            "It's your turn. What is the derivative of x^2 sin x?\n\nTake your time.",
+            "Think about what happens to the margin when n quadruples.",
+            "Consider n = 400 and work out the new margin.",
+            "See if you can rewrite 12/18 in lowest terms.",
+            "Multiply both sides by 3 and tell me what x is.",
+            "Substitute x = 2 into the expression.",
+            "Figure out which coefficient is b in 3x^2 - 5x + 2.",
+            "Add 3 to both sides, then rearrange for x.",
+            "Say which coefficient is b.",
+            "When you're ready, compute the variance.",
+            "Now compute the margin for n = 400.\n\nGood luck!",
             "Which statement is true?\n\nA) b varies\nB) b is fixed\nC) b is x",
             "Which statement is true?\n\n- b varies\n\n- b is fixed",
             "Predict the output:\n\n```python\nprint(len('abc'))\n```",
@@ -347,8 +691,13 @@ mod tests {
             "> **Task.** Differentiate $x^3$.",
             "Can you find the root of $x - 4$?",
             "Ok, what is 3 + 4?",
+            "Would you like to try one: 3x - 7 = 11?",
+            "Ready to try n = 400?",
+            "Would you like to have a go at n = 400?",
+            "那么，x 的系数是多少？",
+            "ما هو معامل x؟",
         ] {
-            assert!(task(reply), "{reply}");
+            assert_eq!(ending(reply), Ending::Task, "{reply}");
         }
     }
 
@@ -356,33 +705,83 @@ mod tests {
     fn a_summary_a_check_in_or_bare_material_at_the_end_is_not_a_task() {
         for reply in [
             "Why does this work? Because the identity cancels the root.\n\nThat is the key idea.",
+            "Why does the margin halve? Because it scales with 1/sqrt(n).",
             "The coefficient b scales x. Does that make sense?",
+            "That is the key idea. Does this help?",
+            "That is the whole idea. Clear so far?",
+            "That covers it. Want another example?",
+            "That covers it. Questions?",
+            "That covers it. Is there anything else you'd like to know?",
             "Any questions?",
             "Would you like another example?",
             "That covers it. Ready?",
+            "Recall that the derivative of x^2 is 2x.",
+            "So b is the coefficient of x.\n\nLet's summarise: a scales x^2, b scales x, c is constant.",
+            "x = 3 gives 9 - 15 + 6 = 0.\n\nLet's check: 3^2 - 5*3 + 6 = 0, so it works.",
+            "First we factor. Finally, apply the zero-product rule to get x = 2 or x = 3.",
+            "List comprehensions build a new list from an old one.",
+            "Practice makes this automatic.",
+            "Use cases include caching and memoisation.",
+            "Test statistics follow a t distribution here.",
+            "Name resolution follows the LEGB rule.",
+            "That is the whole idea. The docs are at https://docs.python.org/3/search.html?q=recursion for more detail.",
+            "The base case stops the recursion.\n\nTip: use small inputs when you trace.",
+            "That covers the base case.\n\nLet me know if you have any questions.",
             "",
             "```python\nprint(1)\n```",
             "Key points:\n\n- b is fixed\n- x varies",
             "| x | y |\n|---|---|\n| 1 | 2 |",
         ] {
-            assert!(!task(reply), "{reply}");
+            assert_eq!(ending(reply), Ending::NoTask, "{reply}");
         }
+    }
+
+    #[test]
+    fn a_reply_not_in_english_is_not_judged_for_a_task() {
+        for reply in [
+            "Bien. El caso base es la lista vacía.\n\nCalcula la suma de [1, 2, 3] paso a paso.",
+            "Gut. Der Basisfall ist die leere Liste. Berechne die Summe von [1, 2, 3].",
+        ] {
+            assert_eq!(ending(reply), Ending::NotJudged, "{reply}");
+        }
+        let long = format!("{}Calcula la suma.", "Es la lista vacía. ".repeat(60));
+        assert_eq!(
+            ReplyCheck::of(&long).feedback().as_deref(),
+            Some(" Previous reply: 243 words.")
+        );
     }
 
     #[test]
     fn known_misses_stay_as_documented() {
         for (reply, judged) in [
-            ("Solve 2x = 4. Good luck!\n\nSee you soon.", false),
-            ("When you're ready, compute the variance.", false),
-            ("Here's one for you:\n\n$$\\int x e^x\\,dx$$", false),
+            ("Here's one to try:\n\n$$3x - 7 = 11$$", Ending::NoTask),
             (
-                "Why does this work? Because the identity cancels the root.",
-                true,
+                "Fix the bug in this function:\n\n```python\nreturn x+\n```\n\nHint: look at line 2.",
+                Ending::NoTask,
             ),
-            ("Work is force times distance.", true),
+            ("Once you're ready, compute the variance.", Ending::NoTask),
+            (
+                "Why does this matter? It matters since n grows.",
+                Ending::Task,
+            ),
+            ("Work out is a phrasal verb.", Ending::Task),
+            ("Show me is a phrase; the answer was 4.", Ending::Task),
         ] {
-            assert_eq!(task(reply), judged, "{reply}");
+            assert_eq!(ending(reply), judged, "{reply}");
         }
+    }
+
+    #[test]
+    fn confusion_is_read_from_the_learner_prompt() {
+        for prompt in [
+            "I'm confused about b",
+            "I don’t understand why it halves",
+            "this makes no sense",
+            "you lost me",
+        ] {
+            assert!(says_confused(prompt), "{prompt}");
+        }
+        assert!(!says_confused("is it 950?"));
     }
 
     #[test]
@@ -403,11 +802,11 @@ mod tests {
             Some(" Previous reply: 200 words.")
         );
         assert_eq!(
-            feedback("Done.".into()).as_deref(),
+            feedback("That is the whole idea.".into()).as_deref(),
             Some(" Previous reply: no task.")
         );
         assert_eq!(
-            feedback(words(850)).as_deref(),
+            feedback("This is the idea and it is what you need. ".repeat(85)).as_deref(),
             Some(" Previous reply: 850 words, no task.")
         );
     }

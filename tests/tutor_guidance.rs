@@ -39,9 +39,16 @@ fn claude_notices_say_when_to_start_and_continue_a_lesson_and_codex_notices_do_n
         active.contains("interpret this learner turn with learning_step"),
         "{active}"
     );
+    let resumed = v2::context(&run_hook_with_host_flag(
+        &e,
+        &e.workspace,
+        "session-start",
+        json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"SessionStart","source":"resume"}),
+        "claude",
+    ));
     assert!(
-        active.contains("compaction, load the learn skill"),
-        "{active}"
+        resumed.contains("compaction, load the learn skill"),
+        "{resumed}"
     );
 
     let codex = v2::context(&v2::prompt(&e, "codex", "conv", Some("t-1"), "teach me"));
@@ -54,7 +61,8 @@ fn claude_stop(e: &TestEnvironment, thread: &str, prompt_id: &str, reply: &str) 
     assert!(output.status.success(), "{output:?}");
 }
 
-const REMINDER: &str = "Teaching reply: one idea, under 200 words, end with one task.";
+const REMINDER: &str =
+    "Teaching reply: one idea, under 200 words, end with one task if the learner wants practice.";
 
 #[test]
 fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_missed() {

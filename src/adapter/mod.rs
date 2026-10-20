@@ -371,35 +371,38 @@ pub(crate) fn host_session_start(
     Ok(Some(notice))
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NoticeHook {
+enum NoticeHook<'a> {
     SessionStart,
-    UserPromptSubmit,
+    UserPromptSubmit {
+        prompt: &'a str,
+        previous_turn: Option<&'a str>,
+    },
 }
-impl NoticeHook {
+impl NoticeHook<'_> {
     const fn additional_context_limit(self) -> usize {
         match self {
             Self::SessionStart => 1024,
-            Self::UserPromptSubmit => 512,
+            Self::UserPromptSubmit { .. } => 512,
         }
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Clause {
     Required,
-    ReloadAfterCompaction,
     TeachingReminder,
     ReplyFeedback,
+    AskWhyConfused,
 }
 const GIVE_WAY_ORDER: [Clause; 3] = [
-    Clause::ReloadAfterCompaction,
     Clause::TeachingReminder,
     Clause::ReplyFeedback,
+    Clause::AskWhyConfused,
 ];
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
     event: Option<&str>,
-    hook: NoticeHook,
+    hook: NoticeHook<'_>,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
@@ -412,7 +415,9 @@ fn hook_notice(
     match (claude, active, recording) {
         (true, true, true) => {
             clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
-            clauses.push((Clause::ReloadAfterCompaction, CLAUDE_RELOAD_GUIDANCE.into()));
+            if hook == NoticeHook::SessionStart {
+                clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
+            }
         }
         (true, false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
@@ -423,12 +428,25 @@ fn hook_notice(
             " Unbound pending work: context.pending_work with unbound_only:true.".into(),
         ));
     }
-    if claude && active && hook == NoticeHook::UserPromptSubmit {
+    if let (
+        true,
+        true,
+        NoticeHook::UserPromptSubmit {
+            prompt,
+            previous_turn,
+        },
+    ) = (claude, active, hook)
+    {
         clauses.push((Clause::TeachingReminder, reply_check::reminder().into()));
-        if let Some(feedback) =
-            event.and_then(|e| reply_check::feedback(&store.conn, host, e).ok().flatten())
-        {
+        if let Some(feedback) = previous_turn.and_then(|turn| {
+            reply_check::feedback(&store.conn, host, turn)
+                .ok()
+                .flatten()
+        }) {
             clauses.push((Clause::ReplyFeedback, feedback.into()));
+        }
+        if reply_check::says_confused(prompt) {
+            clauses.push((Clause::AskWhyConfused, reply_check::ASK_WHY_CONFUSED.into()));
         }
     }
     Ok(fit(state, clauses, hook.additional_context_limit()))
@@ -465,8 +483,12 @@ pub(crate) fn host_user_prompt_submit(
     let context = host_context(host);
     let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
     let store = open_store(&workspace)?;
+    let claude = context.host_kind == "claude";
     if safety.blocked.is_some() {
         let _ = native_capture::invalidate(&workspace, &context);
+        if claude {
+            reply_check::forget_prompts(&workspace, &context);
+        }
         return Ok(Some(if safety.blocked == Some(control_admission::CaptureBlock::SharedDeny) {
             "Magnesium learner-model/v2: capture denied by a shared control safety latch. Explicit recording_on or learning resume, as appropriate, is required."
         } else {
@@ -487,6 +509,14 @@ pub(crate) fn host_user_prompt_submit(
         occurred_at_ms: None,
     };
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
+    let previous_turn = match (claude, recording) {
+        (true, true) => reply_check::remember_prompt(&workspace, &context, &key),
+        (true, false) => {
+            reply_check::forget_prompts(&workspace, &context);
+            None
+        }
+        (false, _) => None,
+    };
     if !active && recording {
         match native_capture::issue(
             &workspace,
@@ -498,7 +528,7 @@ pub(crate) fn host_user_prompt_submit(
             Ok(ticket) => {
                 let unbound:i64=store.conn.query_row("SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
                 let mut notice = native_ticket_notice(&ticket, unbound);
-                if context.host_kind == "claude" {
+                if claude {
                     notice.push_str(CLAUDE_START_GUIDANCE);
                 }
                 return Ok(Some(notice));
@@ -506,7 +536,15 @@ pub(crate) fn host_user_prompt_submit(
             Err(_) => {
                 return Ok(Some(format!(
                     "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(&store, &context, None, NoticeHook::UserPromptSubmit)?
+                    hook_notice(
+                        &store,
+                        &context,
+                        None,
+                        NoticeHook::UserPromptSubmit {
+                            prompt: text,
+                            previous_turn: None,
+                        },
+                    )?
                 )));
             }
         }
@@ -523,7 +561,10 @@ pub(crate) fn host_user_prompt_submit(
         &store,
         &context,
         ids.first().map(String::as_str),
-        NoticeHook::UserPromptSubmit,
+        NoticeHook::UserPromptSubmit {
+            prompt: text,
+            previous_turn: previous_turn.as_deref(),
+        },
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -739,7 +780,6 @@ mod tests {
         let (root, store, host) = claude_lesson();
         let first = claude_prompt(&root, &host, "one");
         assert!(first.contains(&reply_check::reminder()), "{first}");
-        assert!(first.contains(CLAUDE_RELOAD_GUIDANCE), "{first}");
         assert!(!first.contains("Previous reply"), "{first}");
 
         claude_stop(&root, &host, "one", &"word ".repeat(850)).unwrap();
@@ -782,7 +822,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn claude_feedback_skips_a_reply_whose_prompt_was_not_recorded() {
+    fn claude_feedback_never_judges_a_reply_across_an_unrecorded_turn() {
         let (root, store, host) = claude_lesson();
         let context = host_context(&host);
         let control = |request: &str, action: &str| {
@@ -812,6 +852,45 @@ mod tests {
         assert!(
             resumed.contains(" Previous reply: 300 words, no task."),
             "{resumed}"
+        );
+
+        claude_stop(&root, &host, "four", &"recorded ".repeat(280)).unwrap();
+        control("off-between-turns", "recording_off");
+        claude_prompt(&root, &host, "five");
+        claude_stop(&root, &host, "five", "Sure. What is b?").unwrap();
+        control("on-between-turns", "recording_on");
+        let after_toggles = claude_prompt(&root, &host, "six");
+        assert!(!after_toggles.contains("Previous reply"), "{after_toggles}");
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_confused_prompt_gets_the_confusion_clause_within_512_bytes() {
+        let (root, store, host) = claude_lesson();
+        let calm = claude_prompt(&root, &host, "one");
+        assert!(!calm.contains(reply_check::ASK_WHY_CONFUSED), "{calm}");
+        claude_stop(&root, &host, "one", &"word ".repeat(850)).unwrap();
+        let confused = host_user_prompt_submit(
+            &root,
+            &host,
+            Some("two"),
+            None,
+            "I'm confused, why is b fixed?",
+        )
+        .unwrap()
+        .unwrap();
+        for kept in [
+            reply_check::ASK_WHY_CONFUSED,
+            " Previous reply: 850 words, no task.",
+            CLAUDE_LESSON_GUIDANCE,
+            "current event e-",
+        ] {
+            assert!(confused.contains(kept), "{kept}: {confused}");
+        }
+        assert!(
+            confused.len() <= 512,
+            "{} bytes: {confused}",
+            confused.len()
         );
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
@@ -854,15 +933,15 @@ mod tests {
     fn notice_clauses_give_way_in_order_and_required_ones_stay() {
         let clauses = vec![
             (Clause::Required, " lesson".into()),
-            (Clause::ReloadAfterCompaction, " reload".into()),
             (Clause::TeachingReminder, " reminder".into()),
             (Clause::ReplyFeedback, " feedback".into()),
+            (Clause::AskWhyConfused, " confused".into()),
         ];
         let fit_to = |limit| fit("state".into(), clauses.clone(), limit);
-        assert_eq!(fit_to(512), "state lesson reload reminder feedback");
-        assert_eq!(fit_to(35), "state lesson reminder feedback");
-        assert_eq!(fit_to(27), "state lesson feedback");
-        assert_eq!(fit_to(20), "state lesson");
+        assert_eq!(fit_to(512), "state lesson reminder feedback confused");
+        assert_eq!(fit_to(35), "state lesson feedback confused");
+        assert_eq!(fit_to(25), "state lesson confused");
+        assert_eq!(fit_to(15), "state lesson");
         assert_eq!(fit_to(1), "state lesson");
     }
     #[test]
@@ -871,7 +950,13 @@ mod tests {
             serde_json::from_str(include_str!("../../claude-plugin/hooks/hooks.json")).unwrap();
         for (event, hook) in [
             ("SessionStart", NoticeHook::SessionStart),
-            ("UserPromptSubmit", NoticeHook::UserPromptSubmit),
+            (
+                "UserPromptSubmit",
+                NoticeHook::UserPromptSubmit {
+                    prompt: "",
+                    previous_turn: None,
+                },
+            ),
         ] {
             assert_eq!(
                 hooks["hooks"][event][0]["hooks"][0]["additionalContextLimit"],
