@@ -33,15 +33,15 @@ GitHub Actions is manually dispatched and uses the same local check entrypoint.
 
 ## Make a change
 
-Each change starts from a public issue that explains it.
+Each change starts from a public issue that explains it. Work on one issue per pull request, and keep the change to that issue.
 
 1. Create a branch named `<type>/<issue-number>-<short-description>`, for example `feat/2-spaced-retries`. `<type>` is the conventional type of the commit subject, such as `feat`, `fix`, or `docs`.
-2. Keep the change to that one issue. Add regression tests for the behavior it affects.
+2. Add regression tests for the behavior that the change affects.
 3. Update the relevant documentation when commands, data formats, or behavior change.
-4. Open a pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. Include a short summary and the test results.
+4. Open a pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. In the description, include a short summary and the test results. End the description with `Closes #N`, or with `Refs #N` when the pull request only contributes to the issue.
 5. Get an independent review before merging.
 
-Merge each pull request into `main` as one squash commit, with the pull request title as the commit subject.
+Merge each pull request into `main` as one squash commit. The commit subject is the pull request title, and the commit body is the pull request description.
 
 `main` always works. Every merge builds and passes `python3 ci/check.py`.
 
@@ -61,14 +61,16 @@ Write `Closes #N` when the commit completes issue N, and `Refs #N` when it contr
 
 ## Releases
 
-A release is a Git tag on `main`, such as `v0.3.0`, with a GitHub release page. The tag is `v` followed by the `version` in `Cargo.toml`. Users install and update from the newest release, as the [install guide](docs/install.md) describes, so a change merged into `main` reaches them only in the next release.
+A release is a Git tag on `main`, such as `v0.3.0`, with a GitHub release page. The tag is `v` followed by the `version` in `Cargo.toml`, with no suffix. The install guide ignores any other tag, such as `v0.3.0-rc.1`. If you publish a page for such a tag, create it with `gh release create --prerelease`, so that `gh release view` skips it too. Users install and update from the newest release, as the [install guide](docs/install.md) describes, so a change merged into `main` reaches them only in the next release.
 
 Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in behavior raises the minor number, for example from `0.2.0` to `0.3.0`. A fix alone raises the patch number, for example from `0.3.0` to `0.3.1`.
 
 To make a release:
 
-1. In a pull request, raise `version` in `Cargo.toml` to the new version. Change every other file that repeats Magnesium's version to match, such as `Cargo.lock`, the plugin files under `claude-plugin/` and `codex-plugin/`, and the tests that pin it. `git grep -nF <old-version>` finds them. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
-2. After that pull request merges, create the tag and its release page:
+1. Open an issue for the release, such as `Release v0.3.0`. Create a branch for it, such as `chore/<issue-number>-release-v0.3.0`.
+2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin tests` lists. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+3. Open a pull request titled `chore(release): raise the version to 0.3.0`, and merge it as described in Make a change.
+4. Create the tag and its release page:
 
    ```sh
    gh release create v0.3.0 --target main --generate-notes
@@ -76,4 +78,4 @@ To make a release:
 
    `--generate-notes` writes release notes that list the pull requests merged since the previous release.
 
-The first release tags the current `main` as `v0.2.0`, the version that `Cargo.toml` already declares. It needs no version change, so it starts at step 2.
+The first release tags the current `main` as `v0.2.0`, the version that `Cargo.toml` already declares. It needs no version change, so it starts at step 4.
