@@ -186,6 +186,41 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
 }
 
 #[test]
+fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rule = "When the learner says they are confused, reply with one question to find the cause and no explanation.";
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "confused",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in ["teach_and_practice", "interpret_and_repair", "papers_loop"] {
+            assert!(served(stage).contains(rule), "{host}/{stage}");
+        }
+        assert!(
+            served("teach_and_practice")
+                .contains("| Says they are confused | Ask one question to find the cause"),
+            "{host}"
+        );
+        assert!(
+            served("interpret_and_repair").contains(
+                "When the learner says they are confused, send one question to find the cause"
+            ),
+            "{host}"
+        );
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

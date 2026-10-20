@@ -22,6 +22,7 @@ Choose who performs the next operation:
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
+| Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Give no explanation in that message |
 
 This is a branching menu, not a compulsory sequence.
 
