@@ -153,7 +153,7 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
     assert_eq!(plan["date"], "2999-01-02");
     assert!(plan["days_left"].as_i64().unwrap() > 1000);
     assert_eq!(plan["blocks"], json!(["Diagnostic", "Paper1-Easy"]));
-    assert_eq!(plan["open_gaps"], 4);
+    assert_eq!(plan["unfixed_gaps"], 4);
     assert_eq!(plan["redos_due"], 2);
     assert_eq!(
         plan["first_due"],
@@ -165,7 +165,7 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
 }
 
 #[test]
-fn digest_counts_open_rows_of_an_old_gap_log_and_none_as_due() {
+fn digest_counts_unfixed_rows_of_an_old_gap_log_and_none_as_due() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let dir = e.workspace.join("Study/final");
@@ -182,7 +182,7 @@ fn digest_counts_open_rows_of_an_old_gap_log_and_none_as_due() {
     let plan = &digest(&e)["plans"][0];
 
     assert_eq!(plan["target"], "final");
-    assert_eq!(plan["open_gaps"], 1);
+    assert_eq!(plan["unfixed_gaps"], 1);
     assert_eq!(plan["redos_due"], 0);
     assert_eq!(plan["first_due"], Value::Null);
 }

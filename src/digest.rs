@@ -281,11 +281,11 @@ fn plan_digest(
         .filter(|block| !is_placeholder(block))
         .collect::<Vec<_>>();
     let gap_table = Table::parse(section(gaps, "Gaps"));
-    let open_gaps = logged_gaps(&gap_table)
+    let unfixed = logged_gaps(&gap_table)
         .into_iter()
         .filter(|gap| gap.status != GapStatus::Closed)
         .collect::<Vec<_>>();
-    let due = open_gaps
+    let due = unfixed
         .iter()
         .filter(|gap| gap.next_redo.is_some_and(|date| date <= today))
         .collect::<Vec<_>>();
@@ -320,7 +320,7 @@ fn plan_digest(
         "date": date.map(|d| d.to_string()),
         "days_left": date.map(|d| (d - today).num_days()),
         "blocks": blocks,
-        "open_gaps": open_gaps.len(),
+        "unfixed_gaps": unfixed.len(),
         "redos_due": due.len(),
         "first_due": first_due,
         "scores": scores,
@@ -338,7 +338,12 @@ enum GapStatus {
 
 impl GapStatus {
     fn parse(cell: &str) -> Option<Self> {
-        let words = cell.split_whitespace().collect::<Vec<_>>().join(" ");
+        let cell = cell.replace(['*', '_', '`'], "").replace('/', " of ");
+        let words = cell
+            .trim_end_matches('.')
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         Some(match words.to_ascii_lowercase().as_str() {
             "open" => Self::Open,
             "1 of 3" => Self::OneOfThree,
@@ -466,7 +471,7 @@ mod tests {
         assert_eq!(value["date"], "2026-10-23");
         assert_eq!(value["days_left"], 7);
         assert_eq!(value["blocks"], json!(["Diagnostic", "Cold redo"]));
-        assert_eq!(value["open_gaps"], 2);
+        assert_eq!(value["unfixed_gaps"], 2);
         assert_eq!(
             value["scores"],
             json!([{"paper":"Diagnostic","date":"2026-10-14","score":"14/30"}])
@@ -481,7 +486,7 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
         let value = plan_digest("midterm-1", plan, gaps, today, &[]);
         assert_eq!(value["blocks"], json!(["Diagnostic", "Cold redo"]));
-        assert_eq!(value["open_gaps"], 1);
+        assert_eq!(value["unfixed_gaps"], 1);
         assert_eq!(
             value["scores"],
             json!([{"paper":"Diagnostic","date":"2026-10-15","score":"18/30"}])
@@ -501,24 +506,27 @@ mod tests {
         assert_eq!(value["title"], Value::Null);
         assert_eq!(value["date"], Value::Null);
         assert_eq!(value["blocks"], json!([]));
-        assert_eq!(value["open_gaps"], 0);
+        assert_eq!(value["unfixed_gaps"], 0);
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
         assert_eq!(value["scores"], json!([]));
     }
 
     #[test]
-    fn a_gap_stays_open_until_its_status_is_closed() {
+    fn unfixed_gaps_count_every_known_status_short_of_closed() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
             | 1 | 2026-10-14 | Diagnostic | Q1 | | | open |\n\
             | 2 | 2026-10-14 | Diagnostic | Q2 | 2026-10-15 pass | | 1 of 3 |\n\
             | 3 | 2026-10-14 | Diagnostic | Q3 | 2026-10-15 pass, 2026-10-18 pass | | 2 of 3 |\n\
             | 4 | 2026-10-14 | Diagnostic | Q4 | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
             | 5 | 2026-10-14 | Diagnostic | Q5 | | | 2 OF  3 |\n\
-            | 6 | 2026-10-14 | Diagnostic | Q6 | | | 3 of 3 |\n";
+            | 6 | 2026-10-14 | Diagnostic | Q6 | | | 1/3 |\n\
+            | 7 | 2026-10-14 | Diagnostic | Q7 | | | 2 of 3. |\n\
+            | 8 | 2026-10-14 | Diagnostic | Q8 | | | **closed** |\n\
+            | 9 | 2026-10-14 | Diagnostic | Q9 | | | 3 of 3 |\n";
         let today = NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
-        assert_eq!(value["open_gaps"], 4);
+        assert_eq!(value["unfixed_gaps"], 6);
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
     }
@@ -534,7 +542,7 @@ mod tests {
             | open | 6 | Q2 | MockA | 2026-10-18 | 2026-10-17 |\n";
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
-        assert_eq!(value["open_gaps"], 5);
+        assert_eq!(value["unfixed_gaps"], 5);
         assert_eq!(value["redos_due"], 3);
         assert_eq!(
             value["first_due"],
@@ -543,14 +551,14 @@ mod tests {
     }
 
     #[test]
-    fn an_old_gap_log_with_a_cold_redo_date_has_open_gaps_and_nothing_due() {
+    fn an_old_gap_log_with_a_cold_redo_date_has_unfixed_gaps_and_nothing_due() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
             | 1 | 2026-10-14 | Diagnostic | Q2 | km | sign error | A | tighten | 2026-10-15 | open |\n\
             | 2 | 2026-10-14 | Diagnostic | Q3 | vmax | no units | N | tighten | 2026-10-15 | closed |\n\
             | 3 | 2026-10-14 | Diagnostic | Q4 | lb-plot | axes swapped | K | repair | 2026-10-16 | open |\n";
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
-        assert_eq!(value["open_gaps"], 2);
+        assert_eq!(value["unfixed_gaps"], 2);
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
     }
