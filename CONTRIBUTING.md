@@ -33,20 +33,28 @@ GitHub Actions is manually dispatched and uses the same local check entrypoint.
 
 ## Make a change
 
-1. Keep the change focused and add regression tests for the behavior it affects.
-2. Update the relevant documentation when commands, data formats, or behavior change.
-3. Include a short summary and test results in the PR; get an independent review before merging.
+Each change starts from a public issue that explains it.
+
+1. Create a branch named `<type>/<issue-number>-<short-description>`, for example `feat/2-spaced-retries`. `<type>` is the conventional type of the commit subject, such as `feat`, `fix`, or `docs`.
+2. Keep the change to that one issue. Add regression tests for the behavior it affects.
+3. Update the relevant documentation when commands, data formats, or behavior change.
+4. Open one pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. Include a short summary and the test results.
+5. Get an independent review before merging.
+
+Each pull request lands on `main` as one squash commit, with the pull request title as the commit subject.
+
+`main` always works. Every merge builds and passes `python3 ci/check.py`.
 
 Keep reusable tests in the repository. Put one-off investigation logs, review reports, and test-run attachments in the PR. Use whichever editor or coding tools you prefer; keep personal configuration out of version control.
 
 ## Commits
 
-Use a short imperative subject:
+Use a short imperative subject. End the message with a footer that names the issue:
 
 ```text
 fix(storage): preserve raw input when an update fails
 
-Ticket: LEARN-123
+Closes #123
 ```
 
-Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters and include a ticket footer when the work has a ticket. Keep unrelated changes in separate commits. Correct published commit-message mistakes in the PR rather than rewriting shared history.
+Write `Closes #N` when the commit completes issue N, and `Refs #N` when it contributes to issue N. Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters. Correct published commit-message mistakes in the PR rather than rewriting shared history.
