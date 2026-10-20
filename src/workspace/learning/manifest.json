@@ -66,7 +66,7 @@
       "path": "workflows/review-and-transfer.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "73da14e67908024b0e20eeea22f77498f822b7e5a6c5d13739c5eb81169eead8",
+      "sha256": "f5b1658883faeb176bcdadcf7c1e81f232b6178356ab91809ef853539d2387be",
       "stage": "review-and-transfer"
     },
     {
@@ -80,14 +80,14 @@
       "path": "workflows/papers.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "7c76117d23445dbd1db7b64b3c0766feda3946c011e3d3a34fdeefb5bf7e54a6",
+      "sha256": "a7b920b37bc2b97471631bd0319c8a715816868ff23d2b43140316869bb9673b",
       "stage": "papers"
     },
     {
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "63356198a3ad9af338fe68c219c6342ef6a5c2046d160d1fd63fa2de7b03e53b",
+      "sha256": "f288e2eabbbd00c3e79867f80164995212d37ffe0af964ff63b6b24622a84b97",
       "stage": "papers-loop"
     },
     {

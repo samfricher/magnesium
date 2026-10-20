@@ -42,7 +42,7 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 
 A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it, in this order:
 
-1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it.
+1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it, and an empty `Conf` column after `Type`.
 2. Clear Next redo on closed rows, and keep them closed. An open row keeps its old date, so a row whose date has passed is due today.
 3. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
 4. In `plan.md`, replace step 5 of the Method with the template's step 5.
