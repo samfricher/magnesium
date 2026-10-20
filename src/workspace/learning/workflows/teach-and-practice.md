@@ -15,7 +15,7 @@ Choose who performs the next operation:
 | Learner's current position | Next move |
 |---|---|
 | Knows how to start | Let the learner try first |
-| New type of question, no starting move | Work a similar problem with the same structure and different details, then give a changed version to solve alone |
+| New type of question, no starting move | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
 | Same type, second time, no starting move | Give a partly worked example whose missing steps the learner fills in, then a full problem |
 | Same type, third time or later, no starting move | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
@@ -24,9 +24,9 @@ Choose who performs the next operation:
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
 | Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence. An explicit request for an explanation or a full solution wins over every other row.
+This is a branching menu, not a compulsory sequence. An explicit request for an explanation or a full solution wins over every other row, and so does the teaching policy's rewrite after the same task form fails twice.
 
-The state_text of the learner's memory for this type of question holds how many times they have met it. In the papers loop, that is the tag memory. One task on the type is one time, and no memory yet means the first time. After the learner's attempt, revise that state_text with the count and the last help, such as "met twice, last help a partly worked example". The session checkpoint covers one session, so do not count from it.
+The state_text of the learner's memory for this type of question holds its times-met count, the number of times the learner has met it. In the papers loop, that is the tag memory. One task on the type is one time, and no memory yet means the first time. After the learner's attempt, revise that state_text with the count and the last help, such as "met twice, last help a partly worked example". The session checkpoint covers one session, so do not count from it.
 
 ## Construct assessable material before presenting it
 

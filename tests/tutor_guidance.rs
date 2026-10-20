@@ -157,7 +157,7 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
     let rules = [
         "The worked example is never the question they must answer or a later paper question.",
         "then give a changed version with the same structure and new details to solve alone.",
-        "Keep its times-met count.",
+        "Keep its times-met count current.",
     ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
@@ -178,7 +178,7 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
             "| New type of question, no starting move | Work a similar problem",
             "| Same type, second time, no starting move | Give a partly worked example",
             "| Same type, third time or later, no starting move | Give the problem only",
-            "The state_text of the learner's memory for this type of question holds how many times they have met it.",
+            "The state_text of the learner's memory for this type of question holds its times-met count",
         ] {
             assert!(teach.contains(required), "{host}: {required}");
         }
@@ -195,7 +195,7 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule = "When the learner says they are confused, always ask one question to find the cause and explain nothing yet.";
+    let rule = "When the learner says they are confused, ask one question to find the cause and explain nothing yet.";
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
