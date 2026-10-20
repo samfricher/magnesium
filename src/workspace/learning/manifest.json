@@ -8,13 +8,13 @@
       "path": "MAGNESIUM.md",
       "role": "orchestrator",
       "required_for_activation": true,
-      "sha256": "5fcf2820294d7a1c2b0fca97891cdfbd68ee3d3caa097832ff342c66a7d60761"
+      "sha256": "f283a733adbc611d0f55944135f3097e3a0f953ced45b8133fd46ea40c7f5b6e"
     },
     {
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "9d82c124606950999d84a22a37d3127f5eec33558dfd78ac0a74f77225c08795"
+      "sha256": "35607696c0b934ba3cf0d35a89682f089366a1c760459fb781972ee8fbf2430a"
     },
     {
       "path": "contracts/state-and-evidence.md",
@@ -52,7 +52,7 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "140cede462867bf97490549df7530b6c29a60d58be83839893805679f9fce93e",
+      "sha256": "2cffda25f13a38b641341040f4fdb99338eb318fb83b5343918ca9ed023b8d3f",
       "stage": "teach-and-practice"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "820c2dc389b8584185f7048cf461323566962ae64466aab9a6594d931b88d663",
+      "sha256": "9353404dbe31cba3f8ca78e1010af71f67d1d1524360ef38f25d002790e2448b",
       "stage": "papers-loop"
     },
     {

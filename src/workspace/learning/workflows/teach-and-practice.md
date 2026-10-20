@@ -17,7 +17,7 @@ Choose who performs the next operation:
 | Knows how to start | Let the learner try first |
 | New type of question, no starting move | Work a similar problem with the same structure and different details, then give a changed version to solve alone |
 | Same type, second time, no starting move | Give a partly worked example whose missing steps the learner fills in, then a full problem |
-| Same type, third time or later | Give the problem only, with no example |
+| Same type, third time or later, no starting move | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
@@ -26,7 +26,7 @@ Choose who performs the next operation:
 
 This is a branching menu, not a compulsory sequence. An explicit request for an explanation or a full solution wins over every other row.
 
-Find how many times the learner has met this type of question in the state_text of their memory for it. In the papers loop, that is the tag memory. After the learner's attempt, revise that state_text with the count and the help given, such as "met twice: a worked similar problem, then a partly worked one". The session checkpoint covers one session, so do not count from it.
+The state_text of the learner's memory for this type of question holds how many times they have met it. In the papers loop, that is the tag memory. One task on the type is one time, and no memory yet means the first time. After the learner's attempt, revise that state_text with the count and the last help, such as "met twice, last help a partly worked example". The session checkpoint covers one session, so do not count from it.
 
 ## Construct assessable material before presenting it
 
@@ -48,9 +48,9 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 
 ## Example: a similar problem, then a changed version
 
-**Worked example:** "A fair die is rolled. What is the expected value? Each face has probability $1/6$, so $E=(1+2+3+4+5+6)/6=3.5$."
+**Worked example:** "A fair die is rolled. What is the expected value? Each face has probability $1/6$, so $E=1\cdot\frac16+2\cdot\frac16+\dots+6\cdot\frac16=3.5$."
 
-**Learner's problem:** "A die is weighted so that 6 comes up half the time, and the other five faces equally often. What is the expected value?" It keeps $E=\sum x\,P(x)$ and changes the probabilities, so the answer shows understanding, not copied steps.
+**Changed version:** "A die is weighted so that 6 comes up half the time, and the other five faces equally often. What is the expected value?" It keeps $E=\sum x\,P(x)$ and changes the probabilities. Copying the worked steps gives 3.5, and the answer is 4.5.
 
 ## Finish the turn
 

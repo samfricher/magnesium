@@ -154,8 +154,11 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule =
-        "The worked example is never the question they must answer or a later paper question";
+    let rules = [
+        "The worked example is never the question they must answer or a later paper question.",
+        "then give a changed version with the same structure and new details to solve alone.",
+        "Keep its times-met count.",
+    ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
@@ -171,17 +174,20 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
         };
         let teach = served("teach_and_practice");
         for required in [
-            rule,
+            "| Knows how to start | Let the learner try first |",
             "| New type of question, no starting move | Work a similar problem",
             "| Same type, second time, no starting move | Give a partly worked example",
-            "| Same type, third time or later | Give the problem only, with no example |",
-            "has met this type of question in the state_text of their memory for it",
+            "| Same type, third time or later, no starting move | Give the problem only",
+            "The state_text of the learner's memory for this type of question holds how many times they have met it.",
         ] {
             assert!(teach.contains(required), "{host}: {required}");
         }
-        let papers = served("papers_loop");
-        assert!(papers.contains(rule), "{host}");
-        assert!(!papers.contains("worked example first"), "{host}");
+        for stage in ["teach_and_practice", "papers_loop"] {
+            let text = served(stage);
+            for rule in rules {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
     }
 }
 
