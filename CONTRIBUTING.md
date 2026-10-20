@@ -62,3 +62,22 @@ Include a short summary and test results in the PR. Get an independent review be
 Squash-merge each pull request into `main` as a single commit using the PR title as the commit subject.
 
 `main` always works. Every merge builds and passes `python3 ci/check.py`.
+
+## Releases
+
+A release is a Git tag on `main`, such as `v0.3.0`, with a GitHub release page. Users install and update from the newest release, as the [install guide](docs/install.md) describes. A change on `main` reaches them only in the next release.
+
+Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in behavior raises the minor number, for example from `0.2.0` to `0.3.0`. A fix alone raises the patch number, for example from `0.3.0` to `0.3.1`.
+
+To make a release:
+
+1. In a pull request, raise `version` in `Cargo.toml` to the new version. Change each other file that repeats the old version, such as the plugin manifests, to match. `magnesium --version` prints this version.
+2. After that pull request merges, create the tag and the release page:
+
+   ```sh
+   gh release create v0.3.0 --target main --generate-notes
+   ```
+
+   The release notes list the pull requests merged since the previous release.
+
+The first release tags the current `main` as `v0.2.0`, the version that `Cargo.toml` already declares.
