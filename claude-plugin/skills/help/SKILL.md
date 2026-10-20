@@ -42,7 +42,7 @@ The learner wants one clear next step for this folder, and wants it fast. Many l
 Run `magnesium digest` once. It changes nothing. It prints JSON facts that code has already worked out:
 
 - `today`, and `files`: the study folder listed two levels deep, without hidden entries, `AGENTS.md` and `CLAUDE.md`.
-- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows whose status is open, 1 of 3 or 2 of 3. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged.
+- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows whose status is open, 1 of 3 or 2 of 3. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other redos due.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
 
@@ -61,7 +61,7 @@ If a file cannot be read, or a fact is unclear, leave it out. A short screen is 
 
 Put the most urgent first. When the record adds an action, drop the least urgent one, so the screen stays short. Base each one on what you saw:
 
-- A plan with `redos_due` above 0, whose date is ahead or missing: this action comes first. Name the gap in `first_due` by its paper and question, and give `redos_due` as printed. "Redo the Diagnostic Q4 gap cold. It is one of 2 gaps due for a redo today." When `redos_due` is 1, say "It is due today." Say "cold redo".
+- A plan with `redos_due` above 0, whose date is ahead or missing: this action comes first. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more redos are due today." For a `more_due` of 1, say "1 more redo is due today." For 0, leave that sentence out. If `first_due` has no paper or question, say "A redo is due today." Say "cold redo".
 - A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Say "Continue my last lesson".
 - A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Say "Review <the same few words>".
 - A plan with no `date`: name the plan, and say nothing about days left. Its next block follows the plan rule above.
@@ -180,7 +180,7 @@ Next: say "Continue my last lesson".
 
 #### Example: plan in progress
 
-The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 2 redos due. `first_due` is Diagnostic Q4. Its session's `next_action` is "Cold redo of Q4 and Q6, then sit Paper1-Easy".
+The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
 
 ```markdown
 ## In this folder
@@ -190,11 +190,11 @@ The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic sco
 
 ## What you can do now
 
-1. **Redo the Diagnostic Q4 gap cold.** It is one of 2 gaps due for a redo today. You answer from a blank page. Say "cold redo".
+1. **Redo Diagnostic Q4 cold.** 2 more redos are due today. You answer from a blank page. Say "cold redo".
 2. **Sit Paper1-Easy next.** Use a timer. Then send photos and say "mark my Paper1-Easy".
 3. **Fit today to your time.** Say "re-time today" and give your free hours.
 
-Next: redo the Diagnostic Q4 gap cold. Say "cold redo".
+Next: redo Diagnostic Q4 cold. 2 more redos are due today. Say "cold redo".
 ```
 
 ## Topic: overview
