@@ -281,18 +281,14 @@ fn plan_digest(
         .filter(|block| !is_placeholder(block))
         .collect::<Vec<_>>();
     let gap_table = Table::parse(section(gaps, "Gaps"));
-    let unfixed = logged_gaps(&gap_table)
-        .into_iter()
-        .filter(|gap| gap.status != GapStatus::Closed)
-        .collect::<Vec<_>>();
+    let unfixed = unfixed_gaps(&gap_table);
     let due = unfixed
         .iter()
         .filter(|gap| gap.next_redo.is_some_and(|date| date <= today))
         .collect::<Vec<_>>();
-    let first_due = due
-        .iter()
-        .min_by_key(|gap| gap.next_redo)
-        .map(|gap| json!({"paper": gap.paper, "question": gap.question}));
+    let first_due = due.iter().min_by_key(|gap| gap.next_redo).map(
+        |gap| json!({"paper": gap.paper, "question": gap.question, "more_due": due.len() - 1}),
+    );
     let score_rows = Table::parse(section(gaps, "Scores"));
     let scores = score_rows
         .rows
@@ -328,54 +324,38 @@ fn plan_digest(
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum GapStatus {
-    Open,
-    OneOfThree,
-    TwoOfThree,
-    Closed,
-}
-
-impl GapStatus {
-    fn parse(cell: &str) -> Option<Self> {
-        let cell = cell.replace(['*', '_', '`'], "").replace('/', " of ");
-        let words = cell
-            .trim_end_matches('.')
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-        Some(match words.to_ascii_lowercase().as_str() {
-            "open" => Self::Open,
-            "1 of 3" => Self::OneOfThree,
-            "2 of 3" => Self::TwoOfThree,
-            "closed" => Self::Closed,
-            _ => return None,
-        })
-    }
-}
-
 struct Gap<'a> {
     paper: Option<&'a str>,
     question: Option<&'a str>,
-    status: GapStatus,
     next_redo: Option<NaiveDate>,
 }
 
-fn logged_gaps(table: &Table) -> Vec<Gap<'_>> {
+fn unfixed_gaps(table: &Table) -> Vec<Gap<'_>> {
     table
         .rows
         .iter()
         .filter_map(|row| {
             let cell = |name| table.cell(row, name).filter(|c| !is_placeholder(c));
             cell("Date")?;
+            if cell("Status").is_some_and(says_closed) {
+                return None;
+            }
             Some(Gap {
                 paper: cell("Paper"),
                 question: cell("Q"),
-                status: cell("Status").and_then(GapStatus::parse)?,
                 next_redo: cell("Next redo").and_then(first_date),
             })
         })
         .collect()
+}
+
+fn says_closed(status: &str) -> bool {
+    let status = status.to_ascii_lowercase().replace('/', " of ");
+    let words = status
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    words.first() == Some(&"closed") || words == ["3", "of", "3"]
 }
 
 /// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
@@ -513,22 +493,44 @@ mod tests {
     }
 
     #[test]
-    fn unfixed_gaps_count_every_known_status_short_of_closed() {
-        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
-            | 1 | 2026-10-14 | Diagnostic | Q1 | | | open |\n\
-            | 2 | 2026-10-14 | Diagnostic | Q2 | 2026-10-15 pass | | 1 of 3 |\n\
-            | 3 | 2026-10-14 | Diagnostic | Q3 | 2026-10-15 pass, 2026-10-18 pass | | 2 of 3 |\n\
-            | 4 | 2026-10-14 | Diagnostic | Q4 | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
-            | 5 | 2026-10-14 | Diagnostic | Q5 | | | 2 OF  3 |\n\
-            | 6 | 2026-10-14 | Diagnostic | Q6 | | | 1/3 |\n\
-            | 7 | 2026-10-14 | Diagnostic | Q7 | | | 2 of 3. |\n\
-            | 8 | 2026-10-14 | Diagnostic | Q8 | | | **closed** |\n\
-            | 9 | 2026-10-14 | Diagnostic | Q9 | | | 3 of 3 |\n";
-        let today = NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
+    fn a_gap_is_fixed_only_when_its_status_says_closed() {
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Next redo | Status |\n|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | 2026-10-21 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | 2026-10-20 | Open |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q3 | 2026-10-19 | 1 of 3 |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q6 | | open (failed) |\n\
+            | 5 | 2026-10-12 | Paper1-Easy | Q4 | 2026-10-16 | 1 of 3 passes |\n\
+            | 6 | 2026-10-12 | Paper1-Easy | Q6 | 2026-10-18 | reopened |\n\
+            | 7 | 2026-10-12 | Paper1-Easy | Q7 | 2026-10-25 | 0 of 3 |\n\
+            | 8 | 2026-10-12 | Paper1-Easy | Q8 | 2026-10-17 | |\n\
+            | 9 | 2026-10-08 | Diagnostic | Q5 | 2026-10-01 | closed |\n\
+            | 10 | 2026-10-08 | Diagnostic | Q7 | 2026-10-01 | **Closed** |\n\
+            | 11 | 2026-10-08 | Diagnostic | Q8 | 2026-10-01 | closed by MockA Q2 |\n\
+            | 12 | 2026-10-08 | Diagnostic | Q9 | 2026-10-01 | 3 of 3 |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
-        assert_eq!(value["unfixed_gaps"], 6);
-        assert_eq!(value["redos_due"], 0);
-        assert_eq!(value["first_due"], Value::Null);
+        assert_eq!(value["unfixed_gaps"], 8);
+        assert_eq!(value["redos_due"], 5);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Paper1-Easy", "question": "Q4", "more_due": 4})
+        );
+    }
+
+    #[test]
+    fn an_upgraded_old_log_keeps_its_overdue_row_due() {
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-01 | Diagnostic | Q1 | km | sign error | A | tighten | | 2026-10-03 | OPEN |\n\
+            | 2 | 2026-10-01 | Diagnostic | Q2 | vmax | no units | N | tighten | | | closed |\n\
+            | 3 | 2026-10-08 | MockA | Q4 | inhibition | wrong type | K | repair | | 2026-10-25 | open |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("final", PLAN, gaps, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 2);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 0})
+        );
     }
 
     #[test]
@@ -546,7 +548,7 @@ mod tests {
         assert_eq!(value["redos_due"], 3);
         assert_eq!(
             value["first_due"],
-            json!({"paper": "Diagnostic", "question": "Q4"})
+            json!({"paper": "Diagnostic", "question": "Q4", "more_due": 2})
         );
     }
 
