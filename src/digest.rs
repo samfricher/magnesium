@@ -553,6 +553,40 @@ mod tests {
     }
 
     #[test]
+    fn a_conf_column_and_conf_counts_leave_the_digest_unchanged() {
+        let with_conf = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | km | sign error | A | S | tighten | | 2026-10-16 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | vmax | no units | N | | tighten | 2026-10-16 pass | 2026-10-19 | 1 of 3 |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q4 | inhibition | wrong type | K | G | repair | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q5 | lb-plot | axes swapped | K | U | repair | 2026-10-17 fail | | open |\n\n\
+            ## Scores\n\n| Paper | Date | Score | Time used | Notes |\n|---|---|---|---|---|\n\
+            | Diagnostic | 2026-10-14 | 18/30 | 44/45 min | Q1 2/4; Conf right: S 9/12, U 4/6, G 1/2 |\n";
+        let without_conf = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | km | sign error | A | tighten | | 2026-10-16 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | vmax | no units | N | tighten | 2026-10-16 pass | 2026-10-19 | 1 of 3 |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q4 | inhibition | wrong type | K | repair | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q5 | lb-plot | axes swapped | K | repair | 2026-10-17 fail | | open |\n\n\
+            ## Scores\n\n| Paper | Date | Score | Time used | Notes |\n|---|---|---|---|---|\n\
+            | Diagnostic | 2026-10-14 | 18/30 | 44/45 min | Q1 2/4 |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, with_conf, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 2);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 1})
+        );
+        assert_eq!(
+            value["scores"],
+            json!([{"paper":"Diagnostic","date":"2026-10-14","score":"18/30"}])
+        );
+        assert_eq!(
+            value,
+            plan_digest("midterm-1", PLAN, without_conf, today, &[])
+        );
+    }
+
+    #[test]
     fn an_old_gap_log_with_a_cold_redo_date_has_unfixed_gaps_and_nothing_due() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
             | 1 | 2026-10-14 | Diagnostic | Q2 | km | sign error | A | tighten | 2026-10-15 | open |\n\
