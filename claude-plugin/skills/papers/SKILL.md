@@ -49,6 +49,8 @@ A `gap-log.md` without a `Next redo` column comes from an older template, in whi
 
 Log the upgrade as one line under Changes in `plan.md`.
 
+A `gap-log.md` with `Next redo` but no `Conf` column comes from an older template without confidence letters. Add an empty `Conf` column after `Type`, replace the text above `## Tags` with the template's text, and log it under Changes.
+
 ## Optional tools
 
 Write LaTeX papers only when tectonic is available. Otherwise write Markdown or HTML papers, which also work. The study folder's `.magnesium/config.toml` records each answer in a `[tools]` table, as `tectonic = "installed"` or `tectonic = "declined"`. Read it with the Read tool before you choose a format.

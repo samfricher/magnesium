@@ -273,15 +273,23 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
         };
         let papers_loop = served("papers_loop");
         for required in [
-            "In papers and cold redos the learner writes S (sure), U (unsure) or G (guess) after each answer.",
-            "Write the answer's letter, or a blank if it has none, in each new row's Conf column, after Type.",
-            "show S, U and G against right and wrong answers in a table, and keep its counts in that paper's Scores Notes.",
+            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer.",
+            "Copy the answer's letter, or a blank, into each new row's Conf.",
+            "If it has no Conf column, add an empty one after Type.",
+            "show S, U and G against right and wrong answers in a table, and keep the counts in its Scores Notes.",
             "Conf is not evidence. It never passes or closes a row or changes a tag's reading.",
-            "Conf takes the redo's letter",
+            "Conf takes the redo's letter or a blank",
         ] {
             assert!(
                 papers_loop.contains(required),
                 "{host}/papers_loop: {required}"
+            );
+        }
+        for (at, _) in papers_loop.match_indices("S row") {
+            let before = &papers_loop[..at];
+            assert!(
+                before.ends_with("Type ") || before.ends_with("Conf "),
+                "{host}/papers_loop: the bare S row at byte {at} could mean slow or sure"
             );
         }
         assert!(
@@ -289,8 +297,9 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
             "{host}/papers"
         );
         assert!(
-            served("review_and_transfer")
-                .contains("update that row's Passes, Status, Next redo and Conf"),
+            served("review_and_transfer").contains(
+                "ask for S (sure), U (unsure) or G (guess) after each answer, and update that row's Passes, Status, Next redo and Conf"
+            ),
             "{host}/review_and_transfer"
         );
     }
@@ -315,8 +324,7 @@ fn served_instructions_repair_sure_mistakes_first() {
         };
         let papers_loop = served("papers_loop");
         for required in [
-            "Repair Conf S rows before the others, then cold redo",
-            "Rule 6 still orders the steps inside each repair.",
+            "When you choose the next repair, take Conf S rows first, after any open key_need tag they need. Rule 6 still applies.",
         ] {
             assert!(
                 papers_loop.contains(required),
@@ -327,6 +335,7 @@ fn served_instructions_repair_sure_mistakes_first() {
         for required in [
             "When the learner was sure of an answer that is wrong, repair that mistake before the others",
             "How sure they were is not evidence of what they can do.",
+            "papers-loop says how this order combines with its other order rules.",
         ] {
             assert!(
                 repair.contains(required),

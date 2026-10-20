@@ -59,14 +59,14 @@
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "06a676b95ea1188dbf2ac3acedf7c25396163293b06dd88a2a2aca46277483c4",
+      "sha256": "baf90341fdd96c42c66e96216c515a8d9673084f9ded5d4e897feba0be0161f4",
       "stage": "interpret-and-repair"
     },
     {
       "path": "workflows/review-and-transfer.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "f5b1658883faeb176bcdadcf7c1e81f232b6178356ab91809ef853539d2387be",
+      "sha256": "b49604e73a2a6f081a816c4fb3745bfb3e6d3c178b289230554099de17a3f275",
       "stage": "review-and-transfer"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "86e9ff224f2f6a5a8241573b5873c967019822035ee68dbb8b9e5b036603d21d",
+      "sha256": "9332edc4eec35160e512da11450db95fd46238d7d83551653659a28b2ba0fc80",
       "stage": "papers-loop"
     },
     {
