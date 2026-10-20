@@ -297,6 +297,46 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
 }
 
 #[test]
+fn served_instructions_repair_sure_mistakes_first() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "sure-first",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let papers_loop = served("papers_loop");
+        for required in [
+            "Repair Conf S rows before the others, then cold redo",
+            "Rule 6 still orders the steps inside each repair.",
+        ] {
+            assert!(
+                papers_loop.contains(required),
+                "{host}/papers_loop: {required}"
+            );
+        }
+        let repair = served("interpret_and_repair");
+        for required in [
+            "When the learner was sure of an answer that is wrong, repair that mistake before the others",
+            "How sure they were is not evidence of what they can do.",
+        ] {
+            assert!(
+                repair.contains(required),
+                "{host}/interpret_and_repair: {required}"
+            );
+        }
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
