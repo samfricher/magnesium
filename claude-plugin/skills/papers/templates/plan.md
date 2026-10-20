@@ -73,7 +73,7 @@ Another instructor's paper moves to bucket 1 only with evidence that the current
 2. Mark it strictly against the key's mark scheme straight after.
 3. Log every lost mark in `gap-log.md` with a tag and a type.
 4. Repair at the depth the gap needs: tighten, repair or teach.
-5. Redo the question cold after a delay, from a blank page. A gap closes only on an unaided pass.
+5. Redo the question cold, from a blank page, on three different days. The first redo is at least 1 day after the repair, the second at least 3 days after the first, and the third at least 7 days after the second. A gap closes only after three unaided passes.
 6. Sit the next paper. The plan is re-planned after every marked paper.
 
 Question types:
@@ -88,7 +88,7 @@ Rating: <weak, unsure or strong>. Ramp: <papers in order>. <One line on why, fro
 
 ## 6. Blocks
 
-<!-- Hours, not clock times; the learner spreads them. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. -->
+<!-- Hours, not clock times; the learner spreads them. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. Fit each gap's three cold redos before the assessment. -->
 
 | # | Block | Purpose | Duration and stop line | Have open | Running total |
 |---|---|---|---|---|---|
@@ -125,7 +125,7 @@ Say any of these, in your own words:
 - "mark my <PAPER>", with photos or a PDF of your answers.
 - "teach me <TAG>", for a teaching block on one tag.
 - "repair <TAG>", for a short repair on one tag.
-- "cold redo", to redo open gap-log rows from a blank page.
+- "cold redo", to redo the gap-log rows that are due, from a blank page.
 - "new mock", for another paper at assessment level.
 - "re-time today", to fit today's blocks to the hours you have.
 - "rebuild", to start this plan again.

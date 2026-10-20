@@ -43,7 +43,7 @@ If a memory is wrong, say so: “That wasn't a conceptual gap; I misread the que
 
 In Claude Code, say what you are studying for: “I have a midterm Monday” or “Build me practice papers for chapters 6 and 7”. You can also run `/magnesium:papers`. The tutor asks only for what your message and folder do not show. It then writes a plan, papers with separate keys, drills and a gap log in `Study/<target>/`, for example `Study/midterm-1/`. The tutor also keeps a map of the course's skills in `graph.yaml` and uses it to place you and to choose repairs. LaTeX papers build with `tectonic`. The tutor asks before it installs tectonic; without it, the tutor writes the papers in Markdown or HTML.
 
-Sit each paper on your own, timed, and write `?` where you would look something up. Send photos or a PDF of your answers and say “mark my Diagnostic”. The tutor marks against the key, logs each lost mark, repairs it and sets a cold redo for later. It keeps the plan file current and asks before it adds a lot of time. Later conversations continue from the plan. Say “rebuild” to start over.
+Sit each paper on your own, timed, and write `?` where you would look something up. Send photos or a PDF of your answers and say “mark my Diagnostic”. The tutor marks against the key, logs each lost mark, repairs it and sets cold redos for later. A gap counts as fixed only after you pass it cold on three different days, at least 1, 3 and 7 days apart. The tutor keeps the plan file current and asks before it adds a lot of time. Later conversations continue from the plan. Say “rebuild” to start over.
 
 ## Control recording and keep a copy
 
