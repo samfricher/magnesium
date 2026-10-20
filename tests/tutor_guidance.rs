@@ -48,6 +48,96 @@ fn claude_notices_say_when_to_start_and_continue_a_lesson_and_codex_notices_do_n
     assert!(!codex.contains("learn skill"), "{codex}");
 }
 
+fn claude_stop(e: &TestEnvironment, thread: &str, prompt_id: &str, reply: &str) {
+    let input = json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"Stop","prompt_id":prompt_id,"stop_hook_active":false,"last_assistant_message":reply});
+    let output = run_hook_with_host_flag(e, &e.workspace, "stop", input, "claude");
+    assert!(output.status.success(), "{output:?}");
+}
+
+const REMINDER: &str = "Teaching reply: one idea, under 200 words, end with one task.";
+
+#[test]
+fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_missed() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let inactive = claude_prompt(&e, "conv", "p-1", "can we practise confidence intervals?");
+    assert!(!inactive.contains("Teaching reply"), "{inactive}");
+
+    v2::start(&e, "claude", "conv");
+    let first = claude_prompt(&e, "conv", "p-2", "is it 950?");
+    assert!(first.contains(REMINDER), "{first}");
+    assert!(!first.contains("Previous reply"), "{first}");
+    assert!(first.len() <= 512, "{} bytes: {first}", first.len());
+
+    claude_stop(&e, "conv", "p-2", &"Here is why. ".repeat(283));
+    let second = claude_prompt(&e, "conv", "p-3", "so the margin halves?");
+    assert!(
+        second.contains(" Previous reply: 849 words, no task."),
+        "{second}"
+    );
+    assert!(second.contains(REMINDER), "{second}");
+    assert!(second.contains("current event e-"), "{second}");
+    assert!(
+        second.contains("interpret this learner turn with learning_step"),
+        "{second}"
+    );
+    assert!(second.len() <= 512, "{} bytes: {second}", second.len());
+
+    claude_stop(
+        &e,
+        "conv",
+        "p-3",
+        "Yes. Now try n = 400: what is the margin?",
+    );
+    let third = claude_prompt(&e, "conv", "p-4", "about 4.9?");
+    assert!(!third.contains("Previous reply"), "{third}");
+
+    let session_start = v2::context(&run_hook_with_host_flag(
+        &e,
+        &e.workspace,
+        "session-start",
+        json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"SessionStart","source":"compact"}),
+        "claude",
+    ));
+    assert!(
+        session_start.contains("After a new conversation or compaction, load the learn skill"),
+        "{session_start}"
+    );
+    assert!(!session_start.contains("Teaching reply"), "{session_start}");
+
+    v2::start(&e, "codex", "conv");
+    let codex = v2::context(&v2::prompt(&e, "codex", "conv", Some("t-1"), "teach me"));
+    assert!(!codex.contains("Teaching reply"), "{codex}");
+}
+
+#[test]
+fn claude_reminder_stays_without_feedback_while_recording_is_off() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", "conv");
+    let event = claude_prompt(&e, "conv", "p-1", "stop recording please")
+        .split_once("current event ")
+        .unwrap()
+        .1
+        .split('.')
+        .next()
+        .unwrap()
+        .to_owned();
+    v2::tool(
+        &e,
+        "claude",
+        "conv",
+        "learning_step",
+        json!({"schema":"learner-model/v2","action":"control","request_id":"off","control":"recording_off","turn_ref":event}),
+    );
+    claude_stop(&e, "conv", "p-1", &"Unrecorded words. ".repeat(300));
+    let notice = claude_prompt(&e, "conv", "p-2", "what next?");
+    assert!(notice.contains("recording false"), "{notice}");
+    assert!(notice.contains(REMINDER), "{notice}");
+    assert!(!notice.contains("Previous reply"), "{notice}");
+    assert!(notice.len() <= 512, "{} bytes: {notice}", notice.len());
+}
+
 #[test]
 fn claude_session_start_points_a_new_learner_at_help_until_a_session_exists() {
     let e = TestEnvironment::from_fixture("basic").unwrap();

@@ -5,11 +5,13 @@ use crate::workspace::Workspace;
 use control_admission::{
     LocalSuppression, control_event, control_storage_failure, recording_suppressed,
 };
+use std::borrow::Cow;
 use std::path::Path;
 pub(crate) mod cli;
 pub(crate) mod helpers;
 pub(crate) mod host;
 pub(crate) mod native_capture;
+mod reply_check;
 pub(crate) mod search;
 pub(crate) mod sources;
 pub(crate) mod types;
@@ -355,7 +357,7 @@ pub(crate) fn host_session_start(
     check_workspace_binding(&workspace)?;
     let store = open_store(&workspace)?;
     let host = host_context(host);
-    let mut notice = hook_notice(&store, &host, None)?;
+    let mut notice = hook_notice(&store, &host, None, NoticeHook::SessionStart)?;
     if host.host_kind == "claude"
         && !store
             .conn
@@ -368,40 +370,91 @@ pub(crate) fn host_session_start(
     }
     Ok(Some(notice))
 }
+/// The hook a notice answers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NoticeHook {
+    SessionStart,
+    UserPromptSubmit,
+}
+impl NoticeHook {
+    /// The `additionalContextLimit` that the Claude Code plugin's hooks.json
+    /// gives this hook.
+    const fn limit(self) -> usize {
+        match self {
+            Self::SessionStart => 1024,
+            Self::UserPromptSubmit => 512,
+        }
+    }
+}
+/// Clauses after a notice's state line, declared in the order they give way
+/// when the notice is over its hook's limit. `Required` clauses never do.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Clause {
+    /// SessionStart repeats it on resume and compaction, when it applies.
+    ReloadAfterCompaction,
+    TeachingReminder,
+    ReplyFeedback,
+    Required,
+}
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
     event: Option<&str>,
+    hook: NoticeHook,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
-    let recovery = if unbound > 0 {
-        " Unbound pending work: context.pending_work with unbound_only:true."
-    } else {
-        ""
-    };
-    let guidance = engagement_guidance(host, active, recording);
-    Ok(format!(
-        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}. Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.{guidance}{recovery}",
+    let state = format!(
+        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}. Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.",
         event.unwrap_or("unavailable (use labeled reported events)")
-    ))
-}
-/// Plain next-step guidance for Claude Code, whose tutor can lose the Magnesium
-/// skill's instructions to compaction and otherwise sees only state fields.
-/// Other hosts keep their established notices within their hook limits.
-fn engagement_guidance(
-    host: &crate::learner::HostContext,
-    active: bool,
-    recording: bool,
-) -> &'static str {
-    match (host.host_kind.as_str(), active, recording) {
-        ("claude", true, true) => {
-            " A lesson is active: interpret this learner turn with learning_step. After a new conversation or compaction, load the learn skill and its instructions first."
+    );
+    let claude = host.host_kind == "claude";
+    let mut clauses: Vec<(Clause, Cow<'static, str>)> = Vec::new();
+    // Plain next-step guidance for Claude Code, whose tutor can lose the
+    // Magnesium skill's instructions to compaction and otherwise sees only
+    // state fields. Other hosts keep their established notices.
+    match (claude, active, recording) {
+        (true, true, true) => {
+            clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
+            clauses.push((Clause::ReloadAfterCompaction, CLAUDE_RELOAD_GUIDANCE.into()));
         }
-        ("claude", false, true) => CLAUDE_START_GUIDANCE,
-        _ => "",
+        (true, false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
+        _ => {}
     }
+    if unbound > 0 {
+        clauses.push((
+            Clause::Required,
+            " Unbound pending work: context.pending_work with unbound_only:true.".into(),
+        ));
+    }
+    if claude && active && hook == NoticeHook::UserPromptSubmit {
+        clauses.push((Clause::TeachingReminder, reply_check::REMINDER.into()));
+        if let Some(feedback) = event.and_then(|e| reply_check::feedback(&store.conn, host, e)) {
+            clauses.push((Clause::ReplyFeedback, feedback.into()));
+        }
+    }
+    Ok(fit(state, clauses, hook.limit()))
 }
+/// The state line, which carries the current event id, and the clauses in
+/// order, after whole clauses give way in `Clause` order until the text fits.
+fn fit(state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: usize) -> String {
+    while state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>() > limit {
+        let Some(index) = (0..clauses.len())
+            .filter(|&index| clauses[index].0 != Clause::Required)
+            .min_by_key(|&index| clauses[index].0)
+        else {
+            break;
+        };
+        clauses.remove(index);
+    }
+    clauses
+        .iter()
+        .fold(state, |notice, (_, text)| notice + text.as_ref())
+}
+const CLAUDE_LESSON_GUIDANCE: &str =
+    " A lesson is active: interpret this learner turn with learning_step.";
+const CLAUDE_RELOAD_GUIDANCE: &str =
+    " After a new conversation or compaction, load the learn skill and its instructions first.";
 const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed or review, load the learn skill and start or resume a session.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder yet, so the learner is probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
@@ -460,7 +513,7 @@ pub(crate) fn host_user_prompt_submit(
             Err(_) => {
                 return Ok(Some(format!(
                     "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(&store, &context, None)?
+                    hook_notice(&store, &context, None, NoticeHook::UserPromptSubmit)?
                 )));
             }
         }
@@ -477,6 +530,7 @@ pub(crate) fn host_user_prompt_submit(
         &store,
         &context,
         ids.first().map(String::as_str),
+        NoticeHook::UserPromptSubmit,
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -658,6 +712,145 @@ mod tests {
         );
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
+    }
+    fn claude_lesson() -> (
+        std::path::PathBuf,
+        crate::learner::LearnerStore,
+        HostIdentity,
+    ) {
+        let (root, store, _) = fixture();
+        let host = HostIdentity::claude("teaching-reminder").unwrap();
+        store.update(&host_context(&host),json!({"schema":"learner-model/v2","action":"update","request_id":"start","session":{"operation":"start","client_ref":"s","goal":"Quadratic coefficients"}})).unwrap();
+        (root, store, host)
+    }
+    fn claude_prompt(root: &Path, host: &HostIdentity, turn: &str) -> String {
+        host_user_prompt_submit(root, host, Some(turn), None, "Is b another unknown?")
+            .unwrap()
+            .unwrap()
+    }
+    fn claude_stop(
+        root: &Path,
+        host: &HostIdentity,
+        turn: &str,
+        reply: &str,
+    ) -> Result<(), String> {
+        host_response_stop_with_delivery(
+            root,
+            host,
+            &host.stored_turn_id(turn).unwrap(),
+            Some(reply),
+        )
+    }
+    #[test]
+    fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
+        let (root, store, host) = claude_lesson();
+        let first = claude_prompt(&root, &host, "one");
+        assert!(first.contains(reply_check::REMINDER), "{first}");
+        assert!(first.contains(CLAUDE_RELOAD_GUIDANCE), "{first}");
+        assert!(!first.contains("Previous reply"), "{first}");
+
+        claude_stop(&root, &host, "one", &"word ".repeat(850)).unwrap();
+        assert!(
+            claude_stop(&root, &host, "one", "Short now. What is b?").is_err(),
+            "a repeated Stop with new text keeps the first reply"
+        );
+        let second = claude_prompt(&root, &host, "two");
+        assert!(
+            second.contains(" Previous reply: 850 words, no task."),
+            "{second}"
+        );
+        assert!(second.contains("current event e-"), "{second}");
+        assert!(second.contains(CLAUDE_LESSON_GUIDANCE), "{second}");
+        assert!(second.len() <= 512, "{} bytes: {second}", second.len());
+        assert_eq!(
+            claude_prompt(&root, &host, "two"),
+            second,
+            "a retried prompt hook"
+        );
+
+        let after_missed_stop = claude_prompt(&root, &host, "three");
+        assert!(
+            !after_missed_stop.contains("Previous reply"),
+            "{after_missed_stop}"
+        );
+        claude_stop(
+            &root,
+            &host,
+            "three",
+            "b is fixed. Your turn: name the coefficient of x.",
+        )
+        .unwrap();
+        let after_good_reply = claude_prompt(&root, &host, "four");
+        assert!(
+            !after_good_reply.contains("Previous reply"),
+            "{after_good_reply}"
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_prompt_notice_keeps_required_clauses_within_512_bytes_at_extreme_counts() {
+        let (root, store, host) = claude_lesson();
+        store
+            .conn
+            .execute("UPDATE workspace_meta SET memory_generation=?1", [i64::MAX])
+            .unwrap();
+        let earlier = host_context(&HostIdentity::claude("earlier-conversation").unwrap());
+        let unbound = crate::learner::RawEvent {
+            external_event_key: "unbound".into(),
+            speaker: crate::learner::Speaker::Learner,
+            kind: "message".into(),
+            text: "An answer before any lesson".into(),
+            metadata: None,
+            occurred_at_ms: None,
+        };
+        store
+            .capture(&earlier, &[unbound], "host_observed", true)
+            .unwrap();
+        claude_prompt(&root, &host, "one");
+        claude_stop(&root, &host, "one", &"w ".repeat(123_456)).unwrap();
+        let notice = claude_prompt(&root, &host, "two");
+        assert!(notice.len() <= 512, "{} bytes: {notice}", notice.len());
+        for required in [
+            "current event e-",
+            CLAUDE_LESSON_GUIDANCE,
+            "context.pending_work with unbound_only:true",
+            " Previous reply: 123456 words, no task.",
+        ] {
+            assert!(notice.contains(required), "{required}: {notice}");
+        }
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn notice_clauses_give_way_in_order_and_required_ones_stay() {
+        let clauses = vec![
+            (Clause::Required, " lesson".into()),
+            (Clause::ReloadAfterCompaction, " reload".into()),
+            (Clause::TeachingReminder, " reminder".into()),
+            (Clause::ReplyFeedback, " feedback".into()),
+        ];
+        let fit_to = |limit| fit("state".into(), clauses.clone(), limit);
+        assert_eq!(fit_to(512), "state lesson reload reminder feedback");
+        assert_eq!(fit_to(35), "state lesson reminder feedback");
+        assert_eq!(fit_to(27), "state lesson feedback");
+        assert_eq!(fit_to(20), "state lesson");
+        assert_eq!(fit_to(1), "state lesson");
+    }
+    #[test]
+    fn notice_limits_match_the_claude_plugin_hooks() {
+        let hooks: serde_json::Value =
+            serde_json::from_str(include_str!("../../claude-plugin/hooks/hooks.json")).unwrap();
+        for (event, hook) in [
+            ("SessionStart", NoticeHook::SessionStart),
+            ("UserPromptSubmit", NoticeHook::UserPromptSubmit),
+        ] {
+            assert_eq!(
+                hooks["hooks"][event][0]["hooks"][0]["additionalContextLimit"],
+                hook.limit(),
+                "{event}"
+            );
+        }
     }
     #[test]
     fn recording_control_does_not_require_successful_memory_update() {

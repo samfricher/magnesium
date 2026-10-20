@@ -1,0 +1,431 @@
+//! The teaching reminder a Claude Code tutor reads on each lesson turn, and
+//! the check of its previous reply that the reminder reports.
+
+use rusqlite::{Connection, params};
+
+use crate::learner::HostContext;
+
+/// A teaching reply should not run past this many words.
+const WORD_LIMIT: usize = 200;
+
+pub(crate) const REMINDER: &str = " Teaching reply: one idea, under 200 words, end with one task.";
+
+/// Phrases that start a sentence giving the learner something to do.
+const TASK_STARTS: &[&str] = &[
+    "answer",
+    "apply",
+    "attempt",
+    "calculate",
+    "challenge",
+    "check",
+    "choose",
+    "classify",
+    "compare",
+    "complete",
+    "compute",
+    "convert",
+    "decide",
+    "define",
+    "derive",
+    "describe",
+    "determine",
+    "differentiate",
+    "draw",
+    "estimate",
+    "evaluate",
+    "exercise",
+    "expand",
+    "explain",
+    "factor",
+    "factorise",
+    "factorize",
+    "fill",
+    "find",
+    "give",
+    "graph",
+    "guess",
+    "have a go",
+    "identify",
+    "implement",
+    "integrate",
+    "justify",
+    "label",
+    "list",
+    "match",
+    "name",
+    "over to you",
+    "pick",
+    "plot",
+    "practice",
+    "practise",
+    "predict",
+    "prove",
+    "question",
+    "rank",
+    "read",
+    "recall",
+    "rewrite",
+    "show",
+    "simplify",
+    "sketch",
+    "solve",
+    "sort",
+    "spot",
+    "state",
+    "summarise",
+    "summarize",
+    "task",
+    "tell",
+    "test",
+    "trace",
+    "translate",
+    "try",
+    "use",
+    "work",
+    "write",
+    "your task",
+    "your turn",
+];
+
+/// Words skipped before a task start, as in "Now try" or "First, find".
+const OPENERS: &[&str] = &[
+    "and", "finally", "first", "let's", "let’s", "next", "now", "ok", "okay", "please", "so",
+    "then",
+];
+
+/// Starts of questions that check in or offer more, rather than set work.
+const CHECK_INS: &[&str] = &[
+    "any questions",
+    "clear?",
+    "do you want",
+    "does it make sense",
+    "does that make sense",
+    "does this make sense",
+    "got it",
+    "is that clear",
+    "is this clear",
+    "make sense",
+    "makes sense",
+    "ok?",
+    "okay?",
+    "ready for",
+    "ready to",
+    "ready?",
+    "right?",
+    "shall i",
+    "shall we",
+    "should i",
+    "should we",
+    "sound good",
+    "sounds good",
+    "want me",
+    "would you like",
+];
+
+/// What the tutor's reply to the previous prompt got wrong, as a notice
+/// clause such as " Previous reply: 850 words, no task.". `None` when the
+/// reply kept the rule, when there is no paired reply to judge, or when the
+/// store cannot be read: the reminder never fails a hook.
+pub(crate) fn feedback(
+    conn: &Connection,
+    host: &HostContext,
+    current_event: &str,
+) -> Option<String> {
+    let reply = previous_reply(conn, host, current_event).ok().flatten()?;
+    ReplyCheck::of(&reply).feedback()
+}
+
+/// The previous reply is judged only when the two latest host-observed rows
+/// before this turn's prompt are a tutor delivery and the prompt it answered.
+/// A missed Stop hook, or turns that were recorded nowhere, leave some other
+/// row there, so an older reply is never judged as the previous one.
+fn previous_reply(
+    conn: &Connection,
+    host: &HostContext,
+    current_event: &str,
+) -> rusqlite::Result<Option<String>> {
+    let mut statement = conn.prepare(
+        "SELECT speaker,kind,external_event_key,text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND event_no<(SELECT event_no FROM learning_events WHERE event_id=?3) ORDER BY event_no DESC LIMIT 2",
+    )?;
+    let rows = statement
+        .query_map(
+            params![host.host_kind, host.host_thread_id, current_event],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(match rows.as_slice() {
+        [
+            (speaker, kind, turn, reply),
+            (prompt_speaker, prompt_kind, prompt_key, _),
+        ] if speaker == "tutor"
+            && kind == "delivery"
+            && prompt_speaker == "learner"
+            && prompt_kind == "message"
+            && *prompt_key == super::native_capture::event_key(turn) =>
+        {
+            Some(reply.clone())
+        }
+        _ => None,
+    })
+}
+
+/// Length and ending of one tutor reply.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ReplyCheck {
+    words: usize,
+    ends_with_task: bool,
+}
+
+impl ReplyCheck {
+    /// Words are whitespace-separated tokens with at least one letter or digit.
+    fn of(reply: &str) -> Self {
+        Self {
+            words: reply
+                .split_whitespace()
+                .filter(|token| token.chars().any(char::is_alphanumeric))
+                .count(),
+            ends_with_task: last_block(reply).into_iter().any(sets_work),
+        }
+    }
+
+    fn feedback(self) -> Option<String> {
+        let faults: Vec<String> = [
+            (self.words > WORD_LIMIT).then(|| format!("{} words", self.words)),
+            (!self.ends_with_task).then(|| "no task".to_owned()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        (!faults.is_empty()).then(|| format!(" Previous reply: {}.", faults.join(", ")))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Line {
+    Blank,
+    Text,
+    ListItem,
+    /// Code, display maths, a table row or a rule: material a task points at.
+    Material,
+}
+
+/// The lines the task rule reads. Material at the end is set aside, then the
+/// last paragraph is taken, and a paragraph made only of list items also
+/// takes the paragraph before it, so answer options keep their question.
+fn last_block(reply: &str) -> Vec<&str> {
+    let lines = classify(reply);
+    let mut end = lines.len();
+    while end > 0 && matches!(lines[end - 1].0, Line::Blank | Line::Material) {
+        end -= 1;
+    }
+    let mut start = paragraph_start(&lines, end);
+    while start < end
+        && lines[start..end]
+            .iter()
+            .all(|(kind, _)| matches!(kind, Line::ListItem | Line::Blank))
+    {
+        let mut before = start;
+        while before > 0 && lines[before - 1].0 == Line::Blank {
+            before -= 1;
+        }
+        let earlier = paragraph_start(&lines, before);
+        if earlier == before {
+            break;
+        }
+        start = earlier;
+    }
+    lines[start..end].iter().map(|(_, text)| *text).collect()
+}
+
+fn paragraph_start(lines: &[(Line, &str)], end: usize) -> usize {
+    let mut start = end;
+    while start > 0 && matches!(lines[start - 1].0, Line::Text | Line::ListItem) {
+        start -= 1;
+    }
+    start
+}
+
+fn classify(reply: &str) -> Vec<(Line, &str)> {
+    let mut open_block: Option<&str> = None;
+    reply
+        .lines()
+        .map(|line| {
+            let line = line.trim();
+            if let Some(close) = open_block {
+                if line.starts_with(close) || line.ends_with(close) {
+                    open_block = None;
+                }
+                return (Line::Material, line);
+            }
+            for (open, close) in [("```", "```"), ("~~~", "~~~"), ("$$", "$$"), ("\\[", "\\]")] {
+                if let Some(rest) = line.strip_prefix(open) {
+                    if !rest.ends_with(close) {
+                        open_block = Some(close);
+                    }
+                    return (Line::Material, line);
+                }
+            }
+            if line.is_empty() {
+                (Line::Blank, line)
+            } else if line.starts_with('|') || line.chars().all(|c| "-*_=".contains(c)) {
+                (Line::Material, line)
+            } else if let Some(item) = list_item(line) {
+                (Line::ListItem, item)
+            } else {
+                (Line::Text, line)
+            }
+        })
+        .collect()
+}
+
+/// The text of a list item without its marker: `-`, `*`, `+`, `1.`, `1)`,
+/// `a)` or `(a)`.
+fn list_item(line: &str) -> Option<&str> {
+    if let Some(rest) = line.strip_prefix(['-', '*', '+']) {
+        return rest.starts_with(' ').then(|| rest.trim_start());
+    }
+    let marker = line.strip_prefix('(').unwrap_or(line);
+    let label_end = marker.find(|c: char| !c.is_ascii_alphanumeric())?;
+    let (label, rest) = marker.split_at(label_end);
+    let short = label.len() == 1 || label.bytes().all(|b| b.is_ascii_digit());
+    let rest = rest.strip_prefix(['.', ')'])?;
+    (!label.is_empty() && short && rest.starts_with(' ')).then(|| rest.trim_start())
+}
+
+/// Whether a line asks the learner a question or tells them to do something.
+fn sets_work(line: &str) -> bool {
+    let plain: String = line
+        .chars()
+        .filter(|c| !matches!(c, '*' | '_' | '`' | '#' | '>'))
+        .collect::<String>()
+        .to_lowercase();
+    plain
+        .split_inclusive(['.', '!', '?', ':', ';'])
+        .any(|sentence| asks(sentence) || instructs(sentence))
+}
+
+fn asks(sentence: &str) -> bool {
+    let start = sentence.trim_start_matches(|c: char| !c.is_alphanumeric());
+    sentence.trim_end().ends_with('?')
+        && !CHECK_INS
+            .iter()
+            .any(|check_in| starts_with_phrase(start, check_in))
+}
+
+fn instructs(sentence: &str) -> bool {
+    let mut rest = sentence.trim_start_matches(|c: char| !c.is_alphanumeric());
+    while let Some(opener) = OPENERS
+        .iter()
+        .find(|opener| starts_with_phrase(rest, opener))
+    {
+        rest = rest[opener.len()..].trim_start_matches(|c: char| !c.is_alphanumeric());
+    }
+    TASK_STARTS
+        .iter()
+        .any(|start| starts_with_phrase(rest, start))
+}
+
+fn starts_with_phrase(text: &str, phrase: &str) -> bool {
+    text.strip_prefix(phrase)
+        .is_some_and(|rest| !rest.starts_with(char::is_alphanumeric))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(reply: &str) -> bool {
+        ReplyCheck::of(reply).ends_with_task
+    }
+
+    #[test]
+    fn a_question_or_an_instruction_at_the_end_is_a_task() {
+        for reply in [
+            "The root is 3.\n\nWhat is the other root?",
+            "So b is fixed.\n\n**Your turn:** solve 2x + 3 = 11.",
+            "Good.\n\nNow try the case where n is odd.",
+            "First, find the mean. Then compare it with the median.",
+            "Here is the idea. Give it a go and tell me what you get.",
+            "Your turn!",
+            "Let's try one: 3/4 of 12.",
+            "Which statement is true?\n\nA) b varies\nB) b is fixed\nC) b is x",
+            "Which statement is true?\n\n- b varies\n\n- b is fixed",
+            "Predict the output:\n\n```python\nprint(len('abc'))\n```",
+            "Solve for x:\n\n$$\nx^2 - 5x + 6 = 0\n$$",
+            "Try these:\n\n1. 3 + 4\n2. 5 + 6",
+            "> **Task.** Differentiate $x^3$.",
+            "Can you find the root of $x - 4$?",
+            "Ok, what is 3 + 4?",
+        ] {
+            assert!(task(reply), "{reply}");
+        }
+    }
+
+    #[test]
+    fn a_summary_a_check_in_or_bare_material_at_the_end_is_not_a_task() {
+        for reply in [
+            "Why does this work? Because the identity cancels the root.\n\nThat is the key idea.",
+            "The coefficient b scales x. Does that make sense?",
+            "Any questions?",
+            "Would you like another example?",
+            "That covers it. Ready?",
+            "",
+            "```python\nprint(1)\n```",
+            "Key points:\n\n- b is fixed\n- x varies",
+            "| x | y |\n|---|---|\n| 1 | 2 |",
+        ] {
+            assert!(!task(reply), "{reply}");
+        }
+    }
+
+    /// Each known miss is pinned so a change to the rule shows up here.
+    #[test]
+    fn known_misses_stay_as_documented() {
+        for (reply, judged) in [
+            ("Solve 2x = 4. Good luck!\n\nSee you soon.", false),
+            ("When you're ready, compute the variance.", false),
+            ("Here's one for you:\n\n$$\\int x e^x\\,dx$$", false),
+            (
+                "Why does this work? Because the identity cancels the root.",
+                true,
+            ),
+            ("Work is force times distance.", true),
+        ] {
+            assert_eq!(task(reply), judged, "{reply}");
+        }
+    }
+
+    #[test]
+    fn words_are_tokens_with_a_letter_or_digit() {
+        assert_eq!(ReplyCheck::of("Solve $x + 3 = 5$ - quickly!").words, 5);
+        assert_eq!(ReplyCheck::of("| a | b |\n|---|---|").words, 2);
+        assert_eq!(ReplyCheck::of("").words, 0);
+    }
+
+    #[test]
+    fn feedback_names_each_fault_and_nothing_when_the_rule_held() {
+        let words = |n: usize| "word ".repeat(n);
+        let feedback = |reply: String| ReplyCheck::of(&reply).feedback();
+        assert_eq!(feedback(format!("{}What next?", words(10))), None);
+        assert_eq!(feedback(format!("{}Why?", words(199))), None);
+        assert_eq!(
+            feedback(format!("{}Why?", words(200))).as_deref(),
+            Some(" Previous reply: 201 words.")
+        );
+        assert_eq!(
+            feedback("Done.".into()).as_deref(),
+            Some(" Previous reply: no task.")
+        );
+        assert_eq!(
+            feedback(words(850)).as_deref(),
+            Some(" Previous reply: 850 words, no task.")
+        );
+    }
+}
