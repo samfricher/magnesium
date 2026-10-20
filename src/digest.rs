@@ -328,7 +328,6 @@ fn plan_digest(
     })
 }
 
-/// A gap-log row's Status. A row is fixed only once it is closed, after three spaced passes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GapStatus {
     Open,
@@ -357,8 +356,6 @@ struct Gap<'a> {
     next_redo: Option<NaiveDate>,
 }
 
-/// The rows of a Gaps table that have a date and a known status. An old log
-/// has a `Cold-redo date` column instead of `Next redo`, so nothing in it is due.
 fn logged_gaps(table: &Table) -> Vec<Gap<'_>> {
     table
         .rows
@@ -521,7 +518,6 @@ mod tests {
             | 6 | 2026-10-14 | Diagnostic | Q6 | | | 3 of 3 |\n";
         let today = NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
-        // "3 of 3" is not a status, so row 6 is left out.
         assert_eq!(value["open_gaps"], 4);
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
@@ -540,7 +536,6 @@ mod tests {
         let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
         assert_eq!(value["open_gaps"], 5);
         assert_eq!(value["redos_due"], 3);
-        // The most overdue row comes first; of two rows due the same day, the earlier row.
         assert_eq!(
             value["first_due"],
             json!({"paper": "Diagnostic", "question": "Q4"})

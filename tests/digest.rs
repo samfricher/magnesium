@@ -71,7 +71,6 @@ fn write_plan(root: &Path) {
         "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | 2999-01-02 18:00 |\n\n## 6. Blocks\n\n| # | Block | Purpose |\n|---|---|---|\n| 1 | Diagnostic | find gaps |\n| 2 | Paper1-Easy | ramp |\n",
     )
     .unwrap();
-    // Dates in 2000 are always due and dates in 2999 never are, whatever the clock says.
     fs::write(
         dir.join("gap-log.md"),
         "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
