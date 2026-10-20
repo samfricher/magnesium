@@ -1,16 +1,13 @@
-//! The teaching reminder a Claude Code tutor reads on each lesson turn, and
-//! the check of its previous reply that the reminder reports.
-
 use rusqlite::{Connection, params};
 
 use crate::learner::HostContext;
 
-/// A teaching reply should not run past this many words.
 const WORD_LIMIT: usize = 200;
 
-pub(crate) const REMINDER: &str = " Teaching reply: one idea, under 200 words, end with one task.";
+pub(crate) fn reminder() -> String {
+    format!(" Teaching reply: one idea, under {WORD_LIMIT} words, end with one task.")
+}
 
-/// Phrases that start a sentence giving the learner something to do.
 const TASK_STARTS: &[&str] = &[
     "answer",
     "apply",
@@ -87,13 +84,11 @@ const TASK_STARTS: &[&str] = &[
     "your turn",
 ];
 
-/// Words skipped before a task start, as in "Now try" or "First, find".
 const OPENERS: &[&str] = &[
     "and", "finally", "first", "let's", "let’s", "next", "now", "ok", "okay", "please", "so",
     "then",
 ];
 
-/// Starts of questions that check in or offer more, rather than set work.
 const CHECK_INS: &[&str] = &[
     "any questions",
     "clear?",
@@ -122,24 +117,7 @@ const CHECK_INS: &[&str] = &[
     "would you like",
 ];
 
-/// What the tutor's reply to the previous prompt got wrong, as a notice
-/// clause such as " Previous reply: 850 words, no task.". `None` when the
-/// reply kept the rule, when there is no paired reply to judge, or when the
-/// store cannot be read: the reminder never fails a hook.
 pub(crate) fn feedback(
-    conn: &Connection,
-    host: &HostContext,
-    current_event: &str,
-) -> Option<String> {
-    let reply = previous_reply(conn, host, current_event).ok().flatten()?;
-    ReplyCheck::of(&reply).feedback()
-}
-
-/// The previous reply is judged only when the two latest host-observed rows
-/// before this turn's prompt are a tutor delivery and the prompt it answered.
-/// A missed Stop hook, or turns that were recorded nowhere, leave some other
-/// row there, so an older reply is never judged as the previous one.
-fn previous_reply(
     conn: &Connection,
     host: &HostContext,
     current_event: &str,
@@ -147,36 +125,42 @@ fn previous_reply(
     let mut statement = conn.prepare(
         "SELECT speaker,kind,external_event_key,text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND event_no<(SELECT event_no FROM learning_events WHERE event_id=?3) ORDER BY event_no DESC LIMIT 2",
     )?;
-    let rows = statement
+    let latest = statement
         .query_map(
             params![host.host_kind, host.host_thread_id, current_event],
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
+                Ok(Recorded {
+                    speaker: row.get(0)?,
+                    kind: row.get(1)?,
+                    key: row.get(2)?,
+                    text: row.get(3)?,
+                })
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(match rows.as_slice() {
-        [
-            (speaker, kind, turn, reply),
-            (prompt_speaker, prompt_kind, prompt_key, _),
-        ] if speaker == "tutor"
-            && kind == "delivery"
-            && prompt_speaker == "learner"
-            && prompt_kind == "message"
-            && *prompt_key == super::native_capture::event_key(turn) =>
-        {
-            Some(reply.clone())
-        }
+    Ok(match latest.as_slice() {
+        [reply, prompt] if reply.answers(prompt) => ReplyCheck::of(&reply.text).feedback(),
         _ => None,
     })
 }
 
-/// Length and ending of one tutor reply.
+struct Recorded {
+    speaker: String,
+    kind: String,
+    key: String,
+    text: String,
+}
+
+impl Recorded {
+    fn answers(&self, prompt: &Recorded) -> bool {
+        self.speaker == "tutor"
+            && self.kind == "delivery"
+            && prompt.speaker == "learner"
+            && prompt.kind == "message"
+            && prompt.key == super::native_capture::event_key(&self.key)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReplyCheck {
     words: usize,
@@ -184,7 +168,6 @@ struct ReplyCheck {
 }
 
 impl ReplyCheck {
-    /// Words are whitespace-separated tokens with at least one letter or digit.
     fn of(reply: &str) -> Self {
         Self {
             words: reply
@@ -197,7 +180,7 @@ impl ReplyCheck {
 
     fn feedback(self) -> Option<String> {
         let faults: Vec<String> = [
-            (self.words > WORD_LIMIT).then(|| format!("{} words", self.words)),
+            (self.words >= WORD_LIMIT).then(|| format!("{} words", self.words)),
             (!self.ends_with_task).then(|| "no task".to_owned()),
         ]
         .into_iter()
@@ -212,20 +195,24 @@ enum Line {
     Blank,
     Text,
     ListItem,
-    /// Code, display maths, a table row or a rule: material a task points at.
     Material,
 }
 
-/// The lines the task rule reads. Material at the end is set aside, then the
-/// last paragraph is taken, and a paragraph made only of list items also
-/// takes the paragraph before it, so answer options keep their question.
 fn last_block(reply: &str) -> Vec<&str> {
     let lines = classify(reply);
     let mut end = lines.len();
     while end > 0 && matches!(lines[end - 1].0, Line::Blank | Line::Material) {
         end -= 1;
     }
-    let mut start = paragraph_start(&lines, end);
+    let start = with_the_question_of_trailing_options(&lines, paragraph_start(&lines, end), end);
+    lines[start..end].iter().map(|(_, text)| *text).collect()
+}
+
+fn with_the_question_of_trailing_options(
+    lines: &[(Line, &str)],
+    mut start: usize,
+    end: usize,
+) -> usize {
     while start < end
         && lines[start..end]
             .iter()
@@ -235,13 +222,13 @@ fn last_block(reply: &str) -> Vec<&str> {
         while before > 0 && lines[before - 1].0 == Line::Blank {
             before -= 1;
         }
-        let earlier = paragraph_start(&lines, before);
+        let earlier = paragraph_start(lines, before);
         if earlier == before {
             break;
         }
         start = earlier;
     }
-    lines[start..end].iter().map(|(_, text)| *text).collect()
+    start
 }
 
 fn paragraph_start(lines: &[(Line, &str)], end: usize) -> usize {
@@ -276,7 +263,7 @@ fn classify(reply: &str) -> Vec<(Line, &str)> {
                 (Line::Blank, line)
             } else if line.starts_with('|') || line.chars().all(|c| "-*_=".contains(c)) {
                 (Line::Material, line)
-            } else if let Some(item) = list_item(line) {
+            } else if let Some(item) = strip_list_marker(line) {
                 (Line::ListItem, item)
             } else {
                 (Line::Text, line)
@@ -285,9 +272,7 @@ fn classify(reply: &str) -> Vec<(Line, &str)> {
         .collect()
 }
 
-/// The text of a list item without its marker: `-`, `*`, `+`, `1.`, `1)`,
-/// `a)` or `(a)`.
-fn list_item(line: &str) -> Option<&str> {
+fn strip_list_marker(line: &str) -> Option<&str> {
     if let Some(rest) = line.strip_prefix(['-', '*', '+']) {
         return rest.starts_with(' ').then(|| rest.trim_start());
     }
@@ -299,7 +284,6 @@ fn list_item(line: &str) -> Option<&str> {
     (!label.is_empty() && short && rest.starts_with(' ')).then(|| rest.trim_start())
 }
 
-/// Whether a line asks the learner a question or tells them to do something.
 fn sets_work(line: &str) -> bool {
     let plain: String = line
         .chars()
@@ -385,7 +369,6 @@ mod tests {
         }
     }
 
-    /// Each known miss is pinned so a change to the rule shows up here.
     #[test]
     fn known_misses_stay_as_documented() {
         for (reply, judged) in [
@@ -414,10 +397,10 @@ mod tests {
         let words = |n: usize| "word ".repeat(n);
         let feedback = |reply: String| ReplyCheck::of(&reply).feedback();
         assert_eq!(feedback(format!("{}What next?", words(10))), None);
-        assert_eq!(feedback(format!("{}Why?", words(199))), None);
+        assert_eq!(feedback(format!("{}Why?", words(198))), None);
         assert_eq!(
-            feedback(format!("{}Why?", words(200))).as_deref(),
-            Some(" Previous reply: 201 words.")
+            feedback(format!("{}Why?", words(199))).as_deref(),
+            Some(" Previous reply: 200 words.")
         );
         assert_eq!(
             feedback("Done.".into()).as_deref(),

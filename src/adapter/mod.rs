@@ -370,32 +370,31 @@ pub(crate) fn host_session_start(
     }
     Ok(Some(notice))
 }
-/// The hook a notice answers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NoticeHook {
     SessionStart,
     UserPromptSubmit,
 }
 impl NoticeHook {
-    /// The `additionalContextLimit` that the Claude Code plugin's hooks.json
-    /// gives this hook.
-    const fn limit(self) -> usize {
+    const fn additional_context_limit(self) -> usize {
         match self {
             Self::SessionStart => 1024,
             Self::UserPromptSubmit => 512,
         }
     }
 }
-/// Clauses after a notice's state line, declared in the order they give way
-/// when the notice is over its hook's limit. `Required` clauses never do.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Clause {
-    /// SessionStart repeats it on resume and compaction, when it applies.
+    Required,
     ReloadAfterCompaction,
     TeachingReminder,
     ReplyFeedback,
-    Required,
 }
+const GIVE_WAY_ORDER: [Clause; 3] = [
+    Clause::ReloadAfterCompaction,
+    Clause::TeachingReminder,
+    Clause::ReplyFeedback,
+];
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
@@ -410,9 +409,6 @@ fn hook_notice(
     );
     let claude = host.host_kind == "claude";
     let mut clauses: Vec<(Clause, Cow<'static, str>)> = Vec::new();
-    // Plain next-step guidance for Claude Code, whose tutor can lose the
-    // Magnesium skill's instructions to compaction and otherwise sees only
-    // state fields. Other hosts keep their established notices.
     match (claude, active, recording) {
         (true, true, true) => {
             clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
@@ -428,24 +424,21 @@ fn hook_notice(
         ));
     }
     if claude && active && hook == NoticeHook::UserPromptSubmit {
-        clauses.push((Clause::TeachingReminder, reply_check::REMINDER.into()));
-        if let Some(feedback) = event.and_then(|e| reply_check::feedback(&store.conn, host, e)) {
+        clauses.push((Clause::TeachingReminder, reply_check::reminder().into()));
+        if let Some(feedback) =
+            event.and_then(|e| reply_check::feedback(&store.conn, host, e).ok().flatten())
+        {
             clauses.push((Clause::ReplyFeedback, feedback.into()));
         }
     }
-    Ok(fit(state, clauses, hook.limit()))
+    Ok(fit(state, clauses, hook.additional_context_limit()))
 }
-/// The state line, which carries the current event id, and the clauses in
-/// order, after whole clauses give way in `Clause` order until the text fits.
 fn fit(state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: usize) -> String {
-    while state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>() > limit {
-        let Some(index) = (0..clauses.len())
-            .filter(|&index| clauses[index].0 != Clause::Required)
-            .min_by_key(|&index| clauses[index].0)
-        else {
+    for droppable in GIVE_WAY_ORDER {
+        if state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>() <= limit {
             break;
-        };
-        clauses.remove(index);
+        }
+        clauses.retain(|(clause, _)| *clause != droppable);
     }
     clauses
         .iter()
@@ -745,7 +738,7 @@ mod tests {
     fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
         let (root, store, host) = claude_lesson();
         let first = claude_prompt(&root, &host, "one");
-        assert!(first.contains(reply_check::REMINDER), "{first}");
+        assert!(first.contains(&reply_check::reminder()), "{first}");
         assert!(first.contains(CLAUDE_RELOAD_GUIDANCE), "{first}");
         assert!(!first.contains("Previous reply"), "{first}");
 
@@ -784,6 +777,41 @@ mod tests {
         assert!(
             !after_good_reply.contains("Previous reply"),
             "{after_good_reply}"
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_feedback_skips_a_reply_whose_prompt_was_not_recorded() {
+        let (root, store, host) = claude_lesson();
+        let context = host_context(&host);
+        let control = |request: &str, action: &str| {
+            let event = crate::learner::RawEvent {
+                external_event_key: request.into(),
+                speaker: crate::learner::Speaker::Learner,
+                kind: "message".into(),
+                text: action.into(),
+                metadata: Some(crate::learner::EventMetadata {
+                    origin: Some("model_reported".into()),
+                    ..Default::default()
+                }),
+                occurred_at_ms: None,
+            };
+            store.control(&context, request, action, &event).unwrap();
+        };
+        claude_prompt(&root, &host, "one");
+        control("off", "recording_off");
+        claude_stop(&root, &host, "one", &"unrecorded ".repeat(300)).unwrap();
+        claude_prompt(&root, &host, "two");
+        control("on", "recording_on");
+        claude_stop(&root, &host, "two", &"recorded ".repeat(300)).unwrap();
+        let after_gap = claude_prompt(&root, &host, "three");
+        assert!(!after_gap.contains("Previous reply"), "{after_gap}");
+        claude_stop(&root, &host, "three", &"recorded ".repeat(300)).unwrap();
+        let resumed = claude_prompt(&root, &host, "four");
+        assert!(
+            resumed.contains(" Previous reply: 300 words, no task."),
+            "{resumed}"
         );
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
@@ -847,7 +875,7 @@ mod tests {
         ] {
             assert_eq!(
                 hooks["hooks"][event][0]["hooks"][0]["additionalContextLimit"],
-                hook.limit(),
+                hook.additional_context_limit(),
                 "{event}"
             );
         }
