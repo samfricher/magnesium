@@ -29,7 +29,7 @@ Find the newest release tag with either command:
 - With the GitHub CLI: `gh release view --repo samfricher/magnesium --json tagName -q .tagName`
 - With Git alone: `git tag --sort=-v:refname | head -1`. Run it in a copy of the repository, after `git fetch --tags`.
 
-If the GitHub CLI is missing, use the Git command. Do not install the GitHub CLI for this step.
+If the GitHub CLI is missing or fails, use the Git command. Do not install the GitHub CLI for this step.
 
 From the repository root, check out the newest release:
 
