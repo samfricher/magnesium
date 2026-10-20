@@ -64,6 +64,19 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     ] {
         assert!(stdout.contains(step), "update omitted `{step}`: {stdout}");
     }
+    let positions: Vec<usize> = [
+        "git fetch --tags",
+        "git tag --sort=-v:refname | head -1",
+        "git checkout <newest-tag>",
+        "cargo build --locked --release",
+    ]
+    .iter()
+    .filter_map(|step| stdout.find(step))
+    .collect();
+    assert!(
+        positions.is_sorted(),
+        "update steps are out of run order: {stdout}"
+    );
     assert!(
         !stdout.contains("git pull"),
         "update must check out a release tag, not pull main: {stdout}"
