@@ -280,21 +280,19 @@ fn plan_digest(
         .filter_map(|row| plan_blocks.cell(row, "Block"))
         .filter(|block| !is_placeholder(block))
         .collect::<Vec<_>>();
-    let gap_rows = Table::parse(section(gaps, "Gaps"));
-    let open_gaps = gap_rows
-        .rows
+    let gap_table = Table::parse(section(gaps, "Gaps"));
+    let open_gaps = logged_gaps(&gap_table)
+        .into_iter()
+        .filter(|gap| gap.status != GapStatus::Closed)
+        .collect::<Vec<_>>();
+    let due = open_gaps
         .iter()
-        .filter(|row| {
-            gap_rows
-                .cell(row, "Date")
-                .is_some_and(|d| !is_placeholder(d))
-        })
-        .filter(|row| {
-            gap_rows
-                .cell(row, "Status")
-                .is_some_and(|s| s.eq_ignore_ascii_case("open"))
-        })
-        .count();
+        .filter(|gap| gap.next_redo.is_some_and(|date| date <= today))
+        .collect::<Vec<_>>();
+    let first_due = due
+        .iter()
+        .min_by_key(|gap| gap.next_redo)
+        .map(|gap| json!({"paper": gap.paper, "question": gap.question}));
     let score_rows = Table::parse(section(gaps, "Scores"));
     let scores = score_rows
         .rows
@@ -322,10 +320,60 @@ fn plan_digest(
         "date": date.map(|d| d.to_string()),
         "days_left": date.map(|d| (d - today).num_days()),
         "blocks": blocks,
-        "open_gaps": open_gaps,
+        "open_gaps": open_gaps.len(),
+        "redos_due": due.len(),
+        "first_due": first_due,
         "scores": scores,
         "session": session,
     })
+}
+
+/// A gap-log row's Status. A row is fixed only once it is closed, after three spaced passes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GapStatus {
+    Open,
+    OneOfThree,
+    TwoOfThree,
+    Closed,
+}
+
+impl GapStatus {
+    fn parse(cell: &str) -> Option<Self> {
+        let words = cell.split_whitespace().collect::<Vec<_>>().join(" ");
+        Some(match words.to_ascii_lowercase().as_str() {
+            "open" => Self::Open,
+            "1 of 3" => Self::OneOfThree,
+            "2 of 3" => Self::TwoOfThree,
+            "closed" => Self::Closed,
+            _ => return None,
+        })
+    }
+}
+
+struct Gap<'a> {
+    paper: Option<&'a str>,
+    question: Option<&'a str>,
+    status: GapStatus,
+    next_redo: Option<NaiveDate>,
+}
+
+/// The rows of a Gaps table that have a date and a known status. An old log
+/// has a `Cold-redo date` column instead of `Next redo`, so nothing in it is due.
+fn logged_gaps(table: &Table) -> Vec<Gap<'_>> {
+    table
+        .rows
+        .iter()
+        .filter_map(|row| {
+            let cell = |name| table.cell(row, name).filter(|c| !is_placeholder(c));
+            cell("Date")?;
+            Some(Gap {
+                paper: cell("Paper"),
+                question: cell("Q"),
+                status: cell("Status").and_then(GapStatus::parse)?,
+                next_redo: cell("Next redo").and_then(first_date),
+            })
+        })
+        .collect()
 }
 
 /// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
@@ -457,7 +505,59 @@ mod tests {
         assert_eq!(value["date"], Value::Null);
         assert_eq!(value["blocks"], json!([]));
         assert_eq!(value["open_gaps"], 0);
+        assert_eq!(value["redos_due"], 0);
+        assert_eq!(value["first_due"], Value::Null);
         assert_eq!(value["scores"], json!([]));
+    }
+
+    #[test]
+    fn a_gap_stays_open_until_its_status_is_closed() {
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | | | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | 2026-10-15 pass | | 1 of 3 |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q3 | 2026-10-15 pass, 2026-10-18 pass | | 2 of 3 |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q4 | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
+            | 5 | 2026-10-14 | Diagnostic | Q5 | | | 2 OF  3 |\n\
+            | 6 | 2026-10-14 | Diagnostic | Q6 | | | 3 of 3 |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        // "3 of 3" is not a status, so row 6 is left out.
+        assert_eq!(value["open_gaps"], 4);
+        assert_eq!(value["redos_due"], 0);
+        assert_eq!(value["first_due"], Value::Null);
+    }
+
+    #[test]
+    fn redos_due_counts_unfixed_rows_whose_next_redo_has_come() {
+        let gaps = "## Gaps\n\n| Status | # | Q | Paper | NEXT REDO | Date |\n|---|---|---|---|---|---|\n\
+            | open | 1 | Q2 | Diagnostic | 2026-10-21 | 2026-10-14 |\n\
+            | 1 of 3 | 2 | Q4 | Diagnostic | 2026-10-18 | 2026-10-14 |\n\
+            | 2 of 3 | 3 | Q1 | Paper1-Easy | 2026-10-20 (Tue) | 2026-10-16 |\n\
+            | closed | 4 | Q5 | Diagnostic | 2026-10-01 | 2026-10-14 |\n\
+            | open | 5 | Q6 | Diagnostic | | 2026-10-14 |\n\
+            | open | 6 | Q2 | MockA | 2026-10-18 | 2026-10-17 |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        assert_eq!(value["open_gaps"], 5);
+        assert_eq!(value["redos_due"], 3);
+        // The most overdue row comes first; of two rows due the same day, the earlier row.
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q4"})
+        );
+    }
+
+    #[test]
+    fn an_old_gap_log_with_a_cold_redo_date_has_open_gaps_and_nothing_due() {
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q2 | km | sign error | A | tighten | 2026-10-15 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q3 | vmax | no units | N | tighten | 2026-10-15 | closed |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q4 | lb-plot | axes swapped | K | repair | 2026-10-16 | open |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        assert_eq!(value["open_gaps"], 2);
+        assert_eq!(value["redos_due"], 0);
+        assert_eq!(value["first_due"], Value::Null);
     }
 
     #[test]
