@@ -151,13 +151,15 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 }
 
 #[test]
-fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem() {
+fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let rules = [
-        "The worked example is never the question they must answer or a later paper question.",
         "then give a changed version with the same structure and new details to solve alone.",
-        "Keep its times-met count current.",
+        "The next time they are stuck on that kind of problem, give a partly worked example",
+        "No step recorded means the full worked example comes next.",
+        "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
+        "Keep any example step in its state_text.",
     ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
@@ -172,21 +174,28 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
                 .unwrap()
                 .to_owned()
         };
-        let teach = served("teach_and_practice");
-        for required in [
-            "| Knows how to start | Let the learner try first |",
-            "| New type of question, no starting move | Work a similar problem",
-            "| Same type, second time, no starting move | Give a partly worked example",
-            "| Same type, third time or later, no starting move | Give the problem only",
-            "The state_text of the learner's memory for this type of question holds its times-met count",
-        ] {
-            assert!(teach.contains(required), "{host}: {required}");
-        }
         for stage in ["teach_and_practice", "papers_loop"] {
             let text = served(stage);
             for rule in rules {
                 assert!(text.contains(rule), "{host}/{stage}: {rule}");
             }
+        }
+        let teach = served("teach_and_practice");
+        for required in [
+            "| Knows how to start | Let the learner try first |",
+            "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
+            "| No starting move, \"example step: full\" recorded | Give a partly worked example",
+            "| No starting move, \"example step: partly worked\" recorded | Give the problem only",
+            "When rows conflict, take them in this order: an explicit request",
+        ] {
+            assert!(teach.contains(required), "{host}: {required}");
+        }
+        let papers = served("papers_loop");
+        for required in [
+            "the tag's next example step from the teaching policy",
+            "\"conditional: needs TAG, which is open; example step: full\"",
+        ] {
+            assert!(papers.contains(required), "{host}: {required}");
         }
     }
 }
@@ -195,7 +204,10 @@ fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem()
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule = "When the learner says they are confused, ask one question to find the cause and explain nothing yet.";
+    let rules = [
+        "When the learner says they are confused, ask one question to find the cause and explain nothing yet.",
+        "When the learner says they are confused, ask about the cause before you choose.",
+    ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
@@ -219,7 +231,10 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
             "papers",
             "papers_loop",
         ] {
-            assert!(served(stage).contains(rule), "{host}/{stage}");
+            let text = served(stage);
+            for rule in rules {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
         }
         assert!(
             served("teach_and_practice")
@@ -227,9 +242,13 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
             "{host}"
         );
         assert!(
-            served("interpret_and_repair").contains(
-                "When the learner says they are confused, ask one question to find the cause"
-            ),
+            served("interpret_and_repair")
+                .contains("If confusion repeats after you explain from the learner's answer"),
+            "{host}"
+        );
+        assert!(
+            served("orient_and_probe")
+                .contains("explain now, unless the learner says they are confused."),
             "{host}"
         );
     }

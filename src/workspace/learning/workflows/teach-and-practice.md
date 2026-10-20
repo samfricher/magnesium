@@ -15,18 +15,18 @@ Choose who performs the next operation:
 | Learner's current position | Next move |
 |---|---|
 | Knows how to start | Let the learner try first |
-| New type of question, no starting move | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
-| Same type, second time, no starting move | Give a partly worked example whose missing steps the learner fills in, then a full problem |
-| Same type, third time or later, no starting move | Give the problem only, with no example |
+| No starting move, no example step recorded for this kind of problem | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
+| No starting move, "example step: full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
+| No starting move, "example step: partly worked" recorded | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
 | Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence. An explicit request for an explanation or a full solution wins over every other row, and so does the teaching policy's rewrite after the same task form fails twice.
+This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the other rows.
 
-The state_text of the learner's memory for this type of question holds its times-met count, the number of times the learner has met it. In the papers loop, that is the tag memory. One task on the type is one time, and no memory yet means the first time. After the learner's attempt, revise that state_text with the count and the last help, such as "met twice, last help a partly worked example". The session checkpoint covers one session, so do not count from it.
+The teaching policy says where the example step lives. A meeting where the learner knows how to start changes no step. Revise the state_text when you interpret the learner's attempt after a step you gave, such as "example step: full; solved the changed version alone". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 
