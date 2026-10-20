@@ -37,6 +37,8 @@ Ordinary project work doesn't start a lesson. Ask explicitly:
 
 Give the tutor your attempts, questions and constraints. It can use authorized local files and preserve a checkpoint. You don't need to maintain memories yourself.
 
+If a new kind of question leaves you without a way to start, the tutor works through a similar problem, then gives you a changed version to solve yourself. Each time that kind of question comes back, the tutor shows fewer worked steps. If you say you are confused, it first asks one question about how you see the problem, and uses your answer to choose what to explain.
+
 If a memory is wrong, say so: “That wasn't a conceptual gap; I misread the question. Please correct the memory.” The tutor can inspect your original work and revise its interpretation while keeping the history.
 
 ## Practise with timed papers
