@@ -14,13 +14,18 @@ Choose who performs the next operation:
 
 | Learner's current position | Next move |
 |---|---|
-| No meaningful starting move | Explain and work a small example |
+| Knows how to start | Let the learner try first |
+| New type of question, no starting move | Work a similar problem with the same structure and different details, then give a changed version to solve alone |
+| Same type, second time, no starting move | Give a partly worked example whose missing steps the learner fills in, then a full problem |
+| Same type, third time or later | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
 
 This is a branching menu, not a compulsory sequence.
+
+Find how many times the learner has met this type of question in the state_text of their memory for it. In the papers loop, that is the tag memory. After the learner's attempt, revise that state_text with the count and the help given, such as "met twice: a worked similar problem, then a partly worked one". The session checkpoint covers one session, so do not count from it.
 
 ## Construct assessable material before presenting it
 
@@ -39,6 +44,12 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 **Teaching:** “We want the expression inside the root to become a known square. Dividing by $a^2$ exposes $1-(x/a)^2$. The identity $1-\sin^2\theta=\cos^2\theta$ suggests $x=a\sin\theta$. Choose $\theta\in[-\pi/2,\pi/2]$, so the root is $a\cos\theta$, not an unexplained removal of an absolute value. Also transform $dx=a\cos\theta\,d\theta$.”
 
 **Learner-owned next step:** on a fresh expression, choose and justify a transformation before seeing its name. If you supply the identity or substitution, qualify that cue and test the omitted decision later. Do not make remembering a useful formula a failure; reconstruction is a backup and a test of the connections.
+
+## Example: a similar problem, then a changed version
+
+**Worked example:** "A fair die is rolled. What is the expected value? Each face has probability $1/6$, so $E=(1+2+3+4+5+6)/6=3.5$."
+
+**Learner's problem:** "A die is weighted so that 6 comes up half the time, and the other five faces equally often. What is the expected value?" It keeps $E=\sum x\,P(x)$ and changes the probabilities, so the answer shows understanding, not copied steps.
 
 ## Finish the turn
 

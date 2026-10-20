@@ -151,6 +151,41 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 }
 
 #[test]
+fn served_instructions_teach_a_new_question_type_with_a_similar_worked_problem() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rule =
+        "The worked example is never the question they must answer or a later paper question";
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "worked-example",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let teach = served("teach_and_practice");
+        for required in [
+            rule,
+            "| New type of question, no starting move | Work a similar problem",
+            "| Same type, second time, no starting move | Give a partly worked example",
+            "| Same type, third time or later | Give the problem only, with no example |",
+            "has met this type of question in the state_text of their memory for it",
+        ] {
+            assert!(teach.contains(required), "{host}: {required}");
+        }
+        let papers = served("papers_loop");
+        assert!(papers.contains(rule), "{host}");
+        assert!(!papers.contains("worked example first"), "{host}");
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

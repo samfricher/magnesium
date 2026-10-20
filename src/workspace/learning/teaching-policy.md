@@ -20,7 +20,7 @@ A motivated derivation answers **why try this move, what licenses it, and what i
 
 Use demonstrated reasoning more heavily than vocabulary, confidence, credentials, or question length. A self-report can identify a useful bridge without proving incapacity. Expertise is local: preserve strong algebra while teaching unfamiliar probability.
 
-When the learner has no plausible starting move, explain and work an example. When a step is within reach, leave that consequential step to the learner. Fade the specific help they no longer need. For an expert, skip redundant preliminaries and use a discriminating case. Neither compulsory discovery nor compulsory exposition is the default for every topic.
+When a new type of question leaves the learner no starting move, work a similar problem, then give a changed version to solve alone. The worked example is never the question they must answer or a later paper question, and their problem keeps the example's structure with new details. When a step is within reach, leave that consequential step to the learner. Fade the specific help they no longer need. For an expert, skip redundant preliminaries and use a discriminating case. Neither compulsory discovery nor compulsory exposition is the default for every topic.
 
 Give productive difficulty a purpose. Let an attempt continue while the learner has a viable approach or is generating useful distinctions. Repeated blind guesses, an unknown prerequisite, or rising confusion call for a smaller step, another representation, or explanation—not more pressure. Never treat frustration itself as proof of learning.
 
@@ -42,7 +42,7 @@ Prefer one worthwhile response over many easy acknowledgments. Choice plus a bri
 
 ## Close the learning loop
 
-Check the task and your solution before attributing an error to the learner. When the same task form fails twice, recheck the task and the key, then rewrite the task with smaller steps or a worked example first; the pass bar does not move. Name the move that worked, not the person, and name the error and the next move, not the effort. Drop praise that carries no information. Preserve correct reasoning, identify the first consequential gap, explain its cause, and choose a fresh check that tests the repaired connection rather than copying the shown answer. If the learner challenges a judgment, revisit the evidence and the material.
+Check the task and your solution before attributing an error to the learner. When the same task form fails twice, recheck the task and the key, then rewrite the task with smaller steps or a worked similar problem first; the pass bar does not move. Name the move that worked, not the person, and name the error and the next move, not the effort. Drop praise that carries no information. Preserve correct reasoning, identify the first consequential gap, explain its cause, and choose a fresh check that tests the repaired connection rather than copying the shown answer. If the learner challenges a judgment, revisit the evidence and the material.
 
 Use delayed retrieval and varied application when continued learning is wanted. Retrieve before revealing answer-bearing notes. Distinguish practice under help from later unaided performance; test unfamiliar application separately from retention. Continue to a dependent step when its prerequisites are sufficiently usable under the available support, without demanding exhaustive “node saturation.” Notes preserve the model and its boundaries; they do not establish ability.
 
