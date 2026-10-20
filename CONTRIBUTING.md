@@ -38,10 +38,10 @@ Each change starts from a public issue that explains it.
 1. Create a branch named `<type>/<issue-number>-<short-description>`, for example `feat/2-spaced-retries`. `<type>` is the conventional type of the commit subject, such as `feat`, `fix`, or `docs`.
 2. Keep the change to that one issue. Add regression tests for the behavior it affects.
 3. Update the relevant documentation when commands, data formats, or behavior change.
-4. Open one pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. Include a short summary and the test results.
+4. Open a pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. Include a short summary and the test results.
 5. Get an independent review before merging.
 
-Each pull request lands on `main` as one squash commit, with the pull request title as the commit subject.
+Merge each pull request into `main` as one squash commit, with the pull request title as the commit subject.
 
 `main` always works. Every merge builds and passes `python3 ci/check.py`.
 
@@ -67,7 +67,7 @@ Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in
 
 To make a release:
 
-1. In a pull request, raise `version` in `Cargo.toml` to the new version. Change every other file that repeats Magnesium's version to match, such as `Cargo.lock` and the plugin files under `claude-plugin/` and `codex-plugin/`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+1. In a pull request, raise `version` in `Cargo.toml` to the new version. Change every other file that repeats Magnesium's version to match, such as `Cargo.lock`, the plugin files under `claude-plugin/` and `codex-plugin/`, and the tests that pin it. `git grep -nF <old-version>` finds them. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
 2. After that pull request merges, create the tag and its release page:
 
    ```sh
