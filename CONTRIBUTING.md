@@ -39,6 +39,8 @@ GitHub Actions is manually dispatched and uses the same local check entrypoint.
 
 Keep reusable tests in the repository. Put one-off investigation logs, review reports, and test-run attachments in the PR. Use whichever editor or coding tools you prefer; keep personal configuration out of version control.
 
+
+
 ## Commits
 
 Use a short imperative subject:
@@ -46,7 +48,18 @@ Use a short imperative subject:
 ```text
 fix(storage): preserve raw input when an update fails
 
-Ticket: LEARN-123
+Refs #1
 ```
 
-Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters and include a ticket footer when the work has a ticket. Keep unrelated changes in separate commits. Correct published commit-message mistakes in the PR rather than rewriting shared history.
+Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters. Use `Closes #N` when a commit completes an issue, or `Refs #N` when it contributes to an issue without completing it. Keep unrelated changes in separate commits. Correct published commit-message mistakes in the PR rather than rewriting shared history.
+
+## Branches
+
+Name branches using `<type>/<issue-number>-<short-description>`, for example `feat/2-spaced-retries`. Use the same conventional type as in commit messages, such as `feat`, `fix`, or `docs`.
+
+## Pull requests
+
+Keep one issue per pull request. Write the PR title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`.
+
+Squash-merge each pull request into `main` as a single commit using the PR title as the commit subject.
+
