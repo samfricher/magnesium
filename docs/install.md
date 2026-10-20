@@ -29,22 +29,22 @@ Find the newest release tag with one of these commands:
 - With the GitHub CLI: `gh release view --repo samfricher/magnesium --json tagName -q .tagName`
 - With Git alone, in a clone of the repository: `git fetch --tags`, then `git tag --sort=-v:refname | head -1`
 
-If the GitHub CLI is missing or fails, use Git. Do not install the GitHub CLI for this step. If neither command prints a tag, stop and tell the user that Magnesium has no release yet.
+If the GitHub CLI is missing or fails, use Git. Do not install the GitHub CLI for this step. To use Git when you have no clone yet, first run `git clone https://github.com/samfricher/magnesium.git`, then work in the new `magnesium` folder.
 
-From the repository root, check out the newest release tag:
+If neither command prints a tag, stop and tell the user that Magnesium has no release yet.
+
+In a clone, check out the newest release tag from the repository root:
 
 ```sh
 git fetch --tags
 git checkout <newest-tag>
 ```
 
-If you have no clone of the repository yet, clone the newest release instead:
+If you have no clone yet, clone the newest release instead, then work in the new `magnesium` folder:
 
 ```sh
 git clone --branch <newest-tag> https://github.com/samfricher/magnesium.git
 ```
-
-To find the tag with Git alone, clone without `--branch` first. Then check out the tag as above.
 
 Git reports a detached HEAD after the checkout or the clone. A detached HEAD is expected here.
 
@@ -125,7 +125,7 @@ Run these in order:
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
 
-Checks: `magnesium --version` prints the new version, and `/magnesium:help` answers in a new conversation.
+Checks: `git describe --tags --exact-match` prints the newest tag, `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
 
 `magnesium update` prints these steps. It also refreshes the plugin copies that `magnesium init` installed. It never downloads anything.
 
