@@ -68,7 +68,7 @@ Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in
 To make a release:
 
 1. Open an issue for the release, such as `Release v0.3.0`. Create a branch for it, such as `chore/<issue-number>-release-v0.3.0`.
-2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin tests` lists. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin 'tests/*.rs'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
 3. Open a pull request titled `chore(release): raise the version to 0.3.0`, and merge it as described in Make a change. End its description with `Refs #N`, not `Closes #N`, because the release does not exist until step 4.
 4. Create the tag and its release page:
 
