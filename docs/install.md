@@ -27,9 +27,9 @@ Build the newest release, not the `main` branch. Each release is a Git tag. The 
 Find the newest release tag with one of these commands:
 
 - With the GitHub CLI: `gh release view --repo samfricher/magnesium --json tagName -q .tagName`
-- With Git alone, in a clone of the repository: `git fetch --tags`, then `git tag --sort=-v:refname | head -1`
+- With Git alone, in a clone of the repository: `git fetch --tags`, then `git tag --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`
 
-If the GitHub CLI is missing or fails, use Git. Do not install the GitHub CLI for this step. To use Git when you have no clone yet, first run `git clone https://github.com/samfricher/magnesium.git`, then work in the new `magnesium` folder.
+The Git command skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases. If the two commands print different tags, use the tag from Git. If the GitHub CLI is missing or fails, use Git. Do not install the GitHub CLI for this step. To use Git when you have no clone yet, first run `git clone https://github.com/samfricher/magnesium.git`, then work in the new `magnesium` folder.
 
 If neither command prints a tag, stop and tell the user that Magnesium has no release yet.
 
@@ -47,6 +47,8 @@ git clone --branch <newest-tag> https://github.com/samfricher/magnesium.git
 ```
 
 Git reports a detached HEAD after the checkout or the clone. A detached HEAD is expected here.
+
+The files on disk are now the release's copy, and that copy of this guide describes the code you build. Open `docs/install.md` in the checked-out release, and follow it from here on, starting with the check below.
 
 Check: `git describe --tags --exact-match` prints the newest tag.
 
@@ -120,7 +122,7 @@ Use `"installed"` or `"declined"`. The papers skill reads this table, so a later
 
 Run these in order:
 
-1. In the repository, run `git fetch --tags`, then `git checkout <newest-tag>`. Step 4 shows how to find `<newest-tag>`.
+1. In the repository, run `git fetch --tags`, then `git checkout <newest-tag>`. Step 4 shows how to find `<newest-tag>`. Follow the rest of this section in the checked-out copy of this guide.
 2. `cargo build --locked --release`.
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
