@@ -38,6 +38,16 @@ When Claude Code loads this skill, it prints "Base directory for this skill: <pa
 
 Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, as the ramp needs them. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
 
+## Upgrade an old gap log
+
+A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it:
+
+1. Read the `gap-log.md` template. Replace the old file's text above `## Tags` with the template's text, and its Gaps columns with the template's columns.
+2. Keep every row, and keep closed rows closed. For each open row, leave Passes empty and set Next redo to its old Cold-redo date or tomorrow, whichever is later.
+3. In `plan.md`, replace step 5 of the Method with the template's step 5.
+
+Log the upgrade as one line under Changes in `plan.md`.
+
 ## Optional tools
 
 Write LaTeX papers only when tectonic is available. Otherwise write Markdown or HTML papers, which also work. The study folder's `.magnesium/config.toml` records each answer in a `[tools]` table, as `tectonic = "installed"` or `tectonic = "declined"`. Read it with the Read tool before you choose a format.
