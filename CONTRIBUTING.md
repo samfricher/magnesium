@@ -33,13 +33,9 @@ GitHub Actions is manually dispatched and uses the same local check entrypoint.
 
 ## Make a change
 
-1. Keep the change focused and add regression tests for the behavior it affects.
-2. Update the relevant documentation when commands, data formats, or behavior change.
-3. Include a short summary and test results in the PR; get an independent review before merging.
+Add regression tests for the behavior that the change affects. Update the relevant documentation when commands, data formats, or behavior change.
 
 Keep reusable tests in the repository. Put one-off investigation logs, review reports, and test-run attachments in the PR. Use whichever editor or coding tools you prefer; keep personal configuration out of version control.
-
-
 
 ## Commits
 
@@ -61,5 +57,8 @@ Name branches using `<type>/<issue-number>-<short-description>`, for example `fe
 
 Keep one issue per pull request. Write the PR title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`.
 
+Include a short summary and test results in the PR. Get an independent review before merging.
+
 Squash-merge each pull request into `main` as a single commit using the PR title as the commit subject.
 
+`main` always works. Every merge builds and passes `python3 ci/check.py`.
