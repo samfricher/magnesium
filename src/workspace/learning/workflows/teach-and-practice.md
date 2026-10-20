@@ -10,6 +10,10 @@ Start with the local problem the idea solves. Identify the objects and roles; sh
 
 Choose the representation that exposes the relationship. Align symbols with the quantities they name, a trace with its event order, and a diagram with its axes or bindings. Map an analogy to the real mechanism and state where it stops applying. Do not add a diagram when one equation or trace is clearer.
 
+Look for anchors in the state_text of current memories and in the Anchors section of a plan that covers the topic. A tutor explanation, a source or a self-report is never an anchor. Name the anchor in the explanation, such as "You can already do the single-variable chain rule. The matrix version is the same rule, applied to each entry." Prefer a representation the anchor already uses, so the learner does not meet a new form and a new idea at once. If no anchor fits, ask "What do you already know that looks like this?" and build from the answer. Skip that question right after you asked a confused learner about the cause, and build from that answer instead. Also skip it when the learner asked for an explanation or a full solution.
+
+When the learner answers the check question after the explanation correctly, write the approach as an anchor that names what the learner did and where. Outside a plan, add a line such as "anchor: applies the chain rule entry by entry to a matrix function (check question after the matrix explanation)" to the state_text of the memory for that skill, beside any example step. In a plan, add it to the plan's Anchors section. Keep the list short, and replace an anchor that a newer one covers.
+
 Choose who performs the next operation:
 
 | Learner's current position | Next move |
