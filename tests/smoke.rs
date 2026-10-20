@@ -55,7 +55,9 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     assert!(output.status.success(), "update failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     for step in [
-        "git pull",
+        "git fetch --tags",
+        "git checkout <newest-tag>",
+        "git tag --sort=-v:refname | head -1",
         "cargo build --locked --release",
         "magnesium --version",
         "magnesium init --upgrade-instructions",

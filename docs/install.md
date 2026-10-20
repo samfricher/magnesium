@@ -17,12 +17,40 @@ Also ask before you change the user's shell profile or copy a file into a folder
 | Tool | What it is for | Check | If it is missing, ask |
 | --- | --- | --- | --- |
 | Rust, through rustup | Builds Magnesium. The repository pins its toolchain in `rust-toolchain.toml`, and rustup fetches that version on the first build. | `cargo --version` | "May I install Rust with rustup? Magnesium is built from source with it." |
-| Git | Updates the repository later. | `git --version` | "May I install Git? I use it to update Magnesium later." |
+| Git | Checks out the newest release now and at each update. | `git --version` | "May I install Git? I use it to get the newest release of Magnesium, now and when you update." |
 | Git Bash (Windows only) | The assistant runs Magnesium's hooks through it. | `bash --version`, from a Git Bash prompt | "May I install Git for Windows? Its Git Bash runs Magnesium's hooks." |
 
-## 4. Build and place the binary
+## 4. Build the newest release and place the binary
 
-From the repository root, run:
+Build the newest release, not the `main` branch. A release is a Git tag, such as `v0.2.0`. The `main` branch can hold changes that are not released yet.
+
+Find the newest release tag with either command:
+
+- With the GitHub CLI: `gh release view --repo samfricher/magnesium --json tagName -q .tagName`
+- With Git alone: `git tag --sort=-v:refname | head -1`. Run it in a copy of the repository, after `git fetch --tags`.
+
+If the GitHub CLI is missing, use the Git command. Do not install the GitHub CLI for this step.
+
+From the repository root, check out the newest release:
+
+```sh
+git fetch --tags
+git checkout <newest-tag>
+```
+
+Git then reports a detached HEAD. A detached HEAD is expected here.
+
+If you have no copy of the repository yet, clone the newest release instead:
+
+```sh
+git clone --branch <newest-tag> https://github.com/samfricher/magnesium.git
+```
+
+To find the tag with Git alone, clone without `--branch` first. Then check out the tag as above.
+
+Check: `git describe --tags --exact-match` prints the newest tag.
+
+Then, from the repository root, run:
 
 ```sh
 cargo build --locked --release
@@ -92,7 +120,7 @@ Use `"installed"` or `"declined"`. The papers skill reads this table, so a later
 
 Run these in order:
 
-1. `git pull` in the repository.
+1. In the repository, run `git fetch --tags`, then `git checkout <newest-tag>`. Step 4 shows how to find `<newest-tag>`.
 2. `cargo build --locked --release`.
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
