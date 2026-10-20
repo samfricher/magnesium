@@ -24,14 +24,12 @@ Also ask before you change the user's shell profile or copy a file into a folder
 
 Build the newest release, not the `main` branch. Each release is a Git tag. The `main` branch can hold changes that are not released yet.
 
-Find the newest release tag with one of these commands:
+Find the newest release tag. Run one command, chosen by what you have:
 
-- With the GitHub CLI: `gh release view --repo samfricher/magnesium --json tagName -q .tagName`
-- With Git alone, in a clone of the repository: `git fetch --tags`, then `git tag --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`
+- In a clone of the repository, run `git fetch --tags`, then `git tag --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`. It skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases.
+- With no clone yet, run `gh release view --repo samfricher/magnesium --json tagName -q .tagName`. If the GitHub CLI is missing or fails, run `git clone https://github.com/samfricher/magnesium.git` instead, work in the new `magnesium` folder, and use the Git command above. Do not install the GitHub CLI for this step.
 
-The Git command skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases. If the two commands print different tags, use the tag from Git. If the GitHub CLI is missing or fails, use Git. Do not install the GitHub CLI for this step. To use Git when you have no clone yet, first run `git clone https://github.com/samfricher/magnesium.git`, then work in the new `magnesium` folder.
-
-If neither command prints a tag, stop and tell the user that Magnesium has no release yet.
+If the command prints no tag, stop and tell the user that Magnesium has no release yet.
 
 In a clone, check out the newest release tag from the repository root:
 
