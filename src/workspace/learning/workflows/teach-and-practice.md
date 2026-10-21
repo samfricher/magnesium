@@ -22,8 +22,8 @@ Choose who performs the next operation:
 |---|---|
 | Knows how to start | Let the learner try first |
 | No starting move, no example step recorded for this kind of problem | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
-| No starting move, "example step: full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
-| No starting move, "example step: partly worked" recorded | Give the problem only, with no example |
+| No starting move, "example step (KIND): full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
+| No starting move, "example step (KIND): partly worked" recorded | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
@@ -32,7 +32,7 @@ Choose who performs the next operation:
 
 This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the anchor question, then the other rows. So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question, and build from what the learner asked or said.
 
-The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step: full". For a tag with several kinds of problem, name the kind, such as "example step (variance): full". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
+The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step (discrete expected value): full". Name the kind in every step, so a tag with several kinds keeps them apart. Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 

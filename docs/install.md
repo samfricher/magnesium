@@ -17,12 +17,40 @@ Also ask before you change the user's shell profile or copy a file into a folder
 | Tool | What it is for | Check | If it is missing, ask |
 | --- | --- | --- | --- |
 | Rust, through rustup | Builds Magnesium. The repository pins its toolchain in `rust-toolchain.toml`, and rustup fetches that version on the first build. | `cargo --version` | "May I install Rust with rustup? Magnesium is built from source with it." |
-| Git | Updates the repository later. | `git --version` | "May I install Git? I use it to update Magnesium later." |
+| Git | Checks out the newest release before the build and at each update. | `git --version` | "May I install Git? I use it to get the newest release of Magnesium, now and when you update." |
 | Git Bash (Windows only) | The assistant runs Magnesium's hooks through it. | `bash --version`, from a Git Bash prompt | "May I install Git for Windows? Its Git Bash runs Magnesium's hooks." |
 
-## 4. Build and place the binary
+## 4. Build the newest release and place the binary
 
-From the repository root, run:
+Build the newest release, not the `main` branch. Each release is a Git tag. The `main` branch can hold changes that are not released yet.
+
+Find the newest release tag. Run one command, chosen by what you have:
+
+- In a clone of the repository, run `git fetch --tags`, then `git tag --no-column --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`. It skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases.
+- With no clone yet, run `gh release view --repo samfricher/magnesium --json tagName -q .tagName`. If the GitHub CLI is missing or fails, run `git clone https://github.com/samfricher/magnesium.git` instead, work in the new `magnesium` folder, and use the Git command above. Do not install the GitHub CLI for this step.
+
+If the command prints no tag, stop and tell the user that Magnesium has no release yet.
+
+In a clone, check out the newest release tag from the repository root:
+
+```sh
+git fetch --tags
+git checkout <newest-tag>
+```
+
+If you have no clone yet, clone the newest release instead, then work in the new `magnesium` folder:
+
+```sh
+git clone --branch <newest-tag> https://github.com/samfricher/magnesium.git
+```
+
+Git reports a detached HEAD after the checkout or the clone. A detached HEAD is expected here.
+
+The files on disk are now the release's copy, and that copy of this guide describes the code you build. Open `docs/install.md` in the checked-out release, and follow it from here on, starting with the check below.
+
+Check: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the newest release tag on this commit, which must be the tag that the lookup printed. When the commit has no release tag, the command prints nothing and still exits 0, so judge this check by what it prints.
+
+Then, from the repository root, run:
 
 ```sh
 cargo build --locked --release
@@ -92,12 +120,12 @@ Use `"installed"` or `"declined"`. The papers skill reads this table, so a later
 
 Run these in order:
 
-1. `git pull` in the repository.
+1. In the repository, run `git fetch --tags`, then `git checkout <newest-tag>`. Step 4 shows how to find `<newest-tag>`. Follow the rest of this section in the checked-out copy of this guide.
 2. `cargo build --locked --release`.
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
 
-Checks: `magnesium --version` prints the new version, and `/magnesium:help` answers in a new conversation.
+Checks: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that the lookup printed (judge it by its output, as in step 4), `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
 
 `magnesium update` prints these steps. It also refreshes the plugin copies that `magnesium init` installed. It never downloads anything.
 
