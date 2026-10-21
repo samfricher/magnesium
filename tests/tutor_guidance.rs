@@ -158,8 +158,8 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "then give a changed version with the same structure and new details to solve alone.",
         "The next time they are stuck on it, give a partly worked example",
         "A learner who can start gets no example step.",
-        "When you give one, record \"example step: full\" or \"example step: partly worked\"",
-        "A tag memory keeps one step per kind, naming all but the first.",
+        "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
+        "Keep one step per kind.",
         "Read that memory in full. No example step there means a full worked example.",
         "A requested full solution and a fails-twice rewrite record none.",
         "rewrite the task with smaller steps or a worked example first, whatever the example step;",
@@ -189,8 +189,9 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         for required in [
             "| Knows how to start | Let the learner try first |",
             "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
-            "| No starting move, \"example step: full\" recorded | Give a partly worked example",
-            "| No starting move, \"example step: partly worked\" recorded | Give the problem only",
+            "| No starting move, \"example step (KIND): full\" recorded | Give a partly worked example",
+            "| No starting move, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "Name the kind in every step, so a tag with several kinds keeps them apart.",
             "When rows conflict, take them in this order: an explicit request",
             "Record it in the turn you give the example",
             "Add the step to the existing state_text without dropping the rest",
@@ -199,8 +200,8 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         }
         let papers = served("papers_loop");
         for required in [
-            "the tag's next example step if they could not start, unless rule 6 applies,",
-            "\"conditional: needs TAG, which is open; example step: full\"",
+            "the tag's next example step if they could not start, or under rule 6 a worked example,",
+            "\"conditional: needs TAG, which is open; example step (KIND): full\"",
         ] {
             assert!(papers.contains(required), "{host}: {required}");
         }
