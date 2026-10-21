@@ -111,7 +111,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
         .expect("run update command");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let printed = |points_at: bool| {
-        inline_code(&stdout)
+        code(&stdout)
             .into_iter()
             .find(|span| span.starts_with("git tag ") && span.contains("--points-at") == points_at)
             .unwrap_or_else(|| panic!("update printed no tag command: {stdout}"))
@@ -125,7 +125,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
             .split("\n## ")
             .find(|section| section.starts_with(number))
             .unwrap_or_else(|| panic!("docs/install.md has no step {number}"));
-        inline_code(section)
+        code(section)
     };
     assert!(
         step("4. ").contains(&lookup) && step("4. ").contains(&check),
@@ -135,7 +135,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
         step("8. ").contains(&check),
         "docs/install.md step 8 must carry `{check}`"
     );
-    for span in inline_code(&guide) {
+    for span in code(&guide) {
         if span.starts_with("git tag ") || span.starts_with("git describe") {
             assert!(
                 span == lookup || span == check,
@@ -180,6 +180,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     let run = |command: &str| {
         let output = isolated(&clone, "sh")
             .env("GIT_CONFIG_GLOBAL", &user_config)
+            .env_remove("COLUMNS")
             .args(["-c", command])
             .output()
             .expect("run a printed command");
@@ -248,12 +249,19 @@ fn tag_lookup_test_leaves_an_inherited_git_dir_untouched() {
     assert_eq!(refs(), before, "the tag lookup test wrote into GIT_DIR");
 }
 
-fn inline_code(markdown: &str) -> Vec<String> {
-    markdown
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("```"))
-        .flat_map(|line| line.split('`').skip(1).step_by(2).map(str::to_owned))
-        .collect()
+fn code(markdown: &str) -> Vec<String> {
+    let mut fenced = false;
+    let mut code = Vec::new();
+    for line in markdown.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        } else if fenced {
+            code.push(line.trim().to_owned());
+        } else {
+            code.extend(line.split('`').skip(1).step_by(2).map(str::to_owned));
+        }
+    }
+    code
 }
 
 fn isolated(directory: &Path, program: &str) -> Command {
