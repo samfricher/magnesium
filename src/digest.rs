@@ -4,7 +4,7 @@
 //! renders them. Nothing here writes to the folder or the learner store.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
-use chrono::{Local, NaiveDate, TimeZone};
+use chrono::{Datelike, Local, NaiveDate, NaiveTime, TimeZone};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::fs;
@@ -18,6 +18,16 @@ const MAX_RECENT_SESSIONS: usize = 3;
 const MAX_READY_PURPOSES: usize = 3;
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
 const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
+const DAY_NAMES: [&str; 7] = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+];
+const EVERY_DAY: u8 = 0b111_1111;
 
 pub(crate) fn print_digest() -> ExitCode {
     let result = (|| {
@@ -308,6 +318,7 @@ fn plan_digest(
         .iter()
         .find(|s| names_target(&s.goal, target, title.as_deref()))
         .map(|s| s.value.clone());
+    let sessions_today = sessions_today(section(plan, "Sessions"), today);
     json!({
         "target": target,
         "path": format!("Study/{target}/plan.md"),
@@ -320,8 +331,83 @@ fn plan_digest(
         "redos_due": due.len(),
         "first_due": first_due,
         "scores": scores,
+        "sessions_today": sessions_today,
         "session": session,
     })
+}
+
+/// Start times, earliest first, of the Sessions lines that fall on `today`.
+fn sessions_today(text: &str, today: NaiveDate) -> Vec<String> {
+    let day = 1 << today.weekday().num_days_from_monday();
+    let mut times = text
+        .lines()
+        .filter_map(planned_session)
+        .filter(|(days, _)| days & day != 0)
+        .map(|(_, time)| time.format("%H:%M").to_string())
+        .collect::<Vec<_>>();
+    times.sort();
+    times.dedup();
+    times
+}
+
+/// The days and start time of a line "If it is <days> at <HH:MM>, then ...".
+/// Bit n of the days is the weekday n days after Monday. A line without days is every day.
+fn planned_session(line: &str) -> Option<(u8, NaiveTime)> {
+    let line = line.replace(['*', '_'], "").to_lowercase();
+    let line = line.trim().trim_start_matches('-').trim_start();
+    let cue = ["if it is ", "if it's ", "if it’s "]
+        .iter()
+        .find_map(|start| line.strip_prefix(start))?;
+    let (cue, _) = cue.split_once(" then ")?;
+    let cue = cue.trim_end_matches(',');
+    let (days, time) = match cue.rsplit_once(" at ") {
+        Some((days, time)) => (day_set(days)?, time),
+        None => (EVERY_DAY, cue),
+    };
+    Some((days, NaiveTime::parse_from_str(time.trim(), "%H:%M").ok()?))
+}
+
+/// Day names, ranges such as "Monday to Friday", lists joined by commas, "and" or "or",
+/// weekdays, weekends and every day. Any other word makes the whole phrase unreadable.
+fn day_set(phrase: &str) -> Option<u8> {
+    let phrase = phrase.replace(['–', '—'], "-");
+    let mut days = 0;
+    for item in phrase
+        .split([',', '/', '&'])
+        .flat_map(|part| part.split(" and "))
+        .flat_map(|part| part.split(" or "))
+    {
+        let item = item.trim();
+        let item = item.strip_prefix("every ").unwrap_or(item);
+        days |= match item {
+            "" => 0,
+            "day" | "any day" | "daily" => EVERY_DAY,
+            "weekday" | "weekdays" | "a weekday" => 0b001_1111,
+            "weekend" | "weekends" | "the weekend" => 0b110_0000,
+            _ => match item.split_once(" to ").or_else(|| item.split_once('-')) {
+                Some((first, last)) => span(day_number(first.trim())?, day_number(last.trim())?),
+                None => 1 << day_number(item)?,
+            },
+        };
+    }
+    (days != 0).then_some(days)
+}
+
+/// Days after Monday of a day name, a plural such as "Saturdays" or a prefix such as "Tue".
+fn day_number(word: &str) -> Option<u32> {
+    let word = word
+        .strip_suffix('s')
+        .filter(|single| DAY_NAMES.contains(single))
+        .unwrap_or(word);
+    DAY_NAMES
+        .iter()
+        .zip(0..)
+        .find_map(|(name, n)| (word.len() >= 3 && name.starts_with(word)).then_some(n))
+}
+
+/// The days from `first` to `last`, wrapping past Sunday.
+fn span(first: u32, last: u32) -> u8 {
+    (0..=(last + 7 - first) % 7).fold(0, |days, n| days | 1 << ((first + n) % 7))
 }
 
 struct Gap<'a> {
@@ -486,6 +572,125 @@ mod tests {
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
         assert_eq!(value["scores"], json!([]));
+        assert_eq!(value["sessions_today"], json!([]));
+    }
+
+    fn sessions_on(lines: &str, day: u32) -> Value {
+        let plan = format!("{PLAN}\n## 14. Sessions\n\n{lines}\n");
+        let today = NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        plan_digest("midterm-1", &plan, GAPS, today, &[])["sessions_today"].clone()
+    }
+
+    // 2026-10-19 is a Monday, so day 19 + n is n days after Monday.
+    const WEEK: [u32; 7] = [19, 20, 21, 22, 23, 24, 25];
+
+    #[test]
+    fn sessions_today_gives_the_start_times_of_the_lines_that_fall_today() {
+        let lines = "- If it is Monday to Friday at 08:00, then I do the due cold redos at my desk before class.\n\
+            - If it is Tuesday and Thursday at 18:30, then I sit the next block at the library.\n\
+            - If it is Tuesday at 08:00, then I bring the gap log.\n\
+            - If I miss the morning, then I do them after dinner.\n";
+        assert_eq!(sessions_on(lines, 20), json!(["08:00", "18:30"]));
+        assert_eq!(sessions_on(lines, 21), json!(["08:00"]));
+        assert_eq!(sessions_on(lines, 24), json!([]));
+    }
+
+    #[test]
+    fn a_sessions_line_falls_on_each_day_its_days_name() {
+        for (days, falls) in [
+            ("Monday to Friday", "MTWTF.."),
+            ("Mon-Fri", "MTWTF.."),
+            ("Mon–Fri", "MTWTF.."),
+            ("Friday to Monday", "M...FSS"),
+            ("Monday, Wednesday and Friday", "M.W.F.."),
+            ("Monday, Wednesday, and Friday", "M.W.F.."),
+            ("Tuesday or Thursday", ".T.T..."),
+            ("Tue and Thurs", ".T.T..."),
+            ("Saturdays", ".....S."),
+            ("every Sunday", "......S"),
+            ("weekdays", "MTWTF.."),
+            ("a weekday", "MTWTF.."),
+            ("the weekend", ".....SS"),
+            ("Saturday or Sunday", ".....SS"),
+            ("every day", "MTWTFSS"),
+        ] {
+            let line = format!("- **If it is {days} at 7:15, then** I do the due cold redos.\n");
+            for (day, mark) in WEEK.iter().zip(falls.chars()) {
+                let expected = if mark == '.' {
+                    json!([])
+                } else {
+                    json!(["07:15"])
+                };
+                assert_eq!(
+                    sessions_on(&line, *day),
+                    expected,
+                    "{days} on 2026-10-{day}"
+                );
+            }
+        }
+        for day in WEEK {
+            assert_eq!(
+                sessions_on("If it's 06:45, then I do the due cold redos.\n", day),
+                json!(["06:45"]),
+                "a line without days falls every day"
+            );
+        }
+    }
+
+    const UNREADABLE_SESSIONS: &str = "- If it is Monday to Friday except Wednesday at 08:00, then I do the due cold redos.\n\
+        - If it is a weekday at 8am, then I do the due cold redos.\n\
+        - If it is Monday at 7:30 pm, then I do the due cold redos.\n\
+        - If it is Monday at 25:00, then I do the due cold redos.\n\
+        - If it is Funday at 08:00, then I do the due cold redos.\n\
+        - If it is Monday or when I can at 08:00, then I do the due cold redos.\n\
+        - If it is 08:00 on Mondays, then I do the due cold redos.\n\
+        - If it is Monday at 08:00 before class, then I do the due cold redos.\n\
+        - If it is Monday to Friday at 08:00 I do the due cold redos.\n\
+        - Every weekday at 08:00, I do the due cold redos.\n\
+        - If I miss Monday at 08:00, then I do them after dinner.\n\
+        - If it is <days> at <HH:MM>, then I <what I do> <where>.\n";
+
+    #[test]
+    fn a_sessions_line_the_code_cannot_read_gives_no_session() {
+        for day in WEEK {
+            assert_eq!(
+                sessions_on(UNREADABLE_SESSIONS, day),
+                json!([]),
+                "2026-10-{day}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_if_then_line_outside_sessions_is_not_a_session() {
+        let checklist =
+            "\n## 11. Assessment-day checklist\n\n- If it is 10:00, then I move on to Q6.\n";
+        let plan = format!("{PLAN}{checklist}");
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        assert_eq!(
+            plan_digest("midterm-1", &plan, GAPS, today, &[])["sessions_today"],
+            json!([])
+        );
+        assert_eq!(
+            sessions_on(
+                &format!("If it is 08:00, then I do the due cold redos.\n{checklist}"),
+                20
+            ),
+            json!(["08:00"])
+        );
+    }
+
+    #[test]
+    fn a_missing_or_unreadable_sessions_section_leaves_the_rest_of_the_digest() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let without = plan_digest("midterm-1", PLAN, GAPS, today, &[]);
+        assert_eq!(without["sessions_today"], json!([]));
+        assert_eq!(without["unfixed_gaps"], 2);
+        let unreadable = format!("{PLAN}\n## 14. Sessions\n\n{UNREADABLE_SESSIONS}");
+        assert_eq!(
+            plan_digest("midterm-1", &unreadable, GAPS, today, &[]),
+            without
+        );
     }
 
     #[test]

@@ -160,6 +160,7 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
         json!({"paper": "Diagnostic", "question": "Q4", "more_due": 1})
     );
     assert_eq!(plan["scores"][0]["score"], "14/30");
+    assert_eq!(plan["sessions_today"], json!([]));
     // The goal does not name the target, so no session is matched to the plan.
     assert_eq!(plan["session"], Value::Null);
 }
