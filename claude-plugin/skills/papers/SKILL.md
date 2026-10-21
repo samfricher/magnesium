@@ -42,14 +42,22 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 
 A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it, in this order:
 
-1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it, and an empty `Conf` column after `Type`.
+1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it, and add `Conf` after `Type`, with an empty cell in every row.
 2. Clear Next redo on closed rows, and keep them closed. An open row keeps its old date, so a row whose date has passed is due today.
 3. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
-4. In `plan.md`, replace step 5 of the Method with the template's step 5.
+4. In `plan.md`, replace steps 1, 4 and 5 of the Method with the template's steps.
+5. Update the papers not yet sat, as step 4 of the next list says.
 
 Log the upgrade as one line under Changes in `plan.md`.
 
-A `gap-log.md` with `Next redo` but no `Conf` column comes from an older template without confidence letters. Add an empty `Conf` column after `Type`, replace the text above `## Tags` with the template's text, and log it under Changes.
+A `gap-log.md` with `Next redo` but no `Conf` column comes from an older template without confidence letters. Upgrade it before you act on it, in this order:
+
+1. Add a `Conf` column after `Type`, with an empty cell in every row. A row with a missing cell reads the cells after it under the wrong headers.
+2. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+3. In `plan.md`, replace steps 1, 4 and 5 of the Method with the template's steps.
+4. Update each paper that has no row in Scores, so the learner sees the S, U and G line. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the last line of `\paperheader` in `papers/src/preamble.tex` with the `preamble.tex` template's line, and run the build again.
+
+Log the upgrade as one line under Changes in `plan.md`.
 
 ## Optional tools
 

@@ -273,23 +273,17 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
         };
         let papers_loop = served("papers_loop");
         for required in [
-            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer.",
-            "Copy the answer's letter, or a blank, into each new row's Conf.",
-            "If it has no Conf column, add an empty one after Type.",
-            "show S, U and G against right and wrong answers in a table, and keep the counts in its Scores Notes.",
-            "Conf is not evidence. It never passes or closes a row or changes a tag's reading.",
-            "Conf takes the redo's letter or a blank",
+            "If it has no Conf column, add one after Type, empty in every row.",
+            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Stop if the learner declines.",
+            "One letter on a question covers its parts.",
+            "Copy each letter into the Conf of its rows, or a blank, as for a lone `?`.",
+            "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
+            "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
+            "Conf takes any letter the redo has",
         ] {
             assert!(
                 papers_loop.contains(required),
                 "{host}/papers_loop: {required}"
-            );
-        }
-        for (at, _) in papers_loop.match_indices("S row") {
-            let before = &papers_loop[..at];
-            assert!(
-                before.ends_with("Type ") || before.ends_with("Conf "),
-                "{host}/papers_loop: the bare S row at byte {at} could mean slow or sure"
             );
         }
         assert!(
@@ -298,10 +292,29 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
         );
         assert!(
             served("review_and_transfer").contains(
-                "ask for S (sure), U (unsure) or G (guess) after each answer, and update that row's Passes, Status, Next redo and Conf"
+                "ask for S (sure), U (unsure) or G (guess) after each answer, and update that row's Passes, Status and Next redo, and its Conf on a fail, as papers-loop says."
             ),
             "{host}/review_and_transfer"
         );
+        for stage in [
+            "orient_and_probe",
+            "plan_and_route",
+            "teach_and_practice",
+            "interpret_and_repair",
+            "review_and_transfer",
+            "consolidate_and_resume",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = served(stage);
+            for (at, _) in text.match_indices("S row") {
+                let before = &text[..at];
+                assert!(
+                    before.ends_with("Type ") || before.ends_with("Conf "),
+                    "{host}/{stage}: the bare S row at byte {at} could mean slow or sure"
+                );
+            }
+        }
     }
 }
 
@@ -324,7 +337,7 @@ fn served_instructions_repair_sure_mistakes_first() {
         };
         assert!(
             served("papers_loop").contains(
-                "When you choose the next repair, take Conf S rows first, after any open key_need tag they need. Rule 6 still applies."
+                "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags. Rule 6 still orders a repair's steps after two fails."
             ),
             "{host}/papers_loop"
         );
