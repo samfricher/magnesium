@@ -391,12 +391,12 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
         let papers_loop = served("papers_loop");
         for required in [
             "If the log has no Conf column, add one after Type, empty in every row.",
-            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Stop if the learner declines.",
+            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
             "One letter on a question covers its parts.",
             "Copy each letter into its rows' Conf, or a blank, as for a lone `?`.",
             "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
             "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
-            "Conf takes any letter the redo has",
+            "Conf takes any letter the failing answer has",
         ] {
             assert!(
                 papers_loop.contains(required),
@@ -406,6 +406,11 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
         assert!(
             served("papers").contains("and S (sure), U (unsure) or G (guess) after each answer."),
             "{host}/papers"
+        );
+        assert!(
+            served("review_and_transfer")
+                .contains("Load stage papers_loop before the redo; it picks and records it."),
+            "{host}/review_and_transfer"
         );
         for stage in [
             "orient_and_probe",
@@ -448,7 +453,7 @@ fn served_instructions_repair_sure_mistakes_first() {
         };
         assert!(
             served("papers_loop").contains(
-                "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags. Rule 6 still orders a repair's steps after two fails."
+                "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags (no Next redo). Rule 6 still orders a repair's steps after two fails."
             ),
             "{host}/papers_loop"
         );
