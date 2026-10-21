@@ -40,7 +40,10 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column comes from an older template. The `papers_loop` stage holds the upgrade steps, so follow its Upgrade an old gap log section before you act on the log. This skill has the templates it names and keeps no second copy of the steps.
+A `gap-log.md` without a `Next redo` column comes from an older template. The `papers_loop` stage holds the upgrade steps that every host follows. After them, use this skill's templates:
+
+1. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+2. In `plan.md`, replace step 5 of the Method with the template's step 5.
 
 ## Optional tools
 

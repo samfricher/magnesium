@@ -246,7 +246,7 @@ fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
 }
 
 #[test]
-fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_copy() {
+fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_template_steps() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     for host in ["codex", "claude", "opencode"] {
@@ -260,12 +260,13 @@ fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_
         let text = papers["text"].as_str().unwrap();
         for step in [
             "## Upgrade an old gap log",
-            "rename `Cold-redo date` to `Next redo`",
+            "Rename `Cold-redo date` to `Next redo`",
             "Put an empty `Passes` column before it.",
             "write Status as exactly `closed`",
-            "An open row with no date and a filled Repair done gets tomorrow's date",
-            "Dismiss the plan's old review suggestions for gap tags.",
-            "Log the upgrade as one line under Changes in `plan.md`.",
+            "gets tomorrow's date if it has none and its Repair done is filled",
+            "Dismiss the plan's old gap review suggestions",
+            "log the upgrade as one line under Changes in `plan.md`",
+            "Without them, Spaced redos overrides the old text.",
         ] {
             assert!(text.contains(step), "{host}: {step}");
         }
@@ -273,11 +274,21 @@ fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_
     let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
     let section = section.split("\n## ").next().unwrap();
-    assert!(section.contains("papers_loop"), "{section}");
-    for copied in ["Cold-redo date", "Passes", "Dismiss", "tomorrow", "today"] {
+    assert!(
+        section.contains("papers_loop") && section.contains("`## Tags`"),
+        "{section}"
+    );
+    for served_step in [
+        "Cold-redo date",
+        "Passes",
+        "Dismiss",
+        "tomorrow",
+        "today",
+        "exactly",
+    ] {
         assert!(
-            !section.contains(copied),
-            "the papers skill repeats a step of the upgrade ({copied}): {section}"
+            !section.contains(served_step),
+            "the papers skill repeats a served step of the upgrade ({served_step}): {section}"
         );
     }
 }

@@ -37,18 +37,11 @@ For a cold redo, read the rows whose Next redo has come, then pick the smallest 
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column predates spaced redos. Before you act on it:
-
-1. In Gaps, rename `Cold-redo date` to `Next redo`, or add `Next redo` with empty cells. Put an empty `Passes` column before it.
-2. On closed rows, clear Next redo and write Status as exactly `closed`, so `Closed ✓` or `done` does not read as unfixed. An open row keeps its date. An open row with no date and a filled Repair done gets tomorrow's date, so its first redo is a day out. An unrepaired row waits for its repair.
-3. With the papers templates, replace the old text above `## Tags` with the `gap-log.md` template's, and step 5 of the Method in `plan.md` with the `plan.md` template's. Without them, Spaced redos overrides the old text.
-4. Dismiss the plan's old review suggestions for gap tags.
-
-Log the upgrade as one line under Changes in `plan.md`.
+A `gap-log.md` without a `Next redo` column predates spaced redos. Rename `Cold-redo date` to `Next redo`, or add `Next redo` with empty cells. Put an empty `Passes` column before it. On closed rows, clear Next redo and write Status as exactly `closed`. An open row keeps its date, or gets tomorrow's date if it has none and its Repair done is filled. Dismiss the plan's old gap review suggestions, and log the upgrade as one line under Changes in `plan.md`. With the papers skill's templates, also follow its template steps. Without them, Spaced redos overrides the old text.
 
 ## Fix my plan files
 
-Run `magnesium digest`. For each item in the target's `unreadable`, open its `file` at its `line` and correct what its `reason` names, keeping what the learner and the marks said. Ask when you cannot tell what a cell should hold, and never delete a row to clear it. Run the digest again until the list is empty.
+Run `magnesium digest`. Open each `unreadable` item's `file` at its `line`, correct what its `reason` names without losing what the learner or the marks said, and ask when a cell is unclear. Run the digest again until the list is empty.
 
 ## Re-plan after every marked paper
 
