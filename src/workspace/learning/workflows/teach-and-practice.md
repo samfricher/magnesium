@@ -10,9 +10,11 @@ Start with the local problem the idea solves. Identify the objects and roles; sh
 
 Choose the representation that exposes the relationship. Align symbols with the quantities they name, a trace with its event order, and a diagram with its axes or bindings. Map an analogy to the real mechanism and state where it stops applying. Do not add a diagram when one equation or trace is clearer.
 
-Search memories for "anchor:" and read the memories it finds, since a search result can leave state_text out. Also check the Anchors section of a plan that covers the topic. A tutor explanation, a source or a self-report is never an anchor. Name the anchor in the explanation, such as "You can already do the single-variable chain rule. The matrix version is the same rule, applied to each entry." Prefer a representation the anchor already uses, so the learner does not meet a new form and a new idea at once. If no anchor fits, ask "What do you already know that looks like this?" and build from the answer. Skip that question right after you asked a confused learner about the cause, and build from that answer instead. Also skip it when the learner asked for an explanation or a full solution.
+Build the explanation on an anchor. To find one, run a memory search with literal_terms ["anchor:"] and read each memory it returns, since a search result can leave state_text out. A plan covers the topic when its `Study/<target>/graph.yaml` has a tag for it, and that plan's Anchors section keeps copies. A tutor explanation, a source or a self-report is never an anchor. Name the anchor as you explain, such as "You can already do the single-variable chain rule. The matrix version is the same rule, applied to each entry." When several representations expose the relationship, choose the one the anchor already uses, so the learner does not meet a new form and a new idea at once. That choice follows this anchor and sets no learning style.
 
-When the learner answers the check question after the explanation correctly, write the approach as an anchor that names what the learner did and where. When a plan covers the topic, add it to that plan's Anchors section. Otherwise add a line such as "anchor: applies the chain rule entry by entry to a matrix function (check question after the matrix explanation)" to the existing state_text of the memory for that skill, without dropping the rest. Keep the list short, and replace an anchor that a newer one covers.
+If no anchor fits, first ask "What do you already know that looks like this?" and build from the answer, which is a self-report, not an anchor. If the learner names nothing, do not ask again. Explain forward from the next dependency in small steps. The row order below says when to skip the question.
+
+When the learner answers the check question after the explanation correctly, add the approach that worked as an anchor, written as what the learner did and where. Start the line with a lowercase "anchor:", which the literal search finds, such as "anchor: applies the chain rule entry by entry to a matrix function (check question after the matrix explanation)". Add it to the existing state_text of the memory for that skill, without dropping the rest. That line is the anchor's home. When a plan covers the topic, also copy it to the plan's Anchors section, adding the section if the plan lacks it. Keep the list short, and replace an anchor that a newer one covers.
 
 Choose who performs the next operation:
 
@@ -20,17 +22,17 @@ Choose who performs the next operation:
 |---|---|
 | Knows how to start | Let the learner try first |
 | No starting move, no example step recorded for this kind of problem | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
-| No starting move, "example step: full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
-| No starting move, "example step: partly worked" recorded | Give the problem only, with no example |
+| No starting move, "example step (KIND): full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
+| No starting move, "example step (KIND): partly worked" recorded | Give the problem only, with no example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
 | Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the other rows.
+This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the anchor question, then the other rows. So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question, and build from what the learner asked or said.
 
-The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step: full". For a tag with several kinds of problem, name the kind, such as "example step (variance): full". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
+The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step (discrete expected value): full". Name the kind in every step, so a tag with several kinds keeps them apart. Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 
