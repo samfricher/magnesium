@@ -6,7 +6,7 @@ Status: exactly one of open, 1 of 3, 2 of 3 or closed. Passes: the date and resu
 
 Type: K did not know, S slow, N notation or missing step, A arithmetic, R misread.
 
-Conf: S sure, U unsure or G guess, the letter the learner wrote after the answer that lost the mark. It is blank when they wrote none, as for a lone `?`. One letter on a question covers its parts. A failed redo with a letter sets Conf to that letter, and a failed redo without one keeps the old letter. Conf is not evidence, so it never passes or closes a row. For each paper, the Scores Notes count the right answers out of the answers with each letter, such as Conf right: S 9/12, U 4/6, G 1/2. An answer is right when it gets full marks. Count answers, not rows, so each part of a question is one answer, and leave stretch items out.
+Conf: S sure, U unsure or G guess, the letter the learner wrote after the answer that lost the mark. It is blank when they wrote none, as for a lone `?`. One letter on a question covers its parts. A failed redo, or a sitting that fails the row, sets Conf to the failing answer's letter, and keeps the old letter when that answer has none. Conf is not evidence, so it never passes or closes a row. For each paper, the Scores Notes count the right answers out of the answers with each letter, such as Conf right: S 9/12, U 4/6, G 1/2. An answer is right when it gets full marks. Count answers, not rows, so each part of a question is one answer, and leave stretch items out.
 
 ## Tags
 

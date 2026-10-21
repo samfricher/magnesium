@@ -43,20 +43,20 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it, in this order:
 
 1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it, and add `Conf` after `Type`, with an empty cell in every row.
-2. Clear Next redo on closed rows, and keep them closed. An open row keeps its old date, so a row whose date has passed is due today. An open row with no date gets today's date only when its Repair done is filled. An unrepaired row waits for its repair.
+2. Clear Next redo on closed rows, and keep them closed. Write their Status as exactly `closed`, so that a row closed in other words, such as `Closed ✓` or `done`, does not read as an unfixed gap. An open row keeps its old date, so a row whose date has passed is due today. An open row with no date gets today's date only when its Repair done is filled. An unrepaired row waits for its repair.
 3. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
 4. In `plan.md`, replace steps 1, 4 and 5 of the Method with the template's steps.
 5. Dismiss the plan's old review suggestions for gap tags. Next redo is now each row's schedule.
-6. Update the papers not yet sat, as step 4 of the next list says.
+6. Update the papers not yet marked, as step 4 of the next list says.
 
 Log the upgrade as one line under Changes in `plan.md`.
 
-A `gap-log.md` with `Next redo` but no `Conf` column comes from an older template without confidence letters. Upgrade it before you act on it, in this order:
+A study folder comes from before confidence letters when `gap-log.md` has no `Conf:` line above `## Tags`, or when the Method in `plan.md` or a paper not yet marked does not ask for S, U or G. Look for these even when papers-loop has already added the `Conf` column, because that step adds only the column. Upgrade the folder before you act on it, in this order:
 
-1. Add a `Conf` column after `Type`, with an empty cell in every row. A row with a missing cell reads the cells after it under the wrong headers.
-2. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
-3. In `plan.md`, replace steps 1, 4 and 5 of the Method with the template's steps.
-4. Update each paper that has no row in Scores, so the learner sees the S, U and G line. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the last line of `\paperheader` in `papers/src/preamble.tex` with the `preamble.tex` template's line, and run the build again.
+1. If the Gaps table has no `Conf` column, add one after `Type`, with an empty cell in every row. A row with a missing cell reads the cells after it under the wrong headers.
+2. If `gap-log.md` has no `Conf:` line, read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+3. If the Method does not ask for S, U or G, replace steps 1, 4 and 5 of the Method in `plan.md` with the template's steps.
+4. Update each paper not yet marked, so the learner sees the S, U and G line. A paper is marked when Scores has its row with a real score, not the template's `<score>` placeholder. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the line of `\paperheader` in `papers/src/preamble.tex` that asks for a ? with the `preamble.tex` template's line, and run the build again.
 
 Log the upgrade as one line under Changes in `plan.md`.
 
