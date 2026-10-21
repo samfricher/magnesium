@@ -2,6 +2,10 @@
 //!
 //! Code gathers the facts and does the date arithmetic; the help skill only
 //! renders them. Nothing here writes to the folder or the learner store.
+//!
+//! Input the digest cannot read is never skipped silently. Each plan's
+//! `unreadable` lists it, with the file, section, line and reason, and the
+//! counts leave it out.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 use chrono::{Local, NaiveDate, TimeZone};
