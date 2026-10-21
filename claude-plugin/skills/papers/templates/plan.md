@@ -17,7 +17,7 @@ Folder: `Study/<target>/`. Built <YYYY-MM-DD>. Last re-plan <YYYY-MM-DD>.
 | Weight | <share of the course grade> |
 | Coverage | <chapters, sections, lectures> |
 | Exclusions | <what is not examined> |
-| Proficiency | <the learner's words>; read as <weak, unsure or strong> |
+| Proficiency | <the learner's words>; read as <weak, mixed or strong> |
 | Hours available | <total hours before the target> |
 | Other commitments | <other assessments and plans, with the weight the learner gives each> |
 | Answers come back as | <photos or PDF, unless the learner chose otherwise> |
@@ -84,7 +84,7 @@ Question types:
 - Connection: two topics combined, a new setting, or a method chosen without a cue.
 - Stretch: beyond scope, labelled, and scored apart.
 
-Rating: <weak, unsure or strong>. Ramp: <papers in order>. <One line on why, from the Diagnostic result once it is marked.>
+Rating: <weak, mixed or strong>. Ramp: <papers in order>. <One line on why, from the Diagnostic result once it is marked.>
 
 ## 6. Blocks
 
