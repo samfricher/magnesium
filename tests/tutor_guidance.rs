@@ -246,6 +246,43 @@ fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
 }
 
 #[test]
+fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_copy() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let papers = v2::tool(
+            &e,
+            host,
+            "gap-log-upgrade",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = papers["text"].as_str().unwrap();
+        for step in [
+            "## Upgrade an old gap log",
+            "rename the `Cold-redo date` column to `Next redo`",
+            "Put an empty `Passes` column before it.",
+            "Write their Status as exactly `closed`",
+            "An open row with no date gets tomorrow's date only when its Repair done is filled",
+            "Dismiss the plan's old review suggestions for gap tags.",
+            "Log the upgrade as one line under Changes in `plan.md`.",
+        ] {
+            assert!(text.contains(step), "{host}: {step}");
+        }
+    }
+    let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
+    let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
+    let section = section.split("\n## ").next().unwrap();
+    assert!(section.contains("papers_loop"), "{section}");
+    for copied in ["Cold-redo date", "Passes", "Dismiss", "tomorrow", "today"] {
+        assert!(
+            !section.contains(copied),
+            "the papers skill repeats a step of the upgrade ({copied}): {section}"
+        );
+    }
+}
+
+#[test]
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

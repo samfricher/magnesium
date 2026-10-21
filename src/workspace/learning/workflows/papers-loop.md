@@ -1,6 +1,6 @@
 # Papers loop
 
-Each turn, first start or resume the Magnesium session for the target before reading materials, since native capture expires within minutes. Read `plan.md`, `gap-log.md`, `graph.yaml` and the tag memories, then act on the learner's verb in any phrasing: mark my PAPER, teach me TAG, repair TAG, cold redo, re-time today. New mock and rebuild use stage papers. If `graph.yaml` does not exist, write it from the plan, the gap log's tags and the keys before the first marking, and add one `Tags:` line per key question, not per part: the primary tag first, then the other tags it fully exercises. If `gap-log.md` has no `Next redo` column, upgrade it first: rename `Cold-redo date` to `Next redo`, or add it, with an empty `Passes` column before it. On closed rows, clear Next redo and write Status as `closed`; set today on undated open rows with a Repair done, and dismiss old gap review suggestions. Spaced redos overrides any one-pass rule left in the log or plan. Do not rebuild the plan.
+Each turn, first start or resume the Magnesium session for the target before reading materials, since native capture expires within minutes. Read `plan.md`, `gap-log.md`, `graph.yaml` and the tag memories, then act on the learner's verb in any phrasing: mark my PAPER, teach me TAG, repair TAG, cold redo, re-time today. New mock and rebuild use stage papers. If `graph.yaml` does not exist, write it from the plan, the gap log's tags and the keys before the first marking, and add one `Tags:` line per key question, not per part: the primary tag first, then the other tags it fully exercises. If `gap-log.md` has no `Next redo` column, follow Upgrade an old gap log first. Spaced redos overrides any one-pass rule left in the log or plan. Do not rebuild the plan.
 
 ## The loop
 
@@ -34,6 +34,18 @@ A gap-log row closes after three cold passes on three different days. A pass is 
 Set Next redo when a repair is done. After a pass, add it to Passes, such as `2026-10-17 pass`, move Status from `open` to `1 of 3`, `2 of 3`, then `closed`, spelled exactly so, and set Next redo again, or clear it on close. An attempt while Next redo is empty or still to come counts neither way. Asked for a cold redo with none due, say when one is and offer practice. A due redo that is not a pass fails the row. Passes then holds only that result, such as `2026-10-24 fail`, Status goes back to `open`, and Next redo stays empty until a new repair. In a question that covers several rows, or in a sitting, a row fails only when the first error lies in its tag, and a sitting also logs the lost mark as a new row.
 
 For a cold redo, read the rows whose Next redo has come, then pick the smallest set of questions, from the bank or new at the planned level, whose primary tags' contains cover every due tag. One cold pass counts once for every covered due row, by rule 5. Redo uncovered rows and every S row one by one.
+
+## Upgrade an old gap log
+
+A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it, in this order:
+
+1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it.
+2. Clear Next redo on closed rows, and keep them closed. Write their Status as exactly `closed`, so that a row closed in other words, such as `Closed ✓` or `done`, does not read as an unfixed gap. An open row keeps its old date, so a row whose date has passed is due today. An open row with no date gets tomorrow's date only when its Repair done is filled, so its first redo falls a day after the upgrade at the earliest. An unrepaired row waits for its repair.
+3. If the host has the papers templates, read the `gap-log.md` template and replace the old file's text above `## Tags` with the template's text. Otherwise leave that text, since Spaced redos overrides it.
+4. In `plan.md`, replace step 5 of the Method with step 5 of the `plan.md` template, or with the three-day rule above when the host has no template.
+5. Dismiss the plan's old review suggestions for gap tags. Next redo is now each row's schedule.
+
+Log the upgrade as one line under Changes in `plan.md`.
 
 ## Re-plan after every marked paper
 
