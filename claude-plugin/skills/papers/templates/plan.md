@@ -110,11 +110,7 @@ The tags, what each covers and the pages to re-read are in `graph.yaml`.
 
 ## 9. Anchors
 
-<!-- Copies of the anchors that this plan's topics use. An anchor is a skill or way of thinking that the learner's own work has shown, with where they showed it. Its home is a line starting with a lowercase "anchor:" in the state_text of the memory for that skill. Write that line first, then copy it here. Before an explanation, the tutor names the anchor it builds on. A self-report, a tutor explanation or a source is never an anchor.
-At build: run a memory search with literal_terms ["anchor:"], read each memory it returns, and copy each "anchor:" line that names a skill this course uses. If there are none, write "none yet".
-After each marking: when an open tag needs a skill that a fully correct part shows, add an "anchor:" line to that skill's tag memory and copy it here.
-After a repair: when the learner answers the check question correctly, add the approach that worked to the memory for that skill, written as what the learner did, and copy it here.
-Keep the list short. When a newer anchor covers an older one, replace it in the memory and here. -->
+<!-- Copies of the anchors that this plan's topics use. An anchor is a skill or way of thinking that the learner's own work has shown, with where they showed it. Each copy is the line starting with a lowercase "anchor:" in the state_text of the memory for that skill. If there are none, write "none yet". Keep the list short. -->
 
 - anchor: <what the learner did, such as "applies the chain rule to single-variable functions"> (<where they showed it, such as Diagnostic, Q3>)
 
