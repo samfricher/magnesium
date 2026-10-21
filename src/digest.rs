@@ -4,7 +4,7 @@
 //! renders them. Nothing here writes to the folder or the learner store.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
-use chrono::{Datelike, Local, NaiveDate, NaiveTime, TimeZone};
+use chrono::{Datelike, Local, NaiveDate, NaiveTime, TimeZone, Weekday, WeekdaySet};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::fs;
@@ -18,16 +18,23 @@ const MAX_RECENT_SESSIONS: usize = 3;
 const MAX_READY_PURPOSES: usize = 3;
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
 const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
-const DAY_NAMES: [&str; 7] = [
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
+const DAY_NAMES: [(&str, Weekday); 7] = [
+    ("monday", Weekday::Mon),
+    ("tuesday", Weekday::Tue),
+    ("wednesday", Weekday::Wed),
+    ("thursday", Weekday::Thu),
+    ("friday", Weekday::Fri),
+    ("saturday", Weekday::Sat),
+    ("sunday", Weekday::Sun),
 ];
-const EVERY_DAY: u8 = 0b111_1111;
+const WEEKDAYS: WeekdaySet = WeekdaySet::from_array([
+    Weekday::Mon,
+    Weekday::Tue,
+    Weekday::Wed,
+    Weekday::Thu,
+    Weekday::Fri,
+]);
+const WEEKEND: WeekdaySet = WeekdaySet::from_array([Weekday::Sat, Weekday::Sun]);
 
 pub(crate) fn print_digest() -> ExitCode {
     let result = (|| {
@@ -336,13 +343,11 @@ fn plan_digest(
     })
 }
 
-/// Start times, earliest first, of the Sessions lines that fall on `today`.
 fn sessions_today(text: &str, today: NaiveDate) -> Vec<String> {
-    let day = 1 << today.weekday().num_days_from_monday();
     let mut times = text
         .lines()
         .filter_map(planned_session)
-        .filter(|(days, _)| days & day != 0)
+        .filter(|(days, _)| days.contains(today.weekday()))
         .map(|(_, time)| time.format("%H:%M").to_string())
         .collect::<Vec<_>>();
     times.sort();
@@ -350,9 +355,7 @@ fn sessions_today(text: &str, today: NaiveDate) -> Vec<String> {
     times
 }
 
-/// The days and start time of a line "If it is <days> at <HH:MM>, then ...".
-/// Bit n of the days is the weekday n days after Monday. A line without days is every day.
-fn planned_session(line: &str) -> Option<(u8, NaiveTime)> {
+fn planned_session(line: &str) -> Option<(WeekdaySet, NaiveTime)> {
     let line = line.replace(['*', '_'], "").to_lowercase();
     let line = line.trim().trim_start_matches('-').trim_start();
     let cue = ["if it is ", "if it's ", "if it’s "]
@@ -362,16 +365,14 @@ fn planned_session(line: &str) -> Option<(u8, NaiveTime)> {
     let cue = cue.trim_end_matches(',');
     let (days, time) = match cue.rsplit_once(" at ") {
         Some((days, time)) => (day_set(days)?, time),
-        None => (EVERY_DAY, cue),
+        None => (WeekdaySet::ALL, cue),
     };
     Some((days, NaiveTime::parse_from_str(time.trim(), "%H:%M").ok()?))
 }
 
-/// Day names, ranges such as "Monday to Friday", lists joined by commas, "and" or "or",
-/// weekdays, weekends and every day. Any other word makes the whole phrase unreadable.
-fn day_set(phrase: &str) -> Option<u8> {
+fn day_set(phrase: &str) -> Option<WeekdaySet> {
     let phrase = phrase.replace(['–', '—'], "-");
-    let mut days = 0;
+    let mut days = WeekdaySet::EMPTY;
     for item in phrase
         .split([',', '/', '&'])
         .flat_map(|part| part.split(" and "))
@@ -379,35 +380,33 @@ fn day_set(phrase: &str) -> Option<u8> {
     {
         let item = item.trim();
         let item = item.strip_prefix("every ").unwrap_or(item);
-        days |= match item {
-            "" => 0,
-            "day" | "any day" | "daily" => EVERY_DAY,
-            "weekday" | "weekdays" | "a weekday" => 0b001_1111,
-            "weekend" | "weekends" | "the weekend" => 0b110_0000,
+        days = days.union(match item {
+            "" => WeekdaySet::EMPTY,
+            "day" | "any day" | "daily" => WeekdaySet::ALL,
+            "weekday" | "weekdays" | "a weekday" => WEEKDAYS,
+            "weekend" | "weekends" | "the weekend" => WEEKEND,
             _ => match item.split_once(" to ").or_else(|| item.split_once('-')) {
-                Some((first, last)) => span(day_number(first.trim())?, day_number(last.trim())?),
-                None => 1 << day_number(item)?,
+                Some((first, last)) => day_range(weekday(first.trim())?, weekday(last.trim())?),
+                None => WeekdaySet::single(weekday(item)?),
             },
-        };
+        });
     }
-    (days != 0).then_some(days)
+    (!days.is_empty()).then_some(days)
 }
 
-/// Days after Monday of a day name, a plural such as "Saturdays" or a prefix such as "Tue".
-fn day_number(word: &str) -> Option<u32> {
+fn weekday(word: &str) -> Option<Weekday> {
     let word = word
         .strip_suffix('s')
-        .filter(|single| DAY_NAMES.contains(single))
+        .filter(|single| DAY_NAMES.iter().any(|(name, _)| name == single))
         .unwrap_or(word);
     DAY_NAMES
         .iter()
-        .zip(0..)
-        .find_map(|(name, n)| (word.len() >= 3 && name.starts_with(word)).then_some(n))
+        .find(|(name, _)| word.len() >= 3 && name.starts_with(word))
+        .map(|(_, day)| *day)
 }
 
-/// The days from `first` to `last`, wrapping past Sunday.
-fn span(first: u32, last: u32) -> u8 {
-    (0..=(last + 7 - first) % 7).fold(0, |days, n| days | 1 << ((first + n) % 7))
+fn day_range(first: Weekday, last: Weekday) -> WeekdaySet {
+    std::iter::successors(Some(first), |day| (*day != last).then(|| day.succ())).collect()
 }
 
 struct Gap<'a> {
@@ -575,14 +574,21 @@ mod tests {
         assert_eq!(value["sessions_today"], json!([]));
     }
 
-    fn sessions_on(lines: &str, day: u32) -> Value {
+    fn sessions_on(lines: &str, day: Weekday) -> Value {
         let plan = format!("{PLAN}\n## 14. Sessions\n\n{lines}\n");
-        let today = NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        let today = NaiveDate::from_isoywd_opt(2026, 43, day).unwrap();
         plan_digest("midterm-1", &plan, GAPS, today, &[])["sessions_today"].clone()
     }
 
-    // 2026-10-19 is a Monday, so day 19 + n is n days after Monday.
-    const WEEK: [u32; 7] = [19, 20, 21, 22, 23, 24, 25];
+    const WEEK: [Weekday; 7] = [
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+        Weekday::Sat,
+        Weekday::Sun,
+    ];
 
     #[test]
     fn sessions_today_gives_the_start_times_of_the_lines_that_fall_today() {
@@ -590,9 +596,9 @@ mod tests {
             - If it is Tuesday and Thursday at 18:30, then I sit the next block at the library.\n\
             - If it is Tuesday at 08:00, then I bring the gap log.\n\
             - If I miss the morning, then I do them after dinner.\n";
-        assert_eq!(sessions_on(lines, 20), json!(["08:00", "18:30"]));
-        assert_eq!(sessions_on(lines, 21), json!(["08:00"]));
-        assert_eq!(sessions_on(lines, 24), json!([]));
+        assert_eq!(sessions_on(lines, Weekday::Tue), json!(["08:00", "18:30"]));
+        assert_eq!(sessions_on(lines, Weekday::Wed), json!(["08:00"]));
+        assert_eq!(sessions_on(lines, Weekday::Sat), json!([]));
     }
 
     #[test]
@@ -621,11 +627,7 @@ mod tests {
                 } else {
                     json!(["07:15"])
                 };
-                assert_eq!(
-                    sessions_on(&line, *day),
-                    expected,
-                    "{days} on 2026-10-{day}"
-                );
+                assert_eq!(sessions_on(&line, *day), expected, "{days} on {day}");
             }
         }
         for day in WEEK {
@@ -653,11 +655,7 @@ mod tests {
     #[test]
     fn a_sessions_line_the_code_cannot_read_gives_no_session() {
         for day in WEEK {
-            assert_eq!(
-                sessions_on(UNREADABLE_SESSIONS, day),
-                json!([]),
-                "2026-10-{day}"
-            );
+            assert_eq!(sessions_on(UNREADABLE_SESSIONS, day), json!([]), "{day}");
         }
     }
 
@@ -674,7 +672,7 @@ mod tests {
         assert_eq!(
             sessions_on(
                 &format!("If it is 08:00, then I do the due cold redos.\n{checklist}"),
-                20
+                Weekday::Tue
             ),
             json!(["08:00"])
         );
