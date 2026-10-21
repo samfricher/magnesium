@@ -284,12 +284,10 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
     ];
     let procedure = [
         "memory search with literal_terms [\"anchor:\"] and read each memory it returns",
-        "has a tag for",
         "A tutor explanation, a source or a self-report is never an anchor.",
         "forward from the next dependency in small steps.",
         "lowercase \"anchor:\"",
         "to the existing state_text of the memory for that skill, without dropping the rest.",
-        "When a plan covers the topic, also copy",
     ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str, operation: Option<&str>| {
@@ -316,6 +314,10 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             for rule in rules {
                 assert!(text.contains(rule), "{host}/{stage}: {rule}");
             }
+            assert!(
+                !text.contains("Anchors") && !text.contains("copy it"),
+                "{host}/{stage} tells the tutor to keep a plan copy of the anchors"
+            );
             let skip = skip_cases.iter().find(|(name, _)| *name == stage);
             assert_eq!(
                 text.contains(question),
@@ -341,24 +343,14 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
                 "To find anchors, run a memory search with literal_terms [\"anchor:\"] and read each memory it returns. With none, start the route at the next dependency.",
             ),
             (
-                "papers",
-                None,
-                "At build, run a memory search with literal_terms [\"anchor:\"]",
-            ),
-            (
-                "papers",
-                None,
-                "The memory stays the anchor's home, and the plan keeps a copy.",
-            ),
-            (
                 "papers_loop",
                 None,
-                "add an \"anchor:\" line to that skill's tag memory and copy it to the plan's Anchors, adding the section if the plan lacks it.",
+                "add an \"anchor:\" line to that skill's tag memory.",
             ),
             (
                 "teach_and_practice",
                 Some("state_and_evidence"),
-                "That line is the anchor's home. A plan's Anchors section keeps a copy of the anchors its topics use.",
+                "That line is the only copy. A plan holds none, so correcting or retiring the memory corrects the anchor everywhere.",
             ),
         ] {
             assert!(
@@ -372,7 +364,11 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         template
             .lines()
             .any(|line| line.starts_with("## ") && line.ends_with(" Anchors")),
-        "the plan template has no Anchors section for the instructions to name"
+        "the plan template has no Anchors section"
+    );
+    assert!(
+        !template.contains("- anchor:"),
+        "the plan template lists an anchor line to fill in"
     );
 }
 

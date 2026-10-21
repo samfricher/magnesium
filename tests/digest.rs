@@ -165,10 +165,6 @@ fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
             "| 1 | <name> |",
             "| 1 | Diagnostic | find gaps | 90 min, stop at 100 | Diagnostic.pdf | 1.5 h |",
         ),
-        (
-            "- anchor: <what the learner did",
-            "- anchor: applies the chain rule to single-variable functions (Diagnostic, Q3)",
-        ),
     ] {
         let line = plan
             .lines()
