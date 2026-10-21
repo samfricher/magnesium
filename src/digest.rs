@@ -752,6 +752,54 @@ mod tests {
     }
 
     #[test]
+    fn an_open_due_row_missing_its_conf_cell_drops_out_of_redos_due() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&[
+            "Date",
+            "Paper",
+            "Q",
+            "Type",
+            "Conf",
+            "Passes",
+            "Next redo",
+            "Status",
+        ]);
+        let short = full.replace("| A | S | ", "| A | ");
+        assert_ne!(short, full);
+        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q2", "more_due": 0})
+        );
+    }
+
+    #[test]
+    fn rows_with_conf_cells_under_a_header_without_conf_report_a_closed_row_as_first_due() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&[
+            "Date",
+            "Paper",
+            "Q",
+            "Type",
+            "Conf",
+            "Passes",
+            "Next redo",
+            "Status",
+        ]);
+        let headless = full.replace("| Type | Conf |", "| Type |");
+        assert_ne!(headless, full);
+        let value = plan_digest("midterm-1", PLAN, &headless, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 4);
+        assert_eq!(value["redos_due"], 3);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q4", "more_due": 2})
+        );
+    }
+
+    #[test]
     fn an_old_gap_log_with_a_cold_redo_date_has_unfixed_gaps_and_nothing_due() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
             | 1 | 2026-10-14 | Diagnostic | Q2 | km | sign error | A | tighten | 2026-10-15 | open |\n\
