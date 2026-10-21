@@ -213,7 +213,12 @@ fn tag_lookup_test_leaves_an_inherited_git_dir_untouched() {
         .env("GIT_INDEX_FILE", repository.join(".git/index"))
         .output()
         .expect("run the tag lookup test with GIT_DIR set");
+    let report = String::from_utf8_lossy(&lookup_test.stdout);
     assert!(lookup_test.status.success(), "{lookup_test:?}");
+    assert!(
+        report.contains("running 1 test\n") && report.contains("test result: ok. 1 passed;"),
+        "the guard must run the tag lookup test exactly once: {report}"
+    );
     assert_eq!(refs(), before, "the tag lookup test wrote into GIT_DIR");
 }
 
