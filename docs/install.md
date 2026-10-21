@@ -48,7 +48,7 @@ Git reports a detached HEAD after the checkout or the clone. A detached HEAD is 
 
 The files on disk are now the release's copy, and that copy of this guide describes the code you build. Open `docs/install.md` in the checked-out release, and follow it from here on, starting with the check below.
 
-Check: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that you checked out.
+Check: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the newest release tag on this commit, which must be the tag that the lookup printed. When the commit has no release tag, the command prints nothing and still exits 0, so judge this check by what it prints.
 
 Then, from the repository root, run:
 
@@ -125,7 +125,7 @@ Run these in order:
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
 
-Checks: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that you checked out, `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
+Checks: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that the lookup printed (judge it by its output, as in step 4), `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
 
 `magnesium update` prints these steps. It also refreshes the plugin copies that `magnesium init` installed. It never downloads anything.
 
