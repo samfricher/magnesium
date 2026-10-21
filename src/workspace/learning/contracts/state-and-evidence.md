@@ -1,6 +1,6 @@
 # State and evidence
 
-Use one current learner model across conversations. A memory has a title, scope, summary, free-form state_text, optional topics/retrieval_cues/review_note, and current_basis observations. Original events, observations, and revision history preserve the inspectable basis; historical snapshots are not current guidance. Reading or paraphrasing old work creates no new performance or observation date.
+Use one current learner model across conversations. A memory has a title, scope, summary, free-form state_text, optional topics/retrieval_cues/review_note, and current_basis observations. Original events, observations, and revision history preserve the inspectable basis; historical snapshots are not current guidance. Reading or paraphrasing old work creates no new performance or observation date. Every rewrite or merge of a memory keeps each "example step (KIND)" from the state_text it replaces, and a merge that finds two steps for one kind keeps "partly worked".
 
 ## Authoring
 

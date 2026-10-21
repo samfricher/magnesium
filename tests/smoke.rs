@@ -1,5 +1,7 @@
 use std::fs;
+#[cfg(unix)]
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command;
 
 use support::TestEnvironment;
@@ -101,6 +103,7 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     assert!(directory_is_empty(&environment.codex_home));
 }
 
+#[cfg(unix)]
 #[test]
 fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
@@ -195,6 +198,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     assert_eq!(run(&check), newest, "{check}");
 }
 
+#[cfg(unix)]
 #[test]
 fn tag_lookup_test_leaves_an_inherited_git_dir_untouched() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
@@ -249,6 +253,7 @@ fn tag_lookup_test_leaves_an_inherited_git_dir_untouched() {
     assert_eq!(refs(), before, "the tag lookup test wrote into GIT_DIR");
 }
 
+#[cfg(unix)]
 fn code(markdown: &str) -> Vec<String> {
     let mut fenced = false;
     let mut code = Vec::new();
@@ -264,6 +269,7 @@ fn code(markdown: &str) -> Vec<String> {
     code
 }
 
+#[cfg(unix)]
 fn isolated(directory: &Path, program: &str) -> Command {
     let mut command = Command::new(program);
     // Git exports GIT_DIR to hooks, so an inherited one would send these writes to the developer's repository.
