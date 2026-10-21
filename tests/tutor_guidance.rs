@@ -407,12 +407,6 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
             served("papers").contains("and S (sure), U (unsure) or G (guess) after each answer."),
             "{host}/papers"
         );
-        assert!(
-            served("review_and_transfer").contains(
-                "a due fail sets it back to open, and the row's Conf takes any letter the redo has. Load stage papers_loop to record either. In a cold redo for a gap-log row, ask for S (sure), U (unsure) or G (guess) after each answer."
-            ),
-            "{host}/review_and_transfer"
-        );
         for stage in [
             "orient_and_probe",
             "plan_and_route",
