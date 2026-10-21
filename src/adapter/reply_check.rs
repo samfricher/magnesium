@@ -29,16 +29,26 @@ const CONFUSION_PHRASES: &[&str] = &[
 ];
 
 const EXPLANATION_REQUESTS: &[&str] = &[
-    "explain",
-    "explanation",
+    "can you explain",
+    "could you explain",
+    "explain again",
+    "explain it again",
     "give me the answer",
+    "give me the solution",
     "just tell me",
+    "please explain",
     "show me how",
-    "solution",
+    "show me the answer",
+    "show me the solution",
     "solve it for me",
     "tell me the answer",
     "walk me through",
+    "what is the answer",
+    "what's the answer",
+    "would you explain",
 ];
+
+const REQUEST_OPENERS: &[&str] = &["explain", "just explain", "please explain"];
 
 pub(crate) fn wants_the_confusion_question(prompt: &str) -> bool {
     let words = format!(
@@ -56,7 +66,17 @@ pub(crate) fn wants_the_confusion_question(prompt: &str) -> bool {
             .iter()
             .any(|phrase| words.contains(&format!(" {phrase} ")))
     };
-    (says(CONFUSION_PHRASES) || calls_themselves_confused(&words)) && !says(EXPLANATION_REQUESTS)
+    let opens_with_a_request = prompt
+        .to_lowercase()
+        .split(['.', ',', ';', ':', '!', '?', '\n'])
+        .any(|clause| {
+            REQUEST_OPENERS
+                .iter()
+                .any(|opener| starts_with_phrase(clause.trim(), opener))
+        });
+    (says(CONFUSION_PHRASES) || calls_themselves_confused(&words))
+        && !says(EXPLANATION_REQUESTS)
+        && !opens_with_a_request
 }
 
 fn calls_themselves_confused(words: &str) -> bool {
@@ -881,6 +901,8 @@ mod tests {
             "this makes no sense",
             "you lost me",
             "Honestly, I am still confused.",
+            "I don't understand the solution you showed",
+            "I don't understand your explanation",
         ] {
             assert!(wants_the_confusion_question(prompt), "{prompt}");
         }
@@ -893,6 +915,8 @@ mod tests {
             "I'm confused, can you explain it again?",
             "I don't understand. Just tell me the answer.",
             "I'm lost, walk me through the solution",
+            "I'm confused. Explain the chain rule again.",
+            "I don't get it, please explain",
         ] {
             assert!(!wants_the_confusion_question(prompt), "{prompt}");
         }
