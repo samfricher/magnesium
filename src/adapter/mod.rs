@@ -919,6 +919,31 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn claude_feedback_never_judges_an_older_reply_when_the_turns_file_cannot_be_written() {
+        let (root, store, host) = claude_lesson();
+        claude_prompt(&root, &host, "one");
+        claude_stop(&root, &host, "one", &long_reply()).unwrap();
+        let file = prompt_turns_file(&root, &host);
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        let unwritable = claude_prompt(&root, &host, "two");
+        assert!(file.is_dir(), "the blocked path stays a directory");
+        assert!(!unwritable.contains("Previous reply"), "{unwritable}");
+        claude_stop(&root, &host, "two", "Good. Now solve 2x = 6.").unwrap();
+        let after = claude_prompt(&root, &host, "three");
+        assert!(!after.contains("Previous reply"), "{after}");
+        std::fs::remove_dir(&file).unwrap();
+        claude_prompt(&root, &host, "four");
+        claude_stop(&root, &host, "four", &long_reply()).unwrap();
+        let healed = claude_prompt(&root, &host, "five");
+        assert!(
+            healed.contains(" Previous reply: 300 words, no task."),
+            "{healed}"
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn claude_feedback_skips_a_turn_after_a_prompt_hook_that_exited_early() {
         let (root, store, host) = claude_lesson();
         claude_prompt(&root, &host, "one");

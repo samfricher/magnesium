@@ -11,8 +11,7 @@ pub(crate) fn reminder() -> String {
     )
 }
 
-pub(crate) const ASK_WHY_CONFUSED: &str =
-    " Ask a confused learner one question to find the cause, unless they asked for an explanation.";
+pub(crate) const ASK_WHY_CONFUSED: &str = " Ask a confused learner why before explaining, unless they asked for an explanation or solution.";
 
 const CONFUSION_PHRASES: &[&str] = &[
     "does not make sense",
