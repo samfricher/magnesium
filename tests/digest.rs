@@ -160,7 +160,7 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
         json!({"paper": "Diagnostic", "question": "Q4", "more_due": 1})
     );
     assert_eq!(plan["scores"][0]["score"], "14/30");
-    assert_eq!(plan["sessions_today"], json!([]));
+    assert_eq!(plan["planned_sessions_today"], json!([]));
     // The goal does not name the target, so no session is matched to the plan.
     assert_eq!(plan["session"], Value::Null);
 }
@@ -226,7 +226,7 @@ fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
     assert_eq!(plan["title"], "Final exam", "{value}");
     assert_eq!(plan["date"], "2999-01-02");
     assert_eq!(plan["blocks"], json!(["Diagnostic"]));
-    assert_eq!(plan["sessions_today"], json!(["07:30"]));
+    assert_eq!(plan["planned_sessions_today"], json!(["07:30"]));
 }
 
 #[test]
