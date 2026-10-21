@@ -52,14 +52,14 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "bc124421c35a52314b0cdaa9b19ca391987bacce46c834a3949300960e34d41f",
+      "sha256": "8a4cc0d0104a5a4328446f97164ad4dd94c46af3736904eadd1f34280dbb69ed",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "71e60e4efca607009251485a70db6a4f1c4464f86e10af9e3ddfde277748e9be",
+      "sha256": "3d6e840616c34a699ffdeb1e9bc6b73d8873d6a70d568087750f50aabfe8b78a",
       "stage": "interpret-and-repair"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "a587f3abafcd475eac1b1d4ae569d6be215fd995d0dbf31cc6687be8e4e4196a",
+      "sha256": "1e97ebd79e6a8dd16e7ecb700493756bc0e146b75a02bbaa9b9099aa4af98cad",
       "stage": "papers-loop"
     },
     {

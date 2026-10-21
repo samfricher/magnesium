@@ -437,6 +437,36 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
 }
 
 #[test]
+fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work.";
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "unaided",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in ["teach_and_practice", "interpret_and_repair"] {
+            assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
+        }
+        assert!(
+            served("papers_loop").contains(
+                "a skill a fully correct part shows, answered with no hint, step or solution from you,"
+            ),
+            "{host}: a marked part can be helped"
+        );
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
