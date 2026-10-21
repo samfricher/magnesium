@@ -263,7 +263,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let rules = [
-        "then forward from an anchor, a skill or way of thinking the learner's own work has shown, not a learning style. Say which anchor you build on.",
+        "then forward from an anchor, a skill or way of thinking the learner's own work has shown, not a learning style. Say which anchor you build on, if any.",
         "another anchor or representation",
         "Keep any example step or anchor in its state_text.",
     ];
@@ -271,11 +271,11 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
     let skip_cases = [
         (
             "teach_and_practice",
-            "So skip the anchor question after an explicit request or right after the confusion question",
+            "So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question,",
         ),
         (
             "interpret_and_repair",
-            "unless you just asked a confused learner about the cause, or the learner asked for an explanation or a full solution.",
+            "Skip that question when you just asked any question, such as the cause of a confusion or a diagnostic, when the learner asked for an explanation or a full solution, and when a fails-twice rewrite applies.",
         ),
     ];
     let procedure = [
@@ -330,6 +330,11 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
                 "orient_and_probe",
                 None,
                 "plus literal_terms [\"anchor:\"] for anchors",
+            ),
+            (
+                "plan_and_route",
+                None,
+                "To find anchors, run a memory search with literal_terms [\"anchor:\"] and read each memory it returns. With none, start the route at the next dependency.",
             ),
             (
                 "papers",
