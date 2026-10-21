@@ -325,7 +325,8 @@ fn plan_digest(
         .iter()
         .find(|s| names_target(&s.goal, target, title.as_deref()))
         .map(|s| s.value.clone());
-    let planned_sessions_today = planned_sessions_today(section(plan, "Sessions"), today);
+    let rendered = rendered(plan);
+    let planned_sessions_today = planned_sessions_today(section(&rendered, "Sessions"), today);
     json!({
         "target": target,
         "path": format!("Study/{target}/plan.md"),
@@ -344,7 +345,7 @@ fn plan_digest(
 }
 
 fn planned_sessions_today(text: &str, today: NaiveDate) -> Vec<String> {
-    let mut times = without_comments(text)
+    let mut times = text
         .lines()
         .filter_map(planned_session)
         .filter(|(days, _)| days.contains(today.weekday()))
@@ -365,6 +366,31 @@ fn without_comments(text: &str) -> String {
             .map_or("", |(_, after)| after);
     }
     kept + rest
+}
+
+fn rendered(text: &str) -> String {
+    let text = without_comments(text);
+    let mut fence = None;
+    text.lines()
+        .filter(|line| {
+            let marker = ["```", "~~~"]
+                .into_iter()
+                .find(|marker| line.trim_start().starts_with(marker));
+            match (fence, marker) {
+                (None, None) => true,
+                (None, Some(_)) => {
+                    fence = marker;
+                    false
+                }
+                (Some(open), Some(close)) if open == close => {
+                    fence = None;
+                    false
+                }
+                (Some(_), _) => false,
+            }
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
 }
 
 fn planned_session(line: &str) -> Option<(WeekdaySet, NaiveTime)> {
@@ -395,7 +421,7 @@ fn start_time(text: &str) -> Option<NaiveTime> {
 fn clock(text: &str) -> Option<NaiveTime> {
     let (hour, minute) = text.split_once(':')?;
     let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
-    if hour.is_empty() || hour.len() > 2 || minute.len() != 2 || !digits(hour) || !digits(minute) {
+    if hour.len() > 2 || minute.len() != 2 || !digits(hour) || !digits(minute) {
         return None;
     }
     NaiveTime::from_hms_opt(hour.parse().ok()?, minute.parse().ok()?, 0)
@@ -643,6 +669,7 @@ mod tests {
             ("Monday to Friday", "MTWTF.."),
             ("Mon-Fri", "MTWTF.."),
             ("Mon–Fri", "MTWTF.."),
+            ("Mon—Fri", "MTWTF.."),
             ("Friday to Monday", "M...FSS"),
             ("Monday, Wednesday and Friday", "M.W.F.."),
             ("Monday, Wednesday, and Friday", "M.W.F.."),
@@ -655,6 +682,8 @@ mod tests {
             ("the weekend", ".....SS"),
             ("Saturday or Sunday", ".....SS"),
             ("every day", "MTWTFSS"),
+            ("any day", "MTWTFSS"),
+            ("weekends", ".....SS"),
             ("Monday through Friday", "MTWTF.."),
             ("Mon, Weds and Fri", "M.W.F.."),
             ("each weekday", "MTWTF.."),
@@ -704,6 +733,36 @@ mod tests {
             - <!-- If it is Monday at 05:00, then I run. --> If it is Tuesday at 08:00, then I do the due cold redos.\n";
         assert_eq!(sessions_on(lines, Weekday::Mon), json!([]));
         assert_eq!(sessions_on(lines, Weekday::Tue), json!(["08:00"]));
+        assert_eq!(
+            sessions_on(
+                "<!-- unclosed\n- If it is Tuesday at 06:00, then I do the due cold redos.\n",
+                Weekday::Tue
+            ),
+            json!([]),
+            "an unclosed comment hides the rest, as Markdown shows it"
+        );
+    }
+
+    #[test]
+    fn a_sessions_heading_inside_a_comment_or_a_code_fence_is_not_the_section() {
+        let plan = format!(
+            "{PLAN}\n<!-- Old plan:\n## 7. Sessions\n\n- If it is Tuesday at 06:00, then I do the due cold redos.\n-->\n\n\
+             ```markdown\n## 7. Sessions\n\n- If it is Tuesday at 05:00, then I do the due cold redos.\n```\n\n\
+             ## 7. Sessions\n\n- If it is Tuesday at 08:00, then I do the due cold redos.\n"
+        );
+        let tuesday = NaiveDate::from_isoywd_opt(2026, 43, Weekday::Tue).unwrap();
+        assert_eq!(
+            plan_digest("midterm-1", &plan, GAPS, tuesday, &[])["planned_sessions_today"],
+            json!(["08:00"])
+        );
+    }
+
+    #[test]
+    fn a_session_line_inside_a_code_fence_is_not_read() {
+        let lines = "```\n- If it is Tuesday at 06:00, then I do the due cold redos.\n```\n\
+            ~~~\n- If it is Tuesday at 07:00, then I do the due cold redos.\n~~~\n\
+            - If it is Tuesday at 08:00, then I do the due cold redos.\n";
+        assert_eq!(sessions_on(lines, Weekday::Tue), json!(["08:00"]));
     }
 
     const UNREADABLE_SESSIONS: &str = "- If it is Monday to Friday except Wednesday at 08:00, then I do the due cold redos.\n\
@@ -722,6 +781,7 @@ mod tests {
         - If it is Monday at 8:5, then I do the due cold redos.\n\
         - If it is Monday at 08:5, then I do the due cold redos.\n\
         - If it is Monday at 008:00, then I do the due cold redos.\n\
+        - If it is Monday at +8:00, then I do the due cold redos.\n\
         - If it is Monday at 08:00 to dinner, then I do the due cold redos.\n";
 
     #[test]
