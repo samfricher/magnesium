@@ -33,20 +33,49 @@ GitHub Actions is manually dispatched and uses the same local check entrypoint.
 
 ## Make a change
 
-1. Keep the change focused and add regression tests for the behavior it affects.
-2. Update the relevant documentation when commands, data formats, or behavior change.
-3. Include a short summary and test results in the PR; get an independent review before merging.
+Each change starts from a public issue that explains it. Work on one issue per pull request, and keep the change to that issue.
+
+1. Create a branch named `<type>/<issue-number>-<short-description>`, for example `feat/2-spaced-retries`. `<type>` is the conventional type of the commit subject, such as `feat`, `fix`, or `docs`.
+2. Add regression tests for the behavior that the change affects.
+3. Update the relevant documentation when commands, data formats, or behavior change.
+4. Open a pull request for the issue. Write the pull request title like a commit subject, for example `feat(papers): require three spaced retries before a mistake is fixed`. In the description, include a short summary and the test results. End the description with `Closes #N`, or with `Refs #N` when the pull request only contributes to the issue.
+5. Get an independent review before merging.
+
+Merge each pull request into `main` as one squash commit. The commit subject is the pull request title, and the commit body is the pull request description.
+
+`main` always works. Every merge builds and passes `python3 ci/check.py`.
 
 Keep reusable tests in the repository. Put one-off investigation logs, review reports, and test-run attachments in the PR. Use whichever editor or coding tools you prefer; keep personal configuration out of version control.
 
 ## Commits
 
-Use a short imperative subject:
+Use a short imperative subject. End the message with a footer that names the issue:
 
 ```text
 fix(storage): preserve raw input when an update fails
 
-Ticket: LEARN-123
+Closes #123
 ```
 
-Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters and include a ticket footer when the work has a ticket. Keep unrelated changes in separate commits. Correct published commit-message mistakes in the PR rather than rewriting shared history.
+Write `Closes #N` when the commit completes issue N, and `Refs #N` when it contributes to issue N. Choose a conventional type such as `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`. Keep the subject under 72 characters. Correct published commit-message mistakes in the PR rather than rewriting shared history.
+
+## Releases
+
+A release is a Git tag on `main`, such as `v0.3.0`, with a GitHub release page. The tag is `v` followed by the `version` in `Cargo.toml`, with no suffix. The install guide ignores any other tag, such as `v0.3.0-rc.1`. If you publish a page for such a tag, create it with `gh release create --prerelease`, so that `gh release view` skips it too. Users install and update from the newest release, as the [install guide](docs/install.md) describes, so a change merged into `main` reaches them only in the next release.
+
+Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in behavior raises the minor number, for example from `0.2.0` to `0.3.0`. A fix alone raises the patch number, for example from `0.3.0` to `0.3.1`.
+
+To make a release:
+
+1. Open an issue for the release, such as `Release v0.3.0`. Create a branch for it, such as `chore/<issue-number>-release-v0.3.0`.
+2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin 'tests/*.rs'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+3. Open a pull request titled `chore(release): raise the version to 0.3.0`, and merge it as described in Make a change. End its description with `Refs #N`, not `Closes #N`, because the release does not exist until step 4.
+4. Create the tag and its release page on the merged version bump, not on whatever is newest on `main`, which may include a pull request merged after it. Find the bump's squash commit with `gh pr view <pull-request-number> --json mergeCommit -q .mergeCommit.oid`, then run:
+
+   ```sh
+   gh release create v0.3.0 --target <squash-commit-sha> --generate-notes
+   ```
+
+   `--generate-notes` writes release notes that list the pull requests merged since the previous release. Then close the release issue.
+
+The first release tags the current `main` commit as `v0.2.0`, the version that `Cargo.toml` already declares. It needs no version change, so it starts at step 4. With no version bump, take the commit from `git rev-parse origin/main` after `git fetch origin`.
