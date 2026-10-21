@@ -12,51 +12,111 @@ pub(crate) fn reminder() -> String {
 }
 
 pub(crate) const ASK_WHY_CONFUSED: &str =
-    " If the learner is confused, ask one question to find the cause, with no explanation.";
+    " Ask a confused learner one question to find the cause, unless they asked for an explanation.";
 
 const CONFUSION_PHRASES: &[&str] = &[
-    "confus",
-    "do not get",
-    "do not understand",
     "does not make sense",
     "doesn't make sense",
-    "don't get",
-    "don't understand",
-    "i am lost",
-    "i'm lost",
-    "im lost",
-    "lost me",
+    "i do not understand",
+    "i don't get it",
+    "i don't get why",
+    "i don't understand",
+    "i dont understand",
+    "it's confusing",
     "makes no sense",
+    "that's confusing",
+    "this is confusing",
+    "you lost me",
 ];
 
-pub(crate) fn says_confused(prompt: &str) -> bool {
-    let prompt = prompt.to_lowercase().replace('’', "'");
-    CONFUSION_PHRASES
-        .iter()
-        .any(|phrase| prompt.contains(phrase))
+const EXPLANATION_REQUESTS: &[&str] = &[
+    "explain",
+    "explanation",
+    "give me the answer",
+    "just tell me",
+    "show me how",
+    "solution",
+    "solve it for me",
+    "tell me the answer",
+    "walk me through",
+];
+
+pub(crate) fn wants_the_confusion_question(prompt: &str) -> bool {
+    let words = format!(
+        " {} ",
+        prompt
+            .to_lowercase()
+            .replace('’', "'")
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let says = |phrases: &[&str]| {
+        phrases
+            .iter()
+            .any(|phrase| words.contains(&format!(" {phrase} ")))
+    };
+    (says(CONFUSION_PHRASES) || calls_themselves_confused(&words)) && !says(EXPLANATION_REQUESTS)
+}
+
+fn calls_themselves_confused(words: &str) -> bool {
+    let words: Vec<&str> = words.split_whitespace().collect();
+    (0..words.len()).any(|start| {
+        let subject = match words[start..] {
+            ["i'm" | "im", ..] => 1,
+            ["i", "am", ..] => 2,
+            _ => return false,
+        };
+        let rest = &words[start + subject..words.len().min(start + subject + 3)];
+        rest.iter()
+            .take_while(|word| !matches!(**word, "not" | "never" | "no"))
+            .any(|word| matches!(*word, "confused" | "lost"))
+    })
 }
 
 const PROMPT_TURNS: &str = "cache/prompt-turns";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PromptTurns {
+    previous: String,
+    current: String,
+}
 
 pub(crate) fn remember_prompt(
     workspace: &Workspace,
     host: &HostContext,
     turn: &str,
-) -> Option<String> {
+) -> Option<PromptTurns> {
     let path =
         super::host::conversation_file(workspace, PROMPT_TURNS, &host.host_thread_id, "turns")
             .ok()?;
+    let current = super::native_capture::event_key(turn);
     let saved = std::fs::read(&path)
         .ok()
         .filter(|bytes| bytes.len() <= 4096)
         .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_default();
-    let (previous, current) = saved.split_once('\n').unwrap_or(("", ""));
-    if current == turn {
-        return (!previous.is_empty()).then(|| previous.to_owned());
+        .and_then(|text| {
+            let lines: Vec<&str> = text.split('\n').collect();
+            match lines.as_slice() {
+                [previous, current] if !current.is_empty() => {
+                    Some(((*previous).to_owned(), (*current).to_owned()))
+                }
+                _ => None,
+            }
+        });
+    let previous = match saved {
+        Some((previous, saved_current)) if saved_current == current => previous,
+        Some((_, saved_current)) => saved_current,
+        None => String::new(),
+    };
+    if crate::workspace::write_private_atomic(&path, format!("{previous}\n{current}").as_bytes())
+        .is_err()
+    {
+        let _ = std::fs::remove_file(&path);
+        return None;
     }
-    crate::workspace::write_private_atomic(&path, format!("{current}\n{turn}").as_bytes()).ok()?;
-    (!current.is_empty()).then(|| current.to_owned())
+    (!previous.is_empty()).then_some(PromptTurns { previous, current })
 }
 
 pub(crate) fn forget_prompts(workspace: &Workspace, host: &HostContext) {
@@ -70,16 +130,28 @@ pub(crate) fn forget_prompts(workspace: &Workspace, host: &HostContext) {
 pub(crate) fn feedback(
     conn: &Connection,
     host: &HostContext,
-    previous_turn: &str,
+    turns: &PromptTurns,
 ) -> rusqlite::Result<Option<String>> {
-    let reply: Option<String> = conn
-        .query_row(
-            "SELECT text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND external_event_key=?3 AND kind='delivery' AND speaker='tutor' AND origin='host_observed'",
-            params![host.host_kind, host.host_thread_id, previous_turn],
-            |row| row.get(0),
+    let latest = |speaker: &str,
+                  kind: &str,
+                  column: &str|
+     -> rusqlite::Result<Option<(String, String)>> {
+        conn.query_row(
+            &format!("SELECT external_event_key,{column} FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker=?3 AND kind=?4 AND external_event_key<>?5 ORDER BY event_no DESC LIMIT 1"),
+            params![host.host_kind, host.host_thread_id, speaker, kind, turns.current],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .optional()?;
-    Ok(reply.and_then(|reply| ReplyCheck::of(&reply).feedback()))
+        .optional()
+    };
+    let Some((reply_turn, reply)) = latest("tutor", "delivery", "text")? else {
+        return Ok(None);
+    };
+    let prompt = latest("learner", "message", "''")?.map(|(key, _)| key);
+    let answers_previous_prompt = super::native_capture::event_key(&reply_turn) == turns.previous
+        && prompt.as_deref() == Some(turns.previous.as_str());
+    Ok(answers_previous_prompt
+        .then(|| ReplyCheck::of(&reply).feedback())
+        .flatten())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -307,8 +379,17 @@ fn sets_work(block: &[&str]) -> bool {
 }
 
 fn plain(line: &str) -> String {
+    let mut in_code = false;
     line.chars()
-        .filter(|c| !matches!(c, '*' | '_' | '`' | '#' | '>'))
+        .filter_map(|c| match c {
+            '`' => {
+                in_code = !in_code;
+                Some(' ')
+            }
+            _ if in_code => None,
+            '*' | '_' | '#' | '>' => None,
+            _ => Some(c),
+        })
         .collect::<String>()
         .to_lowercase()
         .replace('’', "'")
@@ -603,10 +684,9 @@ fn instructs(sentence: &str) -> bool {
         return true;
     }
     match sentence.split_once(':') {
-        Some((label, after)) if label.split_whitespace().count() <= 3 => {
-            TASK_LABELS.contains(&label.trim())
-                || starts_a_task(after.trim_start_matches(|c: char| !c.is_alphanumeric()))
-        }
+        Some((label, _)) if label.split_whitespace().count() <= 3 => TASK_LABELS
+            .iter()
+            .any(|task_label| starts_with_phrase(label.trim(), task_label)),
         _ => false,
     }
 }
@@ -726,6 +806,11 @@ mod tests {
             "Name resolution follows the LEGB rule.",
             "That is the whole idea. The docs are at https://docs.python.org/3/search.html?q=recursion for more detail.",
             "The base case stops the recursion.\n\nTip: use small inputs when you trace.",
+            "Tip: use the smallest input that still shows the bug.",
+            "Note: use the outer derivative first.",
+            "Remember: check your units at the end.",
+            "In C that is `a ? b : c`.",
+            "The method is `empty?` in Ruby.",
             "That covers the base case.\n\nLet me know if you have any questions.",
             "",
             "```python\nprint(1)\n```",
@@ -766,22 +851,50 @@ mod tests {
             ),
             ("Work out is a phrasal verb.", Ending::Task),
             ("Show me is a phrase; the answer was 4.", Ending::Task),
+            ("Start by factoring the top.", Ending::NoTask),
+            ("Go ahead and factor the top.", Ending::NoTask),
+            ("Take a moment to factor the top.", Ending::NoTask),
+            (
+                "Using the product rule, differentiate x sin x.",
+                Ending::NoTask,
+            ),
+            ("Differentiate x sin x. Good luck on step 2!", Ending::Task),
+            (
+                "Differentiate x sin x.\n\nGood luck on step 2!",
+                Ending::NoTask,
+            ),
+            (
+                "In Spanish, la suma de los números es el total de la lista.",
+                Ending::NotJudged,
+            ),
         ] {
             assert_eq!(ending(reply), judged, "{reply}");
         }
     }
 
     #[test]
-    fn confusion_is_read_from_the_learner_prompt() {
+    fn confusion_question_follows_what_the_learner_says() {
         for prompt in [
             "I'm confused about b",
             "I don’t understand why it halves",
             "this makes no sense",
             "you lost me",
+            "Honestly, I am still confused.",
         ] {
-            assert!(says_confused(prompt), "{prompt}");
+            assert!(wants_the_confusion_question(prompt), "{prompt}");
         }
-        assert!(!says_confused("is it 950?"));
+        for prompt in [
+            "is it 950?",
+            "That wasn't confusing at all",
+            "How do I read a confusion matrix?",
+            "I'm not confused, just slow",
+            "I'm stuck on this one",
+            "I'm confused, can you explain it again?",
+            "I don't understand. Just tell me the answer.",
+            "I'm lost, walk me through the solution",
+        ] {
+            assert!(!wants_the_confusion_question(prompt), "{prompt}");
+        }
     }
 
     #[test]
