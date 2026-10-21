@@ -363,6 +363,62 @@ fn strict_next_call(conn: &Connection, call: &Value) -> Result<Value, String> {
 fn insert_read_memory(conn: &Connection, id: &str) {
     conn.execute("INSERT INTO learner_memories(memory_id,title,scope,summary,state_text,current_basis_json,lifecycle,revision,created_at_ms,updated_at_ms) VALUES(?1,'coefficient','algebra','whole summary','whole state','[]','active',1,0,0)", [id]).unwrap();
 }
+fn insert_anchor_memory(conn: &Connection, id: &str, title: &str, anchor: &str) {
+    conn.execute("INSERT INTO learner_memories(memory_id,title,scope,summary,state_text,current_basis_json,lifecycle,revision,created_at_ms,updated_at_ms) VALUES(?1,?2,'calculus','summary',?3,'[]','active',1,0,0)", params![id, title, format!("anchor: {anchor}")]).unwrap();
+}
+#[test]
+fn anchor_lookup_scoped_to_the_topic_finds_an_anchor_that_an_unscoped_one_misses() {
+    let conn = fixture();
+    for n in 0..30 {
+        insert_anchor_memory(
+            &conn,
+            &format!("a-{n:02}"),
+            &format!("Unrelated skill {n}"),
+            &format!("solves exercise {n} (Week {n} tutorial)"),
+        );
+    }
+    insert_anchor_memory(
+        &conn,
+        "z-chain-rule",
+        "Chain rule",
+        "applies the chain rule to single-variable functions (Diagnostic, Q3)",
+    );
+    search::rebuild_indexes(&conn).unwrap();
+    let ids = |packet: &Value| -> Vec<String> {
+        packet["memories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|card| card["memory_id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    let unscoped = run(
+        &conn,
+        json!({"action":"search","literal_terms":["anchor:"]}),
+    )
+    .unwrap();
+    assert_eq!(unscoped["coverage"]["candidate_lists_truncated"], true);
+    assert!(
+        !ids(&unscoped).contains(&"z-chain-rule".to_owned()),
+        "30 other anchors fill the 24 literal results: {unscoped}"
+    );
+
+    let scoped = run(
+        &conn,
+        json!({"action":"search","intents":[{"id":"anchors","purpose":"anchors for the topic","queries":[{"any_of":["chain rule","derivative"],"all_of":["anchor"]}]}]}),
+    )
+    .unwrap();
+    assert_eq!(ids(&scoped), ["z-chain-rule"], "{scoped}");
+    assert_eq!(scoped["coverage"]["candidate_lists_truncated"], false);
+    assert!(
+        scoped["memories"][0]["state_text"]
+            .as_str()
+            .unwrap()
+            .starts_with("anchor: applies the chain rule"),
+        "{scoped}"
+    );
+}
 #[test]
 fn no_hit_fallback_emits_unchanged_executable_browse_calls() {
     let conn = fixture();

@@ -157,8 +157,10 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
     let rules = [
         "then give a changed version with the same structure and new details to solve alone.",
         "The next time they are stuck on it, give a partly worked example",
+        "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
         "A learner who can start gets no example step.",
         "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
+        "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
         "Keep one step per kind.",
         "Read that memory in full. No example step there means a full worked example.",
         "A requested full solution and a fails-twice rewrite record none.",
@@ -205,6 +207,20 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         ] {
             assert!(papers.contains(required), "{host}: {required}");
         }
+        let contract = v2::tool(
+            &e,
+            host,
+            "worked-example",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"state_and_evidence"}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+            "{host}"
+        );
     }
 }
 
@@ -411,13 +427,11 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         ),
     ];
     let procedure = [
-        "memory search with literal_terms [\"anchor:\"] and read each memory it returns",
-        "has a tag for",
+        "memory search with all_of [\"anchor\"] and any_of naming the topic and the skills it needs, and read each memory it returns",
         "A tutor explanation, a source or a self-report is never an anchor.",
         "forward from the next dependency in small steps.",
         "lowercase \"anchor:\"",
         "to the existing state_text of the memory for that skill, without dropping the rest.",
-        "When a plan covers the topic, also copy",
     ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str, operation: Option<&str>| {
@@ -444,6 +458,14 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             for rule in rules {
                 assert!(text.contains(rule), "{host}/{stage}: {rule}");
             }
+            assert!(
+                !text.contains("literal_terms [\"anchor:\"]"),
+                "{host}/{stage} looks anchors up without the topic, and a search returns at most 24"
+            );
+            assert!(
+                !text.contains("the memory wins"),
+                "{host}/{stage} repeats the rule that belongs to the state_and_evidence contract"
+            );
             let skip = skip_cases.iter().find(|(name, _)| *name == stage);
             assert_eq!(
                 text.contains(question),
@@ -461,32 +483,27 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             (
                 "orient_and_probe",
                 None,
-                "plus literal_terms [\"anchor:\"] for anchors",
+                "plus a query with all_of [\"anchor\"] and the topic in any_of for anchors",
             ),
             (
                 "plan_and_route",
                 None,
-                "To find anchors, run a memory search with literal_terms [\"anchor:\"] and read each memory it returns. With none, start the route at the next dependency.",
+                "To find anchors, run a memory search with all_of [\"anchor\"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency.",
             ),
             (
-                "papers",
+                "teach_and_practice",
                 None,
-                "At build, run a memory search with literal_terms [\"anchor:\"]",
-            ),
-            (
-                "papers",
-                None,
-                "The memory stays the anchor's home, and the plan keeps a copy.",
+                "Scope it to the topic, because one query returns at most 24 records.",
             ),
             (
                 "papers_loop",
                 None,
-                "add an \"anchor:\" line to that skill's tag memory and copy it to the plan's Anchors, adding the section if the plan lacks it.",
+                "add an \"anchor:\" line to that skill's tag memory.",
             ),
             (
-                "teach_and_practice",
-                Some("state_and_evidence"),
-                "That line is the anchor's home. A plan's Anchors section keeps a copy of the anchors its topics use.",
+                "papers",
+                None,
+                "At build, run a memory search with all_of [\"anchor\"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each \"anchor:\" line that names a skill this course uses.",
             ),
         ] {
             assert!(
@@ -495,13 +512,123 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             );
         }
     }
+    let rule = "That line is the source. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    for host in ["codex", "claude", "opencode"] {
+        for stage in [
+            "teach_and_practice",
+            "interpret_and_repair",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = v2::tool(
+                &e,
+                host,
+                "anchors",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage,"operation":"state_and_evidence"}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
+        }
+    }
     let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
     assert!(
         template
             .lines()
             .any(|line| line.starts_with("## ") && line.ends_with(" Anchors")),
-        "the plan template has no Anchors section for the instructions to name"
+        "the plan template has no Anchors section"
     );
+    assert!(
+        template.lines().any(|line| line.starts_with("- anchor: <")),
+        "the plan template has no anchor line to fill in"
+    );
+}
+
+#[test]
+fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor_question() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let policy = "Build the similar problem on an anchor if one fits, and give it without one if none does. A missing anchor never delays it.";
+    let by_stage = [
+        (
+            "teach_and_practice",
+            [
+                "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
+                "A learner with no starting move gets the example or problem in their row, never the anchor question first.",
+                "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
+            ],
+        ),
+        (
+            "interpret_and_repair",
+            [
+                "A learner with no starting move on a kind of problem gets the policy's worked example first, with no anchor question.",
+                "Skip that question when you just asked any question",
+                "Build each explanation on an anchor.",
+            ],
+        ),
+    ];
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "example-first",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for (stage, required) in by_stage {
+            let text = served(stage);
+            assert!(text.contains(policy), "{host}/{stage}: {policy}");
+            for rule in required {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
+        let teach = served("teach_and_practice");
+        let ask = teach.find("if no anchor fits, first ask").unwrap();
+        let first = teach
+            .find("A learner with no starting move gets the worked example first")
+            .unwrap();
+        assert!(
+            first < ask,
+            "{host}: the anchor question comes before the worked example"
+        );
+    }
+}
+
+#[test]
+fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work.";
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "unaided",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in ["teach_and_practice", "interpret_and_repair"] {
+            assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
+        }
+        assert!(
+            served("papers_loop").contains(
+                "a skill a fully correct part shows, answered with no hint, step or solution from you,"
+            ),
+            "{host}: a marked part can be helped"
+        );
+    }
 }
 
 #[test]
