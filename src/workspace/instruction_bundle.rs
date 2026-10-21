@@ -1213,6 +1213,7 @@ mod tests {
     /// that grows past the remaining budget must fail here, not defer recipes.
     #[test]
     fn every_stage_serves_tool_recipes_without_deferral() {
+        let bundle = compiled_bundle().unwrap();
         let control = temp_control("tool-recipes-budget");
         install_bundle(&control).unwrap();
         for stage in STAGES {
@@ -1229,12 +1230,18 @@ mod tests {
                     "instruction_only",
                 )
                 .unwrap();
+                let needed = loaded.bytes_served
+                    + loaded
+                        .deferred_modules
+                        .iter()
+                        .map(|path| bundle.files[path].len() + 2)
+                        .sum::<usize>();
                 assert!(
                     loaded.deferred_modules.is_empty(),
-                    "{stage:?} for {host:?} deferred {:?} at {} of {} bytes",
-                    loaded.deferred_modules,
-                    loaded.bytes_served,
-                    super::RESPONSE_LIMIT
+                    "{stage:?} for {host:?} needs {needed} of {} bytes, {} over, so it deferred {:?}",
+                    super::RESPONSE_LIMIT,
+                    needed.saturating_sub(super::RESPONSE_LIMIT),
+                    loaded.deferred_modules
                 );
             }
         }

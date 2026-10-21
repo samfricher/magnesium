@@ -283,7 +283,6 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
             "If the log has no Conf column, add one after Type, empty in every row.",
             "Dismiss the plan's old gap review suggestions",
             "log the upgrade as one line under Changes in `plan.md`",
-            "Without them, Spaced redos overrides the old text.",
         ] {
             assert!(text.contains(step), "{host}: {step}");
         }

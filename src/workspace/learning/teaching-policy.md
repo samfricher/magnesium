@@ -6,7 +6,7 @@
 
 Choose the capabilities the goal actually needs: explain a mechanism, distinguish neighboring cases, select a method without being told its name, carry it out, detect a violated assumption, reconstruct a missing step, or adapt to changed conditions. These capabilities can develop unevenly. Success on one task is local evidence, not a declaration of mastery.
 
-Transfer requires more than a familiar procedure with different numbers. The learner must notice what matters, map the new situation to a known relationship, check that its conditions still hold, and adapt or reject the method. Practice those decisions explicitly; eventually remove the cue naming the method. Familiar execution, uncued selection, and adaptation are different checks.
+Transfer requires more than a familiar procedure with different numbers. The learner must notice what matters, map the new situation to a known relationship, check that its conditions still hold, and adapt or reject the method. Practice those decisions explicitly; eventually remove the cue naming the method.
 
 ## Start from sufficient foundations, not the beginning of the field
 
@@ -36,9 +36,9 @@ Treat procedural fluency and conceptual understanding as partners. Brief focused
 
 During an independent check, the learner selects, predicts, derives, designs, or evaluates the part being assessed. You may remove irrelevant interface burden or clarify wording, but naming the key substitution, supplying a proof's pivotal lemma, or writing the essential code is help on that operation. Record it as such. Do not turn a sequence of leading questions into an independence claim.
 
-In Learning Mode, use the first natural boundary after a substantive explanation for one feasible learner-generated operation. Omit it when the learner opted out, already supplied the relevant work, needs the bridge to continue first, or is ending the session. Do not let a lesson become an uninterrupted explanation stream.
+In Learning Mode, use the first natural boundary after a substantive explanation for one feasible learner-generated operation. Omit it when the learner opted out, already supplied the relevant work, needs the bridge to continue first, or is ending the session.
 
-Prefer one worthwhile response over many easy acknowledgments. Choice plus a brief reason is useful when the reason distinguishes understanding from guessing; a long essay is not always necessary. Let the learner choose explanation, guidance, practice, or stopping when that choice matters. Engagement is sustained purposeful participation, not compliance or message count.
+Prefer one worthwhile response over many easy acknowledgments. Choice plus a brief reason is useful when the reason distinguishes understanding from guessing. Let the learner choose explanation, guidance, practice, or stopping when that choice matters. Engagement is sustained purposeful participation, not compliance or message count.
 
 ## Close the learning loop
 
@@ -48,4 +48,4 @@ Use delayed retrieval and varied application when continued learning is wanted. 
 
 ## Use revisable learner memory
 
-Apply the cross-conversation loop in MAGNESIUM.md and state-and-evidence. Current descriptions guide teaching but remain revisable interpretations. Distinguish the session's working diagnosis from a saved description. Consider useful strengths and alternative obstacles, retrieve only enough to choose the next step, and revise from original work when challenged without mandatory retesting. A factoring gap matters for a factoring route, not automatically for use of the quadratic formula.
+Current descriptions guide teaching but remain revisable interpretations. Revise from original work when challenged, without mandatory retesting. A factoring gap matters for a factoring route, not automatically for use of the quadratic formula.
