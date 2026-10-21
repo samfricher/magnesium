@@ -283,7 +283,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         ),
     ];
     let procedure = [
-        "memory search with literal_terms [\"anchor:\"] and read each memory it returns",
+        "memory search with all_of [\"anchor\"] and any_of naming the topic and the skills it needs, and read each memory it returns",
         "A tutor explanation, a source or a self-report is never an anchor.",
         "forward from the next dependency in small steps.",
         "lowercase \"anchor:\"",
@@ -315,6 +315,10 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
                 assert!(text.contains(rule), "{host}/{stage}: {rule}");
             }
             assert!(
+                !text.contains("literal_terms [\"anchor:\"]"),
+                "{host}/{stage} looks anchors up without the topic, and a search returns at most 24"
+            );
+            assert!(
                 !text.contains("Anchors") && !text.contains("copy it"),
                 "{host}/{stage} tells the tutor to keep a plan copy of the anchors"
             );
@@ -335,12 +339,17 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             (
                 "orient_and_probe",
                 None,
-                "plus literal_terms [\"anchor:\"] for anchors",
+                "plus a query with all_of [\"anchor\"] and the topic in any_of for anchors",
             ),
             (
                 "plan_and_route",
                 None,
-                "To find anchors, run a memory search with literal_terms [\"anchor:\"] and read each memory it returns. With none, start the route at the next dependency.",
+                "To find anchors, run a memory search with all_of [\"anchor\"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency.",
+            ),
+            (
+                "teach_and_practice",
+                None,
+                "Scope it to the topic, because one query returns at most 24 records.",
             ),
             (
                 "papers_loop",

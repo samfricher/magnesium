@@ -38,28 +38,28 @@
       "path": "workflows/orient-and-probe.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "2476e052b0f2453caa137c0a75074c9b4689914d8fe2a326f0cdf48863254f7d",
+      "sha256": "b6565e0ebe0b7c6eab0e11f8f3f3eb729459dfc205a2b1337ff95ae259e81b79",
       "stage": "orient-and-probe"
     },
     {
       "path": "workflows/plan-and-route.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "404770db27e28ab9cbba61d4f81789a73b58a47ce827503f68686ca6beb9edcc",
+      "sha256": "4707dde5d006ee1565fe2bcf2d866df293a02c740fb726d35549d1d7a5c3e25a",
       "stage": "plan-and-route"
     },
     {
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "2d8d1c85aaee94a97b281267341f2a69947b94c3dd4ecf64b26d00e2aff9c8ff",
+      "sha256": "fbd603b60273265b28ae37c5f5ab28f6f8ffb8a9ec0e620fb61127df8debf145",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "87b107244ab3ba206e523c00ee8c9c11f0f813ea85e41deefefbcfbfbe434589",
+      "sha256": "a64e4dd59f9d9ef8b10030412fc86a4d71639080833b844801939a1443eee2a4",
       "stage": "interpret-and-repair"
     },
     {
