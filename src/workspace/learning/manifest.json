@@ -14,7 +14,7 @@
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "a57cc9dec24cf2f230770a811aad43cd8785659aa67a7460b328b085782baf7c"
+      "sha256": "8462c2e78872473254d1d74e5e8c6697201e6f012fa04606fc726937c35c770d"
     },
     {
       "path": "contracts/state-and-evidence.md",
@@ -52,7 +52,7 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "cea2432592be6ad01a5376509a8cd896961a461e80a5f47e22654a930fbea2b6",
+      "sha256": "b00e88456fa0d8148ebbd1b684a9ffd6b9078dbf03eda665315db04be4e4b3c5",
       "stage": "teach-and-practice"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "cfd0820851d74c6fe8028bbb17d2748af37dce34b74948f2ebdf85d0eb561d76",
+      "sha256": "74a1c51a9c9ff8cc6178985fc4b92925c51f2f692d1da47a91dcaea0e93ce565",
       "stage": "papers-loop"
     },
     {

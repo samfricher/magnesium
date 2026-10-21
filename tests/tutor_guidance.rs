@@ -156,8 +156,11 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
     v2::init(&e);
     let rules = [
         "then give a changed version with the same structure and new details to solve alone.",
-        "The next time they are stuck on that kind of problem, give a partly worked example",
-        "No step recorded means the full worked example comes next.",
+        "The next time they are stuck on it, give a partly worked example",
+        "A learner who can start gets no example step.",
+        "Read that memory, not a search result. No example step there means a full worked example.",
+        "A requested full solution and a fails-twice rewrite record none.",
+        "rewrite the task with smaller steps or a worked example first, whatever the example step;",
         "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
         "Keep any example step or anchor in its state_text.",
     ];
@@ -187,12 +190,13 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
             "| No starting move, \"example step: full\" recorded | Give a partly worked example",
             "| No starting move, \"example step: partly worked\" recorded | Give the problem only",
             "When rows conflict, take them in this order: an explicit request",
+            "Record it in the turn you give the example",
         ] {
             assert!(teach.contains(required), "{host}: {required}");
         }
         let papers = served("papers_loop");
         for required in [
-            "the tag's next example step from the teaching policy",
+            "the tag's next example step if they could not start",
             "\"conditional: needs TAG, which is open; example step: full\"",
         ] {
             assert!(papers.contains(required), "{host}: {required}");
