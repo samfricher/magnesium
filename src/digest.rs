@@ -586,6 +586,106 @@ mod tests {
         );
     }
 
+    fn four_gap_rows_in_columns(columns: &[&str]) -> String {
+        let names = ["Q", "Type", "Conf", "Passes", "Next redo", "Status"];
+        let rows = [
+            ["Q1", "A", "S", "", "2026-10-16", "open"],
+            ["Q2", "N", "", "2026-10-16 pass", "2026-10-19", "1 of 3"],
+            [
+                "Q4",
+                "K",
+                "G",
+                "2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass",
+                "",
+                "closed",
+            ],
+            ["Q5", "K", "U", "2026-10-17 fail", "", "open"],
+        ];
+        let line = |cells: Vec<&str>| format!("| {} |\n", cells.join(" | "));
+        let mut text = String::from("## Gaps\n\n");
+        text += &line(columns.to_vec());
+        text += &line(columns.iter().map(|_| "---").collect());
+        for row in rows {
+            text += &line(
+                columns
+                    .iter()
+                    .map(|column| match *column {
+                        "Date" => "2026-10-14",
+                        "Paper" => "Diagnostic",
+                        name => row[names.iter().position(|n| *n == name).unwrap()],
+                    })
+                    .collect(),
+            );
+        }
+        text
+    }
+
+    #[test]
+    fn a_conf_column_in_any_position_leaves_the_digest_unchanged() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let without = [
+            "Date",
+            "Paper",
+            "Q",
+            "Type",
+            "Passes",
+            "Next redo",
+            "Status",
+        ];
+        let expected = plan_digest(
+            "midterm-1",
+            PLAN,
+            &four_gap_rows_in_columns(&without),
+            today,
+            &[],
+        );
+        assert_eq!(expected["unfixed_gaps"], 3);
+        assert_eq!(expected["redos_due"], 2);
+        assert_eq!(
+            expected["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 1})
+        );
+        for at in 0..=without.len() {
+            let mut columns = without.to_vec();
+            columns.insert(at, "Conf");
+            assert_eq!(
+                plan_digest(
+                    "midterm-1",
+                    PLAN,
+                    &four_gap_rows_in_columns(&columns),
+                    today,
+                    &[]
+                ),
+                expected,
+                "Conf at column {at}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_closed_row_missing_its_conf_cell_counts_as_unfixed() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&[
+            "Date",
+            "Paper",
+            "Q",
+            "Type",
+            "Conf",
+            "Passes",
+            "Next redo",
+            "Status",
+        ]);
+        let short = full.replace("| K | G | ", "| K | ");
+        assert_ne!(short, full);
+        assert_eq!(
+            plan_digest("midterm-1", PLAN, &full, today, &[])["unfixed_gaps"],
+            3
+        );
+        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 4);
+        assert_eq!(value["redos_due"], 2);
+    }
+
     #[test]
     fn an_old_gap_log_with_a_cold_redo_date_has_unfixed_gaps_and_nothing_due() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
