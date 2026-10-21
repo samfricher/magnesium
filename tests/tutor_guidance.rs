@@ -201,6 +201,43 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
 }
 
 #[test]
+fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "spaced-redos",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
+            )
+        };
+        let papers = served("papers_loop");
+        assert_eq!(papers["deferred_modules"], json!([]), "{host}: {papers}");
+        let text = papers["text"].as_str().unwrap();
+        for rule in [
+            "A gap-log row closes after three cold passes on three different days.",
+            "The first redo is at least 1 day after the repair, never on the repair day.",
+            "The second is at least 3 days after the first pass, and the third at least 7 days after the second.",
+            "move Status from `open` to `1 of 3`, `2 of 3`, then `closed`",
+            "An attempt while Next redo is empty or still to come counts neither way.",
+            "A due redo that is not a pass fails the row.",
+            "Spaced redos overrides any one-pass rule left in the log or plan.",
+        ] {
+            assert!(text.contains(rule), "{host}/papers_loop: {rule}");
+        }
+        let review = served("review_and_transfer");
+        let rule = "a gap-log row's Next redo is its only schedule, never a review suggestion.";
+        assert!(
+            review["text"].as_str().unwrap().contains(rule),
+            "{host}/review_and_transfer: {rule}"
+        );
+    }
+}
+
+#[test]
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

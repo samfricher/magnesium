@@ -66,7 +66,7 @@
       "path": "workflows/review-and-transfer.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "73da14e67908024b0e20eeea22f77498f822b7e5a6c5d13739c5eb81169eead8",
+      "sha256": "492c4866caf92419c8332c2d38914f29b8c483cbdf123b1032eb8c9b912f0c3f",
       "stage": "review-and-transfer"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "63356198a3ad9af338fe68c219c6342ef6a5c2046d160d1fd63fa2de7b03e53b",
+      "sha256": "347bef8dff18b4ccac4bf241468789a923f355b757a08676ccbbd6806fd590be",
       "stage": "papers-loop"
     },
     {

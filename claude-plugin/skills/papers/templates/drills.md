@@ -1,6 +1,6 @@
 # Drills: <target>
 
-Short items for one gap tag, used during repair. Do the items for a tag where you lost marks. The cold redos of the failed question come on later days. Answers are at the end of this file.
+Short items for one gap tag, used during repair. Do the items for a tag where you lost marks. The cold redos come on later days, on that question or one that covers its tag. Answers are at the end of this file.
 
 ## <TAG>
 
