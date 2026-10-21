@@ -335,7 +335,7 @@ fn plan_digest(
         .iter()
         .find(|s| names_target(&s.goal, target, title.as_deref()))
         .map(|s| s.value.clone());
-    let planned_sessions_today = sessions::planned_today(plan, today);
+    let planned = sessions::read(&plan_file(target), plan, today);
     json!({
         "target": target,
         "path": format!("Study/{target}/plan.md"),
@@ -348,14 +348,22 @@ fn plan_digest(
         "redos_due": due.len(),
         "first_due": first_due,
         "scores": scores,
-        "planned_sessions_today": planned_sessions_today,
+        "planned_sessions_today": planned.today,
         "session": session,
-        "unreadable": unreadable.iter().map(Unreadable::to_json).collect::<Vec<_>>(),
+        "unreadable": unreadable
+            .iter()
+            .chain(&planned.unreadable)
+            .map(Unreadable::to_json)
+            .collect::<Vec<_>>(),
     })
 }
 
 fn gap_log_file(target: &str) -> String {
     format!("Study/{target}/gap-log.md")
+}
+
+fn plan_file(target: &str) -> String {
+    format!("Study/{target}/plan.md")
 }
 
 /// Something in a study file that the digest could not read. It is left out of
@@ -673,21 +681,65 @@ mod tests {
         assert_eq!(value["first_due"], Value::Null);
         assert_eq!(value["scores"], json!([]));
         assert_eq!(value["planned_sessions_today"], json!([]));
+        assert_eq!(value["unreadable"], json!([]));
     }
 
     #[test]
-    fn a_missing_or_unreadable_sessions_section_leaves_the_rest_of_the_digest() {
+    fn a_missing_sessions_section_leaves_the_rest_of_the_digest() {
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
         let without = plan_digest("midterm-1", PLAN, GAPS, today, &[]);
         assert_eq!(without["planned_sessions_today"], json!([]));
         assert_eq!(without["unfixed_gaps"], 2);
-        let unreadable = format!(
-            "{PLAN}\n## 14. Sessions\n\n{}",
-            sessions::UNREADABLE_SESSIONS
+        let plan_items = without["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["file"] == "Study/midterm-1/plan.md")
+            .count();
+        assert_eq!(plan_items, 0);
+    }
+
+    #[test]
+    fn sessions_lines_it_cannot_read_are_reported_not_treated_as_no_plan() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let mut without = plan_digest("midterm-1", PLAN, GAPS, today, &[]);
+        without["unreadable"] = json!([]);
+        let plan = format!(
+            "{PLAN}\n## 14. Sessions\n\n- If it is Tuesday at 8am, then I do the due cold redos.\n"
         );
+        let value = plan_digest("midterm-1", &plan, GAPS, today, &[]);
+        let items = value["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["file"] == "Study/midterm-1/plan.md")
+            .collect::<Vec<_>>();
+        assert_eq!(items.len(), 1, "{value}");
+        assert_eq!(items[0]["section"], "Sessions");
+        let line = plan.lines().position(|line| line.contains("8am")).unwrap() + 1;
+        assert_eq!(items[0]["line"], line);
+        let mut rest = value.clone();
+        rest["unreadable"] = json!([]);
+        assert_eq!(rest, without);
+    }
+
+    #[test]
+    fn unreadable_gap_rows_and_sessions_lines_are_listed_together() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let gaps = "## Gaps\n\n| # | Date | Paper | Next redo | Status |\n|---|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic |\n";
+        let plan = format!(
+            "{PLAN}\n## 14. Sessions\n\n- If it is Tuesday at 8am, then I do the due cold redos.\n"
+        );
+        let value = plan_digest("midterm-1", &plan, gaps, today, &[]);
+        let files = value["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["file"].as_str().unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(
-            plan_digest("midterm-1", &unreadable, GAPS, today, &[]),
-            without
+            files,
+            ["Study/midterm-1/gap-log.md", "Study/midterm-1/plan.md"]
         );
     }
 

@@ -1,5 +1,5 @@
 //! The plan's Sessions section: if-then lines that say when the learner practises.
-use super::section;
+use super::{Unreadable, section};
 use chrono::{Datelike, NaiveDate, NaiveTime, Weekday, WeekdaySet};
 
 const DAY_NAMES: [(&str, Weekday); 7] = [
@@ -20,45 +20,103 @@ const WEEKDAYS: WeekdaySet = WeekdaySet::from_array([
 ]);
 const WEEKEND: WeekdaySet = WeekdaySet::from_array([Weekday::Sat, Weekday::Sun]);
 
-/// Start times, earliest first, of the planned sessions in `plan` that fall on `today`.
-pub(super) fn planned_today(plan: &str, today: NaiveDate) -> Vec<String> {
+/// What the plan's Sessions section gives: the start times of the sessions that
+/// fall today, and a note for each line it could not read.
+pub(super) struct PlannedSessions {
+    pub(super) today: Vec<String>,
+    pub(super) unreadable: Vec<Unreadable>,
+}
+
+/// One line of the Sessions section, as the digest classifies it.
+enum Line {
+    Blank,
+    /// A line that holds no session: a backup, "none planned" or the template's own.
+    Other,
+    Session(WeekdaySet, NaiveTime),
+    Unreadable(&'static str),
+}
+
+const NOT_A_SESSION: &str = "the line is not a session (\"If it is <days> at HH:MM, then I ...\"), a backup (\"If I miss ...\") or \"none planned\"";
+const NO_THEN: &str = "the line has no \", then I ...\" after the days and start time";
+const BAD_DAYS: &str =
+    "the days are not day names, a range such as Monday to Friday, a list, weekdays or the weekend";
+const BAD_TIME: &str = "the start time is not a 24-hour HH:MM such as 08:00";
+
+pub(super) fn read(file: &str, plan: &str, today: NaiveDate) -> PlannedSessions {
     let rendered = rendered(plan);
-    planned_sessions_today(section(&rendered, "Sessions").text, today)
+    let sessions = section(&rendered, "Sessions");
+    let mut found = PlannedSessions {
+        today: Vec::new(),
+        unreadable: Vec::new(),
+    };
+    for (index, text) in sessions.text.lines().enumerate() {
+        match classify(text) {
+            Line::Blank | Line::Other => {}
+            Line::Session(days, start) => {
+                if days.contains(today.weekday()) {
+                    found.today.push(start.format("%H:%M").to_string());
+                }
+            }
+            Line::Unreadable(reason) => found.unreadable.push(Unreadable::at(
+                file,
+                "Sessions",
+                sessions.first_line + index,
+                reason.to_owned(),
+            )),
+        }
+    }
+    found.today.sort();
+    found.today.dedup();
+    found
 }
 
-fn planned_sessions_today(text: &str, today: NaiveDate) -> Vec<String> {
-    let mut times = text
-        .lines()
-        .filter_map(planned_session)
-        .filter(|(days, _)| days.contains(today.weekday()))
-        .map(|(_, time)| time.format("%H:%M").to_string())
-        .collect::<Vec<_>>();
-    times.sort();
-    times.dedup();
-    times
+fn classify(line: &str) -> Line {
+    let line = line
+        .replace(['*', '_'], "")
+        .replace(['–', '—'], "-")
+        .to_lowercase();
+    let line = line.trim().trim_start_matches('-').trim_start();
+    if line.is_empty() {
+        Line::Blank
+    } else if line.trim_end_matches('.') == "none planned"
+        || line.starts_with("if i miss")
+        || line.contains("<hh:mm>")
+    {
+        Line::Other
+    } else {
+        match planned_session(line) {
+            Ok((days, start)) => Line::Session(days, start),
+            Err(reason) => Line::Unreadable(reason),
+        }
+    }
 }
 
+/// The text with each HTML comment taken out. The comment's line breaks stay,
+/// so a line keeps its number in the file.
 fn without_comments(text: &str) -> String {
     let mut kept = String::new();
     let mut rest = text;
     while let Some(start) = rest.find("<!--") {
         kept.push_str(&rest[..start]);
-        rest = rest[start..]
+        let (hidden, after) = rest[start..]
             .split_once("-->")
-            .map_or("", |(_, after)| after);
+            .map_or((&rest[start..], ""), |(hidden, after)| (hidden, after));
+        kept.extend(hidden.chars().filter(|c| *c == '\n'));
+        rest = after;
     }
     kept + rest
 }
 
+/// The text as Markdown shows it: comments and fenced code are blank lines.
 fn rendered(text: &str) -> String {
     let text = without_comments(text);
     let mut fence = None;
     text.lines()
-        .filter(|line| {
+        .map(|line| {
             let marker = ["```", "~~~"]
                 .into_iter()
                 .find(|marker| line.trim_start().starts_with(marker));
-            match (fence, marker) {
+            let shown = match (fence, marker) {
                 (None, None) => true,
                 (None, Some(_)) => {
                     fence = marker;
@@ -69,28 +127,25 @@ fn rendered(text: &str) -> String {
                     false
                 }
                 (Some(_), _) => false,
-            }
+            };
+            format!("{}\n", if shown { line } else { "" })
         })
-        .map(|line| format!("{line}\n"))
         .collect()
 }
 
-fn planned_session(line: &str) -> Option<(WeekdaySet, NaiveTime)> {
-    let line = line
-        .replace(['*', '_'], "")
-        .replace(['–', '—'], "-")
-        .to_lowercase();
-    let line = line.trim().trim_start_matches('-').trim_start();
-    let cue = ["if it is ", "if it's ", "if it’s "]
+/// `line` is lowercase, with its list marker and emphasis marks taken off.
+fn planned_session(line: &str) -> Result<(WeekdaySet, NaiveTime), &'static str> {
+    let cue = ["if it is ", "if it's ", "if it\u{2019}s "]
         .iter()
-        .find_map(|start| line.strip_prefix(start))?;
-    let (cue, _) = cue.split_once(" then ")?;
+        .find_map(|start| line.strip_prefix(start))
+        .ok_or(NOT_A_SESSION)?;
+    let (cue, _) = cue.split_once(" then ").ok_or(NO_THEN)?;
     let cue = cue.trim_end_matches(',');
     let (days, time) = match cue.rsplit_once(" at ") {
-        Some((days, time)) => (day_set(days)?, time),
+        Some((days, time)) => (day_set(days).ok_or(BAD_DAYS)?, time),
         None => (WeekdaySet::ALL, cue),
     };
-    Some((days, start_time(time.trim())?))
+    Ok((days, start_time(time.trim()).ok_or(BAD_TIME)?))
 }
 
 fn start_time(text: &str) -> Option<NaiveTime> {
@@ -178,12 +233,14 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
 
+    const FILE: &str = "Study/midterm-1/plan.md";
+
     const PLAN: &str = "# Midterm 1: study plan\n\n## 6. Blocks\n\n| # | Block | Purpose |\n|---|---|---|\n| 1 | Diagnostic | find gaps |\n\n## 7. Must know cold\n\n- Km\n";
 
     fn sessions_on(lines: &str, day: Weekday) -> Value {
         let plan = format!("{PLAN}\n## 14. Sessions\n\n{lines}\n");
         let today = NaiveDate::from_isoywd_opt(2026, 43, day).unwrap();
-        json!(planned_today(&plan, today))
+        json!(read(FILE, &plan, today).today)
     }
 
     const WEEK: [Weekday; 7] = [
@@ -295,7 +352,7 @@ mod tests {
              ## 7. Sessions\n\n- If it is Tuesday at 08:00, then I do the due cold redos.\n"
         );
         let tuesday = NaiveDate::from_isoywd_opt(2026, 43, Weekday::Tue).unwrap();
-        assert_eq!(json!(planned_today(&plan, tuesday)), json!(["08:00"]));
+        assert_eq!(json!(read(FILE, &plan, tuesday).today), json!(["08:00"]));
     }
 
     #[test]
@@ -319,7 +376,7 @@ mod tests {
             "\n## 11. Assessment-day checklist\n\n- If it is 10:00, then I move on to Q6.\n";
         let plan = format!("{PLAN}{checklist}");
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
-        assert_eq!(json!(planned_today(&plan, today)), json!([]));
+        assert_eq!(json!(read(FILE, &plan, today).today), json!([]));
         assert_eq!(
             sessions_on(
                 &format!("If it is 08:00, then I do the due cold redos.\n{checklist}"),
@@ -327,5 +384,111 @@ mod tests {
             ),
             json!(["08:00"])
         );
+    }
+
+    fn unreadable_in(plan: &str) -> Vec<(usize, String)> {
+        let today = NaiveDate::from_isoywd_opt(2026, 43, Weekday::Tue).unwrap();
+        read(FILE, plan, today)
+            .unreadable
+            .into_iter()
+            .map(|item| {
+                assert_eq!(item.file, FILE);
+                assert_eq!(item.section, Some("Sessions"));
+                (item.line.unwrap(), item.reason)
+            })
+            .collect()
+    }
+
+    fn line_of(text: &str, needle: &str) -> usize {
+        text.lines().position(|line| line.contains(needle)).unwrap() + 1
+    }
+
+    #[test]
+    fn every_line_the_code_cannot_read_is_reported_at_its_line() {
+        let plan = format!("{PLAN}\n## 14. Sessions\n\n{UNREADABLE_SESSIONS}");
+        let first = line_of(&plan, "except Wednesday");
+        let backup = line_of(&plan, "If I miss Monday");
+        let template = line_of(&plan, "<HH:MM>");
+        let expected = (first..first + UNREADABLE_SESSIONS.lines().count())
+            .filter(|line| *line != backup && *line != template)
+            .collect::<Vec<_>>();
+        let reported = unreadable_in(&plan)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(reported, expected);
+    }
+
+    #[test]
+    fn a_backup_none_planned_the_template_lines_and_blanks_are_not_reported() {
+        for lines in [
+            "- If I miss the morning, then I do them after dinner.\n",
+            "none planned\n",
+            "**None planned.**\n",
+            "- If it is <days> at <HH:MM>, then I <what I do> <where>.\n- If I miss <a session>, then I <what I do instead, and when>.\n",
+            "\n\n",
+        ] {
+            let plan = format!("{PLAN}\n## 14. Sessions\n\n{lines}");
+            assert_eq!(unreadable_in(&plan), [], "{lines:?}");
+        }
+    }
+
+    #[test]
+    fn a_readable_session_is_kept_beside_one_that_is_not() {
+        let plan = format!(
+            "{PLAN}\n## 14. Sessions\n\n- If it is Tuesday at 08:00, then I do the due cold redos.\n- If it is Tuesday at 7pm, then I sit a block.\n"
+        );
+        let today = NaiveDate::from_isoywd_opt(2026, 43, Weekday::Tue).unwrap();
+        let sessions = read(FILE, &plan, today);
+        assert_eq!(sessions.today, ["08:00"]);
+        assert_eq!(unreadable_in(&plan).len(), 1);
+        assert_eq!(unreadable_in(&plan)[0].0, line_of(&plan, "7pm"));
+    }
+
+    #[test]
+    fn prose_in_the_section_is_reported() {
+        let plan = format!("{PLAN}\n## 14. Sessions\n\nMornings suit me best.\n");
+        let reported = unreadable_in(&plan);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].0, line_of(&plan, "Mornings"));
+        assert!(reported[0].1.contains("If it is"), "{}", reported[0].1);
+    }
+
+    #[test]
+    fn each_reason_names_the_part_to_fix() {
+        for (line, part) in [
+            (
+                "If it is Funday at 08:00, then I do the due cold redos.",
+                "days",
+            ),
+            (
+                "If it is Monday at 7pm, then I do the due cold redos.",
+                "start time",
+            ),
+            ("If it is Monday at 08:00 I do the due cold redos.", "then"),
+            (
+                "Every weekday at 08:00, I do the due cold redos.",
+                "If it is",
+            ),
+        ] {
+            let plan = format!("{PLAN}\n## 14. Sessions\n\n- {line}\n");
+            let reported = unreadable_in(&plan);
+            assert_eq!(reported.len(), 1, "{line}");
+            assert!(reported[0].1.contains(part), "{line}: {}", reported[0].1);
+        }
+    }
+
+    #[test]
+    fn line_numbers_count_the_comments_and_code_fences_above_and_inside_the_section() {
+        let plan = format!(
+            "{PLAN}\n<!-- Old plan:\n## 7. Sessions\n- If it is Tuesday at 06:00, then I run.\n-->\n\n\
+             ```markdown\n## 7. Sessions\n```\n\n\
+             ## 7. Sessions\n\n<!-- one\ntwo\nthree -->\n```\nfenced\n```\n\
+             - If it is Tuesday at 08:00, then I do the due cold redos.\n\
+             - If it is Tuesday around eight, then I read.\n"
+        );
+        let reported = unreadable_in(&plan);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].0, line_of(&plan, "around eight"));
     }
 }
