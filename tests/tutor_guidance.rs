@@ -157,8 +157,10 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
     let rules = [
         "then give a changed version with the same structure and new details to solve alone.",
         "The next time they are stuck on it, give a partly worked example",
+        "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
         "A learner who can start gets no example step.",
         "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
+        "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
         "Keep one step per kind.",
         "Read that memory in full. No example step there means a full worked example.",
         "A requested full solution and a fails-twice rewrite record none.",
@@ -205,6 +207,20 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         ] {
             assert!(papers.contains(required), "{host}: {required}");
         }
+        let contract = v2::tool(
+            &e,
+            host,
+            "worked-example",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"state_and_evidence"}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+            "{host}"
+        );
     }
 }
 
