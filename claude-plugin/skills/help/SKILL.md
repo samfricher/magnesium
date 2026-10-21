@@ -43,6 +43,7 @@ Run `magnesium digest` once. It changes nothing. It prints JSON facts that code 
 
 - `today`, and `files`: the study folder listed two levels deep, without hidden entries, `AGENTS.md` and `CLAUDE.md`.
 - `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other gap-log rows due. One redo question can cover several rows, and a row can be overdue.
+- `unreadable`, inside each plan: what the digest could not read in the plan's files. Each item has a `file`, a `section`, a `line` and a `reason`. The counts leave these out, so a plan with any items is not counted in full.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
 
@@ -61,7 +62,8 @@ If a file cannot be read, or a fact is unclear, leave it out. A short screen is 
 
 Put the most urgent first. When the record adds an action, drop the least urgent one, so the screen stays short. Base each one on what you saw:
 
-- A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes first. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more gaps are ready to redo." For a `more_due` of 1, say "1 more gap is ready to redo." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A gap is ready to redo." Say "cold redo".
+- A plan with items in `unreadable`: this action comes before every other. Name the `file` and the `line` of the first item, and its `reason` in a few words. Say how many items there are. Do not trust that plan's `unfixed_gaps` or `redos_due`: say "at least" before a count. Say "fix my plan files".
+- A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes next. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more gaps are ready to redo." For a `more_due` of 1, say "1 more gap is ready to redo." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A gap is ready to redo." Say "cold redo".
 - A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Say "Continue my last lesson".
 - A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Say "Review <the same few words>".
 - A plan with no `date`: name the plan, and say nothing about days left. Its next block follows the plan rule above.
@@ -195,6 +197,24 @@ The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic sco
 3. **Fit today to your time.** Say "re-time today" and give your free hours.
 
 Next: redo Diagnostic Q4 cold. 2 more gaps are ready to redo. Say "cold redo".
+```
+
+#### Example: a plan with rows the digest could not read
+
+The digest has a plan for `midterm-1` with the date 2026-10-23, 1 unfixed gap and 1 redo due. `first_due` is Diagnostic Q4, with a `more_due` of 0. Its `unreadable` has 2 items in `Study/midterm-1/gap-log.md`. Line 9 has the reason "the row has 9 cells but the header has 10 columns". Line 11 has the reason that its Next redo is not a date.
+
+```markdown
+## In this folder
+
+- Your plan for Midterm 1 is in `Study/midterm-1/`. The test is on 2026-10-23, in <N> days.
+- 2 rows in your gap log could not be read. The counts leave them out.
+
+## What you can do now
+
+1. **Fix your gap log.** Line 9 of `Study/midterm-1/gap-log.md` is a cell short. Line 11 has no date. Say "fix my plan files".
+2. **Redo Diagnostic Q4 cold.** At least 1 gap is ready to redo. Say "cold redo".
+
+Next: fix your gap log. Say "fix my plan files".
 ```
 
 ## Topic: overview

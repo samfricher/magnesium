@@ -260,10 +260,10 @@ fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_
         let text = papers["text"].as_str().unwrap();
         for step in [
             "## Upgrade an old gap log",
-            "rename the `Cold-redo date` column to `Next redo`",
+            "rename `Cold-redo date` to `Next redo`",
             "Put an empty `Passes` column before it.",
-            "Write their Status as exactly `closed`",
-            "An open row with no date gets tomorrow's date only when its Repair done is filled",
+            "write Status as exactly `closed`",
+            "An open row with no date and a filled Repair done gets tomorrow's date",
             "Dismiss the plan's old review suggestions for gap tags.",
             "Log the upgrade as one line under Changes in `plan.md`.",
         ] {
@@ -279,6 +279,47 @@ fn every_host_is_served_the_whole_gap_log_upgrade_and_the_papers_skill_keeps_no_
             !section.contains(copied),
             "the papers skill repeats a step of the upgrade ({copied}): {section}"
         );
+    }
+}
+
+#[test]
+fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let verb = "fix my plan files";
+    for (name, text) in [
+        (
+            "help skill",
+            include_str!("../claude-plugin/skills/help/SKILL.md"),
+        ),
+        (
+            "papers skill",
+            include_str!("../claude-plugin/skills/papers/SKILL.md"),
+        ),
+        (
+            "plan template",
+            include_str!("../claude-plugin/skills/papers/templates/plan.md"),
+        ),
+    ] {
+        assert!(text.contains(verb), "{name} does not mention {verb:?}");
+    }
+    for host in ["codex", "claude", "opencode"] {
+        let served = v2::tool(
+            &e,
+            host,
+            "fix-plan-files",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = served["text"].as_str().unwrap();
+        for part in [
+            verb,
+            "## Fix my plan files",
+            "`unreadable`",
+            "until the list is empty",
+        ] {
+            assert!(text.contains(part), "{host}: {part}");
+        }
     }
 }
 

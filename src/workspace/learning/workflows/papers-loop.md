@@ -1,6 +1,6 @@
 # Papers loop
 
-Each turn, first start or resume the Magnesium session for the target before reading materials, since native capture expires within minutes. Read `plan.md`, `gap-log.md`, `graph.yaml` and the tag memories, then act on the learner's verb in any phrasing: mark my PAPER, teach me TAG, repair TAG, cold redo, re-time today. New mock and rebuild use stage papers. If `graph.yaml` does not exist, write it from the plan, the gap log's tags and the keys before the first marking, and add one `Tags:` line per key question, not per part: the primary tag first, then the other tags it fully exercises. If `gap-log.md` has no `Next redo` column, follow Upgrade an old gap log first. Spaced redos overrides any one-pass rule left in the log or plan. Do not rebuild the plan.
+Each turn, first start or resume the Magnesium session for the target before reading materials, since native capture expires within minutes. Read `plan.md`, `gap-log.md`, `graph.yaml` and the tag memories, then act on the learner's verb in any phrasing: mark my PAPER, teach me TAG, repair TAG, cold redo, re-time today, fix my plan files. New mock and rebuild use stage papers. If `graph.yaml` does not exist, write it from the plan, the gap log's tags and the keys before the first marking, and add one `Tags:` line per key question, not per part: the primary tag first, then the other tags it fully exercises. If `gap-log.md` has no `Next redo` column, follow Upgrade an old gap log first. Spaced redos overrides any one-pass rule left in the log or plan. Do not rebuild the plan.
 
 ## The loop
 
@@ -37,15 +37,18 @@ For a cold redo, read the rows whose Next redo has come, then pick the smallest 
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column comes from an older template, in which one cold redo closed a row. Upgrade it before you act on it, in this order:
+A `gap-log.md` without a `Next redo` column predates spaced redos. Before you act on it:
 
-1. In the Gaps table, rename the `Cold-redo date` column to `Next redo`, so each row keeps its date. If there is no such column, add `Next redo` with empty cells. Put an empty `Passes` column before it.
-2. Clear Next redo on closed rows, and keep them closed. Write their Status as exactly `closed`, so that a row closed in other words, such as `Closed ✓` or `done`, does not read as an unfixed gap. An open row keeps its old date, so a row whose date has passed is due today. An open row with no date gets tomorrow's date only when its Repair done is filled, so its first redo falls a day after the upgrade at the earliest. An unrepaired row waits for its repair.
-3. If the host has the papers templates, read the `gap-log.md` template and replace the old file's text above `## Tags` with the template's text. Otherwise leave that text, since Spaced redos overrides it.
-4. In `plan.md`, replace step 5 of the Method with step 5 of the `plan.md` template, or with the three-day rule above when the host has no template.
-5. Dismiss the plan's old review suggestions for gap tags. Next redo is now each row's schedule.
+1. In Gaps, rename `Cold-redo date` to `Next redo`, or add `Next redo` with empty cells. Put an empty `Passes` column before it.
+2. On closed rows, clear Next redo and write Status as exactly `closed`, so `Closed ✓` or `done` does not read as unfixed. An open row keeps its date. An open row with no date and a filled Repair done gets tomorrow's date, so its first redo is a day out. An unrepaired row waits for its repair.
+3. With the papers templates, replace the old text above `## Tags` with the `gap-log.md` template's, and step 5 of the Method in `plan.md` with the `plan.md` template's. Without them, Spaced redos overrides the old text.
+4. Dismiss the plan's old review suggestions for gap tags.
 
 Log the upgrade as one line under Changes in `plan.md`.
+
+## Fix my plan files
+
+Run `magnesium digest`. For each item in the target's `unreadable`, open its `file` at its `line` and correct what its `reason` names, keeping what the learner and the marks said. Ask when you cannot tell what a cell should hold, and never delete a row to clear it. Run the digest again until the list is empty.
 
 ## Re-plan after every marked paper
 

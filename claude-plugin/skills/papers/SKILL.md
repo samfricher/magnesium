@@ -20,7 +20,7 @@ In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-2
 
 ## Loop verbs
 
-Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild. Only "rebuild" starts the plan over.
+Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, fix my plan files, rebuild. Only "rebuild" starts the plan over.
 
 ## Templates
 
