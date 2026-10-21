@@ -64,7 +64,7 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
         "git tag --sort=-v:refname",
         "git checkout <newest-tag>",
         "detached HEAD is expected",
-        "git describe --tags --exact-match",
+        "git tag --points-at HEAD",
         "cargo build --locked --release",
         "magnesium --version",
         "magnesium init --upgrade-instructions",
@@ -75,7 +75,7 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
         "git fetch --tags",
         "git tag --sort=-v:refname",
         "git checkout <newest-tag>",
-        "git describe --tags --exact-match",
+        "git tag --points-at HEAD",
         "cargo build --locked --release",
     ]
     .iter()
@@ -117,11 +117,11 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
             .unwrap_or_else(|| panic!("update printed no `{prefix}` command: {stdout}"))
             .to_owned()
     };
-    let lookup = printed("git tag ");
-    let describe = printed("git describe ");
+    let lookup = printed("git tag --sort");
+    let check = printed("git tag --points-at");
     let guide =
         fs::read_to_string(support::repo_root().join("docs/install.md")).expect("read guide");
-    for command in [&lookup, &describe] {
+    for command in [&lookup, &check] {
         assert!(
             guide.contains(command.as_str()),
             "docs/install.md lacks `{command}`"
@@ -148,6 +148,8 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     commit("candidate promoted to a release");
     git(&["tag", "-a", "-m", "candidate", &tag(11, "-rc1")]);
     git(&["tag", "-a", "-m", "candidate", &tag(11, "-rc.1")]);
+    git(&["tag", "-a", "-m", "build", &tag(11, "+build.1")]);
+    git(&["tag", "-a", "-m", "channel", "stable"]);
     git(&["tag", &tag(11, "")]);
     commit("next candidate");
     git(&["tag", "-a", "-m", "candidate", &tag(12, "-rc.1")]);
@@ -165,7 +167,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     let newest = run(&lookup);
     assert_eq!(newest, tag(11, ""), "{lookup}");
     git(&["checkout", "--quiet", &newest]);
-    assert_eq!(run(&describe), newest, "{describe}");
+    assert_eq!(run(&check), newest, "{check}");
 }
 
 #[test]
