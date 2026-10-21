@@ -264,6 +264,7 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
             "after an empty `Passes` column.",
             "write Status as exactly `closed`",
             "gets tomorrow's date if it has none and its Repair done is filled",
+            "If the log has no Conf column, add one after Type, empty in every row.",
             "Dismiss the plan's old gap review suggestions",
             "log the upgrade as one line under Changes in `plan.md`",
             "Without them, Spaced redos overrides the old text.",
@@ -285,6 +286,8 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
         "tomorrow",
         "today",
         "exactly",
+        "after `Type`",
+        "empty in every row",
     ] {
         assert!(
             !section.contains(served_step),
