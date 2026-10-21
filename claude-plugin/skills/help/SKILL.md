@@ -42,7 +42,7 @@ The learner wants one clear next step for this folder, and wants it fast. Many l
 Run `magnesium digest` once. It changes nothing. It prints JSON facts that code has already worked out:
 
 - `today`, and `files`: the study folder listed two levels deep, without hidden entries, `AGENTS.md` and `CLAUDE.md`.
-- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, `open_gaps`, paper `scores`, and the latest Magnesium `session` whose goal names the target.
+- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other redos due. `sessions_today` lists the start times, earliest first, of the plan's Sessions lines that fall today. It is empty when no line falls today or the digest cannot read the lines.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
 
@@ -57,14 +57,17 @@ Then look only for what the digest does not hold:
 
 If a file cannot be read, or a fact is unclear, leave it out. A short screen is better than a wrong one. If you cannot list the folder at all, show Topic: overview instead.
 
+Put a planned session first under In this folder, for a plan with times in `sessions_today` and a `days_left` of 0 or more, or no date. Give the time and `redos_due` as printed: "Your 08:00 session: 2 redos are due." For a `redos_due` of 1, say "1 redo is due". For 0, say "Your 08:00 session is today." For two times, say "Your 08:00 and 18:30 sessions". When several plans have a session today, add "for <the plan's title>" after "session".
+
 ### Choose 2 to 4 actions
 
 Put the most urgent first. When the record adds an action, drop the least urgent one, so the screen stays short. Base each one on what you saw:
 
+- A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes first. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more redos are due today." For a `more_due` of 1, say "1 more redo is due today." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A redo is due today." Say "cold redo".
 - A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Say "Continue my last lesson".
 - A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Say "Review <the same few words>".
 - A plan with no `date`: name the plan, and say nothing about days left. Its next block follows the plan rule above.
-- A plan whose date is ahead: the next block's words, such as "mark my Diagnostic", "cold redo" with the count of open gaps, or "re-time today". If the next block is unclear, offer `/magnesium:papers`, which continues the plan.
+- A plan with a `days_left` of 0 or more: the next block's words, such as "mark my Diagnostic" or "re-time today". Offer "cold redo" only when `redos_due` is above 0. If the next block is unclear, offer `/magnesium:papers`, which continues the plan.
 - An assessment ahead with no plan: "I have <assessment> on <date>", or `/magnesium:papers`.
 - Course files by chapter or week: "Teach me <a chapter or week you saw> from the slides", or "Quiz me on <it>. One question at a time." When the syllabus gives the next assessment's coverage, pick a chapter or week inside it.
 - An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between sessions, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
@@ -179,21 +182,22 @@ Next: say "Continue my last lesson".
 
 #### Example: plan in progress
 
-The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, and 3 open gaps. Its session's `next_action` is "Cold redo of the 3 open gaps, then sit Paper1-Easy".
+The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its `sessions_today` is `["08:00"]`. Its session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
 
 ```markdown
 ## In this folder
 
+- Your 08:00 session: 3 redos are due.
 - Your plan for Midterm 1 is in `Study/midterm-1/`. The test is on 2026-10-23, in <N> days.
-- The tutor marked your Diagnostic 18/30 on 2026-10-15. 3 gaps are still open.
+- The tutor marked your Diagnostic 18/30 on 2026-10-15. 3 gaps are not fixed yet.
 
 ## What you can do now
 
-1. **Redo your 3 open gaps.** You answer each one again from a blank page. Say "cold redo".
+1. **Redo Diagnostic Q4 cold.** 2 more redos are due today. You answer from a blank page. Say "cold redo".
 2. **Sit Paper1-Easy next.** Use a timer. Then send photos and say "mark my Paper1-Easy".
 3. **Fit today to your time.** Say "re-time today" and give your free hours.
 
-Next: say "cold redo".
+Next: redo Diagnostic Q4 cold. 2 more redos are due today. Say "cold redo".
 ```
 
 ## Topic: overview
@@ -245,14 +249,14 @@ The tutor marks them and helps you fix each gap.
 
 ## Steps
 
-1. Tell the tutor about your test, for example "I have a midterm Monday". Or type `/magnesium:papers`.
+1. Tell the tutor about your test, like "I have a midterm Monday", or type `/magnesium:papers`.
 2. Answer the tutor's questions.
-3. The tutor writes your plan and papers. The first paper is the Diagnostic.
-4. **Sit the Diagnostic** alone, with a timer. Write `?` where you would look something up.
+3. The tutor writes your plan and papers, starting with the Diagnostic.
+4. **Sit the Diagnostic** alone and timed. Write `?` where you would look something up. After each answer, write S (sure), U (unsure) or G (guess).
 5. **Send photos or a PDF** of your answers. Then say "mark my Diagnostic".
-6. The tutor marks your answers. It writes each lost mark in the gap log.
+6. The tutor marks your answers and writes each lost mark in the gap log.
 7. **Repair** each gap with the tutor.
-8. Later, do a **cold redo** of each gap with no help. A pass closes the gap.
+8. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
 
 ## What to say
 
@@ -261,22 +265,22 @@ The tutor marks them and helps you fix each gap.
 | "mark my PAPER" | The tutor marks that paper. |
 | "teach me TAG" | The tutor teaches that topic. |
 | "repair TAG" | The tutor does a short repair on that topic. |
-| "cold redo" | You redo open gaps from a blank page. |
+| "cold redo" | You redo the gaps that are due. |
 | "new mock" | You get another paper at test level. |
 | "re-time today" | The tutor fits today's work to the hours you have. |
 | "rebuild" | The tutor starts the plan again. |
 
-PAPER is a paper name, like Diagnostic. TAG is a topic name from your gap log.
+PAPER is a paper, like Diagnostic. TAG is a topic from your gap log.
 
 ## Your files
 
 Your files are in `Study/<target>/`, like `Study/midterm-1/`.
-Each new session continues from the plan in `plan.md`.
+Each new session continues from `plan.md`.
 
 ## Rules
 
 - **Keep the KEY files closed** until you send your answers.
-- The tutor asks before it adds a lot of time.
+- The tutor asks before it adds much time.
 
 Next: tell the tutor about your test.
 ````

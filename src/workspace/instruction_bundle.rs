@@ -16,12 +16,13 @@ use sha2::{Digest, Sha256};
 
 const BUNDLE_VERSION: u64 = 2;
 const SUPPORTED_SCHEMA: u64 = 2;
-/// Revised from 24 KiB (issue #271 asks for a measured reason): the largest
-/// stage plus tool_recipes response reached 24,573 bytes, leaving no room for
-/// guidance that dogfooding showed was missing. 28 KiB stays far below Claude
-/// Code's MCP result cap and is a modest step for hosts with model-specific
-/// truncation budgets.
-const RESPONSE_LIMIT: usize = 28 * 1024;
+/// Caps the instruction text in one load. Across every stage and host, the MCP
+/// text block adds at most about 4% of JSON escapes and 477 bytes of fields,
+/// so 32 KiB of text makes an MCP text block of at most about 34,600 bytes.
+/// The binding host limits are higher: Claude Code saves a result over 50,000
+/// characters to a file, Codex silently cuts above about 48,000 bytes on
+/// bundled models, and OpenCode truncates above 51,200 bytes.
+const RESPONSE_LIMIT: usize = 32 * 1024;
 const MAX_APPROVED_ASSET_BYTES: usize = 1024 * 1024;
 const MAX_BUNDLE_DIRECTORY_DEPTH: usize = 4;
 const MAX_APPROVED_MANIFEST_BYTES: usize = 64 * 1024;

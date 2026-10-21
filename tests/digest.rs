@@ -73,7 +73,13 @@ fn write_plan(root: &Path) {
     .unwrap();
     fs::write(
         dir.join("gap-log.md"),
-        "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Status |\n|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic | open |\n| 2 | 2026-10-14 | Diagnostic | open |\n| 3 | 2026-10-14 | Diagnostic | closed |\n\n## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-14 | 14/30 |\n",
+        "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
+         | 1 | 2000-01-01 | Diagnostic | Q2 | | 2999-01-01 | open |\n\
+         | 2 | 2000-01-01 | Diagnostic | Q4 | 2000-01-02 pass | 2000-01-05 | 1 of 3 |\n\
+         | 3 | 2000-01-01 | Diagnostic | Q5 | 2000-01-02 pass, 2000-01-05 pass | 2000-01-12 | 2 of 3 |\n\
+         | 4 | 2000-01-01 | Diagnostic | Q6 | 2000-01-02 pass, 2000-01-05 pass, 2000-01-12 pass | | closed |\n\
+         | 5 | 2000-01-01 | Diagnostic | Q7 | 2000-01-03 fail | | open |\n\n\
+         ## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-14 | 14/30 |\n",
     )
     .unwrap();
 }
@@ -147,10 +153,80 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
     assert_eq!(plan["date"], "2999-01-02");
     assert!(plan["days_left"].as_i64().unwrap() > 1000);
     assert_eq!(plan["blocks"], json!(["Diagnostic", "Paper1-Easy"]));
-    assert_eq!(plan["open_gaps"], 2);
+    assert_eq!(plan["unfixed_gaps"], 4);
+    assert_eq!(plan["redos_due"], 2);
+    assert_eq!(
+        plan["first_due"],
+        json!({"paper": "Diagnostic", "question": "Q4", "more_due": 1})
+    );
     assert_eq!(plan["scores"][0]["score"], "14/30");
+    assert_eq!(plan["sessions_today"], json!([]));
     // The goal does not name the target, so no session is matched to the plan.
     assert_eq!(plan["session"], Value::Null);
+}
+
+#[test]
+fn digest_counts_unfixed_rows_of_an_old_gap_log_and_none_as_due() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), "# Final: study plan\n").unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: final\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
+         | 1 | 2000-01-01 | Diagnostic | Q2 | km | sign error | A | tighten | 2000-01-02 | open |\n\
+         | 2 | 2000-01-01 | Diagnostic | Q3 | vmax | no units | N | tighten | 2000-01-02 | closed |\n",
+    )
+    .unwrap();
+
+    let plan = &digest(&e)["plans"][0];
+
+    assert_eq!(plan["target"], "final");
+    assert_eq!(plan["unfixed_gaps"], 1);
+    assert_eq!(plan["redos_due"], 0);
+    assert_eq!(plan["first_due"], Value::Null);
+}
+
+#[test]
+fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let mut plan = include_str!("../claude-plugin/skills/papers/templates/plan.md").to_owned();
+    for (prefix, row) in [
+        ("| Target |", "| Target | Final exam |"),
+        ("| When |", "| When | 2999-01-02 (Sat) 09:00 to 12:00 |"),
+        (
+            "| 1 | <name> |",
+            "| 1 | Diagnostic | find gaps | 90 min, stop at 100 | Diagnostic.pdf | 1.5 h |",
+        ),
+        (
+            "- anchor: <what the learner did",
+            "- anchor: applies the chain rule to single-variable functions (Diagnostic, Q3)",
+        ),
+        (
+            "- If it is <days> at <HH:MM>,",
+            "- If it is 07:30, then I do the due cold redos at my desk.",
+        ),
+    ] {
+        let line = plan
+            .lines()
+            .find(|line| line.starts_with(prefix))
+            .unwrap_or_else(|| panic!("template has no line starting {prefix:?}"))
+            .to_owned();
+        plan = plan.replacen(&line, row, 1);
+    }
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), plan).unwrap();
+
+    let value = digest(&e);
+
+    let plan = &value["plans"][0];
+    assert_eq!(plan["title"], "Final exam", "{value}");
+    assert_eq!(plan["date"], "2999-01-02");
+    assert_eq!(plan["blocks"], json!(["Diagnostic"]));
+    assert_eq!(plan["sessions_today"], json!(["07:30"]));
 }
 
 #[test]

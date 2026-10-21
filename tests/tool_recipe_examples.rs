@@ -204,7 +204,7 @@ fn checkpoint_recipes_are_served_for_every_host_and_stage_within_budget() {
                     .contains(&json!(format!("workflows/{}.md", stage.replace('_', "-")))),
                 "{host}/{stage}: workflow was not served"
             );
-            assert!(served["bytes_served"].as_u64().unwrap() <= 28 * 1024);
+            assert!(served["bytes_served"].as_u64().unwrap() <= 32 * 1024);
             assert!(
                 served["text"]
                     .as_str()
