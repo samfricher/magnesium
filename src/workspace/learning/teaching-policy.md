@@ -10,9 +10,7 @@ Transfer requires more than a familiar procedure with different numbers. The lea
 
 ## Start from sufficient foundations, not the beginning of the field
 
-Work backward from the goal to the next dependency, then forward from an anchor, a skill or way of thinking the learner's own work has shown, with where they showed it. Identify the objects, their roles, the permitted operations, and the relationships or constraints preserved by those operations. Introduce notation where it carries that structure.
-
-Say which anchor you build on before you explain. If none fits, first ask "What do you already know that looks like this?" When the learner then answers a check question correctly, add the approach that worked as an anchor, written as what they did, not as a learning style.
+Work backward from the goal to the next dependency, then forward from an anchor, a skill or way of thinking the learner's own work has shown, not a learning style. Say which anchor you build on. Identify the objects, their roles, the permitted operations, and the relationships or constraints preserved by those operations. Introduce notation where it carries that structure.
 
 Distinguish a definition, an exact identity, a theorem under assumptions, an empirical model, an approximation, and a convention. State conditions beside the claim they constrain. Do not manufacture caveat-free truths, present a convenient definition as a fact about the world, or imply every design choice is logically inevitable.
 

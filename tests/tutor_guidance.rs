@@ -263,21 +263,37 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let rules = [
-        "then forward from an anchor, a skill or way of thinking the learner's own work has shown, with where they showed it.",
-        "Say which anchor you build on before you explain.",
-        "If none fits, first ask \"What do you already know that looks like this?\"",
-        "When the learner then answers a check question correctly, add the approach that worked as an anchor, written as what they did, not as a learning style.",
+        "then forward from an anchor, a skill or way of thinking the learner's own work has shown, not a learning style. Say which anchor you build on.",
+        "another anchor or representation",
         "Keep any example step or anchor in its state_text.",
     ];
+    let question = "\"What do you already know that looks like this?\"";
+    let skip_cases = [
+        (
+            "teach_and_practice",
+            "So skip the anchor question after an explicit request or right after the confusion question",
+        ),
+        (
+            "interpret_and_repair",
+            "unless you just asked a confused learner about the cause, or the learner asked for an explanation or a full solution.",
+        ),
+    ];
+    let procedure = [
+        "memory search with literal_terms [\"anchor:\"] and read each memory it returns",
+        "has a tag for",
+        "A tutor explanation, a source or a self-report is never an anchor.",
+        "forward from the next dependency in small steps.",
+        "lowercase \"anchor:\"",
+        "to the existing state_text of the memory for that skill, without dropping the rest.",
+        "When a plan covers the topic, also copy",
+    ];
     for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "anchors",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
+        let served = |stage: &str, operation: Option<&str>| {
+            let mut request = json!({"action":"instructions","host":host,"stage":stage});
+            if let Some(operation) = operation {
+                request["operation"] = json!(operation);
+            }
+            v2::tool(&e, host, "anchors", "context", request)["text"]
                 .as_str()
                 .unwrap()
                 .to_owned()
@@ -292,35 +308,52 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             "papers",
             "papers_loop",
         ] {
-            let text = served(stage);
+            let text = served(stage, None);
             for rule in rules {
                 assert!(text.contains(rule), "{host}/{stage}: {rule}");
             }
+            let skip = skip_cases.iter().find(|(name, _)| *name == stage);
+            assert_eq!(
+                text.contains(question),
+                skip.is_some(),
+                "{host}/{stage} serves the anchor question only with its skip cases"
+            );
+            if let Some((_, skip)) = skip {
+                assert!(text.contains(skip), "{host}/{stage}: {skip}");
+                for step in procedure {
+                    assert!(text.contains(step), "{host}/{stage}: {step}");
+                }
+            }
         }
-        for (stage, required) in [
+        for (stage, operation, required) in [
             (
-                "teach_and_practice",
-                "Search memories for \"anchor:\" and read the memories it finds, since a search result can leave state_text out. Also check the Anchors section of a plan that covers the topic.",
-            ),
-            (
-                "teach_and_practice",
-                "Skip that question right after you asked a confused learner about the cause",
-            ),
-            (
-                "teach_and_practice",
-                "When a plan covers the topic, add it to that plan's Anchors section. Otherwise add a line such as \"anchor: ",
+                "orient_and_probe",
+                None,
+                "plus literal_terms [\"anchor:\"] for anchors",
             ),
             (
                 "papers",
-                "At build, fill Anchors from the memories you read.",
+                None,
+                "At build, run a memory search with literal_terms [\"anchor:\"]",
+            ),
+            (
+                "papers",
+                None,
+                "The memory stays the anchor's home, and the plan keeps a copy.",
             ),
             (
                 "papers_loop",
-                "When an open tag needs a skill a fully correct part shows, add it to the plan's Anchors.",
+                None,
+                "add an \"anchor:\" line to that skill's tag memory and copy it to the plan's Anchors, adding the section if the plan lacks it.",
+            ),
+            (
+                "teach_and_practice",
+                Some("state_and_evidence"),
+                "That line is the anchor's home. A plan's Anchors section keeps a copy of the anchors its topics use.",
             ),
         ] {
             assert!(
-                served(stage).contains(required),
+                served(stage, operation).contains(required),
                 "{host}/{stage}: {required}"
             );
         }
