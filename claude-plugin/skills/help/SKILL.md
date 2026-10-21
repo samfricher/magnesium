@@ -42,7 +42,7 @@ The learner wants one clear next step for this folder, and wants it fast. Many l
 Run `magnesium digest` once. It changes nothing. It prints JSON facts that code has already worked out:
 
 - `today`, and `files`: the study folder listed two levels deep, without hidden entries, `AGENTS.md` and `CLAUDE.md`.
-- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other redos due.
+- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other redos due. `sessions_today` lists the start times, earliest first, of the plan's Sessions lines that fall today. It is empty when no line falls today or the digest cannot read the lines.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
 
@@ -56,6 +56,8 @@ Then look only for what the digest does not hold:
 - For a plan, the next block is in its session's `next_action` or `current_problem`, which name the current paper and the next block. Without a session, the next block is the first block whose paper has no score. When you name a score, give the date in `scores`. If `magnesium digest` failed, read the plan's Facts and Blocks sections and its `gap-log.md` instead.
 
 If a file cannot be read, or a fact is unclear, leave it out. A short screen is better than a wrong one. If you cannot list the folder at all, show Topic: overview instead.
+
+Put a planned session first under In this folder, for a plan with times in `sessions_today` and a `days_left` of 0 or more, or no date. Give the time and `redos_due` as printed: "Your 08:00 session: 2 redos are due." For a `redos_due` of 1, say "1 redo is due". For 0, say "Your 08:00 session is today." For two times, say "Your 08:00 and 18:30 sessions". When several plans have a session today, add "for <the plan's title>" after "session".
 
 ### Choose 2 to 4 actions
 
@@ -180,11 +182,12 @@ Next: say "Continue my last lesson".
 
 #### Example: plan in progress
 
-The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
+The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its `sessions_today` is `["08:00"]`. Its session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
 
 ```markdown
 ## In this folder
 
+- Your 08:00 session: 3 redos are due.
 - Your plan for Midterm 1 is in `Study/midterm-1/`. The test is on 2026-10-23, in <N> days.
 - The tutor marked your Diagnostic 18/30 on 2026-10-15. 3 gaps are not fixed yet.
 
