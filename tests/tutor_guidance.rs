@@ -246,6 +246,97 @@ fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
 }
 
 #[test]
+fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_template_steps() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let papers = v2::tool(
+            &e,
+            host,
+            "gap-log-upgrade",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = papers["text"].as_str().unwrap();
+        for step in [
+            "## Upgrade an old gap log",
+            "Rename `Cold-redo date` to `Next redo`",
+            "after an empty `Passes` column.",
+            "write Status as exactly `closed`",
+            "gets tomorrow's date if it has none and its Repair done is filled",
+            "If the log has no Conf column, add one after Type, empty in every row.",
+            "Dismiss the plan's old gap review suggestions",
+            "log the upgrade as one line under Changes in `plan.md`",
+        ] {
+            assert!(text.contains(step), "{host}: {step}");
+        }
+    }
+    let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
+    let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
+    let section = section.split("\n## ").next().unwrap();
+    assert!(
+        section.contains("papers_loop") && section.contains("`## Tags`"),
+        "{section}"
+    );
+    for served_step in [
+        "Cold-redo date",
+        "Passes",
+        "Dismiss",
+        "tomorrow",
+        "today",
+        "exactly",
+        "after `Type`",
+        "empty in every row",
+    ] {
+        assert!(
+            !section.contains(served_step),
+            "the papers skill repeats a served step of the upgrade ({served_step}): {section}"
+        );
+    }
+}
+
+#[test]
+fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let verb = "fix my plan files";
+    for (name, text) in [
+        (
+            "help skill",
+            include_str!("../claude-plugin/skills/help/SKILL.md"),
+        ),
+        (
+            "papers skill",
+            include_str!("../claude-plugin/skills/papers/SKILL.md"),
+        ),
+        (
+            "plan template",
+            include_str!("../claude-plugin/skills/papers/templates/plan.md"),
+        ),
+    ] {
+        assert!(text.contains(verb), "{name} does not mention {verb:?}");
+    }
+    for host in ["codex", "claude", "opencode"] {
+        let served = v2::tool(
+            &e,
+            host,
+            "fix-plan-files",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = served["text"].as_str().unwrap();
+        for part in [
+            verb,
+            "correct each `unreadable` item in `magnesium digest` at its `file` and `line`",
+            "`unreadable`",
+            "rerun it until none is left",
+        ] {
+            assert!(text.contains(part), "{host}: {part}");
+        }
+    }
+}
+
+#[test]
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
@@ -437,7 +528,7 @@ fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
         ] {
             assert!(papers.contains(required), "{host}/papers: {required}");
         }
-        let rule = "If the learner changes when or where they practise, rewrite Sessions, and add the section if it is missing.";
+        let rule = "If the learner changes when or where they practise, rewrite Sessions, adding it if missing.";
         assert!(
             served("papers_loop").contains(rule),
             "{host}/papers_loop: {rule}"

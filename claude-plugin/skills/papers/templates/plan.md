@@ -149,6 +149,7 @@ Say any of these, in your own words:
 - "cold redo", to redo the gap-log rows that are due, from a blank page.
 - "new mock", for another paper at assessment level.
 - "re-time today", to fit today's blocks to the hours you have.
+- "fix my plan files", to repair lines in this plan or its gap log that the digest could not read.
 - "rebuild", to start this plan again.
 
 Open a key only after you return the sitting. Magnesium keeps a learner record in this workspace, so a later conversation continues from this plan, `gap-log.md` and that record.
