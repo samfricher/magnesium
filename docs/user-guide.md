@@ -39,6 +39,8 @@ Give the tutor your attempts, questions and constraints. It can use authorized l
 
 If a new kind of problem leaves you without a way to start, the tutor works through a similar problem, then gives you a changed version to solve yourself. If that kind of problem stops you again, the tutor leaves some steps for you to fill in. After that, you get the problem alone. If you say you are confused, it first asks one question about how you see the problem, and uses your answer to choose what to explain.
 
+Before it explains something new, the tutor names a skill you have already shown in your own work and builds from it. These skills are called anchors. If none fits, it first asks what you already know that looks like the new idea. When you then answer a check question correctly, it adds the approach that worked to your anchors. It keeps them in your learner record, or in the Anchors section of a practice plan.
+
 If a memory is wrong, say so: “That wasn't a conceptual gap; I misread the question. Please correct the memory.” The tutor can inspect your original work and revise its interpretation while keeping the history.
 
 ## Practise with timed papers

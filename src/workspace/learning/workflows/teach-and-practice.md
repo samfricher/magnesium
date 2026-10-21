@@ -10,6 +10,10 @@ Start with the local problem the idea solves. Identify the objects and roles; sh
 
 Choose the representation that exposes the relationship. Align symbols with the quantities they name, a trace with its event order, and a diagram with its axes or bindings. Map an analogy to the real mechanism and state where it stops applying. Do not add a diagram when one equation or trace is clearer.
 
+Search memories for "anchor:" and read the memories it finds, since a search result can leave state_text out. Also check the Anchors section of a plan that covers the topic. A tutor explanation, a source or a self-report is never an anchor. Name the anchor in the explanation, such as "You can already do the single-variable chain rule. The matrix version is the same rule, applied to each entry." Prefer a representation the anchor already uses, so the learner does not meet a new form and a new idea at once. If no anchor fits, ask "What do you already know that looks like this?" and build from the answer. Skip that question right after you asked a confused learner about the cause, and build from that answer instead. Also skip it when the learner asked for an explanation or a full solution.
+
+When the learner answers the check question after the explanation correctly, write the approach as an anchor that names what the learner did and where. When a plan covers the topic, add it to that plan's Anchors section. Otherwise add a line such as "anchor: applies the chain rule entry by entry to a matrix function (check question after the matrix explanation)" to the existing state_text of the memory for that skill, without dropping the rest. Keep the list short, and replace an anchor that a newer one covers.
+
 Choose who performs the next operation:
 
 | Learner's current position | Next move |
@@ -26,7 +30,7 @@ Choose who performs the next operation:
 
 This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the other rows.
 
-The teaching policy says where the example step lives. A meeting where the learner knows how to start changes no step. Revise the state_text when you interpret the learner's attempt after a step you gave, such as "example step: full; solved the changed version alone". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
+The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step: full". For a tag with several kinds of problem, name the kind, such as "example step (variance): full". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 
