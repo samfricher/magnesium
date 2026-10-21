@@ -14,13 +14,13 @@
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "8462c2e78872473254d1d74e5e8c6697201e6f012fa04606fc726937c35c770d"
+      "sha256": "dc8c73da26ad692817974483e80b6aa14c2b3c33ba96300430698d161e80adf4"
     },
     {
       "path": "contracts/state-and-evidence.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "5fed2d5e89a9ab55a4172cfb44ddad8e444a73bc1e2eb1bd2d34ea78bdd5fccc"
+      "sha256": "5d8fb8b0633a84b96007cf85a381f375e88d53bc30b33c9b656d07229868412d"
     },
     {
       "path": "contracts/source-use.md",
@@ -38,28 +38,28 @@
       "path": "workflows/orient-and-probe.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "814ba2edfc38034f5c1dabe6d2548274534687837b1a2ac98c663bb56ad7b8e3",
+      "sha256": "2476e052b0f2453caa137c0a75074c9b4689914d8fe2a326f0cdf48863254f7d",
       "stage": "orient-and-probe"
     },
     {
       "path": "workflows/plan-and-route.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "f8d5d7b9693663a8928350c5489a810b87d869ec00582da9f72da850ea557ae4",
+      "sha256": "404770db27e28ab9cbba61d4f81789a73b58a47ce827503f68686ca6beb9edcc",
       "stage": "plan-and-route"
     },
     {
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "275102abc0073c8cacb35b6598050068a81fc8630149539c01f8d3ef94f89e3e",
+      "sha256": "a5bb63cfb18a58c07c358d36eb94aa339fa38e72775800c1e6b3d6273c90df20",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "367591eb596e9ebbe3118173414417be43042dcaa82ebd8749de7aa0ed0892d0",
+      "sha256": "3e96f4e02a785107e060c08147510a183e05d2ab7d53d401d818e325955bb711",
       "stage": "interpret-and-repair"
     },
     {
@@ -80,14 +80,14 @@
       "path": "workflows/papers.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "f119058d78fd67e665c7b1be87cbcf357b50ff2c963af9965f6abc6fb8065396",
+      "sha256": "6f77941171a45bf16d8c4af9614958d3878a52f2a45d52dd457feac9fb3ef9c9",
       "stage": "papers"
     },
     {
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "4dbeff021c3deabd24e71a1bc29bfcd97b18c4027ee388f59578875872cf6826",
+      "sha256": "7afe7f38aca618fa3cee0b954e8a34fc1adb877e6112a31e16d338e18e586adf",
       "stage": "papers-loop"
     },
     {

@@ -17,10 +17,11 @@ use sha2::{Digest, Sha256};
 const BUNDLE_VERSION: u64 = 2;
 const SUPPORTED_SCHEMA: u64 = 2;
 /// Caps the instruction text in one load. Across every stage and host, the MCP
-/// result adds at most about 4% of JSON escapes and 477 bytes of fields, so
-/// 32 KiB of text is at most about 34,600 bytes on the wire. The binding host limits are higher: Claude Code saves a
-/// result over 50,000 characters to a file, Codex silently cuts above about
-/// 48,000 bytes on bundled models, and OpenCode truncates above 51,200 bytes.
+/// text block adds at most about 4% of JSON escapes and 477 bytes of fields,
+/// so 32 KiB of text makes an MCP text block of at most about 34,600 bytes.
+/// The binding host limits are higher: Claude Code saves a result over 50,000
+/// characters to a file, Codex silently cuts above about 48,000 bytes on
+/// bundled models, and OpenCode truncates above 51,200 bytes.
 const RESPONSE_LIMIT: usize = 32 * 1024;
 const MAX_APPROVED_ASSET_BYTES: usize = 1024 * 1024;
 const MAX_BUNDLE_DIRECTORY_DEPTH: usize = 4;
