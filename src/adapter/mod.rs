@@ -875,7 +875,7 @@ mod tests {
         claude_prompt(&root, &first, "a-1");
         claude_prompt(&root, &second, "b-1");
         claude_stop(&root, &first, "a-1", &long_reply()).unwrap();
-        claude_stop(&root, &second, "b-1", "Good. Now solve 2x = 6.").unwrap();
+        claude_stop(&root, &second, "b-1", "Good. Your turn: solve 2x = 6.").unwrap();
         let first_note = claude_prompt(&root, &first, "a-2");
         let second_note = claude_prompt(&root, &second, "b-2");
         assert!(
