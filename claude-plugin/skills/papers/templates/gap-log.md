@@ -2,7 +2,7 @@
 
 One row per lost mark. A row closes after three cold passes on three different days. The first redo is at least a day after the repair, never on the same day. The next two are at least 3 and then 7 days apart, or closer when the assessment is near. Marks and scores live here; the learner record holds the interpreted state.
 
-Status: exactly one of open, 1 of 3, 2 of 3 or closed. Passes: the date and result of each redo, such as 2026-10-17 pass, or 2026-10-20 pass (MockA Q3) for a pass in a sitting. A fail starts the list again, such as 2026-10-24 fail. Next redo: the date the next redo is due. It is empty after a fail until the new repair, and once the row closes.
+Status: exactly one of open, 1 of 3, 2 of 3 or closed. Passes: the date and result of each redo, such as 2026-10-17 pass, or 2026-10-20 pass (MockA Q3) for a pass in a sitting. A fail starts the list again, such as 2026-10-24 fail. Next redo: the date the next redo is due. Leave it empty when you log the mark, and fill it in once the repair is done. It is empty again after a fail until the new repair, and once the row closes.
 
 Type: K did not know, S slow, N notation or missing step, A arithmetic, R misread.
 
@@ -14,7 +14,7 @@ The tags, what each covers and the pages to re-read are in `graph.yaml`; the dri
 
 | # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | <YYYY-MM-DD> | <PAPER> | <Q> | <TAG> | <what was written, and what the mark scheme needed> | <K, S, N, A or R> | <tighten, repair or teach, and what was done> | <empty until the first redo> | <YYYY-MM-DD> | open |
+| 1 | <YYYY-MM-DD> | <PAPER> | <Q> | <TAG> | <what was written, and what the mark scheme needed> | <K, S, N, A or R> | <tighten, repair or teach, and what was done> | <empty until the first redo> | <empty until the repair> | open |
 
 ## Scores
 

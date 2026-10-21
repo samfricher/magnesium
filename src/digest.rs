@@ -970,6 +970,17 @@ mod tests {
     }
 
     #[test]
+    fn the_gap_log_template_does_not_invite_a_date_before_the_repair() {
+        let template = include_str!("../claude-plugin/skills/papers/templates/gap-log.md");
+        let table = Table::parse(section(template, "Gaps"));
+        let row = &table.rows[0];
+        for name in ["Passes", "Next redo"] {
+            let cell = table.cell(row, name).unwrap();
+            assert!(cell.starts_with("<empty until"), "{name}: {cell}");
+        }
+    }
+
+    #[test]
     fn goals_match_a_target_by_slug_or_title() {
         assert!(names_target("Midterm 1 practice papers", "midterm-1", None));
         assert!(names_target("Study for ch6-7", "ch6-7", None));
