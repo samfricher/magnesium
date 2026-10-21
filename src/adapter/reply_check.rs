@@ -1,7 +1,6 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::learner::HostContext;
-use crate::workspace::Workspace;
 
 const WORD_LIMIT: usize = 200;
 
@@ -94,70 +93,21 @@ fn calls_themselves_confused(words: &str) -> bool {
     })
 }
 
-const PROMPT_TURNS: &str = "cache/prompt-turns";
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PromptTurns {
-    previous: String,
-    current: String,
-}
-
-pub(crate) fn remember_prompt(
-    workspace: &Workspace,
-    host: &HostContext,
-    turn: &str,
-) -> Option<PromptTurns> {
-    let path =
-        super::host::conversation_file(workspace, PROMPT_TURNS, &host.host_thread_id, "turns")
-            .ok()?;
-    let current = super::native_capture::event_key(turn);
-    let saved = std::fs::read(&path)
-        .ok()
-        .filter(|bytes| bytes.len() <= 4096)
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(|text| {
-            let lines: Vec<&str> = text.split('\n').collect();
-            match lines.as_slice() {
-                [previous, current] if !current.is_empty() => {
-                    Some(((*previous).to_owned(), (*current).to_owned()))
-                }
-                _ => None,
-            }
-        });
-    let previous = match saved {
-        Some((previous, saved_current)) if saved_current == current => previous,
-        Some((_, saved_current)) => saved_current,
-        None => String::new(),
-    };
-    if crate::workspace::write_private_atomic(&path, format!("{previous}\n{current}").as_bytes())
-        .is_err()
-    {
-        let _ = std::fs::remove_file(&path);
-        return None;
-    }
-    (!previous.is_empty()).then_some(PromptTurns { previous, current })
-}
-
-pub(crate) fn forget_prompts(workspace: &Workspace, host: &HostContext) {
-    if let Ok(path) =
-        super::host::conversation_file(workspace, PROMPT_TURNS, &host.host_thread_id, "turns")
-    {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
+/// Judges the latest recorded reply only when it answers the latest recorded
+/// prompt before this one, so a turn the hooks missed does not pass off an
+/// older reply as the previous one.
 pub(crate) fn feedback(
     conn: &Connection,
     host: &HostContext,
-    turns: &PromptTurns,
+    current_event: &str,
 ) -> rusqlite::Result<Option<String>> {
     let latest = |speaker: &str,
                   kind: &str,
                   column: &str|
      -> rusqlite::Result<Option<(String, String)>> {
         conn.query_row(
-            &format!("SELECT external_event_key,{column} FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker=?3 AND kind=?4 AND external_event_key<>?5 ORDER BY event_no DESC LIMIT 1"),
-            params![host.host_kind, host.host_thread_id, speaker, kind, turns.current],
+            &format!("SELECT external_event_key,{column} FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker=?3 AND kind=?4 AND event_id<>?5 ORDER BY event_no DESC LIMIT 1"),
+            params![host.host_kind, host.host_thread_id, speaker, kind, current_event],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
@@ -166,8 +116,7 @@ pub(crate) fn feedback(
         return Ok(None);
     };
     let prompt = latest("learner", "message", "''")?.map(|(key, _)| key);
-    let answers_previous_prompt = super::native_capture::event_key(&reply_turn) == turns.previous
-        && prompt.as_deref() == Some(turns.previous.as_str());
+    let answers_previous_prompt = prompt == Some(super::native_capture::event_key(&reply_turn));
     Ok(answers_previous_prompt
         .then(|| ReplyCheck::of(&reply).feedback())
         .flatten())

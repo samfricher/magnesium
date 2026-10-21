@@ -373,10 +373,7 @@ pub(crate) fn host_session_start(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NoticeHook<'a> {
     SessionStart,
-    UserPromptSubmit {
-        prompt: &'a str,
-        turns: Option<&'a reply_check::PromptTurns>,
-    },
+    UserPromptSubmit { prompt: &'a str },
 }
 impl NoticeHook<'_> {
     const fn additional_context_limit(self) -> usize {
@@ -430,10 +427,10 @@ fn hook_notice(
         };
         clauses.push((Clause::Required, recovery.into()));
     }
-    if let (true, true, NoticeHook::UserPromptSubmit { prompt, turns }) = (claude, active, hook) {
+    if let (true, true, NoticeHook::UserPromptSubmit { prompt }) = (claude, active, hook) {
         clauses.push((Clause::TeachingReminder, reply_check::reminder().into()));
-        if let Some(feedback) = turns.and_then(|turns| {
-            reply_check::feedback(&store.conn, host, turns)
+        if let Some(feedback) = event.and_then(|event| {
+            reply_check::feedback(&store.conn, host, event)
                 .ok()
                 .flatten()
         }) {
@@ -477,12 +474,8 @@ pub(crate) fn host_user_prompt_submit(
     let context = host_context(host);
     let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
     let store = open_store(&workspace)?;
-    let claude = context.host_kind == "claude";
     if safety.blocked.is_some() {
         let _ = native_capture::invalidate(&workspace, &context);
-        if claude {
-            reply_check::forget_prompts(&workspace, &context);
-        }
         return Ok(Some(if safety.blocked == Some(control_admission::CaptureBlock::SharedDeny) {
             "Magnesium learner-model/v2: capture denied by a shared control safety latch. Explicit recording_on or learning resume, as appropriate, is required."
         } else {
@@ -503,14 +496,6 @@ pub(crate) fn host_user_prompt_submit(
         occurred_at_ms: None,
     };
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
-    let turns = match (claude, recording) {
-        (true, true) => reply_check::remember_prompt(&workspace, &context, &key),
-        (true, false) => {
-            reply_check::forget_prompts(&workspace, &context);
-            None
-        }
-        (false, _) => None,
-    };
     if !active && recording {
         match native_capture::issue(
             &workspace,
@@ -522,7 +507,7 @@ pub(crate) fn host_user_prompt_submit(
             Ok(ticket) => {
                 let unbound:i64=store.conn.query_row("SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
                 let mut notice = native_ticket_notice(&ticket, unbound);
-                if claude {
+                if context.host_kind == "claude" {
                     notice.push_str(CLAUDE_START_GUIDANCE);
                 }
                 return Ok(Some(notice));
@@ -534,10 +519,7 @@ pub(crate) fn host_user_prompt_submit(
                         &store,
                         &context,
                         None,
-                        NoticeHook::UserPromptSubmit {
-                            prompt: text,
-                            turns: None,
-                        },
+                        NoticeHook::UserPromptSubmit { prompt: text },
                     )?
                 )));
             }
@@ -555,10 +537,7 @@ pub(crate) fn host_user_prompt_submit(
         &store,
         &context,
         ids.first().map(String::as_str),
-        NoticeHook::UserPromptSubmit {
-            prompt: text,
-            turns: turns.as_ref(),
-        },
+        NoticeHook::UserPromptSubmit { prompt: text },
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -871,101 +850,11 @@ mod tests {
             resumed.contains(" Previous reply: 300 words, no task."),
             "{resumed}"
         );
-
-        claude_stop(&root, &host, "four", &"recorded ".repeat(280)).unwrap();
-        control("off-between-turns", "recording_off");
-        claude_prompt(&root, &host, "five");
-        claude_stop(&root, &host, "five", "Sure. What is b?").unwrap();
-        control("on-between-turns", "recording_on");
-        let after_toggles = claude_prompt(&root, &host, "six");
-        assert!(!after_toggles.contains("Previous reply"), "{after_toggles}");
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
-    }
-    fn prompt_turns_file(root: &Path, host: &HostIdentity) -> std::path::PathBuf {
-        host::conversation_file(
-            &Workspace::discover(root).unwrap().unwrap(),
-            "cache/prompt-turns",
-            &host.stored_session_id(),
-            "turns",
-        )
-        .unwrap()
     }
     fn long_reply() -> String {
         "This is the idea and it is what you need. ".repeat(30)
-    }
-    #[test]
-    fn claude_feedback_never_judges_an_older_reply_from_a_stale_turns_file() {
-        let (root, store, host) = claude_lesson();
-        claude_prompt(&root, &host, "one");
-        claude_stop(&root, &host, "one", &long_reply()).unwrap();
-        let file = prompt_turns_file(&root, &host);
-        let after_one = std::fs::read(&file).unwrap();
-        claude_prompt(&root, &host, "two");
-        std::fs::write(&file, after_one).unwrap();
-        claude_stop(&root, &host, "two", "Good. Now solve 2x = 6.").unwrap();
-        let after_stale = claude_prompt(&root, &host, "three");
-        assert!(!after_stale.contains("Previous reply"), "{after_stale}");
-        claude_stop(&root, &host, "three", &long_reply()).unwrap();
-        let healed = claude_prompt(&root, &host, "four");
-        assert!(
-            healed.contains(" Previous reply: 300 words, no task."),
-            "{healed}"
-        );
-        drop(store);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn claude_feedback_never_judges_an_older_reply_when_the_turns_file_is_immutable() {
-        let (root, store, host) = claude_lesson();
-        claude_prompt(&root, &host, "one");
-        claude_stop(&root, &host, "one", &long_reply()).unwrap();
-        let file = prompt_turns_file(&root, &host);
-        let flags = |flag: &str| {
-            assert!(
-                std::process::Command::new("chflags")
-                    .arg(flag)
-                    .arg(&file)
-                    .status()
-                    .unwrap()
-                    .success()
-            )
-        };
-        flags("uchg");
-        let unwritable = claude_prompt(&root, &host, "two");
-        claude_stop(&root, &host, "two", "Good. Now solve 2x = 6.").unwrap();
-        let after = claude_prompt(&root, &host, "three");
-        flags("nouchg");
-        assert!(!unwritable.contains("Previous reply"), "{unwritable}");
-        assert!(!after.contains("Previous reply"), "{after}");
-        drop(store);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
-    fn claude_feedback_never_judges_an_older_reply_when_the_turns_file_cannot_be_written() {
-        let (root, store, host) = claude_lesson();
-        claude_prompt(&root, &host, "one");
-        claude_stop(&root, &host, "one", &long_reply()).unwrap();
-        let file = prompt_turns_file(&root, &host);
-        std::fs::remove_file(&file).unwrap();
-        std::fs::create_dir(&file).unwrap();
-        let unwritable = claude_prompt(&root, &host, "two");
-        assert!(file.is_dir(), "the blocked path stays a directory");
-        assert!(!unwritable.contains("Previous reply"), "{unwritable}");
-        claude_stop(&root, &host, "two", "Good. Now solve 2x = 6.").unwrap();
-        let after = claude_prompt(&root, &host, "three");
-        assert!(!after.contains("Previous reply"), "{after}");
-        std::fs::remove_dir(&file).unwrap();
-        claude_prompt(&root, &host, "four");
-        claude_stop(&root, &host, "four", &long_reply()).unwrap();
-        let healed = claude_prompt(&root, &host, "five");
-        assert!(
-            healed.contains(" Previous reply: 300 words, no task."),
-            "{healed}"
-        );
-        drop(store);
-        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn claude_feedback_skips_a_turn_after_a_prompt_hook_that_exited_early() {
@@ -975,58 +864,6 @@ mod tests {
         claude_stop(&root, &host, "two", "Good. Now solve 2x = 6.").unwrap();
         let after = claude_prompt(&root, &host, "three");
         assert!(!after.contains("Previous reply"), "{after}");
-        drop(store);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
-    fn claude_turns_file_heals_when_malformed_or_its_folder_is_deleted() {
-        let (root, store, host) = claude_lesson();
-        claude_prompt(&root, &host, "one");
-        let file = prompt_turns_file(&root, &host);
-        std::fs::write(&file, "a\nb\nc").unwrap();
-        claude_stop(&root, &host, "one", &long_reply()).unwrap();
-        assert!(!claude_prompt(&root, &host, "two").contains("Previous reply"));
-        claude_stop(&root, &host, "two", &long_reply()).unwrap();
-        let healed = claude_prompt(&root, &host, "three");
-        assert!(
-            healed.contains(" Previous reply: 300 words, no task."),
-            "{healed}"
-        );
-        std::fs::remove_dir_all(file.parent().unwrap()).unwrap();
-        claude_stop(&root, &host, "three", &long_reply()).unwrap();
-        assert!(!claude_prompt(&root, &host, "four").contains("Previous reply"));
-        claude_stop(&root, &host, "four", &long_reply()).unwrap();
-        let regrown = claude_prompt(&root, &host, "five");
-        assert!(
-            regrown.contains(" Previous reply: 300 words, no task."),
-            "{regrown}"
-        );
-        drop(store);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
-    fn claude_latch_block_deletes_the_turns_file() {
-        let (root, store, host) = claude_lesson();
-        claude_prompt(&root, &host, "one");
-        let file = prompt_turns_file(&root, &host);
-        assert!(file.exists());
-        let context = host_context(&host);
-        use sha2::Digest as _;
-        let key: String = sha2::Sha256::digest(
-            serde_json::to_vec(&[&context.host_kind, &context.host_thread_id]).unwrap(),
-        )
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-        let deny = root
-            .join(crate::workspace::CONTROL_DIR)
-            .join("control-safety")
-            .join(format!("{key}.deny"));
-        std::fs::create_dir_all(deny.parent().unwrap()).unwrap();
-        crate::workspace::write_private_atomic(&deny, &[1, 1]).unwrap();
-        let blocked = claude_prompt(&root, &host, "two");
-        assert!(blocked.contains("shared control safety latch"), "{blocked}");
-        assert!(!file.exists());
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1167,10 +1004,7 @@ mod tests {
             ("SessionStart", NoticeHook::SessionStart),
             (
                 "UserPromptSubmit",
-                NoticeHook::UserPromptSubmit {
-                    prompt: "",
-                    turns: None,
-                },
+                NoticeHook::UserPromptSubmit { prompt: "" },
             ),
         ] {
             assert_eq!(

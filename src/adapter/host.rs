@@ -143,26 +143,14 @@ pub(crate) fn launch_host() -> Option<HostKind> {
 
 const ENDED_SESSIONS: &str = "cache/ended-sessions";
 
-pub(crate) fn conversation_file(
-    workspace: &Workspace,
-    directory: &str,
-    stored_session_id: &str,
-    extension: &str,
-) -> Result<PathBuf, String> {
+fn ended_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
     let directory = workspace
-        .private_dir(Path::new(directory))
+        .private_dir(Path::new(ENDED_SESSIONS))
         .map_err(|error| error.to_string())?;
-    let path = directory.join(format!(
-        "{}.{extension}",
-        stored_session_hash(stored_session_id)
-    ));
+    let path = directory.join(format!("{}.ended", stored_session_hash(stored_session_id)));
     crate::workspace::reject_symlink_components(&path, workspace.control())
         .map_err(|error| error.to_string())?;
     Ok(path)
-}
-
-fn ended_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
-    conversation_file(workspace, ENDED_SESSIONS, stored_session_id, "ended")
 }
 
 /// Claude Code keeps a stdio MCP server, and its spawn-time session ID,
