@@ -770,6 +770,30 @@ mod tests {
         )
     }
     #[test]
+    fn claude_feedback_says_no_task_after_an_offer_a_check_in_or_a_remark() {
+        let (root, store, host) = claude_lesson();
+        claude_prompt(&root, &host, "0");
+        for (turn, reply) in [
+            "b scales x, so it stays fixed. Would you like me to explain it differently?",
+            "b scales x, so it stays fixed. Shall I write the next step?",
+            "b scales x, so it stays fixed. Should I solve it?",
+            "Spot on! b is the coefficient of x.",
+            "Sort of… b is fixed, but x varies.",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            claude_stop(&root, &host, &turn.to_string(), reply).unwrap();
+            let next = claude_prompt(&root, &host, &(turn + 1).to_string());
+            assert!(
+                next.contains(" Previous reply: no task."),
+                "{reply}: {next}"
+            );
+        }
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
         let (root, store, host) = claude_lesson();
         let first = claude_prompt(&root, &host, "one");
