@@ -2,6 +2,10 @@
 //!
 //! Code gathers the facts and does the date arithmetic; the help skill only
 //! renders them. Nothing here writes to the folder or the learner store.
+//!
+//! Input the digest cannot read is never skipped silently. Each plan's
+//! `unreadable` lists it, with the file, section, line and reason, and the
+//! counts leave it out.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 use chrono::{Local, NaiveDate, TimeZone};
@@ -16,6 +20,7 @@ const MAX_SCANNED_ENTRIES: usize = 2000;
 const MAX_TEXT_CHARS: usize = 300;
 const MAX_RECENT_SESSIONS: usize = 3;
 const MAX_READY_PURPOSES: usize = 3;
+const MAX_QUOTED_CHARS: usize = 40;
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
 const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 
@@ -235,8 +240,25 @@ fn plans(root: &Path, today: NaiveDate, sessions: &[Session]) -> Vec<Value> {
         .filter_map(|target| {
             let dir = study.join(&target);
             let plan = read_small(&dir.join("plan.md"))?;
-            let gaps = read_small(&dir.join("gap-log.md")).unwrap_or_default();
-            Some(plan_digest(&target, &plan, &gaps, today, sessions))
+            let gap_path = dir.join("gap-log.md");
+            let gaps = read_small(&gap_path);
+            let mut value = plan_digest(
+                &target,
+                &plan,
+                gaps.as_deref().unwrap_or_default(),
+                today,
+                sessions,
+            );
+            if gaps.is_none() && fs::symlink_metadata(&gap_path).is_ok() {
+                let unreadable = Unreadable::file(
+                    gap_log_file(&target),
+                    "the file is too large, not text, or not a regular file",
+                );
+                if let Some(list) = value["unreadable"].as_array_mut() {
+                    list.push(unreadable.to_json());
+                }
+            }
+            Some(value)
         })
         .collect()
 }
@@ -281,7 +303,10 @@ fn plan_digest(
         .filter(|block| !is_placeholder(block))
         .collect::<Vec<_>>();
     let gap_table = Table::parse(section(gaps, "Gaps"));
-    let unfixed = unfixed_gaps(&gap_table);
+    let GapLog {
+        unfixed,
+        unreadable,
+    } = GapLog::read(&gap_log_file(target), &gap_table);
     let due = unfixed
         .iter()
         .filter(|gap| gap.next_redo.is_some_and(|date| date <= today))
@@ -321,7 +346,58 @@ fn plan_digest(
         "first_due": first_due,
         "scores": scores,
         "session": session,
+        "unreadable": unreadable.iter().map(Unreadable::to_json).collect::<Vec<_>>(),
     })
+}
+
+fn gap_log_file(target: &str) -> String {
+    format!("Study/{target}/gap-log.md")
+}
+
+/// Something in a study file that the digest could not read. It is left out of
+/// the counts and listed in the plan's `unreadable`, so the help skill can send
+/// the tutor to fix it instead of showing numbers that silently skip it.
+struct Unreadable {
+    file: String,
+    section: Option<&'static str>,
+    line: Option<usize>,
+    reason: String,
+}
+
+impl Unreadable {
+    fn file(file: String, reason: &str) -> Self {
+        Self {
+            file,
+            section: None,
+            line: None,
+            reason: reason.to_owned(),
+        }
+    }
+
+    fn at(file: &str, section: &'static str, line: usize, reason: String) -> Self {
+        Self {
+            file: file.to_owned(),
+            section: Some(section),
+            line: Some(line),
+            reason,
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "file": self.file,
+            "section": self.section,
+            "line": self.line,
+            "reason": self.reason,
+        })
+    }
+}
+
+fn quoted(cell: &str) -> String {
+    match cell.char_indices().nth(MAX_QUOTED_CHARS) {
+        Some((end, _)) => format!("\"{}...\"", &cell[..end]),
+        None => format!("\"{cell}\""),
+    }
 }
 
 struct Gap<'a> {
@@ -330,23 +406,83 @@ struct Gap<'a> {
     next_redo: Option<NaiveDate>,
 }
 
-fn unfixed_gaps(table: &Table) -> Vec<Gap<'_>> {
-    table
-        .rows
-        .iter()
-        .filter_map(|row| {
-            let cell = |name| table.cell(row, name).filter(|c| !is_placeholder(c));
-            cell("Date")?;
-            if cell("Status").is_some_and(says_closed) {
-                return None;
+/// The gap-log rows the digest can trust, and a note for each it cannot.
+struct GapLog<'a> {
+    unfixed: Vec<Gap<'a>>,
+    unreadable: Vec<Unreadable>,
+}
+
+impl<'a> GapLog<'a> {
+    /// Rows that are not closed become gaps. A row whose cells do not line up
+    /// with the header, or whose Next redo is not a date, is never guessed at.
+    fn read(file: &str, table: &'a Table) -> Self {
+        let mut log = Self {
+            unfixed: Vec::new(),
+            unreadable: Vec::new(),
+        };
+        if table.rows.is_empty() {
+            return log;
+        }
+        let note = |line, reason: String| Unreadable::at(file, "Gaps", line, reason);
+        let mut cannot_count = false;
+        for name in ["Date", "Status"] {
+            if table.column(name).is_none() {
+                cannot_count = true;
+                let reason = format!("the Gaps table has no {name} column");
+                log.unreadable.push(note(table.header_line, reason));
             }
-            Some(Gap {
+        }
+        if table.column("Next redo").is_none() {
+            let reason = "the Gaps table has no Next redo column, so no redo can be due";
+            log.unreadable
+                .push(note(table.header_line, reason.to_owned()));
+        }
+        if cannot_count {
+            return log;
+        }
+        for row in &table.rows {
+            if row.cells.len() != table.header.len() {
+                let reason = format!(
+                    "the row has {} cells but the header has {} columns",
+                    row.cells.len(),
+                    table.header.len()
+                );
+                log.unreadable.push(note(row.line, reason));
+                continue;
+            }
+            let cell = |name| table.cell(row, name).filter(|c| !is_placeholder(c));
+            if cell("Date").is_none() {
+                if cell("Paper").is_some() || cell("Q").is_some() {
+                    log.unreadable
+                        .push(note(row.line, "the row has no Date".to_owned()));
+                }
+                continue;
+            }
+            if cell("Status").is_some_and(says_closed) {
+                continue;
+            }
+            let next_redo = match cell("Next redo") {
+                None => None,
+                Some(text) => {
+                    let Some(date) = first_date(text) else {
+                        let reason = format!(
+                            "Next redo {} is not a date written as YYYY-MM-DD",
+                            quoted(text)
+                        );
+                        log.unreadable.push(note(row.line, reason));
+                        continue;
+                    };
+                    Some(date)
+                }
+            };
+            log.unfixed.push(Gap {
                 paper: cell("Paper"),
                 question: cell("Q"),
-                next_redo: cell("Next redo").and_then(first_date),
-            })
-        })
-        .collect()
+                next_redo,
+            });
+        }
+        log
+    }
 }
 
 fn says_closed(status: &str) -> bool {
@@ -354,64 +490,110 @@ fn says_closed(status: &str) -> bool {
     status == "closed" || status == "3 of 3"
 }
 
+/// The body of a `## ` section and the 1-based line of the file it starts on.
+struct Section<'a> {
+    text: &'a str,
+    first_line: usize,
+}
+
 /// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
-fn section<'a>(text: &'a str, name: &str) -> &'a str {
+fn section<'a>(text: &'a str, name: &str) -> Section<'a> {
     let mut start = None;
     let mut offset = 0;
-    for line in text.split_inclusive('\n') {
+    let mut first_line = 0;
+    for (index, line) in text.split_inclusive('\n').enumerate() {
         if let Some(heading) = line.strip_prefix("## ") {
             if let Some(start) = start {
-                return &text[start..offset];
+                return Section {
+                    text: &text[start..offset],
+                    first_line,
+                };
             }
             if heading.contains(name) {
                 start = Some(offset + line.len());
+                first_line = index + 2;
             }
         }
         offset += line.len();
     }
-    start.map_or("", |s| &text[s..])
+    Section {
+        text: start.map_or("", |s| &text[s..]),
+        first_line,
+    }
 }
 
-/// The first Markdown table in `text`. Columns are found by header name,
+struct Row {
+    line: usize,
+    cells: Vec<String>,
+}
+
+/// The first Markdown table in a section. Columns are found by header name,
 /// because the agent may add, drop or reorder columns in its copy of a template.
 struct Table {
     header: Vec<String>,
-    rows: Vec<Vec<String>>,
+    header_line: usize,
+    rows: Vec<Row>,
 }
 
 impl Table {
-    fn parse(text: &str) -> Self {
-        let mut lines = text
+    fn parse(section: Section) -> Self {
+        let mut lines = section
+            .text
             .lines()
-            .map(str::trim)
-            .skip_while(|line| !line.starts_with('|'))
-            .take_while(|line| line.starts_with('|'))
-            .map(|line| {
-                line.trim_matches('|')
-                    .split('|')
-                    .map(|c| c.trim().to_owned())
-                    .collect::<Vec<_>>()
+            .enumerate()
+            .map(|(index, line)| (section.first_line + index, line.trim()))
+            .skip_while(|(_, line)| !line.starts_with('|'))
+            .take_while(|(_, line)| line.starts_with('|'))
+            .map(|(line, text)| Row {
+                line,
+                cells: split_cells(text),
             })
-            .filter(|cells| {
-                !cells
+            .filter(|row| {
+                !row.cells
                     .iter()
                     .all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
             });
-        let header = lines.next().unwrap_or_default();
+        let header = lines.next();
         Self {
-            header,
+            header_line: header.as_ref().map_or(0, |row| row.line),
+            header: header.map(|row| row.cells).unwrap_or_default(),
             rows: lines.collect(),
         }
     }
 
-    /// The cell in `row` under the header `name`, ignoring case.
-    fn cell<'a>(&self, row: &'a [String], name: &str) -> Option<&'a str> {
-        let index = self
-            .header
+    fn column(&self, name: &str) -> Option<usize> {
+        self.header
             .iter()
-            .position(|h| h.eq_ignore_ascii_case(name))?;
-        row.get(index).map(String::as_str)
+            .position(|h| h.eq_ignore_ascii_case(name))
     }
+
+    /// The cell in `row` under the header `name`, ignoring case.
+    fn cell<'a>(&self, row: &'a Row, name: &str) -> Option<&'a str> {
+        row.cells.get(self.column(name)?).map(String::as_str)
+    }
+}
+
+/// The cells of one table line. One leading and one trailing pipe frame the
+/// row, and `\|` is a pipe inside a cell, not a separator.
+fn split_cells(line: &str) -> Vec<String> {
+    let inner = line.strip_prefix('|').unwrap_or(line);
+    let inner = match inner.strip_suffix('|') {
+        Some(rest) if !rest.ends_with('\\') => rest,
+        _ => inner,
+    };
+    let mut cells = vec![String::new()];
+    let mut chars = inner.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'|') {
+            chars.next();
+            cells.last_mut().expect("one cell").push('|');
+        } else if ch == '|' {
+            cells.push(String::new());
+        } else {
+            cells.last_mut().expect("one cell").push(ch);
+        }
+    }
+    cells.iter().map(|cell| cell.trim().to_owned()).collect()
 }
 
 fn is_placeholder(cell: &str) -> bool {
@@ -727,47 +909,66 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_closed_row_missing_its_conf_cell_counts_as_unfixed() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
-        let full = four_gap_rows_in_columns(&[
-            "Date",
-            "Paper",
-            "Q",
-            "Type",
-            "Conf",
-            "Passes",
-            "Next redo",
-            "Status",
-        ]);
-        let short = full.replace("| K | G | ", "| K | ");
-        assert_ne!(short, full);
-        assert_eq!(
-            plan_digest("midterm-1", PLAN, &full, today, &[])["unfixed_gaps"],
-            3
-        );
-        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
-        assert_eq!(value["unfixed_gaps"], 4);
-        assert_eq!(value["redos_due"], 2);
+    const CONF_COLUMNS: [&str; 8] = [
+        "Date",
+        "Paper",
+        "Q",
+        "Type",
+        "Conf",
+        "Passes",
+        "Next redo",
+        "Status",
+    ];
+
+    fn unreadable_rows(value: &Value) -> Vec<(u64, &str)> {
+        value["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                assert_eq!(item["file"], "Study/midterm-1/gap-log.md");
+                assert_eq!(item["section"], "Gaps");
+                (
+                    item["line"].as_u64().unwrap(),
+                    item["reason"].as_str().unwrap(),
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn an_open_due_row_missing_its_conf_cell_drops_out_of_redos_due() {
+    fn a_closed_row_missing_its_conf_cell_is_reported_and_does_not_become_unfixed() {
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
-        let full = four_gap_rows_in_columns(&[
-            "Date",
-            "Paper",
-            "Q",
-            "Type",
-            "Conf",
-            "Passes",
-            "Next redo",
-            "Status",
-        ]);
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
+        let short = full.replace("| K | G | ", "| K | ");
+        assert_ne!(short, full);
+        let value = plan_digest("midterm-1", PLAN, &full, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["unreadable"], json!([]));
+        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 2);
+        let rows = unreadable_rows(&value);
+        assert_eq!(rows.len(), 1, "{value}");
+        assert_eq!(rows[0].0, 7);
+        assert!(
+            rows[0].1.contains('7') && rows[0].1.contains('8'),
+            "{}",
+            rows[0].1
+        );
+    }
+
+    #[test]
+    fn an_open_due_row_missing_its_conf_cell_is_reported_not_silently_dropped() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
         let short = full.replace("| A | S | ", "| A | ");
         assert_ne!(short, full);
         let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
-        assert_eq!(value["unfixed_gaps"], 3);
+        let rows = unreadable_rows(&value);
+        assert_eq!(rows.len(), 1, "{value}");
+        assert_eq!(rows[0].0, 5);
+        assert_eq!(value["unfixed_gaps"], 2);
         assert_eq!(value["redos_due"], 1);
         assert_eq!(
             value["first_due"],
@@ -776,27 +977,20 @@ mod tests {
     }
 
     #[test]
-    fn rows_with_conf_cells_under_a_header_without_conf_report_a_closed_row_as_first_due() {
+    fn rows_with_conf_cells_under_a_header_without_conf_are_all_reported_and_none_counted() {
         let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
-        let full = four_gap_rows_in_columns(&[
-            "Date",
-            "Paper",
-            "Q",
-            "Type",
-            "Conf",
-            "Passes",
-            "Next redo",
-            "Status",
-        ]);
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
         let headless = full.replace("| Type | Conf |", "| Type |");
         assert_ne!(headless, full);
         let value = plan_digest("midterm-1", PLAN, &headless, today, &[]);
-        assert_eq!(value["unfixed_gaps"], 4);
-        assert_eq!(value["redos_due"], 3);
-        assert_eq!(
-            value["first_due"],
-            json!({"paper": "Diagnostic", "question": "Q4", "more_due": 2})
-        );
+        let lines = unreadable_rows(&value)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(lines, [5, 6, 7, 8]);
+        assert_eq!(value["unfixed_gaps"], 0);
+        assert_eq!(value["redos_due"], 0);
+        assert_eq!(value["first_due"], Value::Null);
     }
 
     #[test]
@@ -810,6 +1004,178 @@ mod tests {
         assert_eq!(value["unfixed_gaps"], 2);
         assert_eq!(value["redos_due"], 0);
         assert_eq!(value["first_due"], Value::Null);
+    }
+
+    const GAP_HEADER: &str = "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n";
+
+    fn digest_of_rows(rows: &[&str]) -> Value {
+        let gaps = format!("{GAP_HEADER}{}\n", rows.join("\n"));
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        plan_digest("midterm-1", PLAN, &gaps, today, &[])
+    }
+
+    fn unreadable_lines(value: &Value) -> Vec<(&str, u64)> {
+        value["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                assert_eq!(item["file"], "Study/midterm-1/gap-log.md");
+                (
+                    item["section"].as_str().unwrap(),
+                    item["line"].as_u64().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_readable_gap_log_reports_nothing_unreadable() {
+        let value = digest_of_rows(&[
+            "| 1 | 2026-10-14 | Diagnostic | Q1 | | 2026-10-19 | open |",
+            "| 2 | 2026-10-14 | Diagnostic | Q2 | | | open |",
+        ]);
+        assert_eq!(value["unreadable"], json!([]));
+        assert_eq!(value["unfixed_gaps"], 2);
+        assert_eq!(value["redos_due"], 1);
+    }
+
+    #[test]
+    fn a_next_redo_that_is_not_a_date_is_reported_and_left_out_of_the_counts() {
+        let value = digest_of_rows(&[
+            "| 1 | 2026-10-14 | Diagnostic | Q1 | | soon | open |",
+            "| 2 | 2026-10-14 | Diagnostic | Q2 | | 2026-10-19 | open |",
+            "| 3 | 2026-10-14 | Diagnostic | Q3 | | 2026-10-4 | 1 of 3 |",
+        ]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 7), ("Gaps", 9)]);
+        let reason = value["unreadable"][0]["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("Next redo") && reason.contains("soon"),
+            "{reason}"
+        );
+        assert_eq!(value["unfixed_gaps"], 1);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q2", "more_due": 0})
+        );
+    }
+
+    #[test]
+    fn a_closed_row_is_not_read_for_its_next_redo() {
+        let value = digest_of_rows(&["| 1 | 2026-10-14 | Diagnostic | Q1 | | n/a | closed |"]);
+        assert_eq!(value["unreadable"], json!([]));
+        assert_eq!(value["unfixed_gaps"], 0);
+    }
+
+    #[test]
+    fn a_row_with_too_few_or_too_many_cells_is_reported_and_left_out_of_the_counts() {
+        let value = digest_of_rows(&[
+            "| 1 | 2026-10-14 | Diagnostic | Q1 | 2026-10-19 | open |",
+            "| 2 | 2026-10-14 | Diagnostic | Q2 | | 2026-10-19 | open |",
+            "| 3 | 2026-10-14 | Diagnostic | Q3 | | 2026-10-19 | open | extra |",
+            "| 4 | 2026-10-14 | Diagnostic | Q4 | | 2026-10-19 | closed |",
+        ]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 7), ("Gaps", 9)]);
+        let reason = value["unreadable"][0]["reason"].as_str().unwrap();
+        assert!(reason.contains('6') && reason.contains('7'), "{reason}");
+        assert_eq!(value["unfixed_gaps"], 1);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q2", "more_due": 0})
+        );
+    }
+
+    #[test]
+    fn escaped_pipes_and_an_empty_last_cell_do_not_misalign_a_row() {
+        let gaps = "## Gaps\n\n| # | Date | Q | Next redo | Status | Notes |\n|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Q1 | 2026-10-19 | open | a \\| b |\n\
+            | 2 | 2026-10-14 | Q2 | 2026-10-19 | open | |\n\
+            | 3 | 2026-10-14 | Q3 | 2026-10-19 | open |  |\n\
+            | 4 | 2026-10-14 | Q4 | 2026-10-19 | open\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 8)]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 3);
+    }
+
+    #[test]
+    fn a_row_without_a_date_is_reported_unless_it_is_the_template_row() {
+        let value = digest_of_rows(&[
+            "| 1 | <YYYY-MM-DD> | <PAPER> | <Q> | | <empty until the repair> | open |",
+            "| 2 | | Diagnostic | Q2 | | 2026-10-19 | open |",
+        ]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 8)]);
+        assert_eq!(value["unfixed_gaps"], 0);
+        assert_eq!(value["redos_due"], 0);
+    }
+
+    #[test]
+    fn a_gaps_table_missing_a_column_the_digest_needs_is_reported_once() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let no_status = "# Gap log\n\n## Gaps\n\n| # | Date | Q | Next redo |\n|---|---|---|---|\n| 1 | 2026-10-14 | Q1 | 2026-10-19 |\n| 2 | 2026-10-14 | Q2 | 2026-10-19 |\n";
+        let value = plan_digest("midterm-1", PLAN, no_status, today, &[]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 5)]);
+        assert!(
+            value["unreadable"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("Status")
+        );
+        assert_eq!(value["unfixed_gaps"], 0);
+        assert_eq!(value["redos_due"], 0);
+
+        let no_date = "## Gaps\n\n| # | Q | Next redo | Status |\n|---|---|---|---|\n| 1 | Q1 | 2026-10-19 | open |\n";
+        let value = plan_digest("midterm-1", PLAN, no_date, today, &[]);
+        assert!(
+            value["unreadable"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("Date")
+        );
+        assert_eq!(value["unfixed_gaps"], 0);
+    }
+
+    #[test]
+    fn an_old_log_without_a_next_redo_column_is_reported_with_its_gaps_still_counted() {
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Cold-redo date | Status |\n|---|---|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic | Q1 | 2026-10-15 | open |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 3)]);
+        assert!(
+            value["unreadable"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("Next redo")
+        );
+        assert_eq!(value["unfixed_gaps"], 1);
+        assert_eq!(value["redos_due"], 0);
+    }
+
+    #[test]
+    fn a_gaps_table_with_no_rows_reports_nothing() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        for gaps in [
+            "",
+            "## Gaps\n\nNo gaps yet.\n",
+            "## Gaps\n\n| # | Date |\n|---|---|\n",
+        ] {
+            let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+            assert_eq!(value["unreadable"], json!([]), "{gaps:?}");
+        }
+    }
+
+    #[test]
+    fn the_gap_log_template_does_not_invite_a_date_before_the_repair() {
+        let template = include_str!("../claude-plugin/skills/papers/templates/gap-log.md");
+        let table = Table::parse(section(template, "Gaps"));
+        let row = &table.rows[0];
+        for name in ["Passes", "Next redo"] {
+            let cell = table.cell(row, name).unwrap();
+            assert!(cell.starts_with("<empty until"), "{name}: {cell}");
+        }
     }
 
     #[test]
