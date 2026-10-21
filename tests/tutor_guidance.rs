@@ -300,7 +300,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         for (stage, required) in [
             (
                 "teach_and_practice",
-                "Look for anchors in the state_text of current memories and in the Anchors section of a plan that covers the topic.",
+                "Search memories for \"anchor:\" and read the memories it finds, since a search result can leave state_text out. Also check the Anchors section of a plan that covers the topic.",
             ),
             (
                 "teach_and_practice",
@@ -308,7 +308,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             ),
             (
                 "teach_and_practice",
-                "Outside a plan, add a line such as \"anchor: ",
+                "When a plan covers the topic, add it to that plan's Anchors section. Otherwise add a line such as \"anchor: ",
             ),
             (
                 "papers",
