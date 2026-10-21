@@ -88,7 +88,7 @@ Rating: <weak, mixed or strong>. Ramp: <papers in order>. <One line on why, from
 
 ## 6. Blocks
 
-<!-- Hours, not clock times; the learner spreads them. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. Fit each gap's three cold redos before the assessment. -->
+<!-- Hours, not clock times; Sessions says when the learner practises. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. Fit each gap's three cold redos before the assessment. -->
 
 | # | Block | Purpose | Duration and stop line | Have open | Running total |
 |---|---|---|---|---|---|
