@@ -372,6 +372,28 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
 }
 
 #[test]
+fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let papers = v2::tool(
+            &e,
+            host,
+            "sessions",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers"}),
+        );
+        let text = papers["text"].as_str().unwrap();
+        for required in [
+            "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
+            "Write the answer as if-then lines under Sessions, in the template's form.",
+        ] {
+            assert!(text.contains(required), "{host}/papers: {required}");
+        }
+    }
+}
+
+#[test]
 fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

@@ -204,6 +204,10 @@ fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
             "- <what the learner did",
             "- applies the chain rule to single-variable functions (Diagnostic, Q3)",
         ),
+        (
+            "- If it is <days> at <HH:MM>,",
+            "- If it is 07:30, then I do the due cold redos at my desk.",
+        ),
     ] {
         let line = plan
             .lines()
@@ -222,6 +226,7 @@ fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
     assert_eq!(plan["title"], "Final exam", "{value}");
     assert_eq!(plan["date"], "2999-01-02");
     assert_eq!(plan["blocks"], json!(["Diagnostic"]));
+    assert_eq!(plan["sessions_today"], json!(["07:30"]));
 }
 
 #[test]

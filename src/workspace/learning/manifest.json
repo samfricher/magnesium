@@ -80,7 +80,7 @@
       "path": "workflows/papers.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "f119058d78fd67e665c7b1be87cbcf357b50ff2c963af9965f6abc6fb8065396",
+      "sha256": "31d4dd8e2745b3edee92cc1129f3bc15cc64590e683c630bac95a06378e47823",
       "stage": "papers"
     },
     {
