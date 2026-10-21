@@ -771,6 +771,8 @@ mod tests {
             "> **Task.** Differentiate $x^3$.",
             "Can you find the root of $x - 4$?",
             "Ok, what is 3 + 4?",
+            "Good.\n\nQuestion 2: factor x^2 - 5x + 6.",
+            "I am stuck too.\n\nYour problem: a die shows 6 half the time. Find E.",
             "Would you like to try one: 3x - 7 = 11?",
             "Ready to try n = 400?",
             "Would you like to have a go at n = 400?",
