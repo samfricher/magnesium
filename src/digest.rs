@@ -350,12 +350,23 @@ fn unfixed_gaps(table: &Table) -> Vec<Gap<'_>> {
 }
 
 fn says_closed(status: &str) -> bool {
-    let status = status.to_ascii_lowercase().replace('/', " of ");
-    let words = status
+    let kept = status
+        .split("~~")
+        .step_by(2)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+        .replace('/', " of ");
+    let words = kept
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>();
-    words.first() == Some(&"closed") || words == ["3", "of", "3"]
+    let unfixed = words
+        .iter()
+        .any(|word| word.contains("open") || word.starts_with("fail") || *word == "not");
+    let three_of_three = words.windows(3).any(|w| w == ["3", "of", "3"])
+        || words.windows(4).any(|w| w == ["3", "out", "of", "3"]);
+    !unfixed && (three_of_three || words.iter().any(|word| matches!(*word, "closed" | "done")))
 }
 
 /// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
@@ -515,6 +526,68 @@ mod tests {
             value["first_due"],
             json!({"paper": "Paper1-Easy", "question": "Q4", "more_due": 4})
         );
+    }
+
+    fn unfixed_for_status(status: &str) -> Value {
+        let gaps = format!(
+            "## Gaps\n\n| # | Date | Paper | Q | Next redo | Status |\n|---|---|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic | Q1 | 2026-10-19 | {status} |\n"
+        );
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        plan_digest("midterm-1", PLAN, &gaps, today, &[])["unfixed_gaps"].clone()
+    }
+
+    #[test]
+    fn a_status_closes_a_gap_when_it_says_closed_done_or_three_of_three() {
+        for status in [
+            "closed",
+            "Closed",
+            "**Closed**",
+            "Closed ✓",
+            "closed by MockA Q2",
+            "done",
+            "3 of 3",
+            "3/3",
+            "3 of 3.",
+            "3 of 3 passes",
+            "3 of 3 (closed)",
+            "3/3 closed",
+            "3 of 3, closed",
+            "3 out of 3",
+            "passed 3 of 3",
+            "~~2 of 3~~ closed",
+        ] {
+            assert_eq!(
+                unfixed_for_status(status),
+                0,
+                "{status:?} should close the gap"
+            );
+        }
+    }
+
+    #[test]
+    fn a_status_that_says_open_fail_or_not_keeps_a_gap_unfixed() {
+        for status in [
+            "",
+            "open",
+            "1 of 3",
+            "2 of 3",
+            "2/3",
+            "1 of 3 passes",
+            "0 of 3",
+            "open (failed)",
+            "open (repair pending)",
+            "reopened",
+            "not closed",
+            "not done",
+            "~~closed~~ open",
+            "closed, then failed 2026-10-24",
+        ] {
+            assert_eq!(
+                unfixed_for_status(status),
+                1,
+                "{status:?} should leave the gap unfixed"
+            );
+        }
     }
 
     #[test]
