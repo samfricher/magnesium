@@ -24,7 +24,7 @@ Log each move, rewrite, close and new edge as a line under Changes.
 Size each repair:
 
 - **Tighten** an N, A or R gap in minutes with a one-line correction, the exam-ready wording and one check.
-- **Repair** one unknown rule or step, or slowness, in about 15 minutes with the missing connection, the tag's next example step if they could not start, two or three checks of the same form, one varied check, then the blank-page redo.
+- **Repair** one unknown rule or step, or slowness, in about 15 minutes with the missing connection, the tag's next example step if they could not start, unless rule 6 applies, two or three checks of the same form, one varied check, then the blank-page redo.
 - **Teach** an unknown topic or mostly blank section in a block of an hour or more before the next paper, with that same shape per sub-skill, then the drills and the redo, since more papers do not help without a starting move.
 
 For a cold redo, read the due review suggestions, then pick the smallest set of questions, from the bank or new at the planned level, whose primary tags' contains cover every due tag. One cold pass closes every covered row by rule 5. Redo uncovered rows and every S row one by one.

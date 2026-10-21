@@ -26,7 +26,7 @@ Choose who performs the next operation:
 
 This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the other rows.
 
-The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step: full". For a tag with several kinds of problem, name the kind, such as "example step (variance): full". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
+The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step: full". For a tag with several kinds of problem, name every kind but the first, such as "example step (variance): full". Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 
