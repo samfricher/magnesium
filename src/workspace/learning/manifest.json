@@ -80,14 +80,14 @@
       "path": "workflows/papers.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "08cfa0a392493fe4c1cb7655bd13cd914b4a4878289b292550d071cde1a30dd2",
+      "sha256": "4bcf8d5a9db683a19b9b289b669a7a918b673cc767bcd67e811d3751fc292aa2",
       "stage": "papers"
     },
     {
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "7afe7f38aca618fa3cee0b954e8a34fc1adb877e6112a31e16d338e18e586adf",
+      "sha256": "e980d7a3607b3b93fd2912600e19302fb68990296bc1b568bca19c4c655d0f10",
       "stage": "papers-loop"
     },
     {
