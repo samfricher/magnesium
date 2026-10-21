@@ -156,10 +156,13 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
     v2::init(&e);
     let rules = [
         "then give a changed version with the same structure and new details to solve alone.",
-        "The next time they are stuck on that kind of problem, give a partly worked example",
-        "No step recorded means the full worked example comes next.",
+        "The next time they are stuck on it, give a partly worked example",
+        "A learner who can start gets no example step.",
+        "Read that memory, not a search result. No example step there means a full worked example.",
+        "A requested full solution and a fails-twice rewrite record none.",
+        "rewrite the task with smaller steps or a worked example first, whatever the example step;",
         "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
-        "Keep any example step in its state_text.",
+        "Keep any example step or anchor in its state_text.",
     ];
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
@@ -187,12 +190,13 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
             "| No starting move, \"example step: full\" recorded | Give a partly worked example",
             "| No starting move, \"example step: partly worked\" recorded | Give the problem only",
             "When rows conflict, take them in this order: an explicit request",
+            "Record it in the turn you give the example",
         ] {
             assert!(teach.contains(required), "{host}: {required}");
         }
         let papers = served("papers_loop");
         for required in [
-            "the tag's next example step from the teaching policy",
+            "the tag's next example step if they could not start",
             "\"conditional: needs TAG, which is open; example step: full\"",
         ] {
             assert!(papers.contains(required), "{host}: {required}");
@@ -289,6 +293,82 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
             "{host}"
         );
     }
+}
+
+#[test]
+fn served_instructions_build_each_explanation_from_an_anchor() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rules = [
+        "then forward from an anchor, a skill or way of thinking the learner's own work has shown, with where they showed it.",
+        "Say which anchor you build on before you explain.",
+        "If none fits, first ask \"What do you already know that looks like this?\"",
+        "When the learner then answers a check question correctly, add the approach that worked as an anchor, written as what they did, not as a learning style.",
+        "Keep any example step or anchor in its state_text.",
+    ];
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "anchors",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in [
+            "orient_and_probe",
+            "plan_and_route",
+            "teach_and_practice",
+            "interpret_and_repair",
+            "review_and_transfer",
+            "consolidate_and_resume",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = served(stage);
+            for rule in rules {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
+        for (stage, required) in [
+            (
+                "teach_and_practice",
+                "Search memories for \"anchor:\" and read the memories it finds, since a search result can leave state_text out. Also check the Anchors section of a plan that covers the topic.",
+            ),
+            (
+                "teach_and_practice",
+                "Skip that question right after you asked a confused learner about the cause",
+            ),
+            (
+                "teach_and_practice",
+                "When a plan covers the topic, add it to that plan's Anchors section. Otherwise add a line such as \"anchor: ",
+            ),
+            (
+                "papers",
+                "At build, fill Anchors from the memories you read.",
+            ),
+            (
+                "papers_loop",
+                "When an open tag needs a skill a fully correct part shows, add it to the plan's Anchors.",
+            ),
+        ] {
+            assert!(
+                served(stage).contains(required),
+                "{host}/{stage}: {required}"
+            );
+        }
+    }
+    let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
+    assert!(
+        template
+            .lines()
+            .any(|line| line.starts_with("## ") && line.ends_with(" Anchors")),
+        "the plan template has no Anchors section for the instructions to name"
+    );
 }
 
 #[test]

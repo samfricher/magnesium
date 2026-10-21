@@ -188,6 +188,42 @@ fn digest_counts_unfixed_rows_of_an_old_gap_log_and_none_as_due() {
 }
 
 #[test]
+fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let mut plan = include_str!("../claude-plugin/skills/papers/templates/plan.md").to_owned();
+    for (prefix, row) in [
+        ("| Target |", "| Target | Final exam |"),
+        ("| When |", "| When | 2999-01-02 (Sat) 09:00 to 12:00 |"),
+        (
+            "| 1 | <name> |",
+            "| 1 | Diagnostic | find gaps | 90 min, stop at 100 | Diagnostic.pdf | 1.5 h |",
+        ),
+        (
+            "- <what the learner did",
+            "- applies the chain rule to single-variable functions (Diagnostic, Q3)",
+        ),
+    ] {
+        let line = plan
+            .lines()
+            .find(|line| line.starts_with(prefix))
+            .unwrap_or_else(|| panic!("template has no line starting {prefix:?}"))
+            .to_owned();
+        plan = plan.replacen(&line, row, 1);
+    }
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), plan).unwrap();
+
+    let value = digest(&e);
+
+    let plan = &value["plans"][0];
+    assert_eq!(plan["title"], "Final exam", "{value}");
+    assert_eq!(plan["date"], "2999-01-02");
+    assert_eq!(plan["blocks"], json!(["Diagnostic"]));
+}
+
+#[test]
 fn digest_of_a_new_study_folder_is_empty_and_outside_one_is_inactive() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     let outside = digest(&e);
