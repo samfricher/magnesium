@@ -37,7 +37,7 @@ For a cold redo, read the rows whose Next redo has come, then pick the smallest 
 
 ## Re-plan after every marked paper
 
-Make ordinary changes yourself (reorder, change questions, add a topic or teaching block), log each as one line under Changes, and rewrite `plan.md` to match, since later conversations read it. Ask first only for a substantial new time commitment, as a guide adding over half the remaining hours and at least two, or pushing a never-drop block past the deadline. Say what changed and why, the cost (was X hours, now Y) and the options: accept, a shorter Z-hour version, or the old plan. If the learner declines, re-plan around their stated reason, without starting over.
+Make ordinary changes yourself (reorder, change questions, add a topic or teaching block), log each as one line under Changes, and rewrite `plan.md` to match, since later conversations read it. If the learner changes when or where they practise, rewrite Sessions, and add the section if it is missing. Ask first only for a substantial new time commitment, as a guide adding over half the remaining hours and at least two, or pushing a never-drop block past the deadline. Say what changed and why, the cost (was X hours, now Y) and the options: accept, a shorter Z-hour version, or the old plan. If the learner declines, re-plan around their stated reason, without starting over.
 
 ## Records
 

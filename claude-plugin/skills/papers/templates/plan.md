@@ -100,7 +100,7 @@ Drop order if time runs short: <first block to drop>, then <next>.
 
 ## 7. Sessions
 
-<!-- When and where the learner practises, from the build question. Write one line per session in the form below, because `magnesium digest` reads its days and time. Days are day names, a range such as Monday to Friday, a list such as Tuesday and Thursday, weekdays or the weekend. Use a 24-hour time.
+<!-- When and where the learner practises, from the build question. Write one line per session in the form below, because `magnesium digest` reads its days and time. Days are day names, a range such as Monday to Friday, a list such as Tuesday and Thursday, weekdays or the weekend. Use a 24-hour start time, such as 08:00.
 For a session every day, leave out "<days> at".
 Example: If it is Monday to Friday at 08:00, then I do the due cold redos at my desk before class.
 Add one backup line for a missed session, such as: If I miss the morning, then I do them after dinner.
