@@ -26,7 +26,7 @@ Build the newest release, not the `main` branch. Each release is a Git tag. The 
 
 Find the newest release tag. Run one command, chosen by what you have:
 
-- In a clone of the repository, run `git fetch --tags`, then `git tag --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`. It skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases.
+- In a clone of the repository, run `git fetch --tags`, then `git tag --no-column --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1`. It skips tags with a suffix, such as `v0.3.0-rc.1`, because they are not releases.
 - With no clone yet, run `gh release view --repo samfricher/magnesium --json tagName -q .tagName`. If the GitHub CLI is missing or fails, run `git clone https://github.com/samfricher/magnesium.git` instead, work in the new `magnesium` folder, and use the Git command above. Do not install the GitHub CLI for this step.
 
 If the command prints no tag, stop and tell the user that Magnesium has no release yet.
@@ -48,7 +48,7 @@ Git reports a detached HEAD after the checkout or the clone. A detached HEAD is 
 
 The files on disk are now the release's copy, and that copy of this guide describes the code you build. Open `docs/install.md` in the checked-out release, and follow it from here on, starting with the check below.
 
-Check: `git tag --points-at HEAD | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+'` prints the newest tag.
+Check: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that you checked out.
 
 Then, from the repository root, run:
 
@@ -125,7 +125,7 @@ Run these in order:
 3. Put the new binary in place as in step 4.
 4. In each study folder, run `magnesium init --upgrade-instructions`. This command does everything that `magnesium init` does. It also switches the folder to the new teaching instructions, and the plugin copy then matches the binary.
 
-Checks: `git tag --points-at HEAD | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+'` prints the newest tag, `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
+Checks: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that you checked out, `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
 
 `magnesium update` prints these steps. It also refreshes the plugin copies that `magnesium init` installed. It never downloads anything.
 

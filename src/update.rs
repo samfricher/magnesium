@@ -12,7 +12,7 @@ use crate::workspace::GlobalPaths;
 
 /// The update steps of docs/install.md. Magnesium cannot rebuild itself.
 const SOURCE_UPDATE_STEPS: &str = "Magnesium is built from source. To update it (docs/install.md, \"Update\"):
-  1. In your clone of the Magnesium repository, run `git fetch --tags`, find the newest release tag with `git tag --sort=-v:refname | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+' | head -1`, and run `git checkout <newest-tag>`. A detached HEAD is expected. Check that `git tag --points-at HEAD | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+'` prints the tag.
+  1. In your clone of the Magnesium repository, run `git fetch --tags`, find the newest release tag with `git tag --no-column --sort=-v:refname | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+' | head -1`, and run `git checkout <newest-tag>`. A detached HEAD is expected. Check that `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+' | head -1` prints the tag that you checked out.
   2. Run `cargo build --locked --release`.
   3. Put the new `target/release/magnesium` on your PATH in place of the old one, then check that `magnesium --version` prints the tag's version.
   4. In each study folder, run `magnesium init --upgrade-instructions`, then type `/magnesium:help` in a new Claude Code conversation.

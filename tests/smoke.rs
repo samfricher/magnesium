@@ -61,10 +61,10 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     for step in [
         "git fetch --tags",
-        "git tag --sort=-v:refname",
+        "git tag --no-column --sort=-v:refname",
         "git checkout <newest-tag>",
         "detached HEAD is expected",
-        "git tag --points-at HEAD",
+        "git tag --no-column --points-at HEAD",
         "cargo build --locked --release",
         "magnesium --version",
         "magnesium init --upgrade-instructions",
@@ -73,9 +73,9 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     }
     let positions: Vec<usize> = [
         "git fetch --tags",
-        "git tag --sort=-v:refname",
+        "git tag --no-column --sort=-v:refname",
         "git checkout <newest-tag>",
-        "git tag --points-at HEAD",
+        "git tag --no-column --points-at HEAD",
         "cargo build --locked --release",
     ]
     .iter()
@@ -110,26 +110,42 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
         .output()
         .expect("run update command");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let printed = |prefix: &str| {
-        stdout
-            .split('`')
-            .find(|span| span.starts_with(prefix))
-            .unwrap_or_else(|| panic!("update printed no `{prefix}` command: {stdout}"))
-            .to_owned()
+    let printed = |points_at: bool| {
+        inline_code(&stdout)
+            .into_iter()
+            .find(|span| span.starts_with("git tag ") && span.contains("--points-at") == points_at)
+            .unwrap_or_else(|| panic!("update printed no tag command: {stdout}"))
     };
-    let lookup = printed("git tag --sort");
-    let check = printed("git tag --points-at");
+    let lookup = printed(false);
+    let check = printed(true);
     let guide =
         fs::read_to_string(support::repo_root().join("docs/install.md")).expect("read guide");
-    for command in [&lookup, &check] {
-        assert!(
-            guide.contains(command.as_str()),
-            "docs/install.md lacks `{command}`"
-        );
+    let step = |number: &str| {
+        let section = guide
+            .split("\n## ")
+            .find(|section| section.starts_with(number))
+            .unwrap_or_else(|| panic!("docs/install.md has no step {number}"));
+        inline_code(section)
+    };
+    assert!(
+        step("4. ").contains(&lookup) && step("4. ").contains(&check),
+        "docs/install.md step 4 must carry `{lookup}` and `{check}`"
+    );
+    assert!(
+        step("8. ").contains(&check),
+        "docs/install.md step 8 must carry `{check}`"
+    );
+    for span in inline_code(&guide) {
+        if span.starts_with("git tag ") || span.starts_with("git describe") {
+            assert!(
+                span == lookup || span == check,
+                "docs/install.md has a tag command that magnesium update does not print: `{span}`"
+            );
+        }
     }
 
     // Built at run time, so the release step's search for the old version never rewrites them.
-    let tag = |minor: u32, suffix: &str| format!("v0.{minor}.0{suffix}");
+    let tag = |minor: u32, patch: u32, suffix: &str| format!("v0.{minor}.{patch}{suffix}");
     let clone = environment.root.join("release-clone");
     fs::create_dir(&clone).expect("create clone folder");
     let git = |args: &[&str]| {
@@ -142,20 +158,28 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
     let commit = |message: &str| git(&["commit", "--quiet", "--allow-empty", "-m", message]);
     git(&["init", "--quiet"]);
     commit("first release");
-    git(&["tag", &tag(9, "")]);
+    git(&["tag", &tag(9, 0, "")]);
     commit("second release");
-    git(&["tag", &tag(10, "")]);
-    commit("candidate promoted to a release");
-    git(&["tag", "-a", "-m", "candidate", &tag(11, "-rc1")]);
-    git(&["tag", "-a", "-m", "candidate", &tag(11, "-rc.1")]);
-    git(&["tag", "-a", "-m", "build", &tag(11, "+build.1")]);
+    git(&["tag", &tag(10, 0, "")]);
+    commit("candidate promoted to two releases");
+    git(&["tag", "-a", "-m", "candidate", &tag(11, 0, "-rc1")]);
+    git(&["tag", "-a", "-m", "candidate", &tag(11, 0, "-rc.1")]);
+    git(&["tag", "-a", "-m", "build", &tag(11, 0, "+build.1")]);
     git(&["tag", "-a", "-m", "channel", "stable"]);
-    git(&["tag", &tag(11, "")]);
+    git(&["tag", &tag(11, 0, "")]);
+    git(&["tag", &tag(11, 1, "")]);
     commit("next candidate");
-    git(&["tag", "-a", "-m", "candidate", &tag(12, "-rc.1")]);
+    git(&["tag", "-a", "-m", "candidate", &tag(12, 0, "-rc.1")]);
+    let user_config = clone.join("user-gitconfig");
+    fs::write(
+        &user_config,
+        "[column]\n\tui = always\n\ttag = always\n[tag]\n\tsort = refname\n",
+    )
+    .expect("write a user Git config");
 
     let run = |command: &str| {
         let output = isolated(&clone, "sh")
+            .env("GIT_CONFIG_GLOBAL", &user_config)
             .args(["-c", command])
             .output()
             .expect("run a printed command");
@@ -165,7 +189,7 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
             .to_owned()
     };
     let newest = run(&lookup);
-    assert_eq!(newest, tag(11, ""), "{lookup}");
+    assert_eq!(newest, tag(11, 1, ""), "{lookup}");
     git(&["checkout", "--quiet", &newest]);
     assert_eq!(run(&check), newest, "{check}");
 }
@@ -222,6 +246,14 @@ fn tag_lookup_test_leaves_an_inherited_git_dir_untouched() {
         "the guard must run the tag lookup test exactly once: {report}"
     );
     assert_eq!(refs(), before, "the tag lookup test wrote into GIT_DIR");
+}
+
+fn inline_code(markdown: &str) -> Vec<String> {
+    markdown
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("```"))
+        .flat_map(|line| line.split('`').skip(1).step_by(2).map(str::to_owned))
+        .collect()
 }
 
 fn isolated(directory: &Path, program: &str) -> Command {
