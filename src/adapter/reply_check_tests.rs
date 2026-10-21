@@ -22,26 +22,29 @@ fn claude_stop(root: &Path, host: &HostIdentity, turn: &str, reply: &str) -> Res
     host_response_stop_with_delivery(root, host, &host.stored_turn_id(turn).unwrap(), Some(reply))
 }
 #[test]
-fn claude_feedback_says_no_task_after_an_offer_a_check_in_or_a_remark() {
+fn claude_feedback_gives_only_the_length_of_a_long_reply_ending_in_an_instruction() {
     let (root, store, host) = claude_lesson();
-    claude_prompt(&root, &host, "0");
-    for (turn, reply) in [
-        "b scales x, so it stays fixed. Would you like me to explain it differently?",
-        "b scales x, so it stays fixed. Shall I write the next step?",
-        "b scales x, so it stays fixed. Should I solve it?",
-        "Spot on! b is the coefficient of x.",
-        "Sort of… b is fixed, but x varies.",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        claude_stop(&root, &host, &turn.to_string(), reply).unwrap();
-        let next = claude_prompt(&root, &host, &(turn + 1).to_string());
-        assert!(
-            next.contains(" Previous reply: no task."),
-            "{reply}: {next}"
-        );
-    }
+    claude_prompt(&root, &host, "one");
+    let reply = format!(
+        "{}\n\nDifferentiate x sin x.",
+        "This is the idea. ".repeat(75)
+    );
+    claude_stop(&root, &host, "one", &reply).unwrap();
+    let next = claude_prompt(&root, &host, "two");
+    assert!(next.contains(&reply_check::reminder()), "{next}");
+    assert!(next.contains(" Previous reply: 304 words."), "{next}");
+    assert!(!next.contains("no task"), "{next}");
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn claude_feedback_is_absent_after_a_reply_within_the_limit() {
+    let (root, store, host) = claude_lesson();
+    claude_prompt(&root, &host, "one");
+    claude_stop(&root, &host, "one", "b is fixed because it scales x.").unwrap();
+    let next = claude_prompt(&root, &host, "two");
+    assert!(next.contains(&reply_check::reminder()), "{next}");
+    assert!(!next.contains("Previous reply"), "{next}");
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -58,10 +61,7 @@ fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
         "a repeated Stop with new text keeps the first reply"
     );
     let second = claude_prompt(&root, &host, "two");
-    assert!(
-        second.contains(" Previous reply: 850 words, no task."),
-        "{second}"
-    );
+    assert!(second.contains(" Previous reply: 850 words."), "{second}");
     assert!(second.contains("current event e-"), "{second}");
     assert!(second.contains(CLAUDE_LESSON_GUIDANCE), "{second}");
     assert!(second.len() <= 512, "{} bytes: {second}", second.len());
@@ -119,10 +119,7 @@ fn claude_feedback_never_judges_a_reply_across_an_unrecorded_turn() {
     assert!(!after_gap.contains("Previous reply"), "{after_gap}");
     claude_stop(&root, &host, "three", &"recorded ".repeat(300)).unwrap();
     let resumed = claude_prompt(&root, &host, "four");
-    assert!(
-        resumed.contains(" Previous reply: 300 words, no task."),
-        "{resumed}"
-    );
+    assert!(resumed.contains(" Previous reply: 300 words."), "{resumed}");
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -152,7 +149,7 @@ fn claude_conversations_keep_their_own_feedback() {
     let first_note = claude_prompt(&root, &first, "a-2");
     let second_note = claude_prompt(&root, &second, "b-2");
     assert!(
-        first_note.contains(" Previous reply: 300 words, no task."),
+        first_note.contains(" Previous reply: 300 words."),
         "{first_note}"
     );
     assert!(!second_note.contains("Previous reply"), "{second_note}");
@@ -206,7 +203,7 @@ fn claude_confused_prompt_gets_the_confusion_clause_within_512_bytes() {
     .unwrap();
     for kept in [
         reply_check::ASK_WHY_CONFUSED,
-        " Previous reply: 850 words, no task.",
+        " Previous reply: 850 words.",
         CLAUDE_LESSON_GUIDANCE,
         "current event e-",
     ] {
@@ -247,7 +244,7 @@ fn claude_prompt_notice_keeps_required_clauses_within_512_bytes_at_extreme_count
         "current event e-",
         CLAUDE_LESSON_GUIDANCE,
         "context.pending_work unbound_only:true",
-        " Previous reply: 123456 words, no task.",
+        " Previous reply: 123456 words.",
     ] {
         assert!(notice.contains(required), "{required}: {notice}");
     }

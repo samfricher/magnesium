@@ -79,10 +79,7 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
 
     claude_stop(&e, "conv", "p-2", &"Here is why. ".repeat(283));
     let second = claude_prompt(&e, "conv", "p-3", "so the margin halves?");
-    assert!(
-        second.contains(" Previous reply: 849 words, no task."),
-        "{second}"
-    );
+    assert!(second.contains(" Previous reply: 849 words."), "{second}");
     assert!(second.contains(REMINDER), "{second}");
     assert!(second.contains("current event e-"), "{second}");
     assert!(

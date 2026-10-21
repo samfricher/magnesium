@@ -125,119 +125,7 @@ fn judge(reply: &str) -> Option<String> {
         .split_whitespace()
         .filter(|token| token.chars().any(char::is_alphanumeric))
         .count();
-    let faults: Vec<String> = [
-        (words >= WORD_LIMIT).then(|| format!("{words} words")),
-        (!sets_a_task(reply)).then(|| "no task".to_owned()),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    (!faults.is_empty()).then(|| format!(" Previous reply: {}.", faults.join(", ")))
-}
-
-const QUESTION_MARKS: [char; 3] = ['?', '？', '؟'];
-
-const FENCES: [(&str, &str); 4] = [("```", "```"), ("~~~", "~~~"), ("$$", "$$"), ("\\[", "\\]")];
-
-/// Questions about the tutor's own next move, or whether the reply landed.
-const CHECK_INS: &[&str] = &[
-    "any questions",
-    "do you want me to",
-    "does that make sense",
-    "does this make sense",
-    "shall i",
-    "should i",
-    "want me to",
-    "would you like me to",
-];
-
-const TASK_LABELS: &[&str] = &[
-    "challenge",
-    "exercise",
-    "hint",
-    "practice",
-    "problem",
-    "question",
-    "task",
-    "try this",
-    "your task",
-    "your turn",
-];
-
-fn sets_a_task(reply: &str) -> bool {
-    let ending = ending(reply).join("\n");
-    ending.split(['.', '!', '?', '\n']).any(is_task_label) || asks_the_learner(&ending)
-}
-
-/// The last paragraph of prose and any code, maths or list after it, since a
-/// question often comes just before the code, equation or options it is about.
-fn ending(reply: &str) -> Vec<&str> {
-    let mut fence = None;
-    let lines: Vec<(&str, bool)> = reply
-        .lines()
-        .map(|line| {
-            let line = line.trim();
-            let material = if let Some(close) = fence {
-                if line.starts_with(close) || line.ends_with(close) {
-                    fence = None;
-                }
-                true
-            } else if let Some((open, close)) =
-                FENCES.iter().find(|(open, _)| line.starts_with(open))
-            {
-                if !line[open.len()..].ends_with(close) {
-                    fence = Some(*close);
-                }
-                true
-            } else {
-                is_list_item(line)
-            };
-            (line, material)
-        })
-        .collect();
-    let is_prose = |(line, material): &(&str, bool)| !line.is_empty() && !material;
-    let end = lines.iter().rposition(is_prose).map_or(0, |last| last + 1);
-    let start = lines[..end]
-        .iter()
-        .rposition(|line| !is_prose(line))
-        .map_or(0, |gap| gap + 1);
-    lines[start..].iter().map(|(line, _)| *line).collect()
-}
-
-fn is_list_item(line: &str) -> bool {
-    let marker = line.split(' ').next().unwrap_or_default();
-    let label = marker.strip_suffix(['.', ')']).unwrap_or_default();
-    ["-", "*", "+"].contains(&marker)
-        || (label.len() == 1 && label.chars().all(char::is_alphanumeric))
-        || ((2..=3).contains(&label.len()) && label.bytes().all(|byte| byte.is_ascii_digit()))
-}
-
-fn is_task_label(sentence: &str) -> bool {
-    let sentence = sentence
-        .trim_start_matches(|c: char| !c.is_alphanumeric())
-        .to_lowercase();
-    TASK_LABELS.iter().any(|label| {
-        sentence.strip_prefix(label).is_some_and(|rest| {
-            let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit() || " *_".contains(c));
-            rest.is_empty() || rest.starts_with([':', '–', '—'])
-        })
-    })
-}
-
-fn asks_the_learner(text: &str) -> bool {
-    text.split_inclusive(QUESTION_MARKS)
-        .filter(|part| part.ends_with(QUESTION_MARKS))
-        .any(|question| {
-            let clause = question
-                .rsplit(['.', '!', ',', ';', ':', '\n'])
-                .next()
-                .unwrap_or_default()
-                .trim_start_matches(|c: char| !c.is_alphanumeric())
-                .to_lowercase();
-            !CHECK_INS
-                .iter()
-                .any(|check_in| starts_with_phrase(&clause, check_in))
-        })
+    (words >= WORD_LIMIT).then(|| format!(" Previous reply: {words} words."))
 }
 
 fn starts_with_phrase(text: &str, phrase: &str) -> bool {
@@ -248,70 +136,6 @@ fn starts_with_phrase(text: &str, phrase: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_question_or_a_task_label_at_the_end_is_a_task() {
-        for reply in [
-            "The root is 3.\n\nWhat is the other root?",
-            "So b is fixed.\n\n**Your turn:** solve 2x + 3 = 11.",
-            "b is fixed. Your turn: name the coefficient of x.",
-            "Your turn!",
-            "> **Task.** Differentiate $x^3$.",
-            "Good.\n\nQuestion 2: factor x^2 - 5x + 6.",
-            "Exercise 3.2: rewrite 12/18 in lowest terms.",
-            "Your turn — solve 2x = 6.",
-            "What is the derivative of x^2 sin x?\n\nHint: use the product rule.",
-            "Which statement is true?\n\nA) b varies\nB) b is fixed\nC) b is x",
-            "Which statement is true?\n\n- b varies\n\n- b is fixed",
-            "What does this print?\n\n```python\nprint(len('abc'))\n```",
-            "Which root is larger?\n\n$$\nx^2 - 5x + 6 = 0\n$$",
-            "Try these:\n\n1. What is 3 + 4?\n2. What is 5 + 6?",
-            "Would you like to try one: 3x - 7 = 11?",
-            "Should I solve it, or do you want to try first?",
-            "那么，x 的系数是多少？",
-            "ما هو معامل x؟",
-        ] {
-            assert!(sets_a_task(reply), "{reply}");
-        }
-    }
-
-    #[test]
-    fn an_offer_a_check_in_or_a_statement_at_the_end_is_not_a_task() {
-        for reply in [
-            "b scales x, so it stays fixed. Would you like me to explain it differently?",
-            "b scales x, so it stays fixed. Shall I write the next step?",
-            "b scales x, so it stays fixed. Should I solve it?",
-            "Spot on! b is the coefficient of x.",
-            "Sort of… b is fixed, but x varies.",
-            "**Want me to show another example?**",
-            "Okay, do you want me to go through it again?",
-            "The coefficient b scales x. Does that make sense?",
-            "That covers it. Any questions?",
-            "That is the key idea.",
-            "Problem solved: the base case stops the recursion.",
-            "Tip: use small inputs when you trace.",
-            "Why does this work? Because the identity cancels the root.\n\nThat is the key idea.",
-            "Key points:\n\n- b is fixed\n- x varies",
-            "```python\nprint(1)\n```",
-            "",
-        ] {
-            assert!(!sets_a_task(reply), "{reply}");
-        }
-    }
-
-    #[test]
-    fn known_misses_stay_as_documented() {
-        for (reply, task) in [
-            ("Differentiate x sin x.", false),
-            ("Solve for x:\n\n$$x^2 - 5x + 6 = 0$$", false),
-            ("It's your turn to factor x^2 - 1.", false),
-            ("What is b?\n\nGood luck!", false),
-            ("In C that is `a ? b : c`.", true),
-            ("Would you like another example?", true),
-        ] {
-            assert_eq!(sets_a_task(reply), task, "{reply}");
-        }
-    }
 
     #[test]
     fn confusion_question_follows_what_the_learner_says() {
@@ -343,26 +167,23 @@ mod tests {
     }
 
     #[test]
-    fn feedback_names_each_fault_and_nothing_when_the_rule_held() {
+    fn feedback_gives_the_length_of_a_reply_over_the_limit_and_nothing_otherwise() {
         let words = |n: usize| "word ".repeat(n);
-        assert_eq!(judge(&format!("{}What next?", words(10))), None);
-        assert_eq!(judge(&format!("{}Why?", words(198))), None);
+        assert_eq!(judge(""), None);
+        assert_eq!(judge(&words(10)), None);
+        assert_eq!(judge(&words(199)), None);
         assert_eq!(
-            judge(&format!("{}Why?", words(199))).as_deref(),
+            judge(&words(200)).as_deref(),
             Some(" Previous reply: 200 words.")
         );
         assert_eq!(
-            judge(&format!("{}Why?", "word - | ".repeat(150))),
+            judge(&"word - | ".repeat(150)),
             None,
             "a token without a letter or digit is not a word"
         );
         assert_eq!(
-            judge("That is the whole idea.").as_deref(),
-            Some(" Previous reply: no task.")
-        );
-        assert_eq!(
             judge(&"This is the idea and it is what you need. ".repeat(85)).as_deref(),
-            Some(" Previous reply: 850 words, no task.")
+            Some(" Previous reply: 850 words.")
         );
     }
 }
