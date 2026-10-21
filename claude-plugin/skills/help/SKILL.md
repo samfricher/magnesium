@@ -70,7 +70,7 @@ Put the most urgent first. When the record adds an action, drop the least urgent
 - A plan with a `days_left` of 0 or more: the next block's words, such as "mark my Diagnostic" or "re-time today". Offer "cold redo" only when `redos_due` is above 0. If the next block is unclear, offer `/magnesium:papers`, which continues the plan.
 - An assessment ahead with no plan: "I have <assessment> on <date>", or `/magnesium:papers`.
 - Course files by chapter or week: "Teach me <a chapter or week you saw> from the slides", or "Quiz me on <it>. One question at a time." When the syllabus gives the next assessment's coverage, pick a chapter or week inside it.
-- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between sessions, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
+- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between lessons, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
 - Code or other: "Help me understand <a file or folder you saw>", or "Quiz me on how <it> works".
 
 End each action with the exact words to say in straight quotes, or the command to type in backticks.
@@ -130,7 +130,7 @@ The study folder holds only `.magnesium/`, `.claude/` and `AGENTS.md`.
 ## What Magnesium does
 
 - **Teaches** you from the notes and files in this folder.
-- **Remembers** your answers, strong points and weak points between sessions.
+- **Remembers** your answers, strong points and weak points between lessons.
 - **Builds practice papers** for a test and marks your answers.
 
 ## What you can do now
@@ -211,7 +211,7 @@ Each study folder keeps its own learning history.
 ## What Magnesium does
 
 - **Teaches** you from the notes and files in this folder.
-- **Remembers** your answers, strong points and weak points between sessions.
+- **Remembers** your answers, strong points and weak points between lessons.
 - **Builds practice papers** for a test and marks your answers.
 
 ## How to start
