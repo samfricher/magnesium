@@ -382,6 +382,61 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
 }
 
 #[test]
+fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor_question() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let policy = "Build the similar problem on an anchor if one fits, and give it without one if none does. A missing anchor never delays it.";
+    let by_stage = [
+        (
+            "teach_and_practice",
+            [
+                "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
+                "A learner with no starting move gets the example or problem in their row, never the anchor question first.",
+                "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
+            ],
+        ),
+        (
+            "interpret_and_repair",
+            [
+                "A learner with no starting move on a kind of problem gets the policy's worked example first, with no anchor question.",
+                "Skip that question when you just asked any question",
+                "Build each explanation on an anchor.",
+            ],
+        ),
+    ];
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "example-first",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for (stage, required) in by_stage {
+            let text = served(stage);
+            assert!(text.contains(policy), "{host}/{stage}: {policy}");
+            for rule in required {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
+        let teach = served("teach_and_practice");
+        let ask = teach.find("if no anchor fits, first ask").unwrap();
+        let first = teach
+            .find("A learner with no starting move gets the worked example first")
+            .unwrap();
+        assert!(
+            first < ask,
+            "{host}: the anchor question comes before the worked example"
+        );
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
