@@ -335,8 +335,8 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
                 "{host}/{stage} looks anchors up without the topic, and a search returns at most 24"
             );
             assert!(
-                !text.contains("Anchors") && !text.contains("copy it"),
-                "{host}/{stage} tells the tutor to keep a plan copy of the anchors"
+                !text.contains("the memory wins"),
+                "{host}/{stage} repeats the rule that belongs to the state_and_evidence contract"
             );
             let skip = skip_cases.iter().find(|(name, _)| *name == stage);
             assert_eq!(
@@ -373,15 +373,36 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
                 "add an \"anchor:\" line to that skill's tag memory.",
             ),
             (
-                "teach_and_practice",
-                Some("state_and_evidence"),
-                "That line is the only copy. A plan holds none, so correcting or retiring the memory corrects the anchor everywhere.",
+                "papers",
+                None,
+                "At build, run a memory search with all_of [\"anchor\"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each \"anchor:\" line that names a skill this course uses.",
             ),
         ] {
             assert!(
                 served(stage, operation).contains(required),
                 "{host}/{stage}: {required}"
             );
+        }
+    }
+    let rule = "That line is the source. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    for host in ["codex", "claude", "opencode"] {
+        for stage in [
+            "teach_and_practice",
+            "interpret_and_repair",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = v2::tool(
+                &e,
+                host,
+                "anchors",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage,"operation":"state_and_evidence"}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
     }
     let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
@@ -392,8 +413,8 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         "the plan template has no Anchors section"
     );
     assert!(
-        !template.contains("- anchor:"),
-        "the plan template lists an anchor line to fill in"
+        template.lines().any(|line| line.starts_with("- anchor: <")),
+        "the plan template has no anchor line to fill in"
     );
 }
 

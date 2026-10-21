@@ -110,9 +110,9 @@ The tags, what each covers and the pages to re-read are in `graph.yaml`.
 
 ## 9. Anchors
 
-<!-- An anchor is a skill or way of thinking that the learner's own work has shown. This plan lists none. Each anchor is one line starting with a lowercase "anchor:" in the state_text of the memory for that skill, and the tutor reads it there, so a corrected or retired anchor cannot linger here. -->
+<!-- Copies of the anchors that this plan's topics use. An anchor is a skill or way of thinking that the learner's own work has shown, with where they showed it. Each copy is the line starting with a lowercase "anchor:" in the state_text of the memory for that skill. If there are none, write "none yet". Keep the list short. -->
 
-Your anchors are skills your own work has shown. They are kept in your learner record, not in this plan, so a correction there applies everywhere. Ask the tutor to list them.
+- anchor: <what the learner did, such as "applies the chain rule to single-variable functions"> (<where they showed it, such as Diagnostic, Q3>)
 
 ## 10. Assessment-day checklist
 

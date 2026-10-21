@@ -20,7 +20,7 @@
       "path": "contracts/state-and-evidence.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "defaddba3a625d45413bcb7f7e976b3d7776a3ed0c2671ca6740df7cbade2add"
+      "sha256": "6208a342b2a5bcbddd74924846c75f927909f80beec512f5e5a2e9568d663a6f"
     },
     {
       "path": "contracts/source-use.md",
@@ -80,7 +80,7 @@
       "path": "workflows/papers.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "78ee84aeed29f7b5d93de81295877a7af116fe04924917eeffd072ba3443eb83",
+      "sha256": "1abbb1538f9b09a4d0edb3a2df168173d778c1e0a306d26df9d440b376a79c7c",
       "stage": "papers"
     },
     {
