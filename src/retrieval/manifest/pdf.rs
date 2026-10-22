@@ -4,6 +4,7 @@ use std::path::Path;
 #[cfg(test)]
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,10 @@ pub(crate) const MAX_PDF_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
 pub(crate) const MAX_PDF_ERROR_BYTES: usize = 16 * 1024;
 pub(crate) const PDF_DEADLINE: Duration = Duration::from_secs(5);
 pub(crate) const PDF_PROTOCOL_MARKER: &str = "MAGNESIUM_PDF_V2 ";
+/// Cancellation and deadline checks while the extractor still holds stdout open.
+const PDF_WAIT_TICK: Duration = Duration::from_millis(10);
+/// Reap polling after stdout closed, when the extractor is already exiting.
+const PDF_EXIT_TICK: Duration = Duration::from_millis(1);
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
@@ -243,10 +248,18 @@ pub(crate) fn run_pdf_process_with_cancellation(
         None
     };
     let stdout = child.stdout.take().expect("piped PDF stdout");
-    let output = thread::spawn(move || read_bounded(stdout, MAX_PDF_MESSAGE_BYTES));
+    // The extractor closes stdout as it exits, so the reader's end wakes the
+    // wait below instead of the next fixed tick.
+    let (output_finished, output_closed) = mpsc::channel();
+    let output = thread::spawn(move || {
+        let result = read_bounded(stdout, MAX_PDF_MESSAGE_BYTES);
+        let _ = output_finished.send(());
+        result
+    });
     let stderr = child.stderr.take().expect("piped PDF stderr");
     let errors = thread::spawn(move || read_bounded(stderr, MAX_PDF_ERROR_BYTES));
     let started = Instant::now();
+    let mut output_open = true;
     let status = loop {
         // Cancellation at a real boundary terminates the existing child
         // extractor and releases its reader threads; a dropped future alone
@@ -263,7 +276,16 @@ pub(crate) fn run_pdf_process_with_cancellation(
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) if started.elapsed() < deadline => {
+                if output_open {
+                    output_open = matches!(
+                        output_closed.recv_timeout(PDF_WAIT_TICK),
+                        Err(RecvTimeoutError::Timeout)
+                    );
+                } else {
+                    thread::sleep(PDF_EXIT_TICK);
+                }
+            }
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();

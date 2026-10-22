@@ -77,6 +77,24 @@ pub(crate) fn current_generation(index_path: &Path) -> Result<i64, ManifestError
         .map_err(|source| sqlite(index_path, "read current source generation", source))
 }
 
+/// True when the index holds at least one indexed source and no source waits
+/// for its first extraction. Failed sources do not count: a smaller recheck
+/// does not help them. Any read problem answers false.
+pub(crate) fn indexed_with_nothing_pending(index_path: &Path) -> bool {
+    let Ok(connection) = open_index(index_path) else {
+        return false;
+    };
+    connection
+        .query_row(
+            "SELECT
+                 EXISTS(SELECT 1 FROM source_manifest WHERE present = 1 AND index_status = 'indexed'),
+                 EXISTS(SELECT 1 FROM source_manifest WHERE present = 1 AND index_status = 'pending')",
+            [],
+            |row| Ok(row.get::<_, bool>(0)? && !row.get::<_, bool>(1)?),
+        )
+        .unwrap_or(false)
+}
+
 pub(crate) fn manifest_coverage(index_path: &Path) -> Result<ManifestCoverage, ManifestError> {
     let connection = open_index(index_path)?;
     let scan_active = connection

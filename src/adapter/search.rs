@@ -19,9 +19,10 @@ pub(crate) fn handle_search(cwd: &Path, request: &SearchRequest) -> Result<Value
     let resolved = resolved.ok_or("workspace_not_initialized")?;
     let root = resolved.workspace().root();
     let workspace_id = resolved.workspace().id().map_err(|e| e.to_string())?;
+    let index_path = crate::workspace::source_index_path(root);
     let report = retrieve_workspace_sources(
         root,
-        &crate::workspace::source_index_path(root),
+        &index_path,
         Path::new(""),
         &RetrievalRequest {
             active_workspace_id: workspace_id.clone(),
@@ -31,7 +32,7 @@ pub(crate) fn handle_search(cwd: &Path, request: &SearchRequest) -> Result<Value
                 limit: request.limit.unwrap_or(10),
             },
         },
-        CoordinatorBudget::default(),
+        CoordinatorBudget::for_search(&index_path),
     )
     .map_err(|e| e.to_string())?;
     let hits:Vec<_>=report.hits.iter().map(|hit|json!({
