@@ -255,7 +255,7 @@ class OutputTests(unittest.TestCase):
             out = Path(root, "result.json")
             clients = []
             def factory(env, workspace, _config):
-                client = NativeMcpClient([sys.executable, "-u", "-c", CHILD, "eof"], cwd=workspace, env=env,
+                client = NativeMcpClient([sys.executable, "-u", "-c", CHILD, "timeout"], cwd=workspace, env=env,
                                          limits=TransportLimits(request_timeout=0.1, shutdown_timeout=0.1, max_frame_bytes=4096,
                                                                 max_notifications=4, max_stderr_bytes=1024, max_stderr_total_bytes=8192))
                 clients.append(client)
@@ -267,7 +267,9 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(result["status"], "FAIL")
             self.assertTrue(all(document["native"]["status"] == "FAIL" for document in result["documents"]))
             self.assertTrue(all(document["native"]["transport"]["returncode"] is not None for document in result["documents"]))
-            self.assertIsNotNone(clients[0].proc.returncode)
+            # The timeout child would sleep for a minute, so a return code proves the gate reaped it.
+            self.assertTrue(clients)
+            self.assertTrue(all(client.proc.returncode is not None for client in clients))
 
     def test_missing_optional_conversion_is_not_run_without_weakening_native(self):
         with tempfile.TemporaryDirectory() as root:

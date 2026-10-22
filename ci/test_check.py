@@ -38,8 +38,13 @@ class CheckRunnerTests(unittest.TestCase):
     def test_core_tests_use_the_freshly_built_release_executable(self):
         commands = [command for _, command in check.commands("core", "test-host")]
         build = self.position(commands, "cargo", "build")
-        self.assertIn("--release", commands[build])
-        self.assertLess(build, self.position(commands, "cargo", "test"))
+        test = self.position(commands, "cargo", "test")
+        for flag in ["--locked", "--release"]:
+            self.assertIn(flag, commands[build])
+        self.assertIn("--locked", commands[test])
+        # The test binary path below is only fresh if the build writes there.
+        self.assertEqual(commands[build][commands[build].index("--target") + 1], "test-host")
+        self.assertLess(build, test)
         with patch.dict(os.environ, {"MAGNESIUM_TEST_BINARY": "/stale/magnesium"}):
             binary = Path(check.environment(offline=False, target="test-host")["MAGNESIUM_TEST_BINARY"])
         self.assertEqual(binary.parent, check.ROOT / "target/test-host/release")

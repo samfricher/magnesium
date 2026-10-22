@@ -715,3 +715,24 @@ fn native_stop_control_cannot_be_validated_while_the_event_store_is_unreadable()
         );
     }
 }
+
+#[test]
+fn malformed_control_is_rejected_before_the_unreadable_event_store_is_queried() {
+    let f = Fixture::new();
+    f.start();
+    let before = f.store.binding(&f.host).unwrap();
+    f.store
+        .conn
+        .execute_batch("DROP TABLE learning_events")
+        .unwrap();
+    let request = json!({"schema":SCHEMA,"action":"control","request_id":"missing-off","control":"recording_off"});
+    let error = super::dispatch_with_host(&f.root, "learning_step", request, Some(f.host.clone()))
+        .unwrap_err();
+    assert!(error.contains("reported_event"), "{error}");
+    assert!(error.contains("exactly one"), "{error}");
+    assert!(!error.contains("storage"), "{error}");
+    assert!(!error.contains("control_unavailable"), "{error}");
+    assert_eq!(f.store.binding(&f.host).unwrap(), before);
+    assert!(!f.marker().exists());
+    assert!(!super::control_admission::local_capture_suppressed(&f.workspace, &f.host).unwrap());
+}

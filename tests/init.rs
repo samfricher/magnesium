@@ -102,6 +102,28 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
 }
 
 #[test]
+fn init_and_info_work_without_git_on_path() {
+    let environment = TestEnvironment::from_fixture("basic").unwrap();
+    let empty_path = environment.root.join("empty-path");
+    fs::create_dir_all(&empty_path).unwrap();
+    for arguments in [&["init"][..], &["info", "--json"]] {
+        let output = environment
+            .command()
+            .args(arguments)
+            .env("PATH", &empty_path)
+            .output()
+            .unwrap();
+        assert_success(&output);
+    }
+    let canonical_workspace = fs::canonicalize(&environment.workspace).unwrap();
+    assert_empty_learner_state(
+        &canonical_workspace
+            .join(support::CONTROL_DIR)
+            .join("state.sqlite"),
+    );
+}
+
+#[test]
 fn init_rejects_incompatible_source_cache_without_modifying_it() {
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     assert_success(&environment.command().arg("init").output().unwrap());

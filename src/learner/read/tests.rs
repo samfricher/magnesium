@@ -798,6 +798,53 @@ fn bodies_load_once_per_request_for_auto_prepare_and_explicit_read() {
     );
 }
 
+thread_local! {
+    static STATEMENT_EXECUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// Counts statement executions, so a statement prepared once and run once per
+/// memory shows up even though the authorizer sees it only once.
+fn statement_executions(conn: &Connection, request: Value) -> usize {
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    STATEMENT_EXECUTIONS.with(|count| count.set(0));
+    conn.trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(|event| {
+            if let TraceEvent::Stmt(..) = event {
+                STATEMENT_EXECUTIONS.with(|count| count.set(count.get() + 1));
+            }
+        }),
+    );
+    run(conn, request).unwrap();
+    conn.trace_v2(TraceEventCodes::empty(), None);
+    STATEMENT_EXECUTIONS.with(std::cell::Cell::get)
+}
+
+#[test]
+fn directory_and_auto_prepare_statement_executions_do_not_scale_with_memories() {
+    let with_memories = |count: usize| {
+        let conn = fixture();
+        for n in 0..count {
+            let id = format!("m{n}");
+            insert_read_memory(&conn, &id);
+            conn.execute("INSERT INTO memory_topics VALUES(?1,'algebra')", [&id])
+                .unwrap();
+        }
+        conn
+    };
+    let one = with_memories(1);
+    let twelve = with_memories(12);
+    for request in [
+        json!({"action":"browse","max_bytes":65536}),
+        json!({"action":"prepare","mode":"auto"}),
+    ] {
+        assert_eq!(
+            statement_executions(&one, request.clone()),
+            statement_executions(&twelve, request.clone()),
+            "{request}"
+        );
+    }
+}
+
 #[test]
 fn selected_reads_emit_valid_remaining_refs_with_expected_revisions() {
     let conn = fixture();

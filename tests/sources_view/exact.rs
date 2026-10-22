@@ -218,6 +218,7 @@ fn assert_exact_source(response: &Value, kind: SourceKind, path: &str, hash: &st
 }
 
 fn check_filename_matrix(kind: SourceKind, warm: bool) {
+    let mut first_call_rows = 0;
     for path in filename_cases(kind.extension()) {
         let requests = ["inspect", "status"]
             .into_iter()
@@ -260,6 +261,7 @@ fn check_filename_matrix(kind: SourceKind, warm: bool) {
                     && action == "inspect"
                     && bound;
                 let response = if succeeds_on_first_call {
+                    first_call_rows += 1;
                     client.call_value(id, "sources", request)
                 } else {
                     call_exact_source(&mut client, id, request, kind, &path, &hash)
@@ -275,6 +277,11 @@ fn check_filename_matrix(kind: SourceKind, warm: bool) {
             client.close_cleanly();
         }
     }
+    let expected_first_call_rows = usize::from(!warm && matches!(kind, SourceKind::Text));
+    assert_eq!(
+        first_call_rows, expected_first_call_rows,
+        "the first-call quote filename case must stay in filename_cases"
+    );
 }
 
 #[test]
