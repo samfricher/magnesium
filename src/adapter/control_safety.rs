@@ -10,6 +10,8 @@ use std::{
     time::{Duration, Instant},
 };
 const DIRECTORY: &str = "control-safety";
+#[cfg(unix)]
+const ENTRY_FLUSHED: &str = "directory-entry.flushed";
 const RECORDING: u8 = 1;
 const LEARNING: u8 = 2;
 pub(crate) struct Guard {
@@ -32,7 +34,7 @@ impl Guard {
         // directory also needs its entry in the control directory flushed. Do this even when
         // another process won creation, before claiming a durable shared deny.
         #[cfg(unix)]
-        sync_directory(workspace.control())?;
+        ensure_entry_flushed(workspace.control(), &directory)?;
         let key = Sha256::digest(
             serde_json::to_vec(&[&host.host_kind, &host.host_thread_id]).map_err(failure)?,
         )
@@ -161,6 +163,36 @@ impl Guard {
         self.flags = flags;
         Ok(())
     }
+}
+
+/// Flush `directory`'s entry in `control` once per directory pair, not on
+/// every call. After a flush succeeds, a record inside `directory` names both
+/// directories' identities. A process that reads a matching record knows a
+/// flush already completed, because the record is written only after one
+/// returns. Replacing either directory changes an identity, so the next call
+/// flushes again. A missing or unreadable record also flushes again.
+#[cfg(unix)]
+fn ensure_entry_flushed(control: &Path, directory: &Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let identity = |path: &Path| {
+        fs::symlink_metadata(path)
+            .map(|metadata| format!("{}:{}", metadata.dev(), metadata.ino()))
+            .map_err(failure)
+    };
+    let expected = format!("{} {}\n", identity(control)?, identity(directory)?);
+    let record = directory.join(ENTRY_FLUSHED);
+    crate::workspace::reject_symlink_components(&record, control).map_err(failure)?;
+    let mut found = Vec::new();
+    let recorded = fs::File::open(&record)
+        .and_then(|file| file.take(128).read_to_end(&mut found))
+        .is_ok_and(|_| found == expected.as_bytes());
+    if !recorded {
+        sync_directory(control)?;
+        // The flush above is what this call needs. A record that fails to
+        // write only means a later call flushes again.
+        let _ = crate::workspace::write_private_atomic(&record, expected.as_bytes());
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

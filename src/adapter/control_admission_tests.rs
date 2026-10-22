@@ -736,3 +736,33 @@ fn malformed_control_is_rejected_before_the_unreadable_event_store_is_queried() 
     assert!(!f.marker().exists());
     assert!(!super::control_admission::local_capture_suppressed(&f.workspace, &f.host).unwrap());
 }
+
+#[cfg(unix)]
+#[test]
+fn control_directory_flush_is_recorded_once_and_redone_for_a_stale_record() {
+    use std::os::unix::fs::MetadataExt;
+    let f = Fixture::new();
+    let directory = f.workspace.control().join("control-safety");
+    let record = directory.join("directory-entry.flushed");
+    let identity = |path: &std::path::Path| {
+        let metadata = fs::symlink_metadata(path).unwrap();
+        format!("{}:{}", metadata.dev(), metadata.ino())
+    };
+    drop(Guard::acquire(&f.workspace, &f.host).unwrap());
+    let expected = format!(
+        "{} {}\n",
+        identity(f.workspace.control()),
+        identity(&directory)
+    );
+    assert_eq!(fs::read_to_string(&record).unwrap(), expected);
+
+    // A matching record means the flush already happened: no rewrite, no flush.
+    let written = fs::symlink_metadata(&record).unwrap().ino();
+    drop(Guard::acquire(&f.workspace, &f.host).unwrap());
+    assert_eq!(fs::symlink_metadata(&record).unwrap().ino(), written);
+
+    // A record naming other directories is stale: flush again and rewrite it.
+    fs::write(&record, "0:0 0:0\n").unwrap();
+    drop(Guard::acquire(&f.workspace, &f.host).unwrap());
+    assert_eq!(fs::read_to_string(&record).unwrap(), expected);
+}
