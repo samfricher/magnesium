@@ -539,9 +539,11 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
     fs::remove_file(environment.workspace.join("keeper.txt")).unwrap();
     let corpus = environment.workspace.join("corpus");
     fs::create_dir(&corpus).unwrap();
-    for index in 0..300 {
+    // More entries than one search rechecks once the index is current, so the
+    // unrestricted scan is still active when the exact preparation runs.
+    for index in 0..1100 {
         fs::write(
-            corpus.join(format!("metadata-{index:03}.txt")),
+            corpus.join(format!("metadata-{index:04}.txt")),
             "metadata cursor fixture\n",
         )
         .unwrap();

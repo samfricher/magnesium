@@ -1434,17 +1434,20 @@ fn setup_claude_plugin(
 /// that already match.
 fn write_claude_plugin_files(plugin_dir: &Path) -> Result<(), String> {
     validate_claude_plugin_paths(plugin_dir)?;
+    let mut writes = crate::workspace::AtomicWrites::default();
     for (relative, content) in CLAUDE_PLUGIN_FILES {
         let dest = plugin_dir.join(relative);
         dest.parent()
             .map_or(Ok(()), fs::create_dir_all)
             .and_then(|()| match fs::read_to_string(&dest) {
                 Ok(existing) if existing == *content => Ok(()),
-                _ => write_private_atomic(&dest, content.as_bytes()),
+                _ => writes.write_private(&dest, content.as_bytes()),
             })
             .map_err(|e| format!("could not write {}: {e}", dest.display()))?;
     }
-    Ok(())
+    writes
+        .finish()
+        .map_err(|e| format!("could not flush {}: {e}", plugin_dir.display()))
 }
 
 /// After a runtime upgrade, rewrite an existing Claude plugin copy: its hook
@@ -1571,6 +1574,7 @@ pub(crate) fn materialize_bundled_marketplace(marketplace_dir: &Path) -> Result<
         ("codex-plugin/hooks/hooks.json", HOOKS_MANIFEST),
         ("codex-plugin/skills/learn/SKILL.md", SKILL_MD),
     ];
+    let mut writes = crate::workspace::AtomicWrites::default();
     for (rel_path, content) in files {
         let dest = marketplace_dir.join(rel_path);
         if let Some(parent) = dest.parent() {
@@ -1581,10 +1585,10 @@ pub(crate) fn materialize_bundled_marketplace(marketplace_dir: &Path) -> Result<
             Err(_) => true,
         };
         if needs_write {
-            write_private_atomic(&dest, content.as_bytes())?;
+            writes.write_private(&dest, content.as_bytes())?;
         }
     }
-    Ok(())
+    writes.finish()
 }
 
 fn ensure_codex_marketplace_registered(root: &Path, marketplace_dir: &Path) -> Result<(), String> {

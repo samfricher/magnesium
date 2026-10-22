@@ -507,16 +507,19 @@ pub(crate) fn reconcile_entry(
     let move_matches = existing
         .iter()
         .filter(|(old_key, record)| {
-            (match progress.moves {
-                MovePolicy::MissingOnly => {
-                    manifest_path_is_missing(&discovery.workspace_root, old_key)
-                }
-                MovePolicy::Isolated => false,
-            }) && record.present
+            // In-memory checks first: the filesystem check runs only for a
+            // row with the same content, not for every row per new file.
+            record.present
                 && !current_keys.contains(*old_key)
                 && !progress.moved_ids.contains(&record.manifest_id)
                 && record.source_kind == source_kind
                 && record.content_sha256.as_deref() == Some(&content_sha256)
+                && match progress.moves {
+                    MovePolicy::MissingOnly => {
+                        manifest_path_is_missing(&discovery.workspace_root, old_key)
+                    }
+                    MovePolicy::Isolated => false,
+                }
         })
         .map(|(_, record)| record)
         .collect::<Vec<_>>();

@@ -51,6 +51,36 @@ impl Default for CoordinatorBudget {
     }
 }
 
+impl CoordinatorBudget {
+    /// One `search_sources` call. It may index up to 32 files while time
+    /// remains. Once nothing is waiting to be indexed and no recheck is in
+    /// progress, it may also recheck up to 1,024 entries, so a typical folder
+    /// finishes a full recheck in one call and keeps reporting complete
+    /// coverage between rechecks.
+    pub(crate) fn for_search(index_path: &Path) -> Self {
+        let max_metadata_entries =
+            if super::manifest::status::indexed_with_nothing_pending(index_path) {
+                1_024
+            } else {
+                128
+            };
+        Self {
+            max_metadata_entries,
+            max_on_demand: 32,
+            ..Self::default()
+        }
+    }
+}
+
+/// Extractions a call may start whenever its deadline allows. Past these, a
+/// call starts another extraction only in the first half of its duration, so
+/// indexing more files per call still returns within the budget.
+const GUARANTEED_ON_DEMAND: usize = 4;
+
+fn may_start_on_demand(used: usize, cutoff: Instant) -> bool {
+    used < GUARANTEED_ON_DEMAND || Instant::now() < cutoff
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum IndexCoverage {
     Complete,
@@ -88,6 +118,7 @@ impl ReconciliationOutcome {
 /// A retry continues with whatever remains; it never resets the counters.
 struct RunBudget<'a> {
     deadline: Instant,
+    extraction_cutoff: Instant,
     max_metadata_entries: usize,
     max_on_demand: usize,
     metadata_entries_used: usize,
@@ -103,6 +134,7 @@ impl<'a> RunBudget<'a> {
     ) -> Self {
         Self {
             deadline: started + budget.max_duration,
+            extraction_cutoff: started + budget.max_duration / 2,
             max_metadata_entries: budget.max_metadata_entries,
             max_on_demand: budget.max_on_demand,
             metadata_entries_used: 0,
@@ -122,6 +154,11 @@ impl<'a> RunBudget<'a> {
 
     fn consume_metadata(&mut self) {
         self.metadata_entries_used = self.metadata_entries_used.saturating_add(1);
+    }
+
+    fn may_start_on_demand(&self) -> bool {
+        self.remaining_on_demand() > 0
+            && may_start_on_demand(self.on_demand_used, self.extraction_cutoff)
     }
 
     fn consume_on_demand(&mut self) {
@@ -427,6 +464,7 @@ fn prepare_source_query_with_policy(
     // soft-budget contract: no extraction starts, but the call can return its
     // saved cursor instead of reporting caller cancellation.
     let deadline = Instant::now() + budget.max_duration;
+    let extraction_cutoff = deadline - budget.max_duration / 2;
     let preparation_cancellation = if budget.max_duration.is_zero() {
         cancellation.clone()
     } else {
@@ -465,11 +503,16 @@ fn prepare_source_query_with_policy(
                 pending.push(relative);
             }
         }
-        let (used, outcome) =
-            run_fallback_extractions(&pending, &preparation_cancellation, |relative, token| {
+        let already_used = report.metrics.on_demand_used;
+        let (used, outcome) = run_fallback_extractions(
+            &pending,
+            &preparation_cancellation,
+            |used| may_start_on_demand(already_used + used, extraction_cutoff),
+            |relative, token| {
                 extract_source_with_cancellation(workspace_root, index_path, relative, token)
                     .map(|_| ())
-            });
+            },
+        );
         fallback_count = used;
         match outcome {
             Err(ManifestError::Cancelled)
@@ -510,12 +553,16 @@ fn deferred_budget_preparation(index_path: &Path) -> Result<PreparedSourceQuery,
 fn run_fallback_extractions(
     pending: &[PathBuf],
     cancellation: &OperationCancellation,
+    may_start: impl Fn(usize) -> bool,
     mut extract: impl FnMut(&Path, &OperationCancellation) -> Result<(), ManifestError>,
 ) -> (usize, Result<(), ManifestError>) {
     let mut used = 0;
     for relative in pending {
         if let Err(error) = cancellation.check() {
             return (used, Err(error));
+        }
+        if !may_start(used) {
+            break;
         }
         used += 1;
         if let Err(error) = extract(relative, cancellation) {
@@ -748,7 +795,10 @@ fn coordinate_one_pass(
         }
         extraction_paths.push(relative);
     }
-    for relative in extraction_paths.into_iter().take(run.remaining_on_demand()) {
+    for relative in extraction_paths {
+        if !run.may_start_on_demand() {
+            break;
+        }
         cancellation.check()?;
         run.consume_on_demand();
         let Some((status, size)) = source_status_and_size(index_path, &relative)? else {
@@ -1223,6 +1273,105 @@ mod tests {
     }
 
     #[test]
+    fn search_budget_widens_the_recheck_only_once_nothing_waits_for_indexing() {
+        let fixture = Fixture::new("search-budget");
+        fixture.write("lesson.md", b"bounded coordinator\n");
+        let before_index = CoordinatorBudget::for_search(&fixture.index());
+        assert_eq!(before_index.max_metadata_entries, 128);
+        assert_eq!(before_index.max_on_demand, 32);
+        finish_metadata_scan(&fixture, budget(4));
+        assert_eq!(
+            CoordinatorBudget::for_search(&fixture.index()).max_metadata_entries,
+            128,
+            "lesson.md still waits for its first extraction"
+        );
+        coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[PathBuf::from("lesson.md")],
+            budget(4),
+        )
+        .expect("index selected text source");
+        assert_eq!(
+            CoordinatorBudget::for_search(&fixture.index()).max_metadata_entries,
+            1_024
+        );
+
+        // A recheck still in progress, such as a widened pass that ran out of
+        // time, falls back to the smaller recheck so the next call commits.
+        // Unsupported files leave nothing pending, so only the recheck counts.
+        for index in 0..3 {
+            fixture.write(&format!("added-{index}.bin"), b"\x00binary\n");
+        }
+        coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[],
+            budget(1),
+        )
+        .expect("start a bounded recheck");
+        assert_eq!(scan_active(&fixture.index()), 1);
+        assert_eq!(
+            CoordinatorBudget::for_search(&fixture.index()).max_metadata_entries,
+            128
+        );
+    }
+
+    #[test]
+    fn extractions_past_the_guaranteed_few_start_only_before_the_cutoff() {
+        let passed = std::time::Instant::now();
+        let ahead = passed + Duration::from_secs(60);
+        assert!(super::may_start_on_demand(3, passed));
+        assert!(!super::may_start_on_demand(4, passed));
+        assert!(super::may_start_on_demand(31, ahead));
+
+        let pending = (0..6)
+            .map(|index| PathBuf::from(format!("pending-{index}.md")))
+            .collect::<Vec<_>>();
+        let mut started = 0;
+        let (used, result) = run_fallback_extractions(
+            &pending,
+            &OperationCancellation::none(),
+            |used| super::may_start_on_demand(used, passed),
+            |_, _| {
+                started += 1;
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!((used, started), (4, 4), "past the cutoff only four start");
+    }
+
+    #[test]
+    fn a_search_indexes_more_than_four_files_while_time_remains() {
+        let fixture = Fixture::new("more-than-four");
+        let likely = (0..10)
+            .map(|index| {
+                let path = format!("lesson-{index}.md");
+                fixture.write(&path, format!("lesson {index}\n").as_bytes());
+                PathBuf::from(path)
+            })
+            .collect::<Vec<_>>();
+        finish_metadata_scan(&fixture, budget(64));
+        let report = coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &likely,
+            CoordinatorBudget {
+                max_metadata_entries: 64,
+                max_duration: Duration::from_secs(600),
+                max_on_demand: 32,
+            },
+        )
+        .expect("index every selected source");
+        assert_eq!(report.metrics.on_demand_used, 10);
+        assert_eq!(report.metrics.indexed_on_demand, 10);
+    }
+
+    #[test]
     fn preparation_shares_selected_and_fallback_slots_and_reports_final_coverage() {
         let fixture = Fixture::new("preparation-slots");
         fixture.write("a-selected.md", b"selected source\n");
@@ -1309,9 +1458,12 @@ mod tests {
 
         let expired =
             OperationCancellation::none().with_earlier_deadline(std::time::Instant::now());
-        let (used, result) = run_fallback_extractions(&pending, &expired, |_, _| {
-            panic!("expired preparation must not start fallback extraction")
-        });
+        let (used, result) = run_fallback_extractions(
+            &pending,
+            &expired,
+            |_| true,
+            |_, _| panic!("expired preparation must not start fallback extraction"),
+        );
         assert_eq!(used, 0);
         assert!(matches!(result, Err(ManifestError::Cancelled)));
         assert_eq!(source_status(&fixture.index(), "pending.md"), "pending");
@@ -1319,22 +1471,32 @@ mod tests {
         let caller_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let token = OperationCancellation::with_flag(caller_flag.clone())
             .with_earlier_deadline(std::time::Instant::now() + Duration::from_secs(10));
-        let (used, result) = run_fallback_extractions(&pending, &token, |_, token| {
-            caller_flag.store(true, Ordering::Relaxed);
-            token.check()
-        });
+        let (used, result) = run_fallback_extractions(
+            &pending,
+            &token,
+            |_| true,
+            |_, token| {
+                caller_flag.store(true, Ordering::Relaxed);
+                token.check()
+            },
+        );
         assert_eq!(used, 1, "a started extraction consumes its slot");
         assert!(matches!(result, Err(ManifestError::Cancelled)));
         assert_eq!(source_status(&fixture.index(), "pending.md"), "pending");
 
         let deadline = std::time::Instant::now() + Duration::from_secs(1);
         let token = OperationCancellation::none().with_earlier_deadline(deadline);
-        let (used, result) = run_fallback_extractions(&pending, &token, |_, token| {
-            while std::time::Instant::now() < deadline {
-                std::thread::yield_now();
-            }
-            token.check()
-        });
+        let (used, result) = run_fallback_extractions(
+            &pending,
+            &token,
+            |_| true,
+            |_, token| {
+                while std::time::Instant::now() < deadline {
+                    std::thread::yield_now();
+                }
+                token.check()
+            },
+        );
         assert_eq!(used, 1, "deadline expired after extraction started");
         assert!(matches!(result, Err(ManifestError::Cancelled)));
         assert_eq!(source_status(&fixture.index(), "pending.md"), "pending");
@@ -1373,8 +1535,11 @@ mod tests {
             }));
         let scope = enter_request_cancellation(&token);
         let mut calls = 0;
-        let (used, result) =
-            run_fallback_extractions(&[PathBuf::from("lesson.md")], &token, |path, token| {
+        let (used, result) = run_fallback_extractions(
+            &[PathBuf::from("lesson.md")],
+            &token,
+            |_| true,
+            |path, token| {
                 calls += 1;
                 super::extract_source_with_cancellation(
                     &fixture.root,
@@ -1383,7 +1548,8 @@ mod tests {
                     token,
                 )
                 .map(|_| ())
-            });
+            },
+        );
         drop(scope);
         competitor.join().unwrap();
         assert!(
