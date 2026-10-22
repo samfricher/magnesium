@@ -176,19 +176,6 @@ pub(crate) fn open_index_for_write(path: &Path) -> Result<Connection, ManifestEr
     Ok(connection)
 }
 
-/// Hold an existing index open for one bounded request. While this handle is
-/// open, closing a per-file connection is not the last close, so SQLite does
-/// not checkpoint and fsync the write-ahead log once per file; this handle's
-/// close checkpoints once. Commits stay exactly as durable. `None` when the
-/// index does not exist yet or cannot be opened: the request's own opens then
-/// report any error as before.
-pub(crate) fn retain_index_for_request(path: &Path) -> Option<Connection> {
-    match path.try_exists() {
-        Ok(true) => open_index_for_write(path).ok(),
-        _ => None,
-    }
-}
-
 /// Called only by explicit workspace initialization and reconciliation's
 /// initialization owner. The immediate transaction arbitrates concurrent first
 /// opens; identity and emptiness are checked again while holding its write lock.

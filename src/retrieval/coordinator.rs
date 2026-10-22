@@ -53,9 +53,10 @@ impl Default for CoordinatorBudget {
 
 impl CoordinatorBudget {
     /// One `search_sources` call. It may index up to 32 files while time
-    /// remains. Once nothing is waiting to be indexed, it may also recheck
-    /// up to 1,024 entries, so a typical folder finishes a full recheck in
-    /// one call and keeps reporting complete coverage between rechecks.
+    /// remains. Once nothing is waiting to be indexed and no recheck is in
+    /// progress, it may also recheck up to 1,024 entries, so a typical folder
+    /// finishes a full recheck in one call and keeps reporting complete
+    /// coverage between rechecks.
     pub(crate) fn for_search(index_path: &Path) -> Self {
         let max_metadata_entries =
             if super::manifest::status::indexed_with_nothing_pending(index_path) {
@@ -464,7 +465,6 @@ fn prepare_source_query_with_policy(
     // saved cursor instead of reporting caller cancellation.
     let deadline = Instant::now() + budget.max_duration;
     let extraction_cutoff = deadline - budget.max_duration / 2;
-    let _retained_index = super::manifest::schema::retain_index_for_request(index_path);
     let preparation_cancellation = if budget.max_duration.is_zero() {
         cancellation.clone()
     } else {
@@ -1297,6 +1297,26 @@ mod tests {
             CoordinatorBudget::for_search(&fixture.index()).max_metadata_entries,
             1_024
         );
+
+        // A recheck still in progress, such as a widened pass that ran out of
+        // time, falls back to the smaller recheck so the next call commits.
+        // Unsupported files leave nothing pending, so only the recheck counts.
+        for index in 0..3 {
+            fixture.write(&format!("added-{index}.bin"), b"\x00binary\n");
+        }
+        coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[],
+            budget(1),
+        )
+        .expect("start a bounded recheck");
+        assert_eq!(scan_active(&fixture.index()), 1);
+        assert_eq!(
+            CoordinatorBudget::for_search(&fixture.index()).max_metadata_entries,
+            128
+        );
     }
 
     #[test]
@@ -1306,6 +1326,49 @@ mod tests {
         assert!(super::may_start_on_demand(3, passed));
         assert!(!super::may_start_on_demand(4, passed));
         assert!(super::may_start_on_demand(31, ahead));
+
+        let pending = (0..6)
+            .map(|index| PathBuf::from(format!("pending-{index}.md")))
+            .collect::<Vec<_>>();
+        let mut started = 0;
+        let (used, result) = run_fallback_extractions(
+            &pending,
+            &OperationCancellation::none(),
+            |used| super::may_start_on_demand(used, passed),
+            |_, _| {
+                started += 1;
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!((used, started), (4, 4), "past the cutoff only four start");
+    }
+
+    #[test]
+    fn a_search_indexes_more_than_four_files_while_time_remains() {
+        let fixture = Fixture::new("more-than-four");
+        let likely = (0..10)
+            .map(|index| {
+                let path = format!("lesson-{index}.md");
+                fixture.write(&path, format!("lesson {index}\n").as_bytes());
+                PathBuf::from(path)
+            })
+            .collect::<Vec<_>>();
+        finish_metadata_scan(&fixture, budget(64));
+        let report = coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &likely,
+            CoordinatorBudget {
+                max_metadata_entries: 64,
+                max_duration: Duration::from_secs(600),
+                max_on_demand: 32,
+            },
+        )
+        .expect("index every selected source");
+        assert_eq!(report.metrics.on_demand_used, 10);
+        assert_eq!(report.metrics.indexed_on_demand, 10);
     }
 
     #[test]

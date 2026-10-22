@@ -550,4 +550,22 @@ mod runtime_bounds_tests {
             "timed-out PDF worker did not release promptly"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn pdf_child_that_closes_stdout_but_keeps_running_still_times_out() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "exec 1>&- 2>&-; sleep 30"]);
+        let started = Instant::now();
+        let error = run_pdf_process(command, None, Duration::from_millis(200))
+            .expect_err("a PDF child that never exits must time out");
+        assert!(
+            matches!(error, ManifestError::PdfTimeout),
+            "unexpected PDF timeout error: {error}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "a PDF child with closed stdout was not released promptly"
+        );
+    }
 }
