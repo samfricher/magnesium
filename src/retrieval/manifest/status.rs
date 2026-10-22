@@ -65,12 +65,21 @@ pub(crate) fn pending_source_paths(
     Ok(selected)
 }
 
+/// A source that waits for extraction, as its manifest row records it. A
+/// recheck that sees the file change rewrites its size or modified time.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PendingSource {
+    pub(crate) path: PathBuf,
+    pub(crate) file_size: Option<i64>,
+    pub(crate) modified_unix_ns: Option<i64>,
+}
+
 /// What catch-up needs before each step, read from one snapshot.
 pub(crate) struct IndexingProgress {
-    /// Present text and PDF sources whose current content waits for
-    /// extraction, in path order. Failed sources are not listed: extracting
-    /// them again fails again.
-    pub(crate) pending: Vec<PathBuf>,
+    /// The first sources in path order that wait for extraction and that the
+    /// caller wants. Failed sources are not listed: extracting them again
+    /// fails again.
+    pub(crate) pending: Vec<PendingSource>,
     /// Whether any full scan has completed.
     pub(crate) scanned: bool,
     /// The saved cursor of the scan in progress, if one is in progress.
@@ -80,6 +89,7 @@ pub(crate) struct IndexingProgress {
 pub(crate) fn indexing_progress(
     index_path: &Path,
     maximum: usize,
+    wanted: impl Fn(&PendingSource) -> bool,
 ) -> Result<IndexingProgress, ManifestError> {
     let connection = open_index(index_path)?;
     let snapshot = connection
@@ -87,24 +97,32 @@ pub(crate) fn indexing_progress(
         .map_err(|source| sqlite(index_path, "begin indexing-progress snapshot", source))?;
     let mut statement = snapshot
         .prepare(
-            "SELECT path_key FROM source_manifest
+            "SELECT path_key, file_size, modified_unix_ns FROM source_manifest
              WHERE present = 1 AND source_kind IN ('text', 'pdf') AND index_status = 'pending'
-             ORDER BY display_path COLLATE BINARY, manifest_id
-             LIMIT ?1",
+             ORDER BY display_path COLLATE BINARY, manifest_id",
         )
         .map_err(|source| sqlite(index_path, "prepare pending-source query", source))?;
-    let pending = statement
-        .query_map([i64::try_from(maximum).unwrap_or(i64::MAX)], |row| {
-            row.get::<_, Vec<u8>>(0)
-        })
-        .map_err(|source| sqlite(index_path, "query pending sources", source))?
-        .map(|path_key| {
-            decode_native_path(
-                &path_key.map_err(|source| sqlite(index_path, "read pending source", source))?,
-            )
-            .map_err(ManifestError::Invalid)
-        })
-        .collect::<Result<_, _>>()?;
+    let mut rows = statement
+        .query([])
+        .map_err(|source| sqlite(index_path, "query pending sources", source))?;
+    let mut pending = Vec::new();
+    while pending.len() < maximum
+        && let Some(row) = rows
+            .next()
+            .map_err(|source| sqlite(index_path, "read pending source", source))?
+    {
+        let read = |source| sqlite(index_path, "read pending source", source);
+        let source = PendingSource {
+            path: decode_native_path(&row.get::<_, Vec<u8>>(0).map_err(read)?)
+                .map_err(ManifestError::Invalid)?,
+            file_size: row.get(1).map_err(read)?,
+            modified_unix_ns: row.get(2).map_err(read)?,
+        };
+        if wanted(&source) {
+            pending.push(source);
+        }
+    }
+    drop(rows);
     let (scanned, scan_cursor) = snapshot
         .query_row(
             "SELECT

@@ -68,17 +68,6 @@ impl CoordinatorBudget {
             ..Self::default()
         }
     }
-
-    /// One background catch-up extraction pass. Lasting twice the PDF
-    /// deadline means an extraction that starts before the halfway cutoff
-    /// still gets the whole PDF deadline, so the pass never cuts a PDF short.
-    pub(crate) fn for_catch_up() -> Self {
-        Self {
-            max_metadata_entries: 0,
-            max_duration: super::manifest::pdf::PDF_DEADLINE.saturating_mul(2),
-            max_on_demand: 64,
-        }
-    }
 }
 
 /// Extractions a call may start whenever its deadline allows. Past these, a
@@ -547,45 +536,6 @@ fn prepare_source_query_with_policy(
     })
 }
 
-/// Extract sources that wait for extraction without a reconciliation pass. An
-/// allowlist pass would start a recheck when none is in progress; this never
-/// reads or writes the scan cursor. Each extraction starts before the halfway
-/// cutoff, so it keeps at least half the duration, and one cut short by the
-/// deadline stays pending.
-pub(crate) fn extract_pending_sources(
-    workspace_root: &Path,
-    index_path: &Path,
-    pending: &[PathBuf],
-    budget: CoordinatorBudget,
-    cancellation: &OperationCancellation,
-) -> Result<(), ManifestError> {
-    let deadline = Instant::now() + budget.max_duration;
-    let extraction_cutoff = deadline - budget.max_duration / 2;
-    let pass_cancellation = cancellation.with_earlier_deadline(deadline);
-    let mut eligible = Vec::new();
-    for relative in pending.iter().take(budget.max_on_demand) {
-        if !super::source_relative_path_is_excluded(workspace_root, relative)? {
-            eligible.push(relative.clone());
-        }
-    }
-    let (_, outcome) = run_fallback_extractions(
-        &eligible,
-        &pass_cancellation,
-        |_| Instant::now() < extraction_cutoff,
-        |relative, token| {
-            extract_for_search(workspace_root, index_path, relative, token).map(|_| ())
-        },
-    );
-    match outcome {
-        Err(ManifestError::Cancelled)
-            if Instant::now() >= deadline && !cancellation.is_cancelled() =>
-        {
-            Ok(())
-        }
-        other => other,
-    }
-}
-
 fn deferred_budget_preparation(index_path: &Path) -> Result<PreparedSourceQuery, ManifestError> {
     Ok(PreparedSourceQuery {
         generation: super::manifest::current_generation(index_path)?,
@@ -599,7 +549,7 @@ fn deferred_budget_preparation(index_path: &Path) -> Result<PreparedSourceQuery,
 /// Searches and catch-up also index pending sources in the same path order, so
 /// another writer may publish a source first; that newer state stands. Explicit
 /// source requests report both outcomes instead.
-fn extract_for_search(
+pub(crate) fn extract_for_search(
     workspace_root: &Path,
     index_path: &Path,
     relative: &Path,
@@ -1293,7 +1243,7 @@ mod tests {
     use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
     use rusqlite::Connection;
 
-    use super::super::catch_up::catch_up;
+    use super::super::catch_up::{Skipped, catch_up, catch_up_with};
     use super::{
         CoordinatorBudget, IndexCoverage, ManifestError, OnceGate, OperationCancellation,
         ReconciliationOutcome, coordinate_source_query, coordinate_source_query_with_allowlist,
@@ -1679,7 +1629,7 @@ mod tests {
             "pending"
         );
 
-        catch_up(&fixture.root, &slow).expect("catch up after the search");
+        catch_up(&fixture.root, &slow, &mut Skipped::new()).expect("catch up after the search");
         assert_eq!(
             source_status(&fixture.index(), "slides/lecture.pdf"),
             "indexed"
@@ -1717,7 +1667,7 @@ mod tests {
             }))
         };
         let _scope = enter_request_cancellation(&watch);
-        catch_up(&fixture.root, &watch).expect("catch up");
+        catch_up(&fixture.root, &watch, &mut Skipped::new()).expect("catch up");
         assert_eq!(
             *scanning_at_first_publication.lock().unwrap(),
             Some(true),
@@ -1730,6 +1680,112 @@ mod tests {
                 "indexed"
             );
         }
+    }
+
+    #[test]
+    fn catch_up_continues_past_files_it_cannot_finish() {
+        let fixture = Fixture::new("catch-up-unfinishable");
+        fixture.write("a-vanished.md", b"deleted after discovery\n");
+        fixture.write("b-changed.md", b"changed after discovery\n");
+        fixture.write("c-lesson.md", b"lesson\n");
+        finish_metadata_scan(&fixture, budget(8));
+        fs::remove_file(fixture.root.join("a-vanished.md")).unwrap();
+        fixture.write("b-changed.md", b"changed after discovery, and longer\n");
+
+        catch_up(
+            &fixture.root,
+            &OperationCancellation::none(),
+            &mut Skipped::new(),
+        )
+        .expect("catch up");
+        assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "indexed");
+    }
+
+    #[test]
+    fn catch_up_reaches_a_file_after_a_full_window_of_newly_excluded_files() {
+        let fixture = Fixture::new("catch-up-excluded-window");
+        for index in 0..64 {
+            fixture.write(&format!("drafts/{index:02}.md"), b"draft\n");
+        }
+        fixture.write("lesson.md", b"lesson\n");
+        finish_metadata_scan(&fixture, budget(128));
+        fixture.write(
+            &format!("{}/magnesiumignore", crate::workspace::CONTROL_DIR),
+            b"drafts/\n",
+        );
+        assert!(
+            crate::retrieval::source_relative_path_is_excluded(
+                &fixture.root,
+                Path::new("drafts/00.md")
+            )
+            .unwrap()
+        );
+
+        catch_up(
+            &fixture.root,
+            &OperationCancellation::none(),
+            &mut Skipped::new(),
+        )
+        .expect("catch up");
+        assert_eq!(source_status(&fixture.index(), "lesson.md"), "indexed");
+    }
+
+    #[test]
+    fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
+        let fixture = Fixture::new("catch-up-timeout");
+        fixture.write("a-slow.pdf", &pdf_fixture());
+        fixture.write("b-lesson.md", b"lesson\n");
+        finish_metadata_scan(&fixture, budget(8));
+        let mut skipped = Skipped::new();
+        let attempts = std::cell::Cell::new(0);
+        let times_out = |root: &Path,
+                         index: &Path,
+                         relative: &Path,
+                         token: &OperationCancellation| {
+            if relative != Path::new("a-slow.pdf") {
+                return super::extract_for_search(root, index, relative, token).map(drop);
+            }
+            attempts.set(attempts.get() + 1);
+            super::super::manifest::extract::extract_source_with_pdf(root, index, relative, |_| {
+                Err(ManifestError::PdfTimeout)
+            })
+            .map(drop)
+        };
+
+        for run in 1..=2 {
+            catch_up_with(
+                &fixture.root,
+                &OperationCancellation::none(),
+                &mut skipped,
+                times_out,
+            )
+            .unwrap_or_else(|error| panic!("run {run}: {error}"));
+            assert_eq!(
+                source_status(&fixture.index(), "b-lesson.md"),
+                "indexed",
+                "run {run}"
+            );
+            assert_eq!(
+                source_status(&fixture.index(), "a-slow.pdf"),
+                "pending",
+                "run {run}"
+            );
+            assert_eq!(attempts.get(), 1, "run {run} retried the unchanged PDF");
+        }
+
+        let mut changed = pdf_fixture();
+        changed.extend_from_slice(b"\n% revised\n");
+        fixture.write("a-slow.pdf", &changed);
+        coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[],
+            budget(8),
+        )
+        .expect("a search's recheck records the change");
+        catch_up(&fixture.root, &OperationCancellation::none(), &mut skipped).expect("catch up");
+        assert_eq!(source_status(&fixture.index(), "a-slow.pdf"), "indexed");
     }
 
     #[test]
@@ -1756,7 +1812,12 @@ mod tests {
         let recheck = persisted_cursor(&rechecking.index());
 
         for fixture in [&idle, &rechecking] {
-            catch_up(&fixture.root, &OperationCancellation::none()).expect("catch up");
+            catch_up(
+                &fixture.root,
+                &OperationCancellation::none(),
+                &mut Skipped::new(),
+            )
+            .expect("catch up");
             for index in 0..6 {
                 assert_eq!(
                     source_status(&fixture.index(), &format!("lesson-{index}.md")),
@@ -1787,7 +1848,12 @@ mod tests {
         .expect_err("invalid UTF-8 cannot be indexed");
         assert_eq!(source_status(&fixture.index(), "a-not-text.md"), "failed");
 
-        catch_up(&fixture.root, &OperationCancellation::none()).expect("catch up");
+        catch_up(
+            &fixture.root,
+            &OperationCancellation::none(),
+            &mut Skipped::new(),
+        )
+        .expect("catch up");
         assert_eq!(source_status(&fixture.index(), "b-lesson.md"), "indexed");
     }
 
@@ -1801,7 +1867,7 @@ mod tests {
         let root = fixture.root.clone();
         let background = std::thread::spawn(move || {
             ready_rx.recv().unwrap();
-            catch_up(&root, &OperationCancellation::none()).unwrap();
+            catch_up(&root, &OperationCancellation::none(), &mut Skipped::new()).unwrap();
             published_tx.send(()).unwrap();
         });
         let published_rx = std::sync::Mutex::new(published_rx);

@@ -30,7 +30,7 @@ pub(crate) use reconcile::load_or_start_reconciliation;
 #[cfg(test)]
 pub(crate) use reconcile::reconcile_batch;
 pub(crate) use status::{
-    IndexingProgress, current_generation, indexing_progress, manifest_coverage,
+    IndexingProgress, PendingSource, current_generation, indexing_progress, manifest_coverage,
     pending_source_paths, source_status_and_size,
 };
 
