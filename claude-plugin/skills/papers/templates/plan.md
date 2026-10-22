@@ -108,17 +108,23 @@ Drop order if time runs short: <first block to drop>, then <next>.
 
 The tags, what each covers and the pages to re-read are in `graph.yaml`.
 
-## 9. Assessment-day checklist
+## 9. Anchors
+
+<!-- Copies of the anchors that this plan's topics use. An anchor is a skill or way of thinking that the learner's own work has shown, with where they showed it. Each copy is the line starting with a lowercase "anchor:" in the state_text of the memory for that skill. If there are none, write "none yet". Keep the list short. -->
+
+- anchor: <what the learner did, such as "applies the chain rule to single-variable functions"> (<where they showed it, such as Diagnostic, Q3>)
+
+## 10. Assessment-day checklist
 
 - <what to bring>
 - <the order to attempt questions, and the time budget per mark>
 - <checks that the gap log says to make on every answer>
 
-## 10. Facts to confirm with the TA or instructor
+## 11. Facts to confirm with the TA or instructor
 
 - <question>; ask by <when>.
 
-## 11. Using this folder
+## 12. Using this folder
 
 Say any of these, in your own words:
 
@@ -132,7 +138,7 @@ Say any of these, in your own words:
 
 Open a key only after you return the sitting. Magnesium keeps a learner record in this workspace, so a later conversation continues from this plan, `gap-log.md` and that record.
 
-## 12. Changes
+## 13. Changes
 
 <!-- One line per change made without asking: date, what changed, why. -->
 

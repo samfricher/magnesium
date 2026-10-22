@@ -17,7 +17,7 @@ Each tag has one reading, in its memory: untested (no cold evidence), open (an o
 5. An open row for tag T closes, without asking, when a later cold sitting passes in full and in time a question whose primary tag has T in contains. Write "closed by PAPER Qn" in Repair done and set Status to closed. Never close an S row this way, since slowness is retested directly. A touches edge closes nothing; it only lets you skip the drills and go straight to the cold redo.
 6. When a tag fails in two sittings, or fails its cold redo, start the next repair with its key_need tags (drills and one check each), then the tag. Recheck the question and its key. Then rewrite the next planned question on that tag, in its paper or redo file, with smaller steps or a worked example first. The mark scheme and the pass bar do not change.
 7. When the first consequential error on tag Y lies in a tag X that is not in Y's needs, in two separate sittings, add X to Y's needs (and to key_need when the work runs through it).
-8. Revise each affected tag memory with its new reading and reason, and keep its example step. The readings choose the next block.
+8. Revise each affected tag memory with its new reading and reason, and keep its example step. When an open tag needs a skill a fully correct part shows, answered with no hint, step or solution from you, add an "anchor:" line to that skill's tag memory, unless an anchor there already covers it. The readings choose the next block.
 
 Log each move, rewrite, close and new edge as a line under Changes.
 
