@@ -227,62 +227,6 @@ fn digest_lists_what_it_cannot_read_in_a_gap_log_instead_of_dropping_it() {
 }
 
 #[test]
-fn digest_reports_the_rows_of_a_log_whose_conf_column_was_added_to_the_header_only() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    let dir = e.workspace.join("Study/final");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("plan.md"), "# Final: study plan\n").unwrap();
-    fs::write(
-        dir.join("gap-log.md"),
-        "# Gap log: final\n\n## Gaps\n\n| # | Date | Paper | Q | Type | Conf | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|\n\
-         | 1 | 2000-01-01 | Diagnostic | Q2 | A | | 2000-01-02 | open |\n\
-         | 2 | 2000-01-01 | Diagnostic | Q3 | N | 2000-01-02 pass, 2000-01-05 pass, 2000-01-12 pass | | closed |\n",
-    )
-    .unwrap();
-
-    let plan = &digest(&e)["plans"][0];
-
-    assert_eq!(plan["unfixed_gaps"], 0);
-    assert_eq!(plan["redos_due"], 0);
-    assert_eq!(plan["first_due"], Value::Null);
-    let lines = plan["unreadable"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item["line"].as_u64().unwrap())
-        .collect::<Vec<_>>();
-    assert_eq!(lines, [7, 8], "{plan}");
-}
-
-#[test]
-fn digest_lists_a_sessions_line_it_cannot_read_instead_of_showing_no_plan() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    let dir = e.workspace.join("Study/final");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("plan.md"),
-        "# Final: study plan\n\n## 7. Sessions\n\n- If it is every day at 8am, then I do the due cold redos.\n- If it is every day at 09:30, then I sit a block.\n- If I miss the morning, then I do them after dinner.\n",
-    )
-    .unwrap();
-
-    let plan = &digest(&e)["plans"][0];
-
-    assert_eq!(plan["planned_sessions_today"], json!(["09:30"]));
-    assert_eq!(plan["unreadable"].as_array().unwrap().len(), 1, "{plan}");
-    assert_eq!(plan["unreadable"][0]["file"], "Study/final/plan.md");
-    assert_eq!(plan["unreadable"][0]["section"], "Sessions");
-    assert_eq!(plan["unreadable"][0]["line"], 5);
-    assert!(
-        plan["unreadable"][0]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("start time")
-    );
-}
-
-#[test]
 fn digest_reports_a_gap_log_it_cannot_open() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

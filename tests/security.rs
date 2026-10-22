@@ -454,7 +454,10 @@ fn untrusted_diagnostic_payload_is_never_echoed() {
         fs::write(&path,payload).unwrap();
         let output=environment.command().args(["info","--json"]).output().unwrap();
         let text=output_text(&output);
+        assert!(output.status.success(),"{text}");
         assert!(!text.contains("SECURITY_DIAGNOSTIC_SECRET") && !text.contains("hunter2"),"{text}");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["last_hook_error"], Value::Null, "{text}");
     }
 }
 

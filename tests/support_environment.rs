@@ -112,9 +112,14 @@ fn default_commands_strip_inherited_context_and_keep_explicit_test_configuration
         .args(["--exact", TEST_NAME, "--nocapture"])
         .output()
         .unwrap();
+    let report = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),
-        "{}",
+        "{report}{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        report.contains("running 1 test\n") && report.contains("test result: ok. 1 passed;"),
+        "the child must run {TEST_NAME} exactly once: {report}"
     );
 }
