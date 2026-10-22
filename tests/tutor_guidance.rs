@@ -650,6 +650,42 @@ fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
 }
 
 #[test]
+fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "sessions",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let line_form = "Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".";
+        let write = format!("Write the answer under a Sessions heading in `plan.md`. {line_form}");
+        let papers = served("papers");
+        for required in [
+            "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
+            write.as_str(),
+        ] {
+            assert!(papers.contains(required), "{host}/papers: {required}");
+        }
+        let rule = format!(
+            "If the learner changes when or where they practise, rewrite Sessions, adding it if missing. {line_form}"
+        );
+        assert!(
+            served("papers_loop").contains(&rule),
+            "{host}/papers_loop: {rule}"
+        );
+    }
+}
+
+#[test]
 fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

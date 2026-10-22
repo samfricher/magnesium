@@ -42,7 +42,7 @@ The learner wants one clear next step for this folder, and wants it fast. Many l
 Run `magnesium digest` once. It changes nothing. It prints JSON facts that code has already worked out:
 
 - `today`, and `files`: the study folder listed two levels deep, without hidden entries, `AGENTS.md` and `CLAUDE.md`.
-- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other gap-log rows due. One redo question can cover several rows, and a row can be overdue.
+- `plans`: each `Study/<target>/plan.md`, with its `date`, `days_left`, `blocks`, gap counts, paper `scores`, and the latest Magnesium `session` whose goal names the target. `unfixed_gaps` counts the gap-log rows that are not closed. A status closes a row only when it is exactly closed or 3 of 3, ignoring case, spaces at the ends and * or _ marks. Every other status is unfixed. `redos_due` counts those whose next redo is today or earlier. `first_due` is the most overdue one, with the `paper` and `question` where its gap was logged, and `more_due`, the count of the other gap-log rows due. One redo question can cover several rows, and a row can be overdue. `planned_sessions_today` lists the start times, earliest first, of the plan's planned sessions that fall today. A planned session is a line under the plan's Sessions heading, a time the learner chose to practise, and is not a Magnesium session. A line the digest cannot read is not in the list. It is in `unreadable`, so an empty list is not proof that no session is planned.
 - `unreadable`, inside each plan: what the digest could not read in the plan's files. Each item has a `file`, a `section`, a `line` and a `reason`. The counts leave these out, so a plan with any items is not counted in full.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
@@ -54,15 +54,17 @@ Then look only for what the digest does not hold:
 - Sort the listed files into one kind. **Empty** has none. **Course** has a syllabus or course outline, slides, lecture notes, a textbook, assignments, tutorials, quizzes, old tests or exams, or photos of work. **Code or other** is anything else, such as a software project.
 - For a course, find the course name and the dated assessments in the syllabus or course outline, if there is one. Read only the first pages of a PDF, or Grep a text file for words such as midterm, test, exam, quiz and due. Keep the next one or two dates after today's date. Count the days to each one from `today` in the digest.
 - Take chapter, week and lecture names from file names. Judge slides, notes and textbooks by their names alone.
-- For a plan, the next block is in its session's `next_action` or `current_problem`, which name the current paper and the next block. Without a session, the next block is the first block whose paper has no score. When you name a score, give the date in `scores`. If `magnesium digest` failed, read the plan's Facts and Blocks sections and its `gap-log.md` instead.
+- For a plan, the next block is in its Magnesium session's `next_action` or `current_problem`, which name the current paper and the next block. Without a Magnesium session, the next block is the first block whose paper has no score. When you name a score, give the date in `scores`. If `magnesium digest` failed, read the plan's Facts and Blocks sections and its `gap-log.md` instead.
 
 If a file cannot be read, or a fact is unclear, leave it out. A short screen is better than a wrong one. If you cannot list the folder at all, show Topic: overview instead.
+
+Put a planned session first under In this folder, for a plan with times in `planned_sessions_today` and a `days_left` of 0 or more, or no date. Give the time and `redos_due` as printed: "Your 08:00 session: 2 gaps are ready to redo." For a `redos_due` of 1, say "1 gap is ready to redo". For 0, say "Your 08:00 session is today." For two or more times, join them with commas and a last "and", and say "sessions": "Your 08:00, 12:15 and 18:30 sessions: 2 gaps are ready to redo." or "Your 08:00 and 18:30 sessions are today." When several plans have a planned session today, add "for <the plan's title>" after "session" or "sessions", or "for <the plan's target>" when its `title` is null.
 
 ### Choose 2 to 4 actions
 
 Put the most urgent first. When the record adds an action, drop the least urgent one, so the screen stays short. Base each one on what you saw:
 
-- A plan with items in `unreadable`: this action comes before every other. Name the `file` and the `line` of the first item, and its `reason` in a few words. Say how many items there are. Do not trust that plan's `unfixed_gaps` or `redos_due`: say "at least" before a count. Say "fix my plan files".
+- A plan with items in `unreadable`: this action comes before every other. Name the `file` and the `line` of the first item, and its `reason` in a few words. Say how many items there are. Do not trust that plan's `unfixed_gaps`, `redos_due` or `planned_sessions_today`: say "at least" before a count. Say "fix my plan files".
 - A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes next. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more gaps are ready to redo." For a `more_due` of 1, say "1 more gap is ready to redo." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A gap is ready to redo." Say "cold redo".
 - A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Say "Continue my last lesson".
 - A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Say "Review <the same few words>".
@@ -70,7 +72,7 @@ Put the most urgent first. When the record adds an action, drop the least urgent
 - A plan with a `days_left` of 0 or more: the next block's words, such as "mark my Diagnostic" or "re-time today". Offer "cold redo" only when `redos_due` is above 0. If the next block is unclear, offer `/magnesium:papers`, which continues the plan.
 - An assessment ahead with no plan: "I have <assessment> on <date>", or `/magnesium:papers`.
 - Course files by chapter or week: "Teach me <a chapter or week you saw> from the slides", or "Quiz me on <it>. One question at a time." When the syllabus gives the next assessment's coverage, pick a chapter or week inside it.
-- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between sessions, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
+- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between lessons, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
 - Code or other: "Help me understand <a file or folder you saw>", or "Quiz me on how <it> works".
 
 End each action with the exact words to say in straight quotes, or the command to type in backticks.
@@ -107,7 +109,7 @@ Write the screen by these rules:
 
 - Keep each sentence under 15 words where you can, and never over 20. Split a long list of files into two sentences.
 - Give each sentence one idea. Use common words, and call the learner "you".
-- Use one word for one thing: study folder, tutor, session, plan, gap.
+- Use one word for one thing: study folder, tutor, session, plan, gap. On this screen, a session is always a planned session. Call a Magnesium session a lesson.
 - Copy names and dates exactly as found. Never invent a date, chapter, paper or file.
 - Use straight quotes. Leave out long dashes, semicolons, markdown links, and e.g., i.e. or etc.
 - Stay under about 180 words.
@@ -130,7 +132,7 @@ The study folder holds only `.magnesium/`, `.claude/` and `AGENTS.md`.
 ## What Magnesium does
 
 - **Teaches** you from the notes and files in this folder.
-- **Remembers** your answers, strong points and weak points between sessions.
+- **Remembers** your answers, strong points and weak points between lessons.
 - **Builds practice papers** for a test and marks your answers.
 
 ## What you can do now
@@ -162,7 +164,7 @@ Next: say "I have Midterm 1 on October 23".
 
 #### Example: lesson history, no plan
 
-The folder holds `BIO110-syllabus.pdf` and `Slides/Week01.pdf` to `Slides/Week05.pdf`. The syllabus lists "Midterm 1, October 23". The digest has no plans. Its newest session has the goal "Week 4: enzyme kinetics", `days_ago` 1, and the `next_action` "Ask the learner to read Km and Vmax off a Lineweaver-Burk plot". `record.reviews.ready` is 2, and one purpose is "Recall the meaning of Km without notes".
+The folder holds `BIO110-syllabus.pdf` and `Slides/Week01.pdf` to `Slides/Week05.pdf`. The syllabus lists "Midterm 1, October 23". The digest has no plans. Its newest Magnesium session has the goal "Week 4: enzyme kinetics", `days_ago` 1, and the `next_action` "Ask the learner to read Km and Vmax off a Lineweaver-Burk plot". `record.reviews.ready` is 2, and one purpose is "Recall the meaning of Km without notes".
 
 ```markdown
 ## In this folder
@@ -182,11 +184,12 @@ Next: say "Continue my last lesson".
 
 #### Example: plan in progress
 
-The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
+The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic score of 18/30 dated 2026-10-15, 3 unfixed gaps and 3 redos due. `first_due` is Diagnostic Q4, with a `more_due` of 2. Its `planned_sessions_today` is `["08:00"]`. Its Magnesium session's `next_action` is "Cold redo of Q4, Q5 and Q6, then sit Paper1-Easy".
 
 ```markdown
 ## In this folder
 
+- Your 08:00 session: 3 gaps are ready to redo.
 - Your plan for Midterm 1 is in `Study/midterm-1/`. The test is on 2026-10-23, in <N> days.
 - The tutor marked your Diagnostic 18/30 on 2026-10-15. 3 gaps are not fixed yet.
 
@@ -228,7 +231,7 @@ Each study folder keeps its own learning history.
 ## What Magnesium does
 
 - **Teaches** you from the notes and files in this folder.
-- **Remembers** your answers, strong points and weak points between sessions.
+- **Remembers** your answers, strong points and weak points between lessons.
 - **Builds practice papers** for a test and marks your answers.
 
 ## How to start

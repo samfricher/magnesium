@@ -88,7 +88,7 @@ Rating: <weak, mixed or strong>. Ramp: <papers in order>. <One line on why, from
 
 ## 6. Blocks
 
-<!-- Hours, not clock times; the learner spreads them. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. Fit each gap's three cold redos before the assessment. -->
+<!-- Hours, not clock times; Sessions says when the learner practises. A paper costs about three times its length once marking and repair count. Group blocks into days only if the learner gave availability. Suggest spacing for retrieval, for example a cold redo the next day rather than the same evening. Fit each gap's three cold redos before the assessment. -->
 
 | # | Block | Purpose | Duration and stop line | Have open | Running total |
 |---|---|---|---|---|---|
@@ -98,33 +98,44 @@ Never drop: <blocks that stay whatever happens, including every mark, log and re
 
 Drop order if time runs short: <first block to drop>, then <next>.
 
-## 7. Must know cold
+## 7. Sessions
+
+<!-- When and where the learner practises, from the build question. Write one line per session in the form below, because `magnesium digest` reads its days and time. Days are day names, a range such as Monday to Friday, a list such as Tuesday and Thursday, weekdays or the weekend. Use a 24-hour start time, such as 08:00.
+For a session every day, leave out "<days> at".
+Example: If it is Monday to Friday at 08:00, then I do the due cold redos at my desk before class.
+Add one backup line for a missed session, such as: If I miss the morning, then I do them after dinner.
+If the learner skipped the question, write "none planned". Rewrite these lines when the learner changes when or where they practise. -->
+
+- If it is <days> at <HH:MM>, then I <what I do> <where>.
+- If I miss <a session>, then I <what I do instead, and when>.
+
+## 8. Must know cold
 
 <!-- Definitions, statements, formulas and recipes that the learner must write from memory, in the course's notation. -->
 
 - <item>
 
-## 8. Tags
+## 9. Tags
 
 The tags, what each covers and the pages to re-read are in `graph.yaml`.
 
-## 9. Anchors
+## 10. Anchors
 
 <!-- Copies of the anchors that this plan's topics use. An anchor is a skill or way of thinking that the learner's own work has shown, with where they showed it. Each copy is the line starting with a lowercase "anchor:" in the state_text of the memory for that skill. If there are none, write "none yet". Keep the list short. -->
 
 - anchor: <what the learner did, such as "applies the chain rule to single-variable functions"> (<where they showed it, such as Diagnostic, Q3>)
 
-## 10. Assessment-day checklist
+## 11. Assessment-day checklist
 
 - <what to bring>
 - <the order to attempt questions, and the time budget per mark>
 - <checks that the gap log says to make on every answer>
 
-## 11. Facts to confirm with the TA or instructor
+## 12. Facts to confirm with the TA or instructor
 
 - <question>; ask by <when>.
 
-## 12. Using this folder
+## 13. Using this folder
 
 Say any of these, in your own words:
 
@@ -139,7 +150,7 @@ Say any of these, in your own words:
 
 Open a key only after you return the sitting. Magnesium keeps a learner record in this workspace, so a later conversation continues from this plan, `gap-log.md` and that record.
 
-## 13. Changes
+## 14. Changes
 
 <!-- One line per change made without asking: date, what changed, why. -->
 

@@ -16,7 +16,7 @@ Start the Magnesium session with a goal that names the target slug, such as "mid
 - `Study/<target>/plan.md` does not exist: build mode.
 - `Study/<target>/plan.md` exists: run mode. Read `plan.md`, `gap-log.md` and `graph.yaml` and prepare current memory before you act. Do not rebuild.
 
-In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-21 (Wed) 12:30 to 14:00`. `magnesium digest` reads the date from there.
+In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-21 (Wed) 12:30 to 14:00`. `magnesium digest` reads the date from there. Each session line under Sessions starts `If it is <days> at <HH:MM>, then`, or `If it is <HH:MM>, then` for a session every day, with a 24-hour start time, as the template shows. `magnesium digest` reads the days and the time from there.
 
 ## Loop verbs
 
