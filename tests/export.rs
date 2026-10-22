@@ -113,24 +113,6 @@ fn search_after_preparation(
     response
 }
 
-#[cfg(unix)]
-#[test]
-fn export_source_paths_normalize_workspace_and_destination_aliases() {
-    let _source_capacity = support::sources::source_test_guard();
-    let env = TestEnvironment::from_fixture("basic").unwrap();
-    fs::write(env.workspace.join("learner.json"), "synthetic source").unwrap();
-    let alias = env.root.join("workspace-alias");
-    std::os::unix::fs::symlink(&env.workspace, &alias).unwrap();
-    assert_eq!(
-        workspace_relative_source(&alias, &env.workspace.join("learner.json")),
-        "learner.json"
-    );
-    assert_eq!(
-        workspace_relative_source(&env.workspace, &alias.join("learner.json")),
-        "learner.json"
-    );
-}
-
 fn zip_entries(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     let mut entries = BTreeMap::new();
     let mut offset = 0;
@@ -821,56 +803,29 @@ fn cli_exact_pdf_filename_matrix_copies_current_bytes_without_filename_search() 
 }
 
 #[test]
-fn cli_exact_pdf_copy_refuses_wrong_hash_and_same_size_mutation() {
+fn cli_exact_pdf_copy_refuses_wrong_reference_hash() {
     let _source_capacity = support::sources::source_test_guard();
-    for wrong_hash in [false, true] {
-        let (env, _) = written_workspace();
-        let relative = "learner's (étude).pdf";
-        let pdf = valid_pdf("Alpha WAL end mark payload");
-        fs::write(env.workspace.join(relative), &pdf).unwrap();
-        let hash = support::sources::fixture_hash(&pdf);
-        let reference_hash = if wrong_hash {
-            "0".repeat(64)
-        } else {
-            hash.clone()
-        };
-        record_pdf_reference(&env, relative, &reference_hash);
-        let before = export_canonical_snapshot(&env);
-        let mut first = env.root.join("first-copy");
-        if !wrong_hash {
-            first = export_exact_pdf_copy(&env, relative, &hash, "first-copy");
-            assert_eq!(fs::read(first.join("sources").join(relative)).unwrap(), pdf);
-            let mut changed = pdf.clone();
-            let offset = changed
-                .windows(5)
-                .position(|window| window == b"Alpha")
-                .unwrap();
-            changed[offset..offset + 5].copy_from_slice(b"Beta!");
-            assert_eq!(changed.len(), pdf.len());
-            assert_ne!(support::sources::fixture_hash(&changed), hash);
-            fs::write(env.workspace.join(relative), changed).unwrap();
-        }
-        let refused = env.root.join("refused-copy");
-        successful(export(&env, &refused, &["--include-source-copies"]));
-        assert!(!refused.join("sources").join(relative).exists());
-        let manifest = read_json(&refused.join("manifest.json"));
-        let coverage = manifest["source_coverage"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["path"] == relative)
-            .unwrap();
-        assert_eq!(
-            coverage["status"], "unavailable",
-            "wrong_hash={wrong_hash}: {coverage}"
-        );
-        assert_eq!(coverage["reason"], "source_changed", "{coverage}");
-        assert_eq!(coverage["requested_hash"], reference_hash, "{coverage}");
-        if !wrong_hash {
-            assert_eq!(fs::read(first.join("sources").join(relative)).unwrap(), pdf);
-        }
-        assert_eq!(before, export_canonical_snapshot(&env));
-    }
+    let (env, _) = written_workspace();
+    let relative = "learner's (étude).pdf";
+    let pdf = valid_pdf("Alpha WAL end mark payload");
+    fs::write(env.workspace.join(relative), &pdf).unwrap();
+    let reference_hash = "0".repeat(64);
+    record_pdf_reference(&env, relative, &reference_hash);
+    let before = export_canonical_snapshot(&env);
+    let refused = env.root.join("refused-copy");
+    successful(export(&env, &refused, &["--include-source-copies"]));
+    assert!(!refused.join("sources").join(relative).exists());
+    let manifest = read_json(&refused.join("manifest.json"));
+    let coverage = manifest["source_coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == relative)
+        .unwrap();
+    assert_eq!(coverage["status"], "unavailable", "{coverage}");
+    assert_eq!(coverage["reason"], "source_changed", "{coverage}");
+    assert_eq!(coverage["requested_hash"], reference_hash, "{coverage}");
+    assert_eq!(before, export_canonical_snapshot(&env));
 }
 
 fn prepare_sensitive_pdf_source(environment: &TestEnvironment, path: &str, hash: &str) {

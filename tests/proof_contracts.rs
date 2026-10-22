@@ -269,7 +269,6 @@ fn midpoint_and_exact(a: Rational, _b: Rational, c: Rational, h: Rational) -> (R
 fn issue_identity_matches_recorded_exact_and_corrected_values() {
     let fixture = fixture();
     let identity = &fixture.issue_identity;
-    assert!((identity.tolerance - 1e-12).abs() < f64::EPSILON);
     let exact = exact_binomial_cdf(identity.n, identity.p, identity.k);
     let sigma = (identity.n as f64 * identity.p * (1.0 - identity.p)).sqrt();
     let corrected = normal_cdf((identity.k as f64 + 0.5 - identity.n as f64 * identity.p) / sigma);

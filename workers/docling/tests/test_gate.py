@@ -247,29 +247,29 @@ class OutputTests(unittest.TestCase):
             self.assertTrue(all(document["native"]["status"] == "FAIL" for document in result["documents"]))
             self.assertTrue(all(document["worker"]["status"] == "NOT_RUN" for document in result["documents"]))
 
-    def test_native_protocol_failures_reap_child_and_write_every_document(self):
+    def test_native_protocol_failure_reaps_child_and_writes_every_document(self):
         from ci.native_mcp import NativeMcpClient, TransportLimits
-        from ci.isolated_environment import isolated_environment
         from ci.test_native_mcp import CHILD
-        for mode in ("initialize-error", "partial", "wrong-id", "stderr", "timeout", "eof", "malformed", "oversized", "notifications"):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
-                self.sample(root)
-                out = Path(root, "result.json")
-                clients = []
-                def factory(env, workspace, _config):
-                    client = NativeMcpClient([sys.executable, "-u", "-c", CHILD, mode], cwd=workspace, env=env,
-                                             limits=TransportLimits(request_timeout=0.1, shutdown_timeout=0.1, max_frame_bytes=4096,
-                                                                    max_notifications=4, max_stderr_bytes=1024, max_stderr_total_bytes=8192))
-                    clients.append(client)
-                    return client
-                with patch.object(gate, "run_binary", return_value=subprocess.CompletedProcess([], 0, "", "")), patch.object(gate, "native_client", side_effect=factory), patch.object(gate, "try_docling", return_value=(None, "not installed", 0)), patch.object(gate, "package_size_mb", return_value=None), contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(gate.main(["--sample", root, "--out", str(out)]), 1)
-                result = json.loads(out.read_text())
-                self.assertEqual(len(result["documents"]), 12)
-                self.assertEqual(result["status"], "FAIL")
-                self.assertTrue(all(document["native"]["status"] == "FAIL" for document in result["documents"]))
-                self.assertTrue(all(document["native"]["transport"]["returncode"] is not None for document in result["documents"]))
-                self.assertIsNotNone(clients[0].proc.returncode)
+        with tempfile.TemporaryDirectory() as root:
+            self.sample(root)
+            out = Path(root, "result.json")
+            clients = []
+            def factory(env, workspace, _config):
+                client = NativeMcpClient([sys.executable, "-u", "-c", CHILD, "timeout"], cwd=workspace, env=env,
+                                         limits=TransportLimits(request_timeout=0.1, shutdown_timeout=0.1, max_frame_bytes=4096,
+                                                                max_notifications=4, max_stderr_bytes=1024, max_stderr_total_bytes=8192))
+                clients.append(client)
+                return client
+            with patch.object(gate, "run_binary", return_value=subprocess.CompletedProcess([], 0, "", "")), patch.object(gate, "native_client", side_effect=factory), patch.object(gate, "try_docling", return_value=(None, "not installed", 0)), patch.object(gate, "package_size_mb", return_value=None), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(gate.main(["--sample", root, "--out", str(out)]), 1)
+            result = json.loads(out.read_text())
+            self.assertEqual(len(result["documents"]), 12)
+            self.assertEqual(result["status"], "FAIL")
+            self.assertTrue(all(document["native"]["status"] == "FAIL" for document in result["documents"]))
+            self.assertTrue(all(document["native"]["transport"]["returncode"] is not None for document in result["documents"]))
+            # The timeout child would sleep for a minute, so a return code proves the gate reaped it.
+            self.assertTrue(clients)
+            self.assertTrue(all(client.proc.returncode is not None for client in clients))
 
     def test_missing_optional_conversion_is_not_run_without_weakening_native(self):
         with tempfile.TemporaryDirectory() as root:

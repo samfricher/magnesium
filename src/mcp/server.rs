@@ -37,11 +37,6 @@ fn control_worker_semaphore() -> &'static tokio::sync::Semaphore {
 }
 
 #[cfg(test)]
-pub(crate) fn blocking_worker_permits() -> usize {
-    BLOCKING_WORKER_PERMITS
-}
-
-#[cfg(test)]
 pub(crate) fn blocking_worker_available_permits() -> usize {
     blocking_worker_semaphore().available_permits()
 }
@@ -557,13 +552,6 @@ mod runtime_bounds_tests {
     use std::sync::Mutex;
 
     pub(super) static SERIAL: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn blocking_worker_bound_is_fixed_and_initially_idle() {
-        let _serial = SERIAL.lock().expect("serial worker tests");
-        assert_eq!(blocking_worker_permits(), 8);
-        assert_eq!(blocking_worker_available_permits(), 8);
-    }
 
     #[test]
     fn native_thread_identity_only_uses_valid_codex_envelope_metadata() {

@@ -370,54 +370,78 @@ mod tests {
 
     #[test]
     fn short_ticket_verifies_only_the_exact_current_turn_text_and_conversation() {
-        let (root, workspace, host) = fixture();
-        let text = "Teach me confidence intervals.";
-        let ticket = issue(&workspace, &host, "turn-1", text, 1_000).unwrap();
-        assert_eq!(ticket.len(), 32);
-        assert!(ticket.bytes().all(|b| b.is_ascii_hexdigit()));
-        // A retried prompt hook for the same turn reissues the same ticket.
-        assert_eq!(
-            issue(&workspace, &host, "turn-1", text, 2_000).unwrap(),
-            ticket
-        );
+        for host_kind in ["claude", "codex"] {
+            for (text, altered) in [
+                (
+                    "Teach me confidence intervals.",
+                    &["Teach me confidence intervals!"][..],
+                ),
+                (
+                    "I cannot identify b; \u{2212}b is not +b. π ≠ x.",
+                    &[
+                        "I can identify b; \u{2212}b is not +b. π ≠ x.",
+                        "I cannot identify b; -b is not +b. π ≠ x.",
+                    ][..],
+                ),
+            ] {
+                let (root, workspace, host) = fixture();
+                let host = HostContext {
+                    host_kind: host_kind.into(),
+                    ..host
+                };
+                let ticket = issue(&workspace, &host, "turn-1", text, 1_000).unwrap();
+                assert_eq!(ticket.len(), 32);
+                assert!(ticket.bytes().all(|b| b.is_ascii_hexdigit()));
+                // A retried prompt hook for the same turn reissues the same ticket.
+                assert_eq!(
+                    issue(&workspace, &host, "turn-1", text, 2_000).unwrap(),
+                    ticket
+                );
 
-        let event = verify(&workspace, &host, &ticket, text, 1_500).unwrap();
-        assert_eq!(event.text, text);
-        assert_eq!(event.external_event_key, event_key("turn-1"));
+                let event = verify(&workspace, &host, &ticket, text, 1_500).unwrap();
+                assert_eq!(event.text, text);
+                assert_eq!(event.external_event_key, event_key("turn-1"));
+                assert_eq!(event.occurred_at_ms, None);
 
-        let other = HostContext {
-            host_thread_id: "magnesium-h1:claude:other".into(),
-            ..host.clone()
-        };
-        let mut flipped = ticket.clone().into_bytes();
-        flipped[31] = if flipped[31] == b'0' { b'1' } else { b'0' };
-        let flipped = String::from_utf8(flipped).unwrap();
-        for (host, ticket, text, now) in [
-            (
-                &host,
-                ticket.as_str(),
-                "Teach me confidence intervals!",
-                1_500,
-            ),
-            (&host, flipped.as_str(), text, 1_500),
-            (&host, &ticket[..31], text, 1_500),
-            (&other, ticket.as_str(), text, 1_500),
-            (&host, ticket.as_str(), text, 1_000 + TTL_MS + 1),
-            (&host, ticket.as_str(), text, 999),
-        ] {
-            assert_eq!(
-                verify(&workspace, host, ticket, text, now).err(),
-                Some(failure())
-            );
+                let other = HostContext {
+                    host_thread_id: "magnesium-h1:claude:other".into(),
+                    ..host.clone()
+                };
+                let flip = |index: usize| {
+                    let mut bytes = ticket.clone().into_bytes();
+                    bytes[index] = if bytes[index] == b'0' { b'1' } else { b'0' };
+                    String::from_utf8(bytes).unwrap()
+                };
+                let (flipped_last, flipped_middle) = (flip(31), flip(20));
+                let mut rejected = vec![
+                    (&host, flipped_last.as_str(), text, 1_500),
+                    (&host, flipped_middle.as_str(), text, 1_500),
+                    (&host, &ticket[..31], text, 1_500),
+                    (&other, ticket.as_str(), text, 1_500),
+                    (&host, ticket.as_str(), text, 1_000 + TTL_MS + 1),
+                    (&host, ticket.as_str(), text, 999),
+                ];
+                rejected.extend(
+                    altered
+                        .iter()
+                        .map(|altered| (&host, ticket.as_str(), *altered, 1_500)),
+                );
+                for (host, ticket, text, now) in rejected {
+                    assert_eq!(
+                        verify(&workspace, host, ticket, text, now).err(),
+                        Some(failure())
+                    );
+                }
+
+                // A newer prompt replaces the marker, so the earlier ticket expires with it.
+                issue(&workspace, &host, "turn-2", "Next question", 3_000).unwrap();
+                assert_eq!(
+                    verify(&workspace, &host, &ticket, text, 3_500).err(),
+                    Some(failure())
+                );
+                fs::remove_dir_all(root).unwrap();
+            }
         }
-
-        // A newer prompt replaces the marker, so the earlier ticket expires with it.
-        issue(&workspace, &host, "turn-2", "Next question", 3_000).unwrap();
-        assert_eq!(
-            verify(&workspace, &host, &ticket, text, 3_500).err(),
-            Some(failure())
-        );
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

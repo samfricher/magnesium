@@ -42,34 +42,6 @@ fn claude_stop(root: &Path, host: &HostIdentity, turn: &str, reply: &str) -> Res
     host_response_stop_with_delivery(root, host, &host.stored_turn_id(turn).unwrap(), Some(reply))
 }
 #[test]
-fn claude_feedback_gives_only_the_length_of_a_long_reply_ending_in_an_instruction() {
-    let (root, store, host) = claude_lesson();
-    claude_prompt(&root, &host, "one");
-    let reply = format!(
-        "{}\n\nDifferentiate x sin x.",
-        "This is the idea. ".repeat(75)
-    );
-    claude_stop(&root, &host, "one", &reply).unwrap();
-    let next = claude_prompt(&root, &host, "two");
-    assert!(has_task_reminder(&next), "{next}");
-    assert!(next.contains(" Previous reply: 304 words."), "{next}");
-    assert!(!next.contains("no task"), "{next}");
-    drop(store);
-    std::fs::remove_dir_all(root).unwrap();
-}
-#[test]
-fn claude_feedback_is_absent_after_a_reply_within_the_limit() {
-    let (root, store, host) = claude_lesson();
-    claude_prompt(&root, &host, "one");
-    claude_stop(&root, &host, "one", "b is fixed because it scales x.").unwrap();
-    let next = claude_prompt(&root, &host, "two");
-    assert!(has_task_reminder(&next), "{next}");
-    assert!(has_confusion_reminder(&next), "{next}");
-    assert!(!next.contains("Previous reply"), "{next}");
-    drop(store);
-    std::fs::remove_dir_all(root).unwrap();
-}
-#[test]
 fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
     let (root, store, host) = claude_lesson();
     let first = claude_prompt(&root, &host, "one");

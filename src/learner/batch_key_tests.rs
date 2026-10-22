@@ -173,57 +173,40 @@ fn duplicate_dispositions(outcomes: [&str; 2]) {
         json!([{"event_id":event,"outcome":outcomes[0]},{"event_id":event,"outcome":outcomes[1]}]);
     let error = f.rejection(request, "event_dispositions[1].event_id");
     assert!(error.message.contains("event_dispositions[0].event_id"));
-    assert_eq!(semantic_state(&f.store.conn), before);
-    assert_eq!(event_generation(&f.store.conn), generation);
+    assert_eq!(semantic_state(&f.store.conn), before, "{outcomes:?}");
+    assert_eq!(event_generation(&f.store.conn), generation, "{outcomes:?}");
     assert_eq!(
         event_status(&f.store.conn, &event),
-        ("pending".into(), None)
+        ("pending".into(), None),
+        "{outcomes:?}"
     );
 }
 
 #[test]
-fn batch_keys_dispositions_processed_then_no_change_are_rejected() {
-    duplicate_dispositions(["processed", "no_change"]);
-}
-#[test]
-fn batch_keys_dispositions_no_change_then_processed_are_rejected() {
-    duplicate_dispositions(["no_change", "processed"]);
-}
-#[test]
-fn batch_keys_identical_processed_dispositions_are_rejected() {
-    duplicate_dispositions(["processed", "processed"]);
-}
-#[test]
-fn batch_keys_identical_no_change_dispositions_are_rejected() {
-    duplicate_dispositions(["no_change", "no_change"]);
+fn batch_keys_duplicate_event_dispositions_are_rejected_for_every_outcome_pair() {
+    for outcomes in [
+        ["processed", "no_change"],
+        ["no_change", "processed"],
+        ["processed", "processed"],
+        ["no_change", "no_change"],
+    ] {
+        duplicate_dispositions(outcomes);
+    }
 }
 
-fn runtime_memory_alias(consumer: &str) {
+#[test]
+fn batch_keys_runtime_issued_memory_id_is_rejected_as_new_local_client_ref() {
     let f = Fixture::new();
     let seeded = f.seed();
     let original = &seeded.references["memory"];
     let pending = f.event("new-work");
     let mut request = learning("shadow-existing-memory", &pending, original);
-    match consumer {
-        "checkpoint" => {
-            request["session"] =
-                json!({"operation":"use","session_id":f.session,"expected_revision":2});
-            request["checkpoint"] = checkpoint(original, json!(1));
-        }
-        "review" => request["review_updates"] = json!([review("new-review", original)]),
-        "retirement" => {
-            let another = f.event("other-work");
-            let retired = f
-                .update(learning("other-memory", &another, "other"))
-                .unwrap();
-            request["memory_edits"].as_array_mut().unwrap().push(json!({"operation":"retire","memory_id":retired.references["other"],"expected_revision":1,"reason":"Consolidate overlapping observations","replacement_ids":[original]}));
-        }
-        _ => unreachable!(),
-    }
+    request["session"] = json!({"operation":"use","session_id":f.session,"expected_revision":2});
+    request["checkpoint"] = checkpoint(original, json!(1));
     let before = semantic_state(&f.store.conn);
     let generation = event_generation(&f.store.conn);
     f.rejection(request, "memory_edits[0].client_ref");
-    assert_eq!(semantic_state(&f.store.conn), before, "{consumer}");
+    assert_eq!(semantic_state(&f.store.conn), before);
     assert_eq!(event_generation(&f.store.conn), generation);
     assert_eq!(
         event_status(&f.store.conn, &pending),
@@ -233,19 +216,6 @@ fn runtime_memory_alias(consumer: &str) {
         update::memory_snapshot(&f.store.conn, original).unwrap()["revision"],
         1
     );
-}
-
-#[test]
-fn batch_keys_runtime_memory_alias_cannot_shadow_checkpoint() {
-    runtime_memory_alias("checkpoint");
-}
-#[test]
-fn batch_keys_runtime_memory_alias_cannot_shadow_review() {
-    runtime_memory_alias("review");
-}
-#[test]
-fn batch_keys_runtime_memory_alias_cannot_shadow_retirement() {
-    runtime_memory_alias("retirement");
 }
 
 #[test]

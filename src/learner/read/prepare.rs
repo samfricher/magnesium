@@ -4,11 +4,6 @@ use crate::learner::search;
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[cfg(test)]
-thread_local! {
-    pub(super) static RANKED_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 pub(super) fn directory(
     conn: &Connection,
     request: &Request,
@@ -166,8 +161,6 @@ pub(super) fn prepare(
             return Ok(());
         }
     }
-    #[cfg(test)]
-    RANKED_CALLS.with(|calls| calls.set(calls.get() + 1));
     let result = search::search_in_snapshot(
         conn,
         &r.intents,

@@ -59,8 +59,6 @@ pub(crate) struct ReconciliationState {
 
 #[derive(Clone, Copy)]
 pub(crate) enum MovePolicy {
-    #[cfg(test)]
-    Any,
     MissingOnly,
     Isolated,
 }

@@ -28,11 +28,23 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertEqual(check.selected_scopes(["docs", "core", "docs"]), ["core", "docs"])
         self.assertEqual(check.selected_scopes(["python", "all"]), list(check.SCOPES))
 
+    def position(self, commands, *prefix):
+        """Index of the first command starting with prefix."""
+        for index, command in enumerate(commands):
+            if command[:len(prefix)] == list(prefix):
+                return index
+        self.fail(f"no command starts with {prefix}")
+
     def test_core_tests_use_the_freshly_built_release_executable(self):
         commands = [command for _, command in check.commands("core", "test-host")]
-        build = ["cargo", "build", "--locked", "--release", "--target", "test-host"]
-        tests = ["cargo", "test", "--locked", "--all-targets", "--all-features", "--target", "test-host"]
-        self.assertLess(commands.index(build), commands.index(tests))
+        build = self.position(commands, "cargo", "build")
+        test = self.position(commands, "cargo", "test")
+        for flag in ["--locked", "--release"]:
+            self.assertIn(flag, commands[build])
+        self.assertIn("--locked", commands[test])
+        # The test binary path below is only fresh if the build writes there.
+        self.assertEqual(commands[build][commands[build].index("--target") + 1], "test-host")
+        self.assertLess(build, test)
         with patch.dict(os.environ, {"MAGNESIUM_TEST_BINARY": "/stale/magnesium"}):
             binary = Path(check.environment(offline=False, target="test-host")["MAGNESIUM_TEST_BINARY"])
         self.assertEqual(binary.parent, check.ROOT / "target/test-host/release")
@@ -56,22 +68,13 @@ class CheckRunnerTests(unittest.TestCase):
 
     def test_core_runs_actual_native_source_smoke_after_build(self):
         commands = [command for _, command in check.commands("core", "test-host")]
-        smoke = [check.sys.executable, "ci/check_native_sources.py"]
-        self.assertIn(smoke, commands)
-        self.assertLess(commands.index(["cargo", "build", "--locked", "--release", "--target", "test-host"]), commands.index(smoke))
+        smoke = self.position(commands, check.sys.executable, "ci/check_native_sources.py")
+        self.assertLess(self.position(commands, "cargo", "build"), smoke)
 
     def test_python_includes_script_based_docling_tests(self):
         commands = [command for _, command in check.commands("python")]
         self.assertIn([check.sys.executable, "workers/docling/tests/test_gate.py"], commands)
         self.assertIn([check.sys.executable, "workers/docling/tests/test_worker.py"], commands)
-
-    def test_docs_execute_link_help_text_bundle_and_brand_checks(self):
-        commands = [command for _, command in check.commands("docs")]
-        self.assertEqual(len(commands), 4)
-        self.assertIn("ci/check_markdown_links.py", commands[0])
-        self.assertIn("ci/check_help_text.py", commands[1])
-        self.assertIn("ci/check_learning_bundle_release.py", commands[2])
-        self.assertEqual(commands[3], [check.sys.executable, "ci/check_brand.py"])
 
     def test_failure_stops_the_selected_scope(self):
         with patch.object(check.subprocess, "run", side_effect=subprocess.CalledProcessError(7, "check")) as run:
@@ -82,14 +85,17 @@ class CheckRunnerTests(unittest.TestCase):
         with patch.object(check.subprocess, "run", side_effect=FileNotFoundError):
             self.assertEqual(self.run_main(["python"]), 1)
 
-    def test_selected_scope_runs_with_its_working_directory_and_environment(self):
+    def test_docs_scope_runs_link_help_text_bundle_and_brand_checks_in_the_repository(self):
         with patch.object(check.subprocess, "run") as run:
             self.assertEqual(self.run_main(["docs", "--offline"]), 0)
-        self.assertEqual(run.call_count, 4)
-        self.assertIn("ci/check_brand.py", run.call_args.args[0])
-        self.assertEqual(run.call_args.kwargs["cwd"], check.ROOT)
-        self.assertEqual(run.call_args.kwargs["env"]["CARGO_NET_OFFLINE"], "true")
-        self.assertTrue(run.call_args.kwargs["check"])
+        commands = [call.args[0] for call in run.call_args_list]
+        for script in ("ci/check_markdown_links.py", "ci/check_help_text.py",
+                       "ci/check_learning_bundle_release.py", "ci/check_brand.py"):
+            self.position(commands, check.sys.executable, script)
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs["cwd"], check.ROOT)
+            self.assertEqual(call.kwargs["env"]["CARGO_NET_OFFLINE"], "true")
+            self.assertTrue(call.kwargs["check"])
 
     def test_unknown_scope_is_rejected_before_any_execution(self):
         with patch.object(check.subprocess, "run") as run, self.assertRaises(SystemExit) as error:

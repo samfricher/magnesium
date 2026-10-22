@@ -187,32 +187,6 @@ pub fn test_binary() -> PathBuf {
     }
 }
 
-#[cfg(windows)]
-pub fn sanitize_windows_security_path(path: &Path) -> std::ffi::OsString {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
-    let verbatim = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
-    let unc = [
-        b'\\' as u16,
-        b'\\' as u16,
-        b'?' as u16,
-        b'\\' as u16,
-        b'U' as u16,
-        b'N' as u16,
-        b'C' as u16,
-        b'\\' as u16,
-    ];
-    if units.starts_with(&unc) {
-        let mut stripped = vec![b'\\' as u16, b'\\' as u16];
-        stripped.extend_from_slice(&units[8..]);
-        std::ffi::OsString::from_wide(&stripped)
-    } else if units.starts_with(&verbatim) {
-        std::ffi::OsString::from_wide(&units[4..])
-    } else {
-        path.as_os_str().to_os_string()
-    }
-}
-
 pub fn codex_command(environment: &TestEnvironment) -> Command {
     let executable = env::var_os("CODEX_TEST_BINARY").unwrap_or_else(|| "codex".into());
     environment.command_with(executable, &environment.workspace)

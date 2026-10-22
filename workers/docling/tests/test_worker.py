@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKER = os.path.join(HERE, "..", "worker.py")
 STUB = os.path.join(HERE, "stub_docling")
+# Installed packages report real versions; absent ones report "unknown".
+METHOD_VERSION = re.compile(r"docling \S+ \(docling-slim \S+, docling-core \S+\)")
 
 
 def run_worker(payload_or_raw, files=None, extra_env=None):
@@ -91,8 +94,8 @@ def main():
         check("round-trip exit", code == 0, stderr)
         check("method", response and response.get("method") == "docling", response)
         check(
-            "method_version names stub stack",
-            response and "unknown" in response.get("method_version", ""),
+            "method_version names the docling stack",
+            bool(response and METHOD_VERSION.fullmatch(response.get("method_version", ""))),
             response,
         )
         blocks = (response or {}).get("blocks", [])

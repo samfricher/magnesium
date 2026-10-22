@@ -7,15 +7,13 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::boundary::{RetrievalRequest, retrieve_workspace_sources};
-use super::coordinator::{
-    CoordinatorBudget, CoordinatorMetrics, IndexCoverage, coordinate_source_query,
-};
+use super::coordinator::{CoordinatorBudget, IndexCoverage, coordinate_source_query};
 use super::manifest::{manifest_coverage, pending_source_paths};
 use super::search::{SourceSearchHit, SourceSearchReport, SourceSearchRequest};
 
@@ -51,7 +49,7 @@ struct QueryJudgment {
     relevant_paths: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum QueryKind {
     Exact,
@@ -94,35 +92,12 @@ struct QualityMetrics {
     recall_at_10: f64,
     mrr: f64,
     wrong_workspace_rate: f64,
-    query_results: Vec<QueryMetrics>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct QueryMetrics {
-    id: String,
-    kind: QueryKind,
-    relevant: usize,
-    recalled_at_5: usize,
-    recalled_at_10: usize,
-    reciprocal_rank: f64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
 struct OperationalMetrics {
-    startup_max_us: u64,
-    cold_search_p95_us: u64,
-    warm_search_p50_us: u64,
-    warm_search_p95_us: u64,
-    index_elapsed_us: u64,
-    index_metadata_entries: usize,
-    index_content_reads: usize,
-    index_bytes_read: u64,
-    index_disk_bytes: u64,
-    recovery_calls: usize,
     recovery_preserved_canonical_state: bool,
     external_detection_queries: usize,
-    large_repository_files: usize,
-    large_repository_scan_calls: usize,
     large_repository_max_metadata_per_call: usize,
     large_repository_max_content_reads_per_call: usize,
     partial_index_retrieval_succeeded: bool,
@@ -139,28 +114,6 @@ struct QualityAccumulator {
     reciprocal_rank: f64,
     workspace_scope_checks: usize,
     wrong_workspace_violations: usize,
-    query_results: Vec<QueryMetrics>,
-}
-
-#[derive(Default)]
-struct IndexCost {
-    calls: usize,
-    elapsed_us: u64,
-    metadata_entries: usize,
-    content_reads: usize,
-    bytes_read: u64,
-}
-
-impl IndexCost {
-    fn record(&mut self, metrics: &CoordinatorMetrics) {
-        self.calls += 1;
-        self.elapsed_us = self.elapsed_us.saturating_add(micros(metrics.elapsed));
-        self.metadata_entries = self
-            .metadata_entries
-            .saturating_add(metrics.metadata_entries_reconciled);
-        self.content_reads = self.content_reads.saturating_add(metrics.content_reads);
-        self.bytes_read = self.bytes_read.saturating_add(metrics.bytes_read);
-    }
 }
 
 struct WorkspaceFixture {
@@ -238,12 +191,6 @@ fn run_benchmark(warm_repeats: usize, large_repository_files: usize) -> Benchmar
     validate_corpus(&corpus);
 
     let mut quality = QualityAccumulator::default();
-    let mut cold_samples = Vec::new();
-    let mut warm_samples = Vec::new();
-    let mut index_cost = IndexCost::default();
-    let mut startup_max_us = 0;
-    let mut disk_bytes = 0_u64;
-    let mut recovery_calls = 0;
     let mut recovery_preserved_canonical_state = false;
     let mut external_detection_queries = 0;
 
@@ -255,34 +202,20 @@ fn run_benchmark(warm_repeats: usize, large_repository_files: usize) -> Benchmar
                 .iter()
                 .all(|path| fixture.root.join(path).is_file())
         }));
-        let (cost, startup_us) = index_workspace(&fixture);
-        startup_max_us = startup_max_us.max(startup_us);
-        merge_cost(&mut index_cost, &cost);
+        index_workspace(&fixture);
 
         for judgment in &judgments.queries {
-            let started = Instant::now();
             let report = retrieve(&fixture, Path::new(""), &judgment.query, budget(256, 16));
-            cold_samples.push(micros(started.elapsed()));
             score_query(&mut quality, judgment, &report.hits);
             for _ in 0..warm_repeats {
-                let started = Instant::now();
                 let warm = retrieve(&fixture, Path::new(""), &judgment.query, budget(256, 16));
-                warm_samples.push(micros(started.elapsed()));
                 assert_eq!(hit_identity(&warm.hits), hit_identity(&report.hits));
             }
         }
-        disk_bytes = disk_bytes.saturating_add(directory_bytes(
-            &fixture
-                .root
-                .join(crate::workspace::CONTROL_DIR)
-                .join("index"),
-        ));
 
         if workspace_index == 0 {
             external_detection_queries = measure_external_detection(&fixture);
-            let recovery = measure_recovery(&fixture, judgments);
-            recovery_calls = recovery.calls;
-            recovery_preserved_canonical_state = recovery.preserved_canonical_state;
+            recovery_preserved_canonical_state = measure_recovery(&fixture, judgments);
         }
     }
     quality.workspace_scope_checks += 1;
@@ -295,20 +228,8 @@ fn run_benchmark(warm_repeats: usize, large_repository_files: usize) -> Benchmar
         corpus_version: corpus.version,
         quality: quality.finish(),
         operations: OperationalMetrics {
-            startup_max_us,
-            cold_search_p95_us: percentile(&mut cold_samples, 95),
-            warm_search_p50_us: percentile(&mut warm_samples, 50),
-            warm_search_p95_us: percentile(&mut warm_samples, 95),
-            index_elapsed_us: index_cost.elapsed_us,
-            index_metadata_entries: index_cost.metadata_entries,
-            index_content_reads: index_cost.content_reads,
-            index_bytes_read: index_cost.bytes_read,
-            index_disk_bytes: disk_bytes,
-            recovery_calls,
             recovery_preserved_canonical_state,
             external_detection_queries,
-            large_repository_files,
-            large_repository_scan_calls: large.scan_calls,
             large_repository_max_metadata_per_call: large.max_metadata_per_call,
             large_repository_max_content_reads_per_call: large.max_content_reads_per_call,
             partial_index_retrieval_succeeded: large.partial_retrieval_succeeded,
@@ -341,16 +262,11 @@ fn validate_corpus(corpus: &Corpus) {
     }
 }
 
-fn index_workspace(fixture: &WorkspaceFixture) -> (IndexCost, u64) {
+fn index_workspace(fixture: &WorkspaceFixture) {
     let budget = budget(256, 1);
-    let mut cost = IndexCost::default();
-    let started = Instant::now();
-    let first =
-        coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
-            .expect("start retrieval evaluation index");
-    let startup_us = micros(started.elapsed());
-    cost.record(&first.metrics);
-    finish_scan(fixture, budget, &mut cost, 256);
+    coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
+        .expect("start retrieval evaluation index");
+    finish_scan(fixture, budget, 256);
 
     for _ in 0..256 {
         let Some(source) = pending_source_paths(&fixture.index(), Path::new(""), 1)
@@ -360,7 +276,7 @@ fn index_workspace(fixture: &WorkspaceFixture) -> (IndexCost, u64) {
         else {
             break;
         };
-        let report = coordinate_source_query(
+        coordinate_source_query(
             &fixture.root,
             &fixture.index(),
             Path::new(""),
@@ -368,21 +284,14 @@ fn index_workspace(fixture: &WorkspaceFixture) -> (IndexCost, u64) {
             budget,
         )
         .expect("extract discovered retrieval source");
-        cost.record(&report.metrics);
     }
     let coverage = manifest_coverage(&fixture.index()).expect("read evaluation index coverage");
     assert!(!coverage.scan_active);
     assert_eq!(coverage.pending, 0);
     assert_eq!(coverage.stale, 0);
-    (cost, startup_us)
 }
 
-fn finish_scan(
-    fixture: &WorkspaceFixture,
-    budget: CoordinatorBudget,
-    cost: &mut IndexCost,
-    maximum_calls: usize,
-) {
+fn finish_scan(fixture: &WorkspaceFixture, budget: CoordinatorBudget, maximum_calls: usize) {
     for _ in 0..maximum_calls {
         if !manifest_coverage(&fixture.index())
             .expect("read active evaluation scan")
@@ -390,10 +299,8 @@ fn finish_scan(
         {
             return;
         }
-        let report =
-            coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
-                .expect("continue retrieval evaluation scan");
-        cost.record(&report.metrics);
+        coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
+            .expect("continue retrieval evaluation scan");
     }
     panic!("retrieval evaluation scan exceeded its call bound");
 }
@@ -448,14 +355,6 @@ fn score_query(
         .position(|hit| relevant.contains(hit.candidate.path.as_str()))
         .map_or(0.0, |rank| 1.0 / (rank + 1) as f64);
     quality.reciprocal_rank += reciprocal_rank;
-    quality.query_results.push(QueryMetrics {
-        id: judgment.id.clone(),
-        kind: judgment.kind,
-        relevant: relevant.len(),
-        recalled_at_5,
-        recalled_at_10,
-        reciprocal_rank,
-    });
 }
 
 impl QualityAccumulator {
@@ -472,17 +371,11 @@ impl QualityAccumulator {
                 self.wrong_workspace_violations,
                 self.workspace_scope_checks,
             ),
-            query_results: self.query_results,
         }
     }
 }
 
-struct RecoveryMetrics {
-    calls: usize,
-    preserved_canonical_state: bool,
-}
-
-fn measure_recovery(fixture: &WorkspaceFixture, judgments: &WorkspaceJudgments) -> RecoveryMetrics {
+fn measure_recovery(fixture: &WorkspaceFixture, judgments: &WorkspaceJudgments) -> bool {
     let query = &judgments.queries[0].query;
     let before = hit_identity(&retrieve(fixture, Path::new(""), query, budget(256, 16)).hits);
     let canonical = fixture
@@ -497,17 +390,14 @@ fn measure_recovery(fixture: &WorkspaceFixture, judgments: &WorkspaceJudgments) 
         )
         .expect("seed recovery sentinel");
     remove_index_files(&fixture.index());
-    let (cost, _) = index_workspace(fixture);
+    index_workspace(fixture);
     let after = hit_identity(&retrieve(fixture, Path::new(""), query, budget(256, 16)).hits);
     let retained: String = Connection::open(canonical)
         .expect("reopen recovery sentinel store")
         .query_row("SELECT value FROM recovery_sentinel", [], |row| row.get(0))
         .expect("read recovery sentinel");
     assert_eq!(after, before);
-    RecoveryMetrics {
-        calls: cost.calls + 1,
-        preserved_canonical_state: retained == "retained",
-    }
+    retained == "retained"
 }
 
 fn measure_external_detection(fixture: &WorkspaceFixture) -> usize {
@@ -537,11 +427,11 @@ fn wrong_workspace_control_violated() -> bool {
     let first = WorkspaceFixture::empty("workspace-control-first");
     first.write("first.md", b"workspaceboundarycontrol first\n");
     first.initialize();
-    let _ = index_workspace(&first);
+    index_workspace(&first);
     let second = WorkspaceFixture::empty("workspace-control-second");
     second.write("second.md", b"workspaceboundarycontrol second\n");
     second.initialize();
-    let _ = index_workspace(&second);
+    index_workspace(&second);
 
     let result = retrieve_workspace_sources(
         &first.root,
@@ -567,7 +457,6 @@ fn wrong_workspace_control_violated() -> bool {
 }
 
 struct LargeRepositoryMetrics {
-    scan_calls: usize,
     max_metadata_per_call: usize,
     max_content_reads_per_call: usize,
     partial_retrieval_succeeded: bool,
@@ -595,7 +484,6 @@ fn measure_large_repository(file_count: usize) -> LargeRepositoryMetrics {
         .iter()
         .any(|hit| hit.candidate.path == selected);
 
-    let mut scan_calls = 1;
     let mut max_metadata = first.metrics.metadata_entries_reconciled;
     let mut max_content = first.metrics.content_reads;
     for _ in 0..file_count.saturating_add(32) {
@@ -608,7 +496,6 @@ fn measure_large_repository(file_count: usize) -> LargeRepositoryMetrics {
         let report =
             coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
                 .expect("continue large-repository scan");
-        scan_calls += 1;
         max_metadata = max_metadata.max(report.metrics.metadata_entries_reconciled);
         max_content = max_content.max(report.metrics.content_reads);
     }
@@ -619,7 +506,6 @@ fn measure_large_repository(file_count: usize) -> LargeRepositoryMetrics {
         "large-repository scan must complete within its fixture bound"
     );
     LargeRepositoryMetrics {
-        scan_calls,
         max_metadata_per_call: max_metadata,
         max_content_reads_per_call: max_content,
         partial_retrieval_succeeded,
@@ -659,48 +545,12 @@ fn hit_identity(hits: &[SourceSearchHit]) -> Vec<(String, u32, u32, String)> {
         .collect()
 }
 
-fn merge_cost(total: &mut IndexCost, current: &IndexCost) {
-    total.calls += current.calls;
-    total.elapsed_us = total.elapsed_us.saturating_add(current.elapsed_us);
-    total.metadata_entries = total
-        .metadata_entries
-        .saturating_add(current.metadata_entries);
-    total.content_reads = total.content_reads.saturating_add(current.content_reads);
-    total.bytes_read = total.bytes_read.saturating_add(current.bytes_read);
-}
-
 fn ratio(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
         0.0
     } else {
         numerator as f64 / denominator as f64
     }
-}
-
-fn micros(duration: Duration) -> u64 {
-    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
-}
-
-fn percentile(samples: &mut [u64], percent: usize) -> u64 {
-    assert!(!samples.is_empty());
-    samples.sort_unstable();
-    let index = (samples.len() * percent).div_ceil(100).saturating_sub(1);
-    samples[index]
-}
-
-fn directory_bytes(path: &Path) -> u64 {
-    fs::read_dir(path)
-        .expect("read evaluation index directory")
-        .map(|entry| {
-            let entry = entry.expect("read evaluation index entry");
-            let metadata = entry.metadata().expect("read evaluation index metadata");
-            if metadata.is_dir() {
-                directory_bytes(&entry.path())
-            } else {
-                metadata.len()
-            }
-        })
-        .sum()
 }
 
 fn remove_index_files(index: &Path) {

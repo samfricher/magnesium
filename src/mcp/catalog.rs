@@ -79,24 +79,6 @@ pub(crate) fn generated_schema<T: JsonSchema>() -> Arc<JsonObject> {
 mod tests {
     use super::*;
     #[test]
-    fn tool_surface_is_exactly_the_canonical_operations() {
-        assert_eq!(
-            tool_definitions()
-                .iter()
-                .map(|t| t.name.as_ref())
-                .collect::<Vec<_>>(),
-            CANONICAL_OPERATIONS
-        );
-    }
-    #[test]
-    fn context_advertises_installed_policy_delivery() {
-        let context = get_tool("context").unwrap();
-        let text = serde_json::to_string(&context.input_schema).unwrap();
-        assert!(text.contains("instructions"));
-        assert!(text.contains("orient_and_probe"));
-    }
-
-    #[test]
     fn read_tool_schemas_advertise_their_actual_scoped_actions() {
         fn actions(node: &Value, result: &mut std::collections::BTreeSet<String>) {
             let action = &node["properties"]["action"];

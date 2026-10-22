@@ -46,15 +46,11 @@ macro_rules! read_actions {
                 }
             }
         }
-        impl ReadProtocol for Request {
-            fn decode(raw:&serde_json::Value)->Result<Self,String> {
-                let (action,fields)=super::action_fields(raw)?;
-                match action {
-                    $( $cwire=>super::decode_fields::<$cty>(&fields).map(Self::$context), )*
-                    $( $mwire=>super::decode_fields::<$mty>(&fields).map(Self::$memory), )*
-                    $( $swire=>super::decode_fields::<$sty>(&fields).map(Self::$shared), )*
-                    _=>Err(super::shape_error("action",concat!("Supported read actions: ",$( $cwire," ", )* $( $mwire," ", )* $( $swire," ", )*))),
-                }
+        #[cfg(test)]
+        impl super::Tool {
+            /// Tests name only the action; this picks the native tool that owns it.
+            pub(super) fn for_action(action:&str)->Self {
+                match action { $( $cwire=>Self::Context, )* _=>Self::Memory }
             }
         }
         impl Request {

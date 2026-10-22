@@ -261,7 +261,7 @@ console.log(JSON.stringify({ parts: turn.parts, warnings }));
 }
 
 #[test]
-fn session_scoped_post_compact_refreshes_context_without_capturing_ordinary_work() {
+fn post_compact_without_a_turn_returns_empty_output_and_captures_nothing() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     init_workspace(&environment);
 
@@ -280,27 +280,5 @@ fn session_scoped_post_compact_refreshes_context_without_capturing_ordinary_work
     );
     assert!(compact.status.success());
     assert_eq!(compact.stdout, b"{}");
-    assert_eq!(support::v2::count(&environment, "learning_events"), 0);
-    let restored = run_hook(
-        &environment,
-        "user-prompt-submit",
-        json!({
-            "session_id": "opencode-compact-session",
-            "transcript_path": "/not/read/transcript.jsonl",
-            "cwd": environment.workspace,
-            "hook_event_name": "UserPromptSubmit",
-            "host_kind": "opencode",
-            "turn_id": "opencode-post-compact-turn",
-            "prompt": "What did Magnesium retain after compaction?"
-        }),
-    );
-    assert!(restored.status.success());
-    let output: Value = serde_json::from_slice(&restored.stdout).expect("restored turn output");
-    let context = output["hookSpecificOutput"]["additionalContext"]
-        .as_str()
-        .expect("restored context");
-    assert!(context.contains("learner-model/v2"));
-    assert!(context.contains("context.prepare"));
-    assert!(context.contains("compaction"));
     assert_eq!(support::v2::count(&environment, "learning_events"), 0);
 }

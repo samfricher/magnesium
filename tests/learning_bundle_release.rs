@@ -39,7 +39,7 @@ fn production_entries() -> Vec<Value> {
     manifest["files"].as_array().unwrap().clone()
 }
 
-fn write_candidate(root: &Path) -> (Vec<u8>, String) {
+fn write_candidate(root: &Path) -> Vec<u8> {
     let files = production_entries()
         .into_iter()
         .map(|metadata| {
@@ -62,22 +62,7 @@ fn write_candidate(root: &Path) -> (Vec<u8>, String) {
     });
     let bytes = serde_json::to_vec(&manifest).unwrap();
     fs::write(root.join("manifest.json"), &bytes).unwrap();
-    let mut digest = Sha256::new();
-    digest.update(b"magnesium-instruction-bundle\0");
-    digest.update(2u64.to_be_bytes());
-    digest.update(&bytes);
-    for entry in manifest["files"].as_array().unwrap() {
-        digest.update(entry["path"].as_str().unwrap().as_bytes());
-        digest.update([0]);
-        digest.update(entry["sha256"].as_str().unwrap().as_bytes());
-        digest.update([0]);
-    }
-    let runtime_hash = digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    (bytes, runtime_hash)
+    bytes
 }
 
 #[test]
@@ -95,7 +80,7 @@ fn status_flip_marker_partial_and_changed_assets_fail() {
     let root = temp_path("candidate");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    let (manifest, _runtime_hash) = write_candidate(&root);
+    let manifest = write_candidate(&root);
     let output = run(&["--candidate-bundle", root.to_str().unwrap()]);
     assert!(
         output.status.success(),
@@ -258,11 +243,26 @@ fn status_flip_marker_partial_and_changed_assets_fail() {
             .success()
     );
 
+    let mut reserved: Value = serde_json::from_slice(&manifest).unwrap();
+    reserved["files"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["path"] == "MAGNESIUM.md")
+        .unwrap()["sha256"] = json!(hash(RESERVED));
+    fs::write(
+        root.join("manifest.json"),
+        serde_json::to_vec(&reserved).unwrap(),
+    )
+    .unwrap();
     fs::write(root.join("MAGNESIUM.md"), RESERVED).unwrap();
+    let output = run(&["--candidate-bundle", root.to_str().unwrap()]);
+    assert!(!output.status.success());
     assert!(
-        !run(&["--candidate-bundle", root.to_str().unwrap(),])
-            .status
-            .success()
+        String::from_utf8_lossy(&output.stderr)
+            .contains("blank or reserved-marker content: MAGNESIUM.md"),
+        "a matching digest must still not activate the reserved marker: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
     let _ = fs::remove_dir_all(root);
 }

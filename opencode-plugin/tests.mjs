@@ -728,102 +728,92 @@ const { boundedSdkCall } = await import(
   "data:text/javascript;base64," + Buffer.from(helperSource).toString("base64"),
 );
 
-await check("private SDK helper preserves success and supplies an independent signal", async () => {
+await check("private SDK helper returns the result with its own signal and contains failures", async () => {
   const expected = { data: { id: "ses-helper-success" } };
-  let signal;
-  assert.equal(await boundedSdkCall((current) => {
-    signal = current;
-    return expected;
-  }, 100), expected);
-  assert.ok(signal instanceof AbortSignal);
-  assert.equal(signal.aborted, false);
+  const cases = [
+    ["success", () => expected, expected],
+    ["synchronous throw", () => { throw new Error("synthetic throw"); }, null],
+    ["rejection", () => Promise.reject(new Error("synthetic rejection")), null],
+  ];
+  for (const [name, invoke, outcome] of cases) {
+    let signal;
+    assert.equal(await boundedSdkCall((current) => {
+      signal = current;
+      return invoke();
+    }, 100), outcome, name);
+    assert.ok(signal instanceof AbortSignal, name);
+    assert.equal(signal.aborted, false, name);
+    assert.equal(await boundedSdkCall(() => `healthy after ${name}`, 100), `healthy after ${name}`);
+  }
 });
 
-await check("private SDK helper contains synchronous exceptions", async () => {
-  assert.equal(await boundedSdkCall(() => { throw new Error("synthetic throw"); }, 100), null);
-  assert.equal(await boundedSdkCall(() => "healthy after throw", 100), "healthy after throw");
-});
-
-await check("private SDK helper contains rejected requests", async () => {
-  assert.equal(await boundedSdkCall(() => Promise.reject(new Error("synthetic rejection")), 100), null);
-  assert.equal(await boundedSdkCall(() => "healthy after rejection", 100), "healthy after rejection");
-});
-
-await check("private SDK helper bounds a request ignoring abort", async () => {
-  let signal;
-  const pending = boundedSdkCall((current) => {
-    signal = current;
-    return new Promise(() => {});
-  }, 20);
-  assert.equal(await settlesWithin(pending, 1000), true);
-  assert.equal(await pending, null);
-  assert.equal(signal.aborted, true);
-  assert.equal(await boundedSdkCall(() => "healthy after ignored abort", 100), "healthy after ignored abort");
-});
-
-await check("private SDK helper settles timeout before abort-aware rejection", async () => {
-  let aborted = 0;
-  assert.equal(await boundedSdkCall((signal) => new Promise((_, reject) => {
-    signal.addEventListener("abort", () => {
-      aborted += 1;
-      reject(new Error("synthetic abort rejection"));
-    }, { once: true });
-  }), 20), null);
-  assert.equal(aborted, 1);
-  assert.equal(await boundedSdkCall(() => "healthy after abort", 100), "healthy after abort");
-});
-
-await check("private SDK helper discards late success", async () => {
-  let resolve;
-  let selected = "not settled";
-  const pending = boundedSdkCall(() => new Promise((done) => { resolve = done; }), 20)
-    .then((result) => { selected = result; return result; });
-  assert.equal(await pending, null);
-  resolve({ data: { id: "ses-helper-too-late" } });
-  await wait(0);
-  assert.equal(selected, null);
-  assert.equal(await boundedSdkCall(() => "healthy after late success", 100), "healthy after late success");
-});
-
-await check("private SDK helper observes late rejection", async () => {
-  let reject;
+await check("private SDK helper aborts a timed-out request and discards its late result", async () => {
   const unhandled = [];
   const listener = (reason) => unhandled.push(reason);
   process.on("unhandledRejection", listener);
   try {
-    assert.equal(await boundedSdkCall(() => new Promise((_, fail) => { reject = fail; }), 20), null);
-    reject(new Error("synthetic late helper rejection"));
-    await wait(0);
-    assert.deepEqual(unhandled, []);
-    assert.equal(await boundedSdkCall(() => "healthy after late rejection", 100), "healthy after late rejection");
+    // Each request outlives the 20ms deadline; settleLate then settles it
+    // after the helper has already returned null.
+    const slowRequests = {
+      "ignores abort": () => ({ request: new Promise(() => {}), settleLate() {} }),
+      "rejects on abort": (signal) => ({
+        request: new Promise((_, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("synthetic abort rejection")), { once: true });
+        }),
+        settleLate() {},
+      }),
+      "succeeds late": () => {
+        let resolve;
+        return {
+          request: new Promise((done) => { resolve = done; }),
+          settleLate: () => resolve({ data: { id: "ses-helper-too-late" } }),
+        };
+      },
+      "rejects late": () => {
+        let reject;
+        return {
+          request: new Promise((_, fail) => { reject = fail; }),
+          settleLate: () => reject(new Error("synthetic late helper rejection")),
+        };
+      },
+    };
+    for (const [name, start] of Object.entries(slowRequests)) {
+      let signal;
+      let slow;
+      const pending = boundedSdkCall((current) => {
+        signal = current;
+        slow = start(current);
+        return slow.request;
+      }, 20);
+      assert.equal(await settlesWithin(pending, 1000), true, name);
+      assert.equal(await pending, null, name);
+      assert.equal(signal.aborted, true, name);
+      slow.settleLate();
+      await wait(0);
+      assert.deepEqual(unhandled, [], name);
+      assert.equal(await boundedSdkCall(() => `healthy after ${name}`, 100), `healthy after ${name}`);
+    }
+
+    // A timed-out request must not abort an unrelated concurrent one.
+    let slowSignal;
+    let healthySignal;
+    const slow = boundedSdkCall((signal) => {
+      slowSignal = signal;
+      return new Promise(() => {});
+    }, 20);
+    const expected = { data: { id: "ses-helper-unrelated" } };
+    assert.equal(await boundedSdkCall((signal) => {
+      healthySignal = signal;
+      return expected;
+    }, 100), expected);
+    assert.notEqual(slowSignal, healthySignal);
+    assert.equal(healthySignal.aborted, false);
+    assert.equal(await slow, null);
+    assert.equal(slowSignal.aborted, true);
+    assert.equal(healthySignal.aborted, false);
   } finally {
     process.removeListener("unhandledRejection", listener);
   }
-});
-
-await check("private SDK helper retries normally after timeout", async () => {
-  assert.equal(await boundedSdkCall(() => new Promise(() => {}), 20), null);
-  const expected = { data: { id: "ses-helper-retry" } };
-  assert.equal(await boundedSdkCall(() => Promise.resolve(expected), 100), expected);
-});
-
-await check("private SDK helper lets concurrent unrelated requests proceed", async () => {
-  let slowSignal;
-  let healthySignal;
-  const slow = boundedSdkCall((signal) => {
-    slowSignal = signal;
-    return new Promise(() => {});
-  }, 20);
-  const expected = { data: { id: "ses-helper-unrelated" } };
-  assert.equal(await boundedSdkCall((signal) => {
-    healthySignal = signal;
-    return expected;
-  }, 100), expected);
-  assert.notEqual(slowSignal, healthySignal);
-  assert.equal(healthySignal.aborted, false);
-  assert.equal(await slow, null);
-  assert.equal(slowSignal.aborted, true);
-  assert.equal(healthySignal.aborted, false);
 });
 
 await check("private SDK helper clears successful request timers", async () => {

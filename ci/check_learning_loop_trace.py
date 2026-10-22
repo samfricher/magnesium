@@ -64,8 +64,12 @@ def validate_fixture(fixture):
         source_path = ROOT / "tests/fixtures/learning_loop" / case["source_fixture"]
         if not source_path.is_file():
             raise ContractError(f"{case['id']}: missing synthetic source fixture {source_path.name}")
-        if not case["inputs"] or not case["allowed_actions"] or not case["forbidden_claims"]:
-            raise ContractError(f"{case['id']}: inputs, allowed actions, and forbidden claims must be nonempty")
+        if not isinstance(case["initial_state"], dict):
+            raise ContractError(f"{case['id']}: initial_state must be an object")
+        if not isinstance(case["claim_limit"], str) or not case["claim_limit"].strip():
+            raise ContractError(f"{case['id']}: claim_limit must be a nonempty string")
+        if not case["inputs"] or not case["allowed_actions"] or not case["forbidden_claims"] or not case["reviewed_decisions"]:
+            raise ContractError(f"{case['id']}: inputs, allowed actions, forbidden claims, and reviewed decisions must be nonempty")
         for item in case["inputs"]:
             identity = item.get("id")
             if not isinstance(identity, str) or not re.fullmatch(r"[a-z][a-z0-9-]*-i[0-9]+", identity):
@@ -84,6 +88,9 @@ def validate_fixture(fixture):
         state_keys = [change.get("key") for change in case["required_state_changes"]]
         if any(not isinstance(key, str) or not key for key in state_keys) or len(state_keys) != len(set(state_keys)):
             raise ContractError(f"{case['id']}: state change keys must be unique nonempty strings")
+        for change in case["required_state_changes"]:
+            if "value" not in change:
+                raise ContractError(f"{case['id']}: state change {change['key']} needs an expected value")
 
     negative = fixture.get("negative_fixtures")
     expected_negative_ids = {

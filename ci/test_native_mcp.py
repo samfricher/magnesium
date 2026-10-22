@@ -22,7 +22,7 @@ for line in sys.stdin.buffer:
     if "id" not in request:
         continue
     if mode == "partial":
-        sys.stdout.write('{"jsonrpc":'); sys.stdout.flush(); time.sleep(60)
+        sys.stdout.write('{"jsonrpc":'); sys.stdout.flush(); sys.exit(0)
     elif mode == "timeout":
         time.sleep(60)
     elif mode == "eof":
@@ -69,7 +69,7 @@ class NativeMcpTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(client.diagnostics()["owner_pid"], os.getpid())
 
     async def test_initialization_and_framing_failures_are_bounded_and_reaped(self):
-        for mode, expected in [("partial", "timeout"), ("timeout", "timeout"), ("eof", "EOF"),
+        for mode, expected in [("partial", "partial JSON frame"), ("timeout", "timeout"), ("eof", "EOF"),
                                ("malformed", "JSON"), ("wrong-id", "response ID"),
                                ("oversized", "frame"), ("stderr", "stderr"),
                                ("notifications", "notifications"), ("initialize-error", "init rejected")]:
@@ -83,32 +83,12 @@ class NativeMcpTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(client.proc.returncode)
                 self.assertLessEqual(len(client.diagnostics()["stderr"].encode()), 1024)
 
-    async def test_descendant_pid_readiness_publishes_complete_content(self):
-        with tempfile.TemporaryDirectory() as root:
-            ready = Path(root, "descendant.pid")
-            original_open = open
-
-            def observe_creation(name, mode):
-                handle = original_open(name, mode)
-                try:
-                    self.assertFalse(ready.exists())
-                    self.assertEqual(Path(name).read_text(), "")
-                except BaseException:
-                    handle.close()
-                    raise
-                return handle
-
-            with patch("builtins.open", side_effect=observe_creation):
-                exec(PUBLISH_DESCENDANT_PID, {
-                    "pid_path": str(ready), "descendant_pid": os.getpid(), "os": os,
-                })
-            self.assertEqual(int(ready.read_text()), os.getpid())
-            self.assertFalse(Path(str(ready) + ".tmp").exists())
-
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper regression")
     async def test_clean_leader_exit_terminates_and_reaps_owned_descendant(self):
         # The outer test owns orphan reaping. Production cleanup must terminate
         # the private group, even after its leader has exited with closed pipes.
+        # The child publishes the descendant pid by rename, so the poll below
+        # never reads a partially written pid file.
         libc = ctypes.CDLL(None, use_errno=True)
         old = ctypes.c_int()
         self.assertEqual(libc.prctl(37, ctypes.byref(old), 0, 0, 0), 0)  # GET_CHILD_SUBREAPER

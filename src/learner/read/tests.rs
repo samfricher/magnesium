@@ -242,7 +242,15 @@ fn filtered_event_search_and_review_cursors_track_relational_generations() {
     )
     .unwrap();
     assert!(run(&conn,json!({"action":"observations","kind":"event","memory_id":"m","literal_terms":["private"],"cursor":events["next_cursor"]})).unwrap_err().starts_with("cursor_stale"));
-    let review = run(&conn, json!({"action":"reviews","limit":1})).unwrap_or(review);
+    assert!(
+        run(
+            &conn,
+            json!({"action":"reviews","cursor":review["next_cursor"]})
+        )
+        .unwrap_err()
+        .starts_with("cursor_stale")
+    );
+    let review = run(&conn, json!({"action":"reviews","limit":1})).unwrap();
     conn.execute(
         "UPDATE review_items SET status='dismissed',revision=2 WHERE review_id='r1'",
         [],
@@ -261,7 +269,6 @@ fn filtered_event_search_and_review_cursors_track_relational_generations() {
         .unwrap_err()
         .starts_with("cursor_stale")
     );
-    assert!(review.get("review_fingerprint").is_none());
 }
 #[test]
 fn trace_off_after_snapshot_discards_only_receipt_and_changes_no_generation() {
@@ -463,34 +470,13 @@ fn no_hit_fallback_emits_unchanged_executable_browse_calls() {
 }
 #[test]
 fn complete_directory_does_not_execute_ranked_fts_queries() {
-    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
     let conn = fixture();
     insert_read_memory(&conn, "m");
     search::rebuild_indexes(&conn).unwrap();
-    let reads = Arc::new(AtomicUsize::new(0));
-    let counter = reads.clone();
-    conn.authorizer(Some(move |context: AuthContext<'_>| {
-        if matches!(
-            context.action,
-            AuthAction::Read {
-                table_name: "memory_fts",
-                ..
-            }
-        ) {
-            counter.fetch_add(1, Ordering::Relaxed);
-        }
-        Authorization::Allow
-    }))
-    .unwrap();
-    prepare::RANKED_CALLS.with(|calls| calls.set(0));
+    let reads = record_column_reads(&conn);
     let page = run(&conn, json!({"action":"prepare","mode":"auto","intents":[{"id":"i","purpose":"find coefficient","queries":[{"all_of":["coefficient"]}]}]})).unwrap();
-    prepare::RANKED_CALLS.with(|calls| assert_eq!(calls.get(), 0));
     assert_eq!(
-        reads.load(Ordering::Relaxed),
+        table_read_count(&reads, "memory_fts"),
         0,
         "complete directory must bypass ranked retrieval"
     );
@@ -528,9 +514,20 @@ fn ranked_fallback_annotates_priorities_and_separates_advice_from_calls() {
     )
     .unwrap();
     search::rebuild_indexes(&conn).unwrap();
-    prepare::RANKED_CALLS.with(|calls| calls.set(0));
-    let page = run(&conn, json!({"action":"prepare","mode":"auto","memory_ids":["m0"],"intents":[{"id":"i","purpose":"find coefficient","queries":[{"all_of":["coefficient"]}]}]})).unwrap();
-    prepare::RANKED_CALLS.with(|calls| assert_eq!(calls.get(), 1));
+    let reads = record_column_reads(&conn);
+    let intents =
+        json!([{"id":"i","purpose":"find coefficient","queries":[{"all_of":["coefficient"]}]}]);
+    let page = run(
+        &conn,
+        json!({"action":"prepare","mode":"auto","memory_ids":["m0"],"intents":intents}),
+    )
+    .unwrap();
+    // The fallback must run the ranked query once, exactly as a direct search does.
+    let fallback_reads = table_read_count(&reads, "memory_fts");
+    assert!(fallback_reads > 0);
+    reads.lock().unwrap().clear();
+    run(&conn, json!({"action":"search","intents":intents})).unwrap();
+    assert_eq!(table_read_count(&reads, "memory_fts"), fallback_reads);
     assert_eq!(page["selection_mode"], "focused");
     assert_eq!(page["coverage"]["ranked_retrieval_used"], true);
     assert_eq!(page["coverage"]["query_execution_complete"], true);
@@ -697,16 +694,14 @@ fn optional_ranked_cards_skip_large_candidates_and_keep_whole_qualifications() {
     assert_eq!(read["records"][0]["review_note"], review);
 }
 
-#[test]
-fn compact_directory_batches_projection_without_loading_body_cues_or_topics() {
+type ColumnReads = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+/// Records every table column that statements prepared on `conn` read. The
+/// authorizer reports what a statement touches, so tests can bound how much a
+/// request loads without depending on the SQL text.
+fn record_column_reads(conn: &Connection) -> ColumnReads {
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
-    use std::sync::{Arc, Mutex};
-    let conn = fixture();
-    for n in 0..12 {
-        insert_read_memory(&conn, &format!("m{n}"));
-    }
-    let columns = Arc::new(Mutex::new(Vec::new()));
-    let seen = columns.clone();
+    let reads = ColumnReads::default();
+    let seen = reads.clone();
     conn.authorizer(Some(move |context: AuthContext<'_>| {
         if let AuthAction::Read {
             table_name,
@@ -720,59 +715,134 @@ fn compact_directory_batches_projection_without_loading_body_cues_or_topics() {
         Authorization::Allow
     }))
     .unwrap();
+    reads
+}
+fn table_read_count(reads: &ColumnReads, table: &str) -> usize {
+    reads
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(read_table, _)| read_table == table)
+        .count()
+}
+fn column_read_count(reads: &ColumnReads, table: &str, column: &str) -> usize {
+    reads
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(read_table, read_column)| read_table == table && read_column == column)
+        .count()
+}
+
+#[test]
+fn compact_directory_batches_projection_without_loading_body_cues_or_topics() {
+    let conn = fixture();
+    for n in 0..12 {
+        let id = format!("m{n}");
+        insert_read_memory(&conn, &id);
+        conn.execute("INSERT INTO memory_topics VALUES(?1,'algebra')", [&id])
+            .unwrap();
+    }
+    let reads = record_column_reads(&conn);
     let packet = run(&conn, json!({"action":"browse","max_bytes":65536})).unwrap();
     assert_eq!(packet["memories"].as_array().unwrap().len(), 12);
-    let reads = columns.lock().unwrap();
     for column in ["state_text", "retrieval_cues_json"] {
-        assert!(
-            !reads
-                .iter()
-                .any(|(table, name)| table == "learner_memories" && name == column),
-            "compact read loaded {column}: {reads:?}"
+        assert_eq!(
+            column_read_count(&reads, "learner_memories", column),
+            0,
+            "compact read loaded {column}: {:?}",
+            reads.lock().unwrap()
         );
     }
-    // A topic predicate may read the topic relation; it must not materialize a
-    // per-memory topic list. The summary projection itself is one batch.
+    // The summary projection is one batch for the whole page.
+    assert_eq!(column_read_count(&reads, "learner_memories", "summary"), 1);
+    // The directory's own topic predicate reads the topic relation even with no
+    // memories, so loading topics for the page would show up as extra reads.
+    let empty = fixture();
+    let empty_reads = record_column_reads(&empty);
+    run(&empty, json!({"action":"browse","max_bytes":65536})).unwrap();
     assert_eq!(
-        reads
-            .iter()
-            .filter(|(table, name)| table == "learner_memories" && name == "summary")
-            .count(),
-        1
+        column_read_count(&reads, "memory_topics", "topic"),
+        column_read_count(&empty_reads, "memory_topics", "topic"),
+        "compact read loaded topic lists: {:?}",
+        reads.lock().unwrap()
     );
 }
 
 #[test]
-fn explicit_full_read_loads_body_once() {
-    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
+fn bodies_load_once_per_request_for_auto_prepare_and_explicit_read() {
     let conn = fixture();
-    insert_read_memory(&conn, "m");
-    let reads = Arc::new(AtomicUsize::new(0));
-    let seen = reads.clone();
-    conn.authorizer(Some(move |context: AuthContext<'_>| {
-        if matches!(
-            context.action,
-            AuthAction::Read {
-                table_name: "learner_memories",
-                column_name: "state_text"
-            }
-        ) {
-            seen.fetch_add(1, Ordering::Relaxed);
-        }
-        Authorization::Allow
-    }))
-    .unwrap();
+    for n in 0..12 {
+        insert_read_memory(&conn, &format!("m{n}"));
+    }
+    let reads = record_column_reads(&conn);
+    run(&conn, json!({"action":"prepare","mode":"auto"})).unwrap();
+    assert_eq!(
+        column_read_count(&reads, "learner_memories", "state_text"),
+        1,
+        "{:?}",
+        reads.lock().unwrap()
+    );
+    reads.lock().unwrap().clear();
     let packet = run(
         &conn,
-        json!({"action":"read","refs":[{"kind":"current_memory","id":"m"}]}),
+        json!({"action":"read","refs":[{"kind":"current_memory","id":"m0"}]}),
     )
     .unwrap();
     assert_eq!(packet["records"][0]["state_text"], "whole state");
-    assert_eq!(reads.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        column_read_count(&reads, "learner_memories", "state_text"),
+        1,
+        "{:?}",
+        reads.lock().unwrap()
+    );
+}
+
+thread_local! {
+    static STATEMENT_EXECUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// Counts statement executions, so a statement prepared once and run once per
+/// memory shows up even though the authorizer sees it only once.
+fn statement_executions(conn: &Connection, request: Value) -> usize {
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    STATEMENT_EXECUTIONS.with(|count| count.set(0));
+    conn.trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(|event| {
+            if let TraceEvent::Stmt(..) = event {
+                STATEMENT_EXECUTIONS.with(|count| count.set(count.get() + 1));
+            }
+        }),
+    );
+    run(conn, request).unwrap();
+    conn.trace_v2(TraceEventCodes::empty(), None);
+    STATEMENT_EXECUTIONS.with(std::cell::Cell::get)
+}
+
+#[test]
+fn directory_and_auto_prepare_statement_executions_do_not_scale_with_memories() {
+    let with_memories = |count: usize| {
+        let conn = fixture();
+        for n in 0..count {
+            let id = format!("m{n}");
+            insert_read_memory(&conn, &id);
+            conn.execute("INSERT INTO memory_topics VALUES(?1,'algebra')", [&id])
+                .unwrap();
+        }
+        conn
+    };
+    let one = with_memories(1);
+    let twelve = with_memories(12);
+    for request in [
+        json!({"action":"browse","max_bytes":65536}),
+        json!({"action":"prepare","mode":"auto"}),
+    ] {
+        assert_eq!(
+            statement_executions(&one, request.clone()),
+            statement_executions(&twelve, request.clone()),
+            "{request}"
+        );
+    }
 }
 
 #[test]
@@ -870,78 +940,6 @@ fn compact_and_complete_views_share_strict_canonical_field_decoding() {
         )
         .unwrap_err()
         .contains("retrieval_cues_json")
-    );
-}
-
-thread_local! {
-    static READ_SQL: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-fn traced_read(conn: &Connection, request: Value) -> (Value, Vec<String>) {
-    use rusqlite::trace::{TraceEvent, TraceEventCodes};
-    READ_SQL.with(|sql| sql.borrow_mut().clear());
-    conn.trace_v2(
-        TraceEventCodes::SQLITE_TRACE_STMT,
-        Some(|event| {
-            if let TraceEvent::Stmt(statement, _) = event {
-                READ_SQL.with(|sql| sql.borrow_mut().push(statement.sql().into_owned()));
-            }
-        }),
-    );
-    let packet = run(conn, request).unwrap();
-    conn.trace_v2(TraceEventCodes::empty(), None);
-    (
-        packet,
-        READ_SQL.with(|sql| std::mem::take(&mut *sql.borrow_mut())),
-    )
-}
-
-#[test]
-fn selected_body_batch_and_projection_statement_counts_are_bounded() {
-    let conn = fixture();
-    for n in 0..12 {
-        insert_read_memory(&conn, &format!("m{n}"));
-    }
-    let (_, directory_sql) = traced_read(&conn, json!({"action":"browse","max_bytes":65536}));
-    assert_eq!(
-        directory_sql
-            .iter()
-            .filter(|sql| sql.contains("m.summary"))
-            .count(),
-        1,
-        "{directory_sql:?}"
-    );
-    assert!(
-        !directory_sql
-            .iter()
-            .any(|sql| sql.contains("state_text") || sql.contains("retrieval_cues_json")),
-        "{directory_sql:?}"
-    );
-    assert!(
-        !directory_sql
-            .iter()
-            .any(|sql| sql.contains("SELECT topic FROM memory_topics")),
-        "{directory_sql:?}"
-    );
-    let (_, prepare_sql) = traced_read(&conn, json!({"action":"prepare","mode":"auto"}));
-    assert_eq!(
-        prepare_sql
-            .iter()
-            .filter(|sql| sql.contains("state_text"))
-            .count(),
-        1,
-        "{prepare_sql:?}"
-    );
-    let (_, full_sql) = traced_read(
-        &conn,
-        json!({"action":"read","refs":[{"kind":"current_memory","id":"m0"}]}),
-    );
-    assert_eq!(
-        full_sql
-            .iter()
-            .filter(|sql| sql.contains("state_text"))
-            .count(),
-        1,
-        "{full_sql:?}"
     );
 }
 

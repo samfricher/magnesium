@@ -1,6 +1,8 @@
 """Mutation coverage for the offline learning-loop report."""
 
+import copy
 import json
+import re
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -44,10 +46,6 @@ def check_status(evaluation, code):
 class LearningLoopReportTests(unittest.TestCase):
     def test_report_runs_existing_synthetic_oracle_and_fails_when_it_fails(self):
         assembled = report.build_report()
-        self.assertEqual(assembled["synthetic_contract_oracle"]["cases"], 12)
-        self.assertEqual(assembled["synthetic_contract_oracle"]["negative_fixtures"], 7)
-        self.assertEqual(assembled["synthetic_contract_oracle"]["status"], "PASS")
-        self.assertEqual(assembled["levels"]["native"]["status"], "NOT_TESTED")
         self.assertIn("Status: **PASS**", report.render_markdown(assembled))
         with patch.object(report.trace_oracle, "negative_self_check", return_value=["failed"]):
             failed = report.build_report()
@@ -55,6 +53,38 @@ class LearningLoopReportTests(unittest.TestCase):
         self.assertEqual(failed["levels"]["native"]["status"], "NOT_TESTED")
         self.assertIn("Status: **FAIL**", report.render_markdown(failed))
         self.assertEqual(failed["levels"]["agent"]["status"], "NOT_TESTED")
+
+    def test_fixture_validation_rejects_incomplete_case_contracts(self):
+        oracle = report.trace_oracle
+        fixture = oracle.load_json(oracle.FIXTURE)
+        self.assertEqual(len(oracle.validate_fixture(fixture)), 12)
+        mutations = {
+            "empty claim_limit": (
+                lambda case: case.update(claim_limit=""),
+                "claim_limit must be a nonempty string",
+            ),
+            "empty reviewed_decisions": (
+                lambda case: case.update(reviewed_decisions=[]),
+                "reviewed decisions must be nonempty",
+            ),
+            "non-object initial_state": (
+                lambda case: case.update(initial_state=[]),
+                "initial_state must be an object",
+            ),
+            "state change without value": (
+                lambda case: case["required_state_changes"][0].pop("value"),
+                r"state change \S+ needs an expected value",
+            ),
+        }
+        for index, case in enumerate(fixture["cases"]):
+            for name, (mutate, message) in mutations.items():
+                with self.subTest(case=case["id"], mutation=name):
+                    mutated = copy.deepcopy(fixture)
+                    mutate(mutated["cases"][index])
+                    with self.assertRaisesRegex(
+                        oracle.ContractError, re.escape(case["id"]) + ": .*" + message
+                    ):
+                        oracle.validate_fixture(mutated)
 
     def test_caller_authorization_cannot_promote_offline_trace_to_agent_pass(self):
         evaluation = result(complete_saved_trace())
