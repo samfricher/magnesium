@@ -5,11 +5,13 @@ use crate::workspace::Workspace;
 use control_admission::{
     LocalSuppression, control_event, control_storage_failure, recording_suppressed,
 };
+use std::borrow::Cow;
 use std::path::Path;
 pub(crate) mod cli;
 pub(crate) mod helpers;
 pub(crate) mod host;
 pub(crate) mod native_capture;
+mod reply_check;
 pub(crate) mod search;
 pub(crate) mod sources;
 pub(crate) mod types;
@@ -355,7 +357,7 @@ pub(crate) fn host_session_start(
     check_workspace_binding(&workspace)?;
     let store = open_store(&workspace)?;
     let host = host_context(host);
-    let mut notice = hook_notice(&store, &host, None)?;
+    let mut notice = hook_notice(&store, &host, None, NoticeHook::SessionStart)?;
     if host.host_kind == "claude"
         && !store
             .conn
@@ -368,40 +370,94 @@ pub(crate) fn host_session_start(
     }
     Ok(Some(notice))
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NoticeHook {
+    SessionStart,
+    UserPromptSubmit,
+}
+impl NoticeHook {
+    const fn additional_context_limit(self) -> usize {
+        match self {
+            Self::SessionStart => 1024,
+            Self::UserPromptSubmit => 512,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Clause {
+    Required,
+    ConfusionReminder,
+    TaskReminder,
+    ReplyFeedback,
+}
+const GIVE_WAY_ORDER: [Clause; 3] = [
+    Clause::ConfusionReminder,
+    Clause::TaskReminder,
+    Clause::ReplyFeedback,
+];
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
     event: Option<&str>,
+    hook: NoticeHook,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
-    let recovery = if unbound > 0 {
-        " Unbound pending work: context.pending_work with unbound_only:true."
-    } else {
-        ""
-    };
-    let guidance = engagement_guidance(host, active, recording);
-    Ok(format!(
-        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}. Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.{guidance}{recovery}",
+    let state = format!(
+        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}. Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.",
         event.unwrap_or("unavailable (use labeled reported events)")
-    ))
-}
-/// Plain next-step guidance for Claude Code, whose tutor can lose the Magnesium
-/// skill's instructions to compaction and otherwise sees only state fields.
-/// Other hosts keep their established notices within their hook limits.
-fn engagement_guidance(
-    host: &crate::learner::HostContext,
-    active: bool,
-    recording: bool,
-) -> &'static str {
-    match (host.host_kind.as_str(), active, recording) {
-        ("claude", true, true) => {
-            " A lesson is active: interpret this learner turn with learning_step. After a new conversation or compaction, load the learn skill and its instructions first."
+    );
+    let claude = host.host_kind == "claude";
+    let mut clauses: Vec<(Clause, Cow<'static, str>)> = Vec::new();
+    match (claude, active, recording) {
+        (true, true, true) => {
+            clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
+            if hook == NoticeHook::SessionStart {
+                clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
+            }
         }
-        ("claude", false, true) => CLAUDE_START_GUIDANCE,
-        _ => "",
+        (true, false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
+        _ => {}
     }
+    if unbound > 0 {
+        let recovery = if claude {
+            " Unbound work: context.pending_work unbound_only:true."
+        } else {
+            " Unbound pending work: context.pending_work with unbound_only:true."
+        };
+        clauses.push((Clause::Required, recovery.into()));
+    }
+    if let (true, true, NoticeHook::UserPromptSubmit) = (claude, active, hook) {
+        clauses.push((Clause::TaskReminder, reply_check::task_reminder().into()));
+        clauses.push((
+            Clause::ConfusionReminder,
+            reply_check::CONFUSION_REMINDER.into(),
+        ));
+        if let Some(feedback) = event.and_then(|event| {
+            reply_check::feedback(&store.conn, host, event)
+                .ok()
+                .flatten()
+        }) {
+            clauses.push((Clause::ReplyFeedback, feedback.into()));
+        }
+    }
+    Ok(fit(state, clauses, hook.additional_context_limit()))
 }
+fn fit(state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: usize) -> String {
+    for droppable in GIVE_WAY_ORDER {
+        if state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>() <= limit {
+            break;
+        }
+        clauses.retain(|(clause, _)| *clause != droppable);
+    }
+    clauses
+        .iter()
+        .fold(state, |notice, (_, text)| notice + text.as_ref())
+}
+const CLAUDE_LESSON_GUIDANCE: &str =
+    " A lesson is active: interpret this learner turn with learning_step.";
+const CLAUDE_RELOAD_GUIDANCE: &str =
+    " After a new conversation or compaction, load the learn skill and its instructions first.";
 const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed or review, load the learn skill and start or resume a session.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder yet, so the learner is probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
@@ -460,7 +516,7 @@ pub(crate) fn host_user_prompt_submit(
             Err(_) => {
                 return Ok(Some(format!(
                     "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(&store, &context, None)?
+                    hook_notice(&store, &context, None, NoticeHook::UserPromptSubmit)?
                 )));
             }
         }
@@ -477,6 +533,7 @@ pub(crate) fn host_user_prompt_submit(
         &store,
         &context,
         ids.first().map(String::as_str),
+        NoticeHook::UserPromptSubmit,
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -542,7 +599,7 @@ pub(crate) fn host_response_stop_with_delivery(
 mod tests {
     use super::*;
     use serde_json::json;
-    fn fixture() -> (
+    pub(super) fn fixture() -> (
         std::path::PathBuf,
         crate::learner::LearnerStore,
         HostIdentity,
@@ -756,3 +813,6 @@ mod native_capture_tests;
 
 #[cfg(test)]
 mod control_admission_tests;
+
+#[cfg(test)]
+mod reply_check_tests;

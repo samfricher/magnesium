@@ -7,6 +7,8 @@ description: Durable plans of timed practice papers in a folder set up with Magn
 
 Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Read tool, not a shell command. Load `context(action:"instructions",host:"claude",stage:"papers")` in build mode and for the verbs new mock and rebuild, and `stage:"papers_loop"` for every other verb. Follow that stage; it holds the policy. Load the same call with `operation:"tool_recipes"`. Then, before you read materials or templates, start or resume the Magnesium session for the target, because native capture expires within minutes. Reload after context loss or a bundle change.
 
+During this Magnesium session, the prompt notice usually repeats the teaching rule and can say that the previous reply had 200 words or more. The rule is for teaching replies. A build, a marking report or a plan change runs as long as this stage needs and needs no task, so ignore that feedback after one.
+
 ## Choose the target and the mode
 
 The target slug is short, given or derived from the request: `midterm-1`, `test-1`, `final`, `ch6-7`, `computability`. If the request names no target and `Study/` holds one plan, use that plan. If it holds several, match the paper or tag the learner names, and ask only when that does not decide it.
