@@ -27,6 +27,9 @@ pub(crate) fn source_status_and_size(
         .map_err(|source| sqlite(index_path, "read source status", source))
 }
 
+/// Sources a search may extract, in path order. Failed sources are not listed:
+/// extracting them again fails again until the file changes and
+/// reconciliation marks it pending. An explicit request still retries one.
 pub(crate) fn pending_source_paths(
     index_path: &Path,
     query_scope: &Path,
@@ -39,8 +42,7 @@ pub(crate) fn pending_source_paths(
     let mut statement = connection
         .prepare(
             "SELECT path_key FROM source_manifest
-             WHERE present = 1 AND source_kind IN ('text', 'pdf')
-               AND index_status IN ('pending', 'failed')
+             WHERE present = 1 AND source_kind IN ('text', 'pdf') AND index_status = 'pending'
              ORDER BY display_path COLLATE BINARY, manifest_id",
         )
         .map_err(|source| sqlite(index_path, "prepare pending-source query", source))?;

@@ -872,11 +872,15 @@ fn coordinate_one_pass(
         let Some((status, size)) = source_status_and_size(index_path, &relative)? else {
             continue;
         };
-        if matches!(status.as_str(), "pending" | "failed") {
+        // A search leaves a failed source alone, as the fallback does; an
+        // explicit request retries it.
+        let unindexed =
+            status == "pending" || (status == "failed" && allowed_source_paths.is_some());
+        if unindexed {
             indexed_on_demand += 1;
             extraction_bytes = extraction_bytes.saturating_add(size);
         }
-        if matches!(status.as_str(), "pending" | "failed" | "indexed") {
+        if unindexed || status == "indexed" {
             let extracted = if allowed_source_paths.is_some() {
                 extract_source_with_cancellation(
                     workspace_root,
@@ -1923,6 +1927,51 @@ mod tests {
             "reconciliation held the write lock while hashing: {observed:?}"
         );
         assert_eq!(source_status(&fixture.index(), "lesson.md"), "pending");
+    }
+
+    #[test]
+    fn searches_extract_a_failed_source_again_only_after_it_changes() {
+        let fixture = Fixture::new("failed-not-retried");
+        fixture.write("a-garbled.md", b"\xff\xfe not utf-8\n");
+        fixture.write("lesson.md", b"lesson\n");
+        let search = |likely: &[PathBuf]| {
+            prepare_source_query_with_allowlist_and_cancellation(
+                &fixture.root,
+                &fixture.index(),
+                Path::new(""),
+                likely,
+                budget(8),
+                None,
+                &OperationCancellation::none(),
+            )
+            .expect("search")
+        };
+        search(&[]);
+        assert_eq!(source_status(&fixture.index(), "a-garbled.md"), "failed");
+
+        for likely in [vec![], vec![PathBuf::from("a-garbled.md")]] {
+            let again = search(&likely);
+            assert_ne!(
+                again.coverage,
+                IndexCoverage::IndexingOnDemand,
+                "a search extracted the failed source again (likely paths {likely:?})"
+            );
+        }
+        let explicit = crate::retrieval::prepare_explicit_source(
+            &fixture.root,
+            Path::new("a-garbled.md"),
+            crate::retrieval::FactsInterest::IdentityOnly,
+            &OperationCancellation::none(),
+        );
+        assert!(
+            matches!(explicit, Err(ManifestError::Invalid(ref message)) if message.contains("not valid UTF-8")),
+            "an explicit request extracts the failed source again: {:?}",
+            explicit.err()
+        );
+
+        fixture.write("a-garbled.md", b"fixed and readable now\n");
+        search(&[]);
+        assert_eq!(source_status(&fixture.index(), "a-garbled.md"), "indexed");
     }
 
     #[test]
