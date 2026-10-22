@@ -37,7 +37,7 @@ For a cold redo, read the rows whose Next redo has come, then pick the smallest 
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column predates spaced redos. Rename `Cold-redo date` to `Next redo`, or add `Next redo` with empty cells, after an empty `Passes` column. If the log has no Conf column, add one after Type, empty in every row. On closed rows, clear Next redo and write Status as exactly `closed`. An open row keeps its date, or gets tomorrow's date if it has none and its Repair done is filled. Dismiss the plan's old gap review suggestions, and log the upgrade as one line under Changes in `plan.md`. With the papers skill's templates, also follow its template steps.
+If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos. Rename `Cold-redo date` to `Next redo`, or add `Next redo` with empty cells, after an empty `Passes` column. On closed rows, clear Next redo and write Status as exactly `closed`. An open row keeps its date, or gets tomorrow's date if it has none and its Repair done is filled. Dismiss the plan's old gap review suggestions, and log the upgrade as one line under Changes in `plan.md`. With the papers skill's templates, also follow its template steps.
 
 ## Re-plan after every marked paper
 

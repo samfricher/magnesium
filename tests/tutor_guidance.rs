@@ -280,12 +280,17 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
             "after an empty `Passes` column.",
             "write Status as exactly `closed`",
             "gets tomorrow's date if it has none and its Repair done is filled",
-            "If the log has no Conf column, add one after Type, empty in every row.",
+            "If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos.",
             "Dismiss the plan's old gap review suggestions",
             "log the upgrade as one line under Changes in `plan.md`",
         ] {
             assert!(text.contains(step), "{host}: {step}");
         }
+        let (_, old_log_steps) = text.split_once("predates spaced redos.").unwrap();
+        assert!(
+            old_log_steps.contains("gets tomorrow's date"),
+            "{host}: the date fill applies only to a log without Next redo"
+        );
     }
     let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
