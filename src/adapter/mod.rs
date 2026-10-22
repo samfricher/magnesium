@@ -371,35 +371,35 @@ pub(crate) fn host_session_start(
     Ok(Some(notice))
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NoticeHook<'a> {
+enum NoticeHook {
     SessionStart,
-    UserPromptSubmit { prompt: &'a str },
+    UserPromptSubmit,
 }
-impl NoticeHook<'_> {
+impl NoticeHook {
     const fn additional_context_limit(self) -> usize {
         match self {
             Self::SessionStart => 1024,
-            Self::UserPromptSubmit { .. } => 512,
+            Self::UserPromptSubmit => 512,
         }
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Clause {
     Required,
-    TeachingReminder,
+    ConfusionReminder,
+    TaskReminder,
     ReplyFeedback,
-    AskWhyConfused,
 }
 const GIVE_WAY_ORDER: [Clause; 3] = [
-    Clause::TeachingReminder,
+    Clause::ConfusionReminder,
+    Clause::TaskReminder,
     Clause::ReplyFeedback,
-    Clause::AskWhyConfused,
 ];
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
     event: Option<&str>,
-    hook: NoticeHook<'_>,
+    hook: NoticeHook,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
@@ -427,17 +427,18 @@ fn hook_notice(
         };
         clauses.push((Clause::Required, recovery.into()));
     }
-    if let (true, true, NoticeHook::UserPromptSubmit { prompt }) = (claude, active, hook) {
-        clauses.push((Clause::TeachingReminder, reply_check::reminder().into()));
+    if let (true, true, NoticeHook::UserPromptSubmit) = (claude, active, hook) {
+        clauses.push((Clause::TaskReminder, reply_check::task_reminder().into()));
+        clauses.push((
+            Clause::ConfusionReminder,
+            reply_check::CONFUSION_REMINDER.into(),
+        ));
         if let Some(feedback) = event.and_then(|event| {
             reply_check::feedback(&store.conn, host, event)
                 .ok()
                 .flatten()
         }) {
             clauses.push((Clause::ReplyFeedback, feedback.into()));
-        }
-        if reply_check::wants_the_confusion_question(prompt) {
-            clauses.push((Clause::AskWhyConfused, reply_check::ASK_WHY_CONFUSED.into()));
         }
     }
     Ok(fit(state, clauses, hook.additional_context_limit()))
@@ -515,12 +516,7 @@ pub(crate) fn host_user_prompt_submit(
             Err(_) => {
                 return Ok(Some(format!(
                     "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(
-                        &store,
-                        &context,
-                        None,
-                        NoticeHook::UserPromptSubmit { prompt: text },
-                    )?
+                    hook_notice(&store, &context, None, NoticeHook::UserPromptSubmit)?
                 )));
             }
         }
@@ -537,7 +533,7 @@ pub(crate) fn host_user_prompt_submit(
         &store,
         &context,
         ids.first().map(String::as_str),
-        NoticeHook::UserPromptSubmit { prompt: text },
+        NoticeHook::UserPromptSubmit,
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {

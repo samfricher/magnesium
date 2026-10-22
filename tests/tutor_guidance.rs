@@ -61,8 +61,9 @@ fn claude_stop(e: &TestEnvironment, thread: &str, prompt_id: &str, reply: &str) 
     assert!(output.status.success(), "{output:?}");
 }
 
-const REMINDER: &str =
-    "Teaching reply: one idea, under 200 words, end with one task if the learner wants practice.";
+const REMINDER: &str = "Teaching reply: one idea, under 200 words, end with one task.";
+const WHEN_CONFUSED: &str =
+    "If the learner is confused, ask one question to find out why before explaining.";
 
 #[test]
 fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_missed() {
@@ -70,10 +71,12 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     v2::init(&e);
     let inactive = claude_prompt(&e, "conv", "p-1", "can we practise confidence intervals?");
     assert!(!inactive.contains("Teaching reply"), "{inactive}");
+    assert!(!inactive.contains(WHEN_CONFUSED), "{inactive}");
 
     v2::start(&e, "claude", "conv");
     let first = claude_prompt(&e, "conv", "p-2", "is it 950?");
     assert!(first.contains(REMINDER), "{first}");
+    assert!(first.contains(WHEN_CONFUSED), "{first}");
     assert!(!first.contains("Previous reply"), "{first}");
     assert!(first.len() <= 512, "{} bytes: {first}", first.len());
 
@@ -81,6 +84,7 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     let second = claude_prompt(&e, "conv", "p-3", "so the margin halves?");
     assert!(second.contains(" Previous reply: 849 words."), "{second}");
     assert!(second.contains(REMINDER), "{second}");
+    assert!(!second.contains(WHEN_CONFUSED), "{second}");
     assert!(second.contains("current event e-"), "{second}");
     assert!(
         second.contains("interpret this learner turn with learning_step"),
