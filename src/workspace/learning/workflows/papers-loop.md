@@ -17,7 +17,7 @@ Each tag has one reading, in its memory: untested (no cold evidence), open (a ga
 5. A row for tag T gets a pass, without asking, when a later cold sitting passes in full and in time a question whose primary tag has T in contains, if the row's Next redo has come. Record it as Spaced redos says, with `2026-10-20 pass (MockA Q3)` in Passes. Never count a Type S row this way, since slowness is retested directly. A touches edge only lets you skip the drills and go straight to the cold redo.
 6. When a tag fails in two sittings, or fails a cold redo, start the next repair with its key_need tags (drills and one check each), then the tag. Recheck the question and its key. Then rewrite the next planned question on that tag, in its paper or redo file, with smaller steps or a worked example first. The mark scheme and the pass bar do not change.
 7. When the first consequential error on tag Y lies in a tag X that is not in Y's needs, in two separate sittings, add X to Y's needs (and to key_need when the work runs through it).
-8. Revise each affected tag memory with its new reading and reason. When an open tag needs a skill a fully correct part shows, answered with no hint, step or solution from you, add an "anchor:" line to that skill's tag memory. The readings choose the next block.
+8. Revise each affected tag memory with its new reading and reason. When an open tag needs a skill a fully correct part shows, answered with no hint, step or solution from you, add an "anchor:" line to that skill's tag memory, unless an anchor there already covers it. The readings choose the next block.
 
 Log each move, rewrite, close and new edge as a line under Changes.
 

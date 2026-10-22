@@ -158,6 +158,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "then give a changed version with the same structure and new details to solve alone.",
         "The next time they are stuck on it, give a partly worked example",
         "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
+        "Help goes back as well as down: when the learner does not solve the changed version or the full problem alone, or later fails a cold redo or delayed check of that kind, move the step back one level, so \"partly worked\" becomes \"full\" and \"full\" is removed.",
         "A learner who can start gets no example step.",
         "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
         "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
@@ -191,8 +192,10 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         for required in [
             "| Knows how to start | Let the learner try first |",
             "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
-            "| No starting move, \"example step (KIND): full\" recorded | Give a partly worked example",
-            "| No starting move, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
+            "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
+            "Record a step back in the turn that shows they did not solve the follow-up alone.",
             "Name the kind in every step, so a tag with several kinds keeps them apart.",
             "When rows conflict, take them in this order: an explicit request",
             "Record it in the turn you give the example",
@@ -218,7 +221,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
             .unwrap()
             .to_owned();
         assert!(
-            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
             "{host}"
         );
     }
@@ -337,6 +340,14 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
     ] {
         assert!(text.contains(verb), "{name} does not mention {verb:?}");
     }
+    let papers_description = include_str!("../claude-plugin/skills/papers/SKILL.md")
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .unwrap();
+    assert!(
+        papers_description.contains(verb),
+        "the papers skill description, which routes the verb to the skill, does not list {verb:?}"
+    );
     for host in ["codex", "claude", "opencode"] {
         let served = v2::tool(
             &e,
@@ -503,7 +514,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             (
                 "papers_loop",
                 None,
-                "add an \"anchor:\" line to that skill's tag memory.",
+                "add an \"anchor:\" line to that skill's tag memory, unless an anchor there already covers it.",
             ),
             (
                 "papers",
@@ -517,7 +528,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             );
         }
     }
-    let rule = "That line is the source. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
     for host in ["codex", "claude", "opencode"] {
         for stage in [
             "teach_and_practice",
@@ -561,7 +572,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
             "teach_and_practice",
             [
                 "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
-                "A learner with no starting move gets the example or problem in their row, never the anchor question first.",
+                "A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.",
                 "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
             ],
         ),
@@ -595,7 +606,9 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
             }
         }
         let teach = served("teach_and_practice");
-        let ask = teach.find("if no anchor fits, first ask").unwrap();
+        let ask = teach
+            .find("Otherwise, before you explain, if no anchor fits, first ask")
+            .unwrap();
         let first = teach
             .find("A learner with no starting move gets the worked example first")
             .unwrap();
@@ -610,7 +623,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
 fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work.";
+    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work. An answer that copies the steps of a full solution or worked example you just gave is reproduction, not an anchor.";
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
