@@ -1354,6 +1354,28 @@ fn reconcile_manifest(
 }
 
 #[test]
+fn a_search_past_its_deadline_still_finishes_creating_a_missing_index() {
+    let fixture = Fixture::new("create-index-past-deadline");
+    let index = fixture.index();
+    let expired = crate::retrieval::OperationCancellation::none()
+        .with_earlier_deadline(std::time::Instant::now());
+    let started = load_or_start_reconciliation(&index, "{}", &expired);
+    assert!(
+        matches!(started, Err(ManifestError::Cancelled)),
+        "the expired deadline still bounds the cursor transaction: {started:?}"
+    );
+    drop(open_index(&index).expect("the index was created with its identity"));
+    let journal: String = Connection::open(&index)
+        .unwrap()
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        journal, "wal",
+        "a search deadline left the new index outside WAL mode"
+    );
+}
+
+#[test]
 fn open_workspace_source_rejects_traversal_and_symlink_before_any_bytes() {
     // LEARN-206 reuses this boundary for original-byte inspection: absolute
     // paths, traversal, symlinks and non-files fail before any read, so a

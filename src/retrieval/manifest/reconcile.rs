@@ -30,7 +30,16 @@ pub(crate) fn load_or_start_reconciliation(
     initial_cursor_json: &str,
     cancellation: &OperationCancellation,
 ) -> Result<ReconciliationState, ManifestError> {
-    let connection = initialize_index(index_path, INDEX_INITIALIZATION_BUDGET, cancellation)?;
+    // Creating the index must not stop at a search's deadline: a half-created
+    // index is an empty file, or a cache that never switches to WAL mode. The
+    // caller's deadline still bounds every wait for an existing index.
+    let creating = fs::metadata(index_path).map_or(true, |metadata| metadata.len() == 0);
+    let initialization = if creating {
+        OperationCancellation::none()
+    } else {
+        cancellation.clone()
+    };
+    let connection = initialize_index(index_path, INDEX_INITIALIZATION_BUDGET, &initialization)?;
     // Immediate: the read that decides whether a cursor exists must happen
     // under the write lock, or two writers can both decide to insert and the
     // loser observes a stale snapshot instead of the committed cursor.
