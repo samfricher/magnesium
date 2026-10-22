@@ -126,9 +126,10 @@ pub(crate) enum ManifestError {
     Pdf(String),
     PdfContent(String),
     PdfContentPublished(PublishedPdfContentFailure),
-    /// The file's content cannot be extracted and extraction already recorded
-    /// it as `failed`. The wrapped error is what an explicit request for the
-    /// file reports. Worker and I/O errors are not wrapped, so they stay fatal.
+    /// Extraction failed and already recorded the file as `failed`, so a
+    /// search skips it. The wrapped error is what an explicit request for the
+    /// file reports. Every recorded failure except typed PDF content arrives
+    /// this way, including a PDF over a size, page or text limit.
     SourceFailurePublished(Box<ManifestError>),
     PdfTimeout,
 }

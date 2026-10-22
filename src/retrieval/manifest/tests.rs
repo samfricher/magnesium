@@ -2051,7 +2051,10 @@ fn v1_current_parser_failure_returns_original_error_and_only_bounded_diagnostic(
     let result = extract_source_with_pdf(&fixture.root, &index, Path::new("book.pdf"), move |_| {
         Err(ManifestError::Pdf(returned))
     });
-    assert!(matches!(result, Err(ManifestError::Pdf(ref diagnostic)) if *diagnostic == original));
+    let Err(ManifestError::SourceFailurePublished(reported)) = result else {
+        panic!("a recorded parser failure is a published failure: {result:?}");
+    };
+    assert!(matches!(*reported, ManifestError::Pdf(ref diagnostic) if *diagnostic == original));
     let connection = Connection::open(&index).unwrap();
     let (status, stored): (String, String) = connection
         .query_row(
