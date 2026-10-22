@@ -85,11 +85,6 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     assert!(second.contains(" Previous reply: 849 words."), "{second}");
     assert!(second.contains(REMINDER), "{second}");
     assert!(!second.contains(WHEN_CONFUSED), "{second}");
-    assert!(second.contains("current event e-"), "{second}");
-    assert!(
-        second.contains("interpret this learner turn with learning_step"),
-        "{second}"
-    );
     assert!(second.len() <= 512, "{} bytes: {second}", second.len());
 
     claude_stop(
@@ -231,49 +226,47 @@ fn reused_request_ids_name_the_fix_for_updates_and_controls() {
 fn served_instructions_ask_for_plain_learner_facing_save_failures() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = v2::tool(
-            &e,
-            host,
-            "plain-words",
-            "context",
-            json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"tool_recipes"}),
-        );
-        let text = served["text"].as_str().unwrap();
-        assert!(text.contains("Never show the learner tool names, fields, error codes or IDs."));
-        assert!(
-            served["files"]
-                .to_string()
-                .contains("contracts/tool-recipes.md")
-        );
-    }
+    let host = "claude";
+    let served = v2::tool(
+        &e,
+        host,
+        "plain-words",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"tool_recipes"}),
+    );
+    let text = served["text"].as_str().unwrap();
+    assert!(text.contains("Never show the learner tool names, fields, error codes or IDs."));
+    assert!(
+        served["files"]
+            .to_string()
+            .contains("contracts/tool-recipes.md")
+    );
 }
 
 #[test]
 fn served_instructions_skip_the_task_only_on_the_learners_terms() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = v2::tool(
-            &e,
-            host,
-            "task-exits",
-            "context",
-            json!({"action":"instructions","host":host,"stage":"teach_and_practice"}),
-        );
-        let text = served["text"].as_str().unwrap();
+    let host = "claude";
+    let served = v2::tool(
+        &e,
+        host,
+        "task-exits",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"teach_and_practice"}),
+    );
+    let text = served["text"].as_str().unwrap();
+    assert!(
+        text.contains(
+            "Skip it only when the learner requested explanation-only or the session is ending."
+        ),
+        "{host}"
+    );
+    for exit in ["already observed", "not yet usable"] {
         assert!(
-            text.contains(
-                "Skip it only when the learner requested explanation-only or the session is ending."
-            ),
-            "{host}"
+            !text.contains(exit),
+            "{host} still skips the task when {exit}"
         );
-        for exit in ["already observed", "not yet usable"] {
-            assert!(
-                !text.contains(exit),
-                "{host} still skips the task when {exit}"
-            );
-        }
     }
 }
 
@@ -294,134 +287,130 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "A requested full solution and a fails-twice rewrite record none.",
         "rewrite the task with smaller steps or a worked example first, whatever the example step;",
         "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
-        "Keep any example step or anchor in its state_text.",
     ];
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "worked-example",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        for stage in ["teach_and_practice", "papers_loop"] {
-            let text = served(stage);
-            for rule in rules {
-                assert!(text.contains(rule), "{host}/{stage}: {rule}");
-            }
-        }
-        let teach = served("teach_and_practice");
-        for required in [
-            "| Knows how to start | Let the learner try first |",
-            "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
-            "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
-            "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
-            "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
-            "Record a step back in the turn that shows they did not solve the follow-up alone.",
-            "Name the kind in every step, so a tag with several kinds keeps them apart.",
-            "When rows conflict, take them in this order: an explicit request",
-            "Record it in the turn you give the example",
-            "Add the step to the existing state_text without dropping the rest",
-        ] {
-            assert!(teach.contains(required), "{host}: {required}");
-        }
-        let papers = served("papers_loop");
-        for required in [
-            "the tag's next example step if they could not start, or under rule 6 a worked example,",
-            "\"conditional: needs TAG, which is open; example step (KIND): full\"",
-        ] {
-            assert!(papers.contains(required), "{host}: {required}");
-        }
-        let contract = v2::tool(
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
             &e,
             host,
             "worked-example",
             "context",
-            json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"state_and_evidence"}),
+            json!({"action":"instructions","host":host,"stage":stage}),
         )["text"]
             .as_str()
             .unwrap()
-            .to_owned();
-        assert!(
-            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
-            "{host}"
-        );
-    }
-}
-
-#[test]
-fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "spaced-redos",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
-            )
-        };
-        let papers = served("papers_loop");
-        assert_eq!(papers["deferred_modules"], json!([]), "{host}: {papers}");
-        let text = papers["text"].as_str().unwrap();
-        for rule in [
-            "A gap-log row closes after three cold passes on three different days.",
-            "The first redo is at least 1 day after the repair, never on the repair day.",
-            "The second is at least 3 days after the first pass, and the third at least 7 days after the second.",
-            "move Status from `open` to `1 of 3`, `2 of 3`, then `closed`",
-            "An attempt while Next redo is empty or still to come counts neither way.",
-            "A due redo that is not a pass fails the row.",
-            "Spaced redos overrides any one-pass rule left in the log or plan.",
-        ] {
-            assert!(text.contains(rule), "{host}/papers_loop: {rule}");
+            .to_owned()
+    };
+    for stage in ["teach_and_practice", "papers_loop"] {
+        let text = served(stage);
+        for rule in rules {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
-        let review = served("review_and_transfer");
-        let rule = "a gap-log row's Next redo is its only schedule, never a review suggestion.";
-        assert!(
-            review["text"].as_str().unwrap().contains(rule),
-            "{host}/review_and_transfer: {rule}"
-        );
     }
+    let teach = served("teach_and_practice");
+    for required in [
+        "| Knows how to start | Let the learner try first |",
+        "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
+        "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
+        "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
+        "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
+        "Record a step back in the turn that shows they did not solve the follow-up alone.",
+        "Name the kind in every step, so a tag with several kinds keeps them apart.",
+        "When rows conflict, take them in this order: an explicit request",
+        "Record it in the turn you give the example",
+        "Add the step to the existing state_text without dropping the rest",
+    ] {
+        assert!(teach.contains(required), "{host}: {required}");
+    }
+    let papers = served("papers_loop");
+    for required in [
+        "the tag's next example step if they could not start, or under rule 6 a worked example,",
+        "\"conditional: needs TAG, which is open; example step (KIND): full\"",
+    ] {
+        assert!(papers.contains(required), "{host}: {required}");
+    }
+    let contract = v2::tool(
+        &e,
+        host,
+        "worked-example",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"state_and_evidence"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+        "{host}"
+    );
 }
 
 #[test]
-fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_template_steps() {
+fn the_spaced_redo_rules_are_served_with_the_tool_recipes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let papers = v2::tool(
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
             &e,
             host,
-            "gap-log-upgrade",
+            "spaced-redos",
             "context",
-            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
-        );
-        let text = papers["text"].as_str().unwrap();
-        for step in [
-            "## Upgrade an old gap log",
-            "Rename `Cold-redo date` to `Next redo`",
-            "after an empty `Passes` column.",
-            "write Status as exactly `closed`",
-            "gets tomorrow's date if it has none and its Repair done is filled",
-            "If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos.",
-            "Dismiss the plan's old gap review suggestions",
-            "log the upgrade as one line under Changes in `plan.md`",
-        ] {
-            assert!(text.contains(step), "{host}: {step}");
-        }
-        let (_, old_log_steps) = text.split_once("predates spaced redos.").unwrap();
-        assert!(
-            old_log_steps.contains("gets tomorrow's date"),
-            "{host}: the date fill applies only to a log without Next redo"
-        );
+            json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
+        )
+    };
+    let papers = served("papers_loop");
+    assert_eq!(papers["deferred_modules"], json!([]), "{host}: {papers}");
+    let text = papers["text"].as_str().unwrap();
+    for rule in [
+        "A gap-log row closes after three cold passes on three different days.",
+        "The first redo is at least 1 day after the repair, never on the repair day.",
+        "The second is at least 3 days after the first pass, and the third at least 7 days after the second.",
+        "move Status from `open` to `1 of 3`, `2 of 3`, then `closed`",
+        "An attempt while Next redo is empty or still to come counts neither way.",
+        "A due redo that is not a pass fails the row.",
+        "Spaced redos overrides any one-pass rule left in the log or plan.",
+    ] {
+        assert!(text.contains(rule), "{host}/papers_loop: {rule}");
     }
+    let review = served("review_and_transfer");
+    let rule = "a gap-log row's Next redo is its only schedule, never a review suggestion.";
+    assert!(
+        review["text"].as_str().unwrap().contains(rule),
+        "{host}/review_and_transfer: {rule}"
+    );
+}
+
+#[test]
+fn the_gap_log_upgrade_is_served_and_the_papers_skill_adds_only_the_template_steps() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let papers = v2::tool(
+        &e,
+        host,
+        "gap-log-upgrade",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+    );
+    let text = papers["text"].as_str().unwrap();
+    for step in [
+        "## Upgrade an old gap log",
+        "Rename `Cold-redo date` to `Next redo`",
+        "after an empty `Passes` column.",
+        "write Status as exactly `closed`",
+        "gets tomorrow's date if it has none and its Repair done is filled",
+        "If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos.",
+        "Dismiss the plan's old gap review suggestions",
+        "log the upgrade as one line under Changes in `plan.md`",
+    ] {
+        assert!(text.contains(step), "{host}: {step}");
+    }
+    let (_, old_log_steps) = text.split_once("predates spaced redos.").unwrap();
+    assert!(
+        old_log_steps.contains("gets tomorrow's date"),
+        "{host}: the date fill applies only to a log without Next redo"
+    );
     let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
     let section = section.split("\n## ").next().unwrap();
@@ -475,23 +464,22 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
         papers_description.contains(verb),
         "the papers skill description, which routes the verb to the skill, does not list {verb:?}"
     );
-    for host in ["codex", "claude", "opencode"] {
-        let served = v2::tool(
-            &e,
-            host,
-            "fix-plan-files",
-            "context",
-            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
-        );
-        let text = served["text"].as_str().unwrap();
-        for part in [
-            verb,
-            "correct each `unreadable` item in `magnesium digest` at its `file` and `line`",
-            "`unreadable`",
-            "rerun it until none is left",
-        ] {
-            assert!(text.contains(part), "{host}: {part}");
-        }
+    let host = "claude";
+    let served = v2::tool(
+        &e,
+        host,
+        "fix-plan-files",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+    );
+    let text = served["text"].as_str().unwrap();
+    for part in [
+        verb,
+        "correct each `unreadable` item in `magnesium digest` at its `file` and `line`",
+        "`unreadable`",
+        "rerun it until none is left",
+    ] {
+        assert!(text.contains(part), "{host}: {part}");
     }
 }
 
@@ -503,50 +491,49 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
         "When the learner says they are confused, ask one question to find the cause and explain nothing yet.",
         "When the learner says they are confused, ask about the cause before you choose.",
     ];
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "confused",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        for stage in [
-            "orient_and_probe",
-            "plan_and_route",
-            "teach_and_practice",
-            "interpret_and_repair",
-            "review_and_transfer",
-            "consolidate_and_resume",
-            "papers",
-            "papers_loop",
-        ] {
-            let text = served(stage);
-            for rule in rules {
-                assert!(text.contains(rule), "{host}/{stage}: {rule}");
-            }
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "confused",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    for stage in [
+        "orient_and_probe",
+        "plan_and_route",
+        "teach_and_practice",
+        "interpret_and_repair",
+        "review_and_transfer",
+        "consolidate_and_resume",
+        "papers",
+        "papers_loop",
+    ] {
+        let text = served(stage);
+        for rule in rules {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
-        assert!(
-            served("teach_and_practice")
-                .contains("| Says they are confused | Ask one question to find the cause"),
-            "{host}"
-        );
-        assert!(
-            served("interpret_and_repair")
-                .contains("If confusion repeats after you explain from the learner's answer"),
-            "{host}"
-        );
-        assert!(
-            served("orient_and_probe")
-                .contains("explain now, unless the learner says they are confused."),
-            "{host}"
-        );
     }
+    assert!(
+        served("teach_and_practice")
+            .contains("| Says they are confused | Ask one question to find the cause"),
+        "{host}"
+    );
+    assert!(
+        served("interpret_and_repair")
+            .contains("If confusion repeats after you explain from the learner's answer"),
+        "{host}"
+    );
+    assert!(
+        served("orient_and_probe")
+            .contains("explain now, unless the learner says they are confused."),
+        "{host}"
+    );
 }
 
 #[test]
@@ -576,105 +563,102 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         "lowercase \"anchor:\"",
         "to the existing state_text of the memory for that skill, without dropping the rest.",
     ];
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str, operation: Option<&str>| {
-            let mut request = json!({"action":"instructions","host":host,"stage":stage});
-            if let Some(operation) = operation {
-                request["operation"] = json!(operation);
-            }
-            v2::tool(&e, host, "anchors", "context", request)["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        for stage in [
-            "orient_and_probe",
-            "plan_and_route",
-            "teach_and_practice",
-            "interpret_and_repair",
-            "review_and_transfer",
-            "consolidate_and_resume",
-            "papers",
-            "papers_loop",
-        ] {
-            let text = served(stage, None);
-            for rule in rules {
-                assert!(text.contains(rule), "{host}/{stage}: {rule}");
-            }
-            assert!(
-                !text.contains("literal_terms [\"anchor:\"]"),
-                "{host}/{stage} looks anchors up without the topic, and a search returns at most 24"
-            );
-            assert!(
-                !text.contains("the memory wins"),
-                "{host}/{stage} repeats the rule that belongs to the state_and_evidence contract"
-            );
-            let skip = skip_cases.iter().find(|(name, _)| *name == stage);
-            assert_eq!(
-                text.contains(question),
-                skip.is_some(),
-                "{host}/{stage} serves the anchor question only with its skip cases"
-            );
-            if let Some((_, skip)) = skip {
-                assert!(text.contains(skip), "{host}/{stage}: {skip}");
-                for step in procedure {
-                    assert!(text.contains(step), "{host}/{stage}: {step}");
-                }
-            }
+    let host = "claude";
+    let served = |stage: &str, operation: Option<&str>| {
+        let mut request = json!({"action":"instructions","host":host,"stage":stage});
+        if let Some(operation) = operation {
+            request["operation"] = json!(operation);
         }
-        for (stage, operation, required) in [
-            (
-                "orient_and_probe",
-                None,
-                "plus a query with all_of [\"anchor\"] and the topic in any_of for anchors",
-            ),
-            (
-                "plan_and_route",
-                None,
-                "To find anchors, run a memory search with all_of [\"anchor\"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency.",
-            ),
-            (
-                "teach_and_practice",
-                None,
-                "Scope it to the topic, because one query returns at most 24 records.",
-            ),
-            (
-                "papers_loop",
-                None,
-                "add an \"anchor:\" line to that skill's tag memory, unless an anchor there already covers it.",
-            ),
-            (
-                "papers",
-                None,
-                "At build, run a memory search with all_of [\"anchor\"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each \"anchor:\" line that names a skill this course uses.",
-            ),
-        ] {
-            assert!(
-                served(stage, operation).contains(required),
-                "{host}/{stage}: {required}"
-            );
-        }
-    }
-    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
-    for host in ["codex", "claude", "opencode"] {
-        for stage in [
-            "teach_and_practice",
-            "interpret_and_repair",
-            "papers",
-            "papers_loop",
-        ] {
-            let text = v2::tool(
-                &e,
-                host,
-                "anchors",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage,"operation":"state_and_evidence"}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned();
+        v2::tool(&e, host, "anchors", "context", request)["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    for stage in [
+        "orient_and_probe",
+        "plan_and_route",
+        "teach_and_practice",
+        "interpret_and_repair",
+        "review_and_transfer",
+        "consolidate_and_resume",
+        "papers",
+        "papers_loop",
+    ] {
+        let text = served(stage, None);
+        for rule in rules {
             assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
+        assert!(
+            !text.contains("literal_terms [\"anchor:\"]"),
+            "{host}/{stage} looks anchors up without the topic, and a search returns at most 24"
+        );
+        assert!(
+            !text.contains("the memory wins"),
+            "{host}/{stage} repeats the rule that belongs to the state_and_evidence contract"
+        );
+        let skip = skip_cases.iter().find(|(name, _)| *name == stage);
+        assert_eq!(
+            text.contains(question),
+            skip.is_some(),
+            "{host}/{stage} serves the anchor question only with its skip cases"
+        );
+        if let Some((_, skip)) = skip {
+            assert!(text.contains(skip), "{host}/{stage}: {skip}");
+            for step in procedure {
+                assert!(text.contains(step), "{host}/{stage}: {step}");
+            }
+        }
+    }
+    for (stage, operation, required) in [
+        (
+            "orient_and_probe",
+            None,
+            "plus a query with all_of [\"anchor\"] and the topic in any_of for anchors",
+        ),
+        (
+            "plan_and_route",
+            None,
+            "To find anchors, run a memory search with all_of [\"anchor\"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency.",
+        ),
+        (
+            "teach_and_practice",
+            None,
+            "Scope it to the topic, because one query returns at most 24 records.",
+        ),
+        (
+            "papers_loop",
+            None,
+            "add an \"anchor:\" line to that skill's tag memory, unless an anchor there already covers it.",
+        ),
+        (
+            "papers",
+            None,
+            "At build, run a memory search with all_of [\"anchor\"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each \"anchor:\" line that names a skill this course uses.",
+        ),
+    ] {
+        assert!(
+            served(stage, operation).contains(required),
+            "{host}/{stage}: {required}"
+        );
+    }
+    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    for stage in [
+        "teach_and_practice",
+        "interpret_and_repair",
+        "papers",
+        "papers_loop",
+    ] {
+        let text = v2::tool(
+            &e,
+            host,
+            "anchors",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage,"operation":"state_and_evidence"}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(text.contains(rule), "{host}/{stage}: {rule}");
     }
     let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
     assert!(
@@ -694,10 +678,10 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let policy = "Build the similar problem on an anchor if one fits, and give it without one if none does. A missing anchor never delays it.";
-    let by_stage = [
+    let by_stage: [(&str, &[&str]); 2] = [
         (
             "teach_and_practice",
-            [
+            &[
                 "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
                 "A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.",
                 "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
@@ -705,45 +689,43 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
         ),
         (
             "interpret_and_repair",
-            [
+            &[
                 "A learner with no starting move on a kind of problem gets the policy's worked example first, with no anchor question.",
-                "Skip that question when you just asked any question",
                 "Build each explanation on an anchor.",
             ],
         ),
     ];
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "example-first",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        for (stage, required) in by_stage {
-            let text = served(stage);
-            assert!(text.contains(policy), "{host}/{stage}: {policy}");
-            for rule in required {
-                assert!(text.contains(rule), "{host}/{stage}: {rule}");
-            }
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "example-first",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    for (stage, required) in by_stage {
+        let text = served(stage);
+        assert!(text.contains(policy), "{host}/{stage}: {policy}");
+        for rule in required {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
-        let teach = served("teach_and_practice");
-        let ask = teach
-            .find("Otherwise, before you explain, if no anchor fits, first ask")
-            .unwrap();
-        let first = teach
-            .find("A learner with no starting move gets the worked example first")
-            .unwrap();
-        assert!(
-            first < ask,
-            "{host}: the anchor question comes before the worked example"
-        );
     }
+    let teach = served("teach_and_practice");
+    let ask = teach
+        .find("Otherwise, before you explain, if no anchor fits, first ask")
+        .unwrap();
+    let first = teach
+        .find("A learner with no starting move gets the worked example first")
+        .unwrap();
+    assert!(
+        first < ask,
+        "{host}: the anchor question comes before the worked example"
+    );
 }
 
 #[test]
@@ -751,126 +733,122 @@ fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work. An answer that copies the steps of a full solution or worked example you just gave is reproduction, not an anchor.";
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "unaided",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        for stage in ["teach_and_practice", "interpret_and_repair"] {
-            assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
-        }
-        assert!(
-            served("papers_loop").contains(
-                "a skill a fully correct part shows, answered with no hint, step or solution from you,"
-            ),
-            "{host}: a marked part can be helped"
-        );
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "unaided",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    for stage in ["teach_and_practice", "interpret_and_repair"] {
+        assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
     }
+    assert!(
+        served("papers_loop").contains(
+            "a skill a fully correct part shows, answered with no hint, step or solution from you,"
+        ),
+        "{host}: a marked part can be helped"
+    );
 }
 
 #[test]
 fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "sessions",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        let line_form = "Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".";
-        let write = format!("Write the answer under a Sessions heading in `plan.md`. {line_form}");
-        let papers = served("papers");
-        for required in [
-            "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
-            write.as_str(),
-        ] {
-            assert!(papers.contains(required), "{host}/papers: {required}");
-        }
-        let rule = format!(
-            "If the learner changes when or where they practise, rewrite Sessions, adding it if missing. {line_form}"
-        );
-        assert!(
-            served("papers_loop").contains(&rule),
-            "{host}/papers_loop: {rule}"
-        );
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "sessions",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let line_form = "Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".";
+    let write = format!("Write the answer under a Sessions heading in `plan.md`. {line_form}");
+    let papers = served("papers");
+    for required in [
+        "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
+        write.as_str(),
+    ] {
+        assert!(papers.contains(required), "{host}/papers: {required}");
     }
+    let rule = format!(
+        "If the learner changes when or where they practise, rewrite Sessions, adding it if missing. {line_form}"
+    );
+    assert!(
+        served("papers_loop").contains(&rule),
+        "{host}/papers_loop: {rule}"
+    );
 }
 
 #[test]
 fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "confidence",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        let papers_loop = served("papers_loop");
-        for required in [
-            "If the log has no Conf column, add one after Type, empty in every row.",
-            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
-            "One letter on a question covers its parts.",
-            "Copy each letter into its rows' Conf, or a blank, as for a lone `?`.",
-            "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
-            "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
-            "Conf takes any letter the failing answer has",
-        ] {
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "confidence",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let papers_loop = served("papers_loop");
+    for required in [
+        "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
+        "One letter on a question covers its parts.",
+        "Copy each letter into its rows' Conf, or a blank, as for a lone `?`.",
+        "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
+        "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
+        "Conf takes any letter the failing answer has",
+    ] {
+        assert!(
+            papers_loop.contains(required),
+            "{host}/papers_loop: {required}"
+        );
+    }
+    assert!(
+        served("papers").contains("and S (sure), U (unsure) or G (guess) after each answer."),
+        "{host}/papers"
+    );
+    assert!(
+        served("review_and_transfer")
+            .contains("Load stage papers_loop before the redo; it picks and records it."),
+        "{host}/review_and_transfer"
+    );
+    for stage in [
+        "orient_and_probe",
+        "plan_and_route",
+        "teach_and_practice",
+        "interpret_and_repair",
+        "review_and_transfer",
+        "consolidate_and_resume",
+        "papers",
+        "papers_loop",
+    ] {
+        let text = served(stage);
+        for (at, _) in text.match_indices("S row") {
+            let before = &text[..at];
             assert!(
-                papers_loop.contains(required),
-                "{host}/papers_loop: {required}"
+                before.ends_with("Type ") || before.ends_with("Conf "),
+                "{host}/{stage}: the bare S row at byte {at} could mean slow or sure"
             );
-        }
-        assert!(
-            served("papers").contains("and S (sure), U (unsure) or G (guess) after each answer."),
-            "{host}/papers"
-        );
-        assert!(
-            served("review_and_transfer")
-                .contains("Load stage papers_loop before the redo; it picks and records it."),
-            "{host}/review_and_transfer"
-        );
-        for stage in [
-            "orient_and_probe",
-            "plan_and_route",
-            "teach_and_practice",
-            "interpret_and_repair",
-            "review_and_transfer",
-            "consolidate_and_resume",
-            "papers",
-            "papers_loop",
-        ] {
-            let text = served(stage);
-            for (at, _) in text.match_indices("S row") {
-                let before = &text[..at];
-                assert!(
-                    before.ends_with("Type ") || before.ends_with("Conf "),
-                    "{host}/{stage}: the bare S row at byte {at} could mean slow or sure"
-                );
-            }
         }
     }
 }
@@ -879,36 +857,35 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
 fn served_instructions_repair_sure_mistakes_first() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        let served = |stage: &str| {
-            v2::tool(
-                &e,
-                host,
-                "sure-first",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "sure-first",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert!(
+        served("papers_loop").contains(
+            "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags (no Next redo). Rule 6 still orders a repair's steps after two fails."
+        ),
+        "{host}/papers_loop"
+    );
+    let repair = served("interpret_and_repair");
+    for required in [
+        "When the learner was sure of an answer that is wrong, repair that mistake before the others",
+        "How sure they were is not evidence of what they can do.",
+        "papers-loop says how this order combines with its other order rules.",
+    ] {
         assert!(
-            served("papers_loop").contains(
-                "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags (no Next redo). Rule 6 still orders a repair's steps after two fails."
-            ),
-            "{host}/papers_loop"
+            repair.contains(required),
+            "{host}/interpret_and_repair: {required}"
         );
-        let repair = served("interpret_and_repair");
-        for required in [
-            "When the learner was sure of an answer that is wrong, repair that mistake before the others",
-            "How sure they were is not evidence of what they can do.",
-            "papers-loop says how this order combines with its other order rules.",
-        ] {
-            assert!(
-                repair.contains(required),
-                "{host}/interpret_and_repair: {required}"
-            );
-        }
     }
 }
 

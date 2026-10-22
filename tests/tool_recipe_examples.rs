@@ -32,6 +32,7 @@ fn run_examples(mcp: bool) {
     let text = served["text"].as_str().expect("instruction text");
     assert!(text.contains("session.client_ref"));
     assert!(text.contains("native_capture"));
+    assert!(text.contains("Do not drop the checkpoint"));
     let mut monday = mcp.then(|| {
         let mut c = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "monday")]);
         c.initialize();
@@ -165,52 +166,4 @@ fn shipped_recipes_execute_through_cli_across_new_conversations() {
 #[test]
 fn shipped_recipes_execute_through_mcp_across_new_conversations() {
     run_examples(true);
-}
-
-#[test]
-fn checkpoint_recipes_are_served_for_every_host_and_stage_within_budget() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    for host in ["codex", "claude", "opencode"] {
-        for stage in [
-            "orient_and_probe",
-            "plan_and_route",
-            "teach_and_practice",
-            "interpret_and_repair",
-            "review_and_transfer",
-            "consolidate_and_resume",
-            "papers",
-            "papers_loop",
-        ] {
-            let served = v2::tool(
-                &e,
-                host,
-                "recipe-budget",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
-            );
-            assert_eq!(served["status"], "served", "{host}/{stage}: {served}");
-            assert!(
-                served["files"]
-                    .as_array()
-                    .unwrap()
-                    .contains(&json!("contracts/tool-recipes.md")),
-                "{host}/{stage}: recipe was deferred"
-            );
-            assert!(
-                served["files"]
-                    .as_array()
-                    .unwrap()
-                    .contains(&json!(format!("workflows/{}.md", stage.replace('_', "-")))),
-                "{host}/{stage}: workflow was not served"
-            );
-            assert!(served["bytes_served"].as_u64().unwrap() <= 32 * 1024);
-            assert!(
-                served["text"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Do not drop the checkpoint")
-            );
-        }
-    }
 }

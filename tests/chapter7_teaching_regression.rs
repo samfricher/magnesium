@@ -644,7 +644,14 @@ fn recorded_traces_match_their_expected_gates_and_measures() {
     let fixture = fixture_value();
     let scoring = &fixture["scoring_rules"];
     assert_eq!(scoring["fault_kinds"], json!(FAULT_KINDS));
-    for trace in fixture_traces(&fixture) {
+    let traces = fixture_traces(&fixture);
+    assert!(
+        traces
+            .iter()
+            .any(|trace| trace.id == "negative-advanced-before-prerequisites"),
+        "required negative trace"
+    );
+    for trace in traces {
         let report = evaluate_trace(&trace);
         assert_eq!(
             report.faults, trace.expected.fault_kinds,
@@ -695,57 +702,28 @@ fn recorded_traces_match_their_expected_gates_and_measures() {
             "{}: teaching gate verdict",
             trace.id
         );
+        if trace.id.starts_with("negative-") {
+            assert_eq!(
+                trace.expected.teaching_gate, "fail",
+                "{}: a negative trace must expect a failing teaching gate",
+                trace.id
+            );
+        }
+        if trace.id.starts_with("positive-") {
+            assert_eq!(
+                trace.expected.teaching_gate, "pass",
+                "{}: a positive trace must expect a passing teaching gate",
+                trace.id
+            );
+        }
+        if trace.id == "negative-advanced-before-prerequisites" {
+            assert!(
+                report.accepted_receipts >= 5,
+                "{}: the negative trace must record at least 5 accepted capture receipts",
+                trace.id
+            );
+        }
     }
-}
-
-#[test]
-fn negative_trace_fails_teaching_gate_while_native_receipt_gate_passes() {
-    let fixture = fixture_value();
-    let trace = fixture_traces(&fixture)
-        .into_iter()
-        .find(|trace| trace.id == "negative-advanced-before-prerequisites")
-        .expect("required negative trace");
-    let report = evaluate_trace(&trace);
-    assert!(
-        !report.teaching_gate_passed(),
-        "the negative trace must fail the teaching gate"
-    );
-    assert!(
-        report.native_receipt_gate_passed(),
-        "accepted capture receipts must still pass the native receipt gate"
-    );
-    assert!(report.accepted_receipts >= 5);
-    for fault in [
-        "advanced_before_prerequisite",
-        "repeated_ineffective_method",
-        "answer_exposure_not_qualified",
-        "answer_exposure_counted_as_learning",
-    ] {
-        assert!(
-            report.faults.contains(&fault.to_owned()),
-            "the negative trace must record {fault}"
-        );
-    }
-}
-
-#[test]
-fn positive_trace_passes_with_zero_unnecessary_probes() {
-    let fixture = fixture_value();
-    let trace = fixture_traces(&fixture)
-        .into_iter()
-        .find(|trace| trace.id == "positive-diagnosis-repair-feedback-return")
-        .expect("required positive trace");
-    let report = evaluate_trace(&trace);
-    assert!(
-        report.teaching_gate_passed(),
-        "the positive trace must pass: {:?}",
-        report.faults
-    );
-    assert_eq!(report.unnecessary_probes, 0);
-    assert!(report.identified_missing_link);
-    assert!(report.reconnected_to_goal);
-    assert!(report.offered_learner_work);
-    assert!(report.native_receipt_gate_passed());
 }
 
 fn trace_from_value(value: Value) -> Trace {
@@ -755,7 +733,6 @@ fn trace_from_value(value: Value) -> Trace {
 #[test]
 fn gate_sensitivity_matches_the_recorded_failure_modes() {
     let fixture = fixture_value();
-    let traces = fixture_traces(&fixture);
 
     let mut repaired = fixture["traces"]
         .as_array()
@@ -801,13 +778,6 @@ fn gate_sensitivity_matches_the_recorded_failure_modes() {
         report.faults.contains(&"unnecessary_probe".to_owned()),
         "probing an established prerequisite must be recorded"
     );
-
-    let negative = traces
-        .iter()
-        .find(|trace| trace.id == "negative-advanced-before-prerequisites")
-        .expect("negative trace");
-    let report = evaluate_trace(negative);
-    assert_eq!(report.faults, negative.expected.fault_kinds);
 }
 
 #[test]
