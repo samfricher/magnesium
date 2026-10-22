@@ -158,6 +158,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "then give a changed version with the same structure and new details to solve alone.",
         "The next time they are stuck on it, give a partly worked example",
         "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
+        "Help goes back as well as down: when the learner does not solve the changed version or the full problem alone, or later fails a cold redo or delayed check of that kind, move the step back one level, so \"partly worked\" becomes \"full\" and \"full\" is removed.",
         "A learner who can start gets no example step.",
         "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
         "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
@@ -191,8 +192,10 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         for required in [
             "| Knows how to start | Let the learner try first |",
             "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
-            "| No starting move, \"example step (KIND): full\" recorded | Give a partly worked example",
-            "| No starting move, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
+            "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
+            "Record a step back in the turn that shows they did not solve the follow-up alone.",
             "Name the kind in every step, so a tag with several kinds keeps them apart.",
             "When rows conflict, take them in this order: an explicit request",
             "Record it in the turn you give the example",
@@ -218,7 +221,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
             .unwrap()
             .to_owned();
         assert!(
-            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
             "{host}"
         );
     }

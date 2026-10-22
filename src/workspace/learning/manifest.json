@@ -14,13 +14,13 @@
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "7d7ef7321aaf3997aafe1a7b80c6ece1d149df7328cd844de48fde9602871381"
+      "sha256": "579b19b7fef88083c984341c19b4712e1ef3d432be83893df1b0dffb3889c90b"
     },
     {
       "path": "contracts/state-and-evidence.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "bf9b24e62011a8291a64dc0c0cd1150614f08f2e15bdb1422071d6e695dea5d9"
+      "sha256": "af4ba10882d2d2e817a4ee9b12d4055fe13009f318e4aedd9fbd9ddc94941e86"
     },
     {
       "path": "contracts/source-use.md",
@@ -52,7 +52,7 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "2a5244496c753c390a77dc7a550a7af3e6bc83d7820de54f0d7467f435277232",
+      "sha256": "7a506d9b8f956bd4d454db6b3cc44dfa59b7c9a78832240965adad5f7c60a9b1",
       "stage": "teach-and-practice"
     },
     {
