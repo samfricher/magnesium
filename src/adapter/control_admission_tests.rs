@@ -675,22 +675,43 @@ fn actual_store_failure_with_valid_reported_control_keeps_truthful_deny_fallback
 }
 
 #[test]
-fn typed_control_resolution_distinguishes_storage_failure_and_validates_before_sql() {
-    let f = Fixture::new();
-    f.store
-        .conn
-        .execute_batch("DROP TABLE learning_events")
-        .unwrap();
-    let native: super::ControlRequest = serde_json::from_value(json!({"schema":SCHEMA,"action":"control","request_id":"native-off","control":"recording_off","turn_ref":"current-native"})).unwrap();
-    assert!(matches!(
-        super::control_admission::control_event(&f.store, &f.host, &native),
-        Err(super::control_admission::ControlEventError::Storage(_))
-    ));
-    let missing: super::ControlRequest = serde_json::from_value(json!({"schema":SCHEMA,"action":"control","request_id":"missing-off","control":"recording_off"})).unwrap();
-    assert!(matches!(
-        super::control_admission::control_event(&f.store, &f.host, &missing),
-        Err(super::control_admission::ControlEventError::Input(_))
-    ));
-    assert!(!f.marker().exists());
-    assert!(!super::control_admission::local_capture_suppressed(&f.workspace, &f.host).unwrap());
+fn native_stop_control_cannot_be_validated_while_the_event_store_is_unreadable() {
+    for control in ["pause", "stop", "recording_off"] {
+        let f = Fixture::new();
+        f.start();
+        let before = f.store.binding(&f.host).unwrap();
+        let receipt_count: i64 = f
+            .store
+            .conn
+            .query_row("SELECT count(*) FROM operation_receipts", [], |r| r.get(0))
+            .unwrap();
+        f.store
+            .conn
+            .execute_batch("DROP TABLE learning_events")
+            .unwrap();
+        let request = json!({"schema":SCHEMA,"action":"control","request_id":"native-stop","control":control,"turn_ref":"current-native"});
+        let error =
+            super::dispatch_with_host(&f.root, "learning_step", request, Some(f.host.clone()))
+                .unwrap_err();
+        assert!(
+            error.starts_with("control_unavailable: turn_ref cannot be validated"),
+            "{control}: {error}"
+        );
+        assert!(!error.contains("unknown_reference"), "{control}: {error}");
+        assert_eq!(f.store.binding(&f.host).unwrap(), before, "{control}");
+        assert_eq!(
+            f.store
+                .conn
+                .query_row("SELECT count(*) FROM operation_receipts", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            receipt_count,
+            "{control}"
+        );
+        assert!(!f.marker().exists(), "{control}");
+        assert!(
+            !super::control_admission::local_capture_suppressed(&f.workspace, &f.host).unwrap(),
+            "{control}"
+        );
+    }
 }

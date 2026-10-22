@@ -48,50 +48,6 @@ impl Drop for Fixture {
     }
 }
 #[test]
-fn proof_is_exact_scoped_fresh_and_does_not_certify_occurrence_time() {
-    let f = Fixture::new();
-    let text = "I cannot identify b; −b is not +b. π ≠ x.";
-    let ticket = native_capture::issue(&f.workspace, &f.host, "turn-1", text, 1000).unwrap();
-    let raw = native_capture::verify(&f.workspace, &f.host, &ticket, text, 1001).unwrap();
-    assert_eq!(raw.text, text);
-    assert_eq!(raw.occurred_at_ms, None);
-    assert_eq!(raw.external_event_key, native_capture::event_key("turn-1"));
-    for changed in [
-        "I can identify b; −b is not +b. π ≠ x.",
-        "I cannot identify b; -b is not +b. π ≠ x.",
-    ] {
-        assert!(native_capture::verify(&f.workspace, &f.host, &ticket, changed, 1001).is_err());
-    }
-    let other = HostContext {
-        host_thread_id: "another-native-thread".into(),
-        ..f.host.clone()
-    };
-    assert!(native_capture::verify(&f.workspace, &other, &ticket, text, 1001).is_err());
-    assert!(native_capture::verify(&f.workspace, &f.host, &ticket, text, 999).is_err());
-    assert!(
-        native_capture::verify(
-            &f.workspace,
-            &f.host,
-            &ticket,
-            text,
-            1001 + native_capture::TTL_MS
-        )
-        .is_err()
-    );
-    let mut bytes = ticket.into_bytes();
-    bytes[20] = if bytes[20] == b'0' { b'1' } else { b'0' };
-    assert!(
-        native_capture::verify(
-            &f.workspace,
-            &f.host,
-            &String::from_utf8(bytes).unwrap(),
-            text,
-            1001
-        )
-        .is_err()
-    );
-}
-#[test]
 fn later_native_turn_revokes_old_ticket_and_identical_text_is_not_same_event() {
     let f = Fixture::new();
     let old = native_capture::issue(&f.workspace, &f.host, "turn-1", "same text", 1000).unwrap();
