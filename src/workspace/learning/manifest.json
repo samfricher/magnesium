@@ -20,7 +20,7 @@
       "path": "contracts/state-and-evidence.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "6208a342b2a5bcbddd74924846c75f927909f80beec512f5e5a2e9568d663a6f"
+      "sha256": "bf9b24e62011a8291a64dc0c0cd1150614f08f2e15bdb1422071d6e695dea5d9"
     },
     {
       "path": "contracts/source-use.md",
@@ -52,14 +52,14 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "8a4cc0d0104a5a4328446f97164ad4dd94c46af3736904eadd1f34280dbb69ed",
+      "sha256": "2a5244496c753c390a77dc7a550a7af3e6bc83d7820de54f0d7467f435277232",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "3d6e840616c34a699ffdeb1e9bc6b73d8873d6a70d568087750f50aabfe8b78a",
+      "sha256": "9369810d4d9aefec95b06fe2807f0f7f78873e933af815b723694071c4722309",
       "stage": "interpret-and-repair"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "1e97ebd79e6a8dd16e7ecb700493756bc0e146b75a02bbaa9b9099aa4af98cad",
+      "sha256": "f79e8cb8913f560b6ddc4d5f708b60c52cf5b5133ea394456d8a02d74c986aa9",
       "stage": "papers-loop"
     },
     {

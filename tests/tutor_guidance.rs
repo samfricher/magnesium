@@ -370,7 +370,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             (
                 "papers_loop",
                 None,
-                "add an \"anchor:\" line to that skill's tag memory.",
+                "add an \"anchor:\" line to that skill's tag memory, unless an anchor there already covers it.",
             ),
             (
                 "papers",
@@ -384,7 +384,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             );
         }
     }
-    let rule = "That line is the source. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
     for host in ["codex", "claude", "opencode"] {
         for stage in [
             "teach_and_practice",
@@ -428,7 +428,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
             "teach_and_practice",
             [
                 "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
-                "A learner with no starting move gets the example or problem in their row, never the anchor question first.",
+                "A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.",
                 "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
             ],
         ),
@@ -462,7 +462,9 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
             }
         }
         let teach = served("teach_and_practice");
-        let ask = teach.find("if no anchor fits, first ask").unwrap();
+        let ask = teach
+            .find("Otherwise, before you explain, if no anchor fits, first ask")
+            .unwrap();
         let first = teach
             .find("A learner with no starting move gets the worked example first")
             .unwrap();
@@ -477,7 +479,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
 fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work.";
+    let rule = "Add an anchor only from an unaided answer, one the learner gave with no hint, step or solution from you after you asked the question, since an anchor is their own work. An answer that copies the steps of a full solution or worked example you just gave is reproduction, not an anchor.";
     for host in ["codex", "claude", "opencode"] {
         let served = |stage: &str| {
             v2::tool(
