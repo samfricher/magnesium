@@ -1,6 +1,6 @@
 //! Background indexing after a search. A search indexes only what fits its own
 //! small budget, so the MCP server then keeps one thread per workspace indexing
-//! until nothing is left. Searches keep their own budget and behavior.
+//! until nothing is left.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -88,7 +88,7 @@ pub(super) fn catch_up(
 /// means the pass between them changed nothing, so catch-up stops rather than
 /// repeat it. A file that fails without publishing is skipped; an error from
 /// the index itself or shutdown stops catch-up, and the next search schedules
-/// it again. `extract` indexes one source, so tests can substitute a slow one.
+/// it again.
 pub(super) fn catch_up_with(
     workspace_root: &Path,
     cancellation: &OperationCancellation,
