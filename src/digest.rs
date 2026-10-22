@@ -414,8 +414,19 @@ struct GapLog<'a> {
 
 impl<'a> GapLog<'a> {
     /// Rows that are not closed become gaps. A row whose cells do not line up
-    /// with the header, or whose Next redo is not a date, is never guessed at.
+    /// with the header, or whose Next redo is not a date, is never guessed at,
+    /// and neither is a row below a break in the table.
     fn read(file: &str, table: &'a Table) -> Self {
+        let mut log = Self::read_rows(file, table);
+        for &line in &table.later_rows {
+            let reason = "the row comes after a break in the Gaps table, such as a blank line";
+            log.unreadable
+                .push(Unreadable::at(file, "Gaps", line, reason.to_owned()));
+        }
+        log
+    }
+
+    fn read_rows(file: &str, table: &'a Table) -> Self {
         let mut log = Self {
             unfixed: Vec::new(),
             unreadable: Vec::new(),
@@ -529,10 +540,13 @@ struct Row {
 
 /// The first Markdown table in a section. Columns are found by header name,
 /// because the agent may add, drop or reorder columns in its copy of a template.
+/// A line that is not a table row ends the table; `later_rows` holds the line
+/// of each table row after that, so a reader can report what it did not read.
 struct Table {
     header: Vec<String>,
     header_line: usize,
     rows: Vec<Row>,
+    later_rows: Vec<usize>,
 }
 
 impl Table {
@@ -542,22 +556,27 @@ impl Table {
             .lines()
             .enumerate()
             .map(|(index, line)| (section.first_line + index, line.trim()))
-            .skip_while(|(_, line)| !line.starts_with('|'))
+            .skip_while(|(_, line)| !line.starts_with('|'));
+        let mut rows = lines
+            .by_ref()
             .take_while(|(_, line)| line.starts_with('|'))
             .map(|(line, text)| Row {
                 line,
                 cells: split_cells(text),
             })
-            .filter(|row| {
-                !row.cells
-                    .iter()
-                    .all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
-            });
-        let header = lines.next();
+            .filter(|row| !is_separator(&row.cells))
+            .collect::<Vec<_>>()
+            .into_iter();
+        let later_rows = lines
+            .filter(|(_, text)| text.starts_with('|') && !is_separator(&split_cells(text)))
+            .map(|(line, _)| line)
+            .collect();
+        let header = rows.next();
         Self {
             header_line: header.as_ref().map_or(0, |row| row.line),
             header: header.map(|row| row.cells).unwrap_or_default(),
-            rows: lines.collect(),
+            rows: rows.collect(),
+            later_rows,
         }
     }
 
@@ -594,6 +613,12 @@ fn split_cells(line: &str) -> Vec<String> {
         }
     }
     cells.iter().map(|cell| cell.trim().to_owned()).collect()
+}
+
+fn is_separator(cells: &[String]) -> bool {
+    cells
+        .iter()
+        .all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
 }
 
 fn is_placeholder(cell: &str) -> bool {
@@ -905,6 +930,38 @@ mod tests {
         assert_eq!(unreadable_lines(&value), [("Gaps", 8)]);
         assert_eq!(value["unfixed_gaps"], 3);
         assert_eq!(value["redos_due"], 3);
+    }
+
+    #[test]
+    fn rows_after_a_break_in_the_gaps_table_are_reported_and_left_out_of_the_counts() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let gaps = "## Gaps\n\n| # | Date | Paper | Q | Next redo | Status |\n|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | 2026-10-19 | open |\n\
+            \n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | 2026-10-18 | open |\n\
+            ### Paper1-Easy\n\
+            | # | Date | Paper | Q | Next redo | Status |\n|---|---|---|---|---|---|\n\
+            | 3 | 2026-10-15 | Paper1-Easy | Q4 | 2026-10-17 | 1 of 3 |\n\
+            \n\
+            ## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n";
+        let value = plan_digest("midterm-1", PLAN, gaps, today, &[]);
+        assert_eq!(
+            unreadable_lines(&value),
+            [("Gaps", 7), ("Gaps", 9), ("Gaps", 11)]
+        );
+        let reason = value["unreadable"][0]["reason"].as_str().unwrap();
+        assert!(reason.contains("break"), "{reason}");
+        assert_eq!(value["unfixed_gaps"], 1);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 0})
+        );
+
+        let only_after_a_break = "## Gaps\n\n| # | Date | Next redo | Status |\n|---|---|---|---|\n\n| 1 | 2026-10-14 | 2026-10-19 | open |\n";
+        let value = plan_digest("midterm-1", PLAN, only_after_a_break, today, &[]);
+        assert_eq!(unreadable_lines(&value), [("Gaps", 6)]);
+        assert_eq!(value["unfixed_gaps"], 0);
     }
 
     #[test]
