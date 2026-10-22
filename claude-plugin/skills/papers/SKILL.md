@@ -1,6 +1,6 @@
 ---
 name: papers
-description: Durable plans of timed practice papers in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild). Ordinary coding or repository work does not start it.
+description: Durable plans of timed practice papers in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me TAG, repair TAG, cold redo, new mock, re-time today, fix my plan files, rebuild). Ordinary coding or repository work does not start it.
 ---
 
 # Magnesium papers
@@ -20,7 +20,7 @@ In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-2
 
 ## Loop verbs
 
-Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild. Only "rebuild" starts the plan over.
+Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, fix my plan files, rebuild. Only "rebuild" starts the plan over.
 
 ## Templates
 
@@ -37,6 +37,13 @@ When Claude Code loads this skill, it prints "Base directory for this skill: <pa
 | `preamble.tex`, `build.sh` | `Study/<target>/papers/src/`, for LaTeX papers; one `<Name>-body.tex` per paper |
 
 Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, as the ramp needs them. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
+
+## Upgrade an old gap log
+
+A `gap-log.md` without a `Next redo` column comes from an older template. The `papers_loop` stage holds the upgrade steps that every host follows. After them, use this skill's templates:
+
+1. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+2. In `plan.md`, replace step 5 of the Method with the template's step 5.
 
 ## Optional tools
 

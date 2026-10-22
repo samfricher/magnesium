@@ -228,6 +228,140 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
 }
 
 #[test]
+fn every_host_is_served_the_spaced_redo_rules_with_its_tool_recipes() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "spaced-redos",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
+            )
+        };
+        let papers = served("papers_loop");
+        assert_eq!(papers["deferred_modules"], json!([]), "{host}: {papers}");
+        let text = papers["text"].as_str().unwrap();
+        for rule in [
+            "A gap-log row closes after three cold passes on three different days.",
+            "The first redo is at least 1 day after the repair, never on the repair day.",
+            "The second is at least 3 days after the first pass, and the third at least 7 days after the second.",
+            "move Status from `open` to `1 of 3`, `2 of 3`, then `closed`",
+            "An attempt while Next redo is empty or still to come counts neither way.",
+            "A due redo that is not a pass fails the row.",
+            "Spaced redos overrides any one-pass rule left in the log or plan.",
+        ] {
+            assert!(text.contains(rule), "{host}/papers_loop: {rule}");
+        }
+        let review = served("review_and_transfer");
+        let rule = "a gap-log row's Next redo is its only schedule, never a review suggestion.";
+        assert!(
+            review["text"].as_str().unwrap().contains(rule),
+            "{host}/review_and_transfer: {rule}"
+        );
+    }
+}
+
+#[test]
+fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_template_steps() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let papers = v2::tool(
+            &e,
+            host,
+            "gap-log-upgrade",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = papers["text"].as_str().unwrap();
+        for step in [
+            "## Upgrade an old gap log",
+            "Rename `Cold-redo date` to `Next redo`",
+            "Put an empty `Passes` column before it.",
+            "write Status as exactly `closed`",
+            "gets tomorrow's date if it has none and its Repair done is filled",
+            "Dismiss the plan's old gap review suggestions",
+            "log the upgrade as one line under Changes in `plan.md`",
+            "Without them, Spaced redos overrides the old text.",
+        ] {
+            assert!(text.contains(step), "{host}: {step}");
+        }
+    }
+    let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
+    let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
+    let section = section.split("\n## ").next().unwrap();
+    assert!(
+        section.contains("papers_loop") && section.contains("`## Tags`"),
+        "{section}"
+    );
+    for served_step in [
+        "Cold-redo date",
+        "Passes",
+        "Dismiss",
+        "tomorrow",
+        "today",
+        "exactly",
+    ] {
+        assert!(
+            !section.contains(served_step),
+            "the papers skill repeats a served step of the upgrade ({served_step}): {section}"
+        );
+    }
+}
+
+#[test]
+fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let verb = "fix my plan files";
+    for (name, text) in [
+        (
+            "help skill",
+            include_str!("../claude-plugin/skills/help/SKILL.md"),
+        ),
+        (
+            "papers skill",
+            include_str!("../claude-plugin/skills/papers/SKILL.md"),
+        ),
+        (
+            "plan template",
+            include_str!("../claude-plugin/skills/papers/templates/plan.md"),
+        ),
+    ] {
+        assert!(text.contains(verb), "{name} does not mention {verb:?}");
+    }
+    let papers_description = include_str!("../claude-plugin/skills/papers/SKILL.md")
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .unwrap();
+    assert!(
+        papers_description.contains(verb),
+        "the papers skill description, which routes the verb to the skill, does not list {verb:?}"
+    );
+    for host in ["codex", "claude", "opencode"] {
+        let served = v2::tool(
+            &e,
+            host,
+            "fix-plan-files",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"papers_loop","operation":"tool_recipes"}),
+        );
+        let text = served["text"].as_str().unwrap();
+        for part in [
+            verb,
+            "## Fix my plan files",
+            "`unreadable`",
+            "until the list is empty",
+        ] {
+            assert!(text.contains(part), "{host}: {part}");
+        }
+    }
+}
+
+#[test]
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

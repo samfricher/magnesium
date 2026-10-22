@@ -73,7 +73,13 @@ fn write_plan(root: &Path) {
     .unwrap();
     fs::write(
         dir.join("gap-log.md"),
-        "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Status |\n|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic | open |\n| 2 | 2026-10-14 | Diagnostic | open |\n| 3 | 2026-10-14 | Diagnostic | closed |\n\n## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-14 | 14/30 |\n",
+        "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
+         | 1 | 2000-01-01 | Diagnostic | Q2 | | 2999-01-01 | open |\n\
+         | 2 | 2000-01-01 | Diagnostic | Q4 | 2000-01-02 pass | 2000-01-05 | 1 of 3 |\n\
+         | 3 | 2000-01-01 | Diagnostic | Q5 | 2000-01-02 pass, 2000-01-05 pass | 2000-01-12 | 2 of 3 |\n\
+         | 4 | 2000-01-01 | Diagnostic | Q6 | 2000-01-02 pass, 2000-01-05 pass, 2000-01-12 pass | | closed |\n\
+         | 5 | 2000-01-01 | Diagnostic | Q7 | 2000-01-03 fail | | open |\n\n\
+         ## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-14 | 14/30 |\n",
     )
     .unwrap();
 }
@@ -147,10 +153,92 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
     assert_eq!(plan["date"], "2999-01-02");
     assert!(plan["days_left"].as_i64().unwrap() > 1000);
     assert_eq!(plan["blocks"], json!(["Diagnostic", "Paper1-Easy"]));
-    assert_eq!(plan["open_gaps"], 2);
+    assert_eq!(plan["unfixed_gaps"], 4);
+    assert_eq!(plan["redos_due"], 2);
+    assert_eq!(
+        plan["first_due"],
+        json!({"paper": "Diagnostic", "question": "Q4", "more_due": 1})
+    );
     assert_eq!(plan["scores"][0]["score"], "14/30");
+    assert_eq!(plan["unreadable"], json!([]));
     // The goal does not name the target, so no session is matched to the plan.
     assert_eq!(plan["session"], Value::Null);
+}
+
+#[test]
+fn digest_counts_unfixed_rows_of_an_old_gap_log_and_none_as_due() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), "# Final: study plan\n").unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: final\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
+         | 1 | 2000-01-01 | Diagnostic | Q2 | km | sign error | A | tighten | 2000-01-02 | open |\n\
+         | 2 | 2000-01-01 | Diagnostic | Q3 | vmax | no units | N | tighten | 2000-01-02 | closed |\n",
+    )
+    .unwrap();
+
+    let plan = &digest(&e)["plans"][0];
+
+    assert_eq!(plan["target"], "final");
+    assert_eq!(plan["unfixed_gaps"], 1);
+    assert_eq!(plan["redos_due"], 0);
+    assert_eq!(plan["first_due"], Value::Null);
+    assert_eq!(plan["unreadable"][0]["line"], 5);
+    assert!(
+        plan["unreadable"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("Next redo")
+    );
+}
+
+#[test]
+fn digest_lists_what_it_cannot_read_in_a_gap_log_instead_of_dropping_it() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), "# Final: study plan\n").unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: final\n\n## Gaps\n\n| # | Date | Paper | Q | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|\n\
+         | 1 | 2000-01-01 | Diagnostic | Q2 | | 2000-01-02 | open |\n\
+         | 2 | 2000-01-01 | Diagnostic | Q3 | 2000-01-02 | open |\n\
+         | 3 | 2000-01-01 | Diagnostic | Q4 | | next Tuesday | open |\n",
+    )
+    .unwrap();
+
+    let plan = &digest(&e)["plans"][0];
+
+    assert_eq!(plan["unfixed_gaps"], 1);
+    assert_eq!(plan["redos_due"], 1);
+    let unreadable = plan["unreadable"].as_array().unwrap();
+    assert_eq!(unreadable.len(), 2, "{plan}");
+    for (item, line) in unreadable.iter().zip([8, 9]) {
+        assert_eq!(item["file"], "Study/final/gap-log.md");
+        assert_eq!(item["section"], "Gaps");
+        assert_eq!(item["line"], line);
+        assert!(!item["reason"].as_str().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn digest_reports_a_gap_log_it_cannot_open() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/final");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("plan.md"), "# Final: study plan\n").unwrap();
+    fs::write(dir.join("gap-log.md"), vec![b'x'; 300 * 1024]).unwrap();
+
+    let plan = &digest(&e)["plans"][0];
+
+    assert_eq!(plan["unfixed_gaps"], 0);
+    assert_eq!(plan["unreadable"][0]["file"], "Study/final/gap-log.md");
+    assert_eq!(plan["unreadable"][0]["line"], Value::Null);
 }
 
 #[test]

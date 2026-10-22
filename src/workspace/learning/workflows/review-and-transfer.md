@@ -2,7 +2,7 @@
 
 **Use when:** the learner returns to practice, wants durable access to an idea, or has enough local competence to test selection or adaptation.
 
-**Inputs:** exact target and prior observations, elapsed time, known exposures, current sources, available conditions, and the learner's time and intent. **Output:** one appropriate task and a narrowly qualified result; schedule only through the runtime.
+**Inputs:** exact target and prior observations, elapsed time, known exposures, current sources, available conditions, and the learner's time and intent. **Output:** one appropriate task and a narrowly qualified result; schedule only through the runtime, except papers redos.
 
 ## Separate the purpose of this check
 
@@ -20,7 +20,7 @@ Choose the purpose before generating the task. Neither a new task ID nor a numer
 
 Prepare current memory and the selected session before a recap. Withhold answer-bearing notes, keys, worked examples, and method cues from the learner until the intended response. Content withheld from a tool result may still be visible in the conversation or already known to the learner; record known exposure and never claim a clean slate you cannot observe.
 
-Begin with one feasible activity for the current goal and time. A worthwhile composite task can rehearse prerequisites, but credit only the exact component operations actually demanded and observed—not every ancestor in the plan. An overdue item is a suggestion, not an obligation. The learner's current target, no-quiz preference, refusal, or pause takes priority. Treat optional review dates as suggestions; do not invent a universally optimal interval or create a revisit for every term.
+Begin with one feasible activity for the current goal and time. A worthwhile composite task can rehearse prerequisites, but credit only the exact component operations actually demanded and observed—not every ancestor in the plan. An overdue item is a suggestion, not an obligation. The learner's current target, no-quiz preference, refusal, or pause takes priority. Treat optional review dates as suggestions; do not invent a universally optimal interval or create a revisit for every term. In a papers plan, a gap-log row's Next redo is its only schedule, never a review suggestion. Load stage papers_loop before the redo; it picks and records it.
 
 ## Design variation around the missing decision
 
