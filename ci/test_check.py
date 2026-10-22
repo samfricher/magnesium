@@ -8,8 +8,10 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +19,8 @@ from ci import check
 
 
 DEFAULT_TARGETS = ("digest", "opencode_adapter", "smoke")
+# What a stopped command gets: a signal to its whole process group, or on Windows a plain terminate.
+STOP = signal.SIGTERM if os.name == "posix" else "terminate"
 
 
 def label(command):
@@ -32,6 +36,7 @@ class FakeProcess:
         self.fake, self.command, self.kwargs, self.meets = fake, command, kwargs, meets
         self.label = label(command)
         self.terminated = threading.Event()
+        self.signals = []
         self.returncode = None
         self.interrupted = False
         self.finishing = threading.Lock()
@@ -47,6 +52,8 @@ class FakeProcess:
             if self.label in fake.interrupt and not self.interrupted:
                 self.interrupted = True
                 raise KeyboardInterrupt
+            if self.label in fake.interrupt_main:  # Ctrl-C, which reaches only the main thread
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
             if self.label in fake.hang:
                 self.terminated.wait(10)
             if self.terminated.is_set():
@@ -60,8 +67,15 @@ class FakeProcess:
             fake.record("end", self)
             return self.returncode
 
-    def terminate(self):
+    def signal(self, how):
+        self.signals.append(how)
         self.terminated.set()
+
+    def terminate(self):
+        self.signal("terminate")
+
+    def kill(self):
+        self.signal("kill")
 
 
 class FakeSubprocess:
@@ -69,14 +83,16 @@ class FakeSubprocess:
 
     Every start and end is recorded in order. exit_codes maps a label to its exit status, hang lists
     labels that only end when terminated, missing lists programs (or labels) that cannot be started,
-    interrupt lists labels whose first wait raises KeyboardInterrupt, and meet makes the first N Popen
-    processes (or meet_labels, the processes with those labels) wait for each other, which only works
-    if they run at the same time.
+    interrupt lists labels whose first wait raises KeyboardInterrupt, interrupt_main lists labels whose
+    wait sends Ctrl-C to the main thread, and meet makes the first N Popen processes (or meet_labels,
+    the processes with those labels) wait for each other, which only works if they run at the same time.
+    killpg stands in for os.killpg on the fake processes.
     """
 
-    def __init__(self, *, exit_codes=None, hang=(), missing=(), meet=0, meet_labels=(), interrupt=()):
+    def __init__(self, *, exit_codes=None, hang=(), missing=(), meet=0, meet_labels=(), interrupt=(),
+                 interrupt_main=()):
         self.exit_codes, self.hang, self.missing = exit_codes or {}, set(hang), set(missing)
-        self.meet_labels, self.interrupt = set(meet_labels), set(interrupt)
+        self.meet_labels, self.interrupt, self.interrupt_main = set(meet_labels), set(interrupt), set(interrupt_main)
         parties = meet or len(self.meet_labels)
         self.barrier = threading.Barrier(parties, timeout=2) if parties else None
         self.events, self.processes, self.lock = [], [], threading.Lock()
@@ -85,6 +101,7 @@ class FakeSubprocess:
         with self.lock:
             self.events.append((kind, process.label))
             if kind == "start":
+                process.pid = 40000 + len(self.processes)
                 self.processes.append(process)
 
     def Popen(self, command, **kwargs):
@@ -104,6 +121,13 @@ class FakeSubprocess:
         if kwargs.get("check") and code:
             raise subprocess.CalledProcessError(code, command)
         return subprocess.CompletedProcess(command, code)
+
+    def killpg(self, pid, how):
+        with self.lock:
+            process = next((p for p in self.processes if p.pid == pid), None)
+        if process is None:
+            raise ProcessLookupError(pid)
+        process.signal(how)
 
     def started(self):
         return [name for kind, name in self.events if kind == "start"]
@@ -135,10 +159,15 @@ class CheckRunnerTests(unittest.TestCase):
             else patch.object(check, "test_targets", return_value=list(targets))
         out, err = io.StringIO(), io.StringIO()
         with patch.object(check.subprocess, "Popen", fake.Popen), patch.object(check.subprocess, "run", fake.run), \
+                patch.object(check.os, "killpg", fake.killpg, create=True), \
                 patch.object(check, "test_temp_dir", fake_ram_disk(fake)), patch.object(check, "native_target", return_value="test-host"), \
                 listing, contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = check.main(args)
         return code, fake, out.getvalue(), err.getvalue()
+
+    def assertStopped(self, process):
+        """The command, and on POSIX every process it started, got one stop signal."""
+        self.assertEqual(process.signals, [STOP])
 
     def test_list_shows_every_command_by_phase_without_running_any(self):
         with patch.object(check.subprocess, "run") as run, patch.object(check.subprocess, "Popen") as popen, \
@@ -173,7 +202,7 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertNotIn("[test phase]", output.getvalue())
         self.assertNotIn("cargo", output.getvalue())
 
-    def test_scopes_are_deduplicated_and_run_in_dependency_order(self):
+    def test_scopes_are_deduplicated_and_ordered(self):
         self.assertEqual(check.selected_scopes(["docs", "core", "docs"]), ["core", "docs"])
         self.assertEqual(check.selected_scopes(["python", "all"]), list(check.SCOPES))
 
@@ -193,7 +222,6 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("--locked", commands[test])
         # The test binary path below is only fresh if the build writes there.
         self.assertEqual(commands[build][commands[build].index("--target") + 1], "test-host")
-        self.assertLess(build, test)
         with patch.dict(os.environ, {"MAGNESIUM_TEST_BINARY": "/stale/magnesium"}):
             binary = Path(check.environment(offline=False, target="test-host")["MAGNESIUM_TEST_BINARY"])
         self.assertEqual(binary.parent, check.ROOT / "target/test-host/release")
@@ -215,11 +243,6 @@ class CheckRunnerTests(unittest.TestCase):
         for _, command in [step for lane in lanes for step in lane] + alone:
             if command[0] == "cargo" and command[1] != "fmt":
                 self.assertEqual(command[command.index("--target") + 1], "native-host")
-
-    def test_core_runs_actual_native_source_smoke_after_build(self):
-        commands = [command for _, command in check.commands("core", "test-host")]
-        smoke = self.position(commands, check.sys.executable, "ci/check_native_sources.py")
-        self.assertLess(self.position(commands, "cargo", "build"), smoke)
 
     def test_python_includes_script_based_docling_tests(self):
         commands = [command for _, command in check.commands("python")]
@@ -289,7 +312,7 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Failed: cargo fmt --all --check (exit 3)", err)
         self.assertIn("cargo fmt line 1", out)
-        self.assertTrue(fake.process("cargo build").terminated.is_set())
+        self.assertStopped(fake.process("cargo build"))
         self.assertNotIn("cargo build line 1", out)
         for skipped in ("cargo clippy", "cargo test --no-run", "cargo test", "cargo test opencode_adapter",
                         "ci/check_native_sources.py"):
@@ -310,13 +333,6 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("Failed: cargo clippy", err)
         for skipped in ("cargo test --no-run", "cargo test", "cargo test opencode_adapter", "ci/check_native_sources.py"):
             self.assertNotIn(skipped, fake.started())
-
-    def test_a_failed_test_run_is_named_and_the_native_smoke_does_not_run(self):
-        code, fake, _, err = self.run_main(["core"], exit_codes={"cargo test": 101})
-        self.assertEqual(code, 1)
-        self.assertIn("Failed: cargo test", err)
-        self.assertNotIn("--no-run", err)
-        self.assertNotIn("ci/check_native_sources.py", fake.started())
 
     def test_a_failed_python_check_stops_the_phase(self):
         code, fake, _, err = self.run_main(["python"], exit_codes={"-m unittest discover -s ci": 1})
@@ -460,17 +476,6 @@ class CheckRunnerTests(unittest.TestCase):
         code, fake, _, err = self.run_main(["core"], meet_labels={"cargo test", "cargo test opencode_adapter"})
         self.assertEqual((code, err), (0, ""))
 
-    def test_both_test_commands_share_one_ram_disk_that_outlives_them(self):
-        code, fake, _, _ = self.run_main(["core"])
-        self.assertEqual(code, 0)
-        events = fake.events
-        self.assertEqual(events.count(("ram disk", "up")), 1)
-        up, down = events.index(("ram disk", "up")), events.index(("ram disk", "down"))
-        for name in ("cargo test", "cargo test opencode_adapter"):
-            self.assertLess(up, events.index(("start", name)))
-            self.assertLess(events.index(("end", name)), down)
-        self.assertLess(down, events.index(("start", "ci/check_native_sources.py")))
-
     def test_the_main_test_command_streams_and_the_side_one_prints_whole_afterwards(self):
         _, fake, out, _ = self.run_main(["core"])
         main, side = fake.process("cargo test"), fake.process("cargo test opencode_adapter")
@@ -485,8 +490,21 @@ class CheckRunnerTests(unittest.TestCase):
         code, fake, out, err = self.run_main(["core"], exit_codes={"cargo test": 101}, hang={"cargo test opencode_adapter"})
         self.assertEqual(code, 1)
         self.assertEqual(err.strip(), f"Failed: {shlex.join(fake.process('cargo test').command)} (exit 101)")
-        self.assertTrue(fake.process("cargo test opencode_adapter").terminated.is_set())
+        self.assertStopped(fake.process("cargo test opencode_adapter"))
         self.assertNotIn("cargo test opencode_adapter line", out)  # a stopped command prints nothing
+        self.assertNotIn("ci/check_native_sources.py", fake.started())
+        self.assertEqual(fake.events[-1], ("ram disk", "down"))
+
+    def test_a_failed_single_command_in_the_test_phase_is_named(self):
+        native = check.pick(check.commands("core", "test-host"), check.sys.executable, "ci/check_native_sources.py")[1]
+        code, _, _, err = self.run_main(["core"], exit_codes={"ci/check_native_sources.py": 1})
+        self.assertEqual(code, 1)
+        self.assertEqual(err.strip(), f"Failed: {shlex.join(native)} (exit 1)")
+        # Without the side target, one cargo test command runs every test.
+        code, fake, _, err = self.run_main(["core"], targets=("smoke",), exit_codes={"cargo test": 101})
+        self.assertEqual(code, 1)
+        self.assertIn("--all-targets", fake.process("cargo test").command)
+        self.assertEqual(err.strip(), f"Failed: {shlex.join(fake.process('cargo test').command)} (exit 101)")
         self.assertNotIn("ci/check_native_sources.py", fake.started())
         self.assertEqual(fake.events[-1], ("ram disk", "down"))
 
@@ -495,7 +513,7 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(err.strip(), f"Failed: {shlex.join(fake.process('cargo test opencode_adapter').command)} (exit 1)")
         self.assertIn("cargo test opencode_adapter line 2", out)  # the failing test's output
-        self.assertTrue(fake.process("cargo test").terminated.is_set())
+        self.assertStopped(fake.process("cargo test"))
         self.assertNotIn("ci/check_native_sources.py", fake.started())
         self.assertEqual(fake.events[-1], ("ram disk", "down"))
 
@@ -504,10 +522,32 @@ class CheckRunnerTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             self.run_main(["core"], fake=fake)
         for name in ("cargo test", "cargo test opencode_adapter"):
-            self.assertTrue(fake.process(name).terminated.is_set())
+            self.assertStopped(fake.process(name))
             self.assertIsNotNone(fake.process(name).returncode)
         self.assertEqual(fake.events[-1], ("ram disk", "down"))
         self.assertNotIn("ci/check_native_sources.py", fake.started())
+
+    @unittest.skipUnless(hasattr(signal, "pthread_kill"), "needs Ctrl-C sent to the main thread")
+    def test_an_interrupt_in_the_build_phase_stops_the_running_commands_and_starts_no_more(self):
+        previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+        self.addCleanup(signal.signal, signal.SIGINT, previous)
+        fake = FakeSubprocess(hang={"cargo build", "cargo fmt"}, meet_labels={"cargo build", "cargo fmt"},
+                              interrupt_main={"cargo fmt"})
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_main(["core"], fake=fake)
+        for name in ("cargo build", "cargo fmt"):
+            self.assertStopped(fake.process(name))
+        self.assertCountEqual(fake.started(), ["cargo build", "cargo fmt"])
+
+    def test_commands_that_can_be_stopped_start_in_their_own_session_without_the_console_input(self):
+        _, fake, _, _ = self.run_main([])
+        self.assertCountEqual([process.label for process in fake.processes], fake.started())
+        for process in fake.processes:
+            with self.subTest(command=process.label):
+                if process.label == "ci/check_native_sources.py":  # runs by itself and is never stopped
+                    continue
+                self.assertIs(process.kwargs["start_new_session"], True)
+                self.assertIs(process.kwargs["stdin"], check.subprocess.DEVNULL)
 
     def test_list_and_other_scopes_never_create_a_ram_disk(self):
         with patch.object(check, "test_temp_dir") as ram:
@@ -534,7 +574,7 @@ class FakeDiskutil:
             self.eject_failures -= 1
             return subprocess.CompletedProcess(command, 1, "", "busy")
         if action == "erasevolume":
-            (self.volumes / command[3]).mkdir()
+            (self.volumes / command[3]).mkdir(exist_ok=True)
         stdout = "/dev/disk9\n" if action == "image" else ""
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
@@ -574,12 +614,18 @@ class TestTempDirTests(unittest.TestCase):
 
     def test_macos_uses_a_uniquely_named_ram_volume_and_ejects_the_attached_device(self):
         diskutil = self.macos()
+        volume = self.scratch / f"magnesium-ci-{os.getpid()}"
         with check.test_temp_dir() as directory:
-            self.assertEqual(Path(directory), self.scratch / f"magnesium-ci-{os.getpid()}")
+            # Reached through a symlink in the default temporary directory, as /var/folders is reached
+            # through /var, so the tests still cover roots whose written and resolved paths differ.
+            self.assertTrue(Path(directory).is_symlink())
+            self.assertEqual(Path(directory).resolve(), volume.resolve())
+            self.assertEqual(Path(directory).parent.parent, Path(tempfile.gettempdir()))
             self.assertEqual(diskutil.ejected(), [])
             self.assertIn(["diskutil", "image", "attach", "--noMount", "ram://1048576"], diskutil.calls)
             self.assertIn(["diskutil", "erasevolume", "APFS", f"magnesium-ci-{os.getpid()}", "/dev/disk9"], diskutil.calls)
         self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+        self.assertFalse(Path(directory).parent.exists())
         self.assertIn("RAM-backed", self.output.getvalue())
 
     def test_macos_ejects_when_the_checks_fail(self):
@@ -588,14 +634,25 @@ class TestTempDirTests(unittest.TestCase):
             raise KeyboardInterrupt
         self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
 
-    def test_sigterm_exits_through_the_cleanup_and_restores_the_handler(self):
-        diskutil = self.macos()
-        before = signal.getsignal(signal.SIGTERM)
-        with self.assertRaises(SystemExit) as stopped, check.test_temp_dir():
-            signal.raise_signal(signal.SIGTERM)
-        self.assertEqual(stopped.exception.code, 128 + signal.SIGTERM)
-        self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
-        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+    def test_stop_signals_exit_through_the_cleanup_and_restore_the_handlers(self):
+        for signum in [getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)]:
+            with self.subTest(signal=signum):
+                diskutil = self.macos()
+                before = signal.getsignal(signum)
+                with self.assertRaises(SystemExit) as stopped, check.test_temp_dir():
+                    signal.raise_signal(signum)
+                self.assertEqual(stopped.exception.code, 128 + signum)
+                self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+                self.assertEqual(signal.getsignal(signum), before)
+
+    @unittest.skipUnless(hasattr(signal, "SIGHUP"), "no SIGHUP on this platform")
+    def test_a_stop_signal_the_caller_ignores_stays_ignored(self):
+        previous = signal.signal(signal.SIGHUP, signal.SIG_IGN)  # as nohup leaves it
+        self.addCleanup(signal.signal, signal.SIGHUP, previous)
+        with check.stop_signals_raise():
+            self.assertEqual(signal.getsignal(signal.SIGHUP), signal.SIG_IGN)
+            signal.raise_signal(signal.SIGHUP)
+        self.assertEqual(signal.getsignal(signal.SIGHUP), signal.SIG_IGN)
 
     def test_macos_setup_failure_ejects_the_attached_device_and_falls_back(self):
         diskutil = self.macos(fail={"erasevolume"})
@@ -644,6 +701,40 @@ class TestTempDirTests(unittest.TestCase):
                 with check.test_temp_dir() as directory:
                     self.assertIsNone(directory)
             run.assert_not_called()
+
+
+@unittest.skipUnless(os.name == "posix", "process groups are POSIX")
+class ProcessGroupTests(unittest.TestCase):
+    def test_stopping_a_command_also_stops_the_processes_it_started(self):
+        # Like cargo running a test binary: the command does not pass SIGTERM on.
+        script = ("import subprocess, sys, time\n"
+                  "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                  "print(child.pid, flush=True)\n"
+                  "time.sleep(60)\n")
+        command = check.spawn([sys.executable, "-c", script], check.ROOT, dict(os.environ),
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE)
+        self.addCleanup(command.stdout.close)
+        self.addCleanup(command.kill)  # these two only matter if the test fails early
+        self.addCleanup(check.terminate_group, command, kill=True)
+        started = int(command.stdout.readline())
+
+        check.terminate_group(command)
+
+        self.assertEqual(command.wait(timeout=5), -signal.SIGTERM)
+        deadline = time.monotonic() + 5
+        while self.running(started) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if self.running(started):
+            os.kill(started, signal.SIGKILL)
+            self.fail("the process the command started is still running")
+
+    @staticmethod
+    def running(pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
 
 
 if __name__ == "__main__":

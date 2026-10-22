@@ -30,6 +30,7 @@ VOLUMES_DIR = Path("/Volumes")
 # This test target waits on timers in a Node harness (about 20 s of wall time, almost no CPU),
 # so it can run beside the other Rust tests without disturbing them.
 SIDE_TEST = "opencode_adapter"
+STOP_SIGNALS = [getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)]
 
 
 def commands(scope: str, target: str | None = None) -> list[Step]:
@@ -121,20 +122,27 @@ def uses_test_temp_dir(command: list[str]) -> bool:
 
 
 @contextlib.contextmanager
-def sigterm_raises() -> Iterator[None]:
-    """Turn SIGTERM into an exit so the cleanup in `finally` blocks still runs."""
+def stop_signals_raise() -> Iterator[None]:
+    """Turn SIGTERM and SIGHUP into an exit so the cleanup in `finally` blocks still runs.
+
+    Commands run in their own sessions, so a stopped run or a closed terminal reaches them only
+    through that cleanup. A signal the caller ignores, as nohup does, stays ignored.
+    """
     def handler(signum: int, frame: object) -> None:
         raise SystemExit(128 + signum)
 
+    previous = {}
     try:
-        previous = signal.signal(signal.SIGTERM, handler)
+        for signum in STOP_SIGNALS:
+            if signal.getsignal(signum) != signal.SIG_IGN:
+                previous[signum] = signal.signal(signum, handler)
     except ValueError:  # not the main thread, so there is no handler to install
-        yield
-        return
+        pass
     try:
         yield
     finally:
-        signal.signal(signal.SIGTERM, previous or signal.SIG_DFL)
+        for signum, before in previous.items():
+            signal.signal(signum, before or signal.SIG_DFL)
 
 
 def eject_ram_disk(device: str) -> None:
@@ -167,7 +175,14 @@ def attach_macos_ram_disk(stack: contextlib.ExitStack) -> str:
     if not os.path.ismount(mount):
         raise RuntimeError(f"{mount} is not mounted")
     (mount / ".metadata_never_index").touch()  # keep Spotlight off the churn and off the eject
-    return str(mount)
+    # The default macOS temporary directory sits behind the /var -> /private/var symlink, so the tests
+    # have always covered workspace roots whose written and resolved paths differ. Reaching the RAM
+    # disk through a symlink in that directory keeps that coverage. The link goes before the eject.
+    links = tempfile.mkdtemp(prefix="magnesium-ci-")
+    stack.callback(shutil.rmtree, links, ignore_errors=True)
+    link = Path(links) / "ram"
+    link.symlink_to(mount, target_is_directory=True)
+    return str(link)
 
 
 def create_shm_dir(stack: contextlib.ExitStack) -> str:
@@ -189,13 +204,13 @@ def test_temp_dir() -> Iterator[str | None]:
 
     The tests exercise durable writes (fsync) heavily; a physical disk makes that
     the dominant cost. Production behavior is untouched. Setup problems never fail
-    the run, and the RAM disk is always released, including on Ctrl-C and SIGTERM.
+    the run, and the RAM disk is always released, including on Ctrl-C, SIGTERM and SIGHUP.
     """
     if os.environ.get(DISK_TMP_OPT_OUT, "0") not in ("", "0"):
         print(f"  Tests use the default temporary directory ({DISK_TMP_OPT_OUT} is set).", flush=True)
         yield None
         return
-    with sigterm_raises(), contextlib.ExitStack() as stack:
+    with stop_signals_raise(), contextlib.ExitStack() as stack:
         directory = None
         try:
             if sys.platform == "darwin":
@@ -273,6 +288,31 @@ def echo(text: str) -> None:
     print(text.encode(encoding, "replace").decode(encoding), flush=True)
 
 
+def spawn(command: list[str], cwd: Path, env: dict[str, str], **streams: object) -> subprocess.Popen:
+    """Start a command in its own session, so terminate_group reaches every process it starts."""
+    return subprocess.Popen(command, cwd=cwd, env=env, start_new_session=True, **streams)
+
+
+def terminate_group(child: subprocess.Popen, *, kill: bool = False) -> None:
+    """Stop a command started by spawn and every process it started.
+
+    Cargo does not pass SIGTERM on to the test binary it runs, and tests start processes of their
+    own, such as the Node harness, so signaling only the command would leave those running.
+    """
+    if child.returncode is not None:  # reaped, so its process ID may belong to another process by now
+        return
+    if os.name == "nt":
+        if kill:
+            child.kill()
+        else:
+            child.terminate()
+        return
+    try:
+        os.killpg(child.pid, signal.SIGKILL if kill else signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):  # nothing left that can be signaled (macOS says EPERM for zombies)
+        pass
+
+
 def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
     """Run the lanes at the same time, each in order, printing a command's whole output once it finishes.
 
@@ -286,7 +326,7 @@ def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
     def fail(message: str) -> None:  # the caller holds the lock
         failures.append(message)
         for child in running:
-            child.terminate()
+            terminate_group(child)
 
     def run_lane(lane: list[Step]) -> None:
         for cwd, command in lane:
@@ -296,8 +336,7 @@ def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
                     if failures:
                         return
                     try:
-                        child = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                                 stdout=log, stderr=subprocess.STDOUT)
+                        child = spawn(command, cwd, env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
                     except FileNotFoundError:
                         fail(f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md.")
                         return
@@ -324,10 +363,18 @@ def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
                 fail(f"Could not run the build phase: {error!r}")
 
     threads = [threading.Thread(target=guarded, args=(lane,)) for lane in lanes]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    except BaseException:  # Ctrl-C or a stop signal reaches only this process, so stop the commands here
+        with lock:
+            fail("interrupted")
+        for thread in threads:
+            if thread.is_alive():
+                thread.join()
+        raise
     return failures[0] if failures else None
 
 
@@ -350,16 +397,16 @@ def run_tests_together(cwd: Path, main: list[str], side: list[str], env: dict[st
                 failures.append((command, code))
                 for other in children:
                     if other is not child:
-                        other.terminate()
+                        terminate_group(other)
 
     def stop(child: subprocess.Popen) -> None:
         """Reap a command that is still running because the run was interrupted."""
         if child.returncode is None:
-            child.terminate()
+            terminate_group(child)
             try:
                 child.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                child.kill()
+                terminate_group(child, kill=True)
                 child.wait()
 
     with test_temp_dir() as directory, tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as log:
@@ -367,9 +414,8 @@ def run_tests_together(cwd: Path, main: list[str], side: list[str], env: dict[st
         watcher = threading.Thread(target=lambda: wait_for(children[1], side))
         try:
             print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(main)}", flush=True)
-            children.append(subprocess.Popen(main, cwd=cwd, env=env))
-            children.append(subprocess.Popen(side, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                             stdout=log, stderr=subprocess.STDOUT))
+            children.append(spawn(main, cwd, env, stdin=subprocess.DEVNULL))
+            children.append(spawn(side, cwd, env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT))
             watcher.start()
             wait_for(children[0], main)
             watcher.join()
@@ -449,14 +495,15 @@ def main(argv: list[str] | None = None) -> int:
         show_plan(lanes, alone)
         return 0
     env = environment(offline=args.offline, target=target)
-    print("\n[build phase] commands run at the same time; each one's output appears when it finishes", flush=True)
-    failure = run_build_phase(lanes, env)
-    if failure:
-        print(failure, file=sys.stderr)
-        return 1
-    if alone:
-        print(f"\n[test phase] runs alone: the Rust tests are sensitive to CPU load, so only the {SIDE_TEST} test runs beside them", flush=True)
-    failure = run_test_phase(alone, env)
+    with stop_signals_raise():
+        print("\n[build phase] commands run at the same time; each one's output appears when it finishes", flush=True)
+        failure = run_build_phase(lanes, env)
+        if failure:
+            print(failure, file=sys.stderr)
+            return 1
+        if alone:
+            print(f"\n[test phase] runs alone: the Rust tests are sensitive to CPU load, so only the {SIDE_TEST} test runs beside them", flush=True)
+        failure = run_test_phase(alone, env)
     if failure:
         print(failure, file=sys.stderr)
         return 1
