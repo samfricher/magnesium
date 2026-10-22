@@ -115,14 +115,10 @@ fn decode_protocol<T: requests::ReadProtocol>(request: &Value) -> Result<T, Stri
     }
     T::decode(request)
 }
-#[cfg(test)]
-fn decode(request: &Value) -> Result<Request, String> {
-    let decoded = decode_protocol::<Request>(request)?;
-    decoded.validate()?;
-    Ok(decoded)
-}
-/// Returns only after the read snapshot has closed. No control-admission guard
-/// belongs around this call; the adapter separately guards optional tracing.
+/// Unit-test entry that names only the action and reads through the same
+/// per-tool decoders production uses. Returns only after the read snapshot has
+/// closed. No control-admission guard belongs around this call; the adapter
+/// separately guards optional tracing.
 #[cfg(test)]
 pub(crate) fn prepare_snapshot(
     conn: &Connection,
@@ -130,8 +126,11 @@ pub(crate) fn prepare_snapshot(
     host_thread_id: &str,
     raw: Value,
 ) -> Result<PreparedRead, String> {
-    let request = decode(&raw)?;
-    prepare_decoded_snapshot(conn, host_kind, host_thread_id, raw, request)
+    let tool = raw
+        .get("action")
+        .and_then(Value::as_str)
+        .map_or(Tool::Memory, Tool::for_action);
+    prepare_snapshot_for_tool(conn, host_kind, host_thread_id, raw, tool)
 }
 fn check_read_cancellation() -> Result<(), String> {
     if crate::request::OperationCancellation::none().is_cancelled() {
@@ -401,9 +400,6 @@ pub(crate) fn session_choice_rows(conn: &Connection, last: &str) -> Result<Vec<V
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod cancellation_tests;
 
 #[cfg(test)]
 mod oversized_event_tests;

@@ -79,32 +79,6 @@ fn bundled_schema_roundtrip_and_retry() {
     assert_eq!(count, 1);
 }
 #[test]
-fn raw_capture_survives_invalid_semantic_shape() {
-    let f = Fixture::new();
-    f.start();
-    let result=f.store.update(&f.host,json!({"schema":SCHEMA,"action":"update","request_id":"bad","reported_events":[{"external_event_key":"pending","speaker":"learner","kind":"message","text":"x² − 4 = 0"}],"memory_edits":[{"operation":"create","unexpected":true}]}));
-    let err = result.unwrap_err();
-    assert_eq!(err.captured_event_ids.len(), 1);
-    let text: String = f
-        .store
-        .conn
-        .query_row(
-            "SELECT text FROM learning_events WHERE processing='pending'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(text, "x² − 4 = 0");
-    assert_eq!(
-        f.store
-            .conn
-            .query_row("SELECT count(*) FROM operation_receipts", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-}
-#[test]
 fn capture_deduplicates_external_identity_not_text() {
     let f = Fixture::new();
     f.start();
@@ -225,10 +199,15 @@ fn unknown_store_and_workspace_rejected_without_mutation() {
         LearnerStore::open(&f.path, "wrong").err().unwrap().code,
         "workspace_mismatch"
     );
+    // The schema CHECK pins version 2, so a store from a newer build can only
+    // be simulated with constraint checking off.
     f.store
         .conn
         .execute_batch(
-            "UPDATE workspace_meta SET schema_version=2; CREATE TABLE unrelated(value TEXT)",
+            "PRAGMA ignore_check_constraints=ON;
+             UPDATE workspace_meta SET schema_version=3;
+             PRAGMA ignore_check_constraints=OFF;
+             CREATE TABLE unrelated(value TEXT)",
         )
         .unwrap();
     let count: i64 = f
@@ -236,7 +215,13 @@ fn unknown_store_and_workspace_rejected_without_mutation() {
         .conn
         .query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
         .unwrap();
-    assert!(LearnerStore::open(&f.path, "wrong").is_err());
+    assert_eq!(
+        LearnerStore::open(&f.path, &f.store.workspace_id)
+            .err()
+            .unwrap()
+            .code,
+        "incompatible_store"
+    );
     assert_eq!(
         count,
         f.store

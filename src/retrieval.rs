@@ -15,8 +15,6 @@ mod coordinator;
 mod evaluation;
 mod manifest;
 mod search;
-#[cfg(test)]
-pub(crate) use crate::request::enter_request_cancellation;
 pub(crate) use boundary::{RetrievalRequest, retrieve_workspace_sources};
 pub(crate) use coordinator::CoordinatorBudget;
 pub(crate) use coordinator::OperationCancellation;
