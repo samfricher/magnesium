@@ -338,7 +338,7 @@ fn plan_digest(
     let planned = sessions::read(&plan_file(target), plan, today);
     json!({
         "target": target,
-        "path": format!("Study/{target}/plan.md"),
+        "path": plan_file(target),
         "title": title,
         "when": when,
         "date": date.map(|d| d.to_string()),
