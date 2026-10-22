@@ -15,11 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::workspace::{decode_native_path, native_path_key};
 
 #[cfg(test)]
-use super::manifest::SourceCandidate;
-#[cfg(test)]
 use super::manifest::reconcile_batch;
 use super::manifest::{
-    ManifestError, extract_source_with_cancellation, load_or_start_reconciliation,
+    ManifestError, SourceCandidate, extract_source_with_cancellation, load_or_start_reconciliation,
     manifest_coverage, pending_source_paths, source_status_and_size,
 };
 use super::{
@@ -509,8 +507,7 @@ fn prepare_source_query_with_policy(
             &preparation_cancellation,
             |used| may_start_on_demand(already_used + used, extraction_cutoff),
             |relative, token| {
-                extract_source_with_cancellation(workspace_root, index_path, relative, token)
-                    .map(|_| ())
+                extract_for_search(workspace_root, index_path, relative, token).map(|_| ())
             },
         );
         fallback_count = used;
@@ -545,6 +542,23 @@ fn deferred_budget_preparation(index_path: &Path) -> Result<PreparedSourceQuery,
         reconciliation: ReconciliationOutcome::DeferredBudget,
         coverage: index_coverage(index_path, 0, true)?,
     })
+}
+
+/// A file whose extraction failed and was recorded as `failed` contributes no
+/// candidates but does not end the search; the other files still answer it.
+/// Explicit source requests report the failure instead.
+fn extract_for_search(
+    workspace_root: &Path,
+    index_path: &Path,
+    relative: &Path,
+    cancellation: &OperationCancellation,
+) -> Result<Vec<SourceCandidate>, ManifestError> {
+    match extract_source_with_cancellation(workspace_root, index_path, relative, cancellation) {
+        Err(ManifestError::PdfContentPublished(_) | ManifestError::SourceFailurePublished(_)) => {
+            Ok(Vec::new())
+        }
+        result => result,
+    }
 }
 
 /// A started extraction consumes its slot even if it fails or cancellation
@@ -809,12 +823,17 @@ fn coordinate_one_pass(
             extraction_bytes = extraction_bytes.saturating_add(size);
         }
         if matches!(status.as_str(), "pending" | "failed" | "indexed") {
-            candidates.extend(extract_source_with_cancellation(
-                workspace_root,
-                index_path,
-                &relative,
-                cancellation,
-            )?);
+            let extracted = if allowed_source_paths.is_some() {
+                extract_source_with_cancellation(
+                    workspace_root,
+                    index_path,
+                    &relative,
+                    cancellation,
+                )
+            } else {
+                extract_for_search(workspace_root, index_path, &relative, cancellation)
+            };
+            candidates.extend(extracted?);
         }
     }
     let coverage = index_coverage(index_path, indexed_on_demand, false)?;

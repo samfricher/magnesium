@@ -2044,6 +2044,21 @@ fn v1_extraction_returns_committed_candidates_if_caller_cancels_after_commit() {
 }
 
 #[test]
+fn explicit_request_for_non_utf8_text_still_reports_the_original_error() {
+    let fixture = Fixture::new("explicit-non-utf8");
+    fixture.write("garbled.md", b"\xff\xfe not utf-8\n");
+    let result = crate::retrieval::prepare_explicit_source(
+        &fixture.root,
+        Path::new("garbled.md"),
+        FactsInterest::IdentityOnly,
+        &crate::retrieval::OperationCancellation::none(),
+    );
+    assert!(
+        matches!(result, Err(ManifestError::Invalid(ref message)) if message.contains("not valid UTF-8"))
+    );
+}
+
+#[test]
 fn typed_pdf_content_failure_carries_only_successful_guarded_publication_identity() {
     let fixture = Fixture::new("typed-pdf-content-publication");
     fixture.write("book.pdf", &pdf_fixture());

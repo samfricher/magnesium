@@ -124,6 +124,10 @@ pub(crate) enum ManifestError {
     Pdf(String),
     PdfContent(String),
     PdfContentPublished(PublishedPdfContentFailure),
+    /// The file's content cannot be extracted and extraction already recorded
+    /// it as `failed`. The wrapped error is what an explicit request for the
+    /// file reports. Worker and I/O errors are not wrapped, so they stay fatal.
+    SourceFailurePublished(Box<ManifestError>),
     PdfTimeout,
 }
 
@@ -143,6 +147,7 @@ impl fmt::Display for ManifestError {
             } => write!(formatter, "cannot {action} {}: {source}", path.display()),
             Self::Invalid(message) | Self::Pdf(message) | Self::PdfContent(message) => formatter.write_str(message),
             Self::PdfContentPublished(failure) => formatter.write_str(&failure.diagnostic),
+            Self::SourceFailurePublished(error) => error.fmt(formatter),
             Self::ReconciliationConflict => formatter
                 .write_str("source reconciliation cursor changed concurrently; retry the query"),
             Self::SourceSuperseded => formatter.write_str("source_superseded: a newer source state won; no old result was published. Repeat the source request if it is still useful"),
@@ -161,6 +166,7 @@ impl Error for ManifestError {
             Self::Discovery(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             Self::Sqlite { source, .. } => Some(source),
+            Self::SourceFailurePublished(error) => Some(error.as_ref()),
             Self::Invalid(_)
             | Self::ReconciliationConflict
             | Self::SourceSuperseded
