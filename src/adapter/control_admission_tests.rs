@@ -761,8 +761,27 @@ fn control_directory_flush_is_recorded_once_and_redone_for_a_stale_record() {
     drop(Guard::acquire(&f.workspace, &f.host).unwrap());
     assert_eq!(fs::symlink_metadata(&record).unwrap().ino(), written);
 
-    // A record naming other directories is stale: flush again and rewrite it.
-    fs::write(&record, "0:0 0:0\n").unwrap();
-    drop(Guard::acquire(&f.workspace, &f.host).unwrap());
-    assert_eq!(fs::read_to_string(&record).unwrap(), expected);
+    // A record that names either directory wrongly is stale: flush again and
+    // rewrite it.
+    for stale in [
+        format!("{} 0:0\n", identity(f.workspace.control())),
+        format!("0:0 {}\n", identity(&directory)),
+    ] {
+        fs::write(&record, &stale).unwrap();
+        let before = fs::symlink_metadata(&record).unwrap().ino();
+        drop(Guard::acquire(&f.workspace, &f.host).unwrap());
+        assert_eq!(fs::read_to_string(&record).unwrap(), expected, "{stale}");
+        assert_ne!(
+            fs::symlink_metadata(&record).unwrap().ino(),
+            before,
+            "{stale}"
+        );
+    }
+
+    // A symlinked record fails closed, even when its target matches.
+    let target = f.root.join("matching-record");
+    fs::write(&target, &expected).unwrap();
+    fs::remove_file(&record).unwrap();
+    std::os::unix::fs::symlink(&target, &record).unwrap();
+    assert!(Guard::acquire(&f.workspace, &f.host).is_err());
 }
