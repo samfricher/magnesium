@@ -211,7 +211,7 @@ pub(crate) fn load_existing(
     let mut statement = transaction
         .prepare(
             "SELECT manifest_id, path_key, source_kind, file_size, modified_unix_ns,
-                    content_sha256, present
+                    content_sha256, present, exclusion_reason
              FROM source_manifest",
         )
         .map_err(|source| sqlite(index_path, "prepare existing manifest query", source))?;
@@ -225,6 +225,7 @@ pub(crate) fn load_existing(
                     file_size: row.get(3)?,
                     modified_unix_ns: row.get(4)?,
                     content_sha256: row.get(5)?,
+                    exclusion_reason: row.get(7)?,
                     present: row.get::<_, i64>(6)? == 1,
                 },
             ))

@@ -2041,6 +2041,61 @@ mod tests {
     }
 
     #[test]
+    fn a_recheck_leaves_unchanged_files_excluded_for_their_content() {
+        let fixture = Fixture::new("recheck-content-exclusion");
+        fixture.write("a-notes.md", b"password = hunter2\n");
+        fixture.write("b-slides.pdf", &pdf_fixture());
+        fixture.write("c-lesson.md", b"lesson\n");
+        finish_metadata_scan(&fixture, budget(8));
+        super::super::manifest::extract::extract_source_with_pdf(
+            &fixture.root,
+            &fixture.index(),
+            Path::new("b-slides.pdf"),
+            |_| Ok(vec!["password = hunter2".to_owned()]),
+        )
+        .expect("extracted text excludes the PDF");
+        let exclusions = || {
+            ["a-notes.md", "b-slides.pdf"].map(|path| {
+                Connection::open(fixture.index())
+                    .unwrap()
+                    .query_row(
+                        "SELECT index_status, exclusion_reason FROM source_manifest
+                         WHERE display_path = ?1",
+                        [path],
+                        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                    )
+                    .unwrap()
+            })
+        };
+        let excluded = exclusions();
+        assert_eq!(
+            excluded,
+            [
+                ("excluded".to_owned(), Some("sensitive_content".to_owned())),
+                (
+                    "excluded".to_owned(),
+                    Some("sensitive_extracted".to_owned())
+                ),
+            ]
+        );
+
+        let recheck = coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[],
+            budget(8),
+        )
+        .expect("recheck");
+        assert_eq!(scan_active(&fixture.index()), 0, "the recheck finished");
+        assert_eq!(
+            recheck.metrics.content_reads, 0,
+            "the recheck read an unchanged file again"
+        );
+        assert_eq!(exclusions(), excluded);
+    }
+
+    #[test]
     fn preparation_budget_exhaustion_is_partial_but_caller_cancellation_is_an_error() {
         let fixture = Fixture::new("preparation-budget-disposition");
         fixture.write("lesson.md", b"source text\n");

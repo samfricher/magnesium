@@ -209,7 +209,22 @@ pub(crate) struct ExistingRecord {
     pub(crate) file_size: Option<i64>,
     pub(crate) modified_unix_ns: Option<i64>,
     pub(crate) content_sha256: Option<String>,
+    pub(crate) exclusion_reason: Option<String>,
     pub(crate) present: bool,
+}
+
+impl ExistingRecord {
+    /// Whether this row holds the verdict for a file discovered as `kind`. A
+    /// file excluded for its content keeps that verdict until it changes;
+    /// reading it again on every recheck would only exclude it again.
+    pub(crate) fn describes(&self, kind: &str) -> bool {
+        self.present
+            && (self.source_kind == kind
+                || matches!(
+                    self.exclusion_reason.as_deref(),
+                    Some("sensitive_content" | "sensitive_extracted")
+                ))
+    }
 }
 
 #[derive(Clone, Debug)]

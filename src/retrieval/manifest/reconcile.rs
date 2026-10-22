@@ -312,9 +312,10 @@ fn hash_before_lock(
             continue;
         };
         let path_key = native_path_key(&entry.relative_path);
-        if existing.get(&path_key).is_some_and(|record| {
-            record.present && record.source_kind == kind && record.file_size == to_i64(entry.size)
-        }) {
+        if existing
+            .get(&path_key)
+            .is_some_and(|record| record.describes(kind) && record.file_size == to_i64(entry.size))
+        {
             continue;
         }
         let source =
@@ -463,8 +464,7 @@ pub(crate) fn reconcile_entry(
     let file_size = Some(i64::try_from(file_size_bytes).unwrap_or(i64::MAX));
     let modified = Some(required_modified_ns(&source.path, &source.metadata)?);
     if let Some(record) = existing.get(&path_key)
-        && record.present
-        && record.source_kind == source_kind
+        && record.describes(source_kind)
         && record.file_size == file_size
         && record.modified_unix_ns == modified
     {
