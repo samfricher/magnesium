@@ -250,14 +250,20 @@ fn check_filename_matrix(kind: SourceKind, warm: bool) {
                 if bound {
                     request["content_sha256"] = json!(hash);
                 }
-                let response = call_exact_source(
-                    &mut client,
-                    100 + position as u64 * 3,
-                    request,
-                    kind,
-                    &path,
-                    &hash,
-                );
+                let id = 100 + position as u64 * 3;
+                // A cold, hash-bound inspect of this one filename must succeed
+                // on its first call; the rest of the matrix tolerates deferred
+                // preparation because it is load-sensitive.
+                let succeeds_on_first_call = !warm
+                    && matches!(kind, SourceKind::Text)
+                    && path == "lesson\"draft.txt"
+                    && action == "inspect"
+                    && bound;
+                let response = if succeeds_on_first_call {
+                    client.call_value(id, "sources", request)
+                } else {
+                    call_exact_source(&mut client, id, request, kind, &path, &hash)
+                };
                 assert_exact_source(&response, kind, &path, &hash, action);
                 assert_eq!(
                     before,
@@ -593,42 +599,6 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
         selected,
         (1, "indexed".to_owned(), hash),
         "unrestricted scan completion erased the explicitly prepared source"
-    );
-    client.close_cleanly();
-}
-
-#[cfg(unix)]
-#[test]
-fn cold_bound_text_with_quote_filename_is_inspected_without_search() {
-    let _source_capacity = support::sources::source_test_guard();
-    let environment = TestEnvironment::from_fixture("basic").unwrap();
-    initialize_product(&environment);
-    let path = "lesson\"draft.txt";
-    let bytes = b"Cobalt readers preserve the selected boundary.\n";
-    fs::write(environment.workspace.join(path), bytes).unwrap();
-    let hash = support::sources::fixture_hash(bytes);
-    let mut client = McpClient::spawn(&environment, true);
-    client.initialize();
-    let before =
-        DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES).unwrap();
-
-    let response = client.call_value(
-        100,
-        "sources",
-        json!({"action":"inspect", "path":path, "content_sha256":hash,
-            "anchor_kind":"line", "anchor_start":1, "anchor_end":1}),
-    );
-    assert_eq!(response["coverage"]["status"], "complete", "{response}");
-    assert_eq!(response["file"]["path"], path, "{response}");
-    assert_eq!(response["file"]["content_sha256"], hash, "{response}");
-    assert_eq!(
-        response["original"]["text"], "Cobalt readers preserve the selected boundary.",
-        "{response}"
-    );
-    assert_eq!(response["original"]["content_sha256"], hash, "{response}");
-    assert_eq!(
-        before,
-        DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES).unwrap()
     );
     client.close_cleanly();
 }

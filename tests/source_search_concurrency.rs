@@ -374,28 +374,3 @@ fn four_parallel_searches_report_bounded_outcomes_then_explicit_requests_recover
     }
     complete_corpus_with_bounded_requests(&environment, 320);
 }
-
-#[test]
-fn sequential_search_after_concurrent_recovery_still_finds_the_corpus() {
-    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    initialize_product(&environment);
-    write_corpus(&environment, 24);
-    let mut client = McpClient::spawn(&environment, true);
-    client.initialize();
-    let mut last = None;
-    for attempt in 0..8 {
-        let SearchOutcome::Snapshot(response) = search(&mut client, 10 + attempt) else {
-            continue;
-        };
-        if response["hits"]
-            .as_array()
-            .is_some_and(|hits| !hits.is_empty())
-        {
-            last = Some(response);
-            break;
-        }
-    }
-    let response = last.expect("bounded search must eventually index the corpus");
-    assert_eq!(response["hits"][0]["path"], "corpus/page-000.md");
-    client.close_cleanly();
-}

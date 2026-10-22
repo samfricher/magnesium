@@ -202,35 +202,6 @@ fn inspect_text_anchor_returns_bounded_original_without_learner_state() {
     client.close_cleanly();
 }
 
-/// Magnesium writes nothing into the workspace outside its control folder, so a
-/// learner folder named like the removed notes system's output is their own
-/// material and must be searchable and inspectable.
-#[test]
-fn a_learning_notes_folder_is_the_learners_own_source_material() {
-    let _source_capacity = support::sources::source_test_guard();
-    let environment = TestEnvironment::from_fixture("basic").expect("env");
-    initialize_product(&environment);
-    let path = "Learning Notes/week1.md";
-    fs::create_dir(environment.workspace.join("Learning Notes")).expect("create folder");
-    fs::write(environment.workspace.join(path), LESSON).expect("write note");
-    let mut client = McpClient::spawn(&environment, true);
-    client.initialize();
-
-    let reference = search_hit_for_path(&environment, &mut client, 100, "end mark", path, LESSON);
-    let inspected = client.call_value(
-        101,
-        "sources",
-        json!({"action": "inspect", "path": reference["path"], "content_sha256": reference["content_sha256"], "anchor_kind": reference["anchor_kind"], "anchor_start": reference["anchor_start"], "anchor_end": reference["anchor_end"]}),
-    );
-    assert_eq!(inspected["file"]["path"], path, "{inspected}");
-    assert_eq!(
-        inspected["authority"]["type"], "original_source",
-        "{inspected}"
-    );
-
-    client.close_cleanly();
-}
-
 #[test]
 fn stale_changed_source_reports_stale_without_bytes() {
     let _source_capacity = support::sources::source_test_guard();

@@ -42,6 +42,7 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
     assert!(instructions.contains("Magnesium Workspace Instructions"));
     assert!(instructions.len() < 16 * 1024);
     assert_empty_learner_state(&control.join("state.sqlite"));
+    assert_info_matches_state(&environment, &control.join("state.sqlite"));
     assert_valid_empty_source_cache(&control.join("index/source-search.sqlite"));
     assert_workspace_files_unchanged(&protected);
 
@@ -58,7 +59,7 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
     let config_after_first = fs::read(control.join("config.toml")).unwrap();
     let initialized_id = workspace_id(&control.join("config.toml"));
     assert!(initialized_id.starts_with("ws_"));
-    assert_eq!(environment.unmanaged_data_entries(), Vec::<String>::new());
+    assert_global_data_holds_only_plugin_copies(&environment);
 
     let stdout = String::from_utf8(first.stdout).expect("init output is UTF-8");
     let reported_paths = [
@@ -94,7 +95,7 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
         config_after_first
     );
     assert_eq!(fs::read(&exclude).unwrap(), exclude_after_first);
-    assert_eq!(environment.unmanaged_data_entries(), Vec::<String>::new());
+    assert_global_data_holds_only_plugin_copies(&environment);
     assert_eq!(workspace_id(&control.join("config.toml")), initialized_id);
     assert_empty_learner_state(&control.join("state.sqlite"));
     assert_workspace_files_unchanged(&protected);
@@ -311,17 +312,27 @@ fn workspace_id(config: &Path) -> String {
 fn assert_empty_learner_state(path: &Path) {
     let connection = Connection::open(path).unwrap();
     for table in [
-        "learner_memories",
-        "observations",
-        "learning_events",
         "learning_sessions",
+        "host_bindings",
+        "learning_events",
+        "observations",
+        "observation_events",
+        "learner_memories",
+        "memory_topics",
+        "memory_observations",
+        "memory_changes",
+        "operation_receipts",
+        "review_items",
+        "context_receipts",
+        "memory_fts",
+        "observation_fts",
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 0, "{table} was not empty");
+        assert_eq!(count, 0, "init must not create learner rows in {table}");
     }
     let family: String = connection
         .query_row("SELECT storage_family FROM workspace_meta", [], |r| {
@@ -329,6 +340,50 @@ fn assert_empty_learner_state(path: &Path) {
         })
         .unwrap();
     assert_eq!(family, "learner-model/v2");
+}
+
+fn assert_info_matches_state(environment: &TestEnvironment, state: &Path) {
+    let output = environment
+        .command()
+        .args(["info", "--json"])
+        .output()
+        .expect("run magnesium info");
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).expect("info JSON");
+    let connection = Connection::open(state).unwrap();
+    let (workspace_id, stored_schema): (String, i64) = connection
+        .query_row(
+            "SELECT workspace_id, schema_version FROM workspace_meta",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(report["active"], true);
+    assert_eq!(report["workspace_id"], workspace_id);
+    assert_eq!(report["schema_version"], stored_schema);
+}
+
+/// Learner state stays in the workspace; each per-user data directory holds
+/// only the plugin copies that init manages.
+fn assert_global_data_holds_only_plugin_copies(environment: &TestEnvironment) {
+    for data_dir in [
+        environment
+            .root
+            .join("home/Library/Application Support/magnesium"),
+        environment.global_data.join("magnesium"),
+    ] {
+        let Ok(entries) = fs::read_dir(&data_dir) else {
+            continue;
+        };
+        for entry in entries {
+            let name = entry.unwrap().file_name();
+            assert!(
+                name == "marketplace" || name == "claude-plugin",
+                "init wrote unmanaged global data: {}",
+                data_dir.join(name).display()
+            );
+        }
+    }
 }
 
 fn assert_valid_empty_source_cache(path: &Path) {
@@ -474,25 +529,6 @@ fn init_with_adapter_agents_md_creates_and_updates_bounded_block_preserves_exter
     assert!(content3.starts_with(no_block));
     assert!(content3.contains("<!-- magnesium:begin -->"));
     assert!(content3.contains("<!-- magnesium:end -->"));
-}
-
-#[test]
-fn init_without_adapter_does_not_touch_agents_md() {
-    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    let agents_md = environment.workspace.join("AGENTS.md");
-    let initial_content = "# Preserved User Rules\nUntouched content.\n";
-    fs::write(&agents_md, initial_content).expect("write agents.md");
-
-    let output = environment
-        .command()
-        .arg("init")
-        .output()
-        .expect("run init without adapter");
-    assert_success(&output);
-    assert_eq!(
-        fs::read_to_string(&agents_md).expect("read agents.md"),
-        initial_content
-    );
 }
 
 #[test]

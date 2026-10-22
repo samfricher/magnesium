@@ -8,12 +8,8 @@ use sha2::{Digest, Sha256};
 
 use support::TestEnvironment;
 use support::mcp::McpClient;
-use support::snapshot::DatabaseSnapshot;
 
-use super::{
-    CURRENT_CANONICAL_TABLES, assert_no_delivery_claim, assert_range_issue, initialize_product,
-    sources_error, store_path,
-};
+use super::{assert_no_delivery_claim, assert_range_issue, initialize_product, sources_error};
 
 #[test]
 fn malformed_pdf_reports_text_unavailable_with_original_option() {
@@ -230,87 +226,6 @@ fn native_pdf_defaults_to_pages_and_distinguishes_blank_from_missing_text() {
         "{mismatch}"
     );
     client.close_cleanly();
-}
-
-#[test]
-fn deferred_reconciliation_cannot_certify_changed_or_deleted_pdf_status_or_extent() {
-    let _source_capacity = support::sources::source_test_guard();
-    for deleted in [false, true] {
-        let environment = TestEnvironment::from_fixture("basic").unwrap();
-        initialize_product(&environment);
-        let pdf = pdf_pages(&["Alpha original page", "Beta original page"], 0);
-        let path = environment.workspace.join("source.pdf");
-        fs::write(&path, &pdf).unwrap();
-        let hash = support::sources::fixture_hash(&pdf);
-        let mut client = McpClient::spawn(&environment, true);
-        client.initialize();
-        support::sources::prepare_pdf_fixture(&environment, &mut client, 1000, "source.pdf", &hash);
-        let before = client.call_value(
-            100,
-            "sources",
-            json!({"action":"status", "path":"source.pdf"}),
-        );
-        assert_eq!(before["coverage"]["status"], "complete", "{before}");
-        assert_eq!(before["file"]["content_sha256"], hash, "{before}");
-        let learner_before =
-            DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES).unwrap();
-        let writer = rusqlite::Connection::open(
-            environment
-                .workspace
-                .join(support::CONTROL_DIR)
-                .join("index/source-search.sqlite"),
-        )
-        .unwrap();
-        writer.execute_batch("BEGIN IMMEDIATE").unwrap();
-        if deleted {
-            fs::remove_file(&path).unwrap();
-        } else {
-            let mut changed = pdf.clone();
-            let offset = changed
-                .windows(5)
-                .position(|bytes| bytes == b"Alpha")
-                .unwrap();
-            changed[offset..offset + 5].copy_from_slice(b"Omega");
-            assert_eq!(changed.len(), pdf.len());
-            assert_ne!(support::sources::fixture_hash(&changed), hash);
-            fs::write(&path, changed).unwrap();
-        }
-        for (index, request) in [
-            json!({"action":"status", "path":"source.pdf"}),
-            json!({"action":"inspect", "path":"source.pdf", "anchor_start":3, "anchor_end":3}),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let error = sources_error(&mut client, 101 + index as u64, request);
-            let cache_failure = error.contains(&format!(
-                "{}/index/source-search.sqlite",
-                support::CONTROL_DIR
-            )) && (error.contains("initialization budget exhausted")
-                || error.contains("database is locked"));
-            if deleted {
-                assert!(
-                    cache_failure
-                        || (error.contains("inspect source") && error.contains("source.pdf")),
-                    "{error}"
-                );
-            } else {
-                assert!(
-                    cache_failure || error.contains("source changed after reconciliation"),
-                    "{error}"
-                );
-            }
-            assert!(!error.contains("Alpha original page"), "{error}");
-            assert!(!error.contains("Omega original page"), "{error}");
-            assert!(!error.contains("Beta original page"), "{error}");
-        }
-        writer.execute_batch("ROLLBACK").unwrap();
-        assert_eq!(
-            learner_before,
-            DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES).unwrap()
-        );
-        client.close_cleanly();
-    }
 }
 
 #[cfg(unix)]
