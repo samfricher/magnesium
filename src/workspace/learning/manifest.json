@@ -52,7 +52,7 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "8a4cc0d0104a5a4328446f97164ad4dd94c46af3736904eadd1f34280dbb69ed",
+      "sha256": "21e421f07b8f77e2f42a9b7a0213065693dfc2bb17862c0bc31dfb08276f8c32",
       "stage": "teach-and-practice"
     },
     {

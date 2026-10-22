@@ -250,6 +250,34 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 }
 
 #[test]
+fn served_instructions_skip_the_task_only_on_the_learners_terms() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = v2::tool(
+            &e,
+            host,
+            "task-exits",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"teach_and_practice"}),
+        );
+        let text = served["text"].as_str().unwrap();
+        assert!(
+            text.contains(
+                "Skip it only when the learner requested explanation-only or the session is ending."
+            ),
+            "{host}"
+        );
+        for exit in ["already observed", "not yet usable"] {
+            assert!(
+                !text.contains(exit),
+                "{host} still skips the task when {exit}"
+            );
+        }
+    }
+}
+
+#[test]
 fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
