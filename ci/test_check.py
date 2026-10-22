@@ -1,6 +1,7 @@
 """The local check entrypoint must run real checks and propagate failures."""
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import shlex
@@ -15,10 +16,14 @@ from unittest.mock import patch
 from ci import check
 
 
+DEFAULT_TARGETS = ("digest", "opencode_adapter", "smoke")
+
+
 def label(command):
-    """Short name for a command: 'cargo test --no-run', 'cargo fmt', or the script or module a Python command runs."""
+    """Short name for a command: 'cargo test --no-run', 'cargo test opencode_adapter', 'cargo fmt', or the script or module a Python command runs."""
     if command[0] == "cargo":
-        return " ".join(command[:2]) + (" --no-run" if "--no-run" in command else "")
+        return " ".join(command[:2]) + (" --no-run" if "--no-run" in command else "") + \
+            (f" {check.SIDE_TEST}" if check.SIDE_TEST in command else "")
     return " ".join(command[1:6]) if command[1] == "-m" else command[1]
 
 
@@ -28,24 +33,32 @@ class FakeProcess:
         self.label = label(command)
         self.terminated = threading.Event()
         self.returncode = None
+        self.interrupted = False
+        self.finishing = threading.Lock()
         fake.record("start", self)
 
-    def wait(self):
+    def wait(self, timeout=None):
         fake = self.fake
-        if self.meets:
-            fake.barrier.wait()
-        if self.label in fake.hang:
-            self.terminated.wait(10)
-        if self.terminated.is_set():
-            self.returncode = -signal.SIGTERM
-        else:
-            self.returncode = fake.exit_codes.get(self.label, 0)
-            log = self.kwargs.get("stdout")
-            if log is not None:
-                log.write(f"{self.label} line 1\n{self.label} line 2\n")
-                log.flush()
-        fake.record("end", self)
-        return self.returncode
+        with self.finishing:  # one caller does the work; a later one gets the same answer
+            if self.returncode is not None:
+                return self.returncode
+            if self.meets:
+                fake.barrier.wait()
+            if self.label in fake.interrupt and not self.interrupted:
+                self.interrupted = True
+                raise KeyboardInterrupt
+            if self.label in fake.hang:
+                self.terminated.wait(10)
+            if self.terminated.is_set():
+                self.returncode = -signal.SIGTERM
+            else:
+                self.returncode = fake.exit_codes.get(self.label, 0)
+                log = self.kwargs.get("stdout")
+                if log is not None:
+                    log.write(f"{self.label} line 1\n{self.label} line 2\n")
+                    log.flush()
+            fake.record("end", self)
+            return self.returncode
 
     def terminate(self):
         self.terminated.set()
@@ -55,13 +68,17 @@ class FakeSubprocess:
     """Stands in for subprocess.Popen and subprocess.run, so no test starts cargo or a real check.
 
     Every start and end is recorded in order. exit_codes maps a label to its exit status, hang lists
-    labels that only end when terminated, missing lists programs that are not installed, and meet makes
-    the first N Popen processes wait for each other, which only works if they run at the same time.
+    labels that only end when terminated, missing lists programs (or labels) that cannot be started,
+    interrupt lists labels whose first wait raises KeyboardInterrupt, and meet makes the first N Popen
+    processes (or meet_labels, the processes with those labels) wait for each other, which only works
+    if they run at the same time.
     """
 
-    def __init__(self, *, exit_codes=None, hang=(), missing=(), meet=0):
+    def __init__(self, *, exit_codes=None, hang=(), missing=(), meet=0, meet_labels=(), interrupt=()):
         self.exit_codes, self.hang, self.missing = exit_codes or {}, set(hang), set(missing)
-        self.barrier = threading.Barrier(meet, timeout=2) if meet else None
+        self.meet_labels, self.interrupt = set(meet_labels), set(interrupt)
+        parties = meet or len(self.meet_labels)
+        self.barrier = threading.Barrier(parties, timeout=2) if parties else None
         self.events, self.processes, self.lock = [], [], threading.Lock()
 
     def record(self, kind, process):
@@ -71,14 +88,17 @@ class FakeSubprocess:
                 self.processes.append(process)
 
     def Popen(self, command, **kwargs):
-        if command[0] in self.missing:
+        if command[0] in self.missing or label(command) in self.missing:
             raise FileNotFoundError(command[0])
         with self.lock:
-            meets = self.barrier is not None and sum(p.meets for p in self.processes) < self.barrier.parties
+            if self.meet_labels:
+                meets = label(command) in self.meet_labels
+            else:
+                meets = self.barrier is not None and sum(p.meets for p in self.processes) < self.barrier.parties
         return FakeProcess(self, command, kwargs, meets)
 
     def run(self, command, **kwargs):
-        if command[0] in self.missing:
+        if command[0] in self.missing or label(command) in self.missing:
             raise FileNotFoundError(command[0])
         code = FakeProcess(self, command, kwargs, False).wait()
         if kwargs.get("check") and code:
@@ -92,29 +112,43 @@ class FakeSubprocess:
         return next(p for p in self.processes if p.label == name)
 
 
-@contextlib.contextmanager
-def fake_ram_disk():
-    yield "/ram"
+def fake_ram_disk(fake):
+    """Stands in for test_temp_dir, noting in the fake's events when the one RAM disk is made and released."""
+    @contextlib.contextmanager
+    def disk():
+        fake.events.append(("ram disk", "up"))
+        try:
+            yield "/ram"
+        finally:
+            fake.events.append(("ram disk", "down"))
+    return disk
 
 
 class CheckRunnerTests(unittest.TestCase):
-    def run_main(self, args, **options):
-        """Run check.main with every subprocess faked; returns (exit code, fake, stdout, stderr)."""
-        fake = FakeSubprocess(**options)
+    def run_main(self, args, *, targets=DEFAULT_TARGETS, fake=None, **options):
+        """Run check.main with every subprocess faked; returns (exit code, fake, stdout, stderr).
+
+        targets is what Cargo reports as test targets, or an exception for Cargo failing to say.
+        """
+        fake = fake or FakeSubprocess(**options)
+        listing = patch.object(check, "test_targets", side_effect=targets) if isinstance(targets, Exception) \
+            else patch.object(check, "test_targets", return_value=list(targets))
         out, err = io.StringIO(), io.StringIO()
         with patch.object(check.subprocess, "Popen", fake.Popen), patch.object(check.subprocess, "run", fake.run), \
-                patch.object(check, "test_temp_dir", fake_ram_disk), patch.object(check, "native_target", return_value="test-host"), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                patch.object(check, "test_temp_dir", fake_ram_disk(fake)), patch.object(check, "native_target", return_value="test-host"), \
+                listing, contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = check.main(args)
         return code, fake, out.getvalue(), err.getvalue()
 
     def test_list_shows_every_command_by_phase_without_running_any(self):
-        with patch.object(check.subprocess, "run") as run, patch.object(check.subprocess, "Popen") as popen:
+        with patch.object(check.subprocess, "run") as run, patch.object(check.subprocess, "Popen") as popen, \
+                patch.object(check.subprocess, "check_output") as check_output:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(check.main(["--list"]), 0)
             run.assert_not_called()
             popen.assert_not_called()
+            check_output.assert_not_called()
         listing = output.getvalue()
         for scope in check.SCOPES:
             for _, command in check.commands(scope):
@@ -124,6 +158,12 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("--no-run", listing[:test_phase])
         self.assertNotIn("--no-run", listing[test_phase:])
         self.assertEqual(listing.count("RAM disk"), 1)
+        # The one test command is shown with the two it becomes, which run at the same time.
+        tests = listing[test_phase:]
+        self.assertIn("at the same time", tests)
+        self.assertIn(f"--test {check.SIDE_TEST} ", tests)
+        self.assertIn(f"<every-test-target-except-{check.SIDE_TEST}>", tests)
+        self.assertEqual(tests.count("--lib --bins --benches --examples"), 1)
 
     def test_list_without_core_has_no_test_phase(self):
         output = io.StringIO()
@@ -222,8 +262,12 @@ class CheckRunnerTests(unittest.TestCase):
         build_phase = [label(command) for lane in lanes for _, command in lane]
         self.assertEqual(sorted(fake.events[:2 * len(build_phase)]),
                          sorted([(kind, name) for name in build_phase for kind in ("start", "end")]))
-        self.assertEqual(fake.events[2 * len(build_phase):], [
-            ("start", "cargo test"), ("end", "cargo test"),
+        tests = fake.events[2 * len(build_phase):]
+        self.assertEqual(tests[0], ("ram disk", "up"))
+        self.assertCountEqual(tests[1:5], [(kind, name) for name in ("cargo test", "cargo test opencode_adapter")
+                                           for kind in ("start", "end")])
+        self.assertEqual(tests[5:], [
+            ("ram disk", "down"),
             ("start", "ci/check_native_sources.py"), ("end", "ci/check_native_sources.py")])
         self.assertIn("Selected local checks passed", out)
 
@@ -247,7 +291,8 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("cargo fmt line 1", out)
         self.assertTrue(fake.process("cargo build").terminated.is_set())
         self.assertNotIn("cargo build line 1", out)
-        for skipped in ("cargo clippy", "cargo test --no-run", "cargo test", "ci/check_native_sources.py"):
+        for skipped in ("cargo clippy", "cargo test --no-run", "cargo test", "cargo test opencode_adapter",
+                        "ci/check_native_sources.py"):
             self.assertNotIn(skipped, fake.started())
 
     def test_a_failed_test_binary_build_shows_its_output_and_skips_the_test_run(self):
@@ -263,7 +308,7 @@ class CheckRunnerTests(unittest.TestCase):
         code, fake, _, err = self.run_main(["core"], exit_codes={"cargo clippy": 1})
         self.assertEqual(code, 1)
         self.assertIn("Failed: cargo clippy", err)
-        for skipped in ("cargo test --no-run", "cargo test", "ci/check_native_sources.py"):
+        for skipped in ("cargo test --no-run", "cargo test", "cargo test opencode_adapter", "ci/check_native_sources.py"):
             self.assertNotIn(skipped, fake.started())
 
     def test_a_failed_test_run_is_named_and_the_native_smoke_does_not_run(self):
@@ -289,19 +334,17 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertEqual(fake.events, [])
 
     def test_a_missing_tool_in_the_test_phase_is_a_failure(self):
-        fake = FakeSubprocess()
-        real_run = fake.run
-
-        def run(command, **kwargs):
-            if command[:2] == ["cargo", "test"]:
-                raise FileNotFoundError("cargo")
-            return real_run(command, **kwargs)
-
-        with patch.object(check.subprocess, "Popen", fake.Popen), patch.object(check.subprocess, "run", run), \
-                patch.object(check, "test_temp_dir", fake_ram_disk), patch.object(check, "native_target", return_value="test-host"), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(check.main(["core"]), 1)
-        self.assertIn("Missing prerequisite: cargo", err.getvalue())
+        for missing, targets in [({"cargo test"}, DEFAULT_TARGETS),  # the main command cannot start
+                                 ({"cargo test opencode_adapter"}, DEFAULT_TARGETS),  # the side command cannot start
+                                 ({"cargo test"}, ("smoke",))]:  # the single command cannot start
+            with self.subTest(missing=missing, targets=targets):
+                code, fake, _, err = self.run_main(["core"], missing=missing, targets=targets)
+                self.assertEqual(code, 1)
+                self.assertIn("Missing prerequisite: cargo", err)
+                self.assertNotIn("ci/check_native_sources.py", fake.started())
+                self.assertEqual(fake.events[-1], ("ram disk", "down"))
+                for process in fake.processes:  # nothing is left running
+                    self.assertIsNotNone(process.returncode)
 
     def test_a_crash_while_running_the_build_phase_fails_the_run(self):
         with patch.object(check.subprocess, "Popen", side_effect=PermissionError("denied")), \
@@ -321,7 +364,8 @@ class CheckRunnerTests(unittest.TestCase):
         code, fake, _, _ = self.run_main(["core"])
         self.assertEqual(code, 0)
         self.assertCountEqual(fake.started(), [
-            "cargo fmt", "cargo clippy", "cargo build", "cargo test --no-run", "cargo test", "ci/check_native_sources.py"])
+            "cargo fmt", "cargo clippy", "cargo build", "cargo test --no-run", "cargo test", "cargo test opencode_adapter",
+            "ci/check_native_sources.py"])
         self.assertLess(fake.started().index("cargo test --no-run"), fake.started().index("cargo test"))
 
     def test_docs_scope_runs_link_help_text_bundle_and_brand_checks_in_the_repository(self):
@@ -343,15 +387,127 @@ class CheckRunnerTests(unittest.TestCase):
         run.assert_not_called()
         popen.assert_not_called()
 
-    def test_only_the_test_run_gets_the_temporary_directory(self):
+    def test_only_the_test_runs_get_the_temporary_directory(self):
         _, fake, _, _ = self.run_main(["core"])
         env = {process.label: process.kwargs["env"] for process in fake.processes}
         for name in ("TMPDIR", "TEMP", "TMP"):
             self.assertEqual(env["cargo test"][name], "/ram")
+            self.assertEqual(env["cargo test opencode_adapter"][name], "/ram")
             for other in ("cargo fmt", "cargo clippy", "cargo build", "cargo test --no-run", "ci/check_native_sources.py"):
                 self.assertNotEqual(env[other].get(name), "/ram")
         self.assertEqual(env["cargo test"]["MAGNESIUM_TEST_BINARY"], env["cargo build"]["MAGNESIUM_TEST_BINARY"])
         self.assertEqual(env["cargo test"]["MAGNESIUM_TEST_BINARY"], env["cargo test --no-run"]["MAGNESIUM_TEST_BINARY"])
+        self.assertEqual(env["cargo test opencode_adapter"]["MAGNESIUM_TEST_BINARY"], env["cargo test"]["MAGNESIUM_TEST_BINARY"])
+
+    def test_cargo_metadata_gives_the_integration_test_target_names(self):
+        targets = [("lib", "magnesium"), ("bin", "magnesium"), ("test", "smoke"), ("test", "opencode_adapter"),
+                   ("custom-build", "build-script-build")]
+        metadata = json.dumps({"packages": [{"targets": [{"kind": [kind], "name": name} for kind, name in targets]}]})
+        with patch.object(check.subprocess, "check_output", return_value=metadata) as output:
+            self.assertEqual(check.test_targets(), ["smoke", "opencode_adapter"])
+        self.assertEqual(output.call_args.args[0][:3], ["cargo", "metadata", "--no-deps"])
+        with patch.object(check.subprocess, "check_output", return_value=json.dumps({"packages": [{"targets": []}] * 2})):
+            with self.assertRaises(RuntimeError):
+                check.test_targets()
+
+    def test_the_split_runs_every_target_of_the_single_command_exactly_once(self):
+        _, test = check.pick(check.commands("core", "test-host"), "cargo", "test")
+        names = ["digest", "opencode_adapter", "smoke", "init"]
+        main, side = check.split_tests(test, names)
+
+        def tests_named(command):
+            return [command[index + 1] for index, flag in enumerate(command) if flag == "--test"]
+
+        self.assertEqual(tests_named(side), ["opencode_adapter"])
+        self.assertCountEqual(tests_named(main) + tests_named(side), names)
+        for flag in ("--lib", "--bins", "--benches", "--examples"):
+            self.assertIn(flag, main)
+            self.assertNotIn(flag, side)
+        selection = {"--all-targets", "--lib", "--bins", "--benches", "--examples", "--test", *names}
+        rest = [[word for word in command if word not in selection] for command in (main, side, test)]
+        self.assertEqual(rest[0], rest[1])  # same lock, features, target and profile
+        self.assertEqual(rest[0], rest[2])
+        self.assertNotIn("--all-targets", main + side)
+
+    def test_the_tests_are_not_split_when_the_side_target_or_the_target_flag_is_missing(self):
+        _, test = check.pick(check.commands("core", "test-host"), "cargo", "test")
+        self.assertIsNone(check.split_tests(test, ["digest", "smoke"]))
+        self.assertIsNone(check.split_tests([*test, "--all-targets"], ["opencode_adapter"]))
+        self.assertIsNone(check.split_tests([word for word in test if word != "--all-targets"], ["opencode_adapter"]))
+
+    def test_without_the_side_target_one_command_runs_every_test(self):
+        code, fake, out, _ = self.run_main(["core"], targets=("digest", "smoke"))
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.started().count("cargo test"), 1)
+        self.assertNotIn("cargo test opencode_adapter", fake.started())
+        self.assertIn("--all-targets", fake.process("cargo test").command)
+        self.assertEqual(fake.process("cargo test").kwargs["env"]["TMPDIR"], "/ram")
+        self.assertIn("Running every Rust test in one command", out)
+
+    def test_when_cargo_cannot_list_the_targets_one_command_runs_every_test(self):
+        for error in (RuntimeError("two packages"), subprocess.CalledProcessError(101, "cargo"),
+                      OSError("no cargo"), ValueError("not JSON"), KeyError("packages")):
+            with self.subTest(error=error):
+                code, fake, out, _ = self.run_main(["core"], targets=error)
+                self.assertEqual(code, 0)
+                self.assertEqual(fake.started().count("cargo test"), 1)
+                self.assertNotIn("cargo test opencode_adapter", fake.started())
+                self.assertIn("--all-targets", fake.process("cargo test").command)
+                self.assertIn("Cargo could not list the test targets", out)
+
+    def test_the_two_test_commands_run_at_the_same_time(self):
+        # Each waits for the other to start; a runner that ran them one after the other would time out.
+        code, fake, _, err = self.run_main(["core"], meet_labels={"cargo test", "cargo test opencode_adapter"})
+        self.assertEqual((code, err), (0, ""))
+
+    def test_both_test_commands_share_one_ram_disk_that_outlives_them(self):
+        code, fake, _, _ = self.run_main(["core"])
+        self.assertEqual(code, 0)
+        events = fake.events
+        self.assertEqual(events.count(("ram disk", "up")), 1)
+        up, down = events.index(("ram disk", "up")), events.index(("ram disk", "down"))
+        for name in ("cargo test", "cargo test opencode_adapter"):
+            self.assertLess(up, events.index(("start", name)))
+            self.assertLess(events.index(("end", name)), down)
+        self.assertLess(down, events.index(("start", "ci/check_native_sources.py")))
+
+    def test_the_main_test_command_streams_and_the_side_one_prints_whole_afterwards(self):
+        _, fake, out, _ = self.run_main(["core"])
+        main, side = fake.process("cargo test"), fake.process("cargo test opencode_adapter")
+        self.assertIsNone(main.kwargs.get("stdout"))  # straight to the console as it runs
+        self.assertIsNotNone(side.kwargs["stdout"])
+        self.assertIs(side.kwargs["stdin"], check.subprocess.DEVNULL)
+        shown_main, shown_side = shlex.join(main.command), shlex.join(side.command)
+        self.assertIn(f"\n  (.) {shown_side}\ncargo test opencode_adapter line 1\ncargo test opencode_adapter line 2\n", out)
+        self.assertLess(out.index(f"(.) {shown_main}"), out.index(f"(.) {shown_side}"))
+
+    def test_a_failed_main_test_command_is_named_and_stops_the_side_one_and_the_native_smoke(self):
+        code, fake, out, err = self.run_main(["core"], exit_codes={"cargo test": 101}, hang={"cargo test opencode_adapter"})
+        self.assertEqual(code, 1)
+        self.assertEqual(err.strip(), f"Failed: {shlex.join(fake.process('cargo test').command)} (exit 101)")
+        self.assertTrue(fake.process("cargo test opencode_adapter").terminated.is_set())
+        self.assertNotIn("cargo test opencode_adapter line", out)  # a stopped command prints nothing
+        self.assertNotIn("ci/check_native_sources.py", fake.started())
+        self.assertEqual(fake.events[-1], ("ram disk", "down"))
+
+    def test_a_failed_side_test_command_is_named_and_shown_and_stops_the_main_one(self):
+        code, fake, out, err = self.run_main(["core"], exit_codes={"cargo test opencode_adapter": 1}, hang={"cargo test"})
+        self.assertEqual(code, 1)
+        self.assertEqual(err.strip(), f"Failed: {shlex.join(fake.process('cargo test opencode_adapter').command)} (exit 1)")
+        self.assertIn("cargo test opencode_adapter line 2", out)  # the failing test's output
+        self.assertTrue(fake.process("cargo test").terminated.is_set())
+        self.assertNotIn("ci/check_native_sources.py", fake.started())
+        self.assertEqual(fake.events[-1], ("ram disk", "down"))
+
+    def test_an_interrupt_stops_both_test_commands_and_still_releases_the_ram_disk(self):
+        fake = FakeSubprocess(interrupt={"cargo test"}, hang={"cargo test opencode_adapter"})
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_main(["core"], fake=fake)
+        for name in ("cargo test", "cargo test opencode_adapter"):
+            self.assertTrue(fake.process(name).terminated.is_set())
+            self.assertIsNotNone(fake.process(name).returncode)
+        self.assertEqual(fake.events[-1], ("ram disk", "down"))
+        self.assertNotIn("ci/check_native_sources.py", fake.started())
 
     def test_list_and_other_scopes_never_create_a_ram_disk(self):
         with patch.object(check, "test_temp_dir") as ram:

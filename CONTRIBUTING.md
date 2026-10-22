@@ -20,7 +20,8 @@ the release executable built by the same command. Missing prerequisites and
 failed checks stop the run. The builds, lint, Python tests, and documentation
 checks overlap and print each command's output when it finishes; the Rust tests
 and native source check then run alone because the tests are sensitive to CPU
-load. The Rust tests keep their temporary files on a RAM disk
+load, except that the `opencode_adapter` test, which mostly waits, runs beside the
+other Rust tests. The Rust tests keep their temporary files on a RAM disk
 (macOS) or in `/dev/shm` (Linux) that the command removes afterwards; set
 `MAGNESIUM_CI_DISK_TMP=1` to use the default temporary directory instead.
 

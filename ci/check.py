@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 from pathlib import Path
 import re
@@ -26,6 +27,9 @@ RAM_DISK_SECTORS = 1048576  # 512 MiB; the whole suite peaks near 7 MB
 RAM_DISK_MIN_FREE_BYTES = 32 * 1024 * 1024
 SHM_DIR = Path("/dev/shm")
 VOLUMES_DIR = Path("/Volumes")
+# This test target waits on timers in a Node harness (about 20 s of wall time, almost no CPU),
+# so it can run beside the other Rust tests without disturbing them.
+SIDE_TEST = "opencode_adapter"
 
 
 def commands(scope: str, target: str | None = None) -> list[Step]:
@@ -71,8 +75,9 @@ def plan(scopes: list[str], target: str | None = None) -> tuple[list[list[Step]]
 
     Lanes run side by side, each in order. The Rust tests are load-sensitive and the
     native-source smoke writes durably, so both wait for every lane and then run one at
-    a time, tests first. Clippy and the test-binary build share a lane because Cargo
-    makes builds that share a build directory take turns anyway.
+    a time, tests first (run_test_phase lets only the SIDE_TEST target overlap the other
+    Rust tests). Clippy and the test-binary build share a lane because Cargo makes builds
+    that share a build directory take turns anyway.
     """
     lanes: list[list[Step]] = []
     alone: list[Step] = []
@@ -208,15 +213,58 @@ def test_temp_dir() -> Iterator[str | None]:
         yield directory
 
 
+def with_temp_dir(env: dict[str, str], directory: str | None) -> dict[str, str]:
+    """env with every temporary-file variable pointing at directory (unchanged when there is none)."""
+    if directory is None:
+        return env
+    return {**env, "TMPDIR": directory, "TEMP": directory, "TMP": directory}
+
+
 def run_command(cwd: Path, command: list[str], env: dict[str, str]) -> None:
     """Run one check; cargo test also gets its temporary files on RAM-backed storage."""
     if not uses_test_temp_dir(command):
         subprocess.run(command, cwd=cwd, env=env, check=True)
         return
     with test_temp_dir() as directory:
-        if directory is not None:
-            env = {**env, "TMPDIR": directory, "TEMP": directory, "TMP": directory}
-        subprocess.run(command, cwd=cwd, env=env, check=True)
+        subprocess.run(command, cwd=cwd, env=with_temp_dir(env, directory), check=True)
+
+
+def test_targets() -> list[str]:
+    """Names of the package's integration-test targets, as Cargo lists them."""
+    output = subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"],
+                                     cwd=ROOT, text=True, stderr=subprocess.DEVNULL)
+    packages = json.loads(output)["packages"]
+    if len(packages) != 1:
+        raise RuntimeError(f"expected one Cargo package, found {len(packages)}")
+    return [target["name"] for target in packages[0]["targets"] if "test" in target["kind"]]
+
+
+def split_tests(command: list[str], names: list[str]) -> tuple[list[str], list[str]] | None:
+    """Split `cargo test --all-targets` into every other test, then the SIDE_TEST target alone.
+
+    --all-targets means the library, the binaries, benches, examples and every integration-test
+    target, so naming each target except SIDE_TEST in the first command and SIDE_TEST in the second
+    runs each of them exactly once. None means the split is not possible; the caller keeps the single
+    command, so coverage never shrinks.
+    """
+    if SIDE_TEST not in names or command.count("--all-targets") != 1:
+        return None
+    start = command.index("--all-targets")
+    others = [flag for name in names if name != SIDE_TEST for flag in ("--test", name)]
+    return ([*command[:start], "--lib", "--bins", "--benches", "--examples", *others, *command[start + 1:]],
+            [*command[:start], "--test", SIDE_TEST, *command[start + 1:]])
+
+
+def split_for_overlap(command: list[str]) -> tuple[list[str], list[str]] | None:
+    """split_tests with the package's real test targets; says why when it keeps the single command."""
+    try:
+        split = split_tests(command, test_targets())
+        reason = f"there is no {SIDE_TEST} test target to run on its own"
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError, LookupError) as error:
+        split, reason = None, f"Cargo could not list the test targets ({type(error).__name__})"
+    if split is None:
+        print(f"  Running every Rust test in one command: {reason}.", flush=True)
+    return split
 
 
 def echo(text: str) -> None:
@@ -283,6 +331,85 @@ def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
     return failures[0] if failures else None
 
 
+def run_tests_together(cwd: Path, main: list[str], side: list[str], env: dict[str, str]) -> str | None:
+    """Run the two cargo test commands at the same time on one RAM-backed temporary directory.
+
+    The main command streams as it runs. The side command's output waits for the main one to end, so
+    it cannot land in the middle of a line the main command is printing. The first failure is returned
+    as a message and the other command is terminated; a side command stopped that way prints nothing.
+    None means both passed.
+    """
+    lock = threading.Lock()
+    failures: list[tuple[list[str], int]] = []
+    children: list[subprocess.Popen] = []
+
+    def wait_for(child: subprocess.Popen, command: list[str]) -> None:
+        code = child.wait()
+        with lock:
+            if code and not failures:
+                failures.append((command, code))
+                for other in children:
+                    if other is not child:
+                        other.terminate()
+
+    def stop(child: subprocess.Popen) -> None:
+        """Reap a command that is still running because the run was interrupted."""
+        if child.returncode is None:
+            child.terminate()
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+
+    with test_temp_dir() as directory, tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as log:
+        env = with_temp_dir(env, directory)
+        watcher = threading.Thread(target=lambda: wait_for(children[1], side))
+        try:
+            print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(main)}", flush=True)
+            children.append(subprocess.Popen(main, cwd=cwd, env=env))
+            children.append(subprocess.Popen(side, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                             stdout=log, stderr=subprocess.STDOUT))
+            watcher.start()
+            wait_for(children[0], main)
+            watcher.join()
+        finally:
+            for child in children:
+                stop(child)
+            if watcher.is_alive():
+                watcher.join()
+        failed, code = failures[0] if failures else (None, 0)
+        if failed is not main:  # otherwise the side command was stopped half way
+            print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(side)}", flush=True)
+            log.seek(0)
+            output = log.read()
+            if output.strip():
+                echo(output.rstrip("\n"))
+    return f"Failed: {shlex.join(failed)} (exit {code})" if failed else None
+
+
+def run_test_phase(alone: list[Step], env: dict[str, str]) -> str | None:
+    """Run the steps one at a time, except that the Rust tests run beside the SIDE_TEST target.
+
+    None means everything passed; otherwise the message names what failed.
+    """
+    for cwd, command in alone:
+        try:
+            split = split_for_overlap(command) if uses_test_temp_dir(command) else None
+            if split:
+                failure = run_tests_together(cwd, *split, env)
+                if failure:
+                    return failure
+                continue
+            print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(command)}", flush=True)
+            run_command(cwd, command, env)
+        except FileNotFoundError:
+            return f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md."
+        except subprocess.CalledProcessError as error:
+            return f"Failed: {shlex.join(command)} (exit {error.returncode})"
+    return None
+
+
 def show_plan(lanes: list[list[Step]], alone: list[Step]) -> None:
     print("\n[build phase] lanes run at the same time; a lane runs its commands in order")
     for number, lane in enumerate(lanes, 1):
@@ -290,10 +417,15 @@ def show_plan(lanes: list[list[Step]], alone: list[Step]) -> None:
         for cwd, command in lane:
             print(f"    ({cwd.relative_to(ROOT)}) {shlex.join(command)}")
     if alone:
-        print("\n[test phase] runs alone, in order, after every build-phase command has finished")
+        print("\n[test phase] one step at a time, in order, after every build-phase command has finished")
         for cwd, command in alone:
             print(f"  ({cwd.relative_to(ROOT)}) {shlex.join(command)}")
             if uses_test_temp_dir(command):
+                main, side = split_tests(command, [SIDE_TEST, f"<every-test-target-except-{SIDE_TEST}>"])
+                print(f"    runs as these two commands at the same time, so the {SIDE_TEST} test, which mostly waits, overlaps the rest")
+                print("    (if Cargo cannot list the test targets, the command above runs by itself instead):")
+                print(f"      {shlex.join(main)}")
+                print(f"      {shlex.join(side)}")
                 print(f"    (test temporary files go to a RAM disk or /dev/shm when available; set {DISK_TMP_OPT_OUT}=1 to opt out)")
 
 
@@ -323,17 +455,11 @@ def main(argv: list[str] | None = None) -> int:
         print(failure, file=sys.stderr)
         return 1
     if alone:
-        print("\n[test phase] runs alone: the Rust tests are sensitive to CPU load", flush=True)
-    for cwd, command in alone:
-        print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(command)}", flush=True)
-        try:
-            run_command(cwd, command, env)
-        except FileNotFoundError:
-            print(f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md.", file=sys.stderr)
-            return 1
-        except subprocess.CalledProcessError as error:
-            print(f"Failed: {shlex.join(command)} (exit {error.returncode})", file=sys.stderr)
-            return 1
+        print(f"\n[test phase] runs alone: the Rust tests are sensitive to CPU load, so only the {SIDE_TEST} test runs beside them", flush=True)
+    failure = run_test_phase(alone, env)
+    if failure:
+        print(failure, file=sys.stderr)
+        return 1
     print("\nSelected local checks passed. Installer and live-model checks are separate.")
     return 0
 
