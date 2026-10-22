@@ -172,6 +172,11 @@ where
             Ok(value) => tool_success(value),
             Err((action, error)) => tool_error(&action, &error),
         };
+        if work.name == "search_sources"
+            && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&cwd)
+        {
+            crate::retrieval::catch_up::schedule(workspace.root());
+        }
         #[cfg(test)]
         if let Some(hooks) = &work.hooks {
             (hooks.checkpoint)(&work.name, "worker_finished");
@@ -430,6 +435,7 @@ pub(crate) fn run(
             .map_err(|error| error.to_string())?;
         service.waiting().await.map_err(|error| error.to_string())
     });
+    crate::retrieval::catch_up::shutdown();
     match result {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {

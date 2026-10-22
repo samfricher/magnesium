@@ -30,7 +30,8 @@ pub(crate) use reconcile::load_or_start_reconciliation;
 #[cfg(test)]
 pub(crate) use reconcile::reconcile_batch;
 pub(crate) use status::{
-    current_generation, manifest_coverage, pending_source_paths, source_status_and_size,
+    current_generation, manifest_coverage, pending_source_paths, scan_cursor,
+    source_status_and_size, unindexed_source_paths,
 };
 
 use crate::retrieval::DiscoveryError;

@@ -42,7 +42,7 @@ Writes check expected revisions. Identical successful retries return the saved r
 
 Pause, stop and recording controls apply to the current host/thread independently of interpretation; pausing or completing the lesson itself stops every conversation sharing it. Recording-on does not resume a lesson. Recording-off blocks new learner text in semantic records and context receipts, leaving existing data and provider conversations intact. A context receipt records packet preparation, not delivery or attention.
 
-Source access checks scope, exclusions and file versions independently. Extraction happens outside the writer lock; revision checks prevent stale results from being published. Export-marked private trees stay excluded from source discovery and inspection, including after copying or renaming.
+Source access checks scope, exclusions and file versions independently. Extraction happens outside the writer lock; revision checks prevent stale results from being published. A search indexes only what fits its own budget. After it returns, the MCP server keeps indexing the folder on one background thread until nothing is left, and stops that work when the host disconnects. Export-marked private trees stay excluded from source discovery and inspection, including after copying or renaming.
 
 ## Where the code lives
 
@@ -52,6 +52,6 @@ Source access checks scope, exclusions and file versions independently. Extracti
 | Capture and atomic updates | [`learner/update/`](../../src/learner/update/) |
 | Snapshot reads and retrieval | [`learner/read/`](../../src/learner/read/), [`search.rs`](../../src/learner/search.rs) |
 | Host controls and tool dispatch | [`adapter/`](../../src/adapter/), [`mcp/`](../../src/mcp/), [`request.rs`](../../src/request.rs) |
-| Subject-source search | [`retrieval/manifest/`](../../src/retrieval/manifest/), [`retrieval/search.rs`](../../src/retrieval/search.rs) |
+| Subject-source search | [`retrieval/manifest/`](../../src/retrieval/manifest/), [`retrieval/search.rs`](../../src/retrieval/search.rs), [`retrieval/catch_up.rs`](../../src/retrieval/catch_up.rs) |
 
 See the [security model](../security/threat-model.md) for trust boundaries and [CONTRIBUTING](../../CONTRIBUTING.md) for development and validation.

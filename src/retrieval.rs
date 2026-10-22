@@ -9,6 +9,7 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 mod boundary;
+pub(crate) mod catch_up;
 mod chunking;
 mod coordinator;
 #[cfg(test)]
