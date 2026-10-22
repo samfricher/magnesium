@@ -14,13 +14,20 @@ Choose who performs the next operation:
 
 | Learner's current position | Next move |
 |---|---|
-| No meaningful starting move | Explain and work a small example |
+| Knows how to start | Let the learner try first |
+| No starting move, no example step recorded for this kind of problem | Work a similar problem with the same structure and new details, then give a changed version to solve alone |
+| No starting move on a later problem of this kind, "example step (KIND): full" recorded | Give a partly worked example whose missing steps the learner fills in, then a full problem |
+| No starting move on a later problem of this kind, "example step (KIND): partly worked" recorded | Give the problem only, with no example |
+| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
+| Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence.
+This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the other rows.
+
+The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Record a step back in the turn that shows they did not solve the follow-up alone. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step (discrete expected value): full". Name the kind in every step, so a tag with several kinds keeps them apart. Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
 ## Construct assessable material before presenting it
 
@@ -39,6 +46,12 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 **Teaching:** “We want the expression inside the root to become a known square. Dividing by $a^2$ exposes $1-(x/a)^2$. The identity $1-\sin^2\theta=\cos^2\theta$ suggests $x=a\sin\theta$. Choose $\theta\in[-\pi/2,\pi/2]$, so the root is $a\cos\theta$, not an unexplained removal of an absolute value. Also transform $dx=a\cos\theta\,d\theta$.”
 
 **Learner-owned next step:** on a fresh expression, choose and justify a transformation before seeing its name. If you supply the identity or substitution, qualify that cue and test the omitted decision later. Do not make remembering a useful formula a failure; reconstruction is a backup and a test of the connections.
+
+## Example: a similar problem, then a changed version
+
+**Worked example:** "A fair die is rolled. What is the expected value? Each face has probability $1/6$, so $E=1\cdot\frac16+2\cdot\frac16+\dots+6\cdot\frac16=3.5$."
+
+**Changed version:** "A die is weighted so that 6 comes up half the time, and the other five faces equally often. What is the expected value?" It keeps $E=\sum x\,P(x)$ and changes the probabilities. Copying the worked steps gives 3.5, and the answer is 4.5.
 
 ## Finish the turn
 

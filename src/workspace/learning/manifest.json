@@ -8,19 +8,19 @@
       "path": "MAGNESIUM.md",
       "role": "orchestrator",
       "required_for_activation": true,
-      "sha256": "bae3474dc1103555c045a0699207a5a6a7dc026571917563aa4cda5403aa5434"
+      "sha256": "62f16c7f33db040d205c278a17cdb7d75f18ff8c564f0f2579853a95ec076a37"
     },
     {
       "path": "teaching-policy.md",
       "role": "policy",
       "required_for_activation": true,
-      "sha256": "af5c57da78fe91d3f67b0a5704d0af3a05a18442f3bd7d3ded6c506789aac622"
+      "sha256": "b32f7fa5b232d217c789ffb631a70c03299bd3d5d99579856c74a2799bc24644"
     },
     {
       "path": "contracts/state-and-evidence.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "1bbea0495e516263e5a460ccf9cbac4d14e531b5c7f514cf1a1f6d6838372b5f"
+      "sha256": "c0e241cce71f2b8c2299a9ed7dc108fa59302e45b8ddb269daae486e3df2eafa"
     },
     {
       "path": "contracts/source-use.md",
@@ -38,7 +38,7 @@
       "path": "workflows/orient-and-probe.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "7db1c2fdf6cf405b2d176f94e225dd62cd49c2a6c4f086f82f66aa8d75dfaa68",
+      "sha256": "501f954602d6112da6f116226e98b3b9f5bf424eae864f0e41cae28cba1cde99",
       "stage": "orient-and-probe"
     },
     {
@@ -52,14 +52,14 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "87cd325ef5863d4ce11a0d07d8e868a01a71bb24aa04d507330f48d4405b3b51",
+      "sha256": "4b862da76a5c1d51f5a2353dd72d4e8a77da89e1c9b50bf3a235e49a3caa3198",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "9b6fb4516be5b351d98170dbf5c7733653853a34bd105ad9096b782b102a7dcd",
+      "sha256": "2aee89cda14f47e236d26a62818243fcf371ab3dc8b997314e3475109a1698d2",
       "stage": "interpret-and-repair"
     },
     {
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "3eb44bd25925d7f8f4bfaf2f3be6f236d5d288f4865d11f9ca88d5b9ac191e0d",
+      "sha256": "0ec29bfb4f3632cd84492d59b3c7e03b50db7b1f9a4406b34775e920fcce7449",
       "stage": "papers-loop"
     },
     {

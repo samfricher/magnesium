@@ -151,6 +151,137 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 }
 
 #[test]
+fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rules = [
+        "then give a changed version with the same structure and new details to solve alone.",
+        "The next time they are stuck on it, give a partly worked example",
+        "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
+        "Help goes back as well as down: when the learner does not solve the changed version or the full problem alone, or later fails a cold redo or delayed check of that kind, move the step back one level, so \"partly worked\" becomes \"full\" and \"full\" is removed.",
+        "A learner who can start gets no example step.",
+        "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
+        "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
+        "Keep one step per kind.",
+        "Read that memory in full. No example step there means a full worked example.",
+        "A requested full solution and a fails-twice rewrite record none.",
+        "rewrite the task with smaller steps or a worked example first, whatever the example step;",
+        "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
+        "Keep any example step in its state_text.",
+    ];
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "worked-example",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in ["teach_and_practice", "papers_loop"] {
+            let text = served(stage);
+            for rule in rules {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
+        let teach = served("teach_and_practice");
+        for required in [
+            "| Knows how to start | Let the learner try first |",
+            "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
+            "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
+            "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
+            "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
+            "Record a step back in the turn that shows they did not solve the follow-up alone.",
+            "Name the kind in every step, so a tag with several kinds keeps them apart.",
+            "When rows conflict, take them in this order: an explicit request",
+            "Record it in the turn you give the example",
+            "Add the step to the existing state_text without dropping the rest",
+        ] {
+            assert!(teach.contains(required), "{host}: {required}");
+        }
+        let papers = served("papers_loop");
+        for required in [
+            "the tag's next example step if they could not start, or under rule 6 a worked example,",
+            "\"conditional: needs TAG, which is open; example step (KIND): full\"",
+        ] {
+            assert!(papers.contains(required), "{host}: {required}");
+        }
+        let contract = v2::tool(
+            &e,
+            host,
+            "worked-example",
+            "context",
+            json!({"action":"instructions","host":host,"stage":"teach_and_practice","operation":"state_and_evidence"}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let rules = [
+        "When the learner says they are confused, ask one question to find the cause and explain nothing yet.",
+        "When the learner says they are confused, ask about the cause before you choose.",
+    ];
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "confused",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        for stage in [
+            "orient_and_probe",
+            "plan_and_route",
+            "teach_and_practice",
+            "interpret_and_repair",
+            "review_and_transfer",
+            "consolidate_and_resume",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = served(stage);
+            for rule in rules {
+                assert!(text.contains(rule), "{host}/{stage}: {rule}");
+            }
+        }
+        assert!(
+            served("teach_and_practice")
+                .contains("| Says they are confused | Ask one question to find the cause"),
+            "{host}"
+        );
+        assert!(
+            served("interpret_and_repair")
+                .contains("If confusion repeats after you explain from the learner's answer"),
+            "{host}"
+        );
+        assert!(
+            served("orient_and_probe")
+                .contains("explain now, unless the learner says they are confused."),
+            "{host}"
+        );
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
