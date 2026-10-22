@@ -1,4 +1,5 @@
 use std::fs::File;
+#[cfg(not(unix))]
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -336,8 +337,8 @@ fn validate_header_ownership(
 ) -> Result<(), ManifestError> {
     loop {
         budget.cancellation.check()?;
-        let mut file = match File::open(path) {
-            Ok(file) => file,
+        let header = match read_header(path) {
+            Ok(header) => header,
             Err(error) if allow_empty && error.kind() == std::io::ErrorKind::NotFound => {
                 if has_sidecars(path)? {
                     return Err(incompatible(
@@ -349,13 +350,7 @@ fn validate_header_ownership(
             }
             Err(source) => return Err(io_error("inspect source-index header", path, source)),
         };
-        let mut header = Vec::with_capacity(72);
-        // Fixed-size ownership read, independent of source-cache row count.
-        let bytes = file
-            .by_ref()
-            .take(72)
-            .read_to_end(&mut header)
-            .map_err(|source| io_error("inspect source-index header", path, source))?;
+        let bytes = header.len();
         if bytes != 0 {
             if bytes != 72 {
                 return Err(incompatible(path, "has an incomplete SQLite header"));
@@ -389,6 +384,69 @@ fn validate_header_ownership(
         }
         std::thread::sleep(remaining.min(Duration::from_millis(2)));
     }
+}
+
+/// Fixed-size ownership read, independent of source-cache row count.
+#[cfg(not(unix))]
+fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let mut header = Vec::with_capacity(72);
+    file.by_ref().take(72).read_to_end(&mut header)?;
+    Ok(header)
+}
+
+/// POSIX advisory locks belong to the process and inode, and closing any
+/// descriptor for the inode releases all of them, including the SHARED lock
+/// SQLite holds for this process's live connections. SQLite's unix VFS defers
+/// closes of its own descriptors for that reason, but cannot defer ours. A
+/// descriptor opened here is therefore never closed or duplicated: one handle
+/// per inode lives for the process, so a replaced file adds one entry and the
+/// old entry keeps serving connections still open on the old inode.
+#[cfg(unix)]
+fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::collections::HashMap;
+    use std::os::unix::fs::{FileExt, MetadataExt};
+    use std::sync::{Mutex, OnceLock};
+
+    type Handles = Mutex<HashMap<(u64, u64), Arc<File>>>;
+    static HANDLES: OnceLock<Handles> = OnceLock::new();
+    let handles = HANDLES.get_or_init(Mutex::default);
+    let key = |metadata: std::fs::Metadata| (metadata.dev(), metadata.ino());
+    let file = {
+        let mut handles = handles
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match handles.get(&key(std::fs::metadata(path)?)) {
+            Some(file) => Arc::clone(file),
+            None => {
+                let opened = File::open(path)?;
+                match handles.entry(key(opened.metadata()?)) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        Arc::clone(entry.insert(Arc::new(opened)))
+                    }
+                    // The path was replaced by an inode already held. Closing
+                    // this duplicate would release that inode's locks, so it
+                    // is leaked instead.
+                    std::collections::hash_map::Entry::Occupied(entry) => {
+                        std::mem::forget(opened);
+                        Arc::clone(entry.get())
+                    }
+                }
+            }
+        }
+    };
+    let mut header = vec![0; 72];
+    let mut filled = 0;
+    while filled < header.len() {
+        match file.read_at(&mut header[filled..], filled as u64) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    header.truncate(filled);
+    Ok(header)
 }
 
 fn has_sidecars(path: &Path) -> Result<bool, ManifestError> {

@@ -54,6 +54,69 @@ fn ordinary_source_index_open_is_identity_only() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn reopening_the_index_keeps_a_live_connection_safe_from_a_peer_process() {
+    let fixture = Fixture::new("header-check-keeps-locks");
+    let index = fixture.index();
+    drop(
+        initialize_index(
+            &index,
+            INDEX_INITIALIZATION_BUDGET,
+            &crate::retrieval::coordinator::OperationCancellation::none(),
+        )
+        .unwrap(),
+    );
+    let held = open_index_for_write(&index).unwrap();
+    held.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .unwrap();
+    let wal = PathBuf::from(format!("{}-wal", index.display()));
+    assert!(wal.exists(), "a live WAL connection owns the -wal file");
+
+    drop(open_index(&index).unwrap());
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "retrieval::manifest::tests::wal_peer_process_helper",
+            "--nocapture",
+        ])
+        .env("MAGNESIUM_WAL_PEER_INDEX", &index)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    assert!(
+        wal.exists(),
+        "a peer process deleted the WAL while this process holds a connection"
+    );
+    held.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "spawned by reopening_the_index_keeps_a_live_connection_safe_from_a_peer_process"]
+fn wal_peer_process_helper() {
+    let Some(index) = std::env::var_os("MAGNESIUM_WAL_PEER_INDEX") else {
+        return;
+    };
+    let connection = Connection::open(index).unwrap();
+    connection.busy_timeout(Duration::ZERO).unwrap();
+    // Taking the exclusive lock succeeds only if no other process holds a lock.
+    // Its close then checkpoints and deletes the WAL.
+    let _ = connection.query_row("PRAGMA locking_mode=EXCLUSIVE", [], |row| {
+        row.get::<_, String>(0)
+    });
+    let _ = connection.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    });
+}
+
 #[test]
 fn fresh_source_index_creates_final_schema_directly() {
     let fixture = Fixture::new("direct-final-schema");
