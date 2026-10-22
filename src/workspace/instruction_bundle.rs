@@ -8,7 +8,6 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use crate::workspace::Workspace;
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -575,9 +574,9 @@ fn upgrade_known_bundle(
         bundle_version: bundle.version,
         bundle_hash: bundle.hash.clone(),
     })?;
-    AtomicFile::new(&pointer_path, AllowOverwrite)
-        .write(|file| file.write_all(&pointer))
-        .map_err(io::Error::from)?;
+    let mut writes = crate::workspace::AtomicWrites::default();
+    writes.replace(&pointer_path, |file| file.write_all(&pointer))?;
+    writes.finish()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -628,6 +627,7 @@ fn verify_unedited_bundle_dir(directory: &Path, hash: &str) -> Result<(), Bundle
 }
 
 fn write_bundle_files(root: &Path, bundle: &Bundle) -> Result<(), BundleError> {
+    let mut writes = crate::workspace::AtomicWrites::default();
     for (relative, bytes) in bundle.files.iter() {
         if !safe_relative_path(relative) {
             return Err(BundleError::UnsafePath);
@@ -635,15 +635,14 @@ fn write_bundle_files(root: &Path, bundle: &Bundle) -> Result<(), BundleError> {
         let path = root.join(relative);
         let parent = path.parent().ok_or(BundleError::UnsafePath)?;
         crate::workspace::create_private_dir_all(parent)?;
-        AtomicFile::new(&path, AllowOverwrite)
-            .write(|file| file.write_all(bytes))
-            .map_err(io::Error::from)?;
+        writes.replace(&path, |file| file.write_all(bytes))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
         }
     }
+    writes.finish()?;
     Ok(())
 }
 
@@ -881,9 +880,9 @@ fn activate_current_bundle(instructions: &Path, bundle: &Bundle) -> Result<bool,
         }
         return Ok(false);
     }
-    AtomicFile::new(&pointer_path, AllowOverwrite)
-        .write(|file| file.write_all(&bytes))
-        .map_err(io::Error::from)?;
+    let mut writes = crate::workspace::AtomicWrites::default();
+    writes.replace(&pointer_path, |file| file.write_all(&bytes))?;
+    writes.finish()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

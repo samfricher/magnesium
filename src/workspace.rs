@@ -1,7 +1,10 @@
+#[cfg(unix)]
+use std::collections::BTreeSet;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+#[cfg(not(unix))]
 use atomicwrites::{AllowOverwrite, AtomicFile};
 
 mod config;
@@ -136,17 +139,83 @@ where
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file has no parent"))?;
-    create_private_dir_all(parent)?;
+/// Atomic file replacements whose directory flushes wait for `finish`.
+///
+/// Each file is written to a private temporary file in its own directory,
+/// flushed, and renamed over the target, so a reader sees the old or the new
+/// file and never a partial one. `finish` flushes each directory once, after
+/// all of its files are in place: every file is durable when `finish`
+/// returns, as with one flushed replacement per file. Windows keeps
+/// `atomicwrites`, whose write-through move needs no directory flush.
+#[derive(Default)]
+#[must_use = "replaced files are durable only after `finish`"]
+pub(crate) struct AtomicWrites {
+    #[cfg(unix)]
+    directories: BTreeSet<PathBuf>,
+}
 
-    AtomicFile::new(path, AllowOverwrite)
-        .write(|file| file.write_all(bytes))
-        .map_err(io::Error::from)?;
-    restrict_private_path(path)?;
-    Ok(())
+impl AtomicWrites {
+    pub(crate) fn replace(
+        &mut self,
+        path: &Path,
+        write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+    ) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let directory = match path.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => parent,
+                _ => Path::new("."),
+            };
+            let temporary = directory.join(format!(".magnesium-write-{}.tmp", os_random_hex(8)?));
+            let written = (|| {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&temporary)?;
+                write(&mut file)?;
+                file.sync_all()?;
+                drop(file);
+                fs::rename(&temporary, path)
+            })();
+            if written.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            written?;
+            self.directories.insert(directory.to_path_buf());
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        AtomicFile::new(path, AllowOverwrite)
+            .write(write)
+            .map_err(io::Error::from)
+    }
+
+    /// `replace` with owner-only permissions, creating private parent
+    /// directories as needed.
+    pub(crate) fn write_private(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file has no parent"))?;
+        create_private_dir_all(parent)?;
+        self.replace(path, |file| file.write_all(bytes))?;
+        restrict_private_path(path)
+    }
+
+    pub(crate) fn finish(self) -> io::Result<()> {
+        #[cfg(unix)]
+        for directory in &self.directories {
+            fs::File::open(directory)?.sync_all()?;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut writes = AtomicWrites::default();
+    writes.write_private(path, bytes)?;
+    writes.finish()
 }
 
 pub(crate) fn write_user_owned_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -172,9 +241,9 @@ pub(crate) fn write_user_owned_atomic(path: &Path, bytes: &[u8]) -> io::Result<(
         None
     };
 
-    AtomicFile::new(path, AllowOverwrite)
-        .write(|file| file.write_all(bytes))
-        .map_err(io::Error::from)?;
+    let mut writes = AtomicWrites::default();
+    writes.replace(path, |file| file.write_all(bytes))?;
+    writes.finish()?;
 
     #[cfg(unix)]
     if let Some(mode) = existing_mode {
@@ -433,5 +502,52 @@ mod tests {
             0o600
         );
         fs::remove_dir_all(root).expect("remove private write fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_writes_replace_whole_files_and_leave_no_temporary_files() {
+        use std::fs;
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::{AtomicWrites, create_private_dir, write_private_atomic};
+
+        let root = std::env::temp_dir().join(format!(
+            "magnesium-atomic-writes-{}-{}",
+            std::process::id(),
+            super::os_random_hex(4).expect("random fixture suffix")
+        ));
+        create_private_dir(&root).expect("create atomic write fixture");
+        let one = root.join("notes/one.md");
+        let two = root.join("notes/two.md");
+        let mut writes = AtomicWrites::default();
+        writes.write_private(&one, b"first").expect("write one");
+        writes.write_private(&two, b"second").expect("write two");
+        writes.finish().expect("flush the notes directory");
+        write_private_atomic(&one, b"replaced").expect("replace one");
+
+        let mut writes = AtomicWrites::default();
+        writes
+            .replace(&one, |file| {
+                file.write_all(b"partial")?;
+                Err(io::Error::other("write interrupted"))
+            })
+            .expect_err("a failed write must not replace the file");
+        writes.finish().expect("nothing to flush");
+
+        assert_eq!(fs::read(&one).expect("read one"), b"replaced");
+        assert_eq!(fs::read(&two).expect("read two"), b"second");
+        let mut names = fs::read_dir(root.join("notes"))
+            .expect("list notes")
+            .map(|entry| entry.expect("note entry").file_name())
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["one.md", "two.md"]);
+        for path in [&one, &two] {
+            let mode = fs::metadata(path).expect("stat note").permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        fs::remove_dir_all(root).expect("remove atomic write fixture");
     }
 }
