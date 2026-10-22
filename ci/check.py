@@ -13,10 +13,12 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
+Step = tuple[Path, list[str]]
 SCOPES = ("core", "python", "docs")
 # Set to anything but 0 to keep the default temporary directory, e.g. to reproduce a disk-specific failure.
 DISK_TMP_OPT_OUT = "MAGNESIUM_CI_DISK_TMP"
@@ -26,7 +28,7 @@ SHM_DIR = Path("/dev/shm")
 VOLUMES_DIR = Path("/Volumes")
 
 
-def commands(scope: str, target: str | None = None) -> list[tuple[Path, list[str]]]:
+def commands(scope: str, target: str | None = None) -> list[Step]:
     """Keep targeted and aggregate validation on the same command definitions."""
     python = sys.executable
     native = ["--target", target or "<native-target>"]
@@ -59,6 +61,33 @@ def selected_scopes(requested: list[str]) -> list[str]:
     return [scope for scope in SCOPES if scope in selected]
 
 
+def pick(steps: list[Step], *prefix: str) -> Step:
+    """The one step whose command starts with prefix."""
+    return next(step for step in steps if step[1][:len(prefix)] == list(prefix))
+
+
+def plan(scopes: list[str], target: str | None = None) -> tuple[list[list[Step]], list[Step]]:
+    """Split the selected checks into build-phase lanes and the steps that must run alone.
+
+    Lanes run side by side, each in order. The Rust tests are load-sensitive and the
+    native-source smoke writes durably, so both wait for every lane and then run one at
+    a time, tests first. Clippy and the test-binary build share a lane because Cargo
+    makes builds that share a build directory take turns anyway.
+    """
+    lanes: list[list[Step]] = []
+    alone: list[Step] = []
+    for scope in scopes:
+        steps = commands(scope, target)
+        if scope != "core":
+            lanes.append(steps)
+            continue
+        cwd, test = pick(steps, "cargo", "test")
+        lanes.append([pick(steps, "cargo", "build")])
+        lanes.append([pick(steps, "cargo", "fmt"), pick(steps, "cargo", "clippy"), (cwd, [*test, "--no-run"])])
+        alone += [(cwd, test), pick(steps, sys.executable, "ci/check_native_sources.py")]
+    return lanes, alone
+
+
 def native_target() -> str:
     output = subprocess.check_output(["rustc", "-vV"], cwd=ROOT, text=True, stderr=subprocess.STDOUT)
     for line in output.splitlines():
@@ -82,8 +111,8 @@ def environment(*, offline: bool, target: str | None = None) -> dict[str, str]:
 
 
 def uses_test_temp_dir(command: list[str]) -> bool:
-    """Only the Rust tests create many durable temporary workspaces."""
-    return command[:2] == ["cargo", "test"]
+    """Only running the Rust tests creates many durable temporary workspaces; building them does not."""
+    return command[:2] == ["cargo", "test"] and "--no-run" not in command
 
 
 @contextlib.contextmanager
@@ -190,6 +219,84 @@ def run_command(cwd: Path, command: list[str], env: dict[str, str]) -> None:
         subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
+def echo(text: str) -> None:
+    """Print child output even where the console cannot encode some of its characters."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    print(text.encode(encoding, "replace").decode(encoding), flush=True)
+
+
+def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
+    """Run the lanes at the same time, each in order, printing a command's whole output once it finishes.
+
+    The first failure stops the phase: its output is shown, commands still running are
+    terminated, and the returned message names the failed command. None means all passed.
+    """
+    lock = threading.Lock()
+    running: list[subprocess.Popen] = []
+    failures: list[str] = []
+
+    def fail(message: str) -> None:  # the caller holds the lock
+        failures.append(message)
+        for child in running:
+            child.terminate()
+
+    def run_lane(lane: list[Step]) -> None:
+        for cwd, command in lane:
+            shown = shlex.join(command)
+            with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as log:
+                with lock:
+                    if failures:
+                        return
+                    try:
+                        child = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                                 stdout=log, stderr=subprocess.STDOUT)
+                    except FileNotFoundError:
+                        fail(f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md.")
+                        return
+                    running.append(child)
+                code = child.wait()
+                log.seek(0)
+                output = log.read()
+            with lock:
+                running.remove(child)
+                if failures:
+                    return  # stopped because another command failed first
+                print(f"\n  ({cwd.relative_to(ROOT)}) {shown}", flush=True)
+                if output.strip():
+                    echo(output.rstrip("\n"))
+                if code:
+                    fail(f"Failed: {shown} (exit {code})")
+                    return
+
+    def guarded(lane: list[Step]) -> None:
+        try:
+            run_lane(lane)
+        except Exception as error:  # a crash here must fail the run, never pass it
+            with lock:
+                fail(f"Could not run the build phase: {error!r}")
+
+    threads = [threading.Thread(target=guarded, args=(lane,)) for lane in lanes]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return failures[0] if failures else None
+
+
+def show_plan(lanes: list[list[Step]], alone: list[Step]) -> None:
+    print("\n[build phase] lanes run at the same time; a lane runs its commands in order")
+    for number, lane in enumerate(lanes, 1):
+        print(f"  lane {number}")
+        for cwd, command in lane:
+            print(f"    ({cwd.relative_to(ROOT)}) {shlex.join(command)}")
+    if alone:
+        print("\n[test phase] runs alone, in order, after every build-phase command has finished")
+        for cwd, command in alone:
+            print(f"  ({cwd.relative_to(ROOT)}) {shlex.join(command)}")
+            if uses_test_temp_dir(command):
+                print(f"    (test temporary files go to a RAM disk or /dev/shm when available; set {DISK_TMP_OPT_OUT}=1 to opt out)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scopes", nargs="*", metavar="SCOPE", help="all (default), core, python, or docs")
@@ -205,25 +312,29 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
         print(f"Cannot determine the native Rust target: {error}", file=sys.stderr)
         return 1
+    lanes, alone = plan(scopes, target)
+    if args.list:
+        show_plan(lanes, alone)
+        return 0
     env = environment(offline=args.offline, target=target)
-    for scope in scopes:
-        print(f"\n[{scope}]", flush=True)
-        for cwd, command in commands(scope, target):
-            print(f"  ({cwd.relative_to(ROOT)}) {shlex.join(command)}", flush=True)
-            if args.list:
-                if uses_test_temp_dir(command):
-                    print(f"    (test temporary files go to a RAM disk or /dev/shm when available; set {DISK_TMP_OPT_OUT}=1 to opt out)", flush=True)
-                continue
-            try:
-                run_command(cwd, command, env)
-            except FileNotFoundError:
-                print(f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md.", file=sys.stderr)
-                return 1
-            except subprocess.CalledProcessError as error:
-                print(f"Failed: {shlex.join(command)} (exit {error.returncode})", file=sys.stderr)
-                return 1
-    if not args.list:
-        print("\nSelected local checks passed. Installer and live-model checks are separate.")
+    print("\n[build phase] commands run at the same time; each one's output appears when it finishes", flush=True)
+    failure = run_build_phase(lanes, env)
+    if failure:
+        print(failure, file=sys.stderr)
+        return 1
+    if alone:
+        print("\n[test phase] runs alone: the Rust tests are sensitive to CPU load", flush=True)
+    for cwd, command in alone:
+        print(f"\n  ({cwd.relative_to(ROOT)}) {shlex.join(command)}", flush=True)
+        try:
+            run_command(cwd, command, env)
+        except FileNotFoundError:
+            print(f"Missing prerequisite: {command[0]}. See CONTRIBUTING.md.", file=sys.stderr)
+            return 1
+        except subprocess.CalledProcessError as error:
+            print(f"Failed: {shlex.join(command)} (exit {error.returncode})", file=sys.stderr)
+            return 1
+    print("\nSelected local checks passed. Installer and live-model checks are separate.")
     return 0
 
 
