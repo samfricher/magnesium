@@ -1512,7 +1512,8 @@ mod tests {
         // A successful unbound source-open can describe this pending PDF and
         // offer its original-page reference. That is not an indexed byte-read
         // authorization. Hold the reconciliation writer without changing any
-        // rows so the next real requests deterministically stay pending.
+        // rows so the next real requests deterministically stay pending: they
+        // defer within their budget instead of waiting for the writer.
         crate::learner::LearnerStore::initialize(
             &root
                 .join(crate::workspace::CONTROL_DIR)
@@ -1533,16 +1534,13 @@ mod tests {
             anchor_start: Some(2),
             anchor_end: Some(2),
         };
-        let unavailable =
-            sources_resolved(&resolved, SourceAction::Inspect, &reference).unwrap_err();
-        assert!(
-            unavailable.contains("source-search.sqlite"),
-            "{unavailable}"
-        );
+        let deferred = sources_resolved(&resolved, SourceAction::Inspect, &reference).unwrap();
+        assert_eq!(deferred["preparation"], "deferred_budget", "{deferred}");
+        assert_eq!(deferred["excerpt"], "", "{deferred}");
+        assert_eq!(deferred["coverage"]["status"], "partial", "{deferred}");
         match read_authorized_pdf(root, "math.pdf", &hash, &OperationCancellation::none()) {
-            Err(PdfCopyError::Source(ManifestError::Sqlite { .. } | ManifestError::Invalid(_))) => {
-            }
-            other => panic!("storage failure must propagate through copying: {other:?}"),
+            Err(PdfCopyError::Unavailable("source_preparation_deferred_budget")) => {}
+            other => panic!("a deferred pending PDF must not be copied: {other:?}"),
         }
         assert_eq!(
             read_manifest_row(&index, Path::new("math.pdf"))

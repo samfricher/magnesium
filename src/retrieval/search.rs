@@ -1961,6 +1961,84 @@ mod tests {
         );
     }
 
+    fn fixture_with_unextractable_sources(name: &str) -> Fixture {
+        let fixture = Fixture::new(name);
+        fixture.write(
+            "broken.pdf",
+            b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
+        );
+        fixture.write("garbled.md", b"\xff\xfe not utf-8 \x80\x81\n");
+        fixture.write("panics.pdf", &pdf_that_panics_the_parser());
+        for index in 0..3 {
+            fixture.write(
+                &format!("note{index}.md"),
+                format!("# Note {index}\n\nrecursion base case {index}\n").as_bytes(),
+            );
+        }
+        fixture
+    }
+
+    /// A page without a media box makes the parser panic. The extractor
+    /// reports that as a per-document failure, like a PDF over the page limit.
+    fn pdf_that_panics_the_parser() -> Vec<u8> {
+        use pdf_extract::{Document, Object, dictionary};
+        let mut document = Document::with_version("1.5");
+        let pages_id = document.new_object_id();
+        let page_id = document.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id });
+        document.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id =
+            document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        document.trailer.set("Root", catalog_id);
+        let mut bytes = Vec::new();
+        document.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn sources_that_fail_extraction_do_not_fail_a_search_over_the_others() {
+        let fixture = fixture_with_unextractable_sources("unextractable-fallback");
+        for round in 0..2 {
+            let report = search_workspace_sources(
+                &fixture.root,
+                &fixture.index(),
+                Path::new(""),
+                &request("recursion base case"),
+                budget(),
+            )
+            .unwrap_or_else(|error| panic!("round {round}: {error}"));
+            assert_eq!(report.hits.len(), 3, "round {round}");
+        }
+        let statuses = manifest_statuses(&fixture.index());
+        for broken in ["broken.pdf", "garbled.md", "panics.pdf"] {
+            assert!(
+                statuses.contains(&(broken.to_owned(), "failed".to_owned())),
+                "{broken} stays recorded as failed: {statuses:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_named_by_the_query_that_fails_extraction_does_not_fail_the_search() {
+        let fixture = fixture_with_unextractable_sources("unextractable-on-demand");
+        for named in ["broken.pdf", "garbled.md", "panics.pdf"] {
+            let result = search_workspace_sources(
+                &fixture.root,
+                &fixture.index(),
+                Path::new(""),
+                &request(named),
+                budget(),
+            );
+            assert!(result.is_ok(), "{named}: {:?}", result.err());
+        }
+    }
+
     #[test]
     fn sql_budget_exhaustion_and_explicit_cancellation_have_distinct_recovery() {
         let fixture = Fixture::new("deadline-vs-cancel");

@@ -195,7 +195,7 @@ pub(crate) fn extract_source_with_hooks(
                         diagnostic,
                     })
                 }
-                other => other,
+                error => ManifestError::SourceFailurePublished(Box::new(error)),
             });
         }
     };

@@ -27,6 +27,9 @@ pub(crate) fn source_status_and_size(
         .map_err(|source| sqlite(index_path, "read source status", source))
 }
 
+/// Sources a search may extract, in path order. Failed sources are not listed:
+/// extracting them again fails again until the file changes and
+/// reconciliation marks it pending. An explicit request still retries one.
 pub(crate) fn pending_source_paths(
     index_path: &Path,
     query_scope: &Path,
@@ -39,8 +42,7 @@ pub(crate) fn pending_source_paths(
     let mut statement = connection
         .prepare(
             "SELECT path_key FROM source_manifest
-             WHERE present = 1 AND source_kind IN ('text', 'pdf')
-               AND index_status IN ('pending', 'failed')
+             WHERE present = 1 AND source_kind IN ('text', 'pdf') AND index_status = 'pending'
              ORDER BY display_path COLLATE BINARY, manifest_id",
         )
         .map_err(|source| sqlite(index_path, "prepare pending-source query", source))?;
@@ -61,6 +63,80 @@ pub(crate) fn pending_source_paths(
         }
     }
     Ok(selected)
+}
+
+/// A source that waits for extraction, as its manifest row records it. A
+/// recheck that sees the file change rewrites its size or modified time.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PendingSource {
+    pub(crate) path: PathBuf,
+    pub(crate) file_size: Option<i64>,
+    pub(crate) modified_unix_ns: Option<i64>,
+}
+
+/// What catch-up needs before each step, read from one snapshot.
+pub(crate) struct IndexingProgress {
+    /// The first sources in path order that wait for extraction and that the
+    /// caller wants. Failed sources are not listed: extracting them again
+    /// fails again.
+    pub(crate) pending: Vec<PendingSource>,
+    /// Whether any full scan has completed.
+    pub(crate) scanned: bool,
+    /// The saved cursor of the scan in progress, if one is in progress.
+    pub(crate) scan_cursor: Option<String>,
+}
+
+pub(crate) fn indexing_progress(
+    index_path: &Path,
+    maximum: usize,
+    wanted: impl Fn(&PendingSource) -> bool,
+) -> Result<IndexingProgress, ManifestError> {
+    let connection = open_index(index_path)?;
+    let snapshot = connection
+        .unchecked_transaction()
+        .map_err(|source| sqlite(index_path, "begin indexing-progress snapshot", source))?;
+    let mut statement = snapshot
+        .prepare(
+            "SELECT path_key, file_size, modified_unix_ns FROM source_manifest
+             WHERE present = 1 AND source_kind IN ('text', 'pdf') AND index_status = 'pending'
+             ORDER BY display_path COLLATE BINARY, manifest_id",
+        )
+        .map_err(|source| sqlite(index_path, "prepare pending-source query", source))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|source| sqlite(index_path, "query pending sources", source))?;
+    let mut pending = Vec::new();
+    while pending.len() < maximum
+        && let Some(row) = rows
+            .next()
+            .map_err(|source| sqlite(index_path, "read pending source", source))?
+    {
+        let read = |source| sqlite(index_path, "read pending source", source);
+        let source = PendingSource {
+            path: decode_native_path(&row.get::<_, Vec<u8>>(0).map_err(read)?)
+                .map_err(ManifestError::Invalid)?,
+            file_size: row.get(1).map_err(read)?,
+            modified_unix_ns: row.get(2).map_err(read)?,
+        };
+        if wanted(&source) {
+            pending.push(source);
+        }
+    }
+    drop(rows);
+    let (scanned, scan_cursor) = snapshot
+        .query_row(
+            "SELECT
+                 (SELECT generation > 0 FROM source_index_metadata WHERE singleton = 1),
+                 (SELECT cursor_json FROM source_reconciliation_state WHERE singleton = 1)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|source| sqlite(index_path, "read scan progress", source))?;
+    Ok(IndexingProgress {
+        pending,
+        scanned,
+        scan_cursor,
+    })
 }
 
 /// Last fully reconciled index generation. A deferred pass reports this
@@ -135,7 +211,7 @@ pub(crate) fn load_existing(
     let mut statement = transaction
         .prepare(
             "SELECT manifest_id, path_key, source_kind, file_size, modified_unix_ns,
-                    content_sha256, present
+                    content_sha256, present, exclusion_reason
              FROM source_manifest",
         )
         .map_err(|source| sqlite(index_path, "prepare existing manifest query", source))?;
@@ -149,6 +225,7 @@ pub(crate) fn load_existing(
                     file_size: row.get(3)?,
                     modified_unix_ns: row.get(4)?,
                     content_sha256: row.get(5)?,
+                    exclusion_reason: row.get(7)?,
                     present: row.get::<_, i64>(6)? == 1,
                 },
             ))

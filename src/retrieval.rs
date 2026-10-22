@@ -9,6 +9,7 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 mod boundary;
+pub(crate) mod catch_up;
 mod chunking;
 mod coordinator;
 #[cfg(test)]
@@ -72,6 +73,7 @@ pub(crate) fn prepare_explicit_source(
             Err(ManifestError::PdfContentPublished(failure)) => {
                 (PreparationDisposition::PdfContentFailure, Some(failure))
             }
+            Err(ManifestError::SourceFailurePublished(error)) => return Err(*error),
             Err(error) => return Err(error),
         };
     cancellation.check()?;

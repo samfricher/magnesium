@@ -54,6 +54,69 @@ fn ordinary_source_index_open_is_identity_only() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn reopening_the_index_keeps_a_live_connection_safe_from_a_peer_process() {
+    let fixture = Fixture::new("header-check-keeps-locks");
+    let index = fixture.index();
+    drop(
+        initialize_index(
+            &index,
+            INDEX_INITIALIZATION_BUDGET,
+            &crate::retrieval::coordinator::OperationCancellation::none(),
+        )
+        .unwrap(),
+    );
+    let held = open_index_for_write(&index).unwrap();
+    held.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .unwrap();
+    let wal = PathBuf::from(format!("{}-wal", index.display()));
+    assert!(wal.exists(), "a live WAL connection owns the -wal file");
+
+    drop(open_index(&index).unwrap());
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "retrieval::manifest::tests::wal_peer_process_helper",
+            "--nocapture",
+        ])
+        .env("MAGNESIUM_WAL_PEER_INDEX", &index)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    assert!(
+        wal.exists(),
+        "a peer process deleted the WAL while this process holds a connection"
+    );
+    held.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "spawned by reopening_the_index_keeps_a_live_connection_safe_from_a_peer_process"]
+fn wal_peer_process_helper() {
+    let Some(index) = std::env::var_os("MAGNESIUM_WAL_PEER_INDEX") else {
+        return;
+    };
+    let connection = Connection::open(index).unwrap();
+    connection.busy_timeout(Duration::ZERO).unwrap();
+    // Taking the exclusive lock succeeds only if no other process holds a lock.
+    // Its close then checkpoints and deletes the WAL.
+    let _ = connection.query_row("PRAGMA locking_mode=EXCLUSIVE", [], |row| {
+        row.get::<_, String>(0)
+    });
+    let _ = connection.query_row("SELECT count(*) FROM source_manifest", [], |row| {
+        row.get::<_, i64>(0)
+    });
+}
+
 #[test]
 fn fresh_source_index_creates_final_schema_directly() {
     let fixture = Fixture::new("direct-final-schema");
@@ -1282,8 +1345,34 @@ fn reconcile_manifest(
     index_path: &Path,
 ) -> Result<ManifestReport, ManifestError> {
     let discovery = discover_root(workspace_root)?;
-    let state = load_or_start_reconciliation(index_path, "{}")?;
+    let state = load_or_start_reconciliation(
+        index_path,
+        "{}",
+        &crate::retrieval::OperationCancellation::none(),
+    )?;
     reconcile_batch(workspace_root, index_path, discovery.entries, &state, None)
+}
+
+#[test]
+fn a_search_past_its_deadline_still_finishes_creating_a_missing_index() {
+    let fixture = Fixture::new("create-index-past-deadline");
+    let index = fixture.index();
+    let expired = crate::retrieval::OperationCancellation::none()
+        .with_earlier_deadline(std::time::Instant::now());
+    let started = load_or_start_reconciliation(&index, "{}", &expired);
+    assert!(
+        matches!(started, Err(ManifestError::Cancelled)),
+        "the expired deadline still bounds the cursor transaction: {started:?}"
+    );
+    drop(open_index(&index).expect("the index was created with its identity"));
+    let journal: String = Connection::open(&index)
+        .unwrap()
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        journal, "wal",
+        "a search deadline left the new index outside WAL mode"
+    );
 }
 
 #[test]
@@ -1984,7 +2073,10 @@ fn v1_current_parser_failure_returns_original_error_and_only_bounded_diagnostic(
     let result = extract_source_with_pdf(&fixture.root, &index, Path::new("book.pdf"), move |_| {
         Err(ManifestError::Pdf(returned))
     });
-    assert!(matches!(result, Err(ManifestError::Pdf(ref diagnostic)) if *diagnostic == original));
+    let Err(ManifestError::SourceFailurePublished(reported)) = result else {
+        panic!("a recorded parser failure is a published failure: {result:?}");
+    };
+    assert!(matches!(*reported, ManifestError::Pdf(ref diagnostic) if *diagnostic == original));
     let connection = Connection::open(&index).unwrap();
     let (status, stored): (String, String) = connection
         .query_row(
@@ -2041,6 +2133,21 @@ fn v1_extraction_returns_committed_candidates_if_caller_cancels_after_commit() {
     assert_eq!(candidates[0].body, "committed current candidate");
     let actual = extract_source(&fixture.root, &index, Path::new("book.pdf")).unwrap();
     assert_eq!(actual, candidates);
+}
+
+#[test]
+fn explicit_request_for_non_utf8_text_still_reports_the_original_error() {
+    let fixture = Fixture::new("explicit-non-utf8");
+    fixture.write("garbled.md", b"\xff\xfe not utf-8\n");
+    let result = crate::retrieval::prepare_explicit_source(
+        &fixture.root,
+        Path::new("garbled.md"),
+        FactsInterest::IdentityOnly,
+        &crate::retrieval::OperationCancellation::none(),
+    );
+    assert!(
+        matches!(result, Err(ManifestError::Invalid(ref message)) if message.contains("not valid UTF-8"))
+    );
 }
 
 #[test]

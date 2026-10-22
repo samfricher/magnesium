@@ -30,7 +30,8 @@ pub(crate) use reconcile::load_or_start_reconciliation;
 #[cfg(test)]
 pub(crate) use reconcile::reconcile_batch;
 pub(crate) use status::{
-    current_generation, manifest_coverage, pending_source_paths, source_status_and_size,
+    IndexingProgress, PendingSource, current_generation, indexing_progress, manifest_coverage,
+    pending_source_paths, source_status_and_size,
 };
 
 use crate::retrieval::DiscoveryError;
@@ -68,6 +69,7 @@ pub(crate) struct ReconcileProgress<'a> {
     pub(crate) moves: MovePolicy,
     pub(crate) cancellation: &'a crate::retrieval::OperationCancellation,
     pub(crate) report: ManifestReport,
+    pub(crate) hashed: std::collections::HashMap<Vec<u8>, reconcile::HashedContent>,
     pub(crate) after_open: &'a mut dyn FnMut(&Path) -> Result<(), ManifestError>,
 }
 
@@ -124,6 +126,11 @@ pub(crate) enum ManifestError {
     Pdf(String),
     PdfContent(String),
     PdfContentPublished(PublishedPdfContentFailure),
+    /// Extraction failed and already recorded the file as `failed`, so a
+    /// search skips it. The wrapped error is what an explicit request for the
+    /// file reports. Every recorded failure except typed PDF content arrives
+    /// this way, including a PDF over a size, page or text limit.
+    SourceFailurePublished(Box<ManifestError>),
     PdfTimeout,
 }
 
@@ -143,6 +150,7 @@ impl fmt::Display for ManifestError {
             } => write!(formatter, "cannot {action} {}: {source}", path.display()),
             Self::Invalid(message) | Self::Pdf(message) | Self::PdfContent(message) => formatter.write_str(message),
             Self::PdfContentPublished(failure) => formatter.write_str(&failure.diagnostic),
+            Self::SourceFailurePublished(error) => error.fmt(formatter),
             Self::ReconciliationConflict => formatter
                 .write_str("source reconciliation cursor changed concurrently; retry the query"),
             Self::SourceSuperseded => formatter.write_str("source_superseded: a newer source state won; no old result was published. Repeat the source request if it is still useful"),
@@ -161,6 +169,7 @@ impl Error for ManifestError {
             Self::Discovery(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             Self::Sqlite { source, .. } => Some(source),
+            Self::SourceFailurePublished(error) => Some(error.as_ref()),
             Self::Invalid(_)
             | Self::ReconciliationConflict
             | Self::SourceSuperseded
@@ -200,7 +209,22 @@ pub(crate) struct ExistingRecord {
     pub(crate) file_size: Option<i64>,
     pub(crate) modified_unix_ns: Option<i64>,
     pub(crate) content_sha256: Option<String>,
+    pub(crate) exclusion_reason: Option<String>,
     pub(crate) present: bool,
+}
+
+impl ExistingRecord {
+    /// Whether this row holds the verdict for a file discovered as `kind`. A
+    /// file excluded for its content keeps that verdict until it changes;
+    /// reading it again on every recheck would only exclude it again.
+    pub(crate) fn describes(&self, kind: &str) -> bool {
+        self.present
+            && (self.source_kind == kind
+                || matches!(
+                    self.exclusion_reason.as_deref(),
+                    Some("sensitive_content" | "sensitive_extracted")
+                ))
+    }
 }
 
 #[derive(Clone, Debug)]
