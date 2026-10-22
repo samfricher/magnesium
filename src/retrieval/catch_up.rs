@@ -13,7 +13,7 @@ use super::coordinator::{
     CoordinatorBudget, ReconciliationOutcome, extract_pending_sources,
     prepare_source_query_with_allowlist_and_cancellation,
 };
-use super::manifest::{current_generation, scan_cursor, unindexed_source_paths};
+use super::manifest::{IndexingProgress, indexing_progress};
 use super::{ManifestError, OperationCancellation};
 use crate::request::enter_request_cancellation;
 
@@ -23,33 +23,44 @@ const SHUTDOWN_WAIT: Duration = Duration::from_millis(500);
 const SHUTDOWN_POLL: Duration = Duration::from_millis(5);
 const CONTENDED_PAUSE: Duration = Duration::from_millis(50);
 
-/// What one read of the source index says catch-up does next.
+/// One discovery batch. Small, so its files are extracted and searchable before
+/// the next batch hashes them. The deadline leaves room to hash 32 files at the
+/// 64 MB PDF limit on a slow disk, so a batch is never rolled back. The batch
+/// extracts nothing; extraction publishes one file at a time.
+const DISCOVERY: CoordinatorBudget = CoordinatorBudget {
+    max_metadata_entries: 32,
+    max_duration: Duration::from_secs(120),
+    max_on_demand: 0,
+};
+
+/// What one read of the source index says catch-up does next. Extraction
+/// comes first, so the files one discovery batch found become searchable
+/// before the next batch.
 #[derive(PartialEq, Eq)]
 enum CatchUpStep {
+    Extract(Vec<PathBuf>),
     /// No full scan has completed yet. The saved cursor tells a pass that
-    /// moved the scan from one that did not.
+    /// moved the scan from one that did not. Once a scan has completed,
+    /// catch-up never starts or moves a recheck, so searches keep their usual
+    /// recheck pattern.
     Discover {
         cursor: Option<String>,
     },
-    /// A full scan has completed and these sources wait for extraction. From
-    /// here catch-up never starts or finishes a recheck, so searches keep their
-    /// usual recheck pattern.
-    Extract(Vec<PathBuf>),
     Settled,
 }
 
-fn next_step(index_path: &Path, maximum: usize) -> Result<CatchUpStep, ManifestError> {
-    if current_generation(index_path)? == 0 {
-        return Ok(CatchUpStep::Discover {
-            cursor: scan_cursor(index_path)?,
-        });
+impl From<IndexingProgress> for CatchUpStep {
+    fn from(progress: IndexingProgress) -> Self {
+        if !progress.pending.is_empty() {
+            Self::Extract(progress.pending)
+        } else if !progress.scanned {
+            Self::Discover {
+                cursor: progress.scan_cursor,
+            }
+        } else {
+            Self::Settled
+        }
     }
-    let pending = unindexed_source_paths(index_path, maximum)?;
-    Ok(if pending.is_empty() {
-        CatchUpStep::Settled
-    } else {
-        CatchUpStep::Extract(pending)
-    })
 }
 
 /// Index until nothing is left. Reading the same step twice in a row means the
@@ -61,30 +72,34 @@ pub(super) fn catch_up(
     cancellation: &OperationCancellation,
 ) -> Result<(), ManifestError> {
     let index_path = crate::workspace::source_index_path(workspace_root);
-    let budget = CoordinatorBudget::for_catch_up();
+    let extraction = CoordinatorBudget::for_catch_up();
     let mut previous = None;
     loop {
         cancellation.check()?;
-        let step = next_step(&index_path, budget.max_on_demand)?;
+        let step = CatchUpStep::from(indexing_progress(&index_path, extraction.max_on_demand)?);
         match &step {
             CatchUpStep::Settled => return Ok(()),
             _ if previous.as_ref() == Some(&step) => return Ok(()),
+            CatchUpStep::Extract(pending) => extract_pending_sources(
+                workspace_root,
+                &index_path,
+                pending,
+                extraction,
+                cancellation,
+            )?,
             CatchUpStep::Discover { .. } => {
                 let prepared = prepare_source_query_with_allowlist_and_cancellation(
                     workspace_root,
                     &index_path,
                     Path::new(""),
                     &[],
-                    budget,
+                    DISCOVERY,
                     None,
                     cancellation,
                 )?;
                 if prepared.reconciliation == ReconciliationOutcome::DeferredConcurrentUpdate {
                     thread::sleep(CONTENDED_PAUSE);
                 }
-            }
-            CatchUpStep::Extract(pending) => {
-                extract_pending_sources(workspace_root, &index_path, pending, budget, cancellation)?
             }
         }
         previous = Some(step);

@@ -682,7 +682,7 @@ fn cancellation_while_waiting_for_a_real_writer_lock_leaves_state_unchanged() {
         let trigger = flag.clone();
         let cancellation =
             OperationCancellation::with_flag(flag).with_test_hook(Arc::new(move |checkpoint| {
-                if checkpoint == "source_publication_waiting_for_lock" {
+                if checkpoint == "source_index_waiting_for_lock" {
                     trigger.store(true, Ordering::Relaxed);
                     waiting_tx.send(()).unwrap();
                 }

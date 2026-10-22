@@ -1345,7 +1345,11 @@ fn reconcile_manifest(
     index_path: &Path,
 ) -> Result<ManifestReport, ManifestError> {
     let discovery = discover_root(workspace_root)?;
-    let state = load_or_start_reconciliation(index_path, "{}")?;
+    let state = load_or_start_reconciliation(
+        index_path,
+        "{}",
+        &crate::retrieval::OperationCancellation::none(),
+    )?;
     reconcile_batch(workspace_root, index_path, discovery.entries, &state, None)
 }
 

@@ -63,48 +63,60 @@ pub(crate) fn pending_source_paths(
     Ok(selected)
 }
 
-/// Present text and PDF sources whose current content waits for extraction, in
-/// path order. Failed sources are not listed: extracting them again fails again.
-pub(crate) fn unindexed_source_paths(
+/// What catch-up needs before each step, read from one snapshot.
+pub(crate) struct IndexingProgress {
+    /// Present text and PDF sources whose current content waits for
+    /// extraction, in path order. Failed sources are not listed: extracting
+    /// them again fails again.
+    pub(crate) pending: Vec<PathBuf>,
+    /// Whether any full scan has completed.
+    pub(crate) scanned: bool,
+    /// The saved cursor of the scan in progress, if one is in progress.
+    pub(crate) scan_cursor: Option<String>,
+}
+
+pub(crate) fn indexing_progress(
     index_path: &Path,
     maximum: usize,
-) -> Result<Vec<PathBuf>, ManifestError> {
+) -> Result<IndexingProgress, ManifestError> {
     let connection = open_index(index_path)?;
-    let mut statement = connection
+    let snapshot = connection
+        .unchecked_transaction()
+        .map_err(|source| sqlite(index_path, "begin indexing-progress snapshot", source))?;
+    let mut statement = snapshot
         .prepare(
             "SELECT path_key FROM source_manifest
              WHERE present = 1 AND source_kind IN ('text', 'pdf') AND index_status = 'pending'
              ORDER BY display_path COLLATE BINARY, manifest_id
              LIMIT ?1",
         )
-        .map_err(|source| sqlite(index_path, "prepare unindexed-source query", source))?;
-    let paths = statement
+        .map_err(|source| sqlite(index_path, "prepare pending-source query", source))?;
+    let pending = statement
         .query_map([i64::try_from(maximum).unwrap_or(i64::MAX)], |row| {
             row.get::<_, Vec<u8>>(0)
         })
-        .map_err(|source| sqlite(index_path, "query unindexed sources", source))?;
-    paths
+        .map_err(|source| sqlite(index_path, "query pending sources", source))?
         .map(|path_key| {
             decode_native_path(
-                &path_key.map_err(|source| sqlite(index_path, "read unindexed source", source))?,
+                &path_key.map_err(|source| sqlite(index_path, "read pending source", source))?,
             )
             .map_err(ManifestError::Invalid)
         })
-        .collect()
-}
-
-/// The saved cursor of the scan in progress, or `None` when no scan is in
-/// progress.
-pub(crate) fn scan_cursor(index_path: &Path) -> Result<Option<String>, ManifestError> {
-    let connection = open_index(index_path)?;
-    connection
+        .collect::<Result<_, _>>()?;
+    let (scanned, scan_cursor) = snapshot
         .query_row(
-            "SELECT cursor_json FROM source_reconciliation_state WHERE singleton = 1",
+            "SELECT
+                 (SELECT generation > 0 FROM source_index_metadata WHERE singleton = 1),
+                 (SELECT cursor_json FROM source_reconciliation_state WHERE singleton = 1)",
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .optional()
-        .map_err(|source| sqlite(index_path, "read scan cursor", source))
+        .map_err(|source| sqlite(index_path, "read scan progress", source))?;
+    Ok(IndexingProgress {
+        pending,
+        scanned,
+        scan_cursor,
+    })
 }
 
 /// Last fully reconciled index generation. A deferred pass reports this

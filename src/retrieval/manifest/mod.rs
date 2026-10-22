@@ -30,8 +30,8 @@ pub(crate) use reconcile::load_or_start_reconciliation;
 #[cfg(test)]
 pub(crate) use reconcile::reconcile_batch;
 pub(crate) use status::{
-    current_generation, manifest_coverage, pending_source_paths, scan_cursor,
-    source_status_and_size, unindexed_source_paths,
+    IndexingProgress, current_generation, indexing_progress, manifest_coverage,
+    pending_source_paths, source_status_and_size,
 };
 
 use crate::retrieval::DiscoveryError;
@@ -69,6 +69,7 @@ pub(crate) struct ReconcileProgress<'a> {
     pub(crate) moves: MovePolicy,
     pub(crate) cancellation: &'a crate::retrieval::OperationCancellation,
     pub(crate) report: ManifestReport,
+    pub(crate) hashed: std::collections::HashMap<Vec<u8>, reconcile::HashedContent>,
     pub(crate) after_open: &'a mut dyn FnMut(&Path) -> Result<(), ManifestError>,
 }
 

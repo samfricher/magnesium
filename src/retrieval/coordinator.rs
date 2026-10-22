@@ -69,12 +69,12 @@ impl CoordinatorBudget {
         }
     }
 
-    /// One background catch-up pass after a search. Lasting twice the PDF
+    /// One background catch-up extraction pass. Lasting twice the PDF
     /// deadline means an extraction that starts before the halfway cutoff
     /// still gets the whole PDF deadline, so the pass never cuts a PDF short.
     pub(crate) fn for_catch_up() -> Self {
         Self {
-            max_metadata_entries: 1_024,
+            max_metadata_entries: 0,
             max_duration: super::manifest::pdf::PDF_DEADLINE.saturating_mul(2),
             max_on_demand: 64,
         }
@@ -653,7 +653,7 @@ fn coordinate_one_pass(
     run: &mut RunBudget<'_>,
 ) -> Result<CoordinatorReport, ManifestError> {
     let cancellation = run.cancellation;
-    let state = load_or_start_reconciliation(index_path, initial_json)?;
+    let state = load_or_start_reconciliation(index_path, initial_json, cancellation)?;
     let mut cursor: ScanCursor = serde_json::from_str(&state.cursor_json).map_err(|error| {
         ManifestError::Invalid(format!(
             "invalid persisted source reconciliation cursor: {error}"
@@ -1683,6 +1683,52 @@ mod tests {
     }
 
     #[test]
+    fn catch_up_makes_files_searchable_before_discovery_finishes() {
+        let fixture = Fixture::new("catch-up-progressive");
+        for index in 0..100 {
+            fixture.write(
+                &format!("lesson-{index:03}.md"),
+                format!("lesson {index}\n").as_bytes(),
+            );
+        }
+        drop(
+            crate::retrieval::initialize_index(
+                &fixture.index(),
+                Duration::from_secs(2),
+                &OperationCancellation::none(),
+            )
+            .unwrap(),
+        );
+        let scanning_at_first_publication = Arc::new(std::sync::Mutex::new(None));
+        let watch = {
+            let observed = Arc::clone(&scanning_at_first_publication);
+            let index = fixture.index();
+            OperationCancellation::none().with_test_hook(Arc::new(move |checkpoint| {
+                if checkpoint == "source_publication_before_lock" {
+                    observed
+                        .lock()
+                        .unwrap()
+                        .get_or_insert_with(|| scan_active(&index) == 1);
+                }
+            }))
+        };
+        let _scope = enter_request_cancellation(&watch);
+        catch_up(&fixture.root, &watch).expect("catch up");
+        assert_eq!(
+            *scanning_at_first_publication.lock().unwrap(),
+            Some(true),
+            "the first file became searchable only after discovery finished"
+        );
+        assert_eq!(scan_active(&fixture.index()), 0);
+        for index in [0, 99] {
+            assert_eq!(
+                source_status(&fixture.index(), &format!("lesson-{index:03}.md")),
+                "indexed"
+            );
+        }
+    }
+
+    #[test]
     fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
         let idle = Fixture::new("catch-up-no-recheck");
         let rechecking = Fixture::new("catch-up-recheck-in-progress");
@@ -1776,6 +1822,107 @@ mod tests {
         let searched = searched.expect("the search keeps the newer published state");
         assert_eq!(searched.reconciliation, ReconciliationOutcome::Reconciled);
         assert_eq!(source_status(&fixture.index(), "lesson.md"), "indexed");
+    }
+
+    #[test]
+    fn a_search_that_finds_the_index_writer_busy_defers_within_its_budget() {
+        for lock_taken in ["before the search", "after the cursor loads"] {
+            let fixture = Fixture::new("busy-writer");
+            fixture.write("lesson.md", b"indexed before the writer arrives\n");
+            finish_metadata_scan(&fixture, budget(8));
+            fixture.write("new-lesson.md", b"waits for the next pass\n");
+            let writer = Arc::new(std::sync::Mutex::new(
+                Connection::open(fixture.index()).expect("open competing writer"),
+            ));
+            let take_lock = {
+                let writer = Arc::clone(&writer);
+                move || {
+                    writer
+                        .lock()
+                        .unwrap()
+                        .execute_batch("BEGIN IMMEDIATE")
+                        .expect("competing writer takes the lock");
+                }
+            };
+            let _hook = if lock_taken == "before the search" {
+                take_lock();
+                None
+            } else {
+                Some(install_cursor_load_hook(
+                    &fixture.index(),
+                    Arc::new(move |_, _, _| take_lock()),
+                ))
+            };
+            let search = CoordinatorBudget::for_search(&fixture.index());
+            let started = std::time::Instant::now();
+            let prepared = prepare_source_query_with_allowlist_and_cancellation(
+                &fixture.root,
+                &fixture.index(),
+                Path::new(""),
+                &[],
+                search,
+                None,
+                &OperationCancellation::none(),
+            )
+            .unwrap_or_else(|error| panic!("lock taken {lock_taken}: {error}"));
+            assert!(
+                started.elapsed() < Duration::from_secs(1),
+                "lock taken {lock_taken}: the search waited {:?}",
+                started.elapsed()
+            );
+            assert_eq!(
+                prepared.reconciliation,
+                ReconciliationOutcome::DeferredBudget,
+                "lock taken {lock_taken}"
+            );
+            writer.lock().unwrap().execute_batch("ROLLBACK").unwrap();
+        }
+    }
+
+    #[test]
+    fn other_writers_can_take_the_lock_while_reconciliation_hashes_a_new_file() {
+        let fixture = Fixture::new("hash-outside-lock");
+        fixture.write("lesson.md", b"hashed before the write lock\n");
+        drop(
+            crate::retrieval::initialize_index(
+                &fixture.index(),
+                Duration::from_secs(2),
+                &OperationCancellation::none(),
+            )
+            .unwrap(),
+        );
+        let lock_free_while_hashing = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = {
+            let observed = Arc::clone(&lock_free_while_hashing);
+            let index = fixture.index();
+            OperationCancellation::none().with_test_hook(Arc::new(move |checkpoint| {
+                if checkpoint == "source_hash_read_chunk" {
+                    let writer = Connection::open(&index).unwrap();
+                    writer.busy_timeout(Duration::ZERO).unwrap();
+                    observed
+                        .lock()
+                        .unwrap()
+                        .push(writer.execute_batch("BEGIN IMMEDIATE; ROLLBACK").is_ok());
+                }
+            }))
+        };
+        let scope = enter_request_cancellation(&probe);
+        coordinate_source_query(
+            &fixture.root,
+            &fixture.index(),
+            Path::new(""),
+            &[],
+            budget(8),
+        )
+        .expect("reconcile the new file");
+        drop(scope);
+        let observed = lock_free_while_hashing.lock().unwrap();
+        assert!(!observed.is_empty(), "the new file was never hashed");
+        assert!(
+            observed.iter().all(|free| *free),
+            "reconciliation held the write lock while hashing: {observed:?}"
+        );
+        assert_eq!(source_status(&fixture.index(), "lesson.md"), "pending");
     }
 
     #[test]
@@ -1994,8 +2141,9 @@ mod tests {
         let fixture = Fixture::new("atomic-cursor");
         let initial =
             r#"{"version":1,"directories":[{"relative_path":[],"processed_entries":[]}]}"#;
-        let state = load_or_start_reconciliation(&fixture.index(), initial)
-            .expect("start reconciliation state");
+        let state =
+            load_or_start_reconciliation(&fixture.index(), initial, &OperationCancellation::none())
+                .expect("start reconciliation state");
         reconcile_batch(
             &fixture.root,
             &fixture.index(),
@@ -2030,6 +2178,7 @@ mod tests {
         load_or_start_reconciliation(
             &fixture.index(),
             r#"{"version":1,"directories":[{"relative_path":[],"processed_entries":[]}]}"#,
+            &OperationCancellation::none(),
         )
         .expect("initialize shared source index");
         let gate = std::sync::Arc::new(OnceGate::new(4));
@@ -2146,8 +2295,9 @@ mod tests {
         let fixture = Fixture::new("stale-completion");
         let initial =
             r#"{"version":1,"directories":[{"relative_path":[],"processed_entries":[]}]}"#;
-        let state = load_or_start_reconciliation(&fixture.index(), initial)
-            .expect("start reconciliation state");
+        let state =
+            load_or_start_reconciliation(&fixture.index(), initial, &OperationCancellation::none())
+                .expect("start reconciliation state");
         reconcile_batch(
             &fixture.root,
             &fixture.index(),
@@ -2602,7 +2752,8 @@ mod tests {
     /// it so the pass that loaded the previous value must conflict.
     fn advance_persisted_cursor(root: &Path, index: &Path) {
         let initial = r#"{"version":1,"directories":[]}"#;
-        let state = load_or_start_reconciliation(index, initial).expect("load competing cursor");
+        let state = load_or_start_reconciliation(index, initial, &OperationCancellation::none())
+            .expect("load competing cursor");
         let mut cursor: serde_json::Value =
             serde_json::from_str(&state.cursor_json).expect("parse competing cursor");
         // Serde ignores this test-only field; it only makes the cursor differ.
@@ -2922,7 +3073,12 @@ mod tests {
         fixture.write("selected.md", b"readable selected source\n");
         let original = exact_snapshot(&fixture, "selected.md").row.unwrap();
         for kind in [io::ErrorKind::PermissionDenied, io::ErrorKind::Other] {
-            let state = load_or_start_reconciliation(&fixture.index(), "unused").unwrap();
+            let state = load_or_start_reconciliation(
+                &fixture.index(),
+                "unused",
+                &OperationCancellation::none(),
+            )
+            .unwrap();
             let result = super::super::manifest::reconcile::reconcile_batch_with_policy(
                 &fixture.root,
                 &fixture.index(),
@@ -3011,14 +3167,24 @@ mod tests {
             }],
         })
         .unwrap();
-        let state = load_or_start_reconciliation(&fixture.index(), &initial_cursor).unwrap();
+        let state = load_or_start_reconciliation(
+            &fixture.index(),
+            &initial_cursor,
+            &OperationCancellation::none(),
+        )
+        .unwrap();
         assert!(state.generation > keeper_observed);
         fs::remove_file(fixture.root.join("keeper.md")).unwrap();
         fixture.write("selected.md", b"matching source content\n");
         let selected = exact_snapshot(&fixture, "selected.md").row.unwrap();
         assert_ne!(selected.manifest_id, keeper.manifest_id);
         assert_eq!(selected.index_status, "indexed");
-        let after = load_or_start_reconciliation(&fixture.index(), &initial_cursor).unwrap();
+        let after = load_or_start_reconciliation(
+            &fixture.index(),
+            &initial_cursor,
+            &OperationCancellation::none(),
+        )
+        .unwrap();
         assert_eq!(after, state);
         let untouched = super::super::manifest::status::read_manifest_row(
             &fixture.index(),

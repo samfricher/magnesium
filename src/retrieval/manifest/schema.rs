@@ -8,7 +8,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use rusqlite::{Connection, OpenFlags, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 
 use super::{ManifestError, io_error, reject_managed_symlink, sqlite};
 use crate::retrieval::coordinator::OperationCancellation;
@@ -202,16 +202,20 @@ pub(crate) fn initialize_index(
         drop(snapshot);
         budget.finish(&checked, path, result)?;
     }
-    let mut connection = connect(
+    let connection = connect(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         &budget,
         true,
     )?;
     let result = (|| {
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|source| sqlite(path, "start source-index initialization", source))?;
+        let transaction = begin_write(
+            &connection,
+            path,
+            "start source-index initialization",
+            budget.deadline,
+            &budget.cancellation,
+        )?;
         let fresh = validate_initializable(&transaction, path)?;
         if fresh {
             budget.check(path)?;
@@ -262,6 +266,50 @@ pub(crate) fn initialize_index(
     })();
     budget.finish(&connection, path, result)?;
     Ok(connection)
+}
+
+/// Every writer takes the index write lock here. SQLite's busy timeout cannot
+/// poll a request token, so the wait runs in short slices that observe
+/// cancellation, including a search's own deadline. A search that finds the
+/// writer busy past its budget therefore defers instead of waiting longer.
+pub(crate) fn begin_write<'c>(
+    connection: &'c Connection,
+    index_path: &Path,
+    action: &'static str,
+    deadline: Instant,
+    cancellation: &OperationCancellation,
+) -> Result<Transaction<'c>, ManifestError> {
+    connection
+        .busy_timeout(Duration::from_millis(10))
+        .map_err(|error| sqlite(index_path, "configure source-index lock wait", error))?;
+    let result = loop {
+        if let Err(error) = cancellation.check() {
+            break Err(error);
+        }
+        match Transaction::new_unchecked(connection, TransactionBehavior::Immediate) {
+            Ok(transaction) => break Ok(transaction),
+            Err(error)
+                if matches!(
+                    error.sqlite_error_code(),
+                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                ) =>
+            {
+                #[cfg(test)]
+                crate::request::test_checkpoint("source_index_waiting_for_lock");
+                if let Err(cancelled) = cancellation.check() {
+                    break Err(cancelled);
+                }
+                if Instant::now() >= deadline {
+                    break Err(sqlite(index_path, action, error));
+                }
+            }
+            Err(error) => break Err(sqlite(index_path, action, error)),
+        }
+    };
+    connection
+        .busy_timeout(INDEX_INITIALIZATION_BUDGET)
+        .map_err(|error| sqlite(index_path, "restore source-index lock wait", error))?;
+    result
 }
 
 /// Expensive diagnostics are explicit and bounded, never hidden in queries.

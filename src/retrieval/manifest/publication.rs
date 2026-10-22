@@ -1,13 +1,13 @@
 //! The only extraction publication owner: prepare without side effects, then
 //! compare one source revision before atomically publishing its entire outcome.
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::convert::ConverterProvenance;
 use super::extract::candidate_id;
-use super::schema::INDEX_INITIALIZATION_BUDGET;
+use super::schema::{INDEX_INITIALIZATION_BUDGET, begin_write};
 use super::status::stale_candidates;
 use super::{
     AnchorKind, CurrentSource, ManifestError, PublishedSource, SourceCandidate, anchor_name, sqlite,
@@ -148,7 +148,13 @@ pub(super) fn publish_extraction(
     #[cfg(test)]
     crate::request::test_checkpoint("source_publication_before_lock");
     cancellation.check()?;
-    let transaction = begin_publication(connection, index_path, cancellation)?;
+    let transaction = begin_write(
+        connection,
+        index_path,
+        "begin guarded source publication",
+        Instant::now() + INDEX_INITIALIZATION_BUDGET,
+        cancellation,
+    )?;
     #[cfg(test)]
     crate::request::test_checkpoint("source_publication_after_lock");
     cancellation.check()?;
@@ -266,56 +272,4 @@ pub(super) fn publish_extraction(
     #[cfg(test)]
     crate::request::test_checkpoint("source_publication_after_commit");
     Ok(published)
-}
-
-fn begin_publication<'a>(
-    connection: &'a Connection,
-    index_path: &Path,
-    cancellation: &OperationCancellation,
-) -> Result<Transaction<'a>, ManifestError> {
-    // SQLite's busy timeout cannot poll a captured request token. Short waits
-    // retain the existing bounded source-cache lock budget while observing
-    // cancellation during contention, without retrying extraction/publication.
-    connection
-        .busy_timeout(Duration::from_millis(10))
-        .map_err(|error| sqlite(index_path, "configure publication lock wait", error))?;
-    let deadline = Instant::now() + INDEX_INITIALIZATION_BUDGET;
-    let result = loop {
-        if let Err(error) = cancellation.check() {
-            break Err(error);
-        }
-        match Transaction::new_unchecked(connection, TransactionBehavior::Immediate) {
-            Ok(transaction) => break Ok(transaction),
-            Err(error)
-                if matches!(
-                    error.sqlite_error_code(),
-                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
-                ) =>
-            {
-                #[cfg(test)]
-                crate::request::test_checkpoint("source_publication_waiting_for_lock");
-                if let Err(cancelled) = cancellation.check() {
-                    break Err(cancelled);
-                }
-                if Instant::now() >= deadline {
-                    break Err(sqlite(
-                        index_path,
-                        "begin guarded source publication",
-                        error,
-                    ));
-                }
-            }
-            Err(error) => {
-                break Err(sqlite(
-                    index_path,
-                    "begin guarded source publication",
-                    error,
-                ));
-            }
-        }
-    };
-    connection
-        .busy_timeout(INDEX_INITIALIZATION_BUDGET)
-        .map_err(|error| sqlite(index_path, "restore source-cache lock wait", error))?;
-    result
 }

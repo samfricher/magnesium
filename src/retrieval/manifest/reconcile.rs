@@ -2,11 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::Instant;
 
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::extract::hash_file;
-use super::schema::{INDEX_INITIALIZATION_BUDGET, initialize_index, open_index_for_write};
+use super::schema::{
+    INDEX_INITIALIZATION_BUDGET, begin_write, initialize_index, open_index, open_index_for_write,
+};
 use super::source::{
     exclusion_reason, manifest_path_is_missing, modified_ns, open_workspace_source,
     required_modified_ns, sensitivity, source_kind,
@@ -18,30 +21,26 @@ use super::{
 };
 use crate::retrieval::{
     DiscoveryDisposition, DiscoveryEntry, DiscoveryReport, ExclusionReason, OperationCancellation,
+    SensitivityClass,
 };
 use crate::workspace::native_path_key;
 
 pub(crate) fn load_or_start_reconciliation(
     index_path: &Path,
     initial_cursor_json: &str,
+    cancellation: &OperationCancellation,
 ) -> Result<ReconciliationState, ManifestError> {
-    let mut connection = initialize_index(
-        index_path,
-        INDEX_INITIALIZATION_BUDGET,
-        &crate::retrieval::coordinator::OperationCancellation::none(),
-    )?;
+    let connection = initialize_index(index_path, INDEX_INITIALIZATION_BUDGET, cancellation)?;
     // Immediate: the read that decides whether a cursor exists must happen
     // under the write lock, or two writers can both decide to insert and the
     // loser observes a stale snapshot instead of the committed cursor.
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|source| {
-            sqlite(
-                index_path,
-                "start reconciliation cursor transaction",
-                source,
-            )
-        })?;
+    let transaction = begin_write(
+        &connection,
+        index_path,
+        "start reconciliation cursor transaction",
+        Instant::now() + INDEX_INITIALIZATION_BUDGET,
+        cancellation,
+    )?;
     let current = transaction
         .query_row(
             "SELECT scan_generation, cursor_json
@@ -135,14 +134,20 @@ pub(crate) fn reconcile_batch_with_policy(
         crate::request::test_checkpoint("source_reconciliation_after_open");
         cancellation.check()
     };
-    let mut connection = open_index_for_write(index_path)?;
+    let (hashed, hashed_bytes) =
+        hash_before_lock(&discovery, index_path, &mut after_open, cancellation)?;
+    let connection = open_index_for_write(index_path)?;
     // Immediate: the compare-and-swap guard must read the persisted cursor
     // under the same write lock it commits with. A deferred transaction can
     // read a stale snapshot and then fail with SQLITE_BUSY_SNAPSHOT instead
     // of a truthful reconciliation conflict.
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|source| sqlite(index_path, "start bounded reconciliation batch", source))?;
+    let transaction = begin_write(
+        &connection,
+        index_path,
+        "start bounded reconciliation batch",
+        Instant::now() + INDEX_INITIALIZATION_BUDGET,
+        cancellation,
+    )?;
     let persisted: Option<(i64, String)> = transaction
         .query_row(
             "SELECT scan_generation, cursor_json
@@ -169,7 +174,12 @@ pub(crate) fn reconcile_batch_with_policy(
             ReconciliationAdvance::PreserveSelected => MovePolicy::Isolated,
             _ => MovePolicy::MissingOnly,
         },
-        report: empty_report(state.generation),
+        report: ManifestReport {
+            content_reads: hashed.len(),
+            content_bytes: hashed_bytes,
+            ..empty_report(state.generation)
+        },
+        hashed,
         after_open: &mut after_open,
     };
     for entry in &discovery.entries {
@@ -265,6 +275,65 @@ pub(crate) fn reconcile_batch_with_policy(
         .commit()
         .map_err(|source| sqlite(index_path, "commit bounded reconciliation batch", source))?;
     Ok(progress.report)
+}
+
+/// A content hash read before the write lock, with the size and modified time
+/// the file had then. The locked pass reuses it only while the file still has
+/// both, the same evidence that lets it skip an unchanged file.
+pub(crate) struct HashedContent {
+    file_size: Option<i64>,
+    modified_unix_ns: Option<i64>,
+    sha256: String,
+    sensitivity: Option<SensitivityClass>,
+}
+
+/// Hashing reads every byte of a new file and scans it for credentials, which
+/// takes seconds for a large PDF, and every other writer waits for the lock
+/// meanwhile, including a search with a 150 ms budget. So a batch hashes new
+/// and resized sources before it takes the lock. A file whose size stays the
+/// same but whose modified time changed is still hashed under the lock.
+fn hash_before_lock(
+    discovery: &DiscoveryReport,
+    index_path: &Path,
+    after_open: &mut dyn FnMut(&Path) -> Result<(), ManifestError>,
+    cancellation: &OperationCancellation,
+) -> Result<(HashMap<Vec<u8>, HashedContent>, u64), ManifestError> {
+    let connection = open_index(index_path)?;
+    let snapshot = connection
+        .unchecked_transaction()
+        .map_err(|source| sqlite(index_path, "begin pre-lock manifest snapshot", source))?;
+    let existing = load_existing(&snapshot, index_path, cancellation)?;
+    drop(snapshot);
+    let mut hashed = HashMap::new();
+    let mut bytes = 0_u64;
+    for entry in &discovery.entries {
+        cancellation.check()?;
+        let Some(kind) = source_kind(entry) else {
+            continue;
+        };
+        let path_key = native_path_key(&entry.relative_path);
+        if existing.get(&path_key).is_some_and(|record| {
+            record.present && record.source_kind == kind && record.file_size == to_i64(entry.size)
+        }) {
+            continue;
+        }
+        let source =
+            open_workspace_source(&discovery.workspace_root, &entry.relative_path, after_open)?;
+        let file_size = Some(i64::try_from(source.metadata.len()).unwrap_or(i64::MAX));
+        let modified_unix_ns = Some(required_modified_ns(&source.path, &source.metadata)?);
+        bytes = bytes.saturating_add(source.metadata.len());
+        let (sha256, sensitivity) = hash_file(source.file, &source.path, kind, cancellation)?;
+        hashed.insert(
+            path_key,
+            HashedContent {
+                file_size,
+                modified_unix_ns,
+                sha256,
+                sensitivity,
+            },
+        );
+    }
+    Ok((hashed, bytes))
 }
 
 fn is_missing_entry(entry: &DiscoveryEntry) -> bool {
@@ -409,17 +478,25 @@ pub(crate) fn reconcile_entry(
         return Ok(());
     }
 
-    let (content_sha256, content_sensitivity) = hash_file(
-        source.file,
-        &source.path,
-        source_kind,
-        progress.cancellation,
-    )?;
-    progress.report.content_reads += 1;
-    progress.report.content_bytes = progress
-        .report
-        .content_bytes
-        .saturating_add(file_size_bytes);
+    let (content_sha256, content_sensitivity) = match progress.hashed.remove(&path_key) {
+        Some(hashed) if (hashed.file_size, hashed.modified_unix_ns) == (file_size, modified) => {
+            (hashed.sha256, hashed.sensitivity)
+        }
+        _ => {
+            let hashed = hash_file(
+                source.file,
+                &source.path,
+                source_kind,
+                progress.cancellation,
+            )?;
+            progress.report.content_reads += 1;
+            progress.report.content_bytes = progress
+                .report
+                .content_bytes
+                .saturating_add(file_size_bytes);
+            hashed
+        }
+    };
     if let Some(sensitivity) = content_sensitivity {
         if let Some(record) = existing.get(&path_key) {
             stale_candidates(transaction, record.manifest_id, index_path)?;
