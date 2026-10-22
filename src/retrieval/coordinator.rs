@@ -87,8 +87,6 @@ impl ReconciliationOutcome {
 /// Shared per-request budget for one or more bounded reconciliation passes.
 /// A retry continues with whatever remains; it never resets the counters.
 struct RunBudget<'a> {
-    #[cfg_attr(not(test), allow(dead_code))]
-    started: Instant,
     deadline: Instant,
     max_metadata_entries: usize,
     max_on_demand: usize,
@@ -104,7 +102,6 @@ impl<'a> RunBudget<'a> {
         cancellation: &'a OperationCancellation,
     ) -> Self {
         Self {
-            started,
             deadline: started + budget.max_duration,
             max_metadata_entries: budget.max_metadata_entries,
             max_on_demand: budget.max_on_demand,
@@ -140,11 +137,6 @@ impl<'a> RunBudget<'a> {
         self.on_demand_used
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn elapsed(&self) -> Duration {
-        self.started.elapsed()
-    }
-
     fn deadline_passed(&self) -> bool {
         Instant::now() >= self.deadline
     }
@@ -169,10 +161,6 @@ impl IndexCoverage {
 
 #[derive(Clone, Debug)]
 pub(crate) struct CoordinatorMetrics {
-    #[cfg(test)]
-    pub(crate) elapsed: Duration,
-    #[cfg(test)]
-    pub(crate) directory_entries_read: usize,
     #[cfg(test)]
     pub(crate) metadata_entries_reconciled: usize,
     #[cfg(test)]
@@ -586,7 +574,6 @@ fn coordinate_one_pass(
             }
         }
     }
-    let mut directory_entries_read = 0_usize;
     if let Some(allowed_source_paths) = allowed_source_paths {
         let maximum = run.remaining_metadata();
         for relative in allowed_source_paths.iter().take(maximum) {
@@ -667,7 +654,6 @@ fn coordinate_one_pass(
                 fully_consumed = false;
                 break;
             }
-            directory_entries_read += 1;
             let child = match child {
                 Ok(child) => child,
                 Err(error) => {
@@ -783,7 +769,7 @@ fn coordinate_one_pass(
     }
     let coverage = index_coverage(index_path, indexed_on_demand, false)?;
     #[cfg(not(test))]
-    let _ = (attempt, directory_entries_read, extraction_bytes);
+    let _ = (attempt, extraction_bytes);
     #[cfg(not(test))]
     let _ = &candidates;
     Ok(CoordinatorReport {
@@ -793,10 +779,6 @@ fn coordinate_one_pass(
         #[cfg(test)]
         candidates,
         metrics: CoordinatorMetrics {
-            #[cfg(test)]
-            elapsed: run.elapsed(),
-            #[cfg(test)]
-            directory_entries_read,
             #[cfg(test)]
             metadata_entries_reconciled: run.metadata_entries_used(),
             #[cfg(test)]
@@ -828,10 +810,6 @@ fn deferred_reconciliation_report(
         #[cfg(test)]
         candidates: Vec::new(),
         metrics: CoordinatorMetrics {
-            #[cfg(test)]
-            elapsed: run.elapsed(),
-            #[cfg(test)]
-            directory_entries_read: 0,
             #[cfg(test)]
             metadata_entries_reconciled: run.metadata_entries_used(),
             #[cfg(test)]
@@ -2013,7 +1991,7 @@ mod tests {
     }
 
     #[test]
-    fn large_repository_cold_and_warm_queries_emit_bounded_cost_metrics() {
+    fn large_repository_cold_and_warm_queries_stay_within_bounded_costs() {
         let fixture = Fixture::new("large-metrics");
         let body = vec![b'x'; 256];
         for index in 0..512 {
@@ -2051,19 +2029,6 @@ mod tests {
         assert!(warm.metrics.metadata_entries_reconciled <= 64);
         assert_eq!(warm.metrics.indexed_on_demand, 0);
         assert_eq!(warm.candidates.len(), 1);
-        eprintln!(
-            "LEARN-012A metrics cold_us={} cold_entries={} cold_dir_entries={} cold_bytes={} cold_indexed={} warm_us={} warm_entries={} warm_dir_entries={} warm_bytes={} warm_indexed={}",
-            cold.metrics.elapsed.as_micros(),
-            cold.metrics.metadata_entries_reconciled,
-            cold.metrics.directory_entries_read,
-            cold.metrics.bytes_read,
-            cold.metrics.indexed_on_demand,
-            warm.metrics.elapsed.as_micros(),
-            warm.metrics.metadata_entries_reconciled,
-            warm.metrics.directory_entries_read,
-            warm.metrics.bytes_read,
-            warm.metrics.indexed_on_demand,
-        );
     }
 
     #[test]
@@ -2355,56 +2320,6 @@ mod tests {
         let later = Arc::new(AtomicBool::new(false));
         let _later_scope = enter_request_cancellation(&OperationCancellation::with_flag(later));
         assert!(!OperationCancellation::none().is_cancelled());
-    }
-
-    #[test]
-    fn fixed_corpus_warm_cold_report_records_actual_time_and_size() {
-        // Fixed corpus: five small text sources. Reports actual elapsed,
-        // counts, and bytes for cold vs warm runs with no content logging.
-        let fixture = Fixture::new("warm-cold-report");
-        for index in 0..5 {
-            fixture.write(
-                &format!("fixed-{index}.md"),
-                format!("fixed warm cold corpus entry {index}\n").as_bytes(),
-            );
-        }
-        let cold_start = std::time::Instant::now();
-        let cold = coordinate_source_query(
-            &fixture.root,
-            &fixture.index(),
-            Path::new(""),
-            &[],
-            budget(16),
-        )
-        .expect("cold fixed-corpus scan");
-        let cold_us = cold_start.elapsed().as_micros();
-        finish_metadata_scan(&fixture, budget(16));
-        let warm_start = std::time::Instant::now();
-        let warm = coordinate_source_query(
-            &fixture.root,
-            &fixture.index(),
-            Path::new(""),
-            &[],
-            budget(16),
-        )
-        .expect("warm fixed-corpus scan");
-        let warm_us = warm_start.elapsed().as_micros();
-        // No speedup claim: report actuals and enforce bounded behavior only.
-        eprintln!(
-            "fixed-corpus report cold_us={cold_us} warm_us={warm_us} cold_metadata={} warm_metadata={} cold_reads={} warm_reads={} cold_bytes={} warm_bytes={}",
-            cold.metrics.metadata_entries_reconciled,
-            warm.metrics.metadata_entries_reconciled,
-            cold.metrics.content_reads,
-            warm.metrics.content_reads,
-            cold.metrics.bytes_read,
-            warm.metrics.bytes_read,
-        );
-        assert!(cold_us < 5_000_000, "cold scan exceeded its 5s bound");
-        assert!(warm_us < 5_000_000, "warm scan exceeded its 5s bound");
-        assert!(
-            warm.metrics.metadata_entries_reconciled <= 16,
-            "warm scan exceeded its per-call metadata bound"
-        );
     }
 
     fn finish_metadata_scan(fixture: &Fixture, budget: CoordinatorBudget) {

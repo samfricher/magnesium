@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 
 use super::extract::*;
 use super::pdf::*;
@@ -13,9 +13,7 @@ use super::reconcile::*;
 use super::schema::*;
 use super::status::*;
 use super::*;
-use crate::retrieval::DiscoveryReport;
 use crate::retrieval::chunking::ChunkKind;
-use crate::workspace::native_path_key;
 
 static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
 
@@ -980,14 +978,21 @@ fn reconciliation_and_extraction_reject_symlink_swaps_after_open() {
     fs::write(&outside, b"outside secret\n").expect("write outside file");
     let source =
         fs::canonicalize(fixture.root.join("lesson.md")).expect("resolve fixture source path");
-    let mut swap_after_open = |opened: &Path| {
-        assert_eq!(opened, source);
-        fs::remove_file(&source).expect("remove opened source");
-        std::os::unix::fs::symlink(&outside, &source).expect("replace opened source with symlink");
-        Ok(())
-    };
-    let error = reconcile_manifest_with_hook(&fixture.root, &index, &mut swap_after_open)
-        .expect_err("reject reconciliation source swap");
+    let swap_source = source.clone();
+    let swap_target = outside.clone();
+    let token = crate::retrieval::OperationCancellation::none().with_test_hook(
+        std::sync::Arc::new(move |checkpoint| {
+            if checkpoint == "source_reconciliation_after_open" {
+                fs::remove_file(&swap_source).expect("remove opened source");
+                std::os::unix::fs::symlink(&swap_target, &swap_source)
+                    .expect("replace opened source with symlink");
+            }
+        }),
+    );
+    let scope = crate::request::enter_request_cancellation(&token);
+    let error =
+        reconcile_manifest(&fixture.root, &index).expect_err("reject reconciliation source swap");
+    drop(scope);
     assert!(error.to_string().contains("changed while opening"));
     let external_hash_count: i64 = Connection::open(&index)
         .expect("open source index")
@@ -1276,104 +1281,9 @@ fn reconcile_manifest(
     workspace_root: &Path,
     index_path: &Path,
 ) -> Result<ManifestReport, ManifestError> {
-    let mut after_open = |_: &Path| Ok(());
-    reconcile_manifest_with_hook(workspace_root, index_path, &mut after_open)
-}
-
-fn reconcile_manifest_with_hook(
-    workspace_root: &Path,
-    index_path: &Path,
-    after_open: &mut impl FnMut(&Path) -> Result<(), ManifestError>,
-) -> Result<ManifestReport, ManifestError> {
     let discovery = discover_root(workspace_root)?;
-    reconcile_discovery(index_path, &discovery, after_open)
-}
-
-fn reconcile_discovery(
-    index_path: &Path,
-    discovery: &DiscoveryReport,
-    after_open: &mut impl FnMut(&Path) -> Result<(), ManifestError>,
-) -> Result<ManifestReport, ManifestError> {
-    let mut connection = initialize_index(
-        index_path,
-        INDEX_INITIALIZATION_BUDGET,
-        &crate::retrieval::coordinator::OperationCancellation::none(),
-    )?;
-    let transaction = connection
-        .transaction()
-        .map_err(|source| ManifestError::Sqlite {
-            action: "start source manifest transaction",
-            path: index_path.to_path_buf(),
-            source,
-        })?;
-    let generation: i64 = transaction
-        .query_row(
-            "SELECT generation + 1 FROM source_index_metadata WHERE singleton = 1",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|source| sqlite(index_path, "read source manifest generation", source))?;
-    let cancellation = crate::retrieval::OperationCancellation::none();
-    let existing = load_existing(&transaction, index_path, &cancellation)?;
-    let current_keys = discovery
-        .entries
-        .iter()
-        .map(|entry| native_path_key(&entry.relative_path))
-        .collect::<HashSet<_>>();
-    let mut progress = ReconcileProgress {
-        moved_ids: HashSet::new(),
-        moves: super::MovePolicy::Any,
-        cancellation: &cancellation,
-        report: empty_report(generation),
-        after_open,
-    };
-
-    for entry in &discovery.entries {
-        reconcile_entry(
-            &transaction,
-            index_path,
-            discovery,
-            entry,
-            &existing,
-            &current_keys,
-            &mut progress,
-        )?;
-    }
-
-    for (path_key, record) in &existing {
-        if record.present
-            && !current_keys.contains(path_key)
-            && !progress.moved_ids.contains(&record.manifest_id)
-        {
-            stale_candidates(&transaction, record.manifest_id, index_path)?;
-            transaction
-                .execute(
-                    "UPDATE source_manifest
-                     SET index_status = 'deleted', present = 0, observed_generation = ?2,
-                         last_error = NULL
-                     WHERE manifest_id = ?1",
-                    params![record.manifest_id, generation],
-                )
-                .map_err(|source| sqlite(index_path, "mark deleted manifest source", source))?;
-            progress.report.deleted += 1;
-        }
-    }
-    transaction
-        .execute(
-            "DELETE FROM source_reconciliation_state WHERE singleton = 1",
-            [],
-        )
-        .map_err(|source| sqlite(index_path, "cancel bounded reconciliation cursor", source))?;
-    transaction
-        .execute(
-            "UPDATE source_index_metadata SET generation = ?1 WHERE singleton = 1",
-            [generation],
-        )
-        .map_err(|source| sqlite(index_path, "advance source manifest generation", source))?;
-    transaction
-        .commit()
-        .map_err(|source| sqlite(index_path, "commit source manifest", source))?;
-    Ok(progress.report)
+    let state = load_or_start_reconciliation(index_path, "{}")?;
+    reconcile_batch(workspace_root, index_path, discovery.entries, &state, None)
 }
 
 #[test]
@@ -1382,25 +1292,62 @@ fn open_workspace_source_rejects_traversal_and_symlink_before_any_bytes() {
     // paths, traversal, symlinks and non-files fail before any read, so a
     // `sources` caller can never escape the workspace through a crafted path.
     use super::source::open_workspace_source;
+    use std::cell::Cell;
 
     let fixture = Fixture::new("open-boundary");
     fixture.write("lesson.md", b"bounded original\n");
-    let mut after_open = |_: &Path| Ok(());
+    fs::create_dir(fixture.root.join("notes")).expect("create notes directory");
+    // The outside target exists and is reachable from every path below, so
+    // only the workspace-relative guard rejects it before the file is opened.
+    let outside = Fixture::new("open-boundary-outside");
+    outside.write("secret.md", b"outside secret\n");
+    let outside_name = outside.root.file_name().expect("outside fixture name");
+    let opened = Cell::new(0_usize);
+    let mut after_open = |_: &Path| {
+        opened.set(opened.get() + 1);
+        Ok(())
+    };
+    let mut rejection =
+        |relative: &Path| match open_workspace_source(&fixture.root, relative, &mut after_open) {
+            Err(ManifestError::Invalid(message)) => message,
+            Err(other) => panic!("{} failed with {other:?}", relative.display()),
+            Ok(_) => panic!("{} must be rejected", relative.display()),
+        };
+
     for bad in [
-        PathBuf::from("/etc/hostname"),
-        PathBuf::from("../outside.md"),
-        PathBuf::from("notes/../../outside.md"),
+        outside.root.join("secret.md"),
+        Path::new("..").join(outside_name).join("secret.md"),
+        Path::new("notes/../..")
+            .join(outside_name)
+            .join("secret.md"),
     ] {
-        assert!(
-            open_workspace_source(&fixture.root, &bad, &mut after_open).is_err(),
-            "traversal must be rejected: {}",
-            bad.display()
+        assert_eq!(
+            rejection(&bad),
+            format!("source path {} is not workspace-relative", bad.display())
         );
     }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(outside.root.join("secret.md"), fixture.root.join("link.md"))
+            .expect("create symlink to the outside file");
+        let message = rejection(Path::new("link.md"));
+        assert!(
+            message.contains("must be a regular non-symlink file"),
+            "{message}"
+        );
+    }
+    let message = rejection(Path::new("notes"));
+    assert!(
+        message.contains("must be a regular non-symlink file"),
+        "{message}"
+    );
+    assert_eq!(opened.get(), 0, "a rejected source must never be opened");
+
     assert!(
         open_workspace_source(&fixture.root, Path::new("lesson.md"), &mut after_open).is_ok(),
         "ordinary workspace-relative sources still open"
     );
+    assert_eq!(opened.get(), 1);
 }
 
 /// Two-page PDF with empty content streams: the native text layer is

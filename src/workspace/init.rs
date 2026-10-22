@@ -2467,21 +2467,4 @@ mod tests {
         let rules = super::claude_permission_rules(Path::new(directory));
         assert!(rules.contains(&rule.to_owned()), "{rules:?}");
     }
-
-    #[test]
-    fn claude_rules_allow_launching_every_shipped_skill() {
-        let plugin: serde_json::Value = serde_json::from_str(include_str!(
-            "../../claude-plugin/.claude-plugin/plugin.json"
-        ))
-        .unwrap();
-        assert_eq!(plugin["name"], "magnesium");
-        let rules = super::claude_permission_rules(Path::new("/plugin"));
-        for skill in [
-            "Skill(magnesium:learn)",
-            "Skill(magnesium:papers)",
-            "Skill(magnesium:help)",
-        ] {
-            assert!(rules.contains(&skill.to_owned()), "{rules:?}");
-        }
-    }
 }

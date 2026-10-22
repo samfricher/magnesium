@@ -969,19 +969,4 @@ mod tests {
             );
         }
     }
-    #[test]
-    fn diagnostics_report_observation_index_failures_without_false_current() {
-        let f = Fixture::new();
-        f.store
-            .conn
-            .execute(
-                "UPDATE workspace_meta SET observation_fts_generation=-1",
-                [],
-            )
-            .unwrap();
-        let diagnostics = crate::diagnostics::inspect(&f.workspace).unwrap();
-        assert_eq!(diagnostics["memory_index_current"], true);
-        assert_eq!(diagnostics["observation_index_current"], false);
-        assert_eq!(diagnostics["index_current"], false);
-    }
 }

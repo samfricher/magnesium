@@ -130,7 +130,11 @@ pub(crate) fn reconcile_batch_with_policy(
         workspace_root,
         entries,
     };
-    let mut after_open = |_: &Path| cancellation.check();
+    let mut after_open = |_: &Path| {
+        #[cfg(test)]
+        crate::request::test_checkpoint("source_reconciliation_after_open");
+        cancellation.check()
+    };
     let mut connection = open_index_for_write(index_path)?;
     // Immediate: the compare-and-swap guard must read the persisted cursor
     // under the same write lock it commits with. A deferred transaction can
@@ -504,8 +508,6 @@ pub(crate) fn reconcile_entry(
         .iter()
         .filter(|(old_key, record)| {
             (match progress.moves {
-                #[cfg(test)]
-                MovePolicy::Any => true,
                 MovePolicy::MissingOnly => {
                     manifest_path_is_missing(&discovery.workspace_root, old_key)
                 }
