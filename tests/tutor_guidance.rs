@@ -648,16 +648,20 @@ fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
                 .unwrap()
                 .to_owned()
         };
+        let line_form = "Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".";
+        let write = format!("Write the answer under a Sessions heading in `plan.md`. {line_form}");
         let papers = served("papers");
         for required in [
             "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
-            "Write the answer under a Sessions heading in `plan.md`. Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".",
+            write.as_str(),
         ] {
             assert!(papers.contains(required), "{host}/papers: {required}");
         }
-        let rule = "If the learner changes when or where they practise, rewrite Sessions, adding it if missing.";
+        let rule = format!(
+            "If the learner changes when or where they practise, rewrite Sessions, adding it if missing. {line_form}"
+        );
         assert!(
-            served("papers_loop").contains(rule),
+            served("papers_loop").contains(&rule),
             "{host}/papers_loop: {rule}"
         );
     }
