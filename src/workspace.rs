@@ -141,12 +141,13 @@ where
 
 /// Atomic file replacements whose directory flushes wait for `finish`.
 ///
-/// Each file is written to a private temporary file in its own directory,
-/// flushed, and renamed over the target, so a reader sees the old or the new
-/// file and never a partial one. `finish` flushes each directory once, after
-/// all of its files are in place: every file is durable when `finish`
-/// returns, as with one flushed replacement per file. Windows keeps
-/// `atomicwrites`, whose write-through move needs no directory flush.
+/// Each file is written to a temporary file in its own directory, flushed,
+/// and renamed over the target, so a reader sees the old or the new file and
+/// never a partial one. `finish` flushes each directory once, after all of
+/// its files are in place: every file is durable when `finish` returns, as
+/// with one flushed replacement per file. A batch dropped on an error path
+/// still flushes the directories of the files it already replaced. Windows
+/// keeps `atomicwrites`, whose write-through move needs no directory flush.
 #[derive(Default)]
 #[must_use = "replaced files are durable only after `finish`"]
 pub(crate) struct AtomicWrites {
@@ -155,9 +156,21 @@ pub(crate) struct AtomicWrites {
 }
 
 impl AtomicWrites {
+    /// Replace `path` with an owner-only (0600) file.
     pub(crate) fn replace(
         &mut self,
         path: &Path,
+        write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.replace_with_mode(path, 0o600, write)
+    }
+
+    /// Replace `path` with a file created with `mode`, which the umask
+    /// filters as for any new file. Windows ignores `mode`.
+    pub(crate) fn replace_with_mode(
+        &mut self,
+        path: &Path,
+        #[cfg_attr(not(unix), allow(unused_variables))] mode: u32,
         write: impl FnOnce(&mut fs::File) -> io::Result<()>,
     ) -> io::Result<()> {
         #[cfg(unix)]
@@ -172,7 +185,7 @@ impl AtomicWrites {
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create_new(true)
-                    .mode(0o600)
+                    .mode(mode)
                     .open(&temporary)?;
                 write(&mut file)?;
                 file.sync_all()?;
@@ -205,10 +218,22 @@ impl AtomicWrites {
 
     pub(crate) fn finish(self) -> io::Result<()> {
         #[cfg(unix)]
-        for directory in &self.directories {
-            fs::File::open(directory)?.sync_all()?;
+        {
+            let mut writes = self;
+            for directory in std::mem::take(&mut writes.directories) {
+                fs::File::open(&directory)?.sync_all()?;
+            }
         }
         Ok(())
+    }
+}
+
+impl Drop for AtomicWrites {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        for directory in &self.directories {
+            let _ = fs::File::open(directory).and_then(|directory| directory.sync_all());
+        }
     }
 }
 
@@ -241,8 +266,10 @@ pub(crate) fn write_user_owned_atomic(path: &Path, bytes: &[u8]) -> io::Result<(
         None
     };
 
+    // A new user-owned file gets the umask default, as any editor would
+    // create it; an existing file keeps its mode below.
     let mut writes = AtomicWrites::default();
-    writes.replace(path, |file| file.write_all(bytes))?;
+    writes.replace_with_mode(path, 0o666, |file| file.write_all(bytes))?;
     writes.finish()?;
 
     #[cfg(unix)]
@@ -520,11 +547,11 @@ mod tests {
         ));
         create_private_dir(&root).expect("create atomic write fixture");
         let one = root.join("notes/one.md");
-        let two = root.join("notes/two.md");
+        let two = root.join("papers/two.md");
         let mut writes = AtomicWrites::default();
         writes.write_private(&one, b"first").expect("write one");
         writes.write_private(&two, b"second").expect("write two");
-        writes.finish().expect("flush the notes directory");
+        writes.finish().expect("flush both directories");
         write_private_atomic(&one, b"replaced").expect("replace one");
 
         let mut writes = AtomicWrites::default();
@@ -538,12 +565,13 @@ mod tests {
 
         assert_eq!(fs::read(&one).expect("read one"), b"replaced");
         assert_eq!(fs::read(&two).expect("read two"), b"second");
-        let mut names = fs::read_dir(root.join("notes"))
-            .expect("list notes")
-            .map(|entry| entry.expect("note entry").file_name())
-            .collect::<Vec<_>>();
-        names.sort();
-        assert_eq!(names, ["one.md", "two.md"]);
+        for (directory, name) in [("notes", "one.md"), ("papers", "two.md")] {
+            let names = fs::read_dir(root.join(directory))
+                .expect("list directory")
+                .map(|entry| entry.expect("directory entry").file_name())
+                .collect::<Vec<_>>();
+            assert_eq!(names, [name], "{directory} holds a temporary file");
+        }
         for path in [&one, &two] {
             let mode = fs::metadata(path).expect("stat note").permissions().mode();
             assert_eq!(mode & 0o777, 0o600);

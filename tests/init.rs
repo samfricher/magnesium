@@ -674,6 +674,29 @@ fn init_agents_md_preserves_permissions_and_newlines() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn init_creates_a_new_agents_md_with_the_default_file_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
+    let agents_md = environment.workspace.join("AGENTS.md");
+    assert!(!agents_md.exists());
+
+    let output = environment
+        .command()
+        .args(["init", "--adapter", "agents-md"])
+        .output()
+        .expect("run init with agents-md adapter");
+    assert_success(&output);
+
+    // The test and the init child share one umask, so an ordinary new file
+    // shows the mode a new AGENTS.md should get.
+    let reference = environment.workspace.join("reference.txt");
+    fs::write(&reference, "").expect("write reference file");
+    let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&agents_md), mode(&reference));
+}
+
 #[test]
 fn init_json_is_machine_readable_and_idempotent() {
     let environment = TestEnvironment::from_fixture("basic").expect("create environment");
