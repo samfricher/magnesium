@@ -17,7 +17,9 @@ python3 ci/check.py
 This runs Rust formatting, Clippy, the release build and tests, native source
 checks, Python tests, and documentation/instruction checks. Subprocess tests use
 the release executable built by the same command. Missing prerequisites and
-failed checks stop the run.
+failed checks stop the run. The Rust tests keep their temporary files on a RAM disk
+(macOS) or in `/dev/shm` (Linux) that the command removes afterwards; set
+`MAGNESIUM_CI_DISK_TMP=1` to use the default temporary directory instead.
 
 For a smaller loop, select `core`, `python`, or `docs`, for example
 `python3 ci/check.py core docs`. Use `--list` to inspect the commands or `--offline`

@@ -3,7 +3,10 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import shutil
+import signal
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +105,162 @@ class CheckRunnerTests(unittest.TestCase):
             self.run_main(["typo"])
         self.assertEqual(error.exception.code, 2)
         run.assert_not_called()
+
+
+class FakeDiskutil:
+    """Stands in for subprocess.run so no test creates a real RAM disk."""
+
+    def __init__(self, volumes, *, fail=(), eject_failures=0):
+        self.volumes = volumes
+        self.fail = set(fail)
+        self.eject_failures = eject_failures
+        self.calls = []
+
+    def __call__(self, command, **kwargs):
+        self.calls.append(command)
+        action = command[1] if command[0] == "diskutil" else command[0]
+        if action in self.fail:
+            raise subprocess.CalledProcessError(1, command, stderr="Error: could not do that\n")
+        if action == "eject" and self.eject_failures:
+            self.eject_failures -= 1
+            return subprocess.CompletedProcess(command, 1, "", "busy")
+        if action == "erasevolume":
+            (self.volumes / command[3]).mkdir()
+        stdout = "/dev/disk9\n" if action == "image" else ""
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    def ejected(self):
+        return [command for command in self.calls if command[:2] == ["diskutil", "eject"]]
+
+
+class TestTempDirTests(unittest.TestCase):
+    def setUp(self):
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        env = patch.dict(os.environ, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(check.DISK_TMP_OPT_OUT, None)
+        self.output = io.StringIO()
+        redirect = contextlib.redirect_stdout(self.output)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
+        for name, value in [("VOLUMES_DIR", self.scratch), ("SHM_DIR", self.scratch / "shm")]:
+            patcher = patch.object(check, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        sleep = patch.object(check.time, "sleep")
+        sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def macos(self, **options):
+        diskutil = FakeDiskutil(self.scratch, **options)
+        platform = patch.object(check.sys, "platform", "darwin")
+        mounted = patch.object(check.os.path, "ismount", return_value=True)
+        run = patch.object(check.subprocess, "run", diskutil)
+        for patcher in (platform, mounted, run):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return diskutil
+
+    def test_macos_uses_a_uniquely_named_ram_volume_and_ejects_the_attached_device(self):
+        diskutil = self.macos()
+        with check.test_temp_dir() as directory:
+            self.assertEqual(Path(directory), self.scratch / f"magnesium-ci-{os.getpid()}")
+            self.assertEqual(diskutil.ejected(), [])
+            self.assertIn(["diskutil", "image", "attach", "--noMount", "ram://1048576"], diskutil.calls)
+            self.assertIn(["diskutil", "erasevolume", "APFS", f"magnesium-ci-{os.getpid()}", "/dev/disk9"], diskutil.calls)
+        self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+        self.assertIn("RAM-backed", self.output.getvalue())
+
+    def test_macos_ejects_when_the_checks_fail(self):
+        diskutil = self.macos()
+        with self.assertRaises(KeyboardInterrupt), check.test_temp_dir():
+            raise KeyboardInterrupt
+        self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+
+    def test_sigterm_exits_through_the_cleanup_and_restores_the_handler(self):
+        diskutil = self.macos()
+        before = signal.getsignal(signal.SIGTERM)
+        with self.assertRaises(SystemExit) as stopped, check.test_temp_dir():
+            signal.raise_signal(signal.SIGTERM)
+        self.assertEqual(stopped.exception.code, 128 + signal.SIGTERM)
+        self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+
+    def test_macos_setup_failure_ejects_the_attached_device_and_falls_back(self):
+        diskutil = self.macos(fail={"erasevolume"})
+        with check.test_temp_dir() as directory:
+            self.assertIsNone(directory)
+        self.assertEqual(diskutil.ejected(), [["diskutil", "eject", "/dev/disk9"]])
+        self.assertIn("default temporary directory", self.output.getvalue())
+        self.assertEqual(len(self.output.getvalue().strip().splitlines()), 1)
+
+    def test_macos_without_diskutil_falls_back(self):
+        self.macos()
+        with patch.object(check.subprocess, "run", side_effect=FileNotFoundError("diskutil")):
+            with check.test_temp_dir() as directory:
+                self.assertIsNone(directory)
+        self.assertIn("default temporary directory", self.output.getvalue())
+
+    def test_busy_volume_is_retried_then_force_unmounted(self):
+        diskutil = self.macos(eject_failures=3)
+        with check.test_temp_dir():
+            pass
+        self.assertIn(["diskutil", "unmountDisk", "force", "/dev/disk9"], diskutil.calls)
+        self.assertEqual(len(diskutil.ejected()), 4)
+
+    def test_linux_uses_a_private_shm_directory_and_removes_it(self):
+        (self.scratch / "shm").mkdir()
+        with patch.object(check.sys, "platform", "linux"), check.test_temp_dir() as directory:
+            self.assertEqual(Path(directory).parent, self.scratch / "shm")
+            (Path(directory) / "workspace").mkdir()
+        self.assertFalse(Path(directory).exists())
+
+    def test_linux_without_usable_shm_falls_back(self):
+        with patch.object(check.sys, "platform", "linux"), check.test_temp_dir() as directory:
+            self.assertIsNone(directory)
+        (self.scratch / "shm").mkdir()
+        noexec = os.statvfs_result((0, 4096, 0, 0, 1 << 20, 0, 0, 0, getattr(os, "ST_NOEXEC", 8), 255))
+        with patch.object(check.sys, "platform", "linux"), patch.object(check.os, "statvfs", return_value=noexec):
+            with check.test_temp_dir() as directory:
+                self.assertIsNone(directory)
+        self.assertEqual(list((self.scratch / "shm").iterdir()), [])
+
+    def test_other_platforms_and_the_opt_out_keep_the_default_directory(self):
+        with patch.object(check.subprocess, "run") as run:
+            with patch.object(check.sys, "platform", "win32"), check.test_temp_dir() as directory:
+                self.assertIsNone(directory)
+            with patch.object(check.sys, "platform", "darwin"), patch.dict(os.environ, {check.DISK_TMP_OPT_OUT: "1"}):
+                with check.test_temp_dir() as directory:
+                    self.assertIsNone(directory)
+            run.assert_not_called()
+
+    def test_only_cargo_test_gets_the_temporary_directory(self):
+        seen = {}
+
+        @contextlib.contextmanager
+        def ram():
+            yield "/ram"
+
+        def record(command, **kwargs):
+            seen[command[1]] = kwargs["env"]
+
+        with patch.object(check, "test_temp_dir", ram), patch.object(check.subprocess, "run", record), \
+                patch.object(check, "native_target", return_value="test-host"):
+            self.assertEqual(check.main(["core"]), 0)
+        for name in ("TMPDIR", "TEMP", "TMP"):
+            self.assertEqual(seen["test"][name], "/ram")
+            for other in ("fmt", "clippy", "build", "ci/check_native_sources.py"):
+                self.assertNotEqual(seen[other].get(name), "/ram")
+        self.assertEqual(seen["test"]["MAGNESIUM_TEST_BINARY"], seen["build"]["MAGNESIUM_TEST_BINARY"])
+
+    def test_list_and_other_scopes_never_create_a_ram_disk(self):
+        with patch.object(check, "test_temp_dir") as ram, patch.object(check.subprocess, "run"), \
+                patch.object(check, "native_target", return_value="test-host"):
+            check.main(["--list"])
+            check.main(["python", "docs"])
+        ram.assert_not_called()
 
 
 if __name__ == "__main__":
