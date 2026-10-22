@@ -330,6 +330,14 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
     ] {
         assert!(text.contains(verb), "{name} does not mention {verb:?}");
     }
+    let papers_description = include_str!("../claude-plugin/skills/papers/SKILL.md")
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .unwrap();
+    assert!(
+        papers_description.contains(verb),
+        "the papers skill description, which routes the verb to the skill, does not list {verb:?}"
+    );
     for host in ["codex", "claude", "opencode"] {
         let served = v2::tool(
             &e,

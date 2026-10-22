@@ -1,6 +1,6 @@
 ---
 name: papers
-description: Durable plans of timed practice papers in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me TAG, repair TAG, cold redo, new mock, re-time today, rebuild). Ordinary coding or repository work does not start it.
+description: Durable plans of timed practice papers in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me TAG, repair TAG, cold redo, new mock, re-time today, fix my plan files, rebuild). Ordinary coding or repository work does not start it.
 ---
 
 # Magnesium papers
