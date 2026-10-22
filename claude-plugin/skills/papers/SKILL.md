@@ -40,10 +40,11 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column comes from an older template. The `papers_loop` stage holds the upgrade steps that every host follows. After them, use this skill's templates:
+A `gap-log.md` without a `Next redo` column comes from an older template. A folder from before confidence letters has no `Conf:` line above `## Tags` in `gap-log.md`, or its Method in `plan.md` or a paper not yet marked does not ask for S, U or G. Check for these even when the Conf column is already there, because the `papers_loop` stage adds only the column. That stage holds the upgrade steps that every host follows. After them, use this skill's templates:
 
-1. Read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
-2. In `plan.md`, replace step 5 of the Method with the template's step 5.
+1. If `gap-log.md` has no `Next redo` column or no `Conf:` line, read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+2. If the Method in `plan.md` does not ask for the redo days or for S, U or G, replace steps 1, 4 and 5 of the Method with the template's steps.
+3. Update each paper not yet marked, so the learner sees the S, U and G line. A paper is marked when Scores has its row with a real score, not the template's `<score>` placeholder. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the line of `\paperheader` in `papers/src/preamble.tex` that asks for a ? with the `preamble.tex` template's line, and run the build again.
 
 ## Optional tools
 

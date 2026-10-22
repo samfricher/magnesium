@@ -4,7 +4,7 @@
 
 **Level:** <diagnostic, easy, medium, mock or stretch>. **Time:** <minutes> minutes. **Marks:** <total>. **Aids:** <permitted aids>; nothing else.
 
-Work on paper, timed, away from the conversation. If you do not know something, write your best attempt and a `?`. Do not look anything up during the sitting. Open the key only after you return your answers.
+Work on paper, timed, away from the conversation. If you do not know something, write your best attempt and a `?`. After each answer, write how sure you are: `S` sure, `U` unsure or `G` guess. Do not look anything up during the sitting. Open the key only after you return your answers.
 
 ---
 

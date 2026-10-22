@@ -6,21 +6,23 @@ Status: exactly one of open, 1 of 3, 2 of 3 or closed. Passes: the date and resu
 
 Type: K did not know, S slow, N notation or missing step, A arithmetic, R misread.
 
+Conf: S sure, U unsure or G guess, the letter the learner wrote after the answer that lost the mark. It is blank when they wrote none, as for a lone `?`. One letter on a question covers its parts. A failed redo, or a sitting that fails the row, sets Conf to the failing answer's letter, and keeps the old letter when that answer has none. Conf is not evidence, so it never passes or closes a row. For each paper, the Scores Notes count the right answers out of the answers with each letter, such as Conf right: S 9/12, U 4/6, G 1/2. An answer is right when it gets full marks. Count answers, not rows, so each part of a question is one answer, and leave stretch items out.
+
 ## Tags
 
 The tags, what each covers and the pages to re-read are in `graph.yaml`; the drills per tag are in `drills.md`.
 
 ## Gaps
 
-| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | <YYYY-MM-DD> | <PAPER> | <Q> | <TAG> | <what was written, and what the mark scheme needed> | <K, S, N, A or R> | <tighten, repair or teach, and what was done> | <empty until the first redo> | <empty until the repair> | open |
+| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | <YYYY-MM-DD> | <PAPER> | <Q> | <TAG> | <what was written, and what the mark scheme needed> | <K, S, N, A or R> | <S, U, G or blank> | <tighten, repair or teach, and what was done> | <empty until the first redo> | <empty until the repair> | open |
 
 ## Scores
 
 | Paper | Date | Score | Time used | Notes |
 |---|---|---|---|---|
-| Diagnostic | <YYYY-MM-DD> | <score>/<marks> | <used>/<min> min | <marks per question; strengths; open tags> |
+| Diagnostic | <YYYY-MM-DD> | <score>/<marks> | <used>/<min> min | <marks per question; right answers per Conf letter; strengths; open tags> |
 
 ## Stretch items
 

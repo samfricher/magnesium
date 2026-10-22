@@ -825,6 +825,200 @@ mod tests {
     }
 
     #[test]
+    fn a_conf_column_and_conf_counts_leave_the_digest_unchanged() {
+        let with_conf = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | km | sign error | A | S | tighten | | 2026-10-16 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | vmax | no units | N | | tighten | 2026-10-16 pass | 2026-10-19 | 1 of 3 |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q4 | inhibition | wrong type | K | G | repair | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q5 | lb-plot | axes swapped | K | U | repair | 2026-10-17 fail | | open |\n\n\
+            ## Scores\n\n| Paper | Date | Score | Time used | Notes |\n|---|---|---|---|---|\n\
+            | Diagnostic | 2026-10-14 | 18/30 | 44/45 min | Q1 2/4; Conf right: S 9/12, U 4/6, G 1/2 |\n";
+        let without_conf = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|\n\
+            | 1 | 2026-10-14 | Diagnostic | Q1 | km | sign error | A | tighten | | 2026-10-16 | open |\n\
+            | 2 | 2026-10-14 | Diagnostic | Q2 | vmax | no units | N | tighten | 2026-10-16 pass | 2026-10-19 | 1 of 3 |\n\
+            | 3 | 2026-10-14 | Diagnostic | Q4 | inhibition | wrong type | K | repair | 2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass | | closed |\n\
+            | 4 | 2026-10-14 | Diagnostic | Q5 | lb-plot | axes swapped | K | repair | 2026-10-17 fail | | open |\n\n\
+            ## Scores\n\n| Paper | Date | Score | Time used | Notes |\n|---|---|---|---|---|\n\
+            | Diagnostic | 2026-10-14 | 18/30 | 44/45 min | Q1 2/4 |\n";
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let value = plan_digest("midterm-1", PLAN, with_conf, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 2);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 1})
+        );
+        assert_eq!(
+            value["scores"],
+            json!([{"paper":"Diagnostic","date":"2026-10-14","score":"18/30"}])
+        );
+        assert_eq!(
+            value,
+            plan_digest("midterm-1", PLAN, without_conf, today, &[])
+        );
+    }
+
+    fn four_gap_rows_in_columns(columns: &[&str]) -> String {
+        let names = ["Q", "Type", "Conf", "Passes", "Next redo", "Status"];
+        let rows = [
+            ["Q1", "A", "S", "", "2026-10-16", "open"],
+            ["Q2", "N", "", "2026-10-16 pass", "2026-10-19", "1 of 3"],
+            [
+                "Q4",
+                "K",
+                "G",
+                "2026-10-15 pass, 2026-10-18 pass, 2026-10-25 pass",
+                "",
+                "closed",
+            ],
+            ["Q5", "K", "U", "2026-10-17 fail", "", "open"],
+        ];
+        let line = |cells: Vec<&str>| format!("| {} |\n", cells.join(" | "));
+        let mut text = String::from("## Gaps\n\n");
+        text += &line(columns.to_vec());
+        text += &line(columns.iter().map(|_| "---").collect());
+        for row in rows {
+            text += &line(
+                columns
+                    .iter()
+                    .map(|column| match *column {
+                        "Date" => "2026-10-14",
+                        "Paper" => "Diagnostic",
+                        name => row[names.iter().position(|n| *n == name).unwrap()],
+                    })
+                    .collect(),
+            );
+        }
+        text
+    }
+
+    #[test]
+    fn a_conf_column_in_any_position_leaves_the_digest_unchanged() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let without = [
+            "Date",
+            "Paper",
+            "Q",
+            "Type",
+            "Passes",
+            "Next redo",
+            "Status",
+        ];
+        let expected = plan_digest(
+            "midterm-1",
+            PLAN,
+            &four_gap_rows_in_columns(&without),
+            today,
+            &[],
+        );
+        assert_eq!(expected["unfixed_gaps"], 3);
+        assert_eq!(expected["redos_due"], 2);
+        assert_eq!(
+            expected["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q1", "more_due": 1})
+        );
+        for at in 0..=without.len() {
+            let mut columns = without.to_vec();
+            columns.insert(at, "Conf");
+            assert_eq!(
+                plan_digest(
+                    "midterm-1",
+                    PLAN,
+                    &four_gap_rows_in_columns(&columns),
+                    today,
+                    &[]
+                ),
+                expected,
+                "Conf at column {at}"
+            );
+        }
+    }
+
+    const CONF_COLUMNS: [&str; 8] = [
+        "Date",
+        "Paper",
+        "Q",
+        "Type",
+        "Conf",
+        "Passes",
+        "Next redo",
+        "Status",
+    ];
+
+    fn unreadable_rows(value: &Value) -> Vec<(u64, &str)> {
+        value["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                assert_eq!(item["file"], "Study/midterm-1/gap-log.md");
+                assert_eq!(item["section"], "Gaps");
+                (
+                    item["line"].as_u64().unwrap(),
+                    item["reason"].as_str().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_closed_row_missing_its_conf_cell_is_reported_and_does_not_become_unfixed() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
+        let short = full.replace("| K | G | ", "| K | ");
+        assert_ne!(short, full);
+        let value = plan_digest("midterm-1", PLAN, &full, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["unreadable"], json!([]));
+        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
+        assert_eq!(value["unfixed_gaps"], 3);
+        assert_eq!(value["redos_due"], 2);
+        let rows = unreadable_rows(&value);
+        assert_eq!(rows.len(), 1, "{value}");
+        assert_eq!(rows[0].0, 7);
+        assert!(
+            rows[0].1.contains('7') && rows[0].1.contains('8'),
+            "{}",
+            rows[0].1
+        );
+    }
+
+    #[test]
+    fn an_open_due_row_missing_its_conf_cell_is_reported_not_silently_dropped() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
+        let short = full.replace("| A | S | ", "| A | ");
+        assert_ne!(short, full);
+        let value = plan_digest("midterm-1", PLAN, &short, today, &[]);
+        let rows = unreadable_rows(&value);
+        assert_eq!(rows.len(), 1, "{value}");
+        assert_eq!(rows[0].0, 5);
+        assert_eq!(value["unfixed_gaps"], 2);
+        assert_eq!(value["redos_due"], 1);
+        assert_eq!(
+            value["first_due"],
+            json!({"paper": "Diagnostic", "question": "Q2", "more_due": 0})
+        );
+    }
+
+    #[test]
+    fn rows_with_conf_cells_under_a_header_without_conf_are_all_reported_and_none_counted() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let full = four_gap_rows_in_columns(&CONF_COLUMNS);
+        let headless = full.replace("| Type | Conf |", "| Type |");
+        assert_ne!(headless, full);
+        let value = plan_digest("midterm-1", PLAN, &headless, today, &[]);
+        let lines = unreadable_rows(&value)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(lines, [5, 6, 7, 8]);
+        assert_eq!(value["unfixed_gaps"], 0);
+        assert_eq!(value["redos_due"], 0);
+        assert_eq!(value["first_due"], Value::Null);
+    }
+
+    #[test]
     fn an_old_gap_log_with_a_cold_redo_date_has_unfixed_gaps_and_nothing_due() {
         let gaps = "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
             | 1 | 2026-10-14 | Diagnostic | Q2 | km | sign error | A | tighten | 2026-10-15 | open |\n\

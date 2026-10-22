@@ -17,7 +17,7 @@ Folder: `Study/<target>/`. Built <YYYY-MM-DD>. Last re-plan <YYYY-MM-DD>.
 | Weight | <share of the course grade> |
 | Coverage | <chapters, sections, lectures> |
 | Exclusions | <what is not examined> |
-| Proficiency | <the learner's words>; read as <weak, unsure or strong> |
+| Proficiency | <the learner's words>; read as <weak, mixed or strong> |
 | Hours available | <total hours before the target> |
 | Other commitments | <other assessments and plans, with the weight the learner gives each> |
 | Answers come back as | <photos or PDF, unless the learner chose otherwise> |
@@ -69,11 +69,11 @@ Another instructor's paper moves to bucket 1 only with evidence that the current
 
 ## 5. Method
 
-1. Sit a paper under the stated conditions, timed, with the permitted aids only. Write `?` instead of looking something up.
+1. Sit a paper under the stated conditions, timed, with the permitted aids only. Write `?` instead of looking something up. After each answer, write S (sure), U (unsure) or G (guess).
 2. Mark it strictly against the key's mark scheme straight after.
 3. Log every lost mark in `gap-log.md` with a tag and a type.
-4. Repair at the depth the gap needs: tighten, repair or teach.
-5. Redo each gap cold, from a blank page, on three different days. The first redo is at least 1 day after the repair, the second at least 3 days after the first, and the third at least 7 days after the second. If the assessment comes sooner, the gaps shrink to fit before it. A gap closes only after three unaided passes.
+4. Repair at the depth the gap needs: tighten, repair or teach. Gaps on answers you were sure of come first.
+5. Redo each gap cold, from a blank page, on three different days, with S, U or G after each answer. The first redo is at least 1 day after the repair, the second at least 3 days after the first, and the third at least 7 days after the second. If the assessment comes sooner, the gaps shrink to fit before it. A gap closes only after three unaided passes.
 6. Sit the next paper. The plan is re-planned after every marked paper.
 
 Question types:
@@ -84,7 +84,7 @@ Question types:
 - Connection: two topics combined, a new setting, or a method chosen without a cue.
 - Stretch: beyond scope, labelled, and scored apart.
 
-Rating: <weak, unsure or strong>. Ramp: <papers in order>. <One line on why, from the Diagnostic result once it is marked.>
+Rating: <weak, mixed or strong>. Ramp: <papers in order>. <One line on why, from the Diagnostic result once it is marked.>
 
 ## 6. Blocks
 

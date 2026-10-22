@@ -266,12 +266,12 @@ The tutor marks them and helps you fix each gap.
 
 ## Steps
 
-1. Tell the tutor about your test, for example "I have a midterm Monday". Or type `/magnesium:papers`.
+1. Tell the tutor about your test, like "I have a midterm Monday", or type `/magnesium:papers`.
 2. Answer the tutor's questions.
-3. The tutor writes your plan and papers. The first paper is the Diagnostic.
-4. **Sit the Diagnostic** alone, with a timer. Write `?` where you would look something up.
+3. The tutor writes your plan and papers, starting with the Diagnostic.
+4. **Sit the Diagnostic** alone and timed. Write `?` where you would look something up. After each answer, write S (sure), U (unsure) or G (guess).
 5. **Send photos or a PDF** of your answers. Then say "mark my Diagnostic".
-6. The tutor marks your answers. It writes each lost mark in the gap log.
+6. The tutor marks your answers and writes each lost mark in the gap log.
 7. **Repair** each gap with the tutor.
 8. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
 
@@ -287,17 +287,17 @@ The tutor marks them and helps you fix each gap.
 | "re-time today" | The tutor fits today's work to the hours you have. |
 | "rebuild" | The tutor starts the plan again. |
 
-PAPER is a paper name, like Diagnostic. TAG is a topic name from your gap log.
+PAPER is a paper, like Diagnostic. TAG is a topic from your gap log.
 
 ## Your files
 
 Your files are in `Study/<target>/`, like `Study/midterm-1/`.
-Each new session continues from the plan in `plan.md`.
+Each new session continues from `plan.md`.
 
 ## Rules
 
 - **Keep the KEY files closed** until you send your answers.
-- The tutor asks before it adds a lot of time.
+- The tutor asks before it adds much time.
 
 Next: tell the tutor about your test.
 ````

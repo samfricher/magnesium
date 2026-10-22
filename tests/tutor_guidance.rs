@@ -280,15 +280,20 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
         for step in [
             "## Upgrade an old gap log",
             "Rename `Cold-redo date` to `Next redo`",
-            "Put an empty `Passes` column before it.",
+            "after an empty `Passes` column.",
             "write Status as exactly `closed`",
             "gets tomorrow's date if it has none and its Repair done is filled",
+            "If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos.",
             "Dismiss the plan's old gap review suggestions",
             "log the upgrade as one line under Changes in `plan.md`",
-            "Without them, Spaced redos overrides the old text.",
         ] {
             assert!(text.contains(step), "{host}: {step}");
         }
+        let (_, old_log_steps) = text.split_once("predates spaced redos.").unwrap();
+        assert!(
+            old_log_steps.contains("gets tomorrow's date"),
+            "{host}: the date fill applies only to a log without Next redo"
+        );
     }
     let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
@@ -304,6 +309,8 @@ fn every_host_is_served_the_gap_log_upgrade_and_the_papers_skill_adds_only_the_t
         "tomorrow",
         "today",
         "exactly",
+        "after `Type`",
+        "empty in every row",
     ] {
         assert!(
             !section.contains(served_step),
@@ -352,9 +359,9 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
         let text = served["text"].as_str().unwrap();
         for part in [
             verb,
-            "## Fix my plan files",
+            "correct each `unreadable` item in `magnesium digest` at its `file` and `line`",
             "`unreadable`",
-            "until the list is empty",
+            "rerun it until none is left",
         ] {
             assert!(text.contains(part), "{host}: {part}");
         }
@@ -639,6 +646,106 @@ fn served_instructions_make_an_anchor_only_from_an_unaided_answer() {
             ),
             "{host}: a marked part can be helped"
         );
+    }
+}
+
+#[test]
+fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "confidence",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let papers_loop = served("papers_loop");
+        for required in [
+            "If the log has no Conf column, add one after Type, empty in every row.",
+            "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
+            "One letter on a question covers its parts.",
+            "Copy each letter into its rows' Conf, or a blank, as for a lone `?`.",
+            "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
+            "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
+            "Conf takes any letter the failing answer has",
+        ] {
+            assert!(
+                papers_loop.contains(required),
+                "{host}/papers_loop: {required}"
+            );
+        }
+        assert!(
+            served("papers").contains("and S (sure), U (unsure) or G (guess) after each answer."),
+            "{host}/papers"
+        );
+        assert!(
+            served("review_and_transfer")
+                .contains("Load stage papers_loop before the redo; it picks and records it."),
+            "{host}/review_and_transfer"
+        );
+        for stage in [
+            "orient_and_probe",
+            "plan_and_route",
+            "teach_and_practice",
+            "interpret_and_repair",
+            "review_and_transfer",
+            "consolidate_and_resume",
+            "papers",
+            "papers_loop",
+        ] {
+            let text = served(stage);
+            for (at, _) in text.match_indices("S row") {
+                let before = &text[..at];
+                assert!(
+                    before.ends_with("Type ") || before.ends_with("Conf "),
+                    "{host}/{stage}: the bare S row at byte {at} could mean slow or sure"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn served_instructions_repair_sure_mistakes_first() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for host in ["codex", "claude", "opencode"] {
+        let served = |stage: &str| {
+            v2::tool(
+                &e,
+                host,
+                "sure-first",
+                "context",
+                json!({"action":"instructions","host":host,"stage":stage}),
+            )["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        assert!(
+            served("papers_loop").contains(
+                "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags (no Next redo). Rule 6 still orders a repair's steps after two fails."
+            ),
+            "{host}/papers_loop"
+        );
+        let repair = served("interpret_and_repair");
+        for required in [
+            "When the learner was sure of an answer that is wrong, repair that mistake before the others",
+            "How sure they were is not evidence of what they can do.",
+            "papers-loop says how this order combines with its other order rules.",
+        ] {
+            assert!(
+                repair.contains(required),
+                "{host}/interpret_and_repair: {required}"
+            );
+        }
     }
 }
 
