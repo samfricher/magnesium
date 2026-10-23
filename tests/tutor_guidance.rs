@@ -487,10 +487,7 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rules = [
-        "When the learner says they are confused, ask one question to find the cause and explain nothing yet.",
-        "When the learner says they are confused, ask about the cause before you choose.",
-    ];
+    let rule = "When the learner says they are confused, ask one question to find the cause and explain nothing yet.";
     let host = "claude";
     let served = |stage: &str| {
         v2::tool(
@@ -514,10 +511,7 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
         "papers",
         "papers_loop",
     ] {
-        let text = served(stage);
-        for rule in rules {
-            assert!(text.contains(rule), "{host}/{stage}: {rule}");
-        }
+        assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
     }
     assert!(
         served("teach_and_practice")
@@ -682,7 +676,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
         (
             "teach_and_practice",
             &[
-                "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
+                "then the rows for a learner with no starting move, then the anchor question, then the other rows,",
                 "A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.",
                 "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
             ],
@@ -886,6 +880,170 @@ fn served_instructions_repair_sure_mistakes_first() {
             repair.contains(required),
             "{host}/interpret_and_repair: {required}"
         );
+    }
+}
+
+#[test]
+fn served_orientation_aims_its_one_question_near_the_top() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let text = v2::tool(
+        &e,
+        host,
+        "start-high",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"orient_and_probe"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for rule in [
+        "Ask at most one discriminating question at a time.",
+        "Aim it at the hardest step the goal needs that the learner might already know, not at the basics,",
+        "After a confident correct answer, aim any further question sharply higher. Ask a basic question only after a miss.",
+        "a two-stage test problem to solve, not a request to state Bayes' rule.",
+    ] {
+        assert!(text.contains(rule), "{host}/orient_and_probe: {rule}");
+    }
+}
+
+#[test]
+fn served_instructions_ask_for_a_guess_before_each_new_step() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "guess-first",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let teach = served("teach_and_practice");
+    for rule in [
+        "Before you explain a step the learner has not seen, ask what they think comes next and why,",
+        "A rough guess is enough, since the attempt is the point.",
+        "open the explanation with what the guess got right and what it got wrong, then give the check task.",
+        "the turn that explains a step ends with its check, and the next turn ends with the guess for the following step.",
+        "then the anchor question, then the other rows, then the guess.",
+        "Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check.",
+        "The check you just asked does not count as such a question, so the turn after a passed check still ends with the guess.",
+        "A correct guess with a sound reason is an unaided answer.",
+    ] {
+        assert!(teach.contains(rule), "{host}/teach_and_practice: {rule}");
+    }
+    let not_a_gap = "A wrong guess you asked for before teaching a step is not a mistake: never record it as a difficulty or a gap.";
+    for stage in ["teach_and_practice", "interpret_and_repair"] {
+        assert!(
+            served(stage).contains(not_a_gap),
+            "{host}/{stage}: {not_a_gap}"
+        );
+    }
+}
+
+#[test]
+fn served_instructions_look_at_every_figure_before_the_learner_sees_it() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let rules = [
+        "When you make a figure or page as a file, render it to an image with what the machine has, such as a headless browser screenshot or an SVG-to-PNG converter, then look at the image, fix what is wrong and look again.",
+        "Show it only after you have looked at the final version.",
+        "Check that nothing overlaps or is cut off, every label is readable,",
+        "and nothing in it is unlabelled decoration.",
+        "When a browser is available, open a page with scripts once in a headless browser to confirm it runs without errors.",
+        "If the machine cannot render the file, say so and use text or a Mermaid diagram instead.",
+    ];
+    for (stage, shows) in [
+        (
+            "teach_and_practice",
+            "the picture shows what the step says,",
+        ),
+        ("papers", "the picture shows what its question or key says,"),
+    ] {
+        let text = v2::tool(
+            &e,
+            host,
+            "figures",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        for rule in rules.iter().chain([&shows]) {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
+        }
+    }
+}
+
+#[test]
+fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "shapes",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
+        )
+    };
+    let shapes = "gives a true result and asks why it holds, sets two look-alikes that need different methods and asks what decides it, or drops one assumption and asks which step fails.";
+    let reason = "A given result earns full marks only for a correct reason.";
+    let by_stage: [(&str, &[&str]); 3] = [
+        (
+            "papers",
+            &[
+                "Three question shapes resist pattern matching.",
+                "Give the result, ask the reason:",
+                "Two look-alikes, one difference:",
+                "Break one assumption:",
+                "Every mock paper has at least one question of each shape.",
+                reason,
+            ],
+        ),
+        (
+            "papers_loop",
+            &[
+                "For a Type K row, prefer a question that",
+                shapes,
+                "A give-the-reason question never stands alone in a cold redo: its first part asks the learner to produce the result from a blank page, the reason is its second part, and the row passes only when both parts are right.",
+                reason,
+            ],
+        ),
+        (
+            "teach_and_practice",
+            &[
+                "When the gap is about understanding, not speed, notation or arithmetic, prefer a task that",
+                shapes,
+                reason,
+            ],
+        ),
+    ];
+    for (stage, rules) in by_stage {
+        let loaded = served(stage);
+        assert_eq!(loaded["deferred_modules"], json!([]), "{host}/{stage}");
+        let text = loaded["text"].as_str().unwrap();
+        for rule in rules {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
+        }
+    }
+    let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
+    for shape in [
+        "- Give the reason:",
+        "- Two look-alikes:",
+        "- Break one assumption:",
+    ] {
+        assert!(template.contains(shape), "plan template: {shape}");
     }
 }
 

@@ -84,6 +84,12 @@ Question types:
 - Connection: two topics combined, a new setting, or a method chosen without a cue.
 - Stretch: beyond scope, labelled, and scored apart.
 
+Every mock also has at least one question of each shape below, which recognising the problem type cannot pass:
+
+- Give the reason: a true result, and why it holds. Full marks need a correct reason. In a cold redo, you first produce the result from a blank page, then give the reason, and the gap passes only if both are right.
+- Two look-alikes: two problems that look the same but need different methods. Which method each needs, and what decides it.
+- Break one assumption: one condition of a method dropped. Which step fails, and a counterexample.
+
 Rating: <weak, mixed or strong>. Ramp: <papers in order>. <One line on why, from the Diagnostic result once it is marked.>
 
 ## 6. Blocks
