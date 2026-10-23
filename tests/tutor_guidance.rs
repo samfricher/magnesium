@@ -944,6 +944,39 @@ fn served_instructions_ask_for_a_guess_before_each_new_step() {
 }
 
 #[test]
+fn served_instructions_look_at_every_figure_before_the_learner_sees_it() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let rules = [
+        "When you make a figure or page as a file, render it to an image with what the machine has, such as a headless browser screenshot or an SVG-to-PNG converter, then look at the image, fix what is wrong and look again.",
+        "Show it only after you have looked at the final version.",
+        "Check that nothing overlaps or is cut off, every label is readable,",
+        "and nothing in it is unlabelled decoration.",
+        "When a browser is available, open a page with scripts once in a headless browser to confirm it runs without errors.",
+        "If the machine cannot render the file, say so and use text or a Mermaid diagram instead.",
+    ];
+    for (stage, shows) in [
+        ("teach_and_practice", "the picture shows what the step says,"),
+        ("papers", "the picture shows what its question or key says,"),
+    ] {
+        let text = v2::tool(
+            &e,
+            host,
+            "figures",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        for rule in rules.iter().chain([&shows]) {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
+        }
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
