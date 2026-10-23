@@ -38,7 +38,7 @@
       "path": "workflows/orient-and-probe.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "b6565e0ebe0b7c6eab0e11f8f3f3eb729459dfc205a2b1337ff95ae259e81b79",
+      "sha256": "c3b926b6f9bcfcfdb74d2d2f367452968477c560179ed86a5eae85f2f9f26b44",
       "stage": "orient-and-probe"
     },
     {

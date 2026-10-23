@@ -884,6 +884,31 @@ fn served_instructions_repair_sure_mistakes_first() {
 }
 
 #[test]
+fn served_orientation_aims_its_one_question_near_the_top() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let text = v2::tool(
+        &e,
+        host,
+        "start-high",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"orient_and_probe"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for rule in [
+        "Ask at most one discriminating question at a time.",
+        "Aim it at the hardest step the goal needs that the learner might already know, not at the basics,",
+        "After a confident correct answer, aim any further question sharply higher. Ask a basic question only after a miss.",
+        "a two-stage test problem to solve, not a request to state Bayes' rule.",
+    ] {
+        assert!(text.contains(rule), "{host}/orient_and_probe: {rule}");
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
