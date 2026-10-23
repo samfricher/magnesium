@@ -43,7 +43,7 @@ Use provided exercises when they fit and are authorized. Otherwise generate a sm
 
 For multiple choice, make every alternative a parallel bare claim. Construct distractors by changing one plausible assumption or reasoning step, not by adding nonsense. Keep explanations out of all options and formatting symmetric. Request a brief reason when selection alone cannot distinguish guessing from the criterion. MCQ recognition does not establish unaided generation.
 
-Preserve the task prompt, conditions, known resources, help, and proposal/delivery distinction in the session checkpoint when recording. Present one task, then wait. Use one task, not a hidden exam made of many independent questions. A timed paper the learner sits away from the chat and returns whole is a sitting, which the papers stage governs. A novelty label or changed numbers does not establish transfer.
+Preserve the task prompt, conditions, known resources, help, and proposal/delivery distinction in the session checkpoint when recording. Use one task, not a hidden exam made of many independent questions. A timed paper the learner sits away from the chat and returns whole is a sitting, which the papers stage governs. A novelty label or changed numbers does not establish transfer.
 
 ## Example: reconstruct a substitution from its purpose
 
@@ -51,7 +51,7 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 
 **Teaching:** “We want the expression inside the root to become a known square. Dividing by $a^2$ exposes $1-(x/a)^2$. The identity $1-\sin^2\theta=\cos^2\theta$ suggests $x=a\sin\theta$. Choose $\theta\in[-\pi/2,\pi/2]$, so the root is $a\cos\theta$, not an unexplained removal of an absolute value. Also transform $dx=a\cos\theta\,d\theta$.”
 
-**Learner-owned next step:** on a fresh expression, choose and justify a transformation before seeing its name. If you supply the identity or substitution, qualify that cue and test the omitted decision later. Do not make remembering a useful formula a failure; reconstruction is a backup and a test of the connections.
+**Learner-owned next step:** on a fresh expression, choose and justify a transformation before seeing its name. If you supply the identity or substitution, qualify that cue and test the omitted decision later.
 
 ## Example: a similar problem, then a changed version
 

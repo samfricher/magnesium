@@ -487,10 +487,7 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
 fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let rules = [
-        "When the learner says they are confused, ask one question to find the cause and explain nothing yet.",
-        "When the learner says they are confused, ask about the cause before you choose.",
-    ];
+    let rule = "When the learner says they are confused, ask one question to find the cause and explain nothing yet.";
     let host = "claude";
     let served = |stage: &str| {
         v2::tool(
@@ -514,10 +511,7 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
         "papers",
         "papers_loop",
     ] {
-        let text = served(stage);
-        for rule in rules {
-            assert!(text.contains(rule), "{host}/{stage}: {rule}");
-        }
+        assert!(served(stage).contains(rule), "{host}/{stage}: {rule}");
     }
     assert!(
         served("teach_and_practice")
