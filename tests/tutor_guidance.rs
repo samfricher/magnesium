@@ -977,6 +977,61 @@ fn served_instructions_look_at_every_figure_before_the_learner_sees_it() {
 }
 
 #[test]
+fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "shapes",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
+        )
+    };
+    let shapes = "give a true result and ask why it holds, set two look-alikes that need different methods and ask what decides it, or drop one assumption and ask which step fails.";
+    let reason = "A given result earns full marks only for a correct reason.";
+    let by_stage: [(&str, &[&str]); 3] = [
+        (
+            "papers",
+            &[
+                "Three question shapes resist pattern matching.",
+                "Give the result, ask the reason:",
+                "Two look-alikes, one difference:",
+                "Break one assumption:",
+                "Every mock paper has at least one question of each shape.",
+                reason,
+            ],
+        ),
+        (
+            "papers_loop",
+            &["For a Type K row, prefer a question that", shapes, reason],
+        ),
+        (
+            "teach_and_practice",
+            &[
+                "When the gap is about understanding, not speed, notation or arithmetic, prefer a task that",
+                shapes,
+                reason,
+            ],
+        ),
+    ];
+    for (stage, rules) in by_stage {
+        let loaded = served(stage);
+        assert_eq!(loaded["deferred_modules"], json!([]), "{host}/{stage}");
+        let text = loaded["text"].as_str().unwrap();
+        for rule in rules {
+            assert!(text.contains(rule), "{host}/{stage}: {rule}");
+        }
+    }
+    let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
+    for shape in ["- Give the reason:", "- Two look-alikes:", "- Break one assumption:"] {
+        assert!(template.contains(shape), "plan template: {shape}");
+    }
+}
+
+#[test]
 fn malformed_context_calls_name_both_complete_shapes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

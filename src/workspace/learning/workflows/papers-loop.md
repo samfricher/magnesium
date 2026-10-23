@@ -33,7 +33,7 @@ A gap-log row closes after three cold passes on three different days. A pass is 
 
 Set Next redo when a repair is done. After a pass, add it to Passes, such as `2026-10-17 pass`, move Status from `open` to `1 of 3`, `2 of 3`, then `closed`, spelled exactly so, and set Next redo again, or clear it on close. An attempt while Next redo is empty or still to come counts neither way. Asked for a cold redo with none due, say when one is and offer practice. A due redo that is not a pass fails the row. Passes then holds only that result, such as `2026-10-24 fail`, Conf takes any letter the failing answer has, Status goes back to `open`, and Next redo stays empty until a new repair. In a question that covers several rows, or in a sitting, a row fails only when the first error lies in its tag.
 
-For a cold redo, read the rows whose Next redo has come, then pick the smallest set of questions, from the bank or new at the planned level, whose primary tags' contains cover every due tag. One cold pass counts once for every covered due row, by rule 5. Redo uncovered rows and every Type S row one by one.
+For a cold redo, read the rows whose Next redo has come, then pick the smallest set of questions, from the bank or new at the planned level, whose primary tags' contains cover every due tag. One cold pass counts once for every covered due row, by rule 5. Redo uncovered rows and every Type S row one by one. For a Type K row, prefer a question that give a true result and ask why it holds, set two look-alikes that need different methods and ask what decides it, or drop one assumption and ask which step fails. A given result earns full marks only for a correct reason.
 
 ## Upgrade an old gap log
 
