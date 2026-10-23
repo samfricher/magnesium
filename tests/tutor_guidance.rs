@@ -933,6 +933,7 @@ fn served_instructions_ask_for_a_guess_before_each_new_step() {
         "the turn that explains a step ends with its check, and the next turn ends with the guess for the following step.",
         "then the anchor question, then the other rows, then the guess.",
         "Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check.",
+        "The check you just asked does not count as such a question, so the turn after a passed check still ends with the guess.",
         "A correct guess with a sound reason is an unaided answer.",
     ] {
         assert!(teach.contains(rule), "{host}/teach_and_practice: {rule}");
