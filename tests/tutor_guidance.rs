@@ -1012,7 +1012,12 @@ fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() 
         ),
         (
             "papers_loop",
-            &["For a Type K row, prefer a question that", shapes, reason],
+            &[
+                "For a Type K row, prefer a question that",
+                shapes,
+                "A give-the-reason question never stands alone in a cold redo: its first part asks the learner to produce the result from a blank page, the reason is its second part, and the row passes only when both parts are right.",
+                reason,
+            ],
         ),
         (
             "teach_and_practice",
