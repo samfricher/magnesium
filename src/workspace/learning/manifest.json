@@ -52,14 +52,14 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "3126291bbd963787490c8e7a0699d9eff0139ffaa923e0e534c10c789c043596",
+      "sha256": "e04ee8ef7c4d2eec95bdad2dd7e393b8c094260d656013d048e545a507654d69",
       "stage": "teach-and-practice"
     },
     {
       "path": "workflows/interpret-and-repair.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "c24af8a8cf2d9d962d821e4774e7c2177c9839b2f9f0b4a28a7c74b795eb9700",
+      "sha256": "c52d95060b3c44d3e9b7206ee5c9b16daa850142292001f1ed84460a2c02c067",
       "stage": "interpret-and-repair"
     },
     {

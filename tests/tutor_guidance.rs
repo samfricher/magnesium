@@ -676,7 +676,7 @@ fn served_instructions_give_a_stuck_learner_the_worked_example_before_any_anchor
         (
             "teach_and_practice",
             &[
-                "then the rows for a learner with no starting move, then the anchor question, then the other rows.",
+                "then the rows for a learner with no starting move, then the anchor question, then the other rows,",
                 "A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.",
                 "A learner with no starting move gets the worked example first, built on an anchor if one fits and without one if none does.",
             ],
@@ -905,6 +905,41 @@ fn served_orientation_aims_its_one_question_near_the_top() {
         "a two-stage test problem to solve, not a request to state Bayes' rule.",
     ] {
         assert!(text.contains(rule), "{host}/orient_and_probe: {rule}");
+    }
+}
+
+#[test]
+fn served_instructions_ask_for_a_guess_before_each_new_step() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    let served = |stage: &str| {
+        v2::tool(
+            &e,
+            host,
+            "guess-first",
+            "context",
+            json!({"action":"instructions","host":host,"stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let teach = served("teach_and_practice");
+    for rule in [
+        "Before you explain a step the learner has not seen, ask what they think comes next and why,",
+        "A rough guess is enough, since the attempt is the point.",
+        "open the explanation with what the guess got right and what it got wrong, then give the check task.",
+        "the turn that explains a step ends with its check, and the next turn ends with the guess for the following step.",
+        "then the anchor question, then the other rows, then the guess.",
+        "Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check.",
+        "A correct guess with a sound reason is an unaided answer.",
+    ] {
+        assert!(teach.contains(rule), "{host}/teach_and_practice: {rule}");
+    }
+    let not_a_gap = "A wrong guess you asked for before teaching a step is not a mistake: never record it as a difficulty or a gap.";
+    for stage in ["teach_and_practice", "interpret_and_repair"] {
+        assert!(served(stage).contains(not_a_gap), "{host}/{stage}: {not_a_gap}");
     }
 }
 

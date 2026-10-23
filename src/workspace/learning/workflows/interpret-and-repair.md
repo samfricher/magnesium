@@ -1,6 +1,6 @@
 # Interpret and repair
 
-Identify the learner's actual work or question, original task, known assistance, source context, and uncertainty. A question is not a failed assessment; a quotation is not necessarily a belief. Preserve attributable raw work before feedback where capture is available. Inspect receipts instead of duplicating accepted events after a semantic failure.
+Identify the learner's actual work or question, original task, known assistance, source context, and uncertainty. A question is not a failed assessment; a quotation is not necessarily a belief. A wrong guess you asked for before teaching a step is not a mistake: never record it as a difficulty or a gap. Preserve attributable raw work before feedback where capture is available. Inspect receipts instead of duplicating accepted events after a semantic failure.
 
 Check your own task and answer before attributing an error. Preserve valid methods and specific strengths. Consider a slip, ambiguity, a symbol-role error, a missing connection, or an unsuitable representation. When the learner says they are confused, ask one question to find the cause, such as "How are you seeing it right now?", and explain nothing yet. Otherwise ask one diagnostic only when the answer changes the repair, and explain directly if not. If confusion repeats after you explain from the learner's answer, change the explanation, using another anchor, a smaller example or a contrast rather than repeated pressure.
 
