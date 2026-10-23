@@ -996,7 +996,7 @@ fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() 
             json!({"action":"instructions","host":host,"stage":stage,"operation":"tool_recipes"}),
         )
     };
-    let shapes = "give a true result and ask why it holds, set two look-alikes that need different methods and ask what decides it, or drop one assumption and ask which step fails.";
+    let shapes = "gives a true result and asks why it holds, sets two look-alikes that need different methods and asks what decides it, or drops one assumption and asks which step fails.";
     let reason = "A given result earns full marks only for a correct reason.";
     let by_stage: [(&str, &[&str]); 3] = [
         (
