@@ -939,7 +939,10 @@ fn served_instructions_ask_for_a_guess_before_each_new_step() {
     }
     let not_a_gap = "A wrong guess you asked for before teaching a step is not a mistake: never record it as a difficulty or a gap.";
     for stage in ["teach_and_practice", "interpret_and_repair"] {
-        assert!(served(stage).contains(not_a_gap), "{host}/{stage}: {not_a_gap}");
+        assert!(
+            served(stage).contains(not_a_gap),
+            "{host}/{stage}: {not_a_gap}"
+        );
     }
 }
 
@@ -957,7 +960,10 @@ fn served_instructions_look_at_every_figure_before_the_learner_sees_it() {
         "If the machine cannot render the file, say so and use text or a Mermaid diagram instead.",
     ];
     for (stage, shows) in [
-        ("teach_and_practice", "the picture shows what the step says,"),
+        (
+            "teach_and_practice",
+            "the picture shows what the step says,",
+        ),
         ("papers", "the picture shows what its question or key says,"),
     ] {
         let text = v2::tool(
@@ -1026,7 +1032,11 @@ fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() 
         }
     }
     let template = include_str!("../claude-plugin/skills/papers/templates/plan.md");
-    for shape in ["- Give the reason:", "- Two look-alikes:", "- Break one assumption:"] {
+    for shape in [
+        "- Give the reason:",
+        "- Two look-alikes:",
+        "- Break one assumption:",
+    ] {
         assert!(template.contains(shape), "plan template: {shape}");
     }
 }
