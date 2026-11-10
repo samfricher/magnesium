@@ -32,7 +32,7 @@
       "path": "contracts/tool-recipes.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "db21fde2ef1b599f386a4ac49529bf1a59af611abf80a2b39b6804fa75600fab"
+      "sha256": "cd9cb2f28eff21c1a05844f82ffb6f7cbc84da370353681718038a4df7a4b6ca"
     },
     {
       "path": "workflows/orient-and-probe.md",
@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "65054bd362ae7d54836a95b90f47a52c6d0d4e4a3b89874d0bf25676293d2b48",
+      "sha256": "fb56296f9f6f369d321d58b4fcb4f99abc410a3d5a28747f4e34fb772c30454d",
       "stage": "papers-loop"
     },
     {

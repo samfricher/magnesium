@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 8] = [
+const PUBLIC_COMMANDS: [(&str, &str); 9] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -12,6 +12,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 8] = [
     (
         "digest",
         "Summarize this study folder and its learner record without changing them",
+    ),
+    (
+        "attempts",
+        "List every answer the tutor marked, with its question, mark, date, help and confidence",
     ),
     ("export", "Export a readable scope-safe learner-data copy"),
     ("memory", "Maintain workspace learner-memory search"),
@@ -58,7 +62,7 @@ pub(crate) fn command() -> ClapCommand {
                             .help("Switch a workspace set up by an earlier Magnesium version to this version's teaching instructions; unedited earlier instructions are kept on disk")
                             .action(ArgAction::SetTrue),
                     )
-            } else if name == "info" {
+            } else if name == "info" || name == "attempts" {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")

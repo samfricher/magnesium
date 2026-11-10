@@ -16,7 +16,7 @@ mod tests {
     fn fixture() -> Connection {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(crate::learner::store::SCHEMA_SQL).unwrap();
-        c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w-test','learner-model/v2',2,0)",[]).unwrap();
+        c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w-test','learner-model/v2',3,0)",[]).unwrap();
         c
     }
     fn memory(c: &Connection, id: &str, title: &str, summary: &str, state: &str) {
@@ -366,7 +366,7 @@ mod tests {
         let c = Connection::open(&path).unwrap();
         c.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
         c.execute_batch(crate::learner::store::SCHEMA_SQL).unwrap();
-        c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w-test','learner-model/v2',2,0)",[]).unwrap();
+        c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w-test','learner-model/v2',3,0)",[]).unwrap();
         for n in 0..10 {
             memory(
                 &c,

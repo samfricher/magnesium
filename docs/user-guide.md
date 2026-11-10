@@ -73,6 +73,19 @@ To turn this off for a study folder, run `magnesium opener off` there. Checks ar
 
 A gap log made with an older paper template has no Next redo column, so none of its rows could fall due. The next time the tutor uses that plan, Magnesium adds the column, and the original goes to `.magnesium/cache/gap-log-backups/`.
 
+## See every answer you gave
+
+Each answer the tutor marks, in chat or on a paper, is kept as its own row: the question, the mark, when, the help you had before answering, how sure you said you were, the skill it tests and whether it was cold, meaning unaided, from a blank page, on a later day than the teaching. An answer you were helped with stays marked as helped, and only your first answer on a skill each day can count as cold. From the study folder, `magnesium attempts` lists them, for example:
+
+```text
+2026-11-10 09:15  MockA Q2a: Find E(X) for the table
+    partly 1.5/3, help none, confidence unsure, cold. Tests: expected value
+```
+
+Add `--json` for the rows as data. They are also in an export.
+
+The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
+
 ## Long lessons
 
 A long conversation can get compacted: your assistant replaces its older part with a summary. The tutor's detailed instructions are lost with it. During a lesson, Magnesium then puts a short set of core teaching rules in front of the tutor itself: one idea and one task per reply, a guess before each new step, and the rules above about concrete cases, telling mistakes apart, finishing alone on a later day and ending a plan with a task. Claude Code and OpenCode get them before the next reply. Codex gets them with the next Magnesium tool result.

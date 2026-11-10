@@ -1,4 +1,5 @@
 use super::*;
+use chrono::TimeZone;
 
 pub(super) fn apply_observations(
     tx: &Connection,
@@ -9,6 +10,9 @@ pub(super) fn apply_observations(
     used_events: &mut BTreeSet<String>,
     (now, notes): (i64, &mut Vec<String>),
 ) -> Result<()> {
+    // Attempts this request stored. A paper's answers arrive together, so
+    // they never make each other not cold.
+    let mut this_request = BTreeSet::new();
     for (observation_index, o) in observations.iter().enumerate() {
         limits::text(
             "observation.description",
@@ -88,25 +92,46 @@ pub(super) fn apply_observations(
             }
             used_events.insert(e.event_id.clone());
         }
-        if let Some(attempt) = &o.attempt {
-            let label = attempt.label.trim();
-            if label.is_empty()
-                || label.len() > limits::ATTEMPT_LABEL_BYTES
-                || label.chars().any(char::is_control)
-            {
-                return Err(field_error(
-                    &format!("observations[{observation_index}].attempt.label"),
-                    "An attempt label is 1–120 bytes without control characters",
-                    host,
-                ));
-            }
-            if names_a_problem(label) {
-                return Err(field_error(
-                    &format!("observations[{observation_index}].attempt.label"),
-                    "A label names the skill or misunderstanding in a few words, such as \"sign of b in the quadratic formula\", never the problem: no equation and no question number. One check per label, so reuse an open check's label exactly when it is the same skill",
-                    host,
-                ));
-            }
+        if o.attempt.is_some() && !o.attempts.is_empty() {
+            return Err(field_error(
+                &format!("observations[{observation_index}].attempts"),
+                "Give attempt for one answer or attempts for several, not both",
+                host,
+            ));
+        }
+        if o.attempts.len() > limits::ATTEMPTS_PER_OBSERVATION {
+            return Err(field_error(
+                &format!("observations[{observation_index}].attempts"),
+                "At most 40 attempts per observation; put the rest in a second observation",
+                host,
+            ));
+        }
+        if let Some(index) = o.attempts.iter().position(|a| a.paper.is_none()) {
+            return Err(field_error(
+                &format!("observations[{observation_index}].attempts[{index}].paper"),
+                "attempts is for the answers on a paper, so each needs paper; record a chat answer as attempt, one per observation",
+                host,
+            ));
+        }
+        let attempts: Vec<(String, &Attempt)> = match &o.attempt {
+            Some(attempt) => vec![(
+                format!("observations[{observation_index}].attempt"),
+                attempt,
+            )],
+            None => o
+                .attempts
+                .iter()
+                .enumerate()
+                .map(|(i, attempt)| {
+                    (
+                        format!("observations[{observation_index}].attempts[{i}]"),
+                        attempt,
+                    )
+                })
+                .collect(),
+        };
+        for (path, attempt) in &attempts {
+            check_attempt(path, attempt, host)?;
             if !learner_response {
                 return Err(field_error(
                     &format!("observations[{observation_index}].events"),
@@ -167,6 +192,43 @@ pub(super) fn apply_observations(
                 params![id, e.event_id, e.role, serde_json::to_string(&e.excerpts)?],
             )?;
         }
+        if !attempts.is_empty() {
+            let response = o
+                .events
+                .iter()
+                .find(|e| e.role == ObservationRole::LearnerResponse)
+                .expect("an attempt was checked for a learner_response event");
+            // When: the learner's message, as the host dated or captured it.
+            let answered_at: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(COALESCE(e.occurred_at_ms,e.captured_at_ms)),?2)
+                 FROM learning_events e JOIN observation_events oe ON oe.event_id=e.event_id
+                 WHERE oe.observation_id=?1 AND oe.role='learner_response'",
+                params![id, now],
+                |row| row.get(0),
+            )?;
+            for (path, attempt) in &attempts {
+                if attempt.cold
+                    && let Some(earlier) =
+                        earlier_today(tx, &attempt.label, answered_at, &this_request)?
+                {
+                    return Err(field_error(
+                        &format!("{path}.cold"),
+                        format!(
+                            "This label already has an answer earlier today (\"{earlier}\"), so this one is not cold: cold is true only on a later day than the teaching and any earlier try. Send cold false"
+                        ),
+                        host,
+                    ));
+                }
+                this_request.insert(insert_attempt(
+                    tx,
+                    (&id, &response.event_id, session.as_deref()),
+                    path,
+                    attempt,
+                    (answered_at, now),
+                    notes,
+                )?);
+            }
+        }
         let field = [
             ("description", serde_json::to_vec(&o.description)?.len()),
             (
@@ -220,6 +282,184 @@ fn labeled_sources(
         ));
     }
     sources
+}
+
+/// Refuse an attempt whose facts contradict each other, before anything is
+/// written. The label rule is the quick checks' rule from #26.
+fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()> {
+    let label = attempt.label.trim();
+    if label.is_empty()
+        || label.len() > limits::ATTEMPT_LABEL_BYTES
+        || label.chars().any(char::is_control)
+    {
+        return Err(field_error(
+            &format!("{path}.label"),
+            "An attempt label is 1–120 bytes without control characters",
+            host,
+        ));
+    }
+    if names_a_problem(label) {
+        return Err(field_error(
+            &format!("{path}.label"),
+            "A label names the skill or misunderstanding in a few words, such as \"sign of b in the quadratic formula\", never the problem: no equation and no question number. Put the problem in question. One check per label, so reuse an open check's label exactly when it is the same skill",
+            host,
+        ));
+    }
+    if attempt.question.trim().is_empty() {
+        return Err(field_error(
+            &format!("{path}.question"),
+            "Give the question as you set it, or on a paper a line of it",
+            host,
+        ));
+    }
+    if attempt.cold && attempt.help != AttemptHelp::None {
+        return Err(field_error(
+            &format!("{path}.cold"),
+            "A helped answer is never cold: cold is true only with help none",
+            host,
+        ));
+    }
+    if let Some(paper) = &attempt.paper {
+        let name = paper.name.trim();
+        let question = paper.question.trim();
+        if name.is_empty()
+            || question.is_empty()
+            || name.len() > limits::ATTEMPT_LABEL_BYTES
+            || question.len() > limits::ATTEMPT_LABEL_BYTES
+        {
+            return Err(field_error(
+                &format!("{path}.paper"),
+                "paper.name and paper.question are each 1–120 bytes, such as \"MockA\" and \"3b\"",
+                host,
+            ));
+        }
+        if !(paper.out_of.is_finite()
+            && paper.marks.is_finite()
+            && paper.out_of > 0.0
+            && (0.0..=paper.out_of).contains(&paper.marks))
+        {
+            return Err(field_error(
+                &format!("{path}.paper.marks"),
+                "marks runs from 0 to out_of, and out_of is above 0",
+                host,
+            ));
+        }
+        let mark = if paper.marks == paper.out_of {
+            FirstTry::Right
+        } else if paper.marks == 0.0 {
+            FirstTry::Wrong
+        } else {
+            FirstTry::Partly
+        };
+        if attempt.first_try != mark {
+            return Err(field_error(
+                &format!("{path}.first_try"),
+                format!(
+                    "{} of {} marks is {}: right is full marks, wrong is none, partly is between",
+                    paper.marks,
+                    paper.out_of,
+                    mark.as_str()
+                ),
+                host,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The question of an attempt on the same label answered earlier on the same
+/// local day, from an earlier request, if there is one.
+fn earlier_today(
+    tx: &Connection,
+    label: &str,
+    answered_at: i64,
+    this_request: &BTreeSet<String>,
+) -> Result<Option<String>> {
+    const DAY_AND_A_BIT_MS: i64 = 26 * 60 * 60 * 1000;
+    let day = |ms: i64| {
+        chrono::Local
+            .timestamp_millis_opt(ms)
+            .single()
+            .map(|time| time.date_naive())
+    };
+    let today = day(answered_at);
+    let mut statement = tx.prepare(
+        "SELECT attempt_id,answered_at_ms,question FROM attempts
+         WHERE label_key=?1 AND answered_at_ms BETWEEN ?2 AND ?3
+         ORDER BY answered_at_ms,attempt_no",
+    )?;
+    let rows = statement.query_map(
+        params![
+            crate::learner::label_key(label),
+            answered_at - DAY_AND_A_BIT_MS,
+            answered_at
+        ],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        },
+    )?;
+    for row in rows {
+        let (id, at, question) = row?;
+        if !this_request.contains(&id) && today.is_some() && day(at) == today {
+            return Ok(Some(question));
+        }
+    }
+    Ok(None)
+}
+
+/// Store one attempt as its own row, and return its ID.
+fn insert_attempt(
+    tx: &Connection,
+    (observation_id, response_event_id, session): (&str, &str, Option<&str>),
+    path: &str,
+    attempt: &Attempt,
+    (answered_at, now): (i64, i64),
+    notes: &mut Vec<String>,
+) -> Result<String> {
+    let attempt_id = store::new_id("a")?;
+    let label = attempt
+        .label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let question = limits::shorten(
+        &format!("{path}.question"),
+        attempt.question.trim(),
+        limits::ATTEMPT_QUESTION_BYTES,
+        notes,
+    );
+    tx.execute(
+        "INSERT INTO attempts(
+            attempt_id, observation_id, response_event_id, session_id, question,
+            paper, paper_question, label, label_key, mark, marks, out_of, help,
+            confidence, cold, answered_at_ms, seconds, created_at_ms
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+        params![
+            attempt_id,
+            observation_id,
+            response_event_id,
+            session,
+            question,
+            attempt.paper.as_ref().map(|p| p.name.trim()),
+            attempt.paper.as_ref().map(|p| p.question.trim()),
+            label,
+            crate::learner::label_key(&label),
+            attempt.first_try,
+            attempt.paper.as_ref().map(|p| p.marks),
+            attempt.paper.as_ref().map(|p| p.out_of),
+            attempt.help,
+            attempt.confidence,
+            attempt.cold,
+            answered_at,
+            attempt.seconds,
+            now
+        ],
+    )?;
+    Ok(attempt_id)
 }
 
 /// A label that names one problem rather than a skill: it holds an equation,

@@ -1,3 +1,6 @@
+/// The question an attempt stores; longer is cut, not refused.
+pub const ATTEMPT_QUESTION_BYTES: usize = 1000;
+pub const ATTEMPTS_PER_OBSERVATION: usize = 40;
 pub const REQUEST_BYTES: usize = 1024 * 1024;
 pub const EVENT_BYTES: usize = 256 * 1024;
 pub const PACKET_BYTES: usize = 64 * 1024;
@@ -91,6 +94,8 @@ pub const STATE_BYTES: usize = 16 * 1024;
 pub const OBSERVATION_BYTES: usize = 8 * 1024;
 pub const CONDITIONS_BYTES: usize = 2 * 1024;
 pub const ASSISTANCE_BYTES: usize = 2 * 1024;
+pub const GOAL_STEPS: usize = 12;
+pub const GOAL_STEP_BYTES: usize = 300;
 pub const CHECKPOINT_BYTES: usize = 16 * 1024;
 pub const SESSION_GOAL_BYTES: usize = 2 * 1024;
 pub const CHECKPOINT_FIELD_BYTES: usize = 2 * 1024;

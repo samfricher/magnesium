@@ -98,7 +98,9 @@ protocol_enum!(ChangeKind { NewObservation => "new_observation", Reinterpretatio
 protocol_enum!(Disposition { Processed => "processed", NoChange => "no_change" });
 protocol_enum!(ReviewStatus { Suggested => "suggested", Done => "done", Dismissed => "dismissed" });
 protocol_enum!(Delivery { Proposed => "proposed", Observed => "observed", Unknown => "unknown" });
-protocol_enum!(FirstTry { Right => "right", Wrong => "wrong", Declined => "declined" });
+protocol_enum!(FirstTry { Right => "right", Partly => "partly", Wrong => "wrong", Declined => "declined" });
+protocol_enum!(Confidence { Sure => "sure", Unsure => "unsure", Guess => "guess" });
+protocol_enum!(GoalStepStatus { Todo => "todo", Doing => "doing", Done => "done" });
 protocol_enum!(AttemptHelp { None => "none", Hint => "hint", Step => "step", Solution => "solution" });
 
 /// Serde's internally tagged enum derive buffers payload fields and loses their
@@ -216,30 +218,75 @@ pub struct ObservationInput {
     #[serde(default)]
     pub source_refs: Vec<SourceRef>,
     /// Give this when the observation is the learner's first try at a task you
-    /// set, or their decline of a quick check. A wrong first try schedules a
-    /// quick check on its label for the next day; a later right, unaided first
-    /// try on a due check passes it. A right first try reached through a full
+    /// set, or their decline of a quick check. The runtime stores it as one
+    /// row per answer. A wrong or partly right first try schedules a quick
+    /// check on its label for the next day; a later right, unaided first try
+    /// on a due check passes it. A right first try reached through a full
     /// solution is asked for cold the next day. Needs a learner_response event.
     #[serde(default)]
     pub attempt: Option<Attempt>,
+    /// Instead of attempt, for a marked paper: one attempt per answered
+    /// question or part, each with paper. At most 40.
+    #[serde(default)]
+    #[schemars(length(max = 40))]
+    pub attempts: Vec<Attempt>,
 }
-/// Three facts about one first try. The runtime schedules quick checks from
-/// them; they are not stored in the learner record.
+/// One marked answer. The runtime stores it as a row code can count, and
+/// schedules quick checks from chat answers.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Attempt {
     /// A short name, 1–120 bytes, for the skill or misunderstanding in words,
-    /// such as "sign of b in the quadratic formula". Never the problem: no
-    /// equation and no question number. Reuse an open quick check's label
-    /// exactly for the same skill, and when recording its answer or decline.
+    /// such as "sign of b in the quadratic formula", or the paper's tag. Never
+    /// the problem: no equation and no question number. Reuse an open quick
+    /// check's label exactly for the same skill, and when recording its answer
+    /// or decline.
     pub label: String,
-    /// right or wrong for the first try before any correction. declined when
-    /// the learner declines a quick check, or asks for the full solution
-    /// before giving any answer: record that with help solution, and the step
-    /// is asked for cold the next day.
+    /// The question as you set it, such as "Solve 2x² − 5x − 3 = 0". On a
+    /// paper, a line of the question is enough; paper says which it was.
+    /// Longer than 1,000 bytes is cut.
+    pub question: String,
+    /// The mark for the first try before any correction: right, partly or
+    /// wrong. declined when the learner declines a quick check, or asks for
+    /// the full solution before giving any answer: record that with help
+    /// solution, and the step is asked for cold the next day.
     pub first_try: FirstTry,
-    /// The most help given before the first try: none, hint, step or solution.
+    /// The most help given before the first try: none, hint, step (a worked
+    /// step or example) or solution.
     pub help: AttemptHelp,
+    /// true only when the answer was unaided, from a blank page, on a later
+    /// day than the teaching. Never true with help other than none, nor when
+    /// this label already has an answer earlier the same day.
+    pub cold: bool,
+    /// The learner's confidence letter, when they gave one: sure (S), unsure
+    /// (U) or guess (G).
+    #[serde(default)]
+    pub confidence: Option<Confidence>,
+    /// Seconds the answer took, only where a clock ran.
+    #[serde(default)]
+    pub seconds: Option<u32>,
+    /// For an answer on a practice paper: which paper and question, and its
+    /// marks. first_try is right for full marks, wrong for none, else partly.
+    #[serde(default)]
+    pub paper: Option<PaperMark>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PaperMark {
+    /// The paper's name as the gap log writes it, such as "MockA".
+    pub name: String,
+    /// The question and part, such as "3b".
+    pub question: String,
+    pub marks: f64,
+    pub out_of: f64,
+}
+/// One step of the lesson's current goal.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GoalStep {
+    pub step: String,
+    /// todo, doing or done.
+    pub status: GoalStepStatus,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -491,6 +538,11 @@ pub struct Checkpoint {
     /// Complete-captured may retain an identical existing task or clear it, but
     /// cannot introduce or materially change one.
     pub pending_task: Option<PendingTask>,
+    /// Optional ordered steps of the current goal, at most 12. A checkpoint
+    /// saved before this field existed has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 12))]
+    pub goal_steps: Vec<GoalStep>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

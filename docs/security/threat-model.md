@@ -33,7 +33,7 @@ Exports carry a `.magnesium-export` marker before private content enters staging
 
 ## Persistence and process limits
 
-Private data includes `.magnesium/state.sqlite`, `.magnesium/sittings.sqlite`, `.magnesium/sittings.log` and their sidecars, original events, memory history, checkpoints, receipts, exports and source-cache text. Magnesium uses owner-only Unix permissions and Windows process-SID DACL helpers. Recording-off and updates delete neither existing data nor provider conversations. Unsupported learner schemas are preserved and rejected without migration.
+Private data includes `.magnesium/state.sqlite`, the pre-upgrade copies in `.magnesium/backups/`, `.magnesium/sittings.sqlite`, `.magnesium/sittings.log` and their sidecars, original events, memory history, checkpoints, receipts, exports and source-cache text. Magnesium uses owner-only Unix permissions and Windows process-SID DACL helpers. Recording-off and updates delete neither existing data nor provider conversations. A schema 2 learner store is upgraded in place once, after a private, checked copy is written to `.magnesium/backups/`; other unsupported learner schemas are preserved and rejected without migration.
 
 Request sizes, record counts and output packets have bounds. Learner reads use SQLite instruction/deadline guards and cooperative cancellation. PDF extraction runs in a same-user child with input, page, output and time limits plus kill/reap cleanup; this is not privilege isolation or a guarantee against peak parser allocation. Dependencies and concurrent filesystem races remain attack surfaces.
 

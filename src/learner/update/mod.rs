@@ -224,7 +224,9 @@ impl LearnerStore {
             tx.execute_batch("UPDATE workspace_meta SET review_generation=review_generation+1")?;
         }
         if r.mode == UpdateMode::CompleteCaptured
-            && r.observations.iter().any(|o| o.attempt.is_some())
+            && r.observations
+                .iter()
+                .any(|o| o.attempt.is_some() || !o.attempts.is_empty())
         {
             return Err(LearnerError::new(
                 "invalid_variant",
