@@ -98,7 +98,7 @@ impl NextCall {
         Self::Memory {
             arguments: Box::new(MemoryRequest::Read(ReadRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 refs: vec![ReadRef::CurrentMemory {
                     id: id.into(),
                     expected_revision: None,
@@ -106,14 +106,11 @@ impl NextCall {
             })),
         }
     }
-    pub fn session_status(id: &str) -> Self {
-        Self::current_status(Some(id))
-    }
     pub fn current_status(session_id: Option<&str>) -> Self {
         Self::Context {
             arguments: Box::new(ContextReadRequest::Status(StatusRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 session_id: session_id.map(str::to_owned),
             })),
         }
@@ -122,7 +119,7 @@ impl NextCall {
         Self::Memory {
             arguments: Box::new(MemoryRequest::Reviews(ReviewsRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 limit: None,
                 cursor: None,
                 memory_id: Some(id.into()),
@@ -164,7 +161,7 @@ impl NextCall {
         Self::Context {
             arguments: Box::new(ContextReadRequest::PendingEvents(PendingEventsRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 limit: None,
                 cursor: None,
                 session_id: Some(session_id.into()),
@@ -175,7 +172,7 @@ impl NextCall {
         Self::Memory {
             arguments: Box::new(MemoryRequest::PendingWork(PendingWorkRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 limit: None,
                 cursor: None,
                 host_kind: None,
@@ -193,7 +190,7 @@ impl NextCall {
         Self::Memory {
             arguments: Box::new(MemoryRequest::Observations(ObservationsRequest {
                 schema: SchemaVersion::V2,
-                max_bytes: Some(65536),
+                max_bytes: Some(crate::learner::limits::PACKET_BYTES),
                 limit: None,
                 cursor: None,
                 kind,
@@ -567,7 +564,7 @@ impl Request {
     pub fn validate(&self) -> Result<(), String> {
         let fail = |detail: &str| Err(format!("field_too_large: {detail}"));
         if self.max_bytes() == 0
-            || self.max_bytes() > 65536
+            || self.max_bytes() > crate::learner::limits::PACKET_BYTES
             || self.limit() == 0
             || self.limit() > 32
         {

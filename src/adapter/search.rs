@@ -15,10 +15,9 @@ pub(crate) fn handle_search(cwd: &Path, request: &SearchRequest) -> Result<Value
     {
         return Err("invalid source search bounds".into());
     }
-    let (_, resolved) = resolve_workspace(cwd)?;
-    let resolved = resolved.ok_or("workspace_not_initialized")?;
+    let resolved = resolve_workspace(cwd)?.ok_or("workspace_not_initialized")?;
     let root = resolved.workspace().root();
-    let workspace_id = resolved.workspace().id().map_err(|e| e.to_string())?;
+    let workspace_id = resolved.workspace_id().to_owned();
     let index_path = crate::workspace::source_index_path(root);
     let report = retrieve_workspace_sources(
         root,

@@ -65,7 +65,7 @@ pub(super) fn cas(
         let mut current_review = None;
         let next_call = match table {
             "learner_memories" => read::NextCall::current_memory(id),
-            "learning_sessions" => read::NextCall::session_status(id),
+            "learning_sessions" => read::NextCall::current_status(Some(id)),
             "review_items" => {
                 let review = conn.query_row(
                     "SELECT review_id, memory_id, memory_revision, purpose, reason,

@@ -3,6 +3,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { composing } from "./Session";
+
 export type Command = { label: string; hint?: string; run: () => void };
 
 export function Palette(props: { commands: Command[]; onClose: () => void }) {
@@ -44,6 +46,7 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
+            if (composing(e)) return;
             if (e.key === "ArrowDown") {
               e.preventDefault();
               setAt((n) => Math.min(n + 1, shown.length - 1));
@@ -62,7 +65,7 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
         <div className="pallist" ref={list}>
           {shown.map((command, index) => (
             <button
-              key={command.label}
+              key={`${command.label}${command.hint ?? ""}`}
               className={index === at ? "on" : undefined}
               onMouseEnter={() => setAt(index)}
               onClick={() => run(command)}

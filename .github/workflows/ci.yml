@@ -53,7 +53,7 @@ jobs:
     name: "Core: ${{ matrix.architecture }}"
     runs-on: ${{ matrix.os }}
     needs: [local-checks]
-    if: github.event_name == 'workflow_dispatch' && inputs.run_cross_os
+    if: inputs.run_cross_os
     strategy:
       fail-fast: false
       matrix:

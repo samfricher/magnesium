@@ -6,9 +6,7 @@ use std::time::UNIX_EPOCH;
 use same_file::Handle;
 
 use super::{ManifestError, io_error};
-use crate::retrieval::{
-    DiscoveryDisposition, DiscoveryEntry, ExclusionReason, SensitivityClass, SourceKind,
-};
+use crate::retrieval::{DiscoveryDisposition, DiscoveryEntry, ExclusionReason, SourceKind};
 use crate::workspace::decode_native_path;
 
 pub(crate) fn manifest_path_is_missing(root: &Path, path_key: &[u8]) -> bool {
@@ -38,11 +36,7 @@ pub(crate) fn source_kind(entry: &DiscoveryEntry) -> Option<&'static str> {
 
 pub(crate) fn sensitivity(entry: &DiscoveryEntry) -> Option<&'static str> {
     match entry.disposition {
-        DiscoveryDisposition::Excluded(ExclusionReason::Sensitive(class)) => Some(match class {
-            SensitivityClass::Environment => "environment",
-            SensitivityClass::Credential => "credential",
-            SensitivityClass::PrivateKey => "private_key",
-        }),
+        DiscoveryDisposition::Excluded(ExclusionReason::Sensitive(class)) => Some(class.as_str()),
         _ => None,
     }
 }

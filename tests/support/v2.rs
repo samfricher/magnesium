@@ -9,7 +9,7 @@ pub fn init(environment: &TestEnvironment) {
     let output = environment.command().arg("init").output().unwrap();
     assert!(output.status.success(), "{output:?}");
 }
-pub fn host_env(host: &str) -> &str {
+fn host_env(host: &str) -> &str {
     match host {
         "codex" => "CODEX_THREAD_ID",
         "claude" => "CLAUDE_CODE_SESSION_ID",
@@ -26,9 +26,6 @@ pub fn tool_output(
 ) -> Output {
     let mut child = environment
         .command()
-        .env_remove("CODEX_THREAD_ID")
-        .env_remove("CLAUDE_CODE_SESSION_ID")
-        .env_remove("OPENCODE_SESSION_ID")
         .env(host_env(host), thread)
         .args([
             "adapter",
@@ -97,6 +94,18 @@ pub fn count(environment: &TestEnvironment, table: &str) -> i64 {
     .unwrap()
     .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
     .unwrap()
+}
+pub fn action_schema<'a>(schema: &'a Value, action: &str) -> Option<&'a Value> {
+    if schema["properties"]["action"]["const"] == action {
+        return Some(schema);
+    }
+    match schema {
+        Value::Object(object) => object
+            .values()
+            .find_map(|child| action_schema(child, action)),
+        Value::Array(array) => array.iter().find_map(|child| action_schema(child, action)),
+        _ => None,
+    }
 }
 pub fn context(output: &Output) -> String {
     assert!(output.status.success(), "{output:?}");

@@ -144,10 +144,14 @@ fn mcp_discards_oversized_frame_then_handles_queued_requests_and_shutdown() {
     let mut client = McpClient::spawn(&e, true);
     client
         .stdin
-        .write_all(&vec![b'x'; 1024 * 1024 + 1])
+        .write_all(&vec![b'x'; 4 * 1024 * 1024 + 1])
         .unwrap();
     client.stdin.write_all(b"\n").unwrap();
     client.stdin.flush().unwrap();
+    let mut line = String::new();
+    client.stdout.read_line(&mut line).unwrap();
+    let refused: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(refused["error"]["code"], -32600, "{refused}");
     let init = client.initialize();
     assert_eq!(
         init["result"]["serverInfo"]["version"],

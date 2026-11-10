@@ -258,16 +258,11 @@ fn checkpoint_basis_unrelated_retired_unreferenced_and_budget() {
     let read = f.read(notice["next_call"]["arguments"].clone()).unwrap();
     assert_eq!(read["records"][0]["lifecycle"], "retired");
     assert!(read["records"][0]["state_text"].is_null());
-    let tiny = f.read(json!({"action":"prepare","mode":"focused","session_id":f.session,"known_revisions":[],"max_bytes":1200}));
-    match tiny {
-        Ok(packet) => assert_eq!(
-            packet["checkpoint_basis"]["status"],
-            "needs_reconsideration"
-        ),
-        Err(error) => {
-            assert!(error.contains("budget_too_small") && error.contains("increase max_bytes"))
-        }
-    }
+    let error = f.read(json!({"action":"prepare","mode":"focused","session_id":f.session,"known_revisions":[],"max_bytes":1200})).unwrap_err();
+    assert!(
+        error.contains("budget_too_small") && error.contains("increase max_bytes"),
+        "{error}"
+    );
     f.checkpoint(json!([]), Value::Null, "unreferenced", 2)
         .unwrap();
     assert_eq!(

@@ -646,12 +646,7 @@ fn classify_sensitivity(path: &Path) -> Option<SensitivityClass> {
     if matches!(
         name.as_str(),
         ".netrc" | ".npmrc" | ".pypirc" | ".htpasswd" | "kubeconfig" | "service-account.json"
-    ) || (name == "config.json"
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|parent| parent == OsStr::new(".docker")))
-    {
+    ) {
         return Some(SensitivityClass::Credential);
     }
     let extension = path
@@ -694,7 +689,7 @@ fn classify_sensitivity(path: &Path) -> Option<SensitivityClass> {
 }
 
 fn classify_sensitive_directory(name: &OsStr) -> Option<SensitivityClass> {
-    match name.to_str()? {
+    match name.to_str()?.to_ascii_lowercase().as_str() {
         ".ssh" | ".gnupg" => Some(SensitivityClass::PrivateKey),
         ".aws" | ".azure" | ".docker" | ".kube" => Some(SensitivityClass::Credential),
         _ => None,
@@ -909,15 +904,15 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     let (mut pattern_index, mut value_index) = (0, 0);
     let (mut star, mut retry_value) = (None, 0);
     while value_index < value.len() {
-        if pattern_index < pattern.len()
+        if pattern_index < pattern.len() && pattern[pattern_index] == '*' {
+            star = Some(pattern_index);
+            retry_value = value_index;
+            pattern_index += 1;
+        } else if pattern_index < pattern.len()
             && (pattern[pattern_index] == '?' || pattern[pattern_index] == value[value_index])
         {
             pattern_index += 1;
             value_index += 1;
-        } else if pattern_index < pattern.len() && pattern[pattern_index] == '*' {
-            star = Some(pattern_index);
-            retry_value = value_index;
-            pattern_index += 1;
         } else if let Some(star_index) = star {
             retry_value += 1;
             value_index = retry_value;
@@ -1160,6 +1155,56 @@ mod tests {
         assert!(wildcard_match("*.rs", "source.rs"));
         assert!(wildcard_match("file-??.md", "file-01.md"));
         assert!(!wildcard_match("*.rs", "source.py"));
+        assert!(wildcard_match("*.md", "*notes.md"));
+        assert!(wildcard_match("a*", "a*b"));
+        assert!(wildcard_match("*", "*"));
+        assert!(!wildcard_match("*.md", "*notes.txt"));
+    }
+
+    #[test]
+    fn sensitive_directory_names_match_in_any_ascii_case() {
+        let fixture = Fixture::new("sensitive-case");
+        fixture.write(".AWS/notes.md", b"credential notes\n");
+        fixture.write(".Ssh/notes.md", b"key notes\n");
+        fixture.write(".Docker/config.json", b"{}\n");
+
+        let report = discover_root(&fixture.root).expect("discover sources");
+
+        assert_excluded(
+            &report.entries,
+            ".AWS",
+            ExclusionReason::Sensitive(SensitivityClass::Credential),
+        );
+        assert_excluded(
+            &report.entries,
+            ".Ssh",
+            ExclusionReason::Sensitive(SensitivityClass::PrivateKey),
+        );
+        assert_excluded(
+            &report.entries,
+            ".Docker",
+            ExclusionReason::Sensitive(SensitivityClass::Credential),
+        );
+    }
+
+    #[test]
+    fn ignore_rules_match_file_names_that_contain_a_star() {
+        let fixture = Fixture::new("star-name");
+        fixture.write(
+            &format!("{}/magnesiumignore", crate::workspace::CONTROL_DIR),
+            b"*.md\n",
+        );
+        fixture.write("*notes.md", b"private notes\n");
+        fixture.write("kept.rs", b"fn kept() {}\n");
+
+        let report = discover_root(&fixture.root).expect("discover sources");
+
+        assert_excluded(
+            &report.entries,
+            "*notes.md",
+            ExclusionReason::Magnesiumignore,
+        );
+        assert_source(&report.entries, "kept.rs", SourceKind::Text);
     }
 
     fn assert_source(entries: &[super::DiscoveryEntry], path: &str, kind: SourceKind) {

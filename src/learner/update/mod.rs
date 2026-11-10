@@ -80,13 +80,26 @@ impl LearnerStore {
                     "This native input already committed a session transition; replay the original request or use a new native turn",
                 );
                 error.recovery = Some(
-                    json!({"event_id":native_id,"session_id":session,"next_call":read::NextCall::session_status(&session),"instruction":"Read the existing session. A new native capture needs a new verified turn; replay the original request if its outcome was uncertain."}),
+                    json!({"event_id":native_id,"session_id":session,"next_call":read::NextCall::current_status(Some(&session)),"instruction":"Read the existing session. A new native capture needs a new verified turn; replay the original request if its outcome was uncertain."}),
                 );
                 return Err(error);
             }
         }
         let transition = SessionTransition::from_request(r);
         admit_semantic_update(&tx, host, r, transition)?;
+        if r.mode == UpdateMode::CompleteCaptured
+            && (r
+                .observations
+                .iter()
+                .any(|o| o.attempt.is_some() || !o.attempts.is_empty())
+                || !r.practice.is_empty()
+                || !r.attempt_corrections.is_empty())
+        {
+            return Err(LearnerError::new(
+                "invalid_variant",
+                "complete_captured cannot record an attempt, a practice change or an attempt correction, because each can change what is due",
+            ));
+        }
         for d in &r.event_dispositions {
             let old: Option<String> = tx
                 .query_row(
@@ -223,19 +236,6 @@ impl LearnerStore {
         )?;
         if !r.review_updates.is_empty() {
             tx.execute_batch("UPDATE workspace_meta SET review_generation=review_generation+1")?;
-        }
-        if r.mode == UpdateMode::CompleteCaptured
-            && (r
-                .observations
-                .iter()
-                .any(|o| o.attempt.is_some() || !o.attempts.is_empty())
-                || !r.practice.is_empty()
-                || !r.attempt_corrections.is_empty())
-        {
-            return Err(LearnerError::new(
-                "invalid_variant",
-                "complete_captured cannot record an attempt, a practice change or an attempt correction, because each can change what is due",
-            ));
         }
         crate::learner::practice::apply_corrections(
             &tx,

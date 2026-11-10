@@ -12,6 +12,28 @@ pub(super) fn validate_batch_keys(r: &UpdateRequest, host: &HostContext) -> Resu
     {
         return Err(LearnerError::new("field_too_large", "semantic batch"));
     }
+    for (path, count, max) in [
+        (
+            "practice",
+            r.practice.len(),
+            limits::PRACTICE_EDITS_PER_BATCH,
+        ),
+        (
+            "attempt_corrections",
+            r.attempt_corrections.len(),
+            limits::ATTEMPT_CORRECTIONS_PER_BATCH,
+        ),
+    ] {
+        if count > max {
+            let mut error = field_error(
+                path,
+                format!("At most {max} per request; send the rest in another update"),
+                host,
+            );
+            error.code = "field_too_large".into();
+            return Err(error);
+        }
+    }
     let mut local_names = BTreeMap::new();
     let mut memory_targets = BTreeMap::new();
     let mut review_targets = BTreeMap::new();

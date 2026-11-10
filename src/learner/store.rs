@@ -66,23 +66,21 @@ impl LearnerStore {
             }
             Err(error) => return Err(LearnerError::new("storage_error", error.to_string())),
         }
-        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        configure(&conn)?;
-        let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(crate::learner::store::SCHEMA_SQL)?;
-        tx.execute_batch(SCHEMA_V3_SQL)?;
-        tx.execute_batch(SCHEMA_V4_SQL)?;
-        tx.execute_batch(SCHEMA_V5_SQL)?;
-        tx.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,?1,?2,?3,?4)",params![workspace_id,SCHEMA,SCHEMA_VERSION,now_ms()])?;
-        tx.commit()?;
-        Ok(Self {
-            conn,
-            workspace_id: workspace_id.into(),
-        })
+        Self::open(path, workspace_id)
     }
     pub fn open(path: &Path, workspace_id: &str) -> Result<Self> {
         reject_symlinks(path)?;
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        // An empty file is a store whose first transaction never committed:
+        // this process is creating it, another one is, or one stopped
+        // part-way. Make it under the write lock unless another has by then.
+        let length = std::fs::metadata(path)
+            .map_err(|e| LearnerError::new("storage_error", e.to_string()))?
+            .len();
+        if length == 0 {
+            configure(&conn)?;
+            create_schema(&conn, workspace_id)?;
+        }
         let meta = read_meta(&conn)?;
         if meta.1 != SCHEMA
             || (meta.2 != SCHEMA_VERSION && !UPGRADEABLE_SCHEMA_VERSIONS.contains(&meta.2))
@@ -113,6 +111,19 @@ impl LearnerStore {
     pub fn binding(&self, host: &HostContext) -> Result<(Option<String>, bool, bool)> {
         Ok(self.conn.query_row("SELECT session_id,learning_active,recording_enabled FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.unwrap_or((None,false,true)))
     }
+}
+fn create_schema(conn: &Connection, workspace_id: &str) -> Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let empty: bool = tx.query_row("SELECT count(*) = 0 FROM sqlite_master", [], |r| r.get(0))?;
+    if empty {
+        tx.execute_batch(SCHEMA_SQL)?;
+        tx.execute_batch(SCHEMA_V3_SQL)?;
+        tx.execute_batch(SCHEMA_V4_SQL)?;
+        tx.execute_batch(SCHEMA_V5_SQL)?;
+        tx.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,?1,?2,?3,?4)",params![workspace_id,SCHEMA,SCHEMA_VERSION,now_ms()])?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 type Meta = (String, String, i64);
 fn read_meta(conn: &Connection) -> Result<Meta> {
@@ -303,6 +314,47 @@ mod schema_revision_tests {
         let error = LearnerStore::open(&path, "old-workspace").err().unwrap();
         assert_eq!(error.code, "incompatible_store");
         assert_eq!(std::fs::read(&path).unwrap(), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_empty_store_file_left_by_an_interrupted_initialize_is_initialized() {
+        let dir = std::env::temp_dir().join(new_id("empty-store-test").unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("state.sqlite");
+        let workspace = |store: &LearnerStore| -> String {
+            store
+                .conn
+                .query_row("SELECT workspace_id FROM workspace_meta", [], |r| r.get(0))
+                .unwrap()
+        };
+        // The way back in through init opens the file it finds.
+        std::fs::File::create(&path).unwrap();
+        let opened = LearnerStore::open(&path, "empty-store").unwrap();
+        assert_eq!(workspace(&opened), "empty-store");
+        opened
+            .conn
+            .execute_batch("INSERT INTO operation_receipts VALUES('kept','h','{}',0)")
+            .unwrap();
+        drop(opened);
+        std::fs::write(dir.join("other.sqlite"), b"").unwrap();
+        let initialized = LearnerStore::initialize(&dir.join("other.sqlite"), "other").unwrap();
+        assert_eq!(workspace(&initialized), "other");
+        // A store holding data is opened as it is, never made again.
+        for store in [
+            LearnerStore::initialize(&path, "empty-store").unwrap(),
+            LearnerStore::open(&path, "empty-store").unwrap(),
+        ] {
+            let kept: i64 = store
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM operation_receipts WHERE request_id='kept'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(kept, 1);
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

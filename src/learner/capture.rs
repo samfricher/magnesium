@@ -140,7 +140,13 @@ impl LearnerStore {
         limits::text("request_id", request_id, 256)?;
         let request = serde_json::json!({"action":action,"host_kind":host.host_kind,"host_thread_id":host.host_thread_id,"event_key":current_learner_event.external_event_key});
         let hash = super::update::payload_hash(&request)?;
-        let tx = self.conn.unchecked_transaction()?;
+        // Take the write lock first: a read lock cannot wait to become a
+        // write lock, so a deferred start would fail at once while another
+        // process writes instead of waiting for it.
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
         if let Some((previous, result)) = tx
             .query_row(
                 "SELECT request_sha256,result_json FROM operation_receipts WHERE request_id=?1",

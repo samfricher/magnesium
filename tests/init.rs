@@ -59,7 +59,7 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
     let config_after_first = fs::read(control.join("config.toml")).unwrap();
     let initialized_id = workspace_id(&control.join("config.toml"));
     assert!(initialized_id.starts_with("ws_"));
-    assert_global_data_holds_only_plugin_copies(&environment);
+    assert_eq!(environment.unmanaged_data_entries(), Vec::<String>::new());
 
     let stdout = String::from_utf8(first.stdout).expect("init output is UTF-8");
     let reported_paths = [
@@ -95,7 +95,7 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
         config_after_first
     );
     assert_eq!(fs::read(&exclude).unwrap(), exclude_after_first);
-    assert_global_data_holds_only_plugin_copies(&environment);
+    assert_eq!(environment.unmanaged_data_entries(), Vec::<String>::new());
     assert_eq!(workspace_id(&control.join("config.toml")), initialized_id);
     assert_empty_learner_state(&control.join("state.sqlite"));
     assert_workspace_files_unchanged(&protected);
@@ -385,29 +385,6 @@ fn assert_info_matches_state(environment: &TestEnvironment, state: &Path) {
     assert_eq!(report["schema_version"], stored_schema);
 }
 
-/// Learner state stays in the workspace; each per-user data directory holds
-/// only the plugin copies that init manages.
-fn assert_global_data_holds_only_plugin_copies(environment: &TestEnvironment) {
-    for data_dir in [
-        environment
-            .root
-            .join("home/Library/Application Support/magnesium"),
-        environment.global_data.join("magnesium"),
-    ] {
-        let Ok(entries) = fs::read_dir(&data_dir) else {
-            continue;
-        };
-        for entry in entries {
-            let name = entry.unwrap().file_name();
-            assert!(
-                name == "marketplace" || name == "claude-plugin",
-                "init wrote unmanaged global data: {}",
-                data_dir.join(name).display()
-            );
-        }
-    }
-}
-
 fn assert_valid_empty_source_cache(path: &Path) {
     let connection = Connection::open(path).unwrap();
     let integrity: String = connection
@@ -473,7 +450,7 @@ fn assert_private_permissions(control: &Path) {
 }
 
 #[test]
-fn init_refreshes_instructions_idempotently_without_modifying_other_files() {
+fn init_rewrites_tampered_instructions() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     let init1 = environment
         .command()

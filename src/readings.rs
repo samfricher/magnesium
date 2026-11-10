@@ -98,7 +98,8 @@ pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
         };
         if let Some(item) = body.strip_prefix("- ").or((body == "-").then_some("")) {
             match &block {
-                Some((field, field_indent)) if indent > *field_indent => {
+                // YAML lets a block list's dashes sit at its key's indent.
+                Some((field, field_indent)) if indent >= *field_indent => {
                     let item = unquote(item);
                     if !item.is_empty()
                         && let Some(list) = list(tag, field)
@@ -118,11 +119,13 @@ pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
         let field = field.trim();
         let value = value.trim();
         block = None;
-        if !LIST_FIELDS.contains(&field) {
-            continue;
-        }
+        // A field with its value below may hold a block list. The items of
+        // one a reading does not use are skipped, as `list` gives no list.
         if value.is_empty() {
             block = Some((field.to_owned(), indent));
+            continue;
+        }
+        if !LIST_FIELDS.contains(&field) {
             continue;
         }
         let Some(inner) = value

@@ -43,8 +43,9 @@ Other keys: **Enter** sends, **Shift+Enter** makes a new line, **⌘.** stops a 
 | Check | How to run it | Result on 2026-11-10 |
 |---|---|---|
 | Everything below but the live check | `scripts/check.sh`, and `scripts/check.sh --window` for the self-check too | passes |
-| Core: readers, state, files, which folder opens first | `cargo test -p mg-core --lib` | 32 pass |
-| The pipe: several turns in one process, permission allowed once, always and refused, a question answered, a reply interrupted, a lesson closed and resumed, a missing plugin reported, a helper's text hidden, a usage limit shown, a conversation the agent no longer has, a reply interrupted before its first word | `cargo test -p mg-core --test pipe` | 12 pass, against a stand-in agent |
+| Core: readers, state, files, which folder opens first | `cargo test -p mg-core --lib` | 35 pass |
+| The pipe: several turns in one process, permission allowed once, always and refused, a question answered, a reply interrupted, a lesson closed and resumed, a missing plugin reported, a helper's text hidden, a usage limit shown, a conversation the agent no longer has, a reply interrupted before its first word, a stopped or replaced conversation that says nothing more | `cargo test -p mg-core --test pipe` | 14 pass, against a stand-in agent |
+| A paper opens from a folder inside the study folder, and an answer key does not | `cargo test -p mg-core --test papers` | passes, against a stand-in runtime |
 | The readers against the runtime built from this checkout: the gap log it writes, its digest, `attempts --json`, the goal's steps, and a gap log edited by hand | `cargo test -p mg-core --test runtime` | passes |
 | The real window, end to end: page-to-shell calls, the content policy, mathematics, a diagram, a permission card, stop and resume | `scripts/selftest.sh` | passes, against the stand-in |
 | **The pipe against the real Claude Code**: a new lesson, a second turn, two interrupts, a stop and a resume | `scripts/live-check.sh` | **passes**, with Claude Code 2.1.322 and the runtime of 2026-10-23 |
@@ -97,7 +98,9 @@ crates/core/        everything that is not drawing, with its tests
                     the runtime, the live check
 src-tauri/          the window's shell: passes messages, decides nothing
 src/                the pages (React, plain CSS)
-scripts/            check, selftest, live check, screenshots
+scripts/            check, selftest, live check, screenshots; make_icon.py draws
+                    the app icon (three proof dots on a dark tile) as a 1024-pixel
+                    PNG, written to the path given as its argument
 ```
 
 The window's own state is in `~/Library/Application Support/dev.magnesium.window/`, apart from the runtime's folder: the folders you opened, each folder's conversation id and stop line, and a copy of the turns it showed. None of it is learning state.

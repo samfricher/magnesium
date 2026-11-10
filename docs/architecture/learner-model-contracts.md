@@ -34,7 +34,7 @@ The first result of any tool in a new sitting may carry `sitting_opener`, the te
 
 The MCP server advertises tools only. It exposes no UI resources or navigation links.
 
-Learner-state requests require `schema:"learner-model/v2"`. `context.instructions` uses its own [instruction request](../../src/adapter/mod.rs); source tools use separate [source request types](../../src/adapter/types.rs). Old learner payloads/stores are rejected without migration.
+Learner-state requests require `schema:"learner-model/v2"`. `context.instructions` uses its own [instruction request](../../src/adapter/mod.rs); source tools use separate [source request types](../../src/adapter/types.rs). Old learner payloads are rejected. A store at schema 2, 3 or 4 is upgraded once, after a backup; any other store is kept and refused.
 
 `context.instructions` serves the caller-selected workflow and host adapter, plus the requested optional contract. `recommended_stage` echoes that routing choice. The response identifies the validated bundle and served files, reports delivery bounds, and returns their text. Authored workflows explain teaching decisions; Rust request types define accepted operations and fields. An unavailable response retains the routing choice and packaged version/hash when available, with a specific error instead of serving unvalidated instructions.
 
@@ -77,7 +77,7 @@ Call `memory` to read a returned reference, replacing `$MEMORY_ID` and the revis
 
 Selected kinds are `current_memory`, `observation` and `event`. Reads return a fitting ordered prefix of whole records. Events alone support UTF-8-safe `start_byte`/`end_byte` ranges; large event text pages automatically. Descriptions and observations are never silently clipped.
 
-List actions accept `limit`, `cursor` and `max_bytes`. Submit returned `next_call.tool` and `next_call.arguments` unchanged. Each call opens a new snapshot. Cursors bind the workspace, action, filters and relevant generations; `cursor_stale` requires a restart, while `invalid_cursor` rejects malformed/tampered input. Pages never advance past an unreturned record. `catalog_complete` means the whole active compact directory is present, not that all relevant knowledge was retrieved.
+List actions accept `limit`, `cursor` and `max_bytes`. Submit returned `next_call.tool` and `next_call.arguments` unchanged. Each call opens a new snapshot. Cursors bind the workspace, action, filters and relevant generations; `cursor_stale` requires a restart, while `invalid_cursor` rejects a malformed or inconsistent cursor. Pages never advance past an unreturned record. `catalog_complete` means the whole active compact directory is present, not that all relevant knowledge was retrieved.
 
 See [read request types](../../src/learner/read/requests.rs) for action-specific filters and [response types](../../src/learner/read/pages.rs) for packets and continuations.
 
@@ -177,6 +177,7 @@ All sizes are UTF-8 bytes; encoded records must also fit their response envelope
 | Item | Bound |
 |---|---|
 | Request / inline event | 1 MiB / 256 KiB |
+| One message to the tool server | 4 MiB; a longer one is not read and gets JSON-RPC error -32600 |
 | Learner packet, default / maximum | 24 / 64 KiB |
 | Instruction load response (core + workflow + operation contract) | 32 KiB |
 | Title / scope / summary / review note | 256 / 512 / 1,024 / 1,024 bytes |
@@ -186,4 +187,4 @@ All sizes are UTF-8 bytes; encoded records must also fit their response envelope
 | Selected read refs / list page | 32 / 32 |
 | Search intents / queries per intent / focused cards | 4 / 2 / 16 |
 
-Complete bounds live in [`limits.rs`](../../src/learner/limits.rs) and [read validation](../../src/learner/read/requests.rs). Storage layout is in the [SQL schema](../../src/learner/schema.sql). Source tools enforce scope, exclusions and version checks independently; export-marked private trees are excluded. See the [security model](../security/threat-model.md) for those boundaries.
+Complete bounds live in [`limits.rs`](../../src/learner/limits.rs) and [read validation](../../src/learner/read/requests.rs). Storage layout is listed under [what is stored](learner-model.md#what-is-stored). Source tools enforce scope, exclusions and version checks independently; export-marked private trees are excluded. See the [security model](../security/threat-model.md) for those boundaries.

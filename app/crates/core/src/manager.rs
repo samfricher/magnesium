@@ -43,6 +43,9 @@ pub struct Manager {
     harness: Arc<dyn Harness>,
     sink: EventSink,
     inner: Mutex<Inner>,
+    /// Counts conversations. A conversation that was closed or replaced
+    /// still runs for a while, and its events must not reach the page.
+    current: Arc<Mutex<u64>>,
 }
 
 /// What the session screen needs when it opens.
@@ -71,7 +74,22 @@ impl Manager {
                 conversation: None,
                 buffer: Arc::new(Mutex::new(Buffer::default())),
             }),
+            current: Arc::new(Mutex::new(0)),
         }
+    }
+
+    /// Close the conversation, if there is one. From here on nothing it says
+    /// reaches the page or changes what the folder remembers.
+    fn close_conversation(&self, inner: &mut Inner) -> u64 {
+        let generation = {
+            let mut current = lock(&self.current);
+            *current += 1;
+            *current
+        };
+        if let Some(mut conversation) = inner.conversation.take() {
+            conversation.close();
+        }
+        generation
     }
 
     pub fn store(&self) -> &Store {
@@ -105,9 +123,7 @@ impl Manager {
             .ok_or_else(|| AgentError("That folder does not exist.".into()))?;
         {
             let mut inner = lock(&self.inner);
-            if let Some(mut conversation) = inner.conversation.take() {
-                conversation.close();
-            }
+            self.close_conversation(&mut inner);
             inner.folder = Some(folder.clone());
         }
         self.store.opened(&folder);
@@ -136,17 +152,26 @@ impl Manager {
 
     /// The sink the agent writes to. It keeps the window's own copy of each
     /// turn and remembers the conversation's id, then passes the event on.
-    fn sink_for(&self, folder: PathBuf, buffer: Arc<Mutex<Buffer>>) -> EventSink {
+    /// Once the conversation is closed or replaced, it only keeps the copy of
+    /// its own turns, which is stored under its own id.
+    fn sink_for(&self, folder: PathBuf, buffer: Arc<Mutex<Buffer>>, generation: u64) -> EventSink {
         let store = Arc::clone(&self.store);
         let out = Arc::clone(&self.sink);
+        let current = Arc::clone(&self.current);
         Arc::new(move |event: AgentEvent| {
+            // Held to the end, so the conversation cannot be replaced between
+            // this check and the event reaching the page.
+            let now = lock(&current);
+            let live = *now == generation;
             match &event {
                 AgentEvent::Ready { session_id, .. } if !session_id.is_empty() => {
                     let mut buffer = lock(&buffer);
                     buffer.session = Some(session_id.clone());
                     buffer.ready = true;
                     let id = session_id.clone();
-                    store.update(&folder, |state| state.session_id = Some(id));
+                    if live {
+                        store.update(&folder, |state| state.session_id = Some(id));
+                    }
                 }
                 // An agent that ends before it reports anything was most
                 // likely asked for a conversation it no longer has. Forget
@@ -154,7 +179,7 @@ impl Manager {
                 AgentEvent::Exited { expected, .. } => {
                     let mut buffer = lock(&buffer);
                     buffer.ended = true;
-                    if !expected && !buffer.ready {
+                    if live && !expected && !buffer.ready {
                         store.update(&folder, |state| state.session_id = None);
                     }
                 }
@@ -190,7 +215,9 @@ impl Manager {
                 }
                 _ => {}
             }
-            out(event);
+            if live {
+                out(event);
+            }
         })
     }
 
@@ -211,9 +238,7 @@ impl Manager {
                 turns,
             });
         }
-        if let Some(mut old) = inner.conversation.take() {
-            old.close();
-        }
+        let generation = self.close_conversation(&mut inner);
         let remembered = self.store.folder(&folder).session_id.filter(|_| resume);
         if !resume {
             self.store.update(&folder, |state| {
@@ -231,7 +256,7 @@ impl Manager {
                 folder: folder.clone(),
                 resume: remembered.clone(),
             },
-            self.sink_for(folder.clone(), Arc::clone(&buffer)),
+            self.sink_for(folder.clone(), Arc::clone(&buffer), generation),
         )?;
         inner.conversation = Some(conversation);
         inner.buffer = buffer;
@@ -308,9 +333,7 @@ impl Manager {
             state.stopped_at = line;
             state.stopped_ms = Some(Local::now().timestamp_millis());
         });
-        if let Some(mut conversation) = lock(&self.inner).conversation.take() {
-            conversation.close();
-        }
+        self.close_conversation(&mut lock(&self.inner));
         Ok(())
     }
 
@@ -345,8 +368,17 @@ impl Manager {
         // The paper opens in the system viewer so it can be printed. A paper
         // that will not open does not stop the clock: the learner may hold a
         // printed copy.
-        let _ = files::open(&folder, &paper.path);
+        let _ = self
+            .paper_file(paper)
+            .and_then(|file| files::launch(&file).map_err(AgentError));
         Ok(sitting)
+    }
+
+    /// The file of a paper, checked as any file the window opens. A paper's
+    /// path is inside the study root, which can be a parent of the folder.
+    pub fn paper_file(&self, paper: &Paper) -> AgentResult<PathBuf> {
+        let root = study::root(&self.need_folder()?);
+        files::openable(&root, &paper.path).map_err(AgentError)
     }
 
     /// End a timed paper. With files, the learner's work is copied into the
@@ -391,8 +423,6 @@ impl Manager {
 
     /// End the conversation when the window closes.
     pub fn shut_down(&self) {
-        if let Some(mut conversation) = lock(&self.inner).conversation.take() {
-            conversation.close();
-        }
+        self.close_conversation(&mut lock(&self.inner));
     }
 }

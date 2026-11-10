@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { useNow } from "./Session";
+import { composing, useNow } from "./Session";
 import type { Home, Paper } from "./types";
 
 function ago(days: number | null): string {
@@ -137,7 +137,7 @@ export function Entrance(props: {
           value={goal}
           onChange={(e) => setGoal(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") start();
+            if (e.key === "Enter" && !composing(e)) start();
             if (e.key === "Escape" && !fresh) props.onAsk(false);
           }}
         />

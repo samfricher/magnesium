@@ -8,6 +8,7 @@
 
 import type { Actions } from "./App";
 import { tutorText, type SessionState } from "./lesson";
+import { renderMarkdown } from "./render";
 import type { Core } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
@@ -30,6 +31,18 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
   try {
     const home = await api.home();
     steps.home = { state: home.state, name: home.name };
+
+    // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
+    const page = document.createElement("div");
+    page.innerHTML = renderMarkdown(
+      '![graph of $y=x^2$](plot.png) and [link](u "title $z$") with $a^b$\n\n<map name="m"><area href="https://example.com" shape="default"></map>',
+    );
+    const alt = page.querySelector("img")?.getAttribute("alt");
+    const title = page.querySelector("a")?.getAttribute("title");
+    steps.attributeMath = { alt, title, katex: page.querySelectorAll(".katex").length, areas: page.querySelectorAll("map, area").length };
+    if (alt !== "graph of y=x^2" || title !== "title z") throw new Error(`mathematics in an attribute was not plain text: ${alt} / ${title}`);
+    if (page.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in the text did not draw");
+    if (page.querySelectorAll("map, area").length !== 0) throw new Error("an image map was not removed");
 
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
     await actions.continueLesson(false);

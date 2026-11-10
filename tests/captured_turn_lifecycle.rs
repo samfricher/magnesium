@@ -818,7 +818,6 @@ fn partial_completion(session: &str, event: &str) -> Value {
 fn completion_preserves_typed_existing_task_while_updating_stopping_point() {
     let (e, session, event, task) = paused_with_task();
     let mut request = partial_completion(&session, &event);
-    request["session"]["expected_revision"] = json!(2);
     request["checkpoint"]["pending_task"] = task.clone();
     // Omitted defaults are semantically equal despite different JSON fields.
     request["checkpoint"]["pending_task"]
@@ -829,8 +828,6 @@ fn completion_preserves_typed_existing_task_while_updating_stopping_point() {
         .as_object_mut()
         .unwrap()
         .remove("reference_answer_ref");
-    request["checkpoint"]["working_diagnosis"] =
-        json!("Found one root; checking the other is unfinished.");
     let result = call(&e, THREAD, request);
     assert_eq!(result["update_status"], "committed", "{result}");
     assert_eq!(result["revisions"][&session], 3);
@@ -867,7 +864,6 @@ fn task_completion_change_conflict_and_privacy_failures_keep_task_and_raw_answer
             )
             .unwrap();
         let mut request = partial_completion(&session, &event);
-        request["session"]["expected_revision"] = json!(2);
         request["checkpoint"]["pending_task"] = task;
         let code = match variant {
             "changed_task" => {
@@ -985,7 +981,6 @@ fn completion_can_preserve_whole_checkpoint_or_explicitly_clear_existing_task() 
             )
             .unwrap();
         let mut request = partial_completion(&session, &event);
-        request["session"]["expected_revision"] = json!(2);
         if keep_checkpoint {
             request.as_object_mut().unwrap().remove("checkpoint");
         }

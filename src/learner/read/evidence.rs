@@ -448,9 +448,7 @@ pub(super) fn reviews(
         .collect::<Vec<_>>();
     let bodies = bodies(conn, &selected)?;
     for (index, card) in selected.iter().enumerate() {
-        if crate::request::OperationCancellation::none().is_cancelled() {
-            return Err("request_cancelled: learner read cancelled".into());
-        }
+        super::check_read_cancellation()?;
         if let Some(body) = bodies.get(&card.memory_id) {
             builder.optional(|p| {
                 let card = &mut p.reviews.as_mut().unwrap()[index].current_memory;
@@ -576,7 +574,39 @@ fn support(
         .map_err(db)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(db)?;
-    let items=rows.into_iter().map(|(no,event_id)| {let record=if memories{Record::Memory(card(conn,&event_id)?)}else {let mut e=event(conn,&event_id,Some(0),Some(0))?;e.read_ref=Some(ReadRef::Event {id:event_id.clone(),start_byte:None,end_byte:None});let mut roles=conn.prepare("SELECT role,excerpts_json FROM observation_events WHERE observation_id=?1 AND event_id=?2 ORDER BY role").map_err(db)?;e.observation_roles=Some(roles.query_map(params![r.observation_id,event_id],|r|Ok(ObservationRole {role:r.get(0)?,excerpts:stored(r.get(1)?)?})).map_err(db)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db)?);Record::Event(e)};Ok(PageItem {value:Item::Support(record),after:PageKey::Number(no)})}).collect::<Result<Vec<_>,String>>()?;
+    let mut roles=conn.prepare("SELECT role,excerpts_json FROM observation_events WHERE observation_id=?1 AND event_id=?2 ORDER BY role").map_err(db)?;
+    let items = rows
+        .into_iter()
+        .map(|(no, event_id)| {
+            let record = if memories {
+                Record::Memory(card(conn, &event_id)?)
+            } else {
+                let mut e = event(conn, &event_id, Some(0), Some(0))?;
+                e.read_ref = Some(ReadRef::Event {
+                    id: event_id.clone(),
+                    start_byte: None,
+                    end_byte: None,
+                });
+                e.observation_roles = Some(
+                    roles
+                        .query_map(params![r.observation_id, event_id], |r| {
+                            Ok(ObservationRole {
+                                role: r.get(0)?,
+                                excerpts: stored(r.get(1)?)?,
+                            })
+                        })
+                        .map_err(db)?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                        .map_err(db)?,
+                );
+                Record::Event(e)
+            };
+            Ok(PageItem {
+                value: Item::Support(record),
+                after: PageKey::Number(no),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     builder.required(|p| {
         p.support = Some(vec![]);
         p.page_count = Some(0);

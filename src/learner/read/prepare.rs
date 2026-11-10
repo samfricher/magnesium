@@ -58,7 +58,7 @@ fn browse_from_prepare(
 pub(super) fn enrich_bodies(conn: &Connection, builder: &mut Builder) -> Result<(), String> {
     let mut bodies = bodies(conn, &builder.packet.memories)?;
     for index in 0..builder.packet.memories.len() {
-        check_cancelled()?;
+        super::check_read_cancellation()?;
         if let Some(body) = bodies.remove(&builder.packet.memories[index].memory_id) {
             builder.optional(|p| {
                 p.memories[index].state_text = Some(body);
@@ -143,7 +143,7 @@ pub(super) fn prepare(
             }
             let ids = rows.iter().map(|(_, id)| id.clone()).collect::<Vec<_>>();
             for ((no, id), card) in rows.into_iter().zip(cards(conn, &ids)?) {
-                check_cancelled()?;
+                super::check_read_cancellation()?;
                 last = no;
                 if selected.contains(&id) {
                     continue;
@@ -233,7 +233,7 @@ pub(super) fn prepare(
     evidence::session_context(conn, request.session_id(), builder, host)?;
     let mut omitted = vec![];
     for mut card in cards(conn, &ordered)? {
-        check_cancelled()?;
+        super::check_read_cancellation()?;
         annotate(&mut card);
         let read_ref = ReadRef::CurrentMemory {
             id: card.memory_id.clone(),
@@ -264,12 +264,4 @@ pub(super) fn prepare(
         browse_from_prepare(conn, r, builder, scope)?;
     }
     enrich_bodies(conn, builder)
-}
-
-fn check_cancelled() -> Result<(), String> {
-    if crate::request::OperationCancellation::none().is_cancelled() {
-        Err("request_cancelled: learner read cancelled".into())
-    } else {
-        Ok(())
-    }
 }

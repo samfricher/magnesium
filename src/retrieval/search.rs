@@ -34,16 +34,20 @@ const SOURCE_QUERY_SQL: &str = r#"WITH ranked_matches AS MATERIALIZED (
                     manifest.display_path = ?2 AS exact_path_match,
                     coalesce((candidate.structural_path = ?2 COLLATE NOCASE
                      OR EXISTS(
-                         SELECT 1 FROM json_tree(candidate.definitions_json)
-                         WHERE type = 'text' AND value = ?2 COLLATE NOCASE
+                         SELECT 1 FROM json_each(candidate.definitions_json)
+                         WHERE json_extract(value, '$.name') = ?2 COLLATE NOCASE
                      )
                      OR EXISTS(
-                         SELECT 1 FROM json_tree(candidate.imports_json)
-                         WHERE type = 'text' AND value = ?2 COLLATE NOCASE
+                         SELECT 1 FROM json_each(candidate.imports_json) AS source_import
+                         WHERE json_extract(source_import.value, '$.module') = ?2 COLLATE NOCASE
+                            OR EXISTS(
+                                SELECT 1 FROM json_each(source_import.value, '$.names')
+                                WHERE value = ?2 COLLATE NOCASE
+                            )
                      )
                      OR EXISTS(
-                         SELECT 1 FROM json_tree(candidate.references_json)
-                         WHERE type = 'text' AND value = ?2 COLLATE NOCASE
+                         SELECT 1 FROM json_each(candidate.references_json)
+                         WHERE json_extract(value, '$.name') = ?2 COLLATE NOCASE
                      )), 0) AS exact_identifier_match,
                     CASE WHEN source_search_ranked.rowid IS NULL THEN source_search.rowid IN (
                         SELECT rowid FROM source_search WHERE source_search MATCH ?9
@@ -1411,6 +1415,32 @@ mod tests {
             fixture.search(docs_only).hits[0].candidate.path,
             "docs/reference.md"
         );
+    }
+
+    #[test]
+    fn exact_identifier_tier_matches_names_and_not_definition_kinds() {
+        let fixture = Fixture::new("identifier-kinds");
+        fixture.write(
+            "src/area.py",
+            b"from geometry import square\n\ndef compute_area(width, height):\n    return width * height\n",
+        );
+        fixture.write(
+            "notes/functions.md",
+            b"# Functions\n\nA function maps each input to one output.\n",
+        );
+
+        let kind = fixture.search(request("function"));
+        assert_eq!(kind.hits[0].candidate.path, "notes/functions.md");
+        assert!(
+            kind.hits.iter().all(|hit| !hit.signals.exact_identifier),
+            "a definition kind matched as an identifier: {:?}",
+            kind.hits
+        );
+        for name in ["compute_area", "width", "geometry", "square"] {
+            let identifier = fixture.search(request(name));
+            assert_eq!(identifier.hits[0].candidate.path, "src/area.py", "{name}");
+            assert!(identifier.hits[0].signals.exact_identifier, "{name}");
+        }
     }
 
     #[test]

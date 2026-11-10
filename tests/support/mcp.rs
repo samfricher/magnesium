@@ -66,7 +66,7 @@ impl McpClient {
         )
     }
 
-    pub fn spawn_bound_with_env(
+    fn spawn_bound_with_env(
         environment: &TestEnvironment,
         current_dir: &Path,
         workspace_root: Option<&Path>,
@@ -106,7 +106,7 @@ impl McpClient {
                 "_internal",
                 "mcp-server",
                 "--plugin-version",
-                "0.2.0",
+                super::magnesium_version(),
                 "--adapter-protocol-version",
                 "2",
             ])

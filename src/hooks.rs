@@ -179,25 +179,21 @@ pub(crate) fn run(
         return ExitCode::SUCCESS;
     }
 
-    let output = match workspace {
-        Some(workspace) => match handle(event, &input, &workspace) {
+    let output = match &workspace {
+        Some(workspace) => match handle(event, &input, workspace) {
             Ok(output) => output,
             Err(_) => {
-                record_hook_error(&workspace, event.name(), HookFailure::HookProcessing);
+                record_hook_error(workspace, event.name(), HookFailure::HookProcessing);
                 return ExitCode::SUCCESS;
             }
         },
-        None => inactive_output(event),
+        None => None,
     };
 
     if let Some(output) = output
         && serde_json::to_writer(io::stdout().lock(), &output).is_err()
     {
-        record_if_active(
-            current_workspace.as_ref(),
-            event,
-            HookFailure::OutputSerialization,
-        );
+        record_if_active(workspace.as_ref(), event, HookFailure::OutputSerialization);
     }
     ExitCode::SUCCESS
 }
@@ -230,10 +226,9 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
     {
         return Err("hook input contains an unsupported host_kind".to_owned());
     }
-    // Exactly one turn identity: a stable native turn ID or a native-local
-    // ordinal. Both present is ambiguous and means unavailable capture.
-    // Both missing is allocatable only for ordinal-capable hosts at prompt
-    // time (see `validate_turn_for`); all other cases are unavailable.
+    // A turn-scoped hook needs the native turn ID. Without one, only an
+    // ordinal-capable host at prompt time is accepted, and `handle` then
+    // allocates a native-local ordinal (see `validate_turn_for`).
 
     // Never scrape transcript files. Available finalized assistant text is
     // captured as observed delivery only while learning recording is active.
@@ -358,13 +353,8 @@ fn handle(
                 // native-local ordinal at this trusted prompt hook. The
                 // session/order mapping is unambiguous (per-session monotonic
                 // counter); retries reuse the MCP idempotency key.
-                let Some(workspace) =
-                    Workspace::discover(&input.cwd).map_err(|error| error.to_string())?
-                else {
-                    return Ok(None);
-                };
                 let ordinal =
-                    adapter::host::allocate_native_ordinal(&workspace, &host.stored_session_id())?;
+                    adapter::host::allocate_native_ordinal(workspace, &host.stored_session_id())?;
                 adapter::host_user_prompt_submit(&input.cwd, &host, None, Some(ordinal), prompt)?
             } else {
                 adapter::host_user_prompt_submit(
@@ -422,10 +412,6 @@ fn handle(
             Ok(None)
         }
     }
-}
-
-fn inactive_output(_event: HookEvent) -> Option<Value> {
-    None
 }
 
 fn additional_context(event: HookEvent, context: String) -> Value {

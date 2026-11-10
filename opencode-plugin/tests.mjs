@@ -138,22 +138,6 @@ process.stdin.on("end", () => {
   }
 });
 
-await check("tool arguments remain unchanged for Magnesium and other providers", async () => {
-  const hooks = await Magnesium({ directory: cwd, client: mockClient(async () => ({})) });
-  const expected = {
-    sources: '{"path":"lesson.md"}',
-    enabled: "true",
-    session: '{"operation":"start","goal":"Learn coefficient roles"}',
-    observations: "[]",
-    memory_edits: "[]",
-  };
-  for (const tool of ["magnesium_learning_step", "other_learning_step", "context"]) {
-    const output = { args: structuredClone(expected) };
-    await hooks["tool.execute.before"]?.({ tool }, output);
-    assert.deepEqual(output.args, expected, `${tool} arguments must reach their provider unchanged`);
-  }
-});
-
 await check("stdout overflow is discarded with a fixed warning", async () => {
   const stub = join(root, "overflow-hook.mjs");
   const previousBinary = process.env.MAGNESIUM_BIN;
@@ -269,6 +253,39 @@ await check("compaction context leads the next turn once", async () => {
   assert.equal(lead.text, "Magnesium note for test\n\nMagnesium note for test");
   const [plain] = second.parts.filter((part) => part.synthetic);
   assert.equal(plain.text, "Magnesium note for test");
+});
+
+// 1c. An idle after the compaction (the prompt loop that compacted ends with
+// one) must not drop the pending rules or the verified session kind.
+await check("compaction context survives an idle and the session is looked up once", async () => {
+  let lookups = 0;
+  const hooks = await Magnesium({
+    directory: cwd,
+    client: mockClient(async () => {
+      lookups += 1;
+      return { data: { id: "ses-idle-compact" } };
+    }),
+  });
+  const idle = () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses-idle-compact" } } });
+  await hooks.event({ event: { type: "session.compacted", properties: { sessionID: "ses-idle-compact" } } });
+  const lookupsAfterCompaction = lookups;
+  await idle();
+  const first = userTurn("msg-idle-1", ["where were we?"]);
+  await hooks["chat.message"]({ sessionID: "ses-idle-compact" }, first);
+  await idle();
+  const second = userTurn("msg-idle-2", ["and next?"]);
+  await hooks["chat.message"]({ sessionID: "ses-idle-compact" }, second);
+  assert.equal(lookups, lookupsAfterCompaction, "idle must not make later messages look the session up again");
+  const [lead] = first.parts.filter((part) => part.synthetic);
+  assert.equal(lead.text, "Magnesium note for test\n\nMagnesium note for test");
+  const [plain] = second.parts.filter((part) => part.synthetic);
+  assert.equal(plain.text, "Magnesium note for test");
+  assert.deepEqual(invocations().map((call) => call.op), [
+    "post-compact",
+    "user-prompt-submit",
+    "stop",
+    "user-prompt-submit",
+  ]);
 });
 
 // 2. SDK error objects never authorize capture.

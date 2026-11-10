@@ -19,8 +19,8 @@
 //!   anchors, extraction method/version, warnings, and coverage.
 //! - Worker protocol `MAGNESIUM_DOCS_V1`: length-framed JSON over stdio,
 //!   mirroring the native PDF worker. The native runtime opens the
-//!   authorized source itself and hands the worker a read-only snapshot
-//!   path it created; the worker accepts no model-supplied paths or URL
+//!   authorized source itself and hands the worker the path of a private
+//!   snapshot copy it created; the worker accepts no model-supplied paths or URL
 //!   fetches. Bounded output, deadline, and kill-on-timeout/cancel reuse
 //!   the PDF isolation pattern.
 //! - Explicit opt-in: `MAGNESIUM_DOCS_WORKER` names the worker executable and
@@ -30,9 +30,9 @@
 //! Honest limits (see also the 12-document gate in the issue): the
 //! packaged Docling worker, its measured resource budgets, and the fixed
 //! sample comparison are NOT_RUN in this batch — no worker binary is
-//! bundled here. Until the gate passes, opted-in conversion reports
-//! `partial`/`text_unavailable` with the original-source view rather
-//! than claiming understanding. Extracted text and confidence values
+//! bundled here. Opted-in conversion records the coverage the worker
+//! reports (`complete`, `partial` or `text_unavailable`); a
+//! `text_unavailable` or empty result keeps the native result. Extracted text and confidence values
 //! are derived data, never facts about a learner and never proof of
 //! mathematical correctness; derived text cannot authorize a
 //! learner-state mutation (this boundary performs no store writes).
@@ -72,12 +72,12 @@ pub(crate) struct ExtractionBlock {
     pub(crate) anchor_start: u32,
     pub(crate) anchor_end: u32,
     pub(crate) text: String,
-    /// Uncertain reading order, formula, or table relationship that the
-    /// #206 original view must surface beside this block.
+    /// Uncertain reading order, formula, or table relationship reported for
+    /// this block. Validated but not yet stored: indexing keeps only
+    /// `anchor_start` and `text` of each block.
     pub(crate) warning: Option<String>,
 }
 
-/// Coverage of one conversion invocation.
 /// Coverage of one conversion invocation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ExtractionCoverage {

@@ -1,11 +1,13 @@
 """Stub converter mirroring the pinned docling API surface.
 
-Behavior is driven by `MAGNESIUM_STUB_MODE` (`items`, `partial`, `raise`,
-`empty`) and `MAGNESIUM_STUB_ITEMS` (JSON item list); see README.
+Behavior is driven by `MAGNESIUM_STUB_MODE` (`items`, `partial`, `failure`, `raise`,
+`empty`) and `MAGNESIUM_STUB_ITEMS` (JSON item list); see ../../README.md.
 """
 
 import json
 import os
+
+from docling.datamodel.base_models import ConversionStatus
 
 
 class PdfFormatOption:
@@ -74,5 +76,8 @@ class DocumentConverter:
             _Item(entry["label"], entry["text"], entry.get("pages", [1]))
             for entry in raw
         ]
-        status = "partial_success" if mode == "partial" else "success"
+        status = {
+            "partial": ConversionStatus.PARTIAL_SUCCESS,
+            "failure": ConversionStatus.FAILURE,
+        }.get(mode, ConversionStatus.SUCCESS)
         return _Result(status, _Document(items))

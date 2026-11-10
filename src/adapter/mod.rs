@@ -284,14 +284,13 @@ pub(crate) fn dispatch_with_host(
     request: serde_json::Value,
     native_host: Option<crate::learner::HostContext>,
 ) -> Result<serde_json::Value, String> {
-    let codex_thread = native_host
-        .clone()
-        .or_else(|| host::process_host_identity().map(|host| host_context(&host)))
-        .filter(|host| host.host_kind == HostKind::Codex.as_str())
-        .map(|host| host.host_thread_id);
     let caller = native_host
         .clone()
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
+    let codex_thread = caller
+        .as_ref()
+        .filter(|host| host.host_kind == HostKind::Codex.as_str())
+        .map(|host| host.host_thread_id.clone());
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
@@ -552,7 +551,7 @@ fn dispatch_inner(
         && serde_json::to_vec(&request)
             .map_err(|e| e.to_string())?
             .len()
-            > 1024 * 1024
+            > crate::learner::limits::REQUEST_BYTES
     {
         return Err("field_too_large: semantic request exceeds 1 MiB".into());
     }
@@ -592,7 +591,7 @@ fn dispatch_inner(
         return Err(format!("unknown tool: {operation}"));
     }
     let host = native_host.unwrap_or_else(tool_host);
-    let (_, resolved) = match resolve_workspace(cwd) {
+    let resolved = match resolve_workspace(cwd) {
         Ok(value) => value,
         Err(error) => {
             return control_admission::storage_failure(cwd, &host, operation, &request, error);
@@ -667,6 +666,7 @@ pub(crate) fn host_session_start(
         NoticeHook::SessionStart {
             core_rules: workspace.core_rules_on(),
         },
+        None,
         None,
     )?;
     if host.host_kind == "claude" {
@@ -774,14 +774,20 @@ enum Clause {
     ConfusionReminder,
     TaskReminder,
     ReplyFeedback,
+    Sitting,
+    UnboundRecovery,
 }
 /// Over the limit, the state line first loses its context.prepare advice;
 /// only then do clauses give way, in this order. The confusion reminder goes
-/// last because a turn after a long reply is when it matters most.
-const GIVE_WAY_ORDER: [Clause; 3] = [
+/// before the pointers because a turn after a long reply is when it matters
+/// most. The sitting and unbound-work pointers go only when nothing else is
+/// left to drop; the state line still counts unbound work.
+const GIVE_WAY_ORDER: [Clause; 5] = [
     Clause::TaskReminder,
     Clause::ReplyFeedback,
     Clause::ConfusionReminder,
+    Clause::Sitting,
+    Clause::UnboundRecovery,
 ];
 const STATE_ADVICE: &str = " Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.";
 fn hook_notice(
@@ -790,6 +796,7 @@ fn hook_notice(
     event: Option<&str>,
     hook: NoticeHook,
     sitting: Option<&str>,
+    closing: Option<&'static str>,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
@@ -818,7 +825,7 @@ fn hook_notice(
     }
     // While a quick check of this sitting is open, every turn says so.
     if let Some(sitting) = sitting {
-        clauses.push((Clause::Required, sitting.to_owned().into()));
+        clauses.push((Clause::Sitting, sitting.to_owned().into()));
     }
     if unbound > 0 {
         let recovery = if claude {
@@ -826,7 +833,7 @@ fn hook_notice(
         } else {
             " Unbound pending work: context.pending_work with unbound_only:true."
         };
-        clauses.push((Clause::Required, recovery.into()));
+        clauses.push((Clause::UnboundRecovery, recovery.into()));
     }
     if let (true, true, NoticeHook::UserPromptSubmit) = (claude, active, hook) {
         clauses.push((Clause::TaskReminder, reply_check::task_reminder().into()));
@@ -841,6 +848,9 @@ fn hook_notice(
         }) {
             clauses.push((Clause::ReplyFeedback, feedback.into()));
         }
+    }
+    if let Some(closing) = closing {
+        clauses.push((Clause::Required, closing.into()));
     }
     Ok(fit(state, clauses, hook.additional_context_limit()))
 }
@@ -866,6 +876,8 @@ const CLAUDE_LESSON_GUIDANCE: &str =
 const CLAUDE_RELOAD_GUIDANCE: &str =
     " After a new conversation or compaction, load the learn skill and its instructions first.";
 const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study or catch up, load the learn skill and start or resume a session; when they name an exam, midterm or final to prepare for, load the papers skill instead.";
+const NATIVE_TICKET_FALLBACK: &str =
+    " Native ticket unavailable; use labeled model-reported fallback.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
@@ -933,16 +945,14 @@ pub(crate) fn host_user_prompt_submit(
                 return Ok(Some(notice));
             }
             Err(_) => {
-                return Ok(Some(format!(
-                    "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(
-                        &store,
-                        &context,
-                        None,
-                        NoticeHook::UserPromptSubmit,
-                        sitting.as_deref()
-                    )?
-                )));
+                return Ok(Some(hook_notice(
+                    &store,
+                    &context,
+                    None,
+                    NoticeHook::UserPromptSubmit,
+                    sitting.as_deref(),
+                    Some(NATIVE_TICKET_FALLBACK),
+                )?));
             }
         }
     }
@@ -960,6 +970,7 @@ pub(crate) fn host_user_prompt_submit(
         ids.first().map(String::as_str),
         NoticeHook::UserPromptSubmit,
         sitting.as_deref(),
+        None,
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -1016,7 +1027,6 @@ pub(crate) fn host_response_stop_with_delivery(
         }),
         occurred_at_ms: None,
     };
-    let context = host_context(host);
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
     if active && recording {
         store

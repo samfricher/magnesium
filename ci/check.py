@@ -30,6 +30,7 @@ VOLUMES_DIR = Path("/Volumes")
 # This test target waits on timers in a Node harness (about 20 s of wall time, almost no CPU),
 # so it can run beside the other Rust tests without disturbing them.
 SIDE_TEST = "opencode_adapter"
+STOP_WAIT_SECONDS = 10  # how long a stopped command may take to end before it is killed
 STOP_SIGNALS = [getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)]
 
 
@@ -371,9 +372,14 @@ def run_build_phase(lanes: list[list[Step]], env: dict[str, str]) -> str | None:
     except BaseException:  # Ctrl-C or a stop signal reaches only this process, so stop the commands here
         with lock:
             fail("interrupted")
+        deadline = time.monotonic() + STOP_WAIT_SECONDS
         for thread in threads:
-            if thread.is_alive():
-                thread.join()
+            thread.join(max(0.0, deadline - time.monotonic()))
+        with lock:
+            for child in running:
+                terminate_group(child, kill=True)
+        for thread in threads:
+            thread.join()
         raise
     return failures[0] if failures else None
 
@@ -404,7 +410,7 @@ def run_tests_together(cwd: Path, main: list[str], side: list[str], env: dict[st
         if child.returncode is None:
             terminate_group(child)
             try:
-                child.wait(timeout=10)
+                child.wait(timeout=STOP_WAIT_SECONDS)
             except subprocess.TimeoutExpired:
                 terminate_group(child, kill=True)
                 child.wait()

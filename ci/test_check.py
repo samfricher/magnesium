@@ -54,7 +54,7 @@ class FakeProcess:
                 raise KeyboardInterrupt
             if self.label in fake.interrupt_main:  # Ctrl-C, which reaches only the main thread
                 signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
-            if self.label in fake.hang:
+            if self.label in fake.hang or self.label in fake.stubborn:
                 self.terminated.wait(10)
             if self.terminated.is_set():
                 self.returncode = -signal.SIGTERM
@@ -69,6 +69,8 @@ class FakeProcess:
 
     def signal(self, how):
         self.signals.append(how)
+        if self.label in self.fake.stubborn and how == STOP:
+            return  # ignores the polite stop and only ends when killed
         self.terminated.set()
 
     def terminate(self):
@@ -90,7 +92,8 @@ class FakeSubprocess:
     """
 
     def __init__(self, *, exit_codes=None, hang=(), missing=(), meet=0, meet_labels=(), interrupt=(),
-                 interrupt_main=()):
+                 interrupt_main=(), stubborn=()):
+        self.stubborn = set(stubborn)
         self.exit_codes, self.hang, self.missing = exit_codes or {}, set(hang), set(missing)
         self.meet_labels, self.interrupt, self.interrupt_main = set(meet_labels), set(interrupt), set(interrupt_main)
         parties = meet or len(self.meet_labels)
@@ -538,6 +541,17 @@ class CheckRunnerTests(unittest.TestCase):
         for name in ("cargo build", "cargo fmt"):
             self.assertStopped(fake.process(name))
         self.assertCountEqual(fake.started(), ["cargo build", "cargo fmt"])
+
+    @unittest.skipUnless(hasattr(signal, "pthread_kill"), "needs Ctrl-C sent to the main thread")
+    def test_an_interrupt_in_the_build_phase_kills_a_command_that_ignores_the_stop(self):
+        previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+        self.addCleanup(signal.signal, signal.SIGINT, previous)
+        fake = FakeSubprocess(hang={"cargo fmt"}, stubborn={"cargo build"}, meet_labels={"cargo build", "cargo fmt"},
+                              interrupt_main={"cargo fmt"})
+        with patch.object(check, "STOP_WAIT_SECONDS", 0.2), self.assertRaises(KeyboardInterrupt):
+            self.run_main(["core"], fake=fake)
+        self.assertEqual(fake.process("cargo build").signals, [STOP, signal.SIGKILL if os.name == "posix" else "kill"])
+        self.assertIsNotNone(fake.process("cargo build").returncode)
 
     def test_commands_that_can_be_stopped_start_in_their_own_session_without_the_console_input(self):
         _, fake, _, _ = self.run_main([])

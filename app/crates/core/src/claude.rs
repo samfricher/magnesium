@@ -59,10 +59,6 @@ impl ClaudeCode {
 }
 
 impl Harness for ClaudeCode {
-    fn name(&self) -> &'static str {
-        "claude"
-    }
-
     fn locate(&self) -> AgentResult<PathBuf> {
         if let Some(program) = &self.program {
             return Ok(program.clone());
@@ -695,9 +691,6 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
 }
 
 fn on_result(shared: &Arc<Shared>, value: &Value) {
-    if let Some(id) = value["session_id"].as_str() {
-        *lock(&shared.session_id) = Some(id.to_owned());
-    }
     shared.in_turn.store(false, Ordering::SeqCst);
     shared.awaiting.store(false, Ordering::SeqCst);
     lock(&shared.seen_text).clear();
@@ -921,6 +914,9 @@ struct ClaudeConversation {
 
 impl Conversation for ClaudeConversation {
     fn send(&mut self, text: &str) -> AgentResult<()> {
+        // An interrupt marked just after the last turn ended belongs to no
+        // turn, and must not mark this one.
+        self.shared.interrupting.store(false, Ordering::SeqCst);
         self.shared.write(&json!({
             "type": "user",
             "message": {"role": "user", "content": text},
@@ -1036,12 +1032,19 @@ impl Conversation for ClaudeConversation {
             .respond(id, json!({"behavior": "allow", "updatedInput": input}))
     }
 
-    fn session_id(&self) -> Option<String> {
-        lock(&self.shared.session_id).clone()
-    }
-
     fn close(&mut self) {
         self.shared.closing.store(true, Ordering::SeqCst);
+        // Closing the input does not stop a reply under way, so the reply is
+        // interrupted first.
+        if self.shared.turn_active() {
+            self.shared.interrupting.store(true, Ordering::SeqCst);
+            let id = self.shared.next_id();
+            let _ = self.shared.write(&json!({
+                "type": "control_request",
+                "request_id": id,
+                "request": {"subtype": "interrupt", "cancel_queued": true},
+            }));
+        }
         // Closing the input is how the agent is told the conversation is over.
         // It then runs its session-end hooks and writes the last of the
         // transcript, so it is given time before it is told to stop, and more
@@ -1146,6 +1149,58 @@ mod tests {
         let plain =
             json!({"subtype": "error_during_execution", "errors": ["API Error: overloaded"]});
         assert_eq!(what_went_wrong(&plain), "API Error: overloaded");
+    }
+
+    #[test]
+    fn an_interrupt_that_came_too_late_does_not_mark_the_next_turn() {
+        let mut child = std::process::Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let kept = Arc::clone(&seen);
+        let shared = Arc::new(Shared {
+            sink: Arc::new(move |event| lock(&kept).push(event)),
+            stdin: Mutex::new(child.stdin.take()),
+            child: Mutex::new(None),
+            session_id: Mutex::new(None),
+            pending: Mutex::new(HashMap::new()),
+            allowed: Mutex::new(HashSet::new()),
+            seen_text: Mutex::new(HashMap::new()),
+            stderr_tail: Mutex::new(String::new()),
+            closing: AtomicBool::new(false),
+            interrupting: AtomicBool::new(false),
+            awaiting: AtomicBool::new(false),
+            in_turn: AtomicBool::new(false),
+            ready_sent: AtomicBool::new(false),
+            counter: AtomicU64::new(0),
+            interrupts: AtomicU64::new(0),
+            trace: None,
+            started: Instant::now(),
+        });
+        let mut conversation = ClaudeConversation {
+            shared: Arc::clone(&shared),
+        };
+        // The last turn ended just before the interrupt was marked.
+        shared.interrupting.store(true, Ordering::SeqCst);
+        conversation.send("next").unwrap();
+        on_result(
+            &shared,
+            &json!({"type": "result", "subtype": "error_during_execution", "is_error": true, "result": "API Error: overloaded"}),
+        );
+        let ended = lock(&seen).last().cloned();
+        assert_eq!(
+            ended,
+            Some(AgentEvent::TurnEnded {
+                ok: false,
+                interrupted: false,
+                error: Some("API Error: overloaded".into()),
+            })
+        );
+        conversation.close();
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

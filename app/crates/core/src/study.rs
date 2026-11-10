@@ -42,7 +42,8 @@ pub struct Last {
 pub struct Paper {
     pub target: String,
     pub name: String,
-    /// The paper's path inside the study folder.
+    /// The paper's path inside the study root, which can be a parent of the
+    /// folder the window opened.
     pub path: String,
     pub minutes: Option<u32>,
     pub sat: bool,
@@ -129,6 +130,14 @@ fn root_of(digest: &Value, folder: &Path) -> PathBuf {
         .map(PathBuf::from)
         .filter(|root| root.is_dir())
         .unwrap_or_else(|| folder.to_path_buf())
+}
+
+/// The study root for a folder: the folder itself, or the parent the runtime
+/// resolved it to.
+pub fn root(folder: &Path) -> PathBuf {
+    runtime::digest(folder)
+        .map(|digest| root_of(&digest, folder))
+        .unwrap_or_else(|_| folder.to_path_buf())
 }
 
 const KEY_WORDS: [&str; 9] = [

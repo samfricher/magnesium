@@ -6,7 +6,6 @@ here (needs the installed stack + models); everything the worker owns
 is executed. No model inference; loopback-free local subprocesses.
 """
 
-import base64
 import hashlib
 import json
 import os
@@ -120,6 +119,11 @@ def main():
             base_request(path, digest), extra_env={"MAGNESIUM_STUB_MODE": "partial"}
         )
         check("partial coverage", code == 0 and response.get("coverage") == "partial", response)
+
+        code, response, _ = run_worker(
+            base_request(path, digest), extra_env={"MAGNESIUM_STUB_MODE": "failure"}
+        )
+        check("failed conversion fails bounded", code != 0 and response is None, (code, response))
 
         code, response, _ = run_worker(
             base_request(path, digest), extra_env={"MAGNESIUM_STUB_MODE": "raise"}

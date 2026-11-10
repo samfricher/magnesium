@@ -66,6 +66,8 @@ fn bare_close(r: &UpdateRequest) -> bool {
         && r.checkpoint.is_none()
         && r.event_dispositions.is_empty()
         && r.review_updates.is_empty()
+        && r.practice.is_empty()
+        && r.attempt_corrections.is_empty()
 }
 
 /// A pause control stops capture in its own conversation only; the tutor then
@@ -425,7 +427,7 @@ pub(super) fn apply_session(
             {
                 return Err(LearnerError::new(
                     "event_scope_conflict",
-                    "Pausing or completing a lesson from another conversation must be its own request, with no observations, memory edits, events or checkpoint, and the lesson must still be active or paused",
+                    "Pausing or completing a lesson from another conversation must be its own request, with no observations, memory edits, events, checkpoint, practice changes or attempt corrections, and the lesson must still be active or paused",
                 ));
             }
             let next = cas(

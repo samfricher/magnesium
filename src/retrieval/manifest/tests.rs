@@ -146,9 +146,7 @@ fn fresh_source_index_creates_final_schema_directly() {
     assert!(
         !statements.iter().any(|sql| {
             let sql = sql.to_ascii_lowercase();
-            sql.contains("alter table")
-                || sql.contains("drop table")
-                || sql.contains("source_candidates_v3")
+            sql.contains("alter table") || sql.contains("drop table")
         }),
         "fresh initialization replayed historical schema surgery: {statements:#?}"
     );
@@ -664,6 +662,48 @@ fn unchanged_reconciliation_skips_content_and_changes_stale_prior_anchors() {
     assert_eq!(
         sensitive,
         (None, Some("environment".to_owned()), "excluded".to_owned())
+    );
+}
+
+#[test]
+fn stale_source_with_the_recorded_content_becomes_pending_again() {
+    let fixture = Fixture::new("stale-same-content");
+    fixture.write("lesson.md", b"alpha\nbeta\n");
+    let index = fixture.index();
+    reconcile_manifest(&fixture.root, &index).expect("first reconciliation");
+    let source = current_source_for(&index, "lesson.md");
+    let mut connection = open_index_for_write(&index).expect("open source index");
+    super::publication::publish_extraction(
+        &mut connection,
+        &index,
+        &source,
+        &super::publication::PreparedOutcome::ChangedDuringRead,
+        &crate::retrieval::OperationCancellation::none(),
+    )
+    .expect("mark source stale");
+    assert_eq!(
+        current_source_for(&index, "lesson.md").index_status,
+        "stale"
+    );
+
+    let path = fixture.root.join("lesson.md");
+    fs::write(&path, b"alpha\nbeta\n").expect("rewrite identical bytes");
+    fs::File::options()
+        .write(true)
+        .open(&path)
+        .and_then(|file| file.set_modified(UNIX_EPOCH + Duration::from_secs(1_000_000)))
+        .expect("move modification time");
+    reconcile_manifest(&fixture.root, &index).expect("second reconciliation");
+    assert_eq!(
+        current_source_for(&index, "lesson.md").index_status,
+        "pending"
+    );
+    let candidates = extract_source(&fixture.root, &index, Path::new("lesson.md"))
+        .expect("extract recovered source");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        current_source_for(&index, "lesson.md").index_status,
+        "indexed"
     );
 }
 

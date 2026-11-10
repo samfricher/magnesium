@@ -420,8 +420,9 @@ pub(crate) fn sync_gap_logs(workspace: &Workspace, today: NaiveDate) -> GapLogRe
             .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
             .unwrap_or_default()
     };
+    let plans = plans(root);
     for (plan, last) in taken {
-        if !plans(root).contains(&plan) {
+        if !plans.contains(&plan) {
             continue;
         }
         let rows = items

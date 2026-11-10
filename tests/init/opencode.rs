@@ -157,6 +157,51 @@ fn init_preserves_unrelated_existing_opencode_config_keys() {
 }
 
 #[test]
+fn init_keeps_a_disabled_opencode_mcp_entry_disabled_while_refreshing_it() {
+    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
+    let opencode_binary = test_binary();
+    let config_dir = environment.opencode_config_dir();
+    fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join("opencode.json");
+    let original = serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "mcp": {
+            "magnesium": {
+                "type": "local",
+                "command": ["old-magnesium", "_internal", "mcp-server"],
+                "enabled": false
+            }
+        }
+    });
+    fs::write(&config_path, serde_json::to_vec_pretty(&original).unwrap()).unwrap();
+
+    let output = environment
+        .command()
+        .env("OPENCODE_TEST_BINARY", &opencode_binary)
+        .arg("init")
+        .output()
+        .expect("run magnesium init with a disabled OpenCode MCP entry");
+    assert_success(&output);
+
+    let updated: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    assert_eq!(updated["mcp"]["magnesium"]["enabled"], false);
+    assert_eq!(
+        updated["mcp"]["magnesium"]["command"],
+        opencode_mcp_command(&opencode_binary)
+    );
+    let refreshed = fs::read(&config_path).unwrap();
+
+    let again = environment
+        .command()
+        .env("OPENCODE_TEST_BINARY", &opencode_binary)
+        .arg("init")
+        .output()
+        .expect("rerun magnesium init");
+    assert_success(&again);
+    assert_eq!(fs::read(&config_path).unwrap(), refreshed);
+}
+
+#[test]
 fn init_leaves_opencode_jsonc_untouched_and_reports_manual_registration() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     let opencode_binary = test_binary();
@@ -293,6 +338,7 @@ fn init_never_follows_symlinked_opencode_plugin_paths() {
     assert_eq!(fs::read_dir(&external_skills).unwrap().count(), 1);
 }
 
+#[cfg(unix)]
 #[test]
 fn init_ignores_an_opencode_binary_that_fails_its_version_probe() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");

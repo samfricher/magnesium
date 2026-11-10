@@ -13,7 +13,7 @@ use std::time::Instant;
 /// supported. A dropped future alone does not stop blocking work; callers that
 /// need early termination must signal this token and the worker must poll it.
 /// Never carries prompt, response, credential, or source-content data.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct OperationCancellation {
     cancelled: Option<Arc<AtomicBool>>,
     deadline: Option<Instant>,

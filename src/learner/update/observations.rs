@@ -332,6 +332,15 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
             host,
         ));
     }
+    if attempt.counts_for.len() > limits::COUNTS_FOR_PER_ATTEMPT {
+        let mut error = field_error(
+            &format!("{path}.counts_for"),
+            format!("At most {} items", limits::COUNTS_FOR_PER_ATTEMPT),
+            host,
+        );
+        error.code = "field_too_large".into();
+        return Err(error);
+    }
     if let Some(kind) = &attempt.kind {
         check_kind(&format!("{path}.kind"), kind, host)?;
     }

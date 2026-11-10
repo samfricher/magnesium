@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Validate the frozen synthetic pack and emit only tutor-visible case inputs.
 
-The operator passes tutor_prompts (not this entire manifest) to the existing
-installed-host capture helper. This validates fixture identity, never teaching.
+The operator passes tutor_prompts (not this entire manifest) to whatever
+captures the installed-host run. This validates fixture identity, never teaching.
 """
 import argparse
 import hashlib
@@ -54,7 +54,7 @@ def prepare(pack):
     return {
         'fixture_version': fixture['fixture_version'],
         'fixture_sha256': digest(pack / 'cases.json'),
-        'policy_sha256': digest(ROOT / 'src/workspace/instructions.md'),
+        'policy_sha256': digest(ROOT / 'src/workspace/learning/manifest.json'),
         'source_sha256': sources,
         'cases': cases,
         'claim_limit': 'Input preflight only. Native behavior, live agent behavior and human learning require separate results.',

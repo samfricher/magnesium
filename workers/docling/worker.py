@@ -145,10 +145,7 @@ def validate_request(request):
 
 
 def package_versions():
-    try:
-        from importlib import metadata as importlib_metadata
-    except ImportError:  # Python < 3.8 fallback, never hit on 3.11+.
-        return "docling unknown"
+    from importlib import metadata as importlib_metadata
     versions = {}
     for name in ("docling", "docling-slim", "docling-core"):
         try:
@@ -178,7 +175,9 @@ def convert_with_docling(snapshot, kind, start, end):
         )
     except Exception as error:
         fail("docling conversion failed: %s" % error)
-    status = str(getattr(result, "status", ""))
+    raw_status = getattr(result, "status", "")
+    # ConversionStatus is a str-mixin Enum, so str() would give "ConversionStatus.X".
+    status = str(getattr(raw_status, "value", raw_status)).lower()
     if "failure" in status and "partial" not in status:
         errors = getattr(result, "errors", [])
         fail("docling reported failure: %s" % str(errors)[:200])

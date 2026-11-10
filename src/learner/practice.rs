@@ -1099,7 +1099,7 @@ pub(crate) fn apply_corrections(
             crate::learner::help::refresh(tx, &key, now)?;
         }
         if let Some(names) = &correction.counts_for {
-            if names.len() > 12 {
+            if names.len() > limits::COUNTS_FOR_PER_ATTEMPT {
                 return Err(field_error(
                     &format!("{path}.counts_for"),
                     "At most 12 items",

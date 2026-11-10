@@ -401,7 +401,7 @@ fn a_corrected_attempt_changes_what_is_due() {
     plan(&e, TEMPLATE);
     v2::start(&e, "claude", THREAD);
     let event = prompt(&e, "p-1", "Q2: Vmax = 4");
-    let marked = step(
+    step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"paper",
             "observations":[{"client_ref":"paper","kind":"learner_work","description":"Diagnostic.",
@@ -449,7 +449,6 @@ fn a_corrected_attempt_changes_what_is_due() {
         .unwrap();
     assert_eq!(kept, "wrong");
     // A row logged in error comes out of the table.
-    let _ = marked;
     step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"drop",

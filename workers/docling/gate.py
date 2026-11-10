@@ -15,7 +15,6 @@ import json
 import os
 from pathlib import Path
 import re
-import resource
 import shutil
 import subprocess
 import sys
@@ -29,6 +28,7 @@ if str(REPO) not in sys.path:
 from ci.isolated_environment import isolated_environment
 from ci.native_mcp import NativeMcpClient, TransportLimits
 from ci.source_preparation import call_once, prepare_source_fixture
+from worker import MAX_RESPONSE_BYTES
 
 BIN = os.path.abspath(os.environ.get("MAGNESIUM_TEST_BINARY", REPO / "target/debug/magnesium"))
 WORKER = HERE / "worker.py"
@@ -267,6 +267,10 @@ def package_size_mb():
 
 
 def peak_rss_mb():
+    try:
+        import resource
+    except ImportError:  # Windows has no resource module.
+        return None
     divider = 1024 * 1024 if sys.platform == "darwin" else 1024
     return resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / divider
 
@@ -282,7 +286,7 @@ def worker_convert(workspace_file, sha, kind):
         return None, elapsed, completed.stderr.decode(errors="replace")[-2000:]
     marker, rest = completed.stdout.split(b"\n", 1)
     name, length = marker.decode("ascii").split(" ", 1)
-    if name != "MAGNESIUM_DOCS_V1" or int(length) != len(rest) or len(rest) > 4 * 1024 * 1024:
+    if name != "MAGNESIUM_DOCS_V1" or int(length) != len(rest) or len(rest) > MAX_RESPONSE_BYTES:
         raise RuntimeError("worker returned an invalid/big frame")
     result = json.loads(rest.decode())
     if not isinstance(result, dict):
@@ -351,7 +355,8 @@ async def evaluate_sample(sample, manifest, config):
                 results["failures"].append(f"[{name}] {error}")
             finally:
                 results["documents"].append(record)
-        results["budgets"]["child_process_peak_rss_mb"] = round(peak_rss_mb(), 1)
+        peak = peak_rss_mb()
+        results["budgets"]["child_process_peak_rss_mb"] = None if peak is None else round(peak, 1)
         results["budgets"]["measurement_scope"] = "cumulative high-water mark of native and optional worker children; not worker-only RSS or live-model evidence"
         results["budgets"]["worker_resources"] = ({"status": "NOT_RUN", "reason": reason} if versions is None else {"status": "PASS", "note": "per-document conversion time and package bytes; child RSS is aggregate"})
     results["status"] = "FAIL" if results["failures"] else "PASS"

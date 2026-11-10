@@ -110,7 +110,7 @@ fn decode_fields<T: serde::de::DeserializeOwned>(fields: &Value) -> Result<T, St
         .map_err(|e| shape_error(&e.path().to_string(), &e.inner().to_string()))
 }
 fn decode_protocol<T: requests::ReadProtocol>(request: &Value) -> Result<T, String> {
-    if pages::size(request) > 1024 * 1024 {
+    if pages::size(request) > crate::learner::limits::REQUEST_BYTES {
         return Err("field_too_large: request".into());
     }
     T::decode(request)

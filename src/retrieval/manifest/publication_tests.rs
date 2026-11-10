@@ -567,6 +567,37 @@ fn failure_then_fresh_ready_retry_works_but_older_same_version_ready_is_supersed
 }
 
 #[test]
+fn identical_pieces_at_one_anchor_publish_once() {
+    let fixture = Fixture::new();
+    let mut connection = fixture.connection();
+    let source = current_source(&connection);
+    let line = "=".repeat(40_000);
+    let drafts = crate::retrieval::chunking::chunk_text(Path::new("rule.txt"), &line);
+    assert_eq!(drafts.len(), 3);
+    assert_eq!(drafts[0].body, drafts[1].body);
+    let prepared = prepare_extraction(&source, drafts, None).unwrap();
+    publish_extraction(
+        &mut connection,
+        &fixture.index(),
+        &source,
+        &PreparedOutcome::Ready(prepared),
+        &OperationCancellation::none(),
+    )
+    .unwrap();
+    let counts: (i64, i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM source_candidates WHERE status = 'current'),
+                    (SELECT count(*) FROM source_search),
+                    (SELECT count(*) FROM source_search_ranked)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(counts, (2, 2, 2));
+    assert_eq!(current_source(&connection).index_status, "indexed");
+}
+
+#[test]
 fn all_old_outcomes_are_noops_after_logical_tombstone_or_physical_manifest_absence() {
     for physical in [false, true] {
         for kind in OUTCOMES {

@@ -68,7 +68,7 @@ fn digest(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let plans = plans(workspace.root(), today, &sessions, Some(&snapshot));
+    let plans = plans(workspace.root(), today, &sessions, &snapshot);
     let recent = sessions
         .iter()
         .take(MAX_RECENT_SESSIONS)
@@ -227,12 +227,7 @@ fn reviews(conn: &Connection, now_ms: i64, today: NaiveDate) -> rusqlite::Result
 /// Each `Study/<target>/plan.md` with its date, blocks and gap-log state.
 /// The gap-log state of a plan the runtime has taken over comes from the
 /// learner store, so an edit to its Markdown table changes nothing.
-fn plans(
-    root: &Path,
-    today: NaiveDate,
-    sessions: &[Session],
-    store: Option<&Connection>,
-) -> Vec<Value> {
+fn plans(root: &Path, today: NaiveDate, sessions: &[Session], store: &Connection) -> Vec<Value> {
     let study = root.join("Study");
     let Ok(entries) = fs::read_dir(&study) else {
         return Vec::new();
@@ -258,9 +253,7 @@ fn plans(
                 today,
                 sessions,
             );
-            if let Some(recorded) =
-                store.and_then(|conn| crate::practice::plan_gaps(conn, root, &target, today))
-            {
+            if let Some(recorded) = crate::practice::plan_gaps(store, root, &target, today) {
                 for field in ["unfixed_gaps", "redos_due", "first_due"] {
                     value[field] = recorded[field].clone();
                 }

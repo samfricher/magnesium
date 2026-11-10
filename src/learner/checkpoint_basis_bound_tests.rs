@@ -511,7 +511,7 @@ fn checkpoint_two_host_connections_compare_and_swap_then_reconcile_without_overw
     assert_eq!(error.recovery.as_ref().unwrap()["current_revision"], 3);
     assert_eq!(
         error.recovery.as_ref().unwrap()["next_call"],
-        serde_json::to_value(read::NextCall::session_status(&f.session)).unwrap()
+        serde_json::to_value(read::NextCall::current_status(Some(&f.session))).unwrap()
     );
     assert_eq!(error.captured_event_ids.len(), 1);
     let count = |table: &str| {

@@ -34,7 +34,8 @@ pub(crate) fn command() -> ClapCommand {
         ClapCommand::new("magnesium")
             .version(env!("CARGO_PKG_VERSION"))
             .about("Local workspace-attached learning support for the individual human learner")
-            .disable_help_subcommand(true),
+            .disable_help_subcommand(true)
+            .arg_required_else_help(true),
         |command, (name, about)| {
             let subcommand = ClapCommand::new(name).about(about);
             let subcommand = if name == "init" {
@@ -66,7 +67,11 @@ pub(crate) fn command() -> ClapCommand {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")
-                        .help("Emit stable machine-readable status")
+                        .help(if name == "info" {
+                            "Print the status as JSON on one line instead of pretty-printed"
+                        } else {
+                            "Print the answers as JSON instead of text"
+                        })
                         .action(ArgAction::SetTrue),
                 )
             } else if name == "export" {
@@ -184,4 +189,19 @@ pub(crate) fn command() -> ClapCommand {
                         ])),
                 ),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_bare_invocation_shows_the_help() {
+        let error = super::command()
+            .try_get_matches_from(["magnesium"])
+            .expect_err("a bare invocation is not a command");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        );
+        assert!(error.to_string().contains("Commands:"), "{error}");
+    }
 }

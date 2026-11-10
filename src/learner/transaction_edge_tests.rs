@@ -178,6 +178,36 @@ fn event_status(conn: &Connection, id: &str) -> (String, Option<String>) {
 }
 
 #[test]
+fn a_stop_waits_out_another_process_mid_write_instead_of_failing() {
+    let f = Fixture::new();
+    let other = Connection::open(f.root.join("state.sqlite")).unwrap();
+    other
+        .busy_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    other
+        .execute_batch(
+            "BEGIN IMMEDIATE; INSERT INTO operation_receipts VALUES('other-write','h','{}',0);",
+        )
+        .unwrap();
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        other.execute_batch("COMMIT").unwrap();
+    });
+    let stop = RawEvent {
+        external_event_key: "stop".into(),
+        speaker: crate::learner::Speaker::Learner,
+        kind: "message".into(),
+        text: "Stop".into(),
+        metadata: None,
+        occurred_at_ms: None,
+    };
+    let stopped = f.store.control(&f.host, "stop-while-busy", "stop", &stop);
+    writer.join().unwrap();
+    assert_eq!(stopped.unwrap()["durable"], json!(true));
+    assert!(!f.store.binding(&f.host).unwrap().1);
+}
+
+#[test]
 fn semantic_commit_veto_preserves_independent_capture_and_retries_from_fresh_connection() {
     let f = Fixture::new();
     let event = f.event("known-work", 100);

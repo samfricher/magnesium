@@ -26,7 +26,7 @@ fn the_opener_asks_for_question_cold_and_next_and_long_text_never_cuts_that_off(
             .collect(),
     }];
     // Untrimmed, this is over the limit, so the stored text must give way.
-    assert!(opener_text_with(&checks, &redos).len() > MAX_OPENER_BYTES);
+    assert!(opener_text_with(&checks, &redos, &[]).len() > MAX_OPENER_BYTES);
     let text = opener_text(&checks, &redos);
     assert!(text.len() <= MAX_OPENER_BYTES, "{}", text.len());
     assert!(text.contains(
@@ -50,6 +50,48 @@ fn the_opener_asks_for_question_cold_and_next_and_long_text_never_cuts_that_off(
         text.contains("1. Label \"sign of b\". Earlier misses: Took b as 7. Stored question: Solve x² − 7x + 10 = 0 Key, hidden until they answer: x = 2 or 5"),
         "{text}"
     );
+}
+
+#[test]
+fn an_opener_with_redos_in_many_plans_keeps_its_instructions_whole() {
+    let checks: Vec<Check> = (1..=MAX_CHECKS_PER_SITTING as i64)
+        .map(|number| Check {
+            number,
+            label: "é".repeat(15),
+            misses: vec!["m".repeat(200)],
+            question: Some("q".repeat(900)),
+            key: Some("k".repeat(900)),
+        })
+        .collect();
+    let redos: Vec<DueRedos> = (1..=8)
+        .map(|plan| DueRedos {
+            gap_log: format!("Study/plän-{plan}/gap-log.md"),
+            due: 4,
+            first: Some(format!("plän-{plan}#1")),
+            rows: (1..=3)
+                .map(|n| crate::practice::DueRow {
+                    name: format!("plän-{plan}#{n}"),
+                    tag: "é".repeat(15),
+                    question: Some("q".repeat(900)),
+                    key: Some("k".repeat(900)),
+                })
+                .collect(),
+        })
+        .collect();
+    let text = opener_text(&checks, &redos);
+    assert!(text.len() <= MAX_OPENER_BYTES, "{}", text.len());
+    assert!(
+        text.contains("first_try declined and cold false."),
+        "{text}"
+    );
+    assert!(
+        text.ends_with(
+            "\nSay how many are due and which is first. They run as the first block of the paper session: load stage papers_loop, which picks and records them."
+        ),
+        "{text}"
+    );
+    assert!(text.contains("- Study/plän-1/gap-log.md: 4 due, first plän-1#1."));
+    assert!(text.contains("more gap logs with redos due"), "{text}");
 }
 
 const HOUR: i64 = 60 * 60 * 1000;

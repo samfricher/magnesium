@@ -4,19 +4,6 @@ use serde_json::{Value, json};
 use support::mcp::McpClient;
 use support::{TestEnvironment, v2::*};
 
-fn action_schema<'a>(schema: &'a Value, action: &str) -> Option<&'a Value> {
-    if schema["properties"]["action"]["const"] == action {
-        return Some(schema);
-    }
-    match schema {
-        Value::Object(object) => object
-            .values()
-            .find_map(|child| action_schema(child, action)),
-        Value::Array(array) => array.iter().find_map(|child| action_schema(child, action)),
-        _ => None,
-    }
-}
-
 #[test]
 fn advertised_context_and_memory_shapes_accept_their_documented_read_actions() {
     let e = TestEnvironment::from_fixture("basic").unwrap();

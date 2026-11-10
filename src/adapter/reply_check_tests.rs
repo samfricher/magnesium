@@ -239,6 +239,24 @@ fn claude_prompt_notice_keeps_required_clauses_within_512_bytes_at_extreme_count
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
+fn claude_prompt_notice_without_a_native_ticket_stays_within_512_bytes() {
+    let (root, store, _) = super::tests::fixture();
+    let host = HostIdentity::claude("no-ticket").unwrap();
+    leave_unbound_work(&store);
+    // A prompt over the event size limit gets no native ticket.
+    let text = "x".repeat(crate::learner::limits::EVENT_BYTES + 1);
+    let notice = host_user_prompt_submit(&root, &host, Some("big"), None, &text)
+        .unwrap()
+        .unwrap();
+    let limit = NoticeHook::UserPromptSubmit.additional_context_limit();
+    assert!(notice.len() <= limit, "{} bytes: {notice}", notice.len());
+    assert!(notice.ends_with(NATIVE_TICKET_FALLBACK), "{notice}");
+    assert!(notice.contains(CLAUDE_START_GUIDANCE), "{notice}");
+    assert!(notice.contains("unbound 1;"), "{notice}");
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn notice_clauses_give_way_in_order_and_required_ones_stay() {
     let clauses = vec![
         (Clause::Required, " lesson".into()),

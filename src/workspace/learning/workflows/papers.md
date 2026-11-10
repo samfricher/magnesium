@@ -1,6 +1,6 @@
 # Papers
 
-Each turn, first start or resume the Magnesium session for the target (a slug like `midterm-1`) before reading materials, since native capture expires within minutes. This stage builds `Study/<target>/` and serves the verbs new mock and rebuild; stage papers-loop serves every other verb. Only an explicit rebuild starts over. If a plan exists without `graph.yaml`, first write the graph as Course graph says, from the plan, the gap log and the keys.
+Each turn, first start or resume the Magnesium session for the target (a slug like `midterm-1`) before reading materials, since native capture expires within minutes. This stage builds `Study/<target>/` and serves the verbs new mock and rebuild; stage papers_loop serves every other verb. Only an explicit rebuild starts over. If a plan exists without `graph.yaml`, first write the graph as Course graph says, from the plan, the gap log and the keys.
 
 ## Build
 

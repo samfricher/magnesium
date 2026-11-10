@@ -103,11 +103,7 @@ fn checks(e: &TestEnvironment) -> i64 {
 }
 
 fn chrono_today() -> String {
-    let output = std::process::Command::new("date")
-        .arg("+%Y-%m-%d")
-        .output()
-        .unwrap();
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    chrono::Local::now().date_naive().to_string()
 }
 
 /// A plan with one lost mark in a gap log from the template before #13,

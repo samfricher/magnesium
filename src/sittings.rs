@@ -612,9 +612,11 @@ fn says_check(reply_lowercase: &str, number: i64) -> bool {
 /// The opener, within [`MAX_OPENER_BYTES`]. When the earlier misses and the
 /// stored questions make it too long, they are cut shorter first, so the
 /// instructions after them, which say how to pose and record each check,
-/// always arrive whole.
+/// always arrive whole. If that is not enough, the redos lose their stored
+/// questions, and then the last plans are left out and counted.
 fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
     let mut text = String::new();
+    let mut shortened: Vec<Check> = Vec::new();
     for (misses, questions) in [
         (MAX_MISS_CHARS, MAX_QUESTION_CHARS),
         (160, 300),
@@ -624,7 +626,7 @@ fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
         (0, 60),
     ] {
         let clipped = |text: &Option<String>| text.as_deref().map(|t| clip(t, questions));
-        let shortened: Vec<Check> = checks
+        shortened = checks
             .iter()
             .map(|check| Check {
                 number: check.number,
@@ -652,7 +654,28 @@ fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
                 ..redo.clone()
             })
             .collect();
-        text = opener_text_with(&shortened, &redos);
+        text = opener_text_with(&shortened, &redos, &[]);
+        if text.len() <= MAX_OPENER_BYTES {
+            return text;
+        }
+    }
+    let bare: Vec<DueRedos> = redos
+        .iter()
+        .map(|redo| DueRedos {
+            rows: redo
+                .rows
+                .iter()
+                .map(|row| crate::practice::DueRow {
+                    question: None,
+                    key: None,
+                    ..row.clone()
+                })
+                .collect(),
+            ..redo.clone()
+        })
+        .collect();
+    for listed in (0..=bare.len()).rev() {
+        text = opener_text_with(&shortened, &bare[..listed], &bare[listed..]);
         if text.len() <= MAX_OPENER_BYTES {
             return text;
         }
@@ -665,7 +688,8 @@ fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
     text
 }
 
-fn opener_text_with(checks: &[Check], redos: &[DueRedos]) -> String {
+/// `unlisted` are plans with redos due that the opener has no room to list.
+fn opener_text_with(checks: &[Check], redos: &[DueRedos], unlisted: &[DueRedos]) -> String {
     let mut text = String::from(
         "Sitting opener. A new sitting has begun: open it with what is due, before new material. The learner may decline any of it at no cost, and a skip, no-quiz or stop request wins.",
     );
@@ -685,7 +709,7 @@ fn opener_text_with(checks: &[Check], redos: &[DueRedos]) -> String {
         }
         text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is the check's next problem, made the same way: it asks for a result and never names or points at the skill, the label, the method, the step or the earlier mistake, and each earlier miss gives it a different answer from the right one. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
     }
-    if !redos.is_empty() {
+    if !redos.is_empty() || !unlisted.is_empty() {
         text.push_str("\n\nPaper redos due:");
         for redo in redos {
             text.push_str(&format!("\n- {}: {} due", redo.gap_log, redo.due));
@@ -705,6 +729,13 @@ fn opener_text_with(checks: &[Check], redos: &[DueRedos]) -> String {
                     _ => text.push_str("no stored question."),
                 }
             }
+        }
+        if !unlisted.is_empty() {
+            text.push_str(&format!(
+                "\n- {} more gap logs with redos due, {} due in all.",
+                unlisted.len(),
+                unlisted.iter().map(|redo| redo.due).sum::<u64>()
+            ));
         }
         text.push_str("\nSay how many are due and which is first. They run as the first block of the paper session: load stage papers_loop, which picks and records them.");
     }

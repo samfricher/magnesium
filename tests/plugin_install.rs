@@ -43,7 +43,7 @@ fn repository_marketplace_and_plugin_commands_are_exact_and_native() {
             "_internal",
             "mcp-server",
             "--plugin-version",
-            "0.2.0",
+            env!("CARGO_PKG_VERSION"),
             "--adapter-protocol-version",
             "2",
             "--host-kind",
@@ -60,9 +60,10 @@ fn repository_marketplace_and_plugin_commands_are_exact_and_native() {
             for hook in entry["hooks"].as_array().expect("hook commands") {
                 for field in ["command", "commandWindows"] {
                     let command = hook[field].as_str().expect("native hook command");
-                    assert!(
-                        command.contains("--plugin-version 0.2.0 --adapter-protocol-version 2")
-                    );
+                    assert!(command.contains(&format!(
+                        "--plugin-version {} --adapter-protocol-version 2",
+                        env!("CARGO_PKG_VERSION")
+                    )));
                     assert!(!command.contains("python") && !command.contains("node"));
                 }
             }
@@ -512,7 +513,7 @@ fn incompatible_hook_fails_open_without_workspace_mutation() {
             "hook",
             "session-start",
             "--plugin-version",
-            "0.2.0",
+            env!("CARGO_PKG_VERSION"),
             "--adapter-protocol-version",
             "1",
         ])
