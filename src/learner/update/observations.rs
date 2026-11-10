@@ -88,6 +88,26 @@ pub(super) fn apply_observations(
             }
             used_events.insert(e.event_id.clone());
         }
+        if let Some(attempt) = &o.attempt {
+            let label = attempt.label.trim();
+            if label.is_empty()
+                || label.len() > limits::ATTEMPT_LABEL_BYTES
+                || label.chars().any(char::is_control)
+            {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].attempt.label"),
+                    "An attempt label is 1–120 bytes without control characters",
+                    host,
+                ));
+            }
+            if !learner_response {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].events"),
+                    "An attempt is the learner's, so cite their message under role learner_response",
+                    host,
+                ));
+            }
+        }
         if matches!(
             o.kind,
             ObservationKind::LearnerWork

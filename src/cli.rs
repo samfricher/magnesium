@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 7] = [
+const PUBLIC_COMMANDS: [(&str, &str); 8] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -18,6 +18,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 7] = [
     (
         "core-rules",
         "Turn on or off the core teaching rules the runtime restates after a compaction",
+    ),
+    (
+        "opener",
+        "Turn on or off the quick checks and paper redos that open each sitting",
     ),
 ];
 
@@ -95,6 +99,14 @@ pub(crate) fn command() -> ClapCommand {
                         .value_parser(["on", "off"])
                         .required(true)
                         .help("off asks the tutor to reload its instructions after a compaction instead, as before"),
+                )
+            } else if name == "opener" {
+                subcommand.arg(
+                    Arg::new("state")
+                        .value_name("STATE")
+                        .value_parser(["on", "off", "block"])
+                        .required(true)
+                        .help("block also refuses new teaching stages until each quick check is posed or declined"),
                 )
             } else if name == "memory" {
                 subcommand.subcommand_required(true)

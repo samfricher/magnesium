@@ -98,6 +98,8 @@ protocol_enum!(ChangeKind { NewObservation => "new_observation", Reinterpretatio
 protocol_enum!(Disposition { Processed => "processed", NoChange => "no_change" });
 protocol_enum!(ReviewStatus { Suggested => "suggested", Done => "done", Dismissed => "dismissed" });
 protocol_enum!(Delivery { Proposed => "proposed", Observed => "observed", Unknown => "unknown" });
+protocol_enum!(FirstTry { Right => "right", Wrong => "wrong", Declined => "declined" });
+protocol_enum!(AttemptHelp { None => "none", Hint => "hint", Step => "step", Solution => "solution" });
 
 /// Serde's internally tagged enum derive buffers payload fields and loses their
 /// nested diagnostic path. The runtime variants still derive the wire/schema
@@ -213,6 +215,27 @@ pub struct ObservationInput {
     pub assistance_text: String,
     #[serde(default)]
     pub source_refs: Vec<SourceRef>,
+    /// Give this when the observation is the learner's first try at a task you
+    /// set, or their decline of a quick check. A wrong first try schedules a
+    /// quick check on its label for the next day; a later right, unaided first
+    /// try on a due check passes it. Needs a learner_response event.
+    #[serde(default)]
+    pub attempt: Option<Attempt>,
+}
+/// Three facts about one first try. The runtime schedules quick checks from
+/// them; they are not stored in the learner record.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Attempt {
+    /// A short name for the skill or misunderstanding, 1–120 bytes, such as
+    /// "sign of b in the quadratic formula". Reuse a quick check's label
+    /// exactly when recording its answer or decline.
+    pub label: String,
+    /// right or wrong for the first try before any correction; declined when
+    /// the learner declines a quick check.
+    pub first_try: FirstTry,
+    /// The most help given before the first try: none, hint, step or solution.
+    pub help: AttemptHelp,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -627,6 +650,8 @@ mod protocol_tests {
         advertised_choices_decode::<Disposition>();
         advertised_choices_decode::<ReviewStatus>();
         advertised_choices_decode::<Delivery>();
+        advertised_choices_decode::<FirstTry>();
+        advertised_choices_decode::<AttemptHelp>();
     }
 
     #[test]

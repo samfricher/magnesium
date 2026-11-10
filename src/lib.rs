@@ -16,6 +16,7 @@ pub(crate) mod learner;
 mod mcp;
 mod request;
 mod retrieval;
+mod sittings;
 mod update;
 mod workspace;
 
@@ -49,6 +50,13 @@ pub fn run() -> ExitCode {
         Some(("core-rules", matches)) => {
             let on = matches.get_one::<String>("state").map(String::as_str) == Some("on");
             adapter::set_core_rules(on)
+        }
+        Some(("opener", matches)) => {
+            let mode = matches
+                .get_one::<String>("state")
+                .and_then(|state| workspace::OpenerMode::parse(state))
+                .expect("clap validates the opener state");
+            sittings::set_opener(mode)
         }
         Some(("export", matches)) => {
             let destination = matches

@@ -58,6 +58,21 @@ In Claude Code, say what you are studying for: “I have a midterm Monday” or 
 
 Sit each paper on your own, timed, and write `?` where you would look something up. After each answer, write how sure you are: S if you are sure, U if you are unsure or G if you guessed. Send photos or a PDF of your answers and say “mark my Diagnostic”. The tutor marks against the key, logs each lost mark, repairs it and sets cold redos for later. The marking shows how many answers you got right and wrong for each letter. The tutor repairs the mistakes you were sure of first, because you would not think to review them. Your letters never count as a pass. Only your marked answers do. A gap counts as fixed only after you pass it cold on three different days, at least 1, 3 and 7 days apart, or closer together when the assessment is sooner. Every mock has at least one question of each of three shapes that recognising the problem type cannot pass: say why a given result holds, tell two look-alike problems apart, and say what breaks when one assumption is dropped. A question that gives you the result earns full marks only for a correct reason. Cold redos use these shapes for a gap in understanding. In a cold redo, a reason question always comes second: you first produce the result from a blank page, and the redo passes only if both parts are right. The tutor keeps the plan file current and asks before it adds a lot of time. Later conversations continue from the plan. Say “rebuild” to start over.
 
+## Start each sitting with what you got wrong
+
+A sitting is one stretch of study. It begins with your first message after about three hours without one. A compaction does not begin one.
+
+When you get a task wrong on your first try, the tutor gives the mistake a short label, such as "sign of b in the quadratic formula". Magnesium then schedules a quick check on that label for the next day. The next sitting opens with what is due:
+
+- **Quick checks:** up to three, about a minute each. Each asks you to answer a new example in a line or two. Then it shows lettered options, and the wrong ones are the mistakes you made before. A right answer with no help moves the check on to 3 days later, then 7 days later, and after three passes on three different days it is done. A wrong answer is repaired, and the check comes back the next day.
+- **Paper redos:** the tutor says how many gap-log redos are due and which comes first. They run as the first block of your paper session.
+
+You can decline any of it. A decline costs nothing: it is recorded as your choice, and the check stays due for the next sitting. "Skip", "no quiz" and "stop" still win. Each sitting adds one line to `.magnesium/sittings.log`: what was due, what was posed, answered or declined, and what passed or failed.
+
+To turn this off for a study folder, run `magnesium opener off` there. Checks are still scheduled, but sittings no longer open with them. `magnesium opener on` turns it back on. `magnesium opener block` also makes the tutor wait to teach new material until each quick check has been asked or declined.
+
+A gap log made with an older paper template has no Next redo column, so none of its rows could fall due. The next time the tutor uses that plan, Magnesium adds the column, and the original goes to `.magnesium/cache/gap-log-backups/`.
+
 ## Long lessons
 
 A long conversation can get compacted: your assistant replaces its older part with a summary. The tutor's detailed instructions are lost with it. During a lesson, Magnesium then puts a short set of core teaching rules in front of the tutor itself: one idea and one task per reply, a guess before each new step, and the rules above about concrete cases, telling mistakes apart, finishing alone on a later day and ending a plan with a task. Claude Code and OpenCode get them before the next reply. Codex gets them with the next Magnesium tool result.

@@ -224,6 +224,14 @@ impl LearnerStore {
             tx.execute_batch("UPDATE workspace_meta SET review_generation=review_generation+1")?;
         }
         if r.mode == UpdateMode::CompleteCaptured
+            && r.observations.iter().any(|o| o.attempt.is_some())
+        {
+            return Err(LearnerError::new(
+                "invalid_variant",
+                "complete_captured cannot record an attempt, because an attempt can schedule a quick check",
+            ));
+        }
+        if r.mode == UpdateMode::CompleteCaptured
             && (!r.observations.is_empty()
                 || !r.memory_edits.is_empty()
                 || !r.review_updates.is_empty())

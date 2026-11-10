@@ -289,11 +289,119 @@ pub(crate) fn dispatch_with_host(
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)))
         .filter(|host| host.host_kind == HostKind::Codex.as_str())
         .map(|host| host.host_thread_id);
+    if let Some(refusal) = due_checks_first(cwd, operation, &request) {
+        return Ok(refusal);
+    }
+    let update = (operation == "learning_step").then(|| request.clone());
+    let paper_stage = operation == "context"
+        && matches!(
+            request.get("stage").and_then(serde_json::Value::as_str),
+            Some("papers" | "papers_loop")
+        );
     let mut result = dispatch_inner(cwd, operation, request, native_host)?;
     if let Some(thread) = codex_thread {
         deliver_owed_core_rules(cwd, &thread, &mut result);
     }
+    open_sitting(cwd, update.as_ref(), paper_stage, &mut result);
     Ok(result)
+}
+/// The study folder's sittings, when this call runs in one it is bound to.
+/// The store is created only for a write, so a read changes no file.
+fn sittings_here(cwd: &Path, write: bool) -> Option<(Workspace, crate::sittings::Sittings)> {
+    let workspace = Workspace::discover(cwd).ok()??;
+    check_workspace_binding(&workspace).ok()?;
+    let sittings = if write {
+        crate::sittings::Sittings::open(&workspace).ok()?
+    } else {
+        crate::sittings::Sittings::open_existing(&workspace).ok()??
+    };
+    Some((workspace, sittings))
+}
+/// After a committed update, its learner input notes a learner message and
+/// its attempts move quick checks. The first tool result of a sitting then
+/// carries the opener. A paper stage load converts an older gap log first.
+/// None of this can fail the call.
+fn open_sitting(
+    cwd: &Path,
+    update: Option<&serde_json::Value>,
+    paper_stage: bool,
+    result: &mut serde_json::Value,
+) {
+    if !result.is_object() {
+        return;
+    }
+    let now = crate::sittings::now_ms();
+    if paper_stage
+        && let Ok(Some(workspace)) = Workspace::discover(cwd)
+        && check_workspace_binding(&workspace).is_ok()
+    {
+        crate::digest::convert_gap_logs(&workspace, crate::sittings::local_day(now));
+    }
+    let message =
+        update.is_some_and(|request| crate::sittings::carries_learner_message(request, result));
+    let attempts = update
+        .map(|request| crate::sittings::recorded_attempts(request, result))
+        .unwrap_or_default();
+    let Some((workspace, mut sittings)) = sittings_here(cwd, message || !attempts.is_empty())
+    else {
+        return;
+    };
+    if message {
+        let _ = sittings.note_learner_message(now);
+    }
+    let _ = sittings.apply_attempts(&attempts, now);
+    if workspace.opener() == crate::workspace::OpenerMode::Off {
+        return;
+    }
+    if let Ok(Some(opener)) = sittings.take_opener(&workspace, now) {
+        result["sitting_opener"] = opener.into();
+    }
+}
+/// With the opener's block on, a stage that brings new material is refused
+/// while a quick check of this sitting is neither posed nor declined.
+fn due_checks_first(
+    cwd: &Path,
+    operation: &str,
+    request: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let stage = request.get("stage")?.as_str()?;
+    if operation != "context"
+        || request
+            .get("action")
+            .is_some_and(|action| action != "instructions")
+        || !matches!(
+            stage,
+            "orient_and_probe" | "plan_and_route" | "teach_and_practice"
+        )
+    {
+        return None;
+    }
+    let (workspace, mut sittings) = sittings_here(cwd, false)?;
+    if workspace.opener() != crate::workspace::OpenerMode::Block {
+        return None;
+    }
+    let counts = sittings.open_counts().ok()??;
+    let now = crate::sittings::now_ms();
+    let opener = sittings
+        .take_opener(&workspace, now)
+        .ok()
+        .flatten()
+        .or_else(|| sittings.opener_now(&workspace, now).ok().flatten());
+    let mut refusal = serde_json::json!({
+        "status": "unavailable",
+        "recommended_stage": stage,
+        "error": {
+            "code": "due_checks_first",
+            "message": format!(
+                "This study folder opens each sitting with its quick checks before new material: due {}, posed {}. Pose each one, or record the learner's decline, then load this stage again. Stages review_and_transfer, interpret_and_repair, consolidate_and_resume, papers and papers_loop stay open.",
+                counts.due, counts.posed
+            ),
+        },
+    });
+    if let Some(opener) = opener {
+        refusal["sitting_opener"] = opener.into();
+    }
+    Some(refusal)
 }
 /// After a Codex compaction, the first tool result in that conversation
 /// carries the core rules. An instruction load already holds them in
@@ -444,6 +552,7 @@ pub(crate) fn host_session_start(
         NoticeHook::SessionStart {
             core_rules: workspace.core_rules_on(),
         },
+        None,
     )?;
     if host.host_kind == "claude" {
         let folder_has_lessons = store
@@ -565,6 +674,7 @@ fn hook_notice(
     host: &crate::learner::HostContext,
     event: Option<&str>,
     hook: NoticeHook,
+    sitting: Option<&str>,
 ) -> Result<String, String> {
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
@@ -590,6 +700,10 @@ fn hook_notice(
             Clause::Required,
             format!("\n\n{}", core_rules::text()).into(),
         ));
+    }
+    // While a quick check of this sitting is open, every turn says so.
+    if let Some(sitting) = sitting {
+        clauses.push((Clause::Required, sitting.to_owned().into()));
     }
     if unbound > 0 {
         let recovery = if claude {
@@ -675,6 +789,12 @@ pub(crate) fn host_user_prompt_submit(
         occurred_at_ms: None,
     };
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
+    // A learner message in a conversation that records may begin a sitting.
+    // Only its time is kept, never its text.
+    if recording && let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
+        let _ = sittings.note_learner_message(crate::sittings::now_ms());
+    }
+    let sitting = crate::sittings::notice_clause(&workspace);
     if !active && recording {
         match native_capture::issue(
             &workspace,
@@ -689,12 +809,24 @@ pub(crate) fn host_user_prompt_submit(
                 if context.host_kind == "claude" {
                     notice.push_str(CLAUDE_START_GUIDANCE);
                 }
+                if let Some(sitting) = sitting.as_deref()
+                    && notice.len() + sitting.len()
+                        <= NoticeHook::UserPromptSubmit.additional_context_limit()
+                {
+                    notice.push_str(sitting);
+                }
                 return Ok(Some(notice));
             }
             Err(_) => {
                 return Ok(Some(format!(
                     "{} Native ticket unavailable; use labeled model-reported fallback.",
-                    hook_notice(&store, &context, None, NoticeHook::UserPromptSubmit)?
+                    hook_notice(
+                        &store,
+                        &context,
+                        None,
+                        NoticeHook::UserPromptSubmit,
+                        sitting.as_deref()
+                    )?
                 )));
             }
         }
@@ -712,6 +844,7 @@ pub(crate) fn host_user_prompt_submit(
         &context,
         ids.first().map(String::as_str),
         NoticeHook::UserPromptSubmit,
+        sitting.as_deref(),
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
@@ -750,6 +883,11 @@ pub(crate) fn host_response_stop_with_delivery(
     let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
     if safety.blocked.is_some() {
         return Ok(());
+    }
+    // A reply that says "Quick check 2" poses that check. Only the fact is
+    // kept, never the reply.
+    if let Ok(Some(mut sittings)) = crate::sittings::Sittings::open_existing(&workspace) {
+        let _ = sittings.note_reply(text);
     }
     let store = open_store(&workspace)?;
     let event = crate::learner::RawEvent {

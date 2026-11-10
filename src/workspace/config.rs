@@ -11,6 +11,36 @@ use super::{reject_symlink_components, validate_workspace_id, write_private_atom
 pub(crate) const CONFIG_SCHEMA_VERSION: i64 = 1;
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 const CORE_RULES_KEY: &str = "core_rules";
+const OPENER_KEY: &str = "opener";
+
+/// How a sitting opens with what is due. `On` gives the tutor the facts;
+/// `Block` also refuses new material until each quick check is posed or
+/// declined; `Off` gives neither.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OpenerMode {
+    On,
+    Off,
+    Block,
+}
+
+impl OpenerMode {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "on" => Some(Self::On),
+            "off" => Some(Self::Off),
+            "block" => Some(Self::Block),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+            Self::Block => "block",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspaceConfig {
@@ -90,6 +120,23 @@ impl WorkspaceConfig {
             self.document.remove(CORE_RULES_KEY);
         } else {
             self.document[CORE_RULES_KEY] = value(false);
+        }
+    }
+
+    /// Absent or not one of the three words means on.
+    pub(crate) fn opener(&self) -> OpenerMode {
+        self.document
+            .get(OPENER_KEY)
+            .and_then(toml_edit::Item::as_str)
+            .and_then(OpenerMode::parse)
+            .unwrap_or(OpenerMode::On)
+    }
+
+    pub(crate) fn set_opener(&mut self, mode: OpenerMode) {
+        if mode == OpenerMode::On {
+            self.document.remove(OPENER_KEY);
+        } else {
+            self.document[OPENER_KEY] = value(mode.as_str());
         }
     }
 
@@ -298,6 +345,38 @@ mod tests {
         config.set_core_rules(true);
         config.save().unwrap();
         assert!(!fs::read_to_string(&path).unwrap().contains("core_rules"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_opener_switch_has_three_states_and_on_is_the_default() {
+        let root = std::env::temp_dir().join(format!(
+            "magnesium-config-{}",
+            crate::workspace::os_random_hex(16).unwrap()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("config.toml");
+        fs::write(
+            &path,
+            "schema_version = 1\nworkspace_id = \"workspace-a\"\nopener = \"sometimes\"\n\n[tools]\ntectonic = \"declined\"\n",
+        )
+        .unwrap();
+        let mut config = WorkspaceConfig::load(&path).unwrap();
+        assert_eq!(config.opener(), OpenerMode::On, "an unknown word means on");
+        for mode in [OpenerMode::Off, OpenerMode::Block] {
+            config.set_opener(mode);
+            config.save().unwrap();
+            let text = fs::read_to_string(&path).unwrap();
+            assert!(
+                text.find("opener = ").unwrap() < text.find("[tools]").unwrap(),
+                "{text}"
+            );
+            config = WorkspaceConfig::load(&path).unwrap();
+            assert_eq!(config.opener(), mode);
+        }
+        config.set_opener(OpenerMode::On);
+        config.save().unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("opener"));
         fs::remove_dir_all(root).unwrap();
     }
 }

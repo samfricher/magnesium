@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 
 mod config;
+pub(crate) use config::OpenerMode;
 mod init;
 pub(crate) mod instruction_bundle;
 mod paths;
@@ -82,6 +83,19 @@ impl Workspace {
         let invalid = |error| io::Error::new(io::ErrorKind::InvalidData, error);
         let mut config = config::WorkspaceConfig::load(&self.config_path()).map_err(invalid)?;
         config.set_core_rules(on);
+        config.save().map_err(invalid)
+    }
+
+    /// How a sitting opens in this study folder. An unreadable config means on.
+    pub(crate) fn opener(&self) -> config::OpenerMode {
+        config::WorkspaceConfig::load(&self.config_path())
+            .map_or(config::OpenerMode::On, |config| config.opener())
+    }
+
+    pub(crate) fn set_opener(&self, mode: config::OpenerMode) -> io::Result<()> {
+        let invalid = |error| io::Error::new(io::ErrorKind::InvalidData, error);
+        let mut config = config::WorkspaceConfig::load(&self.config_path()).map_err(invalid)?;
+        config.set_opener(mode);
         config.save().map_err(invalid)
     }
 
