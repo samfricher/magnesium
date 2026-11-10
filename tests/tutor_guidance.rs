@@ -529,7 +529,7 @@ fn served_instructions_ask_a_confused_learner_one_question_before_explaining() {
     }
     assert!(
         served("teach_and_practice")
-            .contains("| Says they are confused, or is lost and asks a question | Ask one question to find the cause: one concrete case of the idea, answerable in under a minute."),
+            .contains("| Says they are confused, or is lost and asks a question | Ask one question to find the cause: one concrete case of the idea in their question, in plain words with no code or symbols until they answer, answerable in under a minute."),
         "{host}"
     );
     assert!(
@@ -1197,7 +1197,7 @@ fn every_stage_serves_the_core_rules_and_they_name_the_four_changed_rules() {
         "they guess what comes next and why.",
         "A new topic, and a question from a learner who is lost, get one concrete case of the target idea that takes under a minute to answer.",
         "Names, symbols and definitions come after the learner has done a step.",
-        "For a lost learner, the case is about the step they asked about and is the whole reply, with no explanation and no new terms.",
+        "For a lost learner, the case is about the idea in their question, in plain words with no code or symbols until they answer, and is the whole reply, with no explanation and no new terms.",
         "A plain factual question about something already introduced, such as what a name stands for, gets its answer in one line, with no task and no question back.",
         "If the wrong idea could have given the same answer, one more question tells the two apart.",
         "A plan item is ticked only after an unaided answer on a later day.",

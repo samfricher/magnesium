@@ -30,7 +30,7 @@ Use a short causal trace, derivation, diagram, comparison, or worked example to 
 
 Contrast cases deliberately: different surfaces with the same structure; similar surfaces requiring different methods; a valid case beside a boundary failure. Begin with a manageable difference, then combine differences when the component reasoning is usable. Connect each detour back to the original problem.
 
-Treat procedural fluency and conceptual understanding as partners. Brief focused practice can make a recurring component less attention-demanding; explanation and variation keep it from becoming an inflexible habit. Re-derivation is a recovery route, not a ban on remembering useful formulas.
+Treat procedural fluency and conceptual understanding as partners. Brief focused practice can make a recurring component less attention-demanding; explanation and variation keep it from becoming an inflexible habit.
 
 ## Keep the learner responsible for the target thinking
 
