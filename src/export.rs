@@ -55,6 +55,9 @@ const TABLES: &[&str] = &[
     "context_receipts",
     "attempts",
     "practice_items",
+    "practice_events",
+    "gap_logs",
+    "attempt_corrections",
     "help_levels",
     "anchors",
 ];
@@ -93,8 +96,8 @@ fn rows(conn: &Connection, table: &str) -> Result<Value, String> {
         .map_err(|e| e.to_string())?;
     Ok(json!(result))
 }
-/// The quick checks and sittings kept beside the learner record, when this
-/// study folder has any.
+/// The sittings kept beside the learner record, when this study folder has
+/// any. A store from before #30 also kept its quick checks there.
 fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
     let path = w.control().join(crate::sittings::STORE_FILE);
     if !path.try_exists().map_err(|e| e.to_string())? {
@@ -109,7 +112,16 @@ fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
     let mut data = serde_json::Map::new();
     // Table identifiers come from this fixed list, as for the learner tables.
     for table in ["items", "attempts", "sittings", "sitting_items"] {
-        data.insert(table.into(), rows(&snapshot, table)?);
+        let exists: bool = snapshot
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                [table],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists {
+            data.insert(table.into(), rows(&snapshot, table)?);
+        }
     }
     Ok(Some(Value::Object(data)))
 }

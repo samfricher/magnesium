@@ -4,12 +4,17 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 pub(crate) const SCHEMA_SQL: &str = include_str!("schema.sql");
-/// The tables schema 3 added. A fresh store and the upgrade both run it.
+/// The tables schema 3 added. A fresh store and the upgrade from schema 2
+/// both run it.
 pub(crate) const SCHEMA_V3_SQL: &str = include_str!("schema_v3.sql");
-/// The one earlier schema this runtime upgrades in place.
-const PREVIOUS_SCHEMA_VERSION: i64 = 2;
+/// The tables and columns schema 4 added. A fresh store and every upgrade
+/// run it.
+pub(crate) const SCHEMA_V4_SQL: &str = include_str!("schema_v4.sql");
+/// The earlier schemas this runtime upgrades in place. Schema 2 is the last
+/// release's; schema 3 was only ever on the main branch.
+const UPGRADEABLE_SCHEMA_VERSIONS: [i64; 2] = [2, 3];
 /// Beside the store: the copy made before an upgrade, kept as the way back.
 pub const BACKUP_DIR: &str = "backups";
 pub struct LearnerStore {
@@ -63,6 +68,7 @@ impl LearnerStore {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(crate::learner::store::SCHEMA_SQL)?;
         tx.execute_batch(SCHEMA_V3_SQL)?;
+        tx.execute_batch(SCHEMA_V4_SQL)?;
         tx.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,?1,?2,?3,?4)",params![workspace_id,SCHEMA,SCHEMA_VERSION,now_ms()])?;
         tx.commit()?;
         Ok(Self {
@@ -74,10 +80,12 @@ impl LearnerStore {
         reject_symlinks(path)?;
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let meta = read_meta(&conn)?;
-        if meta.1 != SCHEMA || (meta.2 != SCHEMA_VERSION && meta.2 != PREVIOUS_SCHEMA_VERSION) {
+        if meta.1 != SCHEMA
+            || (meta.2 != SCHEMA_VERSION && !UPGRADEABLE_SCHEMA_VERSIONS.contains(&meta.2))
+        {
             return Err(LearnerError::new(
                 "incompatible_store",
-                "Unsupported storage family/version. Preserve the existing store and initialize a fresh workspace; this runtime upgrades only schema 2.",
+                "Unsupported storage family/version. Preserve the existing store and initialize a fresh workspace; this runtime upgrades only schemas 2 and 3.",
             ));
         }
         if meta.0 != workspace_id {
@@ -87,8 +95,8 @@ impl LearnerStore {
             ));
         }
         configure(&conn)?;
-        if meta.2 == PREVIOUS_SCHEMA_VERSION {
-            upgrade_from_2(path, &conn)?;
+        if meta.2 != SCHEMA_VERSION {
+            upgrade(path, &conn)?;
         }
         Ok(Self {
             conn,
@@ -117,12 +125,12 @@ fn read_meta(conn: &Connection) -> Result<Meta> {
     })
 }
 
-/// Upgrade a schema 2 store in place, once. Under the write lock, copy it to
-/// `backups/` beside it, then add the schema 3 tables and raise the version
-/// in one transaction. The copy is a whole schema 2 store, so the previous
-/// runtime still opens it: put it back as `state.sqlite` to go back. If any
-/// step fails, the store is left at schema 2.
-fn upgrade_from_2(path: &Path, conn: &Connection) -> Result<()> {
+/// Upgrade a schema 2 or 3 store in place, once. Under the write lock, copy
+/// it to `backups/` beside it, then add the tables of each later schema and
+/// raise the version in one transaction. The copy is a whole store of the
+/// old version, so the runtime that made it still opens it: put it back as
+/// `state.sqlite` to go back. If any step fails, the store is left as it was.
+fn upgrade(path: &Path, conn: &Connection) -> Result<()> {
     // Another process may be upgrading too. Copying takes a while for a large
     // store, so wait longer for the lock than an ordinary write does.
     conn.busy_timeout(Duration::from_secs(30))?;
@@ -136,9 +144,12 @@ fn upgrade_from_2(path: &Path, conn: &Connection) -> Result<()> {
         if version == SCHEMA_VERSION {
             return Ok(());
         }
-        backup_before_upgrade(path)?;
+        backup_before_upgrade(path, version)?;
         conn.execute_batch(UPGRADE_META_SQL)?;
-        conn.execute_batch(SCHEMA_V3_SQL)?;
+        if version == 2 {
+            conn.execute_batch(SCHEMA_V3_SQL)?;
+        }
+        conn.execute_batch(SCHEMA_V4_SQL)?;
         conn.execute(
             "UPDATE workspace_meta SET schema_version=?1 WHERE singleton=1",
             [SCHEMA_VERSION],
@@ -159,11 +170,11 @@ fn upgrade_from_2(path: &Path, conn: &Connection) -> Result<()> {
 /// The version check lives in a table constraint, which SQLite cannot alter,
 /// so the one-row table is rebuilt with the same columns and data.
 const UPGRADE_META_SQL: &str = "
-CREATE TABLE workspace_meta_v3 (
+CREATE TABLE workspace_meta_next (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   workspace_id TEXT NOT NULL UNIQUE,
   storage_family TEXT NOT NULL CHECK (storage_family = 'learner-model/v2'),
-  schema_version INTEGER NOT NULL CHECK (schema_version = 3),
+  schema_version INTEGER NOT NULL CHECK (schema_version = 4),
   memory_generation INTEGER NOT NULL DEFAULT 0,
   observation_generation INTEGER NOT NULL DEFAULT 0,
   event_generation INTEGER NOT NULL DEFAULT 0,
@@ -172,18 +183,18 @@ CREATE TABLE workspace_meta_v3 (
   observation_fts_generation INTEGER NOT NULL DEFAULT 0,
   created_at_ms INTEGER NOT NULL
 );
-INSERT INTO workspace_meta_v3
-  SELECT singleton,workspace_id,storage_family,3,memory_generation,
+INSERT INTO workspace_meta_next
+  SELECT singleton,workspace_id,storage_family,4,memory_generation,
          observation_generation,event_generation,review_generation,
          memory_fts_generation,observation_fts_generation,created_at_ms
   FROM workspace_meta;
 DROP TABLE workspace_meta;
-ALTER TABLE workspace_meta_v3 RENAME TO workspace_meta;
+ALTER TABLE workspace_meta_next RENAME TO workspace_meta;
 ";
 
 /// Copy the store, as it is under the caller's write lock, to a new private
 /// file in `backups/`, and check the copy before anything changes.
-fn backup_before_upgrade(path: &Path) -> Result<PathBuf> {
+fn backup_before_upgrade(path: &Path, version: i64) -> Result<PathBuf> {
     let storage = |e: std::io::Error| LearnerError::new("storage_error", e.to_string());
     let directory = path
         .parent()
@@ -204,7 +215,7 @@ fn backup_before_upgrade(path: &Path) -> Result<PathBuf> {
     }
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     let backup = directory.join(format!(
-        "state-schema-{PREVIOUS_SCHEMA_VERSION}-{stamp}-{}.sqlite",
+        "state-schema-{version}-{stamp}-{}.sqlite",
         new_id("b")?
             .trim_start_matches("b-")
             .get(..8)
@@ -235,7 +246,7 @@ fn backup_before_upgrade(path: &Path) -> Result<PathBuf> {
     let copy = Connection::open_with_flags(&backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let check: String = copy.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
     let meta = read_meta(&copy)?;
-    if check != "ok" || meta.2 != PREVIOUS_SCHEMA_VERSION {
+    if check != "ok" || meta.2 != version {
         return Err(LearnerError::new(
             "storage_error",
             format!("the copy made before upgrading failed its check: {check}"),
@@ -292,8 +303,10 @@ mod upgrade_tests {
     use super::*;
     use std::collections::BTreeMap;
 
-    /// The schema 2 SQL exactly as the previous runtime shipped it.
+    /// The schema 2 SQL exactly as the previous release shipped it.
     const SCHEMA_2: &str = include_str!("../../tests/fixtures/learner_model/schema-2.sql");
+    /// The schema 3 SQL exactly as the main branch had it before schema 4.
+    const SCHEMA_3: &str = include_str!("../../tests/fixtures/learner_model/schema-3.sql");
     const WORKSPACE: &str = "upgrade-test";
 
     fn folder() -> PathBuf {
@@ -412,13 +425,13 @@ mod upgrade_tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         // The history is intact: every old row is still there, unchanged but
         // for the version number.
         for (table, old) in OLD_TABLES.iter().zip(&before) {
             let mut old = old.clone();
             if *table == "workspace_meta" {
-                old[0][3] = "3".into();
+                old[0][3] = "4".into();
             }
             assert_eq!(&rows(&store.conn, table), &old, "{table}");
         }
@@ -463,6 +476,67 @@ mod upgrade_tests {
         let upgraded = LearnerStore::open(&schema_2_store(&dir), WORKSPACE).unwrap();
         let fresh = LearnerStore::initialize(&dir.join("fresh.sqlite"), WORKSPACE).unwrap();
         assert_eq!(shape(&upgraded.conn), shape(&fresh.conn));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A store the main branch made at schema 3, with a lesson and one
+    /// attempt in it.
+    fn schema_3_store(dir: &Path) -> PathBuf {
+        let path = dir.join("state.sqlite");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(SCHEMA_3).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms)
+               VALUES(1,'upgrade-test','learner-model/v2',3,1000);
+             INSERT INTO learning_sessions VALUES('s-1','Quadratic formula','active','{}',1,1000,2000);
+             INSERT INTO learning_events(event_id,session_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,occurred_at_ms,captured_at_ms,processing)
+               VALUES('e-1','s-1','claude','conv','p-1','learner','message','host_observed','b is 7','{}',1500,1500,'processed');
+             INSERT INTO observations(observation_id,session_id,kind,description,conditions_text,assistance_text,source_refs_json,observed_at_ms,created_at_ms)
+               VALUES('o-1','s-1','learner_work','Took b as 7.','','none','[]',1500,1600);
+             INSERT INTO attempts(attempt_id,observation_id,response_event_id,session_id,question,label,label_key,mark,help,cold,answered_at_ms,created_at_ms)
+               VALUES('a-1','o-1','e-1','s-1','b in 2x²−7x+3','sign of b','sign of b','wrong','none',0,1500,1600);",
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn a_schema_3_store_upgrades_to_4_with_its_attempts_and_keeps_a_schema_3_copy() {
+        let dir = folder();
+        let path = schema_3_store(&dir);
+        let before = {
+            let conn = Connection::open(&path).unwrap();
+            rows(&conn, "attempts")
+        };
+        let store = LearnerStore::open(&path, WORKSPACE).unwrap();
+        let version: i64 = store
+            .conn
+            .query_row("SELECT schema_version FROM workspace_meta", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 4);
+        // Each attempt keeps its row and gains slow, false.
+        let after = rows(&store.conn, "attempts");
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0][..before[0].len()], before[0][..]);
+        assert_eq!(after[0].last().unwrap(), "0");
+        let copies = backups(&dir);
+        assert_eq!(copies.len(), 1, "{copies:?}");
+        assert!(
+            copies[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("state-schema-3-")
+        );
+        let copy = Connection::open(&copies[0]).unwrap();
+        assert_eq!(read_meta(&copy).unwrap().2, 3);
+        let fresh_schema_3 = Connection::open_in_memory().unwrap();
+        fresh_schema_3.execute_batch(SCHEMA_3).unwrap();
+        assert_eq!(shape(&copy), shape(&fresh_schema_3));
+        let fresh = LearnerStore::initialize(&dir.join("fresh.sqlite"), WORKSPACE).unwrap();
+        assert_eq!(shape(&store.conn), shape(&fresh.conn));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

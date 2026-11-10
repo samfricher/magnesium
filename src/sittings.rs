@@ -1,37 +1,35 @@
-//! Sittings and quick checks.
+//! Sittings.
 //!
 //! A sitting is one stretch of study. It begins with the first learner
 //! message after [`SITTING_GAP_MS`] without one, and opens with what is due:
-//! quick checks, which the runtime schedules from the attempt facts on
-//! recorded observations, and paper redos, which gap logs schedule.
+//! quick checks and paper redos. Both are practice items in the learner store
+//! (#30), and the runtime works out when each is due.
 //!
 //! This store sits beside the learner record, in `.magnesium/sittings.sqlite`,
-//! because the learner store refuses any other schema version and a review
-//! item there needs a memory. Nothing here is evidence about the learner: the
-//! observations an attempt rides on are. A failure here never fails the tool
-//! call or hook that triggered it.
+//! and holds only the sittings: when the last learner message came, which
+//! checks each sitting took, and what became of them. Nothing here is
+//! evidence about the learner. A failure here never fails the tool call or
+//! hook that triggered it.
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{Days, Local, NaiveDate, TimeZone};
+use chrono::{Local, NaiveDate, TimeZone};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::{Value, json};
 
-use crate::learner::{AttemptHelp, FirstTry};
+use crate::practice::{DueRedos, GapLogReport, Item};
 use crate::workspace::{OpenerMode, Workspace};
 
 pub(crate) const STORE_FILE: &str = "sittings.sqlite";
 pub(crate) const LOG_FILE: &str = "sittings.log";
-const STORE_VERSION: i64 = 1;
+/// Version 1 kept the quick checks here too; they moved to the learner store.
+const STORE_VERSION: i64 = 2;
 /// About three hours without a learner message ends a sitting.
 pub(crate) const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
 /// About a minute each, so about three minutes at the start of a sitting.
-const MAX_CHECKS_PER_SITTING: i64 = 3;
-/// Days until the next check: after a miss, after the first pass, after the second.
-const INTERVAL_DAYS: [u64; 3] = [1, 3, 7];
-const PASSES_TO_CLOSE: i64 = 3;
-const MAX_MISSES_KEPT: usize = 3;
+const MAX_CHECKS_PER_SITTING: usize = 3;
 const MAX_MISS_CHARS: usize = 240;
+const MAX_QUESTION_CHARS: usize = 400;
 const MAX_LOGGED_SITTINGS: i64 = 1000;
 const MAX_OPENER_BYTES: usize = 4096;
 
@@ -40,29 +38,6 @@ CREATE TABLE IF NOT EXISTS meta(
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   version INTEGER NOT NULL,
   last_learner_ms INTEGER
-);
-CREATE TABLE IF NOT EXISTS items(
-  item_id TEXT PRIMARY KEY,
-  label TEXT NOT NULL,
-  label_key TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL CHECK (status IN ('open','closed')),
-  passes INTEGER NOT NULL DEFAULT 0,
-  due_day TEXT,
-  last_pass_day TEXT,
-  misses_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(misses_json)),
-  created_ms INTEGER NOT NULL,
-  updated_ms INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS attempts(
-  observation_id TEXT PRIMARY KEY,
-  label TEXT NOT NULL,
-  label_key TEXT NOT NULL,
-  first_try TEXT NOT NULL,
-  help TEXT NOT NULL,
-  day TEXT NOT NULL,
-  sitting_id TEXT,
-  effect TEXT NOT NULL,
-  created_ms INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sittings(
   sitting_no INTEGER PRIMARY KEY,
@@ -75,26 +50,34 @@ CREATE TABLE IF NOT EXISTS sittings(
 );
 CREATE TABLE IF NOT EXISTS sitting_items(
   sitting_id TEXT NOT NULL REFERENCES sittings(sitting_id),
-  item_id TEXT NOT NULL REFERENCES items(item_id),
+  item_id TEXT NOT NULL,
   number INTEGER NOT NULL,
   label TEXT NOT NULL,
   posed INTEGER NOT NULL DEFAULT 0,
-  outcome TEXT CHECK (outcome IN ('passed','failed','helped','declined')),
+  outcome TEXT CHECK (outcome IN ('passed','failed','helped','declined','answered')),
   PRIMARY KEY (sitting_id, item_id)
 );
-CREATE INDEX IF NOT EXISTS item_due ON items(status, due_day);
 ";
 
-/// One attempt from a committed `learning_step` update.
-#[derive(Clone, Debug)]
-pub(crate) struct RecordedAttempt {
-    pub(crate) observation_id: String,
-    pub(crate) label: String,
-    pub(crate) first_try: FirstTry,
-    pub(crate) help: AttemptHelp,
-    /// The observation's description: for a miss, what went wrong.
-    pub(crate) description: String,
-}
+/// Version 1's sitting_items named its own items table. Version 2's names
+/// learner-store practice items, which keep the same IDs.
+const FROM_VERSION_1: &str = "
+CREATE TABLE sitting_items_v2(
+  sitting_id TEXT NOT NULL REFERENCES sittings(sitting_id),
+  item_id TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  posed INTEGER NOT NULL DEFAULT 0,
+  outcome TEXT CHECK (outcome IN ('passed','failed','helped','declined','answered')),
+  PRIMARY KEY (sitting_id, item_id)
+);
+INSERT INTO sitting_items_v2 SELECT sitting_id,item_id,number,label,posed,outcome FROM sitting_items;
+DROP TABLE sitting_items;
+ALTER TABLE sitting_items_v2 RENAME TO sitting_items;
+DROP TABLE IF EXISTS attempts;
+DROP TABLE IF EXISTS items;
+UPDATE meta SET version = 2;
+";
 
 pub(crate) struct Sittings {
     conn: Connection,
@@ -108,22 +91,23 @@ pub(crate) struct Counts {
     pub(crate) posed: i64,
 }
 
+/// One quick check as the opener states it.
+#[derive(Clone, Debug)]
+struct Check {
+    number: i64,
+    label: String,
+    misses: Vec<String>,
+    question: Option<String>,
+    key: Option<String>,
+}
+
 pub(crate) fn now_ms() -> i64 {
     crate::learner::store::now_ms()
 }
 
 pub(crate) fn local_day(ms: i64) -> NaiveDate {
-    Local
-        .timestamp_millis_opt(ms)
-        .single()
-        .map_or(NaiveDate::MIN, |time| time.date_naive())
+    crate::learner::practice::local_day(ms)
 }
-
-fn day_after(day: NaiveDate, days: u64) -> NaiveDate {
-    day.checked_add_days(Days::new(days)).unwrap_or(day)
-}
-
-pub(crate) use crate::learner::label_key;
 
 fn clip(text: &str, chars: usize) -> String {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -135,6 +119,25 @@ fn clip(text: &str, chars: usize) -> String {
 
 fn error(error: impl std::fmt::Display) -> String {
     format!("sittings: {error}")
+}
+
+/// The items worked out now, or none when the learner store cannot be read.
+fn items_now(workspace: &Workspace) -> Vec<Item> {
+    crate::practice::open_store(workspace)
+        .and_then(|store| crate::practice::snapshot(&store.conn, workspace.root()))
+        .unwrap_or_default()
+}
+
+/// A sitting's outcome for a check, from what the answer did to it.
+pub(crate) fn outcome(effect: &str) -> Option<&'static str> {
+    match effect {
+        "passed" | "closed" => Some("passed"),
+        "failed" | "restarted" => Some("failed"),
+        "helped" => Some("helped"),
+        "declined" => Some("declined"),
+        "no_count" => Some("answered"),
+        _ => None,
+    }
 }
 
 impl Sittings {
@@ -162,8 +165,9 @@ impl Sittings {
         } else if !path.try_exists().map_err(error)? {
             return Ok(None);
         }
-        let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
-            .map_err(error)?;
+        let mut conn =
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+                .map_err(error)?;
         conn.busy_timeout(Duration::from_secs(2)).map_err(error)?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .map_err(error)?;
@@ -176,7 +180,9 @@ impl Sittings {
         let version: i64 = conn
             .query_row("SELECT version FROM meta", [], |r| r.get(0))
             .map_err(error)?;
-        if version != STORE_VERSION {
+        if version == 1 {
+            from_version_1(&mut conn, workspace)?;
+        } else if version != STORE_VERSION {
             return Err(error(format!(
                 "store version {version} is not {STORE_VERSION}"
             )));
@@ -195,16 +201,35 @@ impl Sittings {
 
     /// Note a learner message. The first one after the gap begins a sitting,
     /// which takes the quick checks due that day. Returns whether one began.
-    pub(crate) fn note_learner_message(&mut self, now: i64) -> Result<bool, String> {
+    pub(crate) fn note_learner_message(
+        &mut self,
+        workspace: &Workspace,
+        now: i64,
+    ) -> Result<bool, String> {
+        let last: Option<i64> = self
+            .conn
+            .query_row("SELECT last_learner_ms FROM meta", [], |r| r.get(0))
+            .map_err(error)?;
+        let begins = last.is_none_or(|last| now - last >= SITTING_GAP_MS);
+        let items = if begins {
+            items_now(workspace)
+        } else {
+            Vec::new()
+        };
+        let due = crate::practice::due_checks(&items, local_day(now))
+            .into_iter()
+            .map(|item| (item.facts.item_id.clone(), item.facts.label.clone()))
+            .collect::<Vec<_>>();
         let tx = self.write()?;
         let last: Option<i64> = tx
             .query_row("SELECT last_learner_ms FROM meta", [], |r| r.get(0))
             .map_err(error)?;
         tx.execute("UPDATE meta SET last_learner_ms=?1", [now])
             .map_err(error)?;
+        // Another process may have begun it meanwhile.
         let begins = last.is_none_or(|last| now - last >= SITTING_GAP_MS);
         if begins {
-            begin(&tx, now)?;
+            begin(&tx, now, &due)?;
         }
         tx.commit().map_err(error)?;
         if begins {
@@ -243,11 +268,13 @@ impl Sittings {
 
     /// The opener for the first tool result of a sitting, once. It names the
     /// quick checks taken at the start and the paper redos due today. Before
-    /// it reads the gap logs, an older one is converted.
+    /// it reads them, gap logs the runtime has not taken over are brought in,
+    /// and what that did goes in `report`.
     pub(crate) fn take_opener(
         &mut self,
         workspace: &Workspace,
         now: i64,
+        report: &mut GapLogReport,
     ) -> Result<Option<String>, String> {
         let Some((sitting, delivered)) = self.current()? else {
             return Ok(None);
@@ -256,9 +283,10 @@ impl Sittings {
             return Ok(None);
         }
         let today = local_day(now);
-        crate::digest::convert_gap_logs(workspace, today);
-        let redos = crate::digest::due_redos(workspace.root(), today);
-        let checks = self.checks(&sitting)?;
+        *report = crate::practice::sync_gap_logs(workspace, today);
+        let items = items_now(workspace);
+        let redos = crate::practice::due_redos(&items, today);
+        let checks = self.checks(&sitting, &items)?;
         let tx = self.write()?;
         let claimed = tx
             .execute(
@@ -286,31 +314,44 @@ impl Sittings {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
         };
-        let redos = crate::digest::due_redos(workspace.root(), local_day(now));
-        let checks = self.checks(&sitting)?;
+        let items = items_now(workspace);
+        let redos = crate::practice::due_redos(&items, local_day(now));
+        let checks = self.checks(&sitting, &items)?;
         Ok((!checks.is_empty() || !redos.is_empty()).then(|| opener_text(&checks, &redos)))
     }
 
-    /// (number, label, misses) of each quick check in a sitting.
-    fn checks(&self, sitting: &str) -> Result<Vec<(i64, String, Vec<String>)>, String> {
+    /// The quick checks a sitting took, with what the record holds for each.
+    fn checks(&self, sitting: &str, items: &[Item]) -> Result<Vec<Check>, String> {
         let mut statement = self
             .conn
             .prepare(
-                "SELECT s.number, s.label, i.misses_json FROM sitting_items s JOIN items i ON i.item_id=s.item_id WHERE s.sitting_id=?1 ORDER BY s.number",
+                "SELECT number, label, item_id FROM sitting_items WHERE sitting_id=?1 ORDER BY number",
             )
             .map_err(error)?;
-        statement
+        let taken = statement
             .query_map([sitting], |r| {
-                let misses: String = r.get(2)?;
                 Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    serde_json::from_str(&misses).unwrap_or_default(),
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
                 ))
             })
             .map_err(error)?
             .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(error)
+            .map_err(error)?;
+        Ok(taken
+            .into_iter()
+            .map(|(number, label, item_id)| {
+                let item = items.iter().find(|item| item.facts.item_id == item_id);
+                Check {
+                    number,
+                    label,
+                    misses: item.map(|i| i.state.misses.clone()).unwrap_or_default(),
+                    question: item.and_then(|i| i.facts.next_question.clone()),
+                    key: item.and_then(|i| i.facts.answer_key.clone()),
+                }
+            })
+            .collect())
     }
 
     /// The tutor's reply poses check n when it says "Quick check n".
@@ -319,12 +360,19 @@ impl Sittings {
             return Ok(());
         };
         let reply = reply.to_lowercase();
-        let posed = self
-            .checks(&sitting)?
+        let mut statement = self
+            .conn
+            .prepare("SELECT number FROM sitting_items WHERE sitting_id=?1")
+            .map_err(error)?;
+        let posed = statement
+            .query_map([&sitting], |r| r.get::<_, i64>(0))
+            .map_err(error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(error)?
             .into_iter()
-            .filter(|(number, ..)| says_check(&reply, *number))
-            .map(|(number, ..)| number)
+            .filter(|number| says_check(&reply, *number))
             .collect::<Vec<_>>();
+        drop(statement);
         if posed.is_empty() {
             return Ok(());
         }
@@ -341,73 +389,30 @@ impl Sittings {
         Ok(())
     }
 
-    /// Apply attempts from a committed update. Each observation counts once,
-    /// so replaying the same request changes nothing.
-    pub(crate) fn apply_attempts(
-        &mut self,
-        attempts: &[RecordedAttempt],
-        now: i64,
-    ) -> Result<(), String> {
-        if attempts.is_empty() {
+    /// Settle the current sitting's checks that a committed update answered:
+    /// (item ID, outcome). Only a check still unsettled changes.
+    pub(crate) fn settle(&mut self, outcomes: &[(String, &'static str)]) -> Result<(), String> {
+        if outcomes.is_empty() {
             return Ok(());
         }
-        let today = local_day(now);
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(());
+        };
         let tx = self.write()?;
-        let sitting: Option<String> = tx
-            .query_row(
-                "SELECT sitting_id FROM sittings ORDER BY sitting_no DESC LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(error)?;
-        for attempt in attempts {
-            let seen: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM attempts WHERE observation_id=?1)",
-                    [&attempt.observation_id],
-                    |r| r.get(0),
+        let mut changed = 0;
+        for (item, outcome) in outcomes {
+            changed += tx
+                .execute(
+                    "UPDATE sitting_items SET outcome=?3, posed=1 WHERE sitting_id=?1 AND item_id=?2 AND outcome IS NULL",
+                    params![sitting, item, outcome],
                 )
                 .map_err(error)?;
-            if seen {
-                continue;
-            }
-            let effect = apply(&tx, attempt, sitting.as_deref(), today, now)?;
-            tx.execute(
-                "INSERT INTO attempts(observation_id,label,label_key,first_try,help,day,sitting_id,effect,created_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                params![
-                    attempt.observation_id,
-                    attempt.label,
-                    label_key(&attempt.label),
-                    attempt.first_try.as_str(),
-                    attempt.help.as_str(),
-                    today.to_string(),
-                    sitting,
-                    effect,
-                    now
-                ],
-            )
-            .map_err(error)?;
         }
         tx.commit().map_err(error)?;
-        self.write_log();
+        if changed > 0 {
+            self.write_log();
+        }
         Ok(())
-    }
-
-    /// Open checks' labels, soonest due first, so a later attempt on the same
-    /// skill can reuse one exactly.
-    pub(crate) fn open_labels(&self) -> Result<Vec<String>, String> {
-        let mut statement = self
-            .conn
-            .prepare(
-                "SELECT label FROM items WHERE status='open' ORDER BY due_day, created_ms LIMIT 12",
-            )
-            .map_err(error)?;
-        statement
-            .query_map([], |r| r.get(0))
-            .map_err(error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(error)
     }
 
     /// Rewrite the local log, one JSON line per sitting, from this store.
@@ -500,210 +505,98 @@ fn create_private(path: &Path) -> Result<(), String> {
     }
 }
 
-fn begin(tx: &Transaction<'_>, now: i64) -> Result<(), String> {
+/// Begin a sitting with the quick checks due, longest due first: it takes
+/// [`MAX_CHECKS_PER_SITTING`], and the rest wait for a later sitting.
+fn begin(tx: &Transaction<'_>, now: i64, due: &[(String, String)]) -> Result<(), String> {
     let today = local_day(now).to_string();
     let sitting = crate::learner::store::new_id("sitting").map_err(error)?;
+    let taken = due.len().min(MAX_CHECKS_PER_SITTING);
     tx.execute(
-        "INSERT INTO sittings(sitting_id,started_ms,day) VALUES(?1,?2,?3)",
-        params![sitting, now, today],
+        "INSERT INTO sittings(sitting_id,started_ms,day,not_taken) VALUES(?1,?2,?3,?4)",
+        params![sitting, now, today, (due.len() - taken) as i64],
     )
     .map_err(error)?;
-    tx.execute(
-        "INSERT INTO sitting_items(sitting_id,item_id,number,label)
-         SELECT ?1, item_id, row_number() OVER (ORDER BY due_day, created_ms, seq), label
-         FROM (SELECT rowid AS seq, * FROM items WHERE status='open' AND due_day<=?2 ORDER BY due_day, created_ms, rowid LIMIT ?3)",
-        params![sitting, today, MAX_CHECKS_PER_SITTING],
-    )
-    .map_err(error)?;
-    // Checks due beyond the three a sitting takes wait for a later sitting.
-    tx.execute(
-        "UPDATE sittings SET not_taken=(SELECT count(*) FROM items WHERE status='open' AND due_day<=?2)-(SELECT count(*) FROM sitting_items WHERE sitting_id=?1) WHERE sitting_id=?1",
-        params![sitting, today],
-    )
-    .map_err(error)?;
-    Ok(())
-}
-
-/// Make the check for a label, or start it over: due the next day with no
-/// passes. A miss joins its earlier misses, which become the wrong options.
-fn schedule_next_day(
-    tx: &Transaction<'_>,
-    item: Option<&Item>,
-    (label, key): (&str, &str),
-    miss: Option<String>,
-    today: NaiveDate,
-    now: i64,
-) -> Result<(), String> {
-    let due = day_after(today, INTERVAL_DAYS[0]).to_string();
-    let Some(item) = item else {
-        let id = crate::learner::store::new_id("check").map_err(error)?;
+    for (number, (item, label)) in due.iter().take(taken).enumerate() {
         tx.execute(
-            "INSERT INTO items(item_id,label,label_key,status,passes,due_day,misses_json,created_ms,updated_ms) VALUES(?1,?2,?3,'open',0,?4,?5,?6,?6)",
-            params![id, label, key, due, json!(miss.into_iter().collect::<Vec<_>>()).to_string(), now],
+            "INSERT INTO sitting_items(sitting_id,item_id,number,label) VALUES(?1,?2,?3,?4)",
+            params![sitting, item, number as i64 + 1, label],
         )
         .map_err(error)?;
-        return Ok(());
-    };
-    let mut misses: Vec<String> = serde_json::from_str(&item.misses).unwrap_or_default();
-    if let Some(miss) = miss {
-        misses.retain(|kept| kept != &miss);
-        misses.push(miss);
-        let excess = misses.len().saturating_sub(MAX_MISSES_KEPT);
-        misses.drain(..excess);
     }
-    tx.execute(
-        "UPDATE items SET label=?2,status='open',passes=0,due_day=?3,last_pass_day=NULL,misses_json=?4,updated_ms=?5 WHERE item_id=?1",
-        params![item.id, label, due, json!(misses).to_string(), now],
-    )
-    .map_err(error)?;
     Ok(())
 }
 
-/// One quick check, as stored.
-struct Item {
-    id: String,
-    open: bool,
-    passes: i64,
-    due_day: Option<String>,
-    last_pass_day: Option<String>,
-    misses: String,
-}
-
-/// What one attempt does to its quick check and to the current sitting.
-fn apply(
-    tx: &Transaction<'_>,
-    attempt: &RecordedAttempt,
-    sitting: Option<&str>,
-    today: NaiveDate,
-    now: i64,
-) -> Result<&'static str, String> {
-    let key = label_key(&attempt.label);
-    let label = attempt
-        .label
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let item = tx
-        .query_row(
-            "SELECT item_id,status,passes,due_day,last_pass_day,misses_json FROM items WHERE label_key=?1",
-            [&key],
-            |r| {
-                Ok(Item {
-                    id: r.get(0)?,
-                    open: r.get::<_, String>(1)? == "open",
-                    passes: r.get(2)?,
-                    due_day: r.get(3)?,
-                    last_pass_day: r.get(4)?,
-                    misses: r.get(5)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(error)?;
-    let in_sitting = |item_id: &str| -> Result<bool, String> {
-        let Some(sitting) = sitting else {
-            return Ok(false);
-        };
-        tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sitting_items WHERE sitting_id=?1 AND item_id=?2 AND outcome IS NULL)",
-            params![sitting, item_id],
-            |r| r.get(0),
-        )
-        .map_err(error)
-    };
-    let settle = |item_id: &str, outcome: &str| -> Result<(), String> {
-        if in_sitting(item_id)? {
-            tx.execute(
-                "UPDATE sitting_items SET outcome=?3, posed=1 WHERE sitting_id=?1 AND item_id=?2",
-                params![sitting, item_id, outcome],
+/// Move a version 1 store's quick checks into the learner store, once, as
+/// practice items with the same IDs and the state they had, then drop them
+/// here. The learner store's copy goes first, and inserting an ID twice
+/// changes nothing, so a failure between the two steps is safe to repeat.
+fn from_version_1(conn: &mut Connection, workspace: &Workspace) -> Result<(), String> {
+    let checks = {
+        let mut statement = conn
+            .prepare(
+                "SELECT item_id,label,status,passes,due_day,last_pass_day,misses_json,created_ms,updated_ms FROM items",
             )
             .map_err(error)?;
-        }
-        Ok(())
-    };
-    match attempt.first_try {
-        // A partly right answer still holds the misunderstanding.
-        FirstTry::Wrong | FirstTry::Partly => {
-            let miss = clip(&attempt.description, MAX_MISS_CHARS);
-            if let Some(item) = &item {
-                settle(&item.id, "failed")?;
-            }
-            schedule_next_day(tx, item.as_ref(), (&label, &key), Some(miss), today, now)?;
-            Ok("scheduled")
-        }
-        // A right answer reached only through a full solution is the
-        // solution's, not the learner's: it is asked for cold the next day.
-        FirstTry::Right if attempt.help == AttemptHelp::Solution => {
-            if let Some(item) = &item {
-                settle(&item.id, "helped")?;
-            }
-            schedule_next_day(tx, item.as_ref(), (&label, &key), None, today, now)?;
-            Ok("scheduled")
-        }
-        FirstTry::Right => {
-            let Some(Item {
-                id,
-                open,
-                passes,
-                due_day,
-                last_pass_day,
-                ..
-            }) = item
-            else {
-                return Ok("none");
-            };
-            let today_text = today.to_string();
-            let due = open && due_day.as_deref().is_some_and(|d| d <= today_text.as_str());
-            if !due {
-                return Ok("none");
-            }
-            if attempt.help != AttemptHelp::None {
-                settle(&id, "helped")?;
-                return Ok("helped");
-            }
-            if last_pass_day.as_deref() == Some(today_text.as_str()) {
-                return Ok("none");
-            }
-            let passes = passes + 1;
-            let (status, due) = if passes >= PASSES_TO_CLOSE {
-                ("closed", None)
-            } else {
-                let days = INTERVAL_DAYS[usize::try_from(passes).unwrap_or(2).min(2)];
-                ("open", Some(day_after(today, days).to_string()))
-            };
-            settle(&id, "passed")?;
-            tx.execute(
-                "UPDATE items SET status=?2,passes=?3,due_day=?4,last_pass_day=?5,updated_ms=?6 WHERE item_id=?1",
-                params![id, status, passes, due, today_text, now],
-            )
-            .map_err(error)?;
-            Ok(if status == "closed" {
-                "closed"
-            } else {
-                "passed"
+        statement
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
             })
-        }
-        // Asking for the full solution before any answer: nothing of the
-        // learner's own came first, so the step is asked for cold the next
-        // day, with no miss to offer as a wrong option.
-        FirstTry::Declined if attempt.help == AttemptHelp::Solution => {
-            if let Some(item) = &item {
-                settle(&item.id, "declined")?;
-            }
-            schedule_next_day(tx, item.as_ref(), (&label, &key), None, today, now)?;
-            Ok("scheduled")
-        }
-        FirstTry::Declined => {
-            let Some(Item { id, .. }) = item else {
-                return Ok("none");
-            };
-            if !in_sitting(&id)? {
-                return Ok("none");
-            }
-            settle(&id, "declined")?;
-            Ok("declined")
-        }
+            .map_err(error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(error)?
+    };
+    let store = crate::practice::open_store(workspace).map_err(error)?;
+    let tx = store.conn.unchecked_transaction().map_err(error)?;
+    for (id, label, status, passes, due, last_pass, misses, created, updated) in checks {
+        let passes = if status == "closed" {
+            3
+        } else {
+            passes.clamp(0, 2)
+        };
+        tx.execute(
+            "INSERT OR IGNORE INTO practice_items(item_id,origin,label,label_key,logged_on,base_passes,
+                base_next_on,base_last_pass_on,base_misses_json,created_at_ms,updated_at_ms)
+             VALUES(?1,'chat',?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![
+                id,
+                label,
+                crate::learner::label_key(&label),
+                local_day(created).to_string(),
+                passes,
+                (passes < 3).then_some(due).flatten(),
+                last_pass,
+                if serde_json::from_str::<Vec<String>>(&misses).is_ok() {
+                    misses
+                } else {
+                    "[]".to_owned()
+                },
+                created,
+                updated
+            ],
+        )
+        .map_err(error)?;
     }
+    tx.commit().map_err(error)?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(error)?;
+    let version: i64 = tx
+        .query_row("SELECT version FROM meta", [], |r| r.get(0))
+        .map_err(error)?;
+    if version == 1 {
+        tx.execute_batch(FROM_VERSION_1).map_err(error)?;
+    }
+    tx.commit().map_err(error)
 }
 
 fn says_check(reply_lowercase: &str, number: i64) -> bool {
@@ -716,23 +609,50 @@ fn says_check(reply_lowercase: &str, number: i64) -> bool {
     })
 }
 
-/// The opener, within [`MAX_OPENER_BYTES`]. When the earlier misses make it
-/// too long, they are cut shorter first, so the instructions after them, which
-/// say how to pose and record each check, always arrive whole.
-fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::DueRedos]) -> String {
+/// The opener, within [`MAX_OPENER_BYTES`]. When the earlier misses and the
+/// stored questions make it too long, they are cut shorter first, so the
+/// instructions after them, which say how to pose and record each check,
+/// always arrive whole.
+fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
     let mut text = String::new();
-    for chars in [MAX_MISS_CHARS, 160, 80, 40, 0] {
-        let shortened: Vec<(i64, String, Vec<String>)> = checks
+    for (misses, questions) in [
+        (MAX_MISS_CHARS, MAX_QUESTION_CHARS),
+        (160, 300),
+        (80, 200),
+        (40, 160),
+        (0, 120),
+        (0, 60),
+    ] {
+        let clipped = |text: &Option<String>| text.as_deref().map(|t| clip(t, questions));
+        let shortened: Vec<Check> = checks
             .iter()
-            .map(|(number, label, misses)| {
-                let misses = match chars {
+            .map(|check| Check {
+                number: check.number,
+                label: check.label.clone(),
+                misses: match misses {
                     0 => Vec::new(),
-                    _ => misses.iter().map(|miss| clip(miss, chars)).collect(),
-                };
-                (*number, label.clone(), misses)
+                    _ => check.misses.iter().map(|miss| clip(miss, misses)).collect(),
+                },
+                question: clipped(&check.question),
+                key: clipped(&check.key),
             })
             .collect();
-        text = opener_text_with(&shortened, redos);
+        let redos: Vec<DueRedos> = redos
+            .iter()
+            .map(|redo| DueRedos {
+                rows: redo
+                    .rows
+                    .iter()
+                    .map(|row| crate::practice::DueRow {
+                        question: clipped(&row.question),
+                        key: clipped(&row.key),
+                        ..row.clone()
+                    })
+                    .collect(),
+                ..redo.clone()
+            })
+            .collect();
+        text = opener_text_with(&shortened, &redos);
         if text.len() <= MAX_OPENER_BYTES {
             return text;
         }
@@ -745,22 +665,25 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
     text
 }
 
-fn opener_text_with(
-    checks: &[(i64, String, Vec<String>)],
-    redos: &[crate::digest::DueRedos],
-) -> String {
+fn opener_text_with(checks: &[Check], redos: &[DueRedos]) -> String {
     let mut text = String::from(
         "Sitting opener. A new sitting has begun: open it with what is due, before new material. The learner may decline any of it at no cost, and a skip, no-quiz or stop request wins.",
     );
     if !checks.is_empty() {
         text.push_str("\n\nQuick checks, one at a time, about a minute each:");
-        for (number, label, misses) in checks {
-            text.push_str(&format!("\n{number}. Label \"{label}\"."));
-            if !misses.is_empty() {
-                text.push_str(&format!(" Earlier misses: {}", misses.join(" | ")));
+        for check in checks {
+            text.push_str(&format!("\n{}. Label \"{}\".", check.number, check.label));
+            if !check.misses.is_empty() {
+                text.push_str(&format!(" Earlier misses: {}", check.misses.join(" | ")));
+            }
+            if let Some(question) = &check.question {
+                text.push_str(&format!(" Stored question: {question}"));
+                if let Some(key) = &check.key {
+                    text.push_str(&format!(" Key, hidden until they answer: {key}"));
+                }
             }
         }
-        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold}. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
+        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is a new problem of the same kind for the check's next time. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
     }
     if !redos.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -770,40 +693,22 @@ fn opener_text_with(
                 text.push_str(&format!(", first {first}"));
             }
             text.push('.');
+            for row in &redo.rows {
+                text.push_str(&format!("\n  {}, tag \"{}\": ", row.name, row.tag));
+                match (&row.question, &row.key) {
+                    (Some(question), Some(key)) => text.push_str(&format!(
+                        "stored question: {question} Key, hidden until they answer: {key}"
+                    )),
+                    (Some(question), None) => {
+                        text.push_str(&format!("stored question: {question}"));
+                    }
+                    _ => text.push_str("no stored question."),
+                }
+            }
         }
         text.push_str("\nSay how many are due and which is first. They run as the first block of the paper session: load stage papers_loop, which picks and records them.");
     }
     text
-}
-
-/// The chat attempts in a committed update, with their observation IDs from
-/// its `references`. Nothing for a rejected or uncommitted update. An answer
-/// on a paper moves no quick check: its gap-log row has its own redos.
-pub(crate) fn recorded_attempts(request: &Value, result: &Value) -> Vec<RecordedAttempt> {
-    if result["update_status"] != "committed" {
-        return Vec::new();
-    }
-    request["observations"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|observation| {
-            let attempt: crate::learner::Attempt =
-                serde_json::from_value(observation.get("attempt")?.clone()).ok()?;
-            if attempt.paper.is_some() {
-                return None;
-            }
-            let client_ref = observation["client_ref"].as_str()?;
-            let observation_id = result["references"][client_ref].as_str()?.to_owned();
-            Some(RecordedAttempt {
-                observation_id,
-                label: attempt.label.trim().to_owned(),
-                first_try: attempt.first_try,
-                help: attempt.help,
-                description: observation["description"].as_str().unwrap_or("").to_owned(),
-            })
-        })
-        .collect()
 }
 
 /// A committed update that carried learner input is a learner message, for
@@ -865,429 +770,4 @@ pub(crate) fn set_opener(mode: OpenerMode) -> std::process::ExitCode {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_opener_asks_for_question_and_cold_and_long_misses_never_cut_that_off() {
-        let long_miss = format!("{}...", "é".repeat(MAX_MISS_CHARS));
-        let checks: Vec<(i64, String, Vec<String>)> = (1..=MAX_CHECKS_PER_SITTING)
-            .map(|n| (n, "x".repeat(120), vec![long_miss.clone(); MAX_MISSES_KEPT]))
-            .collect();
-        let redos = vec![crate::digest::DueRedos {
-            gap_log: "Study/midterm-1/gap-log.md".into(),
-            due: 3,
-            first: Some("Diagnostic Q4".into()),
-        }];
-        // Untrimmed, this is over the limit, so the misses must give way.
-        assert!(opener_text_with(&checks, &redos).len() > MAX_OPENER_BYTES);
-        let text = opener_text(&checks, &redos);
-        assert!(text.len() <= MAX_OPENER_BYTES, "{}", text.len());
-        assert!(text.contains(
-            "with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold}"
-        ));
-        assert!(text.contains("cold is true when they answered with no help"));
-        assert!(text.contains("first_try declined and cold false."));
-        assert!(text.ends_with("which picks and records them."), "{text}");
-        assert!(text.contains("Earlier misses: "));
-        // A short opener is untouched.
-        let short = vec![(1, "sign of b".to_owned(), vec!["Took b as 7.".to_owned()])];
-        assert!(opener_text(&short, &[]).contains("Earlier misses: Took b as 7."));
-    }
-
-    const HOUR: i64 = 60 * 60 * 1000;
-    const DAY: i64 = 24 * HOUR;
-
-    fn fixture() -> (PathBuf, Workspace) {
-        let root =
-            std::env::temp_dir().join(crate::learner::store::new_id("sittings-test").unwrap());
-        std::fs::create_dir_all(root.join(crate::workspace::CONTROL_DIR)).unwrap();
-        std::fs::write(
-            root.join(crate::workspace::CONTROL_DIR).join("config.toml"),
-            "schema_version = 1\nworkspace_id = \"sittings-test\"\n",
-        )
-        .unwrap();
-        let workspace = Workspace::discover(&root).unwrap().unwrap();
-        (root, workspace)
-    }
-
-    fn attempt(id: &str, label: &str, first_try: FirstTry, help: AttemptHelp) -> RecordedAttempt {
-        RecordedAttempt {
-            observation_id: id.into(),
-            label: label.into(),
-            first_try,
-            help,
-            description: format!("{id}: called b the unknown"),
-        }
-    }
-
-    /// Noon local time, `days` after a fixed day, so day arithmetic is plain.
-    fn noon(days: i64) -> i64 {
-        let day = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap();
-        let noon = day.and_hms_opt(12, 0, 0).unwrap();
-        Local
-            .from_local_datetime(&noon)
-            .single()
-            .unwrap()
-            .timestamp_millis()
-            + days * DAY
-    }
-
-    #[test]
-    fn a_miss_returns_after_one_three_and_seven_days_and_closes_after_three_passes() {
-        let (root, workspace) = fixture();
-        let mut s = Sittings::open(&workspace).unwrap();
-        s.note_learner_message(noon(0)).unwrap();
-        s.apply_attempts(
-            &[attempt(
-                "o1",
-                "Sign of b",
-                FirstTry::Wrong,
-                AttemptHelp::None,
-            )],
-            noon(0),
-        )
-        .unwrap();
-        // A right answer the same day is no pass: the check is not due yet.
-        s.apply_attempts(
-            &[attempt(
-                "o2",
-                "sign of  B",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(0),
-        )
-        .unwrap();
-        let state = |s: &Sittings| -> (String, i64, Option<String>) {
-            s.conn
-                .query_row("SELECT status,passes,due_day FROM items", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
-                .unwrap()
-        };
-        assert_eq!(
-            state(&s),
-            ("open".into(), 0, Some(local_day(noon(1)).to_string()))
-        );
-
-        // Day 1: a new sitting takes it, the reply poses it, a right answer passes it.
-        assert!(s.note_learner_message(noon(1)).unwrap());
-        assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 1, posed: 0 }));
-        let opener = s.take_opener(&workspace, noon(1)).unwrap().unwrap();
-        assert!(
-            opener.contains("1. Label \"Sign of b\". Earlier misses: o1: called b the unknown"),
-            "{opener}"
-        );
-        assert_eq!(
-            s.take_opener(&workspace, noon(1)).unwrap(),
-            None,
-            "once per sitting"
-        );
-        s.note_reply("Quick check 1: in 3x² − 7x + 2, what is b?")
-            .unwrap();
-        assert_eq!(s.open_counts().unwrap(), None);
-        s.apply_attempts(
-            &[attempt(
-                "o3",
-                "sign of b",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(1),
-        )
-        .unwrap();
-        assert_eq!(
-            state(&s),
-            ("open".into(), 1, Some(local_day(noon(4)).to_string()))
-        );
-
-        // Replaying the same observation changes nothing.
-        s.apply_attempts(
-            &[attempt(
-                "o3",
-                "sign of b",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(4),
-        )
-        .unwrap();
-        assert_eq!(state(&s).1, 1);
-
-        // Day 4: a helped answer is no pass; an unaided one is.
-        assert!(s.note_learner_message(noon(4)).unwrap());
-        s.apply_attempts(
-            &[attempt(
-                "o4",
-                "sign of b",
-                FirstTry::Right,
-                AttemptHelp::Hint,
-            )],
-            noon(4),
-        )
-        .unwrap();
-        assert_eq!(state(&s).1, 1);
-        s.apply_attempts(
-            &[attempt(
-                "o5",
-                "sign of b",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(4),
-        )
-        .unwrap();
-        assert_eq!(
-            state(&s),
-            ("open".into(), 2, Some(local_day(noon(11)).to_string()))
-        );
-
-        // Day 11: the third pass closes it, and nothing is due after.
-        s.note_learner_message(noon(11)).unwrap();
-        s.apply_attempts(
-            &[attempt(
-                "o6",
-                "sign of b",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(11),
-        )
-        .unwrap();
-        assert_eq!(state(&s), ("closed".into(), 3, None));
-        assert!(s.note_learner_message(noon(30)).unwrap());
-        assert_eq!(s.open_counts().unwrap(), None);
-        assert_eq!(s.take_opener(&workspace, noon(30)).unwrap(), None);
-
-        // A miss reopens it for the next day, with both misses known.
-        s.apply_attempts(
-            &[attempt(
-                "o7",
-                "sign of b",
-                FirstTry::Wrong,
-                AttemptHelp::None,
-            )],
-            noon(30),
-        )
-        .unwrap();
-        assert_eq!(
-            state(&s),
-            ("open".into(), 0, Some(local_day(noon(31)).to_string()))
-        );
-        let log = std::fs::read_to_string(root.join(".magnesium").join(LOG_FILE)).unwrap();
-        assert_eq!(log.lines().count(), 5, "{log}");
-        let second: Value = serde_json::from_str(log.lines().nth(1).unwrap()).unwrap();
-        assert_eq!(second["due"], json!(["Sign of b"]));
-        assert_eq!(second["posed"], json!(["Sign of b"]));
-        assert_eq!(second["passed"], json!(["Sign of b"]));
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
-        let (root, workspace) = fixture();
-        let mut s = Sittings::open(&workspace).unwrap();
-        assert!(s.note_learner_message(noon(0)).unwrap());
-        let misses = (1..=5)
-            .map(|n| {
-                attempt(
-                    &format!("o{n}"),
-                    &format!("skill {n}"),
-                    FirstTry::Wrong,
-                    AttemptHelp::None,
-                )
-            })
-            .collect::<Vec<_>>();
-        s.apply_attempts(&misses, noon(0)).unwrap();
-        assert!(!s.note_learner_message(noon(0) + 2 * HOUR).unwrap());
-        assert!(
-            !s.note_learner_message(noon(0) + 4 * HOUR + HOUR / 2)
-                .unwrap(),
-            "2.5 hours after the last message"
-        );
-        assert!(s.note_learner_message(noon(1)).unwrap());
-        assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 0 }));
-        let not_taken: i64 = s
-            .conn
-            .query_row(
-                "SELECT not_taken FROM sittings ORDER BY sitting_no DESC LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(not_taken, 2, "five due, three taken");
-        // "Quick check 1" is not "Quick check 12"; a decline settles a check.
-        s.note_reply("Quick check 12 is not here.").unwrap();
-        assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 0 }));
-        s.note_reply("QUICK CHECK 2: try this.").unwrap();
-        s.apply_attempts(
-            &[attempt(
-                "d1",
-                "skill 1",
-                FirstTry::Declined,
-                AttemptHelp::None,
-            )],
-            noon(1),
-        )
-        .unwrap();
-        assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 2 }));
-        // A decline is free: the check stays due for the next sitting.
-        assert!(s.note_learner_message(noon(2)).unwrap());
-        let opener = s.take_opener(&workspace, noon(2)).unwrap().unwrap();
-        assert!(opener.contains("Label \"skill 1\""), "{opener}");
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_right_answer_reached_through_a_full_solution_is_asked_for_cold_the_next_day() {
-        let (root, workspace) = fixture();
-        let mut s = Sittings::open(&workspace).unwrap();
-        s.note_learner_message(noon(0)).unwrap();
-        s.apply_attempts(
-            &[attempt(
-                "o1",
-                "completing the square",
-                FirstTry::Right,
-                AttemptHelp::Solution,
-            )],
-            noon(0),
-        )
-        .unwrap();
-        let state = |s: &Sittings| -> (String, i64, Option<String>, String) {
-            s.conn
-                .query_row(
-                    "SELECT status,passes,due_day,misses_json FROM items",
-                    [],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-                )
-                .unwrap()
-        };
-        let tomorrow = local_day(noon(1)).to_string();
-        assert_eq!(
-            state(&s),
-            ("open".into(), 0, Some(tomorrow.clone()), "[]".into()),
-            "no miss to offer as a wrong option"
-        );
-        // A hint or a step is not the whole answer, so it schedules nothing.
-        for (id, help) in [("o2", AttemptHelp::Hint), ("o3", AttemptHelp::Step)] {
-            s.apply_attempts(&[attempt(id, "factoring", FirstTry::Right, help)], noon(0))
-                .unwrap();
-        }
-        let items: i64 = s
-            .conn
-            .query_row("SELECT count(*) FROM items", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(items, 1);
-        // On a passed check, a solution-led answer starts it over.
-        s.note_learner_message(noon(1)).unwrap();
-        s.apply_attempts(
-            &[attempt(
-                "o4",
-                "completing the square",
-                FirstTry::Right,
-                AttemptHelp::None,
-            )],
-            noon(1),
-        )
-        .unwrap();
-        assert_eq!(state(&s).1, 1);
-        s.apply_attempts(
-            &[attempt(
-                "o5",
-                "completing the square",
-                FirstTry::Right,
-                AttemptHelp::Solution,
-            )],
-            noon(1),
-        )
-        .unwrap();
-        assert_eq!(
-            state(&s),
-            (
-                "open".into(),
-                0,
-                Some(local_day(noon(2)).to_string()),
-                "[]".into()
-            )
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn asking_for_the_full_solution_before_any_answer_is_asked_for_cold_the_next_day() {
-        let (root, workspace) = fixture();
-        let mut s = Sittings::open(&workspace).unwrap();
-        s.note_learner_message(noon(0)).unwrap();
-        // A plain decline with no check makes nothing; one with the full solution does.
-        s.apply_attempts(
-            &[attempt(
-                "o1",
-                "completing the square",
-                FirstTry::Declined,
-                AttemptHelp::None,
-            )],
-            noon(0),
-        )
-        .unwrap();
-        let count = |s: &Sittings| -> i64 {
-            s.conn
-                .query_row("SELECT count(*) FROM items", [], |r| r.get(0))
-                .unwrap()
-        };
-        assert_eq!(count(&s), 0);
-        s.apply_attempts(
-            &[attempt(
-                "o2",
-                "completing the square",
-                FirstTry::Declined,
-                AttemptHelp::Solution,
-            )],
-            noon(0),
-        )
-        .unwrap();
-        let state: (String, i64, Option<String>, String) = s
-            .conn
-            .query_row(
-                "SELECT status,passes,due_day,misses_json FROM items",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .unwrap();
-        assert_eq!(
-            state,
-            (
-                "open".into(),
-                0,
-                Some(local_day(noon(1)).to_string()),
-                "[]".into()
-            )
-        );
-        // In a sitting, asking for the solution to a due check settles it as
-        // declined and asks for it again the next day.
-        assert!(s.note_learner_message(noon(1)).unwrap());
-        s.apply_attempts(
-            &[attempt(
-                "o3",
-                "completing the square",
-                FirstTry::Declined,
-                AttemptHelp::Solution,
-            )],
-            noon(1),
-        )
-        .unwrap();
-        let (outcome, due): (String, String) = s
-            .conn
-            .query_row(
-                "SELECT s.outcome, i.due_day FROM sitting_items s JOIN items i USING(item_id)",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(
-            (outcome.as_str(), due),
-            ("declined", local_day(noon(2)).to_string())
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
+mod tests;

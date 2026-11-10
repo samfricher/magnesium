@@ -184,8 +184,10 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from([
             "anchors",
+            "attempt_corrections",
             "attempts",
             "context_receipts",
+            "gap_logs",
             "help_levels",
             "host_bindings",
             "learner_memories",
@@ -197,12 +199,14 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             "observation_events",
             "observations",
             "operation_receipts",
+            "practice_events",
             "practice_items",
             "review_items",
             "workspace_meta",
         ])
     );
-    // The quick checks and sittings beside the learner record come too.
+    // The sittings beside the learner record come too. Quick checks are
+    // practice items in the learner store.
     let sittings = read_json(&destination.join("sittings.json"));
     assert_eq!(
         sittings
@@ -211,7 +215,7 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        ["attempts", "items", "sitting_items", "sittings"]
+        ["sitting_items", "sittings"]
     );
     #[cfg(unix)]
     {

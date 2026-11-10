@@ -42,9 +42,9 @@ Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, a
 
 ## Upgrade an old gap log
 
-A `gap-log.md` without a `Next redo` column comes from an older template. A folder from before confidence letters has no `Conf:` line above `## Tags` in `gap-log.md`, or its Method in `plan.md` or a paper not yet marked does not ask for S, U or G. Check for these even when the Conf column is already there, because the `papers_loop` stage adds only the column. That stage holds the upgrade steps that every host follows. After them, use this skill's templates:
+Magnesium brings an older gap log's rows into the learner record when stage `papers_loop` loads, and writes its Gaps table from then on, as that stage says. A folder from before this has text above `## Tags` in `gap-log.md` that tells you to write the Next redo date or the Status, or has no `Conf:` line there. A folder from before confidence letters has a Method in `plan.md`, or a paper not yet marked, that does not ask for S, U or G. Check for these after that stage loads, and use this skill's templates:
 
-1. If `gap-log.md` has no `Next redo` column or no `Conf:` line, read the `gap-log.md` template, and replace the old file's text above `## Tags` with the template's text.
+1. If the text above `## Tags` in `gap-log.md` differs from the `gap-log.md` template's, read the template, and replace the old file's text above `## Tags` with the template's text.
 2. If the Method in `plan.md` does not ask for the redo days or for S, U or G, replace steps 1, 4 and 5 of the Method with the template's steps.
 3. Update each paper not yet marked, so the learner sees the S, U and G line. A paper is marked when Scores has its row with a real score, not the template's `<score>` placeholder. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the line of `\paperheader` in `papers/src/preamble.tex` that asks for a ? with the `preamble.tex` template's line, and run the build again.
 

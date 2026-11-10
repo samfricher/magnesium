@@ -224,15 +224,26 @@ impl LearnerStore {
             tx.execute_batch("UPDATE workspace_meta SET review_generation=review_generation+1")?;
         }
         if r.mode == UpdateMode::CompleteCaptured
-            && r.observations
+            && (r
+                .observations
                 .iter()
                 .any(|o| o.attempt.is_some() || !o.attempts.is_empty())
+                || !r.practice.is_empty()
+                || !r.attempt_corrections.is_empty())
         {
             return Err(LearnerError::new(
                 "invalid_variant",
-                "complete_captured cannot record an attempt, because an attempt can schedule a quick check",
+                "complete_captured cannot record an attempt, a practice change or an attempt correction, because each can change what is due",
             ));
         }
+        crate::learner::practice::apply_corrections(
+            &tx,
+            &r.attempt_corrections,
+            now,
+            host,
+            &mut shortened,
+        )?;
+        crate::learner::practice::apply_edits(&tx, &r.practice, now, host, &mut shortened)?;
         if r.mode == UpdateMode::CompleteCaptured
             && (!r.observations.is_empty()
                 || !r.memory_edits.is_empty()

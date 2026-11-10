@@ -219,14 +219,27 @@ pub(super) fn apply_observations(
                         host,
                     ));
                 }
-                this_request.insert(insert_attempt(
+                let attempt_id = insert_attempt(
                     tx,
                     (&id, &response.event_id, session.as_deref()),
                     path,
                     attempt,
                     (answered_at, now),
                     notes,
-                )?);
+                )?;
+                crate::learner::practice::record_attempt(
+                    tx,
+                    &crate::learner::practice::NewAttempt {
+                        attempt_id: &attempt_id,
+                        attempt,
+                        path,
+                        answered_at,
+                        now,
+                    },
+                    host,
+                    notes,
+                )?;
+                this_request.insert(attempt_id);
             }
         }
         let field = [
@@ -363,6 +376,44 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
                 host,
             ));
         }
+        let lost = paper.marks < paper.out_of;
+        match &attempt.gap {
+            Some(_) if paper.stretch => {
+                return Err(field_error(
+                    &format!("{path}.gap"),
+                    "A stretch question makes no gap-log row: score it under Stretch items",
+                    host,
+                ));
+            }
+            Some(gap) if !lost && gap.gap_type != GapType::S => {
+                return Err(field_error(
+                    &format!("{path}.gap.type"),
+                    "A full-mark answer makes a row only when it was too slow, as type S",
+                    host,
+                ));
+            }
+            Some(gap) if gap.what_went_wrong.trim().is_empty() => {
+                return Err(field_error(
+                    &format!("{path}.gap.what_went_wrong"),
+                    "Say what was written, and what the mark scheme needed",
+                    host,
+                ));
+            }
+            None if lost && !paper.stretch && attempt.counts_for.is_empty() => {
+                return Err(field_error(
+                    &format!("{path}.gap"),
+                    "This answer lost marks, so it makes a gap-log row: give gap {type: K, S, N, A or R, what_went_wrong}. The runtime numbers and dates the row. For a redo of an existing row, name it in counts_for instead; for a question beyond the plan, set paper.stretch true",
+                    host,
+                ));
+            }
+            _ => {}
+        }
+    } else if attempt.gap.is_some() {
+        return Err(field_error(
+            &format!("{path}.gap"),
+            "gap is for a paper answer, so it needs paper. A chat miss makes its quick check by itself",
+            host,
+        ));
     }
     Ok(())
 }
@@ -436,8 +487,8 @@ fn insert_attempt(
         "INSERT INTO attempts(
             attempt_id, observation_id, response_event_id, session_id, question,
             paper, paper_question, label, label_key, mark, marks, out_of, help,
-            confidence, cold, answered_at_ms, seconds, created_at_ms
-         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+            confidence, cold, answered_at_ms, seconds, created_at_ms, slow
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
         params![
             attempt_id,
             observation_id,
@@ -456,7 +507,8 @@ fn insert_attempt(
             attempt.cold,
             answered_at,
             attempt.seconds,
-            now
+            now,
+            attempt.slow
         ],
     )?;
     Ok(attempt_id)
