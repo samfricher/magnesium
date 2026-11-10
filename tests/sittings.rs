@@ -152,6 +152,7 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     for text in [
         &format!("1. Label \"{LABEL}\". Earlier misses: {MISS}"),
         "Your first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them",
+        "the question never names or points at the skill, the label, the step or the earlier mistake",
         "lettered options",
         "first_try declined",
         "Study/midterm-1/gap-log.md: 1 due, first Diagnostic Q3.",

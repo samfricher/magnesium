@@ -233,8 +233,10 @@ pub struct Attempt {
     /// equation and no question number. Reuse an open quick check's label
     /// exactly for the same skill, and when recording its answer or decline.
     pub label: String,
-    /// right or wrong for the first try before any correction; declined when
-    /// the learner declines a quick check.
+    /// right or wrong for the first try before any correction. declined when
+    /// the learner declines a quick check, or asks for the full solution
+    /// before giving any answer: record that with help solution, and the step
+    /// is asked for cold the next day.
     pub first_try: FirstTry,
     /// The most help given before the first try: none, hint, step or solution.
     pub help: AttemptHelp,

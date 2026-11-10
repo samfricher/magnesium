@@ -689,6 +689,16 @@ fn apply(
                 "passed"
             })
         }
+        // Asking for the full solution before any answer: nothing of the
+        // learner's own came first, so the step is asked for cold the next
+        // day, with no miss to offer as a wrong option.
+        FirstTry::Declined if attempt.help == AttemptHelp::Solution => {
+            if let Some(item) = &item {
+                settle(&item.id, "declined")?;
+            }
+            schedule_next_day(tx, item.as_ref(), (&label, &key), None, today, now)?;
+            Ok("scheduled")
+        }
         FirstTry::Declined => {
             let Some(Item { id, .. }) = item else {
                 return Ok("none");
@@ -724,7 +734,7 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
                 text.push_str(&format!(" Earlier misses: {}", misses.join(" | ")));
             }
         }
-        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new instance the learner has not seen, answered in a line or two, chosen so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that instance: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, first_try, help}. first_try is right only when the answer, and any reason the learner gives, rules out each earlier miss. A right final answer whose reason still holds an earlier miss is wrong. A decline is recorded the same way with first_try declined.");
+        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, first_try, help}. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined.");
     }
     if !redos.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -1150,6 +1160,83 @@ mod tests {
                 Some(local_day(noon(2)).to_string()),
                 "[]".into()
             )
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn asking_for_the_full_solution_before_any_answer_is_asked_for_cold_the_next_day() {
+        let (root, workspace) = fixture();
+        let mut s = Sittings::open(&workspace).unwrap();
+        s.note_learner_message(noon(0)).unwrap();
+        // A plain decline with no check makes nothing; one with the full solution does.
+        s.apply_attempts(
+            &[attempt(
+                "o1",
+                "completing the square",
+                FirstTry::Declined,
+                AttemptHelp::None,
+            )],
+            noon(0),
+        )
+        .unwrap();
+        let count = |s: &Sittings| -> i64 {
+            s.conn
+                .query_row("SELECT count(*) FROM items", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count(&s), 0);
+        s.apply_attempts(
+            &[attempt(
+                "o2",
+                "completing the square",
+                FirstTry::Declined,
+                AttemptHelp::Solution,
+            )],
+            noon(0),
+        )
+        .unwrap();
+        let state: (String, i64, Option<String>, String) = s
+            .conn
+            .query_row(
+                "SELECT status,passes,due_day,misses_json FROM items",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            state,
+            (
+                "open".into(),
+                0,
+                Some(local_day(noon(1)).to_string()),
+                "[]".into()
+            )
+        );
+        // In a sitting, asking for the solution to a due check settles it as
+        // declined and asks for it again the next day.
+        assert!(s.note_learner_message(noon(1)).unwrap());
+        s.apply_attempts(
+            &[attempt(
+                "o3",
+                "completing the square",
+                FirstTry::Declined,
+                AttemptHelp::Solution,
+            )],
+            noon(1),
+        )
+        .unwrap();
+        let (outcome, due): (String, String) = s
+            .conn
+            .query_row(
+                "SELECT s.outcome, i.due_day FROM sitting_items s JOIN items i USING(item_id)",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (outcome.as_str(), due),
+            ("declined", local_day(noon(2)).to_string())
         );
         std::fs::remove_dir_all(root).unwrap();
     }
