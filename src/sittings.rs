@@ -716,7 +716,39 @@ fn says_check(reply_lowercase: &str, number: i64) -> bool {
     })
 }
 
+/// The opener, within [`MAX_OPENER_BYTES`]. When the earlier misses make it
+/// too long, they are cut shorter first, so the instructions after them, which
+/// say how to pose and record each check, always arrive whole.
 fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::DueRedos]) -> String {
+    let mut text = String::new();
+    for chars in [MAX_MISS_CHARS, 160, 80, 40, 0] {
+        let shortened: Vec<(i64, String, Vec<String>)> = checks
+            .iter()
+            .map(|(number, label, misses)| {
+                let misses = match chars {
+                    0 => Vec::new(),
+                    _ => misses.iter().map(|miss| clip(miss, chars)).collect(),
+                };
+                (*number, label.clone(), misses)
+            })
+            .collect();
+        text = opener_text_with(&shortened, redos);
+        if text.len() <= MAX_OPENER_BYTES {
+            return text;
+        }
+    }
+    let mut end = MAX_OPENER_BYTES;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    text
+}
+
+fn opener_text_with(
+    checks: &[(i64, String, Vec<String>)],
+    redos: &[crate::digest::DueRedos],
+) -> String {
     let mut text = String::from(
         "Sitting opener. A new sitting has begun: open it with what is due, before new material. The learner may decline any of it at no cost, and a skip, no-quiz or stop request wins.",
     );
@@ -728,7 +760,7 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
                 text.push_str(&format!(" Earlier misses: {}", misses.join(" | ")));
             }
         }
-        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, first_try, help}. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined.");
+        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold}. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
     }
     if !redos.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -740,13 +772,6 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
             text.push('.');
         }
         text.push_str("\nSay how many are due and which is first. They run as the first block of the paper session: load stage papers_loop, which picks and records them.");
-    }
-    if text.len() > MAX_OPENER_BYTES {
-        let mut end = MAX_OPENER_BYTES;
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        text.truncate(end);
     }
     text
 }
@@ -842,6 +867,33 @@ pub(crate) fn set_opener(mode: OpenerMode) -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_opener_asks_for_question_and_cold_and_long_misses_never_cut_that_off() {
+        let long_miss = format!("{}...", "é".repeat(MAX_MISS_CHARS));
+        let checks: Vec<(i64, String, Vec<String>)> = (1..=MAX_CHECKS_PER_SITTING)
+            .map(|n| (n, "x".repeat(120), vec![long_miss.clone(); MAX_MISSES_KEPT]))
+            .collect();
+        let redos = vec![crate::digest::DueRedos {
+            gap_log: "Study/midterm-1/gap-log.md".into(),
+            due: 3,
+            first: Some("Diagnostic Q4".into()),
+        }];
+        // Untrimmed, this is over the limit, so the misses must give way.
+        assert!(opener_text_with(&checks, &redos).len() > MAX_OPENER_BYTES);
+        let text = opener_text(&checks, &redos);
+        assert!(text.len() <= MAX_OPENER_BYTES, "{}", text.len());
+        assert!(text.contains(
+            "with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold}"
+        ));
+        assert!(text.contains("cold is true when they answered with no help"));
+        assert!(text.contains("first_try declined and cold false."));
+        assert!(text.ends_with("which picks and records them."), "{text}");
+        assert!(text.contains("Earlier misses: "));
+        // A short opener is untouched.
+        let short = vec![(1, "sign of b".to_owned(), vec!["Took b as 7.".to_owned()])];
+        assert!(opener_text(&short, &[]).contains("Earlier misses: Took b as 7."));
+    }
 
     const HOUR: i64 = 60 * 60 * 1000;
     const DAY: i64 = 24 * HOUR;

@@ -75,7 +75,7 @@ A gap log made with an older paper template has no Next redo column, so none of 
 
 ## See every answer you gave
 
-Each answer the tutor marks, in chat or on a paper, is kept as its own row: the question, the mark, when, the help you had before answering, how sure you said you were, the skill it tests and whether it was cold, meaning unaided, from a blank page, on a later day than the teaching. An answer you were helped with stays marked as helped. From the study folder, `magnesium attempts` lists them, for example:
+Each answer the tutor marks, in chat or on a paper, is kept as its own row: the question, the mark, when, the help you had before answering, how sure you said you were, the skill it tests and whether it was cold, meaning unaided, from a blank page, on a later day than the teaching. An answer you were helped with stays marked as helped, and only your first answer on a skill each day can count as cold. From the study folder, `magnesium attempts` lists them, for example:
 
 ```text
 2026-11-10 09:15  MockA Q2a: Find E(X) for the table

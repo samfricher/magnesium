@@ -1,4 +1,5 @@
 use super::*;
+use chrono::TimeZone;
 
 pub(super) fn apply_observations(
     tx: &Connection,
@@ -9,6 +10,9 @@ pub(super) fn apply_observations(
     used_events: &mut BTreeSet<String>,
     (now, notes): (i64, &mut Vec<String>),
 ) -> Result<()> {
+    // Attempts this request stored. A paper's answers arrive together, so
+    // they never make each other not cold.
+    let mut this_request = BTreeSet::new();
     for (observation_index, o) in observations.iter().enumerate() {
         limits::text(
             "observation.description",
@@ -203,14 +207,26 @@ pub(super) fn apply_observations(
                 |row| row.get(0),
             )?;
             for (path, attempt) in &attempts {
-                insert_attempt(
+                if attempt.cold
+                    && let Some(earlier) =
+                        earlier_today(tx, &attempt.label, answered_at, &this_request)?
+                {
+                    return Err(field_error(
+                        &format!("{path}.cold"),
+                        format!(
+                            "This label already has an answer earlier today (\"{earlier}\"), so this one is not cold: cold is true only on a later day than the teaching and any earlier try. Send cold false"
+                        ),
+                        host,
+                    ));
+                }
+                this_request.insert(insert_attempt(
                     tx,
                     (&id, &response.event_id, session.as_deref()),
                     path,
                     attempt,
                     (answered_at, now),
                     notes,
-                )?;
+                )?);
             }
         }
         let field = [
@@ -351,7 +367,51 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
     Ok(())
 }
 
-/// Store one attempt as its own row.
+/// The question of an attempt on the same label answered earlier on the same
+/// local day, from an earlier request, if there is one.
+fn earlier_today(
+    tx: &Connection,
+    label: &str,
+    answered_at: i64,
+    this_request: &BTreeSet<String>,
+) -> Result<Option<String>> {
+    const DAY_AND_A_BIT_MS: i64 = 26 * 60 * 60 * 1000;
+    let day = |ms: i64| {
+        chrono::Local
+            .timestamp_millis_opt(ms)
+            .single()
+            .map(|time| time.date_naive())
+    };
+    let today = day(answered_at);
+    let mut statement = tx.prepare(
+        "SELECT attempt_id,answered_at_ms,question FROM attempts
+         WHERE label_key=?1 AND answered_at_ms BETWEEN ?2 AND ?3
+         ORDER BY answered_at_ms,attempt_no",
+    )?;
+    let rows = statement.query_map(
+        params![
+            crate::learner::label_key(label),
+            answered_at - DAY_AND_A_BIT_MS,
+            answered_at
+        ],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        },
+    )?;
+    for row in rows {
+        let (id, at, question) = row?;
+        if !this_request.contains(&id) && today.is_some() && day(at) == today {
+            return Ok(Some(question));
+        }
+    }
+    Ok(None)
+}
+
+/// Store one attempt as its own row, and return its ID.
 fn insert_attempt(
     tx: &Connection,
     (observation_id, response_event_id, session): (&str, &str, Option<&str>),
@@ -359,7 +419,8 @@ fn insert_attempt(
     attempt: &Attempt,
     (answered_at, now): (i64, i64),
     notes: &mut Vec<String>,
-) -> Result<()> {
+) -> Result<String> {
+    let attempt_id = store::new_id("a")?;
     let label = attempt
         .label
         .split_whitespace()
@@ -378,7 +439,7 @@ fn insert_attempt(
             confidence, cold, answered_at_ms, seconds, created_at_ms
          ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         params![
-            store::new_id("a")?,
+            attempt_id,
             observation_id,
             response_event_id,
             session,
@@ -398,7 +459,7 @@ fn insert_attempt(
             now
         ],
     )?;
-    Ok(())
+    Ok(attempt_id)
 }
 
 /// A label that names one problem rather than a skill: it holds an equation,

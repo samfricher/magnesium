@@ -255,7 +255,8 @@ pub struct Attempt {
     /// step or example) or solution.
     pub help: AttemptHelp,
     /// true only when the answer was unaided, from a blank page, on a later
-    /// day than the teaching. Never true with help other than none.
+    /// day than the teaching. Never true with help other than none, nor when
+    /// this label already has an answer earlier the same day.
     pub cold: bool,
     /// The learner's confidence letter, when they gave one: sure (S), unsure
     /// (U) or guess (G).

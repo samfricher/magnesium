@@ -282,3 +282,88 @@ fn an_attempt_whose_facts_contradict_is_refused_and_nothing_is_stored() {
     assert_eq!(count(&conn, "SELECT count(*) FROM attempts"), 0);
     assert_eq!(count(&conn, "SELECT count(*) FROM observations"), 0);
 }
+
+#[test]
+fn a_later_answer_on_a_label_the_same_day_is_never_cold() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    let chat = |event: &str, question: &str, cold: bool| {
+        let mut o = observation(event, "Read b with its sign.");
+        o["attempt"] = json!({"label":"sign of b in the quadratic formula","question":question,
+            "first_try":"right","help":"none","cold":cold});
+        o
+    };
+    // Yesterday's answer does not stop today's first one being cold.
+    let first = prompt(&e, "p-1", "b is -7");
+    step(
+        &e,
+        update("day-0", chat(&first, "b in x² − 7x + 10?", false)),
+    );
+    store(&e)
+        .execute(
+            "UPDATE attempts SET answered_at_ms=answered_at_ms-2*86400000",
+            [],
+        )
+        .unwrap();
+    let check = prompt(&e, "p-2", "b is -5, so x = 4 or 1");
+    step(
+        &e,
+        update("check", chat(&check, "Solve x² − 5x + 4 = 0", true)),
+    );
+
+    // A later answer on that label the same day is refused as cold, and
+    // accepted as not cold.
+    let later = prompt(&e, "p-3", "b is -3");
+    let value = refused(&e, update("later", chat(&later, "b in x² − 3x?", true)));
+    assert_eq!(
+        value["error"]["recovery"]["field_path"], "observations[0].attempt.cold",
+        "{value}"
+    );
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Solve x² − 5x + 4 = 0"),
+        "{value}"
+    );
+    step(&e, update("later-2", chat(&later, "b in x² − 3x?", false)));
+    // Another label the same day is unaffected.
+    let other = prompt(&e, "p-4", "the discriminant is 1");
+    let mut o = observation(&other, "Found the discriminant.");
+    o["attempt"] = json!({"label":"discriminant","question":"b² − 4ac for x² − 3x + 2?",
+        "first_try":"right","help":"none","cold":true});
+    step(&e, update("other", o));
+
+    // A paper's parts on one tag, sent together, are all cold.
+    let answers = prompt(&e, "p-5", "MockB: 1a x=2, 1b x=-1");
+    let mut paper = observation(&answers, "MockB, timed.");
+    paper["attempts"] = json!([
+        {"label":"factorising","question":"Factorise x² − x − 2","first_try":"right","help":"none","cold":true,
+         "paper":{"name":"MockB","question":"1a","marks":2,"out_of":2}},
+        {"label":"factorising","question":"Hence solve x² − x − 2 = 0","first_try":"right","help":"none","cold":true,
+         "paper":{"name":"MockB","question":"1b","marks":2,"out_of":2}}
+    ]);
+    step(&e, update("paper", paper));
+
+    let colds: Vec<(String, bool)> = attempts(&e)
+        .iter()
+        .map(|a| {
+            (
+                a["question"].as_str().unwrap().to_owned(),
+                a["cold"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        colds,
+        [
+            ("b in x² − 7x + 10?".to_owned(), false),
+            ("Solve x² − 5x + 4 = 0".to_owned(), true),
+            ("b in x² − 3x?".to_owned(), false),
+            ("b² − 4ac for x² − 3x + 2?".to_owned(), true),
+            ("Factorise x² − x − 2".to_owned(), true),
+            ("Hence solve x² − x − 2 = 0".to_owned(), true),
+        ]
+    );
+}
