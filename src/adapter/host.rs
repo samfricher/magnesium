@@ -13,49 +13,38 @@ use crate::workspace::Workspace;
 pub(crate) const EXPLICIT_ROOT_ENV: &str = "MAGNESIUM_WORKSPACE_ROOT";
 pub(crate) const MAX_NATIVE_ID_BYTES: usize = 512;
 
-/// Native process session identity exported by each host to hooks and stdio
+/// Native process session identity Claude Code exports to hooks and stdio
 /// MCP servers. Claude Code sends no conversation identity in MCP requests,
-/// so `CLAUDE_CODE_SESSION_ID` is its only route. A Claude MCP server keeps
-/// the ID it was spawned with, so it can lag the hooks after `/clear`.
-pub(crate) const HOST_SESSION_ENV: [(HostKind, &str); 3] = [
-    (HostKind::Codex, "CODEX_THREAD_ID"),
-    (HostKind::Claude, "CLAUDE_CODE_SESSION_ID"),
-    (HostKind::OpenCode, "OPENCODE_SESSION_ID"),
-];
+/// so this variable is its only route. A Claude MCP server keeps the ID it
+/// was spawned with, so it can lag the hooks after `/clear`.
+pub(crate) const HOST_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
 /// Stable native identity framing. Host kind is also stored separately in
 /// the learner database; no identity is taken from a model tool argument.
 pub(crate) const STORED_HOST_ID_PREFIX: &str = "magnesium-h1:";
 
-/// Supported host kinds. Unknown kinds are rejected as unavailable capture;
-/// they must not silently inherit another host's identity.
+/// Supported host kinds. Magnesium is built and tested for Claude Code only.
+/// Unknown kinds are rejected as unavailable capture; they must not silently
+/// inherit another host's identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HostKind {
-    Codex,
     Claude,
-    OpenCode,
 }
 
 impl HostKind {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
-            Self::Codex => "codex",
             Self::Claude => "claude",
-            Self::OpenCode => "opencode",
         }
     }
 
     pub(crate) fn parse(value: &str) -> Result<Self, String> {
         match value {
-            "codex" => Ok(Self::Codex),
             "claude" => Ok(Self::Claude),
-            "opencode" => Ok(Self::OpenCode),
-            _ => Err("unsupported host kind".to_owned()),
+            _ => Err(
+                "unsupported host kind; Magnesium supports only Claude Code (claude)".to_owned(),
+            ),
         }
-    }
-
-    pub(crate) fn is_codex(self) -> bool {
-        matches!(self, Self::Codex)
     }
 }
 
@@ -75,16 +64,8 @@ impl HostIdentity {
         })
     }
 
-    pub(crate) fn codex(native_session_id: &str) -> Result<Self, String> {
-        Self::new(HostKind::Codex, native_session_id)
-    }
-
     pub(crate) fn claude(native_session_id: &str) -> Result<Self, String> {
         Self::new(HostKind::Claude, native_session_id)
-    }
-
-    pub(crate) fn opencode(native_session_id: &str) -> Result<Self, String> {
-        Self::new(HostKind::OpenCode, native_session_id)
     }
 
     pub(crate) fn kind(&self) -> HostKind {
@@ -94,19 +75,13 @@ impl HostIdentity {
     /// Opaque host-thread key. Native identity does not restrict which
     /// workspace-wide memories may be read or revised.
     pub(crate) fn stored_session_id(&self) -> String {
-        match self.kind {
-            HostKind::Codex => self.native_session_id.clone(),
-            _ => framed_host_id(self.kind, &self.native_session_id),
-        }
+        framed_host_id(self.kind, &self.native_session_id)
     }
 
     /// Stable native event key used for capture deduplication.
     pub(crate) fn stored_turn_id(&self, native_turn_id: &str) -> Result<String, String> {
         validate_native_id("native turn ID", native_turn_id)?;
-        Ok(match self.kind {
-            HostKind::Codex => native_turn_id.to_owned(),
-            _ => framed_host_id(self.kind, native_turn_id),
-        })
+        Ok(framed_host_id(self.kind, native_turn_id))
     }
 
     /// Stored turn value for a native-local ordinal allocated at a trusted
@@ -117,10 +92,7 @@ impl HostIdentity {
     /// `ordinal-…` values remain readable as opaque existing identities.
     pub(crate) fn stored_ordinal_turn_id(&self, ordinal: u64) -> String {
         let base = session_qualified_ordinal_turn_id(&self.stored_session_id(), ordinal);
-        match self.kind {
-            HostKind::Codex => base,
-            _ => framed_host_id(self.kind, &base),
-        }
+        framed_host_id(self.kind, &base)
     }
 }
 
@@ -129,8 +101,6 @@ fn framed_host_id(kind: HostKind, native: &str) -> String {
 }
 
 /// The host whose plugin launched this process, when its command line says so.
-/// Only that host's session variable is trusted, so a Claude Code session
-/// started from a Codex shell cannot borrow the inherited Codex thread.
 static LAUNCH_HOST: std::sync::OnceLock<HostKind> = std::sync::OnceLock::new();
 
 pub(crate) fn set_launch_host(kind: HostKind) {
@@ -142,7 +112,6 @@ pub(crate) fn launch_host() -> Option<HostKind> {
 }
 
 const ENDED_SESSIONS: &str = "cache/ended-sessions";
-const CORE_RULES_OWED: &str = "cache/core-rules-owed";
 
 fn session_marker(
     workspace: &Workspace,
@@ -169,32 +138,6 @@ fn remove_if_present(path: &Path) -> Result<bool, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
     }
-}
-
-/// Codex allows too few bytes at session start for the core rules, so after
-/// a compaction its hook marks the conversation, and the next tool result in
-/// that conversation carries them.
-pub(crate) fn mark_core_rules_owed(
-    workspace: &Workspace,
-    host: &HostIdentity,
-) -> Result<(), String> {
-    crate::workspace::write_private_atomic(
-        &session_marker(workspace, CORE_RULES_OWED, &host.stored_session_id())?,
-        b"",
-    )
-    .map_err(|error| error.to_string())
-}
-
-/// True once per mark: the caller delivers the core rules.
-pub(crate) fn take_core_rules_owed(
-    workspace: &Workspace,
-    stored_session_id: &str,
-) -> Result<bool, String> {
-    remove_if_present(&session_marker(
-        workspace,
-        CORE_RULES_OWED,
-        stored_session_id,
-    )?)
 }
 
 /// Claude Code keeps a stdio MCP server, and its spawn-time session ID,
@@ -224,19 +167,14 @@ pub(crate) fn session_ended(
         .map_err(|error| error.to_string())
 }
 
-/// Resolve a validated native process identity using the established host precedence.
-/// Environment values are native IDs; framing happens only through HostIdentity.
-/// No match grants neither a native identity nor permission to publish learner text.
+/// Resolve a validated native process identity from Claude Code's session
+/// variable. Environment values are native IDs; framing happens only through
+/// HostIdentity. No match grants neither a native identity nor permission to
+/// publish learner text.
 pub(crate) fn process_host_identity() -> Option<HostIdentity> {
-    let launched = launch_host();
-    HOST_SESSION_ENV
-        .into_iter()
-        .filter(|(kind, _)| launched.is_none_or(|launched| launched == *kind))
-        .find_map(|(kind, key)| {
-            std::env::var(key)
-                .ok()
-                .and_then(|id| HostIdentity::new(kind, &id).ok())
-        })
+    std::env::var(HOST_SESSION_ENV)
+        .ok()
+        .and_then(|id| HostIdentity::claude(&id).ok())
 }
 
 /// Native process workspace binding; tool arguments cannot change it.

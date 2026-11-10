@@ -66,7 +66,7 @@ impl Scratch {
     fn new(binary: PathBuf) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
-        for name in ["home", "data", "config", "tmp", "codex", "window", "Course"] {
+        for name in ["home", "data", "config", "tmp", "window", "Course"] {
             std::fs::create_dir_all(root.join(name)).unwrap();
         }
         let folder = root.join("Course");
@@ -97,7 +97,6 @@ impl Scratch {
             ("XDG_DATA_HOME".to_owned(), path("data")),
             ("XDG_CONFIG_HOME".to_owned(), path("config")),
             ("TMPDIR".to_owned(), path("tmp")),
-            ("CODEX_HOME".to_owned(), path("codex")),
             ("CLAUDE_CODE_SESSION_ID".to_owned(), THREAD.to_owned()),
         ];
         if let Ok(zone) = std::env::var("TZ") {

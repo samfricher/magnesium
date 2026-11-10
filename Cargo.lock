@@ -626,38 +626,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "magnesium"
-version = "0.2.0"
-dependencies = [
- "atomicwrites",
- "chrono",
- "clap",
- "directories",
- "getrandom 0.2.17",
- "hmac",
- "nix",
- "pdf-extract",
- "rmcp",
- "rusqlite",
- "rustix 1.1.4",
- "same-file",
- "schemars",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "sha2 0.11.0",
- "support",
- "tokio",
- "toml_edit",
- "tree-sitter",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-typescript",
- "unicode-normalization",
- "windows-permissions",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -726,6 +694,38 @@ dependencies = [
  "thiserror",
  "ttf-parser",
  "weezl",
+]
+
+[[package]]
+name = "magnesium"
+version = "0.2.0"
+dependencies = [
+ "atomicwrites",
+ "chrono",
+ "clap",
+ "directories",
+ "getrandom 0.2.17",
+ "hmac",
+ "nix",
+ "pdf-extract",
+ "rmcp",
+ "rusqlite",
+ "rustix 1.1.4",
+ "same-file",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2 0.11.0",
+ "support",
+ "tokio",
+ "toml_edit",
+ "tree-sitter",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-typescript",
+ "unicode-normalization",
+ "windows-permissions",
 ]
 
 [[package]]

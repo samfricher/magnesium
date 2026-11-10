@@ -51,10 +51,9 @@ impl Fixture {
         let store =
             crate::learner::LearnerStore::initialize(&workspace.store_path(), "mcp-lifetime")
                 .unwrap();
-        let host = crate::learner::HostContext {
-            host_kind: "codex".into(),
-            host_thread_id: thread_id(),
-        };
+        let host = crate::adapter::host_context(
+            &crate::adapter::HostIdentity::claude("mcp-lifetime-thread").unwrap(),
+        );
         store.update(&host, json!({"schema":crate::learner::SCHEMA,"action":"update","request_id":"start","session":{"operation":"start","client_ref":"s","goal":"request lifetime"}})).unwrap();
         Self { root, store, host }
     }
@@ -67,6 +66,7 @@ impl Fixture {
             bound_root: Some(self.root.clone()),
             hooks: Some(Arc::new(TestRequestHooks {
                 cwd: self.root.clone(),
+                host: Some(self.host.clone()),
                 checkpoint: hook,
             })),
         }
@@ -86,13 +86,8 @@ fn runtime() -> tokio::runtime::Runtime {
 fn request(name: &str, arguments: Value) -> CallToolRequestParams {
     serde_json::from_value(json!({"name":name,"arguments":arguments})).unwrap()
 }
-fn thread_id() -> String {
-    std::env::var("CODEX_THREAD_ID").unwrap_or_else(|_| "mcp-lifetime-thread".into())
-}
 fn context(peer: &rmcp::service::Peer<RoleServer>, id: i64) -> RequestContext<RoleServer> {
-    let mut context = RequestContext::new(rmcp::model::RequestId::Number(id), peer.clone());
-    context.meta.0.insert("threadId".into(), json!(thread_id()));
-    context
+    RequestContext::new(rmcp::model::RequestId::Number(id), peer.clone())
 }
 type ServedFixture = (
     rmcp::service::RunningService<RoleServer, MagnesiumServer>,
@@ -103,7 +98,7 @@ type ServedFixture = (
 fn serve(server: MagnesiumServer) -> ServedFixture {
     let (incoming, rx) = tokio::sync::mpsc::channel(32);
     let (tx, outgoing) = tokio::sync::mpsc::channel(32);
-    let info = serde_json::from_value(json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"codex-mcp-client","version":"test"}})).unwrap();
+    let info = serde_json::from_value(json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test-client","version":"test"}})).unwrap();
     (
         rmcp::service::serve_directly(
             server,

@@ -19,7 +19,7 @@ fn live_mcp_requires_current_v2_structured_fields_and_rejects_retired_fields() {
     let mut client = McpClient::spawn_with_env(
         &environment,
         true,
-        &[("OPENCODE_SESSION_ID", "opencode-v2-contract")],
+        &[("CLAUDE_CODE_SESSION_ID", "claude-v2-contract")],
     );
     client.initialize();
     let listed = client.request(2, "tools/list", json!({}));
@@ -108,10 +108,7 @@ fn live_mcp_requires_current_v2_structured_fields_and_rejects_retired_fields() {
             "{rejected}"
         );
         assert_eq!(rejected["error"]["recovery"]["tool"], "context");
-        assert_eq!(
-            rejected["error"]["recovery"]["arguments"]["host"],
-            "opencode"
-        );
+        assert_eq!(rejected["error"]["recovery"]["arguments"]["host"], "claude");
         assert_eq!(v2::count(&environment, "learning_sessions"), 0);
         assert_eq!(v2::count(&environment, "observations"), 0);
         assert_eq!(v2::count(&environment, "learner_memories"), 0);
@@ -142,10 +139,10 @@ fn live_mcp_requires_current_v2_structured_fields_and_rejects_retired_fields() {
     }
     let saved = call(&mut client, id, valid);
     assert_eq!(saved["update_status"], "committed", "{saved}");
-    assert_eq!(saved["host_kind"], "opencode");
+    assert_eq!(saved["host_kind"], "claude");
     assert_eq!(
         saved["host_thread_id"],
-        "magnesium-h1:opencode:opencode-v2-contract"
+        "magnesium-h1:claude:claude-v2-contract"
     );
     let session = saved["references"]["session"].as_str().unwrap();
     let connection = Connection::open(
@@ -176,7 +173,7 @@ fn live_mcp_role_and_disposition_repair_retains_native_capture_and_checkpoint() 
     let text = "I solved x + 3 = 5 and got x = 2.";
     let notice = v2::context(&v2::prompt(
         &environment,
-        "codex",
+        "claude",
         thread,
         Some("first"),
         text,
@@ -188,7 +185,8 @@ fn live_mcp_role_and_disposition_repair_retains_native_capture_and_checkpoint() 
         .split(';')
         .next()
         .unwrap();
-    let mut client = McpClient::spawn_with_env(&environment, true, &[("CODEX_THREAD_ID", thread)]);
+    let mut client =
+        McpClient::spawn_with_env(&environment, true, &[("CLAUDE_CODE_SESSION_ID", thread)]);
     client.initialize();
     let listed = client.request(2, "tools/list", json!({}));
     let schema = &listed["result"]["tools"]

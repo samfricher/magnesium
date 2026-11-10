@@ -460,17 +460,17 @@ fn recording_off_exact_source_reads_preserve_canonical_learner_state() {
     let _source_capacity = support::sources::source_test_guard();
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     initialize_product(&environment);
-    support::v2::start(&environment, "codex", "exact-source-recording-off");
+    support::v2::start(&environment, "claude", "exact-source-recording-off");
     let controlled = support::v2::tool(
         &environment,
-        "codex",
+        "claude",
         "exact-source-recording-off",
         "learning_step",
         json!({"schema":"learner-model/v2", "action":"control", "request_id":"privacy", "control":"recording_off", "reported_event":{"external_event_key":"privacy-control", "speaker":"learner", "kind":"message", "text":"Turn recording off."}}),
     );
     assert!(controlled.get("error").is_none(), "{controlled}");
     let recording: i64 = Connection::open_with_flags(store_path(&environment), OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap().query_row(
-        "SELECT recording_enabled FROM host_bindings WHERE host_kind = 'codex' AND host_thread_id = 'exact-source-recording-off'",
+        "SELECT recording_enabled FROM host_bindings WHERE host_kind = 'claude' AND host_thread_id = 'magnesium-h1:claude:exact-source-recording-off'",
         [], |row| row.get(0),
     ).unwrap();
     assert_eq!(

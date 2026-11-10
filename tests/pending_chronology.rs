@@ -64,7 +64,7 @@ fn paused_store() -> (TestEnvironment, String, String, String) {
     v2::init(&e);
     let start = v2::tool(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"tuesday-start","session":{"operation":"start","client_ref":"s","goal":"Identify quadratic coefficients"},"reported_events":[{"external_event_key":"old-work","speaker":"learner","kind":"message","text":"I think b is another unknown."}]}),
@@ -73,7 +73,7 @@ fn paused_store() -> (TestEnvironment, String, String, String) {
     let event = start["captured_event_ids"][0].as_str().unwrap();
     let saved = v2::tool(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"old-interpretation","observations":[{"client_ref":"o","kind":"learner_work","description":"Calls b another unknown.","events":[{"event_id":event,"role":"learner_response"}],"assistance_text":"Role distinction was then explained; later answer not yet available."}],"memory_edits":[{"operation":"create","client_ref":"m","record":{"title":"Quadratic coefficient roles","scope":"Algebra","summary":"Earlier formula success; coefficient roles uncertain.","state_text":"Most recently called b another unknown. Preserve earlier formula success.","current_basis":[{"new_observation":"o"}]},"reason":"Record the limited work.","change_basis":[{"new_observation":"o"}]}],"event_dispositions":[{"event_id":event,"outcome":"processed"}],"session":{"operation":"use","session_id":session,"expected_revision":1},"checkpoint":{"current_problem":"Coefficient versus unknown","working_diagnosis":"Role distinction remains uncertain","next_action":"Ask a fresh b check after the explanation","memory_refs":[{"memory_id":"m","revision":"after_edit"}]}}),
@@ -81,7 +81,7 @@ fn paused_store() -> (TestEnvironment, String, String, String) {
     let memory = saved["references"]["m"].as_str().unwrap().to_owned();
     let native = v2::prompt(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         Some("correct-and-pause"),
         CORRECTION_AND_PAUSE,
@@ -96,7 +96,7 @@ fn paused_store() -> (TestEnvironment, String, String, String) {
         .unwrap();
     let paused = v2::tool(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"control","request_id":"pause","control":"pause","turn_ref":correction}),
@@ -124,14 +124,15 @@ fn fresh_cli_and_mcp_recover_raw_correction_without_resuming_or_assessing() {
     let before = canonical_snapshot(&e);
     let instructions = v2::tool(
         &e,
-        "codex",
+        "claude",
         "wednesday",
         "context",
-        json!({"action":"instructions","host":"codex","stage":"consolidate_and_resume","operation":"tool_recipes"}),
+        json!({"action":"instructions","host":"claude","stage":"consolidate_and_resume","operation":"tool_recipes"}),
     );
     let text = instructions["text"].as_str().unwrap();
     assert!(text.contains("pending_evidence"));
-    let mut client = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "wednesday")]);
+    let mut client =
+        McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "wednesday")]);
     client.initialize();
     let mut call_id = 10;
     for mcp in [false, true] {
@@ -141,7 +142,7 @@ fn fresh_cli_and_mcp_recover_raw_correction_without_resuming_or_assessing() {
             if mcp {
                 client.call_value(call_id, name, request)
             } else {
-                v2::tool(&e, "codex", "wednesday", name, request)
+                v2::tool(&e, "claude", "wednesday", name, request)
             }
         };
         let fresh = call(
@@ -192,7 +193,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     let (e, session, _, correction) = paused_store();
     v2::tool(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"control","request_id":"privacy","control":"recording_off","reported_event":{"external_event_key":"privacy-control","speaker":"learner","kind":"message","text":"Turn recording off."}}),
@@ -201,7 +202,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     v2::init(&other);
     let foreign = v2::tool(
         &other,
-        "codex",
+        "claude",
         "other",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"foreign-start","session":{"operation":"start","client_ref":"session","goal":"FOREIGN WORKSPACE GOAL"},"reported_events":[{"external_event_key":"foreign-one","speaker":"learner","kind":"message","text":"FOREIGN PRIVATE WORK ONE"},{"external_event_key":"foreign-two","speaker":"learner","kind":"message","text":"FOREIGN PRIVATE WORK TWO"}]}),
@@ -211,7 +212,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     for action in ["prepare", "status", "session_choices"] {
         let packet = v2::tool(
             &e,
-            "codex",
+            "claude",
             "tuesday",
             "context",
             json!({"schema":"learner-model/v2","action":action}),
@@ -225,7 +226,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     }
     let packet = v2::tool(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         "memory",
         json!({"schema":"learner-model/v2","action":"read","refs":[{"kind":"event","id":correction}]}),
@@ -234,7 +235,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     assert_eq!(packet["trace_status"], "disabled");
     let rejected = v2::tool_output(
         &other,
-        "codex",
+        "claude",
         "other",
         "context",
         json!({"schema":"learner-model/v2","action":"pending_events","session_id":session}),
@@ -247,7 +248,7 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     assert!(failure.contains("unknown_reference"), "{rejected:?}");
     let ignored = v2::prompt(
         &e,
-        "codex",
+        "claude",
         "tuesday",
         Some("private-later"),
         "PRIVATE MESSAGE MUST NOT BE RECORDED",
@@ -261,11 +262,11 @@ fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
     for control in ["pause", "stop", "recording_off"] {
         let e = TestEnvironment::from_fixture("basic").unwrap();
         v2::init(&e);
-        let start = v2::start(&e, "codex", "pending-task");
+        let start = v2::start(&e, "claude", "pending-task");
         let session = start["references"]["session"].as_str().unwrap();
         let proposal = v2::tool(
             &e,
-            "codex",
+            "claude",
             "pending-task",
             "learning_step",
             json!({"schema":"learner-model/v2","action":"update","request_id":"proposal","reported_events":[{"external_event_key":"task-proposal","speaker":"tutor","kind":"task_proposal","text":"Identify a, b, and c in 5x² − 2x + 4 = 0.","metadata":{"delivery":"proposed"}}]}),
@@ -274,7 +275,7 @@ fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
         let pending_task = json!({"proposal_event_ref":proposed_event,"conditions":"A proposed coefficient check; delivery not established.","observed_delivery_refs":[],"help_refs":[],"reference_answer_ref":null});
         v2::tool(
             &e,
-            "codex",
+            "claude",
             "pending-task",
             "learning_step",
             json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint","session":{"operation":"use","session_id":session,"expected_revision":1},"checkpoint":{"current_problem":"Coefficient roles","working_diagnosis":"No answer supplied","next_action":"Await the requested operation or honor learner control","pending_task":pending_task},"event_dispositions":[{"event_id":proposed_event,"outcome":"no_change"}]}),
@@ -282,7 +283,7 @@ fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
         let before_control = canonical_snapshot(&e);
         let controlled = v2::tool(
             &e,
-            "codex",
+            "claude",
             "pending-task",
             "learning_step",
             json!({"schema":"learner-model/v2","action":"control","request_id":"control","control":control,"reported_event":{"external_event_key":"learner-control","speaker":"learner","kind":"message","text":format!("Please {control} now.")}}),
@@ -297,7 +298,7 @@ fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
         assert_eq!(after["observations"], before_control["observations"]);
         let status = v2::tool(
             &e,
-            "codex",
+            "claude",
             "pending-task",
             "context",
             json!({"schema":"learner-model/v2","action":"status"}),
@@ -309,7 +310,7 @@ fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
         assert_eq!(status["trace_status"], "disabled");
         let ignored = v2::prompt(
             &e,
-            "codex",
+            "claude",
             "pending-task",
             Some("after-control"),
             "UNREQUESTED FOLLOW-UP MUST NOT BE CAPTURED",

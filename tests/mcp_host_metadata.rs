@@ -1,4 +1,5 @@
-//! Exercise real MCP envelopes, not process-environment stand-ins for Codex.
+//! Exercise real MCP envelopes: which conversation a tool call belongs to comes
+//! only from the server's own launch, never from the call itself.
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::io::BufReader;
@@ -22,6 +23,8 @@ fn client(e: &TestEnvironment, name: &str, variables: &[(&str, &str)]) -> McpCli
             env!("CARGO_PKG_VERSION"),
             "--adapter-protocol-version",
             "2",
+            "--host-kind",
+            "claude",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -74,14 +77,13 @@ fn status(c: &mut McpClient, id: u64, meta: Option<Value>) -> Value {
 }
 
 #[test]
-fn per_call_codex_metadata_binds_native_tickets_and_separate_threads_on_one_connection() {
+fn each_conversations_server_binds_native_tickets_to_its_own_session() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let mut c = client(&e, "codex-mcp-client", &[]);
     let mut sessions = vec![];
     for (index, thread) in ["monday", "tuesday"].into_iter().enumerate() {
         let text = format!("Teach me the meaning of b on {thread}.");
-        let notice = v2::context(&v2::prompt(&e, "codex", thread, Some("first-turn"), &text));
+        let notice = v2::context(&v2::prompt(&e, "claude", thread, Some("first-turn"), &text));
         let ticket = notice
             .split_once("native_capture.ticket=")
             .unwrap()
@@ -94,34 +96,34 @@ fn per_call_codex_metadata_binds_native_tickets_and_separate_threads_on_one_conn
             "session":{"operation":"start","client_ref":"session","goal":"Coefficient meaning"},
             "native_capture":{"ticket":ticket,"text":text}
         });
+        let mut c = client(&e, "claude-code", &[("CLAUDE_CODE_SESSION_ID", thread)]);
         let id = 10 + index as u64 * 10;
-        let receipt = result(call(
-            &mut c,
-            id,
-            "learning_step",
-            payload.clone(),
-            Some(json!({"threadId":thread})),
-        ));
+        let receipt = result(call(&mut c, id, "learning_step", payload.clone(), None));
         assert_eq!(receipt["update_status"], "committed", "{receipt}");
-        assert_eq!(receipt["host_kind"], "codex");
-        assert_eq!(receipt["host_thread_id"], thread);
+        assert_eq!(receipt["host_kind"], "claude");
+        assert_eq!(
+            receipt["host_thread_id"],
+            format!("magnesium-h1:claude:{thread}")
+        );
         assert_eq!(receipt["captured_event_ids"].as_array().unwrap().len(), 1);
-        let replay = result(call(
-            &mut c,
-            id + 1,
-            "learning_step",
-            payload,
-            Some(json!({"threadId":thread})),
-        ));
+        let replay = result(call(&mut c, id + 1, "learning_step", payload, None));
         assert_eq!(receipt, replay);
         sessions.push(receipt["references"]["session"].clone());
+        c.close_cleanly();
     }
     assert_ne!(sessions[0], sessions[1]);
     for (index, thread) in ["monday", "tuesday"].into_iter().enumerate() {
-        let packet = status(&mut c, 30 + index as u64, Some(json!({"threadId":thread})));
-        assert_eq!(packet["host_binding"]["host_thread_id"], thread, "{packet}");
+        let mut c = client(&e, "claude-code", &[("CLAUDE_CODE_SESSION_ID", thread)]);
+        let packet = status(&mut c, 30 + index as u64, None);
+        assert_eq!(
+            packet["host_binding"]["host_thread_id"],
+            format!("magnesium-h1:claude:{thread}"),
+            "{packet}"
+        );
         assert_eq!(packet["session"]["session_id"], sessions[index], "{packet}");
+        c.close_cleanly();
     }
+    let mut c = client(&e, "claude-code", &[]);
     let unknown = status(&mut c, 40, None);
     assert_eq!(
         unknown["host_binding"]["host_kind"], "tool_only",
@@ -143,21 +145,30 @@ fn per_call_codex_metadata_binds_native_tickets_and_separate_threads_on_one_conn
     assert_eq!(
         rows,
         vec![
-            ("codex".into(), "monday".into(), "host_observed".into()),
-            ("codex".into(), "tuesday".into(), "host_observed".into()),
+            (
+                "claude".into(),
+                "magnesium-h1:claude:monday".into(),
+                "host_observed".into()
+            ),
+            (
+                "claude".into(),
+                "magnesium-h1:claude:tuesday".into(),
+                "host_observed".into()
+            ),
         ]
     );
 }
 
 #[test]
-fn metadata_identity_rejects_conflicts_and_cannot_be_chosen_in_arguments() {
+fn call_metadata_and_tool_arguments_cannot_choose_the_host_identity() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let mut c = client(
         &e,
-        "codex-mcp-client",
-        &[("CODEX_THREAD_ID", "process-thread")],
+        "claude-code",
+        &[("CLAUDE_CODE_SESSION_ID", "process-thread")],
     );
+    let own = "magnesium-h1:claude:process-thread";
     for (index, thread) in [
         json!("other-thread"),
         json!(12),
@@ -167,19 +178,11 @@ fn metadata_identity_rejects_conflicts_and_cannot_be_chosen_in_arguments() {
     .into_iter()
     .enumerate()
     {
-        let response = call(
-            &mut c,
-            10 + index as u64,
-            "context",
-            json!({"schema":"learner-model/v2","action":"status"}),
-            Some(json!({"threadId":thread})),
-        );
-        assert_eq!(response["result"]["isError"], true, "{response}");
+        let packet = status(&mut c, 10 + index as u64, Some(json!({"threadId":thread})));
+        assert_eq!(packet["host_binding"]["host_thread_id"], own, "{packet}");
     }
-    let same = status(&mut c, 20, Some(json!({"threadId":"process-thread"})));
-    assert_eq!(same["host_binding"]["host_thread_id"], "process-thread");
     let fallback = status(&mut c, 21, None);
-    assert_eq!(fallback["host_binding"]["host_thread_id"], "process-thread");
+    assert_eq!(fallback["host_binding"]["host_thread_id"], own);
     let spoof = call(
         &mut c,
         22,
@@ -200,35 +203,10 @@ fn metadata_identity_rejects_conflicts_and_cannot_be_chosen_in_arguments() {
     );
     assert_eq!(v2::count(&e, "learning_sessions"), 0);
     c.close_cleanly();
-    // Claude Code exports CLAUDE_CODE_SESSION_ID to every subprocess, so a
-    // Codex launched from a Claude shell inherits it without being a Claude
-    // process. Other host identities still conflict with Codex metadata.
-    for (index, (name, conflicts)) in [
-        ("CLAUDE_CODE_SESSION_ID", false),
-        ("OPENCODE_SESSION_ID", true),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let mut c = client(&e, "codex-mcp-client", &[(name, "process-thread")]);
-        let response = call(
-            &mut c,
-            30 + index as u64,
-            "context",
-            json!({"schema":"learner-model/v2","action":"status"}),
-            Some(json!({"threadId":"process-thread"})),
-        );
-        assert_eq!(
-            response["result"]["isError"] == true,
-            conflicts,
-            "{name}: {response}"
-        );
-        c.close_cleanly();
-    }
 }
 
 #[test]
-fn unsupported_client_metadata_is_not_native_codex_identity() {
+fn call_metadata_is_not_a_native_identity_without_the_session_environment() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let mut c = client(&e, "other-client", &[]);
@@ -240,10 +218,10 @@ fn unsupported_client_metadata_is_not_native_codex_identity() {
     c.close_cleanly();
 }
 
-/// A plugin copy from another release can reach this runtime from any host,
-/// so the recovery must not name one host and must say what refreshes it.
+/// A plugin copy from another release can reach this runtime, so the recovery
+/// must say what refreshes it.
 #[test]
-fn incompatible_plugin_version_gives_a_recovery_for_every_host() {
+fn incompatible_plugin_version_gives_a_recovery_that_names_the_refresh() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let mut child = e
@@ -295,7 +273,6 @@ fn incompatible_plugin_version_gives_a_recovery_for_every_host() {
     assert_eq!(body["outcome"], "incompatible_adapter", "{body}");
     assert_eq!(body["observed"]["plugin_version"], "0.0.1", "{body}");
     let recovery = body["recovery"].as_str().unwrap();
-    assert!(!recovery.contains("Codex"), "{recovery}");
     assert!(recovery.contains("magnesium init"), "{recovery}");
     c.close_cleanly();
 }

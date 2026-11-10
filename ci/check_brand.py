@@ -18,7 +18,7 @@ EXEMPT = {"ci/check_brand.py", "ci/test_check_brand.py"}
 
 OLD_NAMES = {
     "old command": re.compile(r"(?<![\w./:@-])learn (?:init|digest|export|info|update|adapter|memory|_internal|help)\b|(?<![\w./:@-])learn (?=\d|--version)|\binstall learn\b|\blearn\(1\)"),
-    "old plugin id": re.compile(r"@learn\b|\bcodex-plugin@"),
+    "old plugin id": re.compile(r"@learn\b"),
     "old namespace": re.compile(r"(?<![\w-])learn:(?=[\w{])"),
     "old MCP rule": re.compile(r"\bmcp__plugin_learn"),
     "old control folder": re.compile(r"(?<![\w.])\.learn(?!\w)"),

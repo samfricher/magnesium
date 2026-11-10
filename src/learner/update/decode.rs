@@ -19,7 +19,7 @@ pub(crate) fn field_error(
     let mut failure = LearnerError::new("invalid_variant", format!("{path}: {detail}"));
     let mut arguments =
         json!({"action":"instructions","stage":"interpret_and_repair","operation":"tool_recipes"});
-    if matches!(host.host_kind.as_str(), "codex" | "claude" | "opencode") {
+    if crate::adapter::HostKind::parse(&host.host_kind).is_ok() {
         arguments["host"] = json!(host.host_kind);
     }
     // Tutors reach for an update field when the learner asks to pause; point

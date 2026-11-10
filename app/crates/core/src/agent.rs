@@ -1,7 +1,7 @@
 //! The one interface between the window and a coding agent.
 //!
-//! Nothing outside `claude.rs` may assume Claude Code. A second agent (Codex,
-//! OpenCode) is a second implementation of [`Harness`] and [`Conversation`].
+//! Nothing outside `claude.rs` may assume Claude Code. A second agent is a
+//! second implementation of [`Harness`] and [`Conversation`].
 
 use std::path::PathBuf;
 use std::sync::Arc;

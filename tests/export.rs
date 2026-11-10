@@ -8,10 +8,10 @@ use support::{TestEnvironment, v2};
 fn written_workspace() -> (TestEnvironment, String) {
     let env = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&env);
-    v2::start(&env, "codex", "export-thread");
+    v2::start(&env, "claude", "export-thread");
     let captured = v2::tool(
         &env,
-        "codex",
+        "claude",
         "export-thread",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"capture","reported_events":[{"external_event_key":"original-answer","speaker":"learner","kind":"message","text":"I used the quadratic formula correctly but confused b with the constant.","metadata":{}}]}),
@@ -37,7 +37,7 @@ fn written_workspace() -> (TestEnvironment, String) {
     fs::write(env.workspace.join(".env"), "PRIVATE_ENV_SENTINEL").unwrap();
     let memory = v2::tool(
         &env,
-        "codex",
+        "claude",
         "export-thread",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"describe","turn_ref":event,"observations":[{"client_ref":"o","kind":"learner_question","description":"Substitution succeeds; coefficient identification needs clarification.","events":[{"event_id":event,"role":"learner_response","excerpts":[]}],"source_refs":[{"path":"allowed.txt","available_form":"original"},{"path":"ignored.txt","available_form":"original"},{"path":".env","available_form":"original"},{"path":"missing.txt","available_form":"unavailable"}]}],"memory_edits":[{"operation":"create","client_ref":"m","record":{"title":"Coefficient roles","scope":"Quadratics","summary":"Preserve formula application strength.","state_text":"The learner has not yet distinguished b from the constant c.","current_basis":[{"new_observation":"o"}]},"reason":"Original learner explanation","change_basis":[{"new_observation":"o"}]}],"event_dispositions":[{"event_id":event,"outcome":"processed"}]}),
@@ -92,7 +92,7 @@ fn search_after_preparation(
     // exclusion and empty negative results are never retried.
     let response = v2::tool(
         env,
-        "codex",
+        "claude",
         "export-thread",
         "search_sources",
         json!({"query":query, "limit":50}),
@@ -144,7 +144,7 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
     let (env, id) = written_workspace();
     let packet = v2::tool(
         &env,
-        "codex",
+        "claude",
         "export-thread",
         "context",
         json!({"schema":"learner-model/v2","action":"prepare"}),
@@ -365,7 +365,7 @@ fn cli_directory_exports_remain_private_after_rename_copy_and_overwrite() {
             let relative = workspace_relative_source(&env.workspace, &directory.join(filename));
             let inspected = v2::tool(
                 &env,
-                "codex",
+                "claude",
                 "export-thread",
                 "sources",
                 json!({"action":"inspect", "path":relative}),
@@ -432,7 +432,7 @@ fn cli_export_marker_revokes_direct_reads_of_previously_indexed_text() {
         json!({"action":"inspect", "path":"review/learner.json"}),
         json!({"action":"inspect", "path":hit["path"], "content_sha256":hit["content_sha256"], "anchor_kind":hit["anchor_kind"], "anchor_start":hit["anchor_start"], "anchor_end":hit["anchor_end"]}),
     ] {
-        let inspected = v2::tool(&env, "codex", "export-thread", "sources", request);
+        let inspected = v2::tool(&env, "claude", "export-thread", "sources", request);
         assert_eq!(inspected["coverage"]["status"], "excluded", "{inspected}");
         assert!(
             inspected.get("original").is_none() && inspected.get("excerpt").is_none(),
@@ -466,7 +466,7 @@ fn cli_export_marker_at_initialized_workspace_root_blocks_sources() {
     for path in ["learner.json", "README.md"] {
         let inspected = v2::tool(
             &env,
-            "codex",
+            "claude",
             "export-thread",
             "sources",
             json!({"action":"inspect", "path":path}),
@@ -608,7 +608,7 @@ fn prepare_pdf_source(
 fn record_pdf_reference(environment: &TestEnvironment, path: &str, hash: &str) {
     let captured = v2::tool(
         environment,
-        "codex",
+        "claude",
         "export-thread",
         "learning_step",
         json!({
@@ -619,7 +619,7 @@ fn record_pdf_reference(environment: &TestEnvironment, path: &str, hash: &str) {
     let event = captured["captured_event_ids"][0].as_str().unwrap();
     let written = v2::tool(
         environment,
-        "codex",
+        "claude",
         "export-thread",
         "learning_step",
         json!({
@@ -914,7 +914,7 @@ fn cli_unicode_pdf_export_preserves_exact_bytes_and_current_authorization() {
         let (hash, preparation) = prepare_pdf_source(&env, &relative, &pdf);
         let inspected = v2::tool(
             &env,
-            "codex",
+            "claude",
             "export-thread",
             "sources",
             json!({"action":"inspect", "path":relative, "content_sha256":hash}),
@@ -993,7 +993,7 @@ fn cli_unicode_pdf_export_preserves_exact_bytes_and_current_authorization() {
         }
         let refused = v2::tool(
             &env,
-            "codex",
+            "claude",
             "export-thread",
             "sources",
             json!({"action":"inspect", "path":relative, "content_sha256":hash}),

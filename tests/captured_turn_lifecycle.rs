@@ -11,20 +11,20 @@ fn db(e: &TestEnvironment) -> Connection {
 }
 
 fn call(e: &TestEnvironment, thread: &str, request: Value) -> Value {
-    let output = v2::tool_output(e, "codex", thread, "learning_step", request);
+    let output = v2::tool_output(e, "claude", thread, "learning_step", request);
     serde_json::from_slice(&output.stdout).unwrap_or_else(|_| panic!("{output:?}"))
 }
 
 fn captured_answer() -> (TestEnvironment, String, String) {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let started = v2::start(&e, "codex", THREAD);
+    let started = v2::start(&e, "claude", THREAD);
     let session = started["references"]["session"]
         .as_str()
         .unwrap()
         .to_owned();
     assert!(
-        v2::prompt(&e, "codex", THREAD, Some("closing-answer"), ANSWER)
+        v2::prompt(&e, "claude", THREAD, Some("closing-answer"), ANSWER)
             .status
             .success()
     );
@@ -67,7 +67,7 @@ fn processing(e: &TestEnvironment, event: &str) -> String {
 }
 
 fn binding(e: &TestEnvironment) -> (bool, bool) {
-    db(e).query_row("SELECT learning_active,recording_enabled FROM host_bindings WHERE host_kind='codex' AND host_thread_id=?1", [THREAD], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    db(e).query_row("SELECT learning_active,recording_enabled FROM host_bindings WHERE host_kind='claude' AND host_thread_id=?1", [format!("magnesium-h1:claude:{THREAD}")], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn answer_plus_pause_or_stop_finishes_without_reopening_or_a_next_task() {
         let receipts = v2::count(&e, "context_receipts");
         let ignored = v2::prompt(
             &e,
-            "codex",
+            "claude",
             THREAD,
             Some("after-stop"),
             "A new answer after stop must not be captured.",
@@ -199,7 +199,7 @@ fn completion_rejects_new_raw_input_tasks_and_unscoped_work_without_capture() {
             "foreign" => {
                 let foreign = v2::tool(
                     &e,
-                    "codex",
+                    "claude",
                     "unrelated",
                     "learning_step",
                     json!({"schema":"learner-model/v2","action":"update","request_id":"foreign-start","session":{"operation":"start","client_ref":"s","goal":"Unrelated topic"},"reported_events":[{"external_event_key":"foreign","speaker":"learner","kind":"message","text":"Unrelated learner work"}]}),
@@ -251,7 +251,7 @@ fn failed_native_start_explicit_selection_attaches_input_and_generations_change_
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     assert_eq!(event_generation(&e), 0);
-    let hook = v2::prompt(&e, "codex", THREAD, Some("initial-native"), ANSWER);
+    let hook = v2::prompt(&e, "claude", THREAD, Some("initial-native"), ANSWER);
     let notice = v2::context(&hook);
     let ticket = notice
         .split_once("native_capture.ticket=")
@@ -351,11 +351,11 @@ fn prior_memory(e: &TestEnvironment) -> (String, String, String) {
 fn closing_answer_with_prior_memory() -> (TestEnvironment, String, String, String, String, String) {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let start = v2::start(&e, "codex", THREAD);
+    let start = v2::start(&e, "claude", THREAD);
     let session = start["references"]["session"].as_str().unwrap().to_owned();
     let (memory, observation, help) = prior_memory(&e);
     assert!(
-        v2::prompt(&e, "codex", THREAD, Some("closing-after-help"), ANSWER)
+        v2::prompt(&e, "claude", THREAD, Some("closing-after-help"), ANSWER)
             .status
             .success()
     );
@@ -531,7 +531,7 @@ fn unrelated_start_attaches_only_current_capture_and_explicit_selected_unbound_w
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(owner, "another-thread");
+    assert_eq!(owner, "magnesium-h1:claude:another-thread");
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn resume_does_not_import_a_threads_unselected_failed_start_backlog() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let earlier = failed_first_update(&e, THREAD, "before-resume");
-    let started = v2::start(&e, "codex", "session-owner");
+    let started = v2::start(&e, "claude", "session-owner");
     let session = started["references"]["session"].as_str().unwrap();
     let result = call(
         &e,
@@ -614,7 +614,7 @@ fn selected_unbound_attachment_cannot_steal_bound_work_or_duplicate_selection() 
 fn ordinary_tutor_and_source_capture_remain_referenceable_without_pending_learner_work() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    v2::start(&e, "codex", THREAD);
+    v2::start(&e, "claude", THREAD);
     let result = call(
         &e,
         THREAD,
@@ -626,7 +626,7 @@ fn ordinary_tutor_and_source_capture_remain_referenceable_without_pending_learne
     }
     let read = v2::tool(
         &e,
-        "codex",
+        "claude",
         THREAD,
         "memory",
         json!({"schema":"learner-model/v2","action":"read","refs":[{"kind":"event","id":result["captured_event_ids"][0]}]}),
@@ -639,7 +639,7 @@ fn ordinary_tutor_and_source_capture_remain_referenceable_without_pending_learne
 }
 
 fn native_ticket(e: &TestEnvironment, key: &str, text: &str) -> String {
-    let hook = v2::prompt(e, "codex", THREAD, Some(key), text);
+    let hook = v2::prompt(e, "claude", THREAD, Some(key), text);
     assert!(hook.status.success(), "{hook:?}");
     v2::context(&hook)
         .split_once("native_capture.ticket=")
@@ -659,10 +659,10 @@ fn paused_native_resume_uses_same_session_and_exactly_one_new_event() {
     let ticket = native_ticket(&e, "resume-same-native", text);
     let served = v2::tool(
         &e,
-        "codex",
+        "claude",
         THREAD,
         "context",
-        json!({"action":"instructions","host":"codex","stage":"consolidate_and_resume","operation":"tool_recipes"}),
+        json!({"action":"instructions","host":"claude","stage":"consolidate_and_resume","operation":"tool_recipes"}),
     );
     let recipe = served["text"]
         .as_str()
@@ -700,7 +700,7 @@ fn paused_native_resume_uses_same_session_and_exactly_one_new_event() {
 fn active_native_turn_can_reference_original_work_while_resuming_another_session() {
     let (e, original, event) = captured_answer();
     let unrelated = failed_first_update(&e, "unrelated-pending", "unrelated-pending");
-    let target = v2::start(&e, "codex", "saved-lesson")["references"]["session"]
+    let target = v2::start(&e, "claude", "saved-lesson")["references"]["session"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -765,7 +765,7 @@ fn explicit_selection_of_bound_work_still_fails_atomically() {
 fn paused_with_task() -> (TestEnvironment, String, String, Value) {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let session = v2::start(&e, "codex", THREAD)["references"]["session"]
+    let session = v2::start(&e, "claude", THREAD)["references"]["session"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -785,7 +785,7 @@ fn paused_with_task() -> (TestEnvironment, String, String, Value) {
     assert_eq!(saved["update_status"], "committed", "{saved}");
     let partial = "I found one root is 2. I haven't checked the other yet; pause here.";
     assert!(
-        v2::prompt(&e, "codex", THREAD, Some("partial-pause"), partial)
+        v2::prompt(&e, "claude", THREAD, Some("partial-pause"), partial)
             .status
             .success()
     );
@@ -961,7 +961,7 @@ fn native_resume_preserves_exact_text_host_freshness_and_recording_guards() {
                 THREAD
             }
         };
-        let output = v2::tool_output(&e, "codex", thread, "learning_step", request);
+        let output = v2::tool_output(&e, "claude", thread, "learning_step", request);
         assert!(!output.status.success(), "{variant}: {output:?}");
         assert_eq!(v2::count(&e, "learning_events"), 1, "{variant}");
         assert_eq!(v2::count(&e, "learning_sessions"), 1, "{variant}");

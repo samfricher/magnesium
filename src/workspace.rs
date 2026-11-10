@@ -14,10 +14,7 @@ pub(crate) mod instruction_bundle;
 mod paths;
 mod resolution;
 
-pub(crate) use init::{
-    install_opencode_adapter, materialize_bundled_marketplace, refresh_and_verify_codex_plugin,
-    refresh_claude_plugin, run_init, run_init_json,
-};
+pub(crate) use init::{refresh_claude_plugin, run_init, run_init_json};
 pub(crate) use paths::{GlobalPaths, reject_symlink_components};
 pub(crate) use paths::{decode_path as decode_native_path, encode_path as native_path_key};
 pub(crate) use resolution::{ResolvedWorkspace, WorkspaceResolution, resolve_initialized};

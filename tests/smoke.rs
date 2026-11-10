@@ -24,7 +24,6 @@ fn native_binary_reports_version_without_touching_personal_state() {
     assert!(output.stderr.is_empty());
     assert!(environment.workspace.join("lesson.md").is_file());
     assert!(directory_is_empty(&environment.global_data));
-    assert!(directory_is_empty(&environment.codex_home));
 }
 
 #[test]
@@ -46,7 +45,6 @@ fn help_lists_only_the_reserved_public_commands() {
     }
     assert!(environment.workspace.join("child/topic.md").is_file());
     assert!(directory_is_empty(&environment.global_data));
-    assert!(directory_is_empty(&environment.codex_home));
 }
 
 #[test]
@@ -100,7 +98,6 @@ fn update_prints_source_steps_and_writes_nothing_before_init() {
     assert!(!environment.workspace.join(support::CONTROL_DIR).exists());
     assert!(!environment.data_dir().exists());
     assert!(directory_is_empty(&environment.global_data));
-    assert!(directory_is_empty(&environment.codex_home));
 }
 
 #[cfg(unix)]

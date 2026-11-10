@@ -1,6 +1,6 @@
 # Magnesium
 
-A harness-neutral learning engine for Claude Code, Codex and OpenCode. It works with whatever model your assistant runs.
+A learning engine for Claude Code. It works with whatever model your Claude Code runs.
 
 In the brain, a single magnesium ion (Mg²⁺) sits in the channel of a synapse's NMDA receptor and blocks it. Weak or one-sided signals leave it in place. It moves aside only when both neurons fire together, and that lets the connection strengthen. Magnesium brings the same rule to your learning. It finds the missing piece in your mental model through Socratic questions, diagrams when they help, and active recall. Then it remembers what you know across every session in your study folder.
 
@@ -30,14 +30,14 @@ The magnesium ion in the receptor moves aside only when both sides of the synaps
 
 Magnesium works in a study folder. A study folder is any course or project folder where you ran `magnesium init`. Each study folder keeps its own learning history: your reasoning, useful explanations, and unfinished work from earlier conversations.
 
-- **Practise for a test.** In Claude Code, the tutor writes a study plan and timed practice papers for your test. It marks your answers and helps you fix each mistake.
+- **Practise for a test.** The tutor writes a study plan and timed practice papers for your test. It marks your answers and helps you fix each mistake.
 - **Continue where you left off.** The tutor resumes a problem with its context and next step.
 - **Remember how you reason.** Magnesium keeps your strengths, your difficulties, your original answers, and the help that you received.
 - **Learn from your materials.** The tutor searches your local notes, PDFs, and source code during a conversation.
 - **Correct a wrong memory.** Tell the tutor what really happened. The tutor checks the memory against your original work and corrects it.
 - **Control what is recorded.** You can pause a lesson, turn recording off, or export your history.
 
-Magnesium uses your assistant's existing model connection. Your usual model limits and charges apply. Magnesium needs no separate API key, embedding model, or database server.
+Magnesium uses Claude Code's existing model connection. Your usual model limits and charges apply. Magnesium needs no separate API key, embedding model, or database server.
 
 ## Get started
 
@@ -53,7 +53,7 @@ Ordinary coding conversations do not start a lesson. Ask to learn, practise, or 
 
 To practise for a test in Claude Code, tell the tutor about the test, for example "I have a midterm Monday". You can also type `/magnesium:papers`. The tutor writes your plan and papers in `Study/<target>/`, for example `Study/midterm-1/`. Later conversations continue from that plan. The [user guide](docs/user-guide.md#practise-with-timed-papers) gives the steps.
 
-Practice papers and `/magnesium:help` work only in Claude Code for now. Codex and OpenCode do not yet have the skills or the plan templates.
+Magnesium is built and tested for Claude Code. Its learner record, its files and its tools are open to any agent that can call them. The hooks that keep a lesson on track, the skills and the plan templates work only in Claude Code. An adapter for another agent is separate work.
 
 Magnesium stores your learning history in `.magnesium/` inside the study folder. Your assistant's model receives the memories and file excerpts that a lesson needs. The [user guide](docs/user-guide.md#control-recording-and-keep-a-copy) explains how to control recording and export your history.
 

@@ -12,8 +12,8 @@ from ci.isolated_environment import isolated_environment
 
 
 PRIVATE_DIRECTORY_KEYS = (
-    "HOME", "USERPROFILE", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-    "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "PATH",
+    "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+    "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "PATH",
 )
 
 
@@ -35,23 +35,16 @@ class IsolatedEnvironmentTests(unittest.TestCase):
     def test_provider_credentials_host_identity_and_runtime_overrides_are_not_inherited(self):
         with tempfile.TemporaryDirectory() as directory:
             hostile = {
-                "CODEX_THREAD_ID": "host-thread", "CLAUDE_CODE_SESSION_ID": "claude-thread",
-                "OPENCODE_SESSION_ID": "opencode-thread", "OPENAI_API_KEY": "synthetic-secret",
+                "CLAUDE_CODE_SESSION_ID": "claude-thread", "OPENAI_API_KEY": "synthetic-secret",
                 "ANTHROPIC_API_KEY": "synthetic-secret", "NODE_OPTIONS": "--import=evil.js",
                 "PYTHONPATH": "/original-profile/python", "MAGNESIUM_WORKSPACE_ROOT": "/original-work",
                 "MAGNESIUM_DOCS_WORKER": "/original-profile/worker", "MAGNESIUM_DOCS_WORKER_OPT_IN": "1",
                 "MAGNESIUM_HARNESS_EXECUTION_GRANT": "synthetic-grant", "MAGNESIUM_DATA_DIR": "/ignored",
-                "CODEX_TEST_BINARY": "/original-profile/codex",
-                "OPENCODE_TEST_BINARY": "/original-profile/opencode",
                 "hOmE": "/original-profile/home", "Path": "/original-profile/bin",
             }
             environment = isolated_environment(directory, hostile)
             for key in hostile:
-                if key in {"CODEX_TEST_BINARY", "OPENCODE_TEST_BINARY"}:
-                    self.assertFalse(Path(environment[key]).exists())
-                    self.assertTrue(Path(environment[key]).is_relative_to(Path(directory).resolve()))
-                else:
-                    self.assertNotIn(key, environment)
+                self.assertNotIn(key, environment)
             self.assertEqual(environment["TZ"], "UTC")
 
     def test_symlinked_temporary_root_keeps_every_private_path_inside_its_canonical_root(self):
@@ -72,15 +65,12 @@ class IsolatedEnvironmentTests(unittest.TestCase):
             environment = isolated_environment(root, {})
             self.assertNotEqual(root, canonical_root)
             self.assertEqual(root.resolve(), canonical_root)
-            for key in (*PRIVATE_DIRECTORY_KEYS, "CODEX_TEST_BINARY", "OPENCODE_TEST_BINARY"):
+            for key in PRIVATE_DIRECTORY_KEYS:
                 path = Path(environment[key])
                 self.assertEqual(path, path.resolve(), key)
                 self.assertTrue(path.is_relative_to(canonical_root), key)
                 self.assertTrue(path.resolve().is_relative_to(root.resolve()), key)
-                if key in PRIVATE_DIRECTORY_KEYS:
-                    self.assertTrue(path.is_dir(), key)
-                else:
-                    self.assertFalse(path.exists(), key)
+                self.assertTrue(path.is_dir(), key)
 
     def test_windows_bootstrap_variables_are_case_normalized_without_copying_the_source(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -99,26 +89,20 @@ class IsolatedEnvironmentTests(unittest.TestCase):
             original.mkdir()
             sentinel = original / "sentinel.txt"
             sentinel.write_text("original profile is unchanged", encoding="utf-8")
-            host = original / "codex"
+            host = original / "claude"
             host.write_text("synthetic host, must never execute", encoding="utf-8")
             host.chmod(0o755)
             before = {p.name: p.read_bytes() for p in original.iterdir()}
             source = {key: str(original) for key in PRIVATE_DIRECTORY_KEYS}
-            source.update(CODEX_TEST_BINARY=str(host), OPENCODE_TEST_BINARY=str(host))
             for key in ("SystemRoot", "WINDIR"):
                 if key in os.environ:
                     source[key] = os.environ[key]
             environment = isolated_environment(base / "fixture", source)
             fake_magnesium = base / "fake-magnesium.py"
             fake_magnesium.write_text(
-                "import json, os, pathlib, shutil, subprocess\n"
-                "assert shutil.which('codex') is None\n"
-                "assert shutil.which('opencode') is None\n"
-                "for key in ('CODEX_TEST_BINARY', 'OPENCODE_TEST_BINARY'):\n"
-                "    try: subprocess.run([os.environ[key], '--version'], check=True)\n"
-                "    except FileNotFoundError: pass\n"
-                "    else: raise AssertionError('real host executable was available')\n"
-                "for key in ('HOME','USERPROFILE','CODEX_HOME','XDG_CONFIG_HOME','XDG_DATA_HOME',"
+                "import json, os, pathlib, shutil\n"
+                "assert shutil.which('claude') is None\n"
+                "for key in ('HOME','USERPROFILE','XDG_CONFIG_HOME','XDG_DATA_HOME',"
                 "'XDG_CACHE_HOME','APPDATA','LOCALAPPDATA','TMPDIR','TEMP','TMP'):\n"
                 "    (pathlib.Path(os.environ[key]) / ('fake-init-' + key)).write_text('fixture')\n"
                 "print(json.dumps(dict(os.environ)))\n",

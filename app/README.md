@@ -81,7 +81,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 It keeps that one process open for the sitting and writes each of your messages to it as one line of JSON. Permission requests and the tutor's questions arrive as control requests on the same pipe. This is the wire format the Agent SDKs use. Closing the window ends the process, and the conversation stays on disk under its id.
 
-**Codex and OpenCode** each need a second file beside `claude.rs` that implements the same two traits: start a conversation in a folder, send words, stream the reply, surface approvals, interrupt, resume by id. Codex has an app-server protocol that fits. OpenCode has a local server with sessions and events. Neither is written.
+**Another agent** would need a second file beside `claude.rs` that implements the same two traits: start a conversation in a folder, send words, stream the reply, surface approvals, interrupt, resume by id. None is written. Magnesium itself is built and tested for Claude Code only.
 
 ## Where things are
 

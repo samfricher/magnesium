@@ -11,7 +11,7 @@ fn inactive_hooks_leave_no_workspace_trace() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     for (command, event, extra) in [
         ("session-start", "SessionStart", json!({"source":"startup"})),
-        ("post-compact", "PostCompact", json!({"trigger":"auto"})),
+        ("session-start", "SessionStart", json!({"source":"compact"})),
         ("session-end", "SessionEnd", json!({"reason":"other"})),
     ] {
         let mut input = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":event});
@@ -57,16 +57,16 @@ fn startup_never_scans_subject_sources_and_reports_bounded_refresh_notice() {
 fn compact_and_session_end_preserve_recorded_work_without_creating_observations() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", "thread");
+    start(&e, "claude", "thread");
     prompt(
         &e,
-        "codex",
+        "claude",
         "thread",
         Some("turn"),
         "I distinguish fixed coefficients from x.",
     );
     for (command, event, extra) in [
-        ("post-compact", "PostCompact", json!({"trigger":"auto"})),
+        ("session-start", "SessionStart", json!({"source":"compact"})),
         ("session-end", "SessionEnd", json!({"reason":"other"})),
     ] {
         let mut input = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":event});
@@ -80,7 +80,7 @@ fn compact_and_session_end_preserve_recorded_work_without_creating_observations(
     assert_eq!(count(&e, "observations"), 0);
     let notice = context(&prompt(
         &e,
-        "codex",
+        "claude",
         "thread",
         Some("next"),
         "What is the next step?",
@@ -92,20 +92,26 @@ fn compact_and_session_end_preserve_recorded_work_without_creating_observations(
 fn recording_off_stops_subsequent_native_prompt_and_delivery_capture() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", "thread");
+    start(&e, "claude", "thread");
     let receipt = tool(
         &e,
-        "codex",
+        "claude",
         "thread",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"control","request_id":"off","control":"recording_off","reported_event":{"external_event_key":"off-turn","speaker":"learner","kind":"message","text":"Stop recording."}}),
     );
     assert!(receipt.get("error").is_none());
-    prompt(&e, "codex", "thread", Some("private"), "PRIVATE_OFF_PROMPT");
+    prompt(
+        &e,
+        "claude",
+        "thread",
+        Some("private"),
+        "PRIVATE_OFF_PROMPT",
+    );
     let out = run_hook(
         &e,
         "stop",
-        json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"Stop","turn_id":"private","stop_hook_active":false,"last_assistant_message":"PRIVATE_OFF_DELIVERY"}),
+        json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"private","stop_hook_active":false,"last_assistant_message":"PRIVATE_OFF_DELIVERY"}),
     );
     assert!(out.status.success());
     let conn =

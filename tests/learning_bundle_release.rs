@@ -183,7 +183,7 @@ fn status_flip_marker_partial_and_changed_assets_fail() {
                 "sha256": hash(b"synthetic retired instruction asset\n"),
             }));
     }
-    assert_eq!(retired_inventory["files"].as_array().unwrap().len(), 18);
+    assert_eq!(retired_inventory["files"].as_array().unwrap().len(), 16);
     fs::write(
         root.join("manifest.json"),
         serde_json::to_vec(&retired_inventory).unwrap(),
@@ -191,7 +191,7 @@ fn status_flip_marker_partial_and_changed_assets_fail() {
     .unwrap();
     let output = run(&["--candidate-bundle", root.to_str().unwrap()]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("exactly 16 runtime-consumed files"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("exactly 14 runtime-consumed files"));
     fs::write(root.join("manifest.json"), &manifest).unwrap();
 
     fs::remove_file(root.join("adapters/claude.md")).unwrap();

@@ -8,9 +8,6 @@ use serde_json::Value;
 use support::TestEnvironment;
 use toml_edit::DocumentMut;
 
-#[path = "init/opencode.rs"]
-mod opencode;
-
 #[test]
 fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
@@ -283,12 +280,18 @@ fn create_protected_workspace_files(workspace: &Path) -> BTreeMap<PathBuf, Vec<u
         ("AGENTS.md", b"user-owned agents\n".as_slice()),
         (".gitignore", b"target/\n".as_slice()),
         (
-            ".codex/config.toml",
+            ".other-agent/config.toml",
             b"model = \"user-choice\"\n".as_slice(),
         ),
-        (".codex/workflows/review.md", b"user workflow\n".as_slice()),
-        (".codex/permissions.toml", b"allow = []\n".as_slice()),
-        (".codex/plugins/local.toml", b"enabled = true\n".as_slice()),
+        (
+            ".other-agent/workflows/review.md",
+            b"user workflow\n".as_slice(),
+        ),
+        (".other-agent/permissions.toml", b"allow = []\n".as_slice()),
+        (
+            ".other-agent/plugins/local.toml",
+            b"enabled = true\n".as_slice(),
+        ),
         (".github/workflows/ci.yml", b"name: user-ci\n".as_slice()),
     ];
     let mut snapshots = BTreeMap::new();
@@ -531,7 +534,7 @@ fn init_with_adapter_agents_md_creates_and_updates_bounded_block_preserves_exter
 }
 
 #[test]
-fn init_bundled_marketplace_materialization_and_status() {
+fn init_bundled_plugin_materialization_and_status() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     let output = environment
         .command()
@@ -540,29 +543,21 @@ fn init_bundled_marketplace_materialization_and_status() {
         .expect("run init");
     assert_success(&output);
 
-    let marketplace = environment.data_dir().join("marketplace");
+    let plugin = environment.data_dir().join("claude-plugin");
+    assert!(plugin.join(".claude-plugin/marketplace.json").is_file());
+    assert!(plugin.join(".claude-plugin/plugin.json").is_file());
+    assert!(plugin.join(".mcp.json").is_file());
+    assert!(plugin.join("hooks/hooks.json").is_file());
+    assert!(plugin.join("skills/learn/SKILL.md").is_file());
     assert!(
-        marketplace
-            .join(".agents/plugins/marketplace.json")
-            .is_file()
-    );
-    assert!(
-        marketplace
-            .join("codex-plugin/.codex-plugin/plugin.json")
-            .is_file()
-    );
-    assert!(marketplace.join("codex-plugin/.mcp.json").is_file());
-    assert!(marketplace.join("codex-plugin/hooks/hooks.json").is_file());
-    assert!(
-        marketplace
-            .join("codex-plugin/skills/learn/SKILL.md")
-            .is_file()
+        !environment.data_dir().join("marketplace").exists(),
+        "init must write only the Claude Code plugin copy"
     );
 
-    let skill_path = marketplace.join("codex-plugin/skills/learn/SKILL.md");
+    let skill_path = plugin.join("skills/learn/SKILL.md");
     let skill = fs::read_to_string(&skill_path).unwrap();
     let source_skill = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("codex-plugin/skills/learn/SKILL.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("claude-plugin/skills/learn/SKILL.md"),
     )
     .unwrap();
     assert!(skill.contains("INSTRUCTIONS.md"));
@@ -572,13 +567,13 @@ fn init_bundled_marketplace_materialization_and_status() {
     );
     let (_, after_opening) = skill.split_once("---\n").unwrap();
     let (frontmatter, body) = after_opening.split_once("\n---\n").unwrap();
-    assert!(frontmatter.contains("explicit learning, teaching, practice, or review request"));
+    assert!(frontmatter.contains("Ordinary coding or repository work does not start a lesson"));
     assert!(body.contains("learner-model/v2"));
     assert!(
         body.contains("Repository work")
             || body.contains("Ordinary implementation work remains neutral")
     );
-    assert!(body.contains("context(action:\"instructions\",host:\"codex\""));
+    assert!(body.contains("context(action:\"instructions\",host:\"claude\""));
     assert!(body.contains("teaching-policy/v2"));
 }
 

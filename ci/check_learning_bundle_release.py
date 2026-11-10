@@ -24,7 +24,7 @@ CONTRACT_FILES = {
     "contracts/source-use.md",
     "contracts/tool-recipes.md",
 }
-ADAPTER_FILES = {"adapters/codex.md", "adapters/claude.md", "adapters/opencode.md"}
+ADAPTER_FILES = {"adapters/claude.md"}
 HEX256 = re.compile(r"^[0-9a-f]{64}$")
 CODE_STATES = {
     "CODE_READY_FOR_REVIEW",
@@ -94,8 +94,8 @@ def _manifest_entries(root: Path, *, status: str) -> list[dict[str, object]]:
     }:
         raise GateError("learning bundle manifest has an unsupported shape or version")
     entries = manifest["files"]
-    if not isinstance(entries, list) or len(entries) != 16:
-        raise GateError("learning bundle manifest must declare exactly 16 runtime-consumed files")
+    if not isinstance(entries, list) or len(entries) != 14:
+        raise GateError("learning bundle manifest must declare exactly 14 runtime-consumed files")
     paths: set[str] = set()
     stages: set[str] = set()
     for entry in entries:

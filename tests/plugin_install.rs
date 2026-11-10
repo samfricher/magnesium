@@ -3,73 +3,7 @@ use std::io::Write;
 use std::process::Stdio;
 
 use serde_json::{Value, json};
-use support::{TestEnvironment, codex_command, copy_tree, test_binary};
-
-#[test]
-fn repository_marketplace_and_plugin_commands_are_exact_and_native() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let marketplace: Value = serde_json::from_slice(
-        &fs::read(root.join(".agents/plugins/marketplace.json")).expect("marketplace manifest"),
-    )
-    .expect("marketplace JSON");
-    assert_eq!(marketplace["name"], "magnesium");
-    assert_eq!(marketplace["interface"]["displayName"], "Magnesium");
-    assert_eq!(
-        marketplace["plugins"]
-            .as_array()
-            .expect("plugin list")
-            .len(),
-        1
-    );
-    let plugin = &marketplace["plugins"][0];
-    assert_eq!(plugin["name"], "magnesium");
-    assert_eq!(
-        plugin["source"],
-        json!({"source": "local", "path": "./codex-plugin"})
-    );
-    assert_eq!(
-        plugin["policy"],
-        json!({"installation": "AVAILABLE", "authentication": "ON_INSTALL"})
-    );
-    assert_eq!(plugin["category"], "Productivity");
-
-    let mcp: Value = serde_json::from_slice(
-        &fs::read(root.join("codex-plugin/.mcp.json")).expect("MCP manifest"),
-    )
-    .expect("MCP JSON");
-    assert_eq!(
-        mcp["mcpServers"]["magnesium"]["args"],
-        json!([
-            "_internal",
-            "mcp-server",
-            "--plugin-version",
-            env!("CARGO_PKG_VERSION"),
-            "--adapter-protocol-version",
-            "2",
-            "--host-kind",
-            "codex"
-        ]),
-        "the Codex MCP server must name its launching host"
-    );
-    let hooks: Value = serde_json::from_slice(
-        &fs::read(root.join("codex-plugin/hooks/hooks.json")).expect("hooks manifest"),
-    )
-    .expect("hooks JSON");
-    for hooks in hooks["hooks"].as_object().expect("hook events").values() {
-        for entry in hooks.as_array().expect("hook groups") {
-            for hook in entry["hooks"].as_array().expect("hook commands") {
-                for field in ["command", "commandWindows"] {
-                    let command = hook[field].as_str().expect("native hook command");
-                    assert!(command.contains(&format!(
-                        "--plugin-version {} --adapter-protocol-version 2",
-                        env!("CARGO_PKG_VERSION")
-                    )));
-                    assert!(!command.contains("python") && !command.contains("node"));
-                }
-            }
-        }
-    }
-}
+use support::{TestEnvironment, test_binary};
 
 #[test]
 fn claude_plugin_is_exact_and_native() {
@@ -77,23 +11,18 @@ fn claude_plugin_is_exact_and_native() {
     // Plugins ship with the runtime, so they carry its version and protocol.
     let plugin_version = env!("CARGO_PKG_VERSION");
     let protocol = "2".to_owned();
-    let codex_plugin: Value = serde_json::from_slice(
-        &fs::read(root.join("codex-plugin/.codex-plugin/plugin.json")).expect("codex manifest"),
-    )
-    .expect("codex manifest JSON");
 
-    // The Claude Code plugin mirrors the Codex skeleton: manifest, real MCP
-    // server declaration, and the six lifecycle hooks bound to the native
-    // executable. The installed command line supplies `--host-kind claude`
-    // because the official Claude Code event JSON carries session, cwd, and
-    // prompt but no host-kind field.
+    // The Claude Code plugin is a manifest, a real MCP server declaration,
+    // and the four lifecycle hooks bound to the native executable. The
+    // installed command line supplies `--host-kind claude` because the
+    // official Claude Code event JSON carries session, cwd, and prompt but no
+    // host-kind field.
     let manifest: Value = serde_json::from_slice(
         &fs::read(root.join("claude-plugin/.claude-plugin/plugin.json")).expect("claude manifest"),
     )
     .expect("claude manifest JSON");
     assert_eq!(manifest["name"], "magnesium");
     assert_eq!(manifest["version"], plugin_version);
-    assert_eq!(manifest["version"], codex_plugin["version"]);
     assert!(
         manifest["description"]
             .as_str()
@@ -128,37 +57,30 @@ fn claude_plugin_is_exact_and_native() {
         &fs::read(root.join("claude-plugin/hooks/hooks.json")).expect("claude hooks manifest"),
     )
     .expect("claude hooks JSON");
-    let codex_hooks: Value = serde_json::from_slice(
-        &fs::read(root.join("codex-plugin/hooks/hooks.json")).expect("codex hooks manifest"),
-    )
-    .expect("codex hooks JSON");
-    let events: Vec<String> = hooks["hooks"]
+    // Claude Code restates the core rules through SessionStart after a
+    // compaction, so the plugin registers no compaction hooks.
+    let mut events: Vec<&str> = hooks["hooks"]
         .as_object()
         .expect("hook events")
         .keys()
-        .cloned()
+        .map(String::as_str)
         .collect();
-    let codex_events: Vec<String> = codex_hooks["hooks"]
-        .as_object()
-        .expect("codex hook events")
-        .keys()
-        .cloned()
-        .collect();
+    events.sort_unstable();
     assert_eq!(
-        events, codex_events,
-        "Claude must cover the same lifecycle events"
+        events,
+        ["SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"]
     );
     for (event, groups) in hooks["hooks"].as_object().expect("hook events") {
-        // Claude also ends a conversation on /clear and in-process /resume.
-        let expected = if event == "SessionEnd" {
-            Some(json!("other|clear|resume"))
-        } else {
-            codex_hooks["hooks"][event][0].get("matcher").cloned()
+        // SessionEnd also ends a conversation on /clear and in-process /resume.
+        let expected = match event.as_str() {
+            "SessionStart" => Some(json!("startup|resume|clear|compact")),
+            "SessionEnd" => Some(json!("other|clear|resume")),
+            _ => None,
         };
         assert_eq!(
             groups[0].get("matcher").cloned(),
             expected,
-            "{event} matcher must mirror the Codex declaration"
+            "{event} matcher"
         );
         for hook in groups[0]["hooks"].as_array().expect("hook commands") {
             let command = hook["command"].as_str().expect("native hook command");
@@ -542,277 +464,64 @@ fn incompatible_hook_fails_open_without_workspace_mutation() {
     assert_eq!(before, snapshot(&environment));
 }
 
-// Native proofs explicitly opt into the selected host executable. Ordinary test
-// commands keep the absent-host default even when a real Codex is on PATH.
-#[cfg(unix)]
-fn native_runtime_command(environment: &TestEnvironment) -> std::process::Command {
-    let executable = codex_command(environment).get_program().to_owned();
-    let mut command = environment.command();
-    command.env("CODEX_TEST_BINARY", executable);
-    command
-}
-
-#[cfg(unix)]
+/// A plugin copy from before the compaction hooks were removed, or a Claude
+/// Code session started before the program was replaced, still runs them.
+/// Exit code 2 from a PreCompact hook blocks compaction, so both retired
+/// commands succeed silently and record nothing, inside a study folder or
+/// outside one, whatever their input holds.
 #[test]
-#[ignore = "requires an authorized installed Codex CLI with plugin marketplace commands"]
-fn isolated_codex_install_caches_the_plugin_source() {
+fn retired_compaction_hooks_from_an_older_plugin_copy_exit_cleanly() {
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
-    let probe = codex_command(&environment)
-        .arg("--version")
-        .output()
-        .expect("opt-in native test requires an installed Codex CLI");
-    assert!(
-        probe.status.success(),
-        "Codex version probe failed: {probe:?}"
-    );
-    let marketplace = environment.root.join("marketplace");
-    fs::create_dir_all(marketplace.join(".agents/plugins")).expect("marketplace metadata");
-    copy_tree(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("codex-plugin"),
-        &marketplace.join("codex-plugin"),
-    )
-    .expect("copy plugin bundle");
-    fs::copy(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".agents/plugins/marketplace.json"),
-        marketplace.join(".agents/plugins/marketplace.json"),
-    )
-    .expect("copy marketplace");
-    for (operation, args) in [
-        (
-            "marketplace",
-            vec![
-                "plugin",
-                "marketplace",
-                "add",
-                marketplace.to_str().expect("marketplace path"),
-                "--json",
-            ],
-        ),
-        (
-            "plugin",
-            vec!["plugin", "add", "magnesium@magnesium", "--json"],
-        ),
-    ] {
-        let output = codex_command(&environment)
-            .args(args)
-            .output()
-            .expect("Codex plugin command");
-        if !output.status.success()
-            && String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand")
-        {
-            panic!("opt-in native test requires Codex plugin marketplace commands");
-        }
-        assert!(
-            output.status.success(),
-            "Codex {operation} failed: stdout={} stderr={}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let listing = codex_command(&environment)
-        .args(["plugin", "list", "--json"])
-        .output()
-        .expect("list plugins");
-    assert!(listing.status.success());
-    let value: Value = serde_json::from_slice(&listing.stdout).expect("plugin list JSON");
-    assert!(
-        value["installed"]
-            .as_array()
-            .is_some_and(|plugins| { plugins.iter().any(|plugin| plugin["name"] == "magnesium") })
-    );
-    let config_before = fs::read(environment.codex_home.join("config.toml")).unwrap();
-    let init = native_runtime_command(&environment)
+    let init = environment
+        .command()
         .arg("init")
         .output()
-        .unwrap();
+        .expect("initialize");
     assert!(init.status.success());
-    assert!(String::from_utf8_lossy(&init.stderr).contains("points to another source"));
-    assert_eq!(
-        fs::read(environment.codex_home.join("config.toml")).unwrap(),
-        config_before
-    );
-}
-
-#[cfg(unix)]
-#[test]
-#[ignore = "requires an authorized installed Codex CLI and native plugin approval workflow"]
-fn public_init_and_update_refresh_the_qualified_plugin_without_changing_trust() {
-    use support::codex_app_server_request;
-
-    let environment = TestEnvironment::from_fixture("basic").expect("test environment");
-    let probe = codex_command(&environment)
-        .arg("--version")
-        .output()
-        .expect("opt-in native test requires an installed Codex CLI");
-    assert!(
-        probe.status.success(),
-        "Codex version probe failed: {probe:?}"
-    );
-    let run_codex = |args: &[&str]| -> Value {
-        let output = codex_command(&environment)
-            .args(args)
-            .output()
-            .expect("Codex command");
-        assert!(
-            output.status.success(),
-            "Codex {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        serde_json::from_slice(&output.stdout).expect("Codex JSON")
-    };
-    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let other_market = environment.root.join("other-market");
-    fs::create_dir_all(other_market.join(".agents/plugins")).unwrap();
-    copy_tree(
-        &source.join("codex-plugin"),
-        &other_market.join("codex-plugin"),
-    )
-    .unwrap();
-    let mut manifest: Value =
-        serde_json::from_slice(&fs::read(source.join(".agents/plugins/marketplace.json")).unwrap())
-            .unwrap();
-    manifest["name"] = json!("magnesium-other");
-    fs::write(
-        other_market.join(".agents/plugins/marketplace.json"),
-        serde_json::to_vec(&manifest).unwrap(),
-    )
-    .unwrap();
-    run_codex(&[
-        "plugin",
-        "marketplace",
-        "add",
-        other_market.to_str().unwrap(),
-        "--json",
-    ]);
-    let other = run_codex(&["plugin", "add", "magnesium@magnesium-other", "--json"]);
-    let other_skill = std::path::Path::new(other["installedPath"].as_str().unwrap())
-        .join("skills/learn/SKILL.md");
-    let other_before = fs::read(&other_skill).unwrap();
-
-    let init = native_runtime_command(&environment)
-        .arg("init")
-        .output()
-        .unwrap();
-    assert!(
-        init.status.success(),
-        "{}",
-        String::from_utf8_lossy(&init.stderr)
-    );
-    assert!(!String::from_utf8_lossy(&init.stderr).contains("could not install plugin"));
-    let listing = run_codex(&["plugin", "list", "--json"]);
-    let installed = listing["installed"].as_array().unwrap();
-    assert!(
-        installed
-            .iter()
-            .any(|p| p["pluginId"] == "magnesium@magnesium" && p["enabled"] == true)
-    );
-    assert!(
-        installed
-            .iter()
-            .any(|p| p["pluginId"] == "magnesium@magnesium-other" && p["enabled"] == true)
-    );
-    let market = environment.data_dir().join("marketplace");
-    let skill_source = market.join("codex-plugin/skills/learn/SKILL.md");
-    let expected = fs::read(source.join("codex-plugin/skills/learn/SKILL.md")).unwrap();
-
-    // Record actual hook approval in the disposable host, then ensure refresh
-    // preserves those choices rather than obtaining a pass by approving hooks.
-    let response = codex_app_server_request(
-        &environment,
-        json!({"method":"hooks/list", "id":2, "params":{"cwds":[environment.workspace]}}),
-    );
-    let hooks = response["result"]["data"][0]["hooks"].as_array().unwrap();
-    let selected: Vec<_> = hooks
-        .iter()
-        .filter(|h| h["pluginId"] == "magnesium@magnesium")
-        .collect();
-    assert_eq!(selected.len(), 6);
-    let mut config = fs::OpenOptions::new()
-        .append(true)
-        .open(environment.codex_home.join("config.toml"))
-        .unwrap();
-    for hook in &selected {
-        writeln!(
-            config,
-            "\n[hooks.state.\"{}\"]\ntrusted_hash = \"{}\"",
-            hook["key"].as_str().unwrap(),
-            hook["currentHash"].as_str().unwrap()
-        )
-        .unwrap();
+    let outside = environment.root.join("outside");
+    fs::create_dir(&outside).expect("folder outside any study folder");
+    let before = snapshot(&environment);
+    for (event, name) in [
+        ("pre-compact", "PreCompact"),
+        ("post-compact", "PostCompact"),
+    ] {
+        let payload = json!({
+            "session_id": "older-plugin", "cwd": environment.workspace,
+            "hook_event_name": name, "trigger": "auto", "custom_instructions": ""
+        })
+        .to_string();
+        for folder in [&environment.workspace, &outside] {
+            for input in [payload.as_bytes(), b"", b"not json"] {
+                // The exact command line an older plugin copy registered.
+                let mut child = environment
+                    .command_with(test_binary(), folder)
+                    .args([
+                        "_internal",
+                        "hook",
+                        event,
+                        "--plugin-version",
+                        env!("CARGO_PKG_VERSION"),
+                        "--adapter-protocol-version",
+                        "2",
+                        "--host-kind",
+                        "claude",
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("spawn retired hook");
+                // The hook may exit before it reads its input.
+                let _ = child.stdin.take().expect("hook stdin").write_all(input);
+                let output = child.wait_with_output().expect("hook output");
+                assert_eq!(output.status.code(), Some(0), "{event}: {output:?}");
+                assert!(output.stdout.is_empty(), "{event}: {output:?}");
+                assert!(output.stderr.is_empty(), "{event}: {output:?}");
+            }
+        }
     }
-    drop(config);
-    let config_before = fs::read(environment.codex_home.join("config.toml")).unwrap();
-
-    // Install stale same-version bytes through Codex, then repair through public init.
-    fs::write(&skill_source, b"stale same-version skill\n").unwrap();
-    let receipt = run_codex(&["plugin", "add", "magnesium@magnesium", "--json"]);
-    let installed_skill = std::path::Path::new(receipt["installedPath"].as_str().unwrap())
-        .join("skills/learn/SKILL.md");
-    assert_eq!(
-        fs::read(&installed_skill).unwrap(),
-        b"stale same-version skill\n"
-    );
-    let repeated = native_runtime_command(&environment)
-        .arg("init")
-        .output()
-        .unwrap();
-    assert!(repeated.status.success());
-    assert_eq!(fs::read(&installed_skill).unwrap(), expected);
-    assert_eq!(
-        fs::read(environment.codex_home.join("config.toml")).unwrap(),
-        config_before
-    );
-
-    fs::write(&skill_source, b"stale before public update\n").unwrap();
-    run_codex(&["plugin", "add", "magnesium@magnesium", "--json"]);
-    let update = environment
-        .command()
-        .env(
-            "CODEX_TEST_BINARY",
-            codex_command(&environment).get_program(),
-        )
-        .arg("update")
-        .output()
-        .unwrap();
-    assert!(
-        update.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&update.stdout),
-        String::from_utf8_lossy(&update.stderr)
-    );
-    assert_eq!(fs::read(&installed_skill).unwrap(), expected);
-    assert_eq!(fs::read(&other_skill).unwrap(), other_before);
-    assert_eq!(
-        fs::read(environment.codex_home.join("config.toml")).unwrap(),
-        config_before
-    );
-    assert!(String::from_utf8_lossy(&update.stdout).contains("verified installed version"));
-    assert!(
-        String::from_utf8_lossy(&update.stdout).contains("does not report hook/protocol approval")
-    );
-    let info = environment
-        .command()
-        .args(["info", "--json"])
-        .output()
-        .unwrap();
-    let info: Value = serde_json::from_slice(&info.stdout).unwrap();
-    assert_eq!(info["instructions"]["status"], "current");
-
-    // An explicitly disabled plugin stays disabled; initialization must not
-    // re-enable it merely to refresh its files.
-    let config_path = environment.codex_home.join("config.toml");
-    let content = fs::read_to_string(&config_path).unwrap();
-    let mut config: toml_edit::DocumentMut = content.parse().unwrap();
-    config["plugins"]["magnesium@magnesium"]["enabled"] = toml_edit::value(false);
-    fs::write(&config_path, config.to_string()).unwrap();
-    let disabled_before = fs::read(&config_path).unwrap();
-    let disabled = native_runtime_command(&environment)
-        .arg("init")
-        .output()
-        .unwrap();
-    assert!(disabled.status.success());
-    assert!(String::from_utf8_lossy(&disabled.stderr).contains("disabled"));
-    assert_eq!(fs::read(&config_path).unwrap(), disabled_before);
+    assert_eq!(before, snapshot(&environment));
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
 }
 
 fn snapshot(environment: &TestEnvironment) -> Vec<(String, Vec<u8>)> {

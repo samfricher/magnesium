@@ -1,11 +1,10 @@
-//! Refresh the installed plugin copies for this runtime and print the steps
-//! that update the runtime itself. Magnesium is built from source, so this
+//! Refresh the installed Claude Code plugin copy for this runtime and print
+//! the steps that update the runtime itself. Magnesium is built from source, so this
 //! command never fetches or runs anything over the network.
 //!
 //! Learner stores belong to individual workspaces. Updating the installation
 //! never opens, migrates, imports, or deletes learner databases.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use crate::workspace::GlobalPaths;
@@ -32,32 +31,16 @@ pub(crate) fn run() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut failed_count = 0;
-    if let Err(error) = crate::workspace::materialize_bundled_marketplace(&paths.marketplace()) {
-        failed_count += 1;
-        eprintln!("Failed to refresh plugin assets: {error}");
-    } else {
-        println!("Plugin assets: refreshed bundled marketplace assets.");
-    }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    if let Err(error) =
-        crate::workspace::refresh_and_verify_codex_plugin(&cwd, &paths.marketplace())
-    {
-        failed_count += 1;
-        eprintln!("Failed to refresh and verify Codex plugin: {error}");
-    }
     match crate::workspace::refresh_claude_plugin(&paths.claude_plugin()) {
-        Ok(true) => println!("Claude Code plugin: refreshed the plugin copy."),
-        Ok(false) => {}
-        Err(error) => {
-            failed_count += 1;
-            eprintln!("Failed to refresh the Claude Code plugin: {error}");
+        Ok(refreshed) => {
+            if refreshed {
+                println!("Claude Code plugin: refreshed the plugin copy.");
+            }
+            ExitCode::SUCCESS
         }
-    }
-    crate::workspace::install_opencode_adapter().print();
-    if failed_count == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+        Err(error) => {
+            eprintln!("Failed to refresh the Claude Code plugin: {error}");
+            ExitCode::from(1)
+        }
     }
 }

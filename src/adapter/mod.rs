@@ -78,13 +78,8 @@ pub(crate) fn validate(identity: &InvocationIdentity) -> Result<(), Compatibilit
     Ok(())
 }
 
-pub(crate) fn compatible_plugin_version(version: &str) -> bool {
-    validate_version(version).is_ok() && compatible_version(version)
-}
-
 fn compatible_version(version: &str) -> bool {
-    let (base, build) = version.split_once('+').unwrap_or((version, ""));
-    base == env!("CARGO_PKG_VERSION") && (build.is_empty() || valid_cachebuster(build))
+    version == env!("CARGO_PKG_VERSION")
 }
 
 fn validate_version(version: &str) -> Result<(), String> {
@@ -122,13 +117,6 @@ fn validate_version(version: &str) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn valid_cachebuster(build: &str) -> bool {
-    let Some(token) = build.strip_prefix("codex.") else {
-        return false;
-    };
-    !token.is_empty() && token.split('.').all(valid_identifier)
 }
 
 fn valid_numeric(value: &str) -> bool {
@@ -211,7 +199,7 @@ pub(crate) fn host_context(host: &HostIdentity) -> crate::learner::HostContext {
 }
 /// `context` serves two request shapes; a tutor that mixes them gets both in
 /// full rather than one missing field per retry.
-const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude"|"codex"|"opencode","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
+const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
 const MEMORY_SHAPES: &str = r#"memory takes {"schema":"learner-model/v2","action":"search","goal":"<topic>","original_query":"<learner's words>"}, {"schema":"learner-model/v2","action":"read","refs":[{"kind":"current_memory"|"observation"|"event","id":"<id>"}]}, or {"schema":"learner-model/v2","action":"browse"} with optional "topic"; other actions are topics, history, reviews, observations and pending_work"#;
 /// Native process environment is adapter context, not a model-supplied identity.
 /// A tool-only connection gets its own ephemeral thread; it never borrows a
@@ -287,10 +275,6 @@ pub(crate) fn dispatch_with_host(
     let caller = native_host
         .clone()
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
-    let codex_thread = caller
-        .as_ref()
-        .filter(|host| host.host_kind == HostKind::Codex.as_str())
-        .map(|host| host.host_thread_id.clone());
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
@@ -306,9 +290,6 @@ pub(crate) fn dispatch_with_host(
             Some("papers" | "papers_loop")
         );
     let mut result = dispatch_inner(cwd, operation, request, native_host)?;
-    if let Some(thread) = codex_thread {
-        deliver_owed_core_rules(cwd, &thread, &mut result);
-    }
     open_sitting(
         cwd,
         update.as_ref(),
@@ -517,29 +498,6 @@ fn due_checks_first(
     }
     Some(refusal)
 }
-/// After a Codex compaction, the first tool result in that conversation
-/// carries the core rules. An instruction load already holds them in
-/// `MAGNESIUM.md`, so it only settles the debt.
-fn deliver_owed_core_rules(cwd: &Path, thread: &str, result: &mut serde_json::Value) {
-    let Some(fields) = result.as_object_mut() else {
-        return;
-    };
-    let Ok(Some(workspace)) = Workspace::discover(cwd) else {
-        return;
-    };
-    if check_workspace_binding(&workspace).is_err()
-        || !host::take_core_rules_owed(&workspace, thread).unwrap_or(false)
-    {
-        return;
-    }
-    let loaded_orchestrator = fields
-        .get("files")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|files| files.iter().any(|file| file == "MAGNESIUM.md"));
-    if !loaded_orchestrator {
-        fields.insert("core_rules".into(), core_rules::text().into());
-    }
-}
 fn dispatch_inner(
     cwd: &Path,
     operation: &str,
@@ -669,16 +627,14 @@ pub(crate) fn host_session_start(
         None,
         None,
     )?;
-    if host.host_kind == "claude" {
-        let folder_has_lessons = store
-            .conn
-            .query_row("SELECT EXISTS(SELECT 1 FROM learning_sessions)", [], |r| {
-                r.get::<_, bool>(0)
-            })
-            .map_err(|e| e.to_string())?;
-        if first_greeting_on_this_machine(folder_has_lessons) {
-            notice.push_str(CLAUDE_NEW_LEARNER_GUIDANCE);
-        }
+    let folder_has_lessons = store
+        .conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM learning_sessions)", [], |r| {
+            r.get::<_, bool>(0)
+        })
+        .map_err(|e| e.to_string())?;
+    if first_greeting_on_this_machine(folder_has_lessons) {
+        notice.push_str(CLAUDE_NEW_LEARNER_GUIDANCE);
     }
     Ok(Some(notice))
 }
@@ -715,22 +671,6 @@ pub(crate) fn set_core_rules(on: bool) -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
-}
-/// The core rules to restate after a compaction, when this study folder
-/// keeps them on and this conversation has an active lesson.
-pub(crate) fn core_rules_after_compaction(
-    workspace: &Workspace,
-    host: &HostIdentity,
-) -> Result<Option<&'static str>, String> {
-    check_workspace_binding(workspace)?;
-    if !workspace.core_rules_on() {
-        return Ok(None);
-    }
-    let store = open_store(workspace)?;
-    let (_, active, _) = store
-        .binding(&host_context(host))
-        .map_err(|e| e.to_string())?;
-    Ok(active.then(core_rules::text))
 }
 /// "New here?" is said once per machine, not once per study folder. The
 /// marker lives in Magnesium's per-user data folder, which `magnesium init`
@@ -804,20 +744,19 @@ fn hook_notice(
         "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}.",
         event.unwrap_or("unavailable (use labeled reported events)")
     );
-    let claude = host.host_kind == "claude";
     let mut clauses: Vec<(Clause, Cow<'static, str>)> = Vec::new();
-    match (claude, active, recording) {
-        (true, true, true) => {
+    match (active, recording) {
+        (true, true) => {
             clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
             if hook == (NoticeHook::SessionStart { core_rules: false }) {
                 clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
             }
         }
-        (true, false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
+        (false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
     }
     // The lesson's teaching rules hold whether or not it is recording.
-    if claude && active && hook == (NoticeHook::SessionStart { core_rules: true }) {
+    if active && hook == (NoticeHook::SessionStart { core_rules: true }) {
         clauses.push((
             Clause::Required,
             format!("\n\n{}", core_rules::text()).into(),
@@ -828,14 +767,12 @@ fn hook_notice(
         clauses.push((Clause::Sitting, sitting.to_owned().into()));
     }
     if unbound > 0 {
-        let recovery = if claude {
-            " Unbound work: context.pending_work unbound_only:true."
-        } else {
-            " Unbound pending work: context.pending_work with unbound_only:true."
-        };
-        clauses.push((Clause::UnboundRecovery, recovery.into()));
+        clauses.push((
+            Clause::UnboundRecovery,
+            " Unbound work: context.pending_work unbound_only:true.".into(),
+        ));
     }
-    if let (true, true, NoticeHook::UserPromptSubmit) = (claude, active, hook) {
+    if let (true, NoticeHook::UserPromptSubmit) = (active, hook) {
         clauses.push((Clause::TaskReminder, reply_check::task_reminder().into()));
         clauses.push((
             Clause::ConfusionReminder,
@@ -933,9 +870,7 @@ pub(crate) fn host_user_prompt_submit(
             Ok(ticket) => {
                 let unbound:i64=store.conn.query_row("SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
                 let mut notice = native_ticket_notice(&ticket, unbound);
-                if context.host_kind == "claude" {
-                    notice.push_str(CLAUDE_START_GUIDANCE);
-                }
+                notice.push_str(CLAUDE_START_GUIDANCE);
                 if let Some(sitting) = sitting.as_deref()
                     && notice.len() + sitting.len()
                         <= NoticeHook::UserPromptSubmit.additional_context_limit()
@@ -1062,7 +997,7 @@ mod tests {
         (
             root,
             store,
-            HostIdentity::codex("native-host-test").unwrap(),
+            HostIdentity::claude("native-host-test").unwrap(),
         )
     }
     #[test]

@@ -37,30 +37,6 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "matcher": "manual|auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "magnesium _internal hook pre-compact --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "matcher": "manual|auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "magnesium _internal hook post-compact --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "matcher": "other|clear|resume",

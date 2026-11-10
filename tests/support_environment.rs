@@ -1,15 +1,11 @@
 //! Test commands must not inherit the caller's workspace, identity or host capabilities.
 use support::TestEnvironment;
 
-const CONTEXT_VARIABLES: [&str; 20] = [
+const CONTEXT_VARIABLES: [&str; 15] = [
     "MAGNESIUM_WORKSPACE_ROOT",
-    "CODEX_THREAD_ID",
     "CLAUDE_CODE_SESSION_ID",
-    "OPENCODE_SESSION_ID",
     "CLAUDE_CONFIG_DIR",
     "MAGNESIUM_BIN",
-    "OPENCODE_SERVER_PASSWORD",
-    "OPENCODE_SERVER_USERNAME",
     "MAGNESIUM_DOCS_WORKER",
     "MAGNESIUM_DOCS_WORKER_OPT_IN",
     "OPENAI_API_KEY",
@@ -20,7 +16,6 @@ const CONTEXT_VARIABLES: [&str; 20] = [
     "GOOGLE_API_KEY",
     "AZURE_OPENAI_API_KEY",
     "OPENROUTER_API_KEY",
-    "CODEX_API_KEY",
     "MAGNESIUM_SUPPORT_UNTRUSTED_PARENT",
 ];
 const TEST_NAME: &str =
@@ -37,10 +32,6 @@ fn default_commands_strip_inherited_context_and_keep_explicit_test_configuration
         assert_eq!(
             std::env::var("MAGNESIUM_TEST_BINARY").unwrap(),
             "synthetic-magnesium-test-binary"
-        );
-        assert_eq!(
-            std::env::var("CODEX_TEST_BINARY").unwrap(),
-            "synthetic-codex-test-binary"
         );
         assert_eq!(
             std::env::var_os("HOME"),
@@ -64,22 +55,10 @@ fn default_commands_strip_inherited_context_and_keep_explicit_test_configuration
             );
         }
         let mut command = environment.command_with(executable, &environment.workspace);
-        let codex_default = command
-            .get_envs()
-            .find(|(name, _)| *name == "CODEX_TEST_BINARY")
-            .and_then(|(_, value)| value)
-            .unwrap();
-        assert_eq!(
-            codex_default,
-            environment.root.join("codex-not-installed").as_os_str()
+        command.env(PHASE, "clean").env(
+            "MAGNESIUM_SUPPORT_TEST_EXPECTED_HOME",
+            environment.root.join("home"),
         );
-        command
-            .env(PHASE, "clean")
-            .env("CODEX_TEST_BINARY", "synthetic-codex-test-binary")
-            .env(
-                "MAGNESIUM_SUPPORT_TEST_EXPECTED_HOME",
-                environment.root.join("home"),
-            );
         for variable in ["PATH", "CARGO_HOME", "RUSTUP_HOME"] {
             let expected = format!("MAGNESIUM_SUPPORT_EXPECTED_{variable}");
             if let Some(value) = std::env::var_os(&expected) {
@@ -91,8 +70,7 @@ fn default_commands_strip_inherited_context_and_keep_explicit_test_configuration
         let mut command = std::process::Command::new(executable);
         command
             .env(PHASE, "poisoned")
-            .env("MAGNESIUM_TEST_BINARY", "synthetic-magnesium-test-binary")
-            .env("CODEX_TEST_BINARY", "synthetic-codex-test-binary");
+            .env("MAGNESIUM_TEST_BINARY", "synthetic-magnesium-test-binary");
         // Poison only this subprocess. These paths belong to this synthetic fixture;
         // no global environment mutation or real host/account access is needed.
         for variable in CONTEXT_VARIABLES {

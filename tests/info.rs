@@ -35,8 +35,8 @@ fn info_reports_fresh_family_counts_and_instruction_identity_without_writes() {
 fn pending_native_work_is_visible_and_observation_index_failure_is_distinct() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    v2::start(&e, "codex", "monday");
-    let o = v2::prompt(&e, "codex", "monday", Some("1"), "What does b mean?");
+    v2::start(&e, "claude", "monday");
+    let o = v2::prompt(&e, "claude", "monday", Some("1"), "What does b mean?");
     assert!(o.status.success());
     let report = info(&e);
     assert_eq!(report["pending_event_count"], 1);

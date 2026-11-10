@@ -15,12 +15,11 @@ use sha2::{Digest, Sha256};
 
 const BUNDLE_VERSION: u64 = 2;
 const SUPPORTED_SCHEMA: u64 = 2;
-/// Caps the instruction text in one load. Across every stage and host, the MCP
-/// text block adds at most about 4% of JSON escapes and 477 bytes of fields,
-/// so 32 KiB of text makes an MCP text block of at most about 34,600 bytes.
-/// The binding host limits are higher: Claude Code saves a result over 50,000
-/// characters to a file, Codex silently cuts above about 48,000 bytes on
-/// bundled models, and OpenCode truncates above 51,200 bytes.
+/// Caps the instruction text in one load. Across every stage, the MCP text
+/// block adds at most about 4% of JSON escapes and 477 bytes of fields, so
+/// 32 KiB of text makes an MCP text block of at most about 34,600 bytes. The
+/// binding host limit is higher: Claude Code saves a result over 50,000
+/// characters to a file.
 const RESPONSE_LIMIT: usize = 32 * 1024;
 const MAX_APPROVED_ASSET_BYTES: usize = 1024 * 1024;
 const MAX_BUNDLE_DIRECTORY_DEPTH: usize = 4;
@@ -70,17 +69,13 @@ impl InstructionStage {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum InstructionHost {
-    Codex,
     Claude,
-    Opencode,
 }
 
 impl InstructionHost {
     fn manifest_key(self) -> &'static str {
         match self {
-            Self::Codex => "codex",
             Self::Claude => "claude",
-            Self::Opencode => "opencode",
         }
     }
 
@@ -1118,7 +1113,7 @@ mod tests {
     fn compiled_approved_bundle_activates_and_serves() {
         let bundle = compiled_bundle().expect("compiled approved assets validate");
         assert_eq!(bundle.status, "active");
-        assert_eq!(bundle.files.len(), 17);
+        assert_eq!(bundle.files.len(), 15);
         let control = temp_control("approved");
         assert_eq!(
             install_bundle(&control).expect("approved install"),
@@ -1133,7 +1128,7 @@ mod tests {
         let loaded = load_inner(
             &control,
             InstructionStage::TeachAndPractice,
-            InstructionHost::Codex,
+            InstructionHost::Claude,
             None,
             "full_adapter",
         )
@@ -1141,7 +1136,7 @@ mod tests {
         assert_eq!(loaded.status, "served");
         assert_eq!(loaded.bundle_hash, bundle.hash);
         assert!(loaded.immutable_bytes_reused);
-        assert_eq!(loaded.validation_file_count, 18);
+        assert_eq!(loaded.validation_file_count, 16);
         fs::remove_dir_all(control).unwrap();
     }
 
@@ -1154,7 +1149,7 @@ mod tests {
             "../secret",
             "workflows/../../secret",
             "/absolute",
-            "adapters\\codex.md",
+            "adapters\\claude.md",
         ] {
             assert!(!safe_relative_path(unsafe_path));
         }
@@ -1179,21 +1174,17 @@ mod tests {
 
     #[test]
     fn every_runtime_host_and_operation_has_a_manifest_consumer() {
-        for host in [
-            InstructionHost::Codex,
-            InstructionHost::Claude,
-            InstructionHost::Opencode,
-        ] {
-            assert!(
-                super::GENERATED_METADATA
-                    .iter()
-                    .any(|(path, role, _, metadata_host)| {
-                        *path == host.asset()
-                            && *role == "adapter"
-                            && *metadata_host == Some(host.manifest_key())
-                    })
-            );
-        }
+        let host = InstructionHost::Claude;
+        assert!(
+            super::GENERATED_METADATA
+                .iter()
+                .any(|(path, role, _, metadata_host)| {
+                    *path == host.asset()
+                        && *role == "adapter"
+                        && *metadata_host == Some(host.manifest_key())
+                })
+        );
+
         for operation in [
             InstructionOperation::StateAndEvidence,
             InstructionOperation::SourceUse,
@@ -1216,33 +1207,28 @@ mod tests {
         let control = temp_control("tool-recipes-budget");
         install_bundle(&control).unwrap();
         for stage in STAGES {
-            for host in [
-                InstructionHost::Codex,
-                InstructionHost::Claude,
-                InstructionHost::Opencode,
-            ] {
-                let loaded = load_inner(
-                    &control,
-                    stage,
-                    host,
-                    Some(InstructionOperation::ToolRecipes),
-                    "instruction_only",
-                )
-                .unwrap();
-                let needed = loaded.bytes_served
-                    + loaded
-                        .deferred_modules
-                        .iter()
-                        .map(|path| bundle.files[path].len() + 2)
-                        .sum::<usize>();
-                assert!(
-                    loaded.deferred_modules.is_empty(),
-                    "{stage:?} for {host:?} needs {needed} of {} bytes, {} over, so it deferred {:?}",
-                    super::RESPONSE_LIMIT,
-                    needed.saturating_sub(super::RESPONSE_LIMIT),
-                    loaded.deferred_modules
-                );
-            }
+            let host = InstructionHost::Claude;
+            let loaded = load_inner(
+                &control,
+                stage,
+                host,
+                Some(InstructionOperation::ToolRecipes),
+                "instruction_only",
+            )
+            .unwrap();
+            let needed = loaded.bytes_served
+                + loaded
+                    .deferred_modules
+                    .iter()
+                    .map(|path| bundle.files[path].len() + 2)
+                    .sum::<usize>();
+            assert!(
+                loaded.deferred_modules.is_empty(),
+                "{stage:?} for {host:?} needs {needed} of {} bytes, {} over, so it deferred {:?}",
+                super::RESPONSE_LIMIT,
+                needed.saturating_sub(super::RESPONSE_LIMIT),
+                loaded.deferred_modules
+            );
         }
         fs::remove_dir_all(control).unwrap();
     }
@@ -1258,75 +1244,69 @@ mod tests {
                 .len();
         let mut served = std::collections::BTreeSet::new();
         for stage in STAGES {
-            for host in [
-                InstructionHost::Codex,
-                InstructionHost::Claude,
-                InstructionHost::Opencode,
+            let host = InstructionHost::Claude;
+            for operation in [
+                None,
+                Some(InstructionOperation::StateAndEvidence),
+                Some(InstructionOperation::SourceUse),
+                Some(InstructionOperation::ToolRecipes),
             ] {
-                for operation in [
-                    None,
-                    Some(InstructionOperation::StateAndEvidence),
-                    Some(InstructionOperation::SourceUse),
-                    Some(InstructionOperation::ToolRecipes),
-                ] {
-                    let loaded =
-                        load_inner(&control, stage, host, operation, "instruction_only").unwrap();
-                    let mut expected_files = vec![
-                        "MAGNESIUM.md",
-                        "teaching-policy.md",
-                        host.asset(),
-                        stage.workflow(),
-                    ];
-                    if let Some(operation) = operation {
-                        expected_files.push(operation.asset());
-                    }
-                    assert_eq!(loaded.files, expected_files);
-                    assert!(loaded.deferred_modules.is_empty());
-                    let expected_text = expected_files
-                        .iter()
-                        .map(|path| std::str::from_utf8(&bundle.files[*path]).unwrap())
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    assert_eq!(loaded.text, expected_text);
-                    assert_eq!(loaded.status, "served");
-                    assert_eq!(loaded.bundle_version, bundle.version);
-                    assert_eq!(loaded.bundle_hash, bundle.hash);
-                    assert_eq!(loaded.recommended_stage, stage);
-                    assert_eq!(loaded.bytes_served, expected_text.len());
-                    assert!(loaded.bytes_served <= super::RESPONSE_LIMIT);
-                    assert_eq!(loaded.validation_file_count, 18);
-                    assert_eq!(loaded.validation_bytes, validation_bytes);
-                    assert!(loaded.immutable_bytes_reused);
-                    let response =
-                        super::load(&control, stage, host, operation, "instruction_only");
-                    assert_eq!(response, serde_json::to_value(&loaded).unwrap());
-                    assert_eq!(
-                        response
-                            .as_object()
-                            .unwrap()
-                            .keys()
-                            .map(String::as_str)
-                            .collect::<Vec<_>>(),
-                        [
-                            "bundle_hash",
-                            "bundle_version",
-                            "bytes_served",
-                            "capability_tier",
-                            "deferred_modules",
-                            "files",
-                            "immutable_bytes_reused",
-                            "recommended_stage",
-                            "status",
-                            "text",
-                            "validation_bytes",
-                            "validation_file_count",
-                        ]
-                    );
-                    served.extend(loaded.files);
+                let loaded =
+                    load_inner(&control, stage, host, operation, "instruction_only").unwrap();
+                let mut expected_files = vec![
+                    "MAGNESIUM.md",
+                    "teaching-policy.md",
+                    host.asset(),
+                    stage.workflow(),
+                ];
+                if let Some(operation) = operation {
+                    expected_files.push(operation.asset());
                 }
+                assert_eq!(loaded.files, expected_files);
+                assert!(loaded.deferred_modules.is_empty());
+                let expected_text = expected_files
+                    .iter()
+                    .map(|path| std::str::from_utf8(&bundle.files[*path]).unwrap())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                assert_eq!(loaded.text, expected_text);
+                assert_eq!(loaded.status, "served");
+                assert_eq!(loaded.bundle_version, bundle.version);
+                assert_eq!(loaded.bundle_hash, bundle.hash);
+                assert_eq!(loaded.recommended_stage, stage);
+                assert_eq!(loaded.bytes_served, expected_text.len());
+                assert!(loaded.bytes_served <= super::RESPONSE_LIMIT);
+                assert_eq!(loaded.validation_file_count, 16);
+                assert_eq!(loaded.validation_bytes, validation_bytes);
+                assert!(loaded.immutable_bytes_reused);
+                let response = super::load(&control, stage, host, operation, "instruction_only");
+                assert_eq!(response, serde_json::to_value(&loaded).unwrap());
+                assert_eq!(
+                    response
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    [
+                        "bundle_hash",
+                        "bundle_version",
+                        "bytes_served",
+                        "capability_tier",
+                        "deferred_modules",
+                        "files",
+                        "immutable_bytes_reused",
+                        "recommended_stage",
+                        "status",
+                        "text",
+                        "validation_bytes",
+                        "validation_file_count",
+                    ]
+                );
+                served.extend(loaded.files);
             }
         }
-        assert_eq!(served.len(), 16);
+        assert_eq!(served.len(), 14);
         assert_eq!(
             served,
             ALLOWED_PATHS
@@ -1344,48 +1324,43 @@ mod tests {
         let instructions = control.join("instructions");
         fs::create_dir(&instructions).unwrap();
         for stage in STAGES {
-            for host in [
-                InstructionHost::Codex,
-                InstructionHost::Claude,
-                InstructionHost::Opencode,
+            let host = InstructionHost::Claude;
+            for operation in [
+                None,
+                Some(InstructionOperation::StateAndEvidence),
+                Some(InstructionOperation::SourceUse),
+                Some(InstructionOperation::ToolRecipes),
             ] {
-                for operation in [
-                    None,
-                    Some(InstructionOperation::StateAndEvidence),
-                    Some(InstructionOperation::SourceUse),
-                    Some(InstructionOperation::ToolRecipes),
-                ] {
-                    let response =
-                        super::load(&control, stage, host, operation, "instruction_only");
-                    assert_eq!(response["status"], "unavailable");
-                    assert_eq!(response["bundle_version"], bundle.version);
-                    assert_eq!(response["bundle_hash"], bundle.hash);
-                    assert_eq!(
-                        response["recommended_stage"],
-                        serde_json::to_value(stage).unwrap()
-                    );
-                    assert_eq!(response["error"]["code"], "bundle_not_active");
-                    assert!(
-                        response["error"]["message"].as_str().unwrap().contains(
-                            "run `magnesium init --upgrade-instructions` in this workspace"
-                        )
-                    );
-                    assert_eq!(
-                        response
-                            .as_object()
-                            .unwrap()
-                            .keys()
-                            .map(String::as_str)
-                            .collect::<Vec<_>>(),
-                        [
-                            "bundle_hash",
-                            "bundle_version",
-                            "error",
-                            "recommended_stage",
-                            "status"
-                        ]
-                    );
-                }
+                let response = super::load(&control, stage, host, operation, "instruction_only");
+                assert_eq!(response["status"], "unavailable");
+                assert_eq!(response["bundle_version"], bundle.version);
+                assert_eq!(response["bundle_hash"], bundle.hash);
+                assert_eq!(
+                    response["recommended_stage"],
+                    serde_json::to_value(stage).unwrap()
+                );
+                assert_eq!(response["error"]["code"], "bundle_not_active");
+                assert!(
+                    response["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("run `magnesium init --upgrade-instructions` in this workspace")
+                );
+                assert_eq!(
+                    response
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    [
+                        "bundle_hash",
+                        "bundle_version",
+                        "error",
+                        "recommended_stage",
+                        "status"
+                    ]
+                );
             }
         }
         assert_eq!(fs::read_dir(&control).unwrap().count(), 1);
@@ -1450,7 +1425,7 @@ mod tests {
         let instructions = control.join("instructions");
         let first_validation = load_installed(&instructions, &bundle).unwrap();
         let second_validation = load_installed(&instructions, &bundle).unwrap();
-        assert_eq!(first_validation.file_count, 18);
+        assert_eq!(first_validation.file_count, 16);
         assert_eq!(
             first_validation.bytes,
             bundle.files.values().map(Vec::len).sum::<usize>()
@@ -1462,7 +1437,7 @@ mod tests {
             let response = render(
                 &bundle,
                 stage,
-                InstructionHost::Codex,
+                InstructionHost::Claude,
                 None,
                 "instruction_only",
                 second_validation,
@@ -1475,7 +1450,7 @@ mod tests {
                 [
                     "MAGNESIUM.md",
                     "teaching-policy.md",
-                    "adapters/codex.md",
+                    "adapters/claude.md",
                     stage.workflow(),
                 ]
             );
@@ -1497,7 +1472,7 @@ mod tests {
                 !response.immutable_bytes_reused,
                 "stage sequence item {sequence_index}"
             );
-            assert_eq!(response.validation_file_count, 18);
+            assert_eq!(response.validation_file_count, 16);
             assert_eq!(response.validation_bytes, second_validation.bytes);
         }
 
@@ -1539,7 +1514,7 @@ mod tests {
             let loaded = load_inner(
                 &control,
                 InstructionStage::TeachAndPractice,
-                InstructionHost::Codex,
+                InstructionHost::Claude,
                 None,
                 "instruction_only",
             )
@@ -1549,9 +1524,9 @@ mod tests {
             assert!(Arc::ptr_eq(&loaded_bundle.files, &bundle.files));
             assert!(loaded.immutable_bytes_reused);
             assert_eq!(loaded.bundle_hash, bundle.hash);
-            // One active-pointer read plus the 16 instructions and manifest; the
+            // One active-pointer read plus the 14 instructions and manifest; the
             // ordinary path must not reopen the pointer it already verified.
-            assert_eq!(loaded.validation_file_count, 18);
+            assert_eq!(loaded.validation_file_count, 16);
             match validation_bytes_per_workspace {
                 Some(bytes) => assert_eq!(loaded.validation_bytes, bytes),
                 None => validation_bytes_per_workspace = Some(loaded.validation_bytes),
@@ -1578,7 +1553,7 @@ mod tests {
         let no_operation = render(
             &bundle,
             InstructionStage::TeachAndPractice,
-            InstructionHost::Opencode,
+            InstructionHost::Claude,
             None,
             "instruction_only",
             validation,
@@ -1588,7 +1563,7 @@ mod tests {
         let with_operation = render(
             &bundle,
             InstructionStage::TeachAndPractice,
-            InstructionHost::Opencode,
+            InstructionHost::Claude,
             Some(InstructionOperation::SourceUse),
             "instruction_only",
             validation,
@@ -1631,7 +1606,7 @@ mod tests {
         ));
 
         for (original, replacement) in [
-            ("adapters/codex.md", "adapters/browser.md"),
+            ("adapters/claude.md", "adapters/browser.md"),
             ("contracts/source-use.md", "contracts/extra.md"),
         ] {
             let mut substituted: Value = serde_json::from_slice(&manifest_bytes).unwrap();
@@ -1742,7 +1717,7 @@ mod tests {
             render(
                 &bundle,
                 InstructionStage::TeachAndPractice,
-                InstructionHost::Codex,
+                InstructionHost::Claude,
                 None,
                 "full_adapter",
                 super::ValidationWork {
@@ -1762,7 +1737,7 @@ mod tests {
         let output = render(
             &bundle,
             InstructionStage::TeachAndPractice,
-            InstructionHost::Codex,
+            InstructionHost::Claude,
             Some(InstructionOperation::ToolRecipes),
             "tool_only",
             super::ValidationWork {
@@ -1835,7 +1810,7 @@ mod tests {
         }
         let old_manifest_bytes = serde_json::to_vec(&old_manifest).unwrap();
         old_files.insert(MANIFEST.to_owned(), old_manifest_bytes.clone());
-        assert_eq!(old_manifest["files"].as_array().unwrap().len(), 18);
+        assert_eq!(old_manifest["files"].as_array().unwrap().len(), 16);
         assert!(matches!(
             validate_bundle(old_manifest_bytes.clone(), old_files.clone()),
             Err(BundleError::ManifestMismatch)
@@ -1895,8 +1870,8 @@ mod tests {
         );
         let fresh_validation =
             load_installed(&fresh_control.join("instructions"), &current).unwrap();
-        assert_eq!(fresh_validation.file_count, 18);
-        assert_eq!(current.files.len(), 17);
+        assert_eq!(fresh_validation.file_count, 16);
+        assert_eq!(current.files.len(), 15);
         assert_eq!(current.version, 2);
         fs::remove_dir_all(old_control).unwrap();
         fs::remove_dir_all(fresh_control).unwrap();
@@ -2024,7 +1999,7 @@ mod tests {
         );
         assert_eq!(
             load_installed(&instructions, &bundle).unwrap().file_count,
-            18
+            16
         );
         fs::remove_dir_all(control).unwrap();
     }
@@ -2045,7 +2020,7 @@ mod tests {
         assert_eq!(fs::read(&pointer_path).unwrap(), original);
         assert_eq!(
             load_installed(&instructions, &bundle).unwrap().file_count,
-            18
+            16
         );
         #[cfg(unix)]
         {

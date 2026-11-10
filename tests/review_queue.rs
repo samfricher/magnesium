@@ -17,7 +17,7 @@ struct Fixture {
 fn update(e: &TestEnvironment, mut request: Value) -> Value {
     request["schema"] = json!("learner-model/v2");
     request["action"] = json!("update");
-    let receipt = tool(e, "codex", THREAD, "learning_step", request);
+    let receipt = tool(e, "claude", THREAD, "learning_step", request);
     assert_eq!(receipt["update_status"], "committed", "{receipt}");
     receipt
 }
@@ -30,7 +30,7 @@ fn record(summary: &str, body: &str, basis: Value) -> Value {
 fn fixture(n: usize) -> Fixture {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", THREAD);
+    start(&e, "claude", THREAD);
     let captured = update(
         &e,
         json!({"request_id":"capture","reported_events":[{
@@ -92,13 +92,13 @@ fn connection(f: &Fixture) -> Connection {
 fn read(f: &Fixture, mut request: Value) -> Value {
     request["schema"] = json!("learner-model/v2");
     request["action"] = json!("reviews");
-    tool(&f.e, "codex", THREAD, "memory", request)
+    tool(&f.e, "claude", THREAD, "memory", request)
 }
 
 fn read_error(f: &Fixture, mut request: Value) -> String {
     request["schema"] = json!("learner-model/v2");
     request["action"] = json!("reviews");
-    let output = tool_output(&f.e, "codex", THREAD, "memory", request);
+    let output = tool_output(&f.e, "claude", THREAD, "memory", request);
     assert!(!output.status.success(), "{output:?}");
     String::from_utf8(output.stderr)
         .unwrap()
@@ -168,7 +168,7 @@ fn generation(f: &Fixture) -> (i64, i64) {
 fn mcp_advertises_reviews_and_records_the_exact_current_packet_without_state_mutation() {
     let f = fixture(3);
     let before = learner_state(&f);
-    let mut client = McpClient::spawn_with_env(&f.e, true, &[("CODEX_THREAD_ID", THREAD)]);
+    let mut client = McpClient::spawn_with_env(&f.e, true, &[("CLAUDE_CODE_SESSION_ID", THREAD)]);
     client.initialize();
     let listed = client.request(2, "tools/list", json!({}));
     let memory = listed["result"]["tools"]
@@ -366,7 +366,7 @@ fn recording_off_leaves_no_receipt_or_ability_changes() {
     assert_eq!(count(&f.e, "context_receipts"), 0);
     tool(
         &f.e,
-        "codex",
+        "claude",
         THREAD,
         "learning_step",
         json!({"schema":"learner-model/v2",

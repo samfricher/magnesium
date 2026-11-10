@@ -31,7 +31,7 @@ impl Fixture {
             workspace,
             store,
             host: HostContext {
-                host_kind: "codex".into(),
+                host_kind: "claude".into(),
                 host_thread_id: "native-thread".into(),
             },
         }
@@ -234,7 +234,7 @@ fn failed_recording_off_requires_recording_on_after_storage_recovers() {
 #[test]
 fn same_process_hooks_honor_failed_control_suppression() {
     let f = Fixture::new();
-    let native_host = super::HostIdentity::codex("failed-control-hook-review").unwrap();
+    let native_host = super::HostIdentity::claude("failed-control-hook-review").unwrap();
     let host = super::host_context(&native_host);
     f.store.update(&host,json!({"schema":SCHEMA,"action":"update","request_id":"hook-start","session":{"operation":"start","client_ref":"session","goal":"algebra"}})).unwrap();
     f.store.conn.execute_batch("CREATE TRIGGER reject_recording_control BEFORE UPDATE OF recording_enabled ON host_bindings BEGIN SELECT RAISE(ABORT,'injected durable control failure'); END;").unwrap();
@@ -296,7 +296,7 @@ fn same_process_hooks_honor_failed_control_suppression() {
 #[test]
 fn stop_then_new_native_hook_can_start_a_new_session_in_same_thread() {
     let f = Fixture::new();
-    let native_host = super::HostIdentity::codex("restart-same-thread").unwrap();
+    let native_host = super::HostIdentity::claude("restart-same-thread").unwrap();
     let host = super::host_context(&native_host);
     let initial=f.store.update(&host,json!({"schema":SCHEMA,"action":"update","request_id":"initial-session","session":{"operation":"start","client_ref":"first","goal":"First lesson"}})).unwrap();
     let stop = crate::learner::RawEvent {

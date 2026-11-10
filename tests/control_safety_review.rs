@@ -10,7 +10,7 @@ fn control_output(
 ) -> std::process::Output {
     v2::tool_output(
         environment,
-        "codex",
+        "claude",
         thread,
         "learning_step",
         json!({
@@ -30,11 +30,13 @@ fn headless_controls_do_not_bypass_busy_admission() {
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&environment);
     let thread = "busy-headless-control";
-    v2::start(&environment, "codex", thread);
-    let key = Sha256::digest(serde_json::to_vec(&["codex", thread]).unwrap())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    v2::start(&environment, "claude", thread);
+    let key = Sha256::digest(
+        serde_json::to_vec(&["claude", &format!("magnesium-h1:claude:{thread}")]).unwrap(),
+    )
+    .iter()
+    .map(|byte| format!("{byte:02x}"))
+    .collect::<String>();
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -77,7 +79,7 @@ fn headless_binding_read_failure_discloses_the_persisted_deny() {
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&environment);
     let thread = "headless-binding-failure";
-    v2::start(&environment, "codex", thread);
+    v2::start(&environment, "claude", thread);
     let conn = rusqlite::Connection::open(
         environment
             .workspace

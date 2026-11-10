@@ -55,9 +55,7 @@ const FILES: &[(&str, &str, Option<&str>, Option<&str>)] = &[
         Some("papers-loop"),
         None,
     ),
-    ("adapters/codex.md", "adapter", None, Some("codex")),
     ("adapters/claude.md", "adapter", None, Some("claude")),
-    ("adapters/opencode.md", "adapter", None, Some("opencode")),
 ];
 
 fn sha256(bytes: &[u8]) -> String {
@@ -102,7 +100,7 @@ fn authored_files_match_active_manifest_and_packaged_bytes() {
     assert_eq!(manifest["entrypoint"], "MAGNESIUM.md");
 
     let declared = manifest["files"].as_array().expect("explicit files array");
-    assert_eq!(declared.len(), 16);
+    assert_eq!(declared.len(), 14);
     let mut seen = BTreeSet::new();
     for (entry, &(relative, role, stage, host)) in declared.iter().zip(FILES) {
         assert_eq!(entry["path"], relative);
@@ -156,7 +154,7 @@ fn authored_files_match_active_manifest_and_packaged_bytes() {
     assert_eq!(actual, expected);
 
     let packaged = packaged_entries();
-    assert_eq!(packaged.len(), 17);
+    assert_eq!(packaged.len(), 15);
     assert_eq!(packaged[0], ("manifest.json".to_owned(), manifest_bytes));
     for ((name, bytes), (relative, ..)) in packaged.iter().skip(1).zip(FILES) {
         assert_eq!(name, relative);

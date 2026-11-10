@@ -274,45 +274,46 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
 }
 
 #[test]
-fn a_right_unaided_answer_to_a_due_check_passes_it_on_a_host_without_reply_text() {
+fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no_reply_text() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let capture = |id: &str, text: &str| -> String {
-        let value = v2::tool(
-            &e,
-            "opencode",
-            "oc",
-            "learning_step",
-            json!({"schema":"learner-model/v2","action":"update","request_id":id,
-                "reported_events":[{"external_event_key":id,"speaker":"learner","kind":"message","text":text}]}),
-        );
-        value["captured_event_ids"][0].as_str().unwrap().to_owned()
-    };
-    let record = |id: &str, event: &str, first_try: &str| -> Value {
-        v2::tool(
-            &e,
-            "opencode",
-            "oc",
-            "learning_step",
-            json!({"schema":"learner-model/v2","action":"update","request_id":id,
-                "observations":[{"client_ref":"work","kind":"learner_work","description":"Answer to b.",
-                    "events":[{"event_id":event,"role":"learner_response"}],
-                    "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":first_try,"help":"none","cold":first_try == "right"}}]}),
-        )
-    };
-    v2::start(&e, "opencode", "oc");
-    let event = capture("answer-1", "b is 7");
-    record("miss", &event, "wrong");
+    claude_prompt(&e, "p-1", "teach me");
+    v2::start(&e, "claude", "conv");
+    let notice = claude_prompt(&e, "p-2", "b is 7");
+    attempt(&e, "miss", &current_event(&notice), "wrong", MISS);
     next_day(&e);
-    // With no prompt hook, a committed update carrying learner input is the
-    // learner message that begins the sitting, and its result has the opener.
-    let event = capture("answer-2", "hello again");
+    // A new sitting begins with the learner's next message. The Stop hook of
+    // that turn carries no reply text, so nothing says the check was posed.
+    claude_prompt(&e, "p-3", "hello again");
+    let no_reply = json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"p-3","stop_hook_active":false});
+    let output = run_hook_with_host_flag(&e, &e.workspace, "stop", no_reply, "claude");
+    assert!(output.status.success(), "{output:?}");
     let conn = sittings(&e);
     let sittings_count: i64 = conn
         .query_row("SELECT count(*) FROM sittings", [], |r| r.get(0))
         .unwrap();
     assert_eq!(sittings_count, 2);
-    let passed = record("pass", &event, "right");
+    // The first tool result of the sitting carries its opener, once.
+    let load = v2::tool(
+        &e,
+        "claude",
+        "conv",
+        "context",
+        json!({"action":"instructions","host":"claude","stage":"teach_and_practice"}),
+    );
+    assert!(
+        load["sitting_opener"].as_str().unwrap().contains(LABEL),
+        "{load}"
+    );
+    // The learner answers anyway; a right unaided answer is recorded and passes it.
+    let notice = claude_prompt(&e, "p-4", "x is 2 or 5");
+    let passed = step(
+        &e,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"pass",
+            "observations":[{"client_ref":"work","kind":"learner_work","description":"Answer to b.",
+                "events":[{"event_id":current_event(&notice),"role":"learner_response"}],
+                "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":"right","help":"none","cold":true}}]}),
+    );
     assert!(passed.get("sitting_opener").is_none(), "{passed}");
     let (outcome,): (String,) = conn
         .query_row("SELECT outcome FROM sitting_items", [], |r| {
@@ -330,10 +331,10 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_on_a_host_without_reply_text(
 fn an_attempt_needs_the_learners_own_message_and_a_bounded_label() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    v2::start(&e, "codex", "cx");
+    v2::start(&e, "claude", "cx");
     let captured = v2::tool(
         &e,
-        "codex",
+        "claude",
         "cx",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"tutor",
@@ -354,7 +355,7 @@ fn an_attempt_needs_the_learners_own_message_and_a_bounded_label() {
     {
         let output = v2::tool_output(
             &e,
-            "codex",
+            "claude",
             "cx",
             "learning_step",
             json!({"schema":"learner-model/v2","action":"update","request_id":format!("bad-{index}"),
@@ -440,10 +441,10 @@ fn loading_a_paper_stage_brings_in_an_older_gap_log_even_with_the_opener_off() {
     let before = std::fs::read_to_string(&path).unwrap();
     let load = v2::tool(
         &e,
-        "codex",
+        "claude",
         "cx",
         "context",
-        json!({"action":"instructions","host":"codex","stage":"papers_loop"}),
+        json!({"action":"instructions","host":"claude","stage":"papers_loop"}),
     );
     assert_eq!(load["status"], "served", "{load}");
     assert!(load.get("sitting_opener").is_none(), "{load}");
@@ -465,7 +466,7 @@ fn loading_a_paper_stage_brings_in_an_older_gap_log_even_with_the_opener_off() {
 fn served_instructions_ask_for_an_attempt_and_open_each_sitting_with_what_is_due() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    for host in ["claude", "codex", "opencode"] {
+    for host in ["claude"] {
         let served = |stage: &str| {
             v2::tool(
                 &e,

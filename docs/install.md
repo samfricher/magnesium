@@ -4,7 +4,9 @@ This document is for a coding agent. The user handed you this repository and ask
 
 ## 1. What you are installing
 
-You are installing a command-line runtime, `magnesium`, and a plugin for the user's assistant (Claude Code, Codex or OpenCode). It runs with the user's privileges and writes only to the folders that step 5 names.
+You are installing a command-line runtime, `magnesium`, and a plugin for Claude Code. It runs with the user's privileges and writes only to the folders that step 5 names.
+
+Magnesium is built and tested for Claude Code only. If the user wants it in another agent, tell them that no other agent is supported. Its learner record, files and tools are open to any agent, but an adapter for another agent is separate work.
 
 ## 2. Ask before you install anything
 
@@ -18,7 +20,7 @@ Also ask before you change the user's shell profile or copy a file into a folder
 | --- | --- | --- | --- |
 | Rust, through rustup | Builds Magnesium. The repository pins its toolchain in `rust-toolchain.toml`, and rustup fetches that version on the first build. | `cargo --version` | "May I install Rust with rustup? Magnesium is built from source with it." |
 | Git | Checks out the newest release before the build and at each update. | `git --version` | "May I install Git? I use it to get the newest release of Magnesium, now and when you update." |
-| Git Bash (Windows only) | The assistant runs Magnesium's hooks through it. | `bash --version`, from a Git Bash prompt | "May I install Git for Windows? Its Git Bash runs Magnesium's hooks." |
+| Git Bash (Windows only) | Claude Code runs Magnesium's hooks through it. | `bash --version`, from a Git Bash prompt | "May I install Git for Windows? Its Git Bash runs Magnesium's hooks." |
 
 ## 4. Build the newest release and place the binary
 
@@ -63,7 +65,7 @@ Put the binary on the user's PATH. Ask first, then do one of these:
 - Copy it into a folder that is already on PATH, such as `~/.local/bin` on macOS or Linux.
 - Add the repository's `target/release` folder to PATH in the user's shell profile.
 
-The assistant starts `magnesium` by name, so the command must resolve in a new terminal.
+Claude Code starts `magnesium` by name, so the command must resolve in a new terminal.
 
 Check: `magnesium --version` prints `magnesium` and a version number.
 
@@ -78,22 +80,19 @@ magnesium init
 `magnesium init` writes these things:
 
 - `.magnesium/` in the study folder. It holds the learning history (`state.sqlite`), the teaching instructions, the source search cache and `config.toml`.
-- A per-user plugin folder: `~/Library/Application Support/magnesium` on macOS, `$XDG_DATA_HOME/magnesium` or `~/.local/share/magnesium` on Linux, and `%LOCALAPPDATA%\magnesium` on Windows. It holds the Claude Code plugin copy and the Codex marketplace.
-- For Claude Code, one `extraKnownMarketplaces` entry in `~/.claude/settings.json` (or in `$CLAUDE_CONFIG_DIR/settings.json`). That entry names the plugin folder and enables nothing.
-- For Claude Code, `.claude/settings.local.json` in the study folder. It turns the plugin on for this folder only. It also allows Magnesium's tools, reads of the plugin folder, the three Magnesium skills and `magnesium digest`.
+- A per-user plugin folder: `~/Library/Application Support/magnesium` on macOS, `$XDG_DATA_HOME/magnesium` or `~/.local/share/magnesium` on Linux, and `%LOCALAPPDATA%\magnesium` on Windows. It holds the Claude Code plugin copy.
+- One `extraKnownMarketplaces` entry in Claude Code's `~/.claude/settings.json` (or in `$CLAUDE_CONFIG_DIR/settings.json`). That entry names the plugin folder and enables nothing.
+- `.claude/settings.local.json` in the study folder. It turns the plugin on for this folder only. It also allows Magnesium's tools, reads of the plugin folder, the three Magnesium skills and `magnesium digest`.
 - In a Git repository, entries for `.magnesium/` and `.claude/settings.local.json` in `.git/info/exclude`.
-- When the `codex` command exists, the Magnesium marketplace and plugin in Codex.
-- When the `opencode` command exists, the OpenCode plugin, its skill and an MCP entry in OpenCode's config folder.
 - With `--adapter agents-md` only, a bounded Magnesium block in the folder's `AGENTS.md`.
 
-`magnesium init` prints one result line for each assistant. Tell the user what it wrote.
+`magnesium init` prints a result line for the Claude Code plugin. Tell the user what it wrote.
 
 Checks:
 
 - The study folder has a `.magnesium/` folder.
-- Claude Code: `.claude/settings.local.json` lists `magnesium@magnesium` under `enabledPlugins`. In a new Claude Code conversation in the study folder, `/magnesium:help` answers with a short guide.
-- Codex: run `codex` from the study folder. Approve the Magnesium hooks if Codex asks.
-- OpenCode: do any manual registration step that `magnesium init` printed. Then run `opencode` from the study folder.
+- `.claude/settings.local.json` lists `magnesium@magnesium` under `enabledPlugins`.
+- In a new Claude Code conversation in the study folder, `/magnesium:help` answers with a short guide.
 
 ## 6. Optional tools
 
@@ -127,7 +126,7 @@ Run these in order:
 
 Checks: `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1` prints the tag that the lookup printed (judge it by its output, as in step 4), `magnesium --version` prints the same version number, and `/magnesium:help` answers in a new conversation.
 
-`magnesium update` prints these steps. It also refreshes the plugin copies that `magnesium init` installed. It never downloads anything.
+`magnesium update` prints these steps. It also refreshes the Claude Code plugin copy that `magnesium init` installed. It never downloads anything.
 
 ## 9. Windows
 

@@ -24,17 +24,17 @@ fn run_examples(mcp: bool) {
     v2::init(&e);
     let served = v2::tool(
         &e,
-        "codex",
+        "claude",
         "monday",
         "context",
-        json!({"action":"instructions","host":"codex","stage":"interpret_and_repair","operation":"tool_recipes"}),
+        json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}),
     );
     let text = served["text"].as_str().expect("instruction text");
     assert!(text.contains("session.client_ref"));
     assert!(text.contains("native_capture"));
     assert!(text.contains("Do not drop the checkpoint"));
     let mut monday = mcp.then(|| {
-        let mut c = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "monday")]);
+        let mut c = McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "monday")]);
         c.initialize();
         c
     });
@@ -44,7 +44,7 @@ fn run_examples(mcp: bool) {
         let result = if let Some(c) = client {
             c.call_value(id, "learning_step", request)
         } else {
-            v2::tool(&e, "codex", thread, "learning_step", request)
+            v2::tool(&e, "claude", thread, "learning_step", request)
         };
         assert_eq!(result["update_status"], "committed", "{result}");
         result
@@ -70,7 +70,7 @@ fn run_examples(mcp: bool) {
         c.close_cleanly();
     }
     let mut tuesday = mcp.then(|| {
-        let mut c = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "tuesday")]);
+        let mut c = McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "tuesday")]);
         c.initialize();
         c
     });

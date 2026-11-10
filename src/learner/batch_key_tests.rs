@@ -15,7 +15,7 @@ impl Fixture {
         std::fs::create_dir(&root).unwrap();
         let store = LearnerStore::initialize(&root.join("state.sqlite"), "batch-keys").unwrap();
         let host = HostContext {
-            host_kind: "codex".into(),
+            host_kind: "claude".into(),
             host_thread_id: "batch-keys".into(),
         };
         let started = store.update(&host, json!({"schema":SCHEMA,"action":"update","request_id":"start","session":{"operation":"start","client_ref":"session","goal":"Coefficient roles"}})).unwrap();
