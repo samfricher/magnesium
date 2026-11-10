@@ -27,7 +27,7 @@ fn inactive_context_does_not_initialize_then_active_status_and_prepare_are_bound
     let e = TestEnvironment::from_fixture("basic").unwrap();
     let status = tool(
         &e,
-        "codex",
+        "claude",
         "thread",
         "context",
         json!({"schema":"learner-model/v2","action":"status"}),
@@ -37,7 +37,7 @@ fn inactive_context_does_not_initialize_then_active_status_and_prepare_are_bound
     init(&e);
     let status = tool(
         &e,
-        "codex",
+        "claude",
         "thread",
         "context",
         json!({"schema":"learner-model/v2","action":"status"}),
@@ -46,7 +46,7 @@ fn inactive_context_does_not_initialize_then_active_status_and_prepare_are_bound
     assert!(status["workspace_id"].is_string());
     let context = tool(
         &e,
-        "codex",
+        "claude",
         "thread",
         "context",
         json!({"schema":"learner-model/v2","action":"prepare","goal":"quadratic coefficients"}),
@@ -60,8 +60,8 @@ fn cli_and_mcp_current_directory_match_without_creating_learning_events() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
     let request = json!({"schema":"learner-model/v2","action":"browse"});
-    let cli = tool(&e, "codex", "thread", "memory", request.clone());
-    let mut client = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "thread")]);
+    let cli = tool(&e, "claude", "thread", "memory", request.clone());
+    let mut client = McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "thread")]);
     client.initialize();
     let mcp = client.call_value(2, "memory", request);
     assert_eq!(cli, mcp);
@@ -84,7 +84,7 @@ fn source_search_remains_separate_and_reads_plain_sources() {
     );
     let result = tool(
         &e,
-        "codex",
+        "claude",
         "thread",
         "search_sources",
         json!({"query":"coefficient","limit":4}),

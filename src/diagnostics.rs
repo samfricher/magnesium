@@ -20,8 +20,7 @@ pub(crate) fn record_hook_error(workspace: &Workspace, event: &str, failure: Hoo
         return;
     }
     let event = match event {
-        "SessionStart" | "UserPromptSubmit" | "Stop" | "PreCompact" | "PostCompact"
-        | "SessionEnd" => event,
+        "SessionStart" | "UserPromptSubmit" | "Stop" | "SessionEnd" => event,
         _ => "hook",
     };
     let value = json!({"event":event,"failure":format!("{failure:?}"),"at_ms":chrono::Utc::now().timestamp_millis()});
@@ -56,8 +55,6 @@ pub(crate) fn latest_hook_failure(workspace: &Workspace) -> Value {
             "SessionStart",
             "UserPromptSubmit",
             "Stop",
-            "PreCompact",
-            "PostCompact",
             "SessionEnd",
             "hook",
         ]
@@ -145,14 +142,7 @@ mod tests {
         )
         .unwrap();
         let workspace = Workspace::discover(&root).unwrap().unwrap();
-        for event in [
-            "SessionStart",
-            "UserPromptSubmit",
-            "Stop",
-            "PreCompact",
-            "PostCompact",
-            "SessionEnd",
-        ] {
+        for event in ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"] {
             record_hook_error(&workspace, event, HookFailure::HookProcessing);
             let latest = latest_hook_failure(&workspace);
             assert_eq!(latest["event"], event, "{latest}");

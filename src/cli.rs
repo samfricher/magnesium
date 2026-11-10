@@ -165,7 +165,7 @@ pub(crate) fn command() -> ClapCommand {
                             Arg::new("host-kind")
                                 .long("host-kind")
                                 .value_name("HOST_KIND")
-                                .help("Host whose plugin launched this server; only its session identity is trusted (e.g. claude)"),
+                                .help("Host whose plugin launched this server; only claude is supported"),
                         ),
                 )
                 .subcommand(ClapCommand::new("extract-pdf"))
@@ -177,14 +177,12 @@ pub(crate) fn command() -> ClapCommand {
                             Arg::new("host-kind")
                                 .long("host-kind")
                                 .value_name("HOST_KIND")
-                                .help("Adapter host kind for hosts whose native event JSON carries no kind field (e.g. claude)"),
+                                .help("Host whose plugin runs this hook, because its event JSON carries no kind field; only claude is supported"),
                         )
                         .arg(Arg::new("event").required(true).value_parser([
                             "session-start",
                             "user-prompt-submit",
                             "stop",
-                            "pre-compact",
-                            "post-compact",
                             "session-end",
                         ])),
                 ),

@@ -14,7 +14,7 @@ fn claude_prompt(e: &TestEnvironment, thread: &str, prompt_id: &str, text: &str)
 }
 
 #[test]
-fn claude_notices_say_when_to_start_and_continue_a_lesson_and_codex_notices_do_not() {
+fn claude_notices_say_when_to_start_and_continue_a_lesson() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
 
@@ -57,9 +57,6 @@ fn claude_notices_say_when_to_start_and_continue_a_lesson_and_codex_notices_do_n
     ));
     assert!(resumed.contains(CORE_HEADING), "{resumed}");
     assert!(!resumed.contains("load the learn skill"), "{resumed}");
-
-    let codex = v2::context(&v2::prompt(&e, "codex", "conv", Some("t-1"), "teach me"));
-    assert!(!codex.contains("learn skill"), "{codex}");
 }
 
 fn claude_stop(e: &TestEnvironment, thread: &str, prompt_id: &str, reply: &str) {
@@ -114,10 +111,6 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     ));
     assert!(session_start.contains(CORE_HEADING), "{session_start}");
     assert!(!session_start.contains("Teaching reply"), "{session_start}");
-
-    v2::start(&e, "codex", "conv");
-    let codex = v2::context(&v2::prompt(&e, "codex", "conv", Some("t-1"), "teach me"));
-    assert!(!codex.contains("Teaching reply"), "{codex}");
 }
 
 #[test]
@@ -152,25 +145,23 @@ fn claude_reminder_stays_without_feedback_while_recording_is_off() {
 fn claude_session_start_points_a_new_learner_at_help_once_per_machine() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let session_start = |folder: &std::path::Path, host: &str, thread: &str| {
+    let session_start = |folder: &std::path::Path, thread: &str| {
         let input = json!({"session_id":thread,"cwd":folder,"hook_event_name":"SessionStart","source":"startup"});
         v2::context(&run_hook_with_host_flag(
             &e,
             folder,
             "session-start",
             input,
-            host,
+            "claude",
         ))
     };
 
-    let codex = session_start(&e.workspace, "codex", "first");
-    assert!(!codex.contains("/magnesium:help"), "{codex}");
-    let fresh = session_start(&e.workspace, "claude", "first");
+    let fresh = session_start(&e.workspace, "first");
     assert!(
         fresh.contains("\"New here? Type /magnesium:help.\""),
         "{fresh}"
     );
-    let again = session_start(&e.workspace, "claude", "second");
+    let again = session_start(&e.workspace, "second");
     assert!(again.contains("context.prepare"), "{again}");
     assert!(!again.contains("/magnesium:help"), "{again}");
 
@@ -180,7 +171,7 @@ fn claude_session_start_points_a_new_learner_at_help_once_per_machine() {
     std::fs::create_dir_all(&other).unwrap();
     let init = e.command_in(&other).arg("init").output().unwrap();
     assert!(init.status.success(), "{init:?}");
-    let other_folder = session_start(&other, "claude", "third");
+    let other_folder = session_start(&other, "third");
     assert!(other_folder.contains("context.prepare"), "{other_folder}");
     assert!(!other_folder.contains("/magnesium:help"), "{other_folder}");
 }
@@ -1159,35 +1150,12 @@ fn served_core(e: &TestEnvironment) -> String {
     section[..end].trim_end().to_owned()
 }
 
-fn compaction(e: &TestEnvironment, host: &str, thread: &str) -> std::process::Output {
-    let (event, input) = if host == "claude" {
-        (
-            "session-start",
-            json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"SessionStart","source":"compact"}),
-        )
-    } else {
-        (
-            "post-compact",
-            json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"PostCompact","trigger":"auto"}),
-        )
-    };
-    let output = run_hook_with_host_flag(e, &e.workspace, event, input, host);
+/// Claude Code fires its SessionStart hook again after a compaction.
+fn compaction(e: &TestEnvironment, thread: &str) -> std::process::Output {
+    let input = json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"SessionStart","source":"compact"});
+    let output = run_hook_with_host_flag(e, &e.workspace, "session-start", input, "claude");
     assert!(output.status.success(), "{output:?}");
     output
-}
-
-fn hook_json(output: &std::process::Output) -> Value {
-    serde_json::from_slice(&output.stdout).unwrap()
-}
-
-fn codex_status(e: &TestEnvironment, thread: &str) -> Value {
-    v2::tool(
-        e,
-        "codex",
-        thread,
-        "context",
-        json!({"schema":"learner-model/v2","action":"status"}),
-    )
 }
 
 #[test]
@@ -1210,51 +1178,43 @@ fn every_stage_serves_the_core_rules() {
     ] {
         assert!(core.contains(rule), "{rule}");
     }
-    for host in ["claude", "codex", "opencode"] {
-        for stage in [
-            "orient_and_probe",
-            "plan_and_route",
-            "teach_and_practice",
-            "interpret_and_repair",
-            "review_and_transfer",
-            "consolidate_and_resume",
-            "papers",
-            "papers_loop",
-        ] {
-            let text = v2::tool(
-                &e,
-                host,
-                "core-stages",
-                "context",
-                json!({"action":"instructions","host":host,"stage":stage}),
-            )["text"]
-                .as_str()
-                .unwrap()
-                .to_owned();
-            assert!(text.contains(&core), "{host}/{stage}");
-        }
+    for stage in [
+        "orient_and_probe",
+        "plan_and_route",
+        "teach_and_practice",
+        "interpret_and_repair",
+        "review_and_transfer",
+        "consolidate_and_resume",
+        "papers",
+        "papers_loop",
+    ] {
+        let text = v2::tool(
+            &e,
+            "claude",
+            "core-stages",
+            "context",
+            json!({"action":"instructions","host":"claude","stage":stage}),
+        )["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(text.contains(&core), "{stage}");
     }
 }
 
 #[test]
-fn the_runtime_restates_the_core_rules_after_a_compaction_on_every_host() {
+fn the_runtime_restates_the_core_rules_after_a_compaction() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let core = served_core(&e);
 
     // No lesson in the conversation: nothing is restated.
-    let idle = v2::context(&compaction(&e, "claude", "claude-idle"));
+    let idle = v2::context(&compaction(&e, "claude-idle"));
     assert!(!idle.contains(CORE_HEADING), "{idle}");
-    assert_eq!(
-        hook_json(&compaction(&e, "opencode", "opencode-idle")),
-        json!({})
-    );
-    compaction(&e, "codex", "codex-idle");
-    assert!(codex_status(&e, "codex-idle").get("core_rules").is_none());
 
     // Claude Code: its SessionStart hook fires again after a compaction.
     v2::start(&e, "claude", "claude-lesson");
-    let claude = v2::context(&compaction(&e, "claude", "claude-lesson"));
+    let claude = v2::context(&compaction(&e, "claude-lesson"));
     assert!(claude.contains(&core), "{claude}");
     assert!(
         claude.contains("interpret this learner turn with learning_step"),
@@ -1262,49 +1222,6 @@ fn the_runtime_restates_the_core_rules_after_a_compaction_on_every_host() {
     );
     assert!(!claude.contains("load the learn skill"), "{claude}");
     assert!(claude.len() <= 4096, "{} bytes", claude.len());
-
-    // OpenCode: the post-compaction hook's context leads the next turn.
-    v2::start(&e, "opencode", "opencode-lesson");
-    let opencode = v2::context(&compaction(&e, "opencode", "opencode-lesson"));
-    assert_eq!(opencode, core);
-
-    // Codex: the next tool result in that conversation carries them, once.
-    v2::start(&e, "codex", "codex-lesson");
-    assert_eq!(
-        hook_json(&compaction(&e, "codex", "codex-lesson")),
-        json!({})
-    );
-    assert!(codex_status(&e, "codex-other").get("core_rules").is_none());
-    assert_eq!(codex_status(&e, "codex-lesson")["core_rules"], json!(core));
-    assert!(codex_status(&e, "codex-lesson").get("core_rules").is_none());
-    let step = v2::tool(
-        &e,
-        "codex",
-        "codex-lesson",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"update","request_id":"after-compaction"}),
-    );
-    assert!(step.get("core_rules").is_none(), "{step}");
-    compaction(&e, "codex", "codex-lesson");
-    let step = v2::tool(
-        &e,
-        "codex",
-        "codex-lesson",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"update","request_id":"after-second-compaction"}),
-    );
-    assert_eq!(step["core_rules"], json!(core), "{step}");
-    // An instruction load already holds the core, so it settles the debt.
-    compaction(&e, "codex", "codex-lesson");
-    let load = v2::tool(
-        &e,
-        "codex",
-        "codex-lesson",
-        "context",
-        json!({"action":"instructions","host":"codex","stage":"teach_and_practice"}),
-    );
-    assert!(load.get("core_rules").is_none());
-    assert!(codex_status(&e, "codex-lesson").get("core_rules").is_none());
 }
 
 #[test]
@@ -1322,32 +1239,20 @@ fn one_command_turns_the_core_rules_off_for_a_study_folder() {
         String::from_utf8(output.stdout).unwrap()
     };
     v2::start(&e, "claude", "claude-lesson");
-    v2::start(&e, "codex", "codex-lesson");
-    v2::start(&e, "opencode", "opencode-lesson");
 
     assert!(switch("off").starts_with("Core rules off"));
-    let claude = v2::context(&compaction(&e, "claude", "claude-lesson"));
+    let claude = v2::context(&compaction(&e, "claude-lesson"));
     assert!(!claude.contains(CORE_HEADING), "{claude}");
     assert!(
         claude.contains("After a new conversation or compaction, load the learn skill"),
         "{claude}"
     );
-    assert_eq!(
-        hook_json(&compaction(&e, "opencode", "opencode-lesson")),
-        json!({})
-    );
-    compaction(&e, "codex", "codex-lesson");
-    assert!(codex_status(&e, "codex-lesson").get("core_rules").is_none());
     // The stage instructions keep the rewritten rules either way.
     assert!(served_core(&e).contains("**Start from one concrete case.**"));
 
     assert!(switch("on").starts_with("Core rules on"));
-    let claude = v2::context(&compaction(&e, "claude", "claude-lesson"));
+    let claude = v2::context(&compaction(&e, "claude-lesson"));
     assert!(claude.contains(&core), "{claude}");
-    assert_eq!(
-        v2::context(&compaction(&e, "opencode", "opencode-lesson")),
-        core
-    );
 
     let elsewhere = e.root.join("not-a-study-folder");
     std::fs::create_dir_all(&elsewhere).unwrap();

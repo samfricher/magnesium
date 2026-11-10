@@ -12,7 +12,7 @@ impl Fixture {
             std::env::temp_dir().join(format!("{}.sqlite", store::new_id("parse-shape").unwrap()));
         let store = LearnerStore::initialize(&path, "parse-workspace").unwrap();
         let host = HostContext {
-            host_kind: "codex".into(),
+            host_kind: "claude".into(),
             host_thread_id: "shape-thread".into(),
         };
         store.update(&host,json!({"schema":SCHEMA,"action":"update","request_id":"start","session":{"operation":"start","client_ref":"session","goal":"algebra"}})).unwrap();
@@ -91,7 +91,7 @@ fn missing_start_reference_identifies_session_field_and_keeps_capture() {
     assert!(e.message.contains("client_ref"));
     assert_eq!(
         e.recovery.unwrap()["arguments"],
-        json!({"action":"instructions","stage":"interpret_and_repair","operation":"tool_recipes","host":"codex"})
+        json!({"action":"instructions","stage":"interpret_and_repair","operation":"tool_recipes","host":"claude"})
     );
     assert_eq!(
         f.store

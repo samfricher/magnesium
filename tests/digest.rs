@@ -13,14 +13,14 @@ fn digest(e: &TestEnvironment) -> Value {
 }
 
 fn update(e: &TestEnvironment, request: Value) -> Value {
-    let receipt = v2::tool(e, "codex", THREAD, "learning_step", request);
+    let receipt = v2::tool(e, "claude", THREAD, "learning_step", request);
     assert_eq!(receipt["update_status"], "committed", "{receipt}");
     receipt
 }
 
 /// One lesson with a checkpoint and three review suggestions, one due in the year 3000.
 fn seed_lesson(e: &TestEnvironment) {
-    let started = v2::start(e, "codex", THREAD);
+    let started = v2::start(e, "claude", THREAD);
     let session = started["references"]["session"].as_str().unwrap();
     let captured = update(
         e,

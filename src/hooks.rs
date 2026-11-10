@@ -16,8 +16,6 @@ enum HookEvent {
     SessionStart,
     UserPromptSubmit,
     Stop,
-    PreCompact,
-    PostCompact,
     SessionEnd,
 }
 
@@ -27,8 +25,6 @@ impl HookEvent {
             "session-start" => Some(Self::SessionStart),
             "user-prompt-submit" => Some(Self::UserPromptSubmit),
             "stop" => Some(Self::Stop),
-            "pre-compact" => Some(Self::PreCompact),
-            "post-compact" => Some(Self::PostCompact),
             "session-end" => Some(Self::SessionEnd),
             _ => None,
         }
@@ -39,8 +35,6 @@ impl HookEvent {
             Self::SessionStart => "SessionStart",
             Self::UserPromptSubmit => "UserPromptSubmit",
             Self::Stop => "Stop",
-            Self::PreCompact => "PreCompact",
-            Self::PostCompact => "PostCompact",
             Self::SessionEnd => "SessionEnd",
         }
     }
@@ -54,67 +48,24 @@ struct HookInput {
     hook_event_name: String,
     model: Option<String>,
     permission_mode: Option<String>,
-    turn_id: Option<String>,
-    /// Optional host kind for the common adapter boundary. Absent means
-    /// Codex. Unknown kinds are rejected as unavailable capture;
-    /// they never inherit Codex trust. Hosts whose native event JSON carries
-    /// no kind field (Claude Code) receive it from the installed
-    /// `--host-kind` hook flag instead; a flag that disagrees with a payload
-    /// kind is ambiguous and means unavailable capture.
-    host_kind: Option<String>,
-    /// Claude Code's per-prompt UUID, shared by every hook in that turn.
+    /// Claude Code's per-prompt UUID, shared by every hook in that turn, so
+    /// the prompt and Stop hooks agree on the turn. A prompt without one gets
+    /// a native-local ordinal instead.
     prompt_id: Option<String>,
     prompt: Option<String>,
     source: Option<String>,
-    trigger: Option<String>,
     reason: Option<String>,
     stop_hook_active: Option<bool>,
     last_assistant_message: Option<String>,
 }
 
-fn host_identity(input: &HookInput) -> Result<HostIdentity, String> {
-    let kind = match input.host_kind.as_deref() {
-        None => HostKind::Codex,
-        Some(value) => {
-            HostKind::parse(value).map_err(|detail| format!("unavailable_capture: {detail}"))?
-        }
-    };
-    match kind {
-        HostKind::Codex => HostIdentity::codex(&input.session_id),
-        HostKind::Claude => HostIdentity::claude(&input.session_id),
-        HostKind::OpenCode => HostIdentity::opencode(&input.session_id),
-    }
-    .map_err(|detail| format!("unavailable_capture: {detail}"))
-}
-
-/// Merge the installed `--host-kind` hook flag into the parsed event. Claude
-/// Code's official event JSON carries no kind field, so the installed Claude
-/// command line supplies it; adapters whose payload already carries a kind
-/// never use the flag. An unknown flag kind, or a flag that disagrees with
-/// the payload kind, is ambiguous input: unavailable capture, never a silent
-/// reinterpretation as another host. The caller degrades fail-open so the
-/// host stays unblocked.
-fn apply_host_kind_flag(input: &mut HookInput, flag: Option<&str>) -> Result<(), String> {
-    let Some(flag) = flag else {
-        return Ok(());
-    };
-    let kind = HostKind::parse(flag).map_err(|detail| format!("unavailable_capture: {detail}"))?;
-    if let Some(payload) = input.host_kind.as_deref()
-        && payload != kind.as_str()
-    {
-        return Err("turn-scoped hook is ambiguous".to_owned());
-    }
-    input.host_kind = Some(kind.as_str().to_owned());
-    Ok(())
-}
-
-/// Claude Code has no `turn_id`, but its common `prompt_id` names the user
-/// prompt a hook belongs to, so the prompt and Stop hooks agree on the turn.
-/// Events without one keep the ordinal fallback at prompt time.
-fn adopt_claude_prompt_id(input: &mut HookInput) {
-    if input.host_kind.as_deref() == Some("claude") && input.turn_id.is_none() {
-        input.turn_id = input.prompt_id.take();
-    }
+/// The host comes from the installed `--host-kind` hook flag, because Claude
+/// Code's official event JSON carries no kind field. A missing or unknown
+/// kind is unavailable capture, never a silent reinterpretation as Claude
+/// Code. The caller degrades fail-open so the host stays unblocked.
+fn host_kind(flag: Option<&str>) -> Result<HostKind, String> {
+    let flag = flag.ok_or("unavailable_capture: the hook command names no host kind")?;
+    HostKind::parse(flag).map_err(|detail| format!("unavailable_capture: {detail}"))
 }
 
 pub(crate) fn run(
@@ -142,7 +93,7 @@ pub(crate) fn run(
         return ExitCode::SUCCESS;
     }
 
-    let mut input = match read_input() {
+    let input = match read_input() {
         Ok(input) => input,
         Err(_) => {
             record_if_active(
@@ -153,15 +104,17 @@ pub(crate) fn run(
             return ExitCode::SUCCESS;
         }
     };
-    if apply_host_kind_flag(&mut input, host_kind_flag.as_deref()).is_err() {
-        record_if_active(
-            current_workspace.as_ref(),
-            event,
-            HookFailure::InputValidation,
-        );
-        return ExitCode::SUCCESS;
-    }
-    adopt_claude_prompt_id(&mut input);
+    let kind = match host_kind(host_kind_flag.as_deref()) {
+        Ok(kind) => kind,
+        Err(_) => {
+            record_if_active(
+                current_workspace.as_ref(),
+                event,
+                HookFailure::InputValidation,
+            );
+            return ExitCode::SUCCESS;
+        }
+    };
     let workspace = match Workspace::discover(&input.cwd) {
         Ok(workspace) => workspace,
         Err(_) => {
@@ -180,7 +133,7 @@ pub(crate) fn run(
     }
 
     let output = match &workspace {
-        Some(workspace) => match handle(event, &input, workspace) {
+        Some(workspace) => match handle(event, &input, kind, workspace) {
             Ok(output) => output,
             Err(_) => {
                 record_hook_error(workspace, event.name(), HookFailure::HookProcessing);
@@ -221,14 +174,9 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
         return Err("hook_event_name does not match the invoked handler".to_owned());
     }
     validate_identifier("session_id", &input.session_id)?;
-    if let Some(kind) = input.host_kind.as_deref()
-        && HostKind::parse(kind).is_err()
-    {
-        return Err("hook input contains an unsupported host_kind".to_owned());
-    }
-    // A turn-scoped hook needs the native turn ID. Without one, only an
-    // ordinal-capable host at prompt time is accepted, and `handle` then
-    // allocates a native-local ordinal (see `validate_turn_for`).
+    // A turn-scoped hook needs the native turn ID. Without one, only a
+    // prompt is accepted, and `handle` then allocates a native-local ordinal
+    // (see `validate_turn_for`).
 
     // Never scrape transcript files. Available finalized assistant text is
     // captured as observed delivery only while learning recording is active.
@@ -257,20 +205,8 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
                 .ok_or_else(|| "Stop is missing stop_hook_active".to_owned())?;
             Ok(())
         }
-        HookEvent::PreCompact => {
-            validate_turn_for(input, false)?;
-            validate_choice("trigger", input.trigger.as_deref(), &["manual", "auto"])
-        }
-        HookEvent::PostCompact => {
-            // Post-compaction is session-scoped: the OpenCode adapter reports
-            // it without a turn because no turn is in flight when the host
-            // emits the event. The marker itself is keyed by host session, so
-            // no turn identity is consumed downstream.
-            validate_post_compact_turn(input)?;
-            validate_choice("trigger", input.trigger.as_deref(), &["manual", "auto"])
-        }
-        // Codex registers only "other"; Claude also registers the reasons
-        // after which its process continues as a different conversation.
+        // "clear" and "resume" are the reasons after which Claude Code's
+        // process continues as a different conversation.
         HookEvent::SessionEnd => validate_choice(
             "reason",
             input.reason.as_deref(),
@@ -280,18 +216,11 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
 }
 
 fn validate_turn_for(input: &HookInput, allocatable: bool) -> Result<(), String> {
-    match input.turn_id.as_deref() {
-        Some(turn_id) => validate_turn_identifier(turn_id),
-        None if allocatable && input.host_kind.as_deref() == Some("claude") => Ok(()),
-        None => Err("turn-scoped hook is missing turn_id".to_owned()),
+    match input.prompt_id.as_deref() {
+        Some(prompt_id) => validate_turn_identifier(prompt_id),
+        None if allocatable => Ok(()),
+        None => Err("turn-scoped hook is missing prompt_id".to_owned()),
     }
-}
-
-fn validate_post_compact_turn(input: &HookInput) -> Result<(), String> {
-    input
-        .turn_id
-        .as_deref()
-        .map_or(Ok(()), validate_turn_identifier)
 }
 
 fn validate_turn_identifier(value: &str) -> Result<(), String> {
@@ -300,7 +229,7 @@ fn validate_turn_identifier(value: &str) -> Result<(), String> {
         || value.chars().any(char::is_control)
     {
         return Err(format!(
-            "turn_id must contain 1-{} bytes without control characters",
+            "prompt_id must contain 1-{} bytes without control characters",
             crate::adapter::MAX_TURN_ID_BYTES
         ));
     }
@@ -328,6 +257,7 @@ fn validate_choice(field: &str, value: Option<&str>, choices: &[&str]) -> Result
 fn handle(
     event: HookEvent,
     input: &HookInput,
+    kind: HostKind,
     workspace: &Workspace,
 ) -> Result<Option<Value>, String> {
     // Hook cwd must resolve to the same nearest boundary as the workspace
@@ -336,31 +266,29 @@ fn handle(
     // writes here; ordinary host work continues because hooks always exit
     // successfully with degraded status instead of blocking.
     adapter::check_workspace_binding(workspace)?;
-    let host = host_identity(input)?;
+    let host = &HostIdentity::new(kind, &input.session_id)
+        .map_err(|detail| format!("unavailable_capture: {detail}"))?;
     match event {
         HookEvent::SessionStart => {
-            if host.kind() == HostKind::Claude {
-                adapter::host::clear_session_ended(workspace, &host)?;
-            }
-            // All native hosts share the same workspace-local capture owner.
-            let context = adapter::host_session_start(&input.cwd, &host)?;
+            adapter::host::clear_session_ended(workspace, host)?;
+            let context = adapter::host_session_start(&input.cwd, host)?;
             Ok(context.map(|c| additional_context(event, c)))
         }
         HookEvent::UserPromptSubmit => {
             let prompt = input.prompt.as_deref().expect("validated prompt");
-            let context = if input.turn_id.is_none() {
-                // Ordinal-capable host without a stable turn ID: allocate a
-                // native-local ordinal at this trusted prompt hook. The
-                // session/order mapping is unambiguous (per-session monotonic
-                // counter); retries reuse the MCP idempotency key.
+            let context = if input.prompt_id.is_none() {
+                // A prompt without a stable turn ID: allocate a native-local
+                // ordinal at this trusted prompt hook. The session/order
+                // mapping is unambiguous (per-session monotonic counter);
+                // retries reuse the MCP idempotency key.
                 let ordinal =
                     adapter::host::allocate_native_ordinal(workspace, &host.stored_session_id())?;
-                adapter::host_user_prompt_submit(&input.cwd, &host, None, Some(ordinal), prompt)?
+                adapter::host_user_prompt_submit(&input.cwd, host, None, Some(ordinal), prompt)?
             } else {
                 adapter::host_user_prompt_submit(
                     &input.cwd,
-                    &host,
-                    input.turn_id.as_deref(),
+                    host,
+                    input.prompt_id.as_deref(),
                     None,
                     prompt,
                 )?
@@ -369,45 +297,23 @@ fn handle(
         }
         HookEvent::Stop => {
             let native = input
-                .turn_id
+                .prompt_id
                 .as_deref()
-                .ok_or("turn-scoped hook is missing turn_id")?;
+                .ok_or("turn-scoped hook is missing prompt_id")?;
             let stored_turn = host
                 .stored_turn_id(native)
                 .map_err(|detail| format!("unavailable_capture: {detail}"))?;
             adapter::host_response_stop_with_delivery(
                 &input.cwd,
-                &host,
+                host,
                 &stored_turn,
                 input.last_assistant_message.as_deref(),
             )?;
             Ok(Some(json!({})))
         }
-        HookEvent::PreCompact => Ok(Some(json!({}))),
-        // A compaction drops the stage instructions with the tool results
-        // that carried them, so the runtime restates the core rules. Claude
-        // Code gets them from its SessionStart hook, which fires again with
-        // source "compact". OpenCode puts this hook's context in front of the
-        // next turn. Codex allows too few bytes at session start, so its next
-        // tool result carries them instead.
-        HookEvent::PostCompact => {
-            let Some(core) = adapter::core_rules_after_compaction(workspace, &host)? else {
-                return Ok(Some(json!({})));
-            };
-            match host.kind() {
-                HostKind::OpenCode => Ok(Some(additional_context(event, core.to_owned()))),
-                HostKind::Codex => {
-                    adapter::host::mark_core_rules_owed(workspace, &host)?;
-                    Ok(Some(json!({})))
-                }
-                HostKind::Claude => Ok(Some(json!({}))),
-            }
-        }
         HookEvent::SessionEnd => {
-            if host.kind() == HostKind::Claude
-                && matches!(input.reason.as_deref(), Some("clear" | "resume"))
-            {
-                adapter::host::mark_session_ended(workspace, &host)?;
+            if matches!(input.reason.as_deref(), Some("clear" | "resume")) {
+                adapter::host::mark_session_ended(workspace, host)?;
             }
             Ok(None)
         }
@@ -417,7 +323,7 @@ fn handle(
 fn additional_context(event: HookEvent, context: String) -> Value {
     debug_assert!(matches!(
         event,
-        HookEvent::SessionStart | HookEvent::UserPromptSubmit | HookEvent::PostCompact
+        HookEvent::SessionStart | HookEvent::UserPromptSubmit
     ));
     json!({
         "hookSpecificOutput": {

@@ -47,8 +47,8 @@ fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)>
     let entries = manifest["files"].as_array().expect("manifest files array");
     assert_eq!(
         entries.len(),
-        16,
-        "the reserved bundle has exactly 16 runtime-consumed files"
+        14,
+        "the reserved bundle has exactly 14 runtime-consumed files"
     );
     let mut inventory = Vec::with_capacity(entries.len());
     let mut seen = BTreeSet::new();
@@ -121,10 +121,7 @@ fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)>
             )
         } else if path.starts_with("adapters/") {
             assert!(
-                matches!(
-                    path.as_str(),
-                    "adapters/codex.md" | "adapters/claude.md" | "adapters/opencode.md"
-                ),
+                path == "adapters/claude.md",
                 "adapter path has no runtime consumer: {path}"
             );
             (
@@ -172,9 +169,7 @@ fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)>
         "workflows/consolidate-and-resume.md",
         "workflows/papers.md",
         "workflows/papers-loop.md",
-        "adapters/codex.md",
         "adapters/claude.md",
-        "adapters/opencode.md",
     ]);
     let actual_runtime_paths: BTreeSet<_> = inventory
         .iter()

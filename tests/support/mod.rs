@@ -1,11 +1,11 @@
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub mod mcp;
 pub mod snapshot;
@@ -22,7 +22,6 @@ pub struct TestEnvironment {
     pub root: PathBuf,
     pub workspace: PathBuf,
     pub global_data: PathBuf,
-    pub codex_home: PathBuf,
     fake_home: PathBuf,
     temp: PathBuf,
 }
@@ -32,11 +31,10 @@ impl TestEnvironment {
         let root = unique_test_root()?;
         let workspace = root.join("workspace");
         let global_data = root.join("global-data");
-        let codex_home = root.join("codex-home");
         let fake_home = root.join("home");
         let temp = root.join("tmp");
 
-        for directory in [&global_data, &codex_home, &fake_home, &temp] {
+        for directory in [&global_data, &fake_home, &temp] {
             fs::create_dir(directory)?;
         }
 
@@ -47,7 +45,6 @@ impl TestEnvironment {
             root,
             workspace,
             global_data,
-            codex_home,
             fake_home,
             temp,
         })
@@ -98,12 +95,6 @@ impl TestEnvironment {
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("LOCALAPPDATA", &self.global_data)
             .env("APPDATA", &self.global_data)
-            .env("CODEX_HOME", &self.codex_home)
-            .env("CODEX_TEST_BINARY", self.root.join("codex-not-installed"))
-            .env(
-                "OPENCODE_TEST_BINARY",
-                self.root.join("opencode-not-installed"),
-            )
             .env("TMPDIR", &self.temp)
             .env("TEMP", &self.temp)
             .env("TMP", &self.temp);
@@ -119,22 +110,19 @@ impl TestEnvironment {
         self.global_data.join("magnesium")
     }
 
-    /// Entries in the data directory other than the two that `init` manages.
-    /// Magnesium keeps learner state in the workspace, never in a global store.
+    /// Entries in the data directory other than the plugin copy that `init`
+    /// manages. Magnesium keeps learner state in the workspace, never in a
+    /// global store.
     pub fn unmanaged_data_entries(&self) -> Vec<String> {
         let Ok(entries) = fs::read_dir(self.data_dir()) else {
             return Vec::new();
         };
         let mut names: Vec<String> = entries
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name != "marketplace" && name != "claude-plugin")
+            .filter(|name| name != "claude-plugin")
             .collect();
         names.sort();
         names
-    }
-
-    pub fn opencode_config_dir(&self) -> PathBuf {
-        self.root.join("config/opencode")
     }
 }
 
@@ -187,60 +175,6 @@ pub fn test_binary() -> PathBuf {
     }
 }
 
-pub fn codex_command(environment: &TestEnvironment) -> Command {
-    let executable = env::var_os("CODEX_TEST_BINARY").unwrap_or_else(|| "codex".into());
-    environment.command_with(executable, &environment.workspace)
-}
-
-pub fn codex_app_server_request(environment: &TestEnvironment, request: Value) -> Value {
-    let expected_id = request.get("id").cloned().expect("app-server request ID");
-    let mut child = codex_command(environment)
-        .args(["app-server", "--stdio"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn Codex app-server");
-    let mut stdin = child.stdin.take().expect("app-server stdin");
-    let mut stdout = io::BufReader::new(child.stdout.take().expect("app-server stdout"));
-    for message in [
-        json!({
-            "method": "initialize",
-            "id": 1,
-            "params": {
-                "clientInfo": {"name": "magnesium-lifecycle-tests", "version": "1"},
-                "capabilities": {}
-            }
-        }),
-        json!({"method": "initialized", "params": {}}),
-        request,
-    ] {
-        serde_json::to_writer(&mut stdin, &message).expect("serialize app-server request");
-        stdin
-            .write_all(b"\n")
-            .expect("terminate app-server request");
-        stdin.flush().expect("flush app-server request");
-    }
-
-    let response = loop {
-        let mut line = String::new();
-        let read = stdout
-            .read_line(&mut line)
-            .expect("read app-server response");
-        assert!(read != 0, "app-server closed before its response");
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if value.get("id") == Some(&expected_id) {
-            break value;
-        }
-    };
-    drop(stdin);
-    let _ = child.kill();
-    let _ = child.wait();
-    response
-}
-
 pub fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
     fs::create_dir(destination)?;
     for entry in fs::read_dir(source)? {
@@ -255,13 +189,23 @@ pub fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Hook invocation as the installed Claude Code plugin runs it: its command
+/// line supplies `--host-kind claude`, because Claude Code's event JSON
+/// carries no kind field of its own.
 pub fn run_hook(environment: &TestEnvironment, event: &str, input: Value) -> process::Output {
+    run_hook_with_host_flag(environment, &environment.workspace, event, input, "claude")
+}
+
+/// Hook invocation with no `--host-kind` flag, as no installed plugin runs it.
+pub fn run_hook_without_host_flag(
+    environment: &TestEnvironment,
+    event: &str,
+    input: Value,
+) -> process::Output {
     spawn_hook(environment, &environment.workspace, event, &[], input)
 }
 
-/// Hook invocation with the installed `--host-kind` flag, mirroring the
-/// Claude Code plugin command line whose official event JSON carries no kind
-/// field of its own.
+/// Hook invocation with the given `--host-kind` flag.
 pub fn run_hook_with_host_flag(
     environment: &TestEnvironment,
     current_dir: &Path,

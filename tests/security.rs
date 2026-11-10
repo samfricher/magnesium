@@ -213,7 +213,7 @@ fn managed_index_symlink_is_rejected_without_touching_external_sentinel() {
     // Search is what opens the managed index; it must refuse the symlink.
     let search = support::v2::tool_output(
         &environment,
-        "codex",
+        "claude",
         "index-symlink",
         "search_sources",
         json!({"query":"lesson"}),

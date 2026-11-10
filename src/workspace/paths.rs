@@ -53,10 +53,6 @@ impl GlobalPaths {
         self.root.exists()
     }
 
-    pub(crate) fn marketplace(&self) -> PathBuf {
-        self.root.join("marketplace")
-    }
-
     /// Present once any study folder on this machine has pointed a learner at
     /// `/magnesium:help`, or has a recorded lesson.
     pub(crate) fn greeted_marker(&self) -> PathBuf {

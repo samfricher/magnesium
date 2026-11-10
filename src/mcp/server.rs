@@ -83,7 +83,6 @@ struct WorkerRequest {
     bound_root: Option<std::path::PathBuf>,
     name: String,
     arguments: Option<rmcp::model::JsonObject>,
-    host: Option<crate::learner::HostContext>,
     finish_safety_control: bool,
     #[cfg(test)]
     hooks: Option<Arc<TestRequestHooks>>,
@@ -171,7 +170,19 @@ where
         if let Some(hooks) = &work.hooks {
             (hooks.checkpoint)(&work.name, "dispatch");
         }
-        let result = match dispatch_tool_call(&cwd, &work.name, work.arguments, work.host) {
+        // The caller's identity comes from the process environment; tests
+        // name theirs directly.
+        let host = {
+            #[cfg(test)]
+            {
+                work.hooks.as_ref().and_then(|hooks| hooks.host.clone())
+            }
+            #[cfg(not(test))]
+            {
+                None
+            }
+        };
+        let result = match dispatch_tool_call(&cwd, &work.name, work.arguments, host) {
             Ok(value) => tool_success(value),
             Err((action, error)) => tool_error(&action, &error),
         };
@@ -202,6 +213,7 @@ type RequestCheckpoint = Arc<dyn Fn(&str, &'static str) + Send + Sync>;
 #[cfg(test)]
 struct TestRequestHooks {
     cwd: std::path::PathBuf,
+    host: Option<crate::learner::HostContext>,
     checkpoint: RequestCheckpoint,
 }
 
@@ -275,14 +287,6 @@ impl ServerHandler for MagnesiumServer {
         if let Err(error) = adapter::validate(&self.identity) {
             return Ok(compatibility_error(&self.identity, error));
         }
-        let client_name = context
-            .peer
-            .peer_info()
-            .map(|info| info.client_info.name.clone());
-        let native_host = match native_host_from_meta(client_name.as_deref(), &context.meta.0) {
-            Ok(host) => host,
-            Err(error) => return Ok(tool_error("resolve native host", &error)),
-        };
         // Only bounded in-memory transport validation belongs here. The same
         // typed control validator owns both reservation and domain admission.
         let control = request.name == "learning_step"
@@ -319,7 +323,6 @@ impl ServerHandler for MagnesiumServer {
                 bound_root: self.bound_root.clone(),
                 name: request.name.into_owned(),
                 arguments: request.arguments,
-                host: native_host,
                 finish_safety_control,
                 #[cfg(test)]
                 hooks: self.hooks.clone(),
@@ -353,39 +356,6 @@ impl ServerHandler for MagnesiumServer {
     fn get_tool(&self, name: &str) -> Option<Tool> {
         get_tool(name)
     }
-}
-
-/// Codex supplies this envelope itself for every call, independently of model
-/// arguments. One app-server connection may serve many conversation threads.
-fn native_host_from_meta(
-    client_name: Option<&str>,
-    meta: &rmcp::model::MetaObject,
-) -> Result<Option<crate::learner::HostContext>, String> {
-    if client_name != Some("codex-mcp-client") {
-        return Ok(None);
-    }
-    let Some(thread) = meta.get("threadId") else {
-        return Ok(None);
-    };
-    let thread = thread.as_str().ok_or("invalid native threadId metadata")?;
-    let host = crate::adapter::host::HostIdentity::codex(thread)?;
-    // Claude Code exports its session ID to every subprocess, including a
-    // Codex started from a Claude shell, so it cannot contradict Codex metadata.
-    for (kind, key) in crate::adapter::host::HOST_SESSION_ENV {
-        if kind == crate::adapter::host::HostKind::Claude {
-            continue;
-        }
-        if let Ok(value) = std::env::var(key) {
-            let observed = crate::adapter::host::HostIdentity::new(kind, &value)?;
-            if !kind.is_codex() || observed.stored_session_id() != host.stored_session_id() {
-                return Err("native host metadata conflicts with process identity".into());
-            }
-        }
-    }
-    Ok(Some(crate::learner::HostContext {
-        host_kind: "codex".into(),
-        host_thread_id: host.stored_session_id(),
-    }))
 }
 
 fn dispatch_tool_call(
@@ -669,33 +639,6 @@ mod runtime_bounds_tests {
             replies.read_line(&mut rest).await.unwrap();
             assert_eq!(rest, "", "no reply to bytes that are not JSON");
         });
-    }
-
-    #[test]
-    fn native_thread_identity_only_uses_valid_codex_envelope_metadata() {
-        let empty = rmcp::model::MetaObject::default();
-        assert!(
-            native_host_from_meta(Some("codex-mcp-client"), &empty)
-                .unwrap()
-                .is_none()
-        );
-        let malicious: rmcp::model::MetaObject =
-            serde_json::from_value(serde_json::json!({"threadId": "another-conversation"}))
-                .unwrap();
-        assert!(
-            native_host_from_meta(Some("other-client"), &malicious)
-                .unwrap()
-                .is_none()
-        );
-        for value in [
-            serde_json::json!(12),
-            serde_json::json!(""),
-            serde_json::json!("bad\nthread"),
-        ] {
-            let meta: rmcp::model::MetaObject =
-                serde_json::from_value(serde_json::json!({"threadId":value})).unwrap();
-            assert!(native_host_from_meta(Some("codex-mcp-client"), &meta).is_err());
-        }
     }
 
     #[test]

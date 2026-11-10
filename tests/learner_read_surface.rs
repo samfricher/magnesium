@@ -19,7 +19,8 @@ fn advertised_context_and_memory_shapes_accept_their_documented_read_actions() {
     .unwrap();
     c.execute("INSERT INTO memory_observations VALUES('m','o')", [])
         .unwrap();
-    let mut client = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "read-surface")]);
+    let mut client =
+        McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "read-surface")]);
     client.initialize();
     let listed = client.request(2, "tools/list", json!({}));
     let tools = listed["result"]["tools"].as_array().unwrap();
@@ -58,7 +59,7 @@ fn advertised_context_and_memory_shapes_accept_their_documented_read_actions() {
     let instructions = client.call_value(
         3,
         "context",
-        json!({"action":"instructions","host":"codex","stage":"orient_and_probe"}),
+        json!({"action":"instructions","host":"claude","stage":"orient_and_probe"}),
     );
     assert_eq!(instructions["status"], "served", "{instructions}");
     assert!(
@@ -102,10 +103,11 @@ fn advertised_context_and_memory_shapes_accept_their_documented_read_actions() {
 fn status_receipt_matches_actual_cli_and_mcp_packets_with_identity() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", "receipt-thread");
+    start(&e, "claude", "receipt-thread");
     let request = json!({"schema":"learner-model/v2","action":"status"});
-    let cli = tool(&e, "codex", "receipt-thread", "context", request.clone());
-    let mut client = McpClient::spawn_with_env(&e, true, &[("CODEX_THREAD_ID", "receipt-thread")]);
+    let cli = tool(&e, "claude", "receipt-thread", "context", request.clone());
+    let mut client =
+        McpClient::spawn_with_env(&e, true, &[("CLAUDE_CODE_SESSION_ID", "receipt-thread")]);
     client.initialize();
     let mcp = client.call_value(2, "context", request);
     let c = Connection::open(e.workspace.join(support::CONTROL_DIR).join("state.sqlite")).unwrap();

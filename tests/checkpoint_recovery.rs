@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use support::{TestEnvironment, v2};
 
 fn call(e: &TestEnvironment, request: Value) -> Value {
-    let output = v2::tool_output(e, "codex", "checkpoint", "learning_step", request);
+    let output = v2::tool_output(e, "claude", "checkpoint", "learning_step", request);
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
@@ -12,11 +12,11 @@ fn call(e: &TestEnvironment, request: Value) -> Value {
 fn missing_checkpoint_guard_retains_raw_and_supplies_executable_recovery() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let started = v2::start(&e, "codex", "checkpoint");
+    let started = v2::start(&e, "claude", "checkpoint");
     let session = started["references"]["session"].as_str().unwrap();
     v2::prompt(
         &e,
-        "codex",
+        "claude",
         "checkpoint",
         Some("turn-1"),
         "I used b=-5 and got roots 2 and 3.",
@@ -50,7 +50,7 @@ fn missing_checkpoint_guard_retains_raw_and_supplies_executable_recovery() {
     assert_eq!(recovery["suggested_session"]["expected_revision"], 1);
     let status = v2::tool(
         &e,
-        "codex",
+        "claude",
         "checkpoint",
         "context",
         recovery["next_call"]["arguments"].clone(),
@@ -64,7 +64,7 @@ fn missing_checkpoint_guard_retains_raw_and_supplies_executable_recovery() {
     assert_eq!(v2::count(&e, "learner_memories"), 1);
     let current = v2::tool(
         &e,
-        "codex",
+        "claude",
         "checkpoint",
         "context",
         json!({"schema":"learner-model/v2","action":"status"}),
@@ -80,7 +80,7 @@ fn missing_checkpoint_guard_retains_raw_and_supplies_executable_recovery() {
 fn stale_checkpoint_guard_exposes_a_valid_session_read_without_overwrite() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let started = v2::start(&e, "codex", "checkpoint");
+    let started = v2::start(&e, "claude", "checkpoint");
     let session = &started["references"]["session"];
     let mut request = json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint-first","session":{"operation":"use","session_id":session,"expected_revision":1},"checkpoint":{"current_problem":"First problem","working_diagnosis":"Uncertain","next_action":"First useful next step"}});
     assert_eq!(call(&e, request.clone())["update_status"], "committed");
@@ -92,7 +92,7 @@ fn stale_checkpoint_guard_exposes_a_valid_session_read_without_overwrite() {
     assert_eq!(recovery["next_call"]["tool"], "context");
     let current = v2::tool(
         &e,
-        "codex",
+        "claude",
         "checkpoint",
         "context",
         recovery["next_call"]["arguments"].clone(),
@@ -106,7 +106,7 @@ fn stale_checkpoint_guard_exposes_a_valid_session_read_without_overwrite() {
     assert_eq!(call(&e, request)["update_status"], "committed");
     let current = v2::tool(
         &e,
-        "codex",
+        "claude",
         "checkpoint",
         "context",
         json!({"schema":"learner-model/v2","action":"status"}),
@@ -118,22 +118,22 @@ fn stale_checkpoint_guard_exposes_a_valid_session_read_without_overwrite() {
 }
 
 #[test]
-fn missing_guard_does_not_suggest_using_a_session_paused_by_another_host() {
+fn missing_guard_does_not_suggest_using_a_session_paused_by_another_conversation() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let started = v2::start(&e, "codex", "checkpoint");
+    let started = v2::start(&e, "claude", "checkpoint");
     let session = &started["references"]["session"];
     v2::tool(
         &e,
-        "codex",
-        "other-host",
+        "claude",
+        "other-conversation",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"other-resume","session":{"operation":"resume","session_id":session,"expected_revision":1}}),
     );
     v2::tool(
         &e,
-        "codex",
-        "other-host",
+        "claude",
+        "other-conversation",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"other-pause","session":{"operation":"pause","session_id":session,"expected_revision":2}}),
     );
@@ -157,7 +157,7 @@ fn missing_guard_does_not_suggest_using_a_session_paused_by_another_host() {
 fn memory_and_terminal_review_conflicts_return_executable_reads_and_current_review() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    v2::start(&e, "codex", "checkpoint");
+    v2::start(&e, "claude", "checkpoint");
     let raw = call(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"raw-support","reported_events":[{"external_event_key":"support","speaker":"learner","kind":"message","text":"I still confuse b with the unknown x."}]}),
@@ -186,7 +186,7 @@ fn memory_and_terminal_review_conflicts_return_executable_reads_and_current_revi
         let next = &recovery["next_call"];
         let current = v2::tool(
             &e,
-            "codex",
+            "claude",
             "checkpoint",
             next["tool"].as_str().unwrap(),
             next["arguments"].clone(),

@@ -3,78 +3,91 @@ use rusqlite::Connection;
 use serde_json::json;
 use support::mcp::McpClient;
 use support::v2::*;
-use support::{TestEnvironment, run_hook, run_hook_with_host_flag};
+use support::{TestEnvironment, run_hook, run_hook_with_host_flag, run_hook_without_host_flag};
 
 #[test]
-fn ordinary_work_is_neutral_then_native_hosts_capture_separately() {
+fn ordinary_work_is_neutral_then_each_conversation_captures_its_own_turns() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    for host in ["codex", "claude", "opencode"] {
+    for thread in ["thread-a", "thread-b"] {
         assert!(
             context(&prompt(
                 &e,
-                host,
-                "same-thread",
-                Some("ordinary"),
+                "claude",
+                thread,
+                Some(&format!("{thread}-ordinary")),
                 "private coding work"
             ))
             .contains("native_capture.ticket=")
         );
     }
     assert_eq!(count(&e, "learning_events"), 0);
-    for host in ["codex", "claude", "opencode"] {
-        start(&e, host, "same-thread");
-        let text = format!("{host} original work");
-        let first = context(&prompt(&e, host, "same-thread", Some("same-turn"), &text));
+    for thread in ["thread-a", "thread-b"] {
+        start(&e, "claude", thread);
+        let turn = format!("{thread}-turn");
+        let text = format!("{thread} original work");
+        let first = context(&prompt(&e, "claude", thread, Some(&turn), &text));
         assert!(first.contains("current event e-"), "{first}");
         assert_eq!(
-            context(&prompt(&e, host, "same-thread", Some("same-turn"), &text)),
+            context(&prompt(&e, "claude", thread, Some(&turn), &text)),
             first
         );
     }
     let conn =
         Connection::open(e.workspace.join(support::CONTROL_DIR).join("state.sqlite")).unwrap();
     let mut query = conn
-        .prepare("SELECT host_kind,text,origin FROM learning_events ORDER BY host_kind")
+        .prepare("SELECT host_kind,text,origin FROM learning_events ORDER BY text")
         .unwrap();
     let events: Vec<(String, String, String)> = query
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert_eq!(events.len(), 3);
-    for (host, text, origin) in events {
-        assert_eq!(text, format!("{host} original work"));
-        assert_eq!(origin, "host_observed");
-    }
+    assert_eq!(
+        events,
+        [
+            (
+                "claude".into(),
+                "thread-a original work".into(),
+                "host_observed".into()
+            ),
+            (
+                "claude".into(),
+                "thread-b original work".into(),
+                "host_observed".into()
+            ),
+        ]
+    );
 }
 
 #[test]
-fn claude_missing_turn_allocates_distinct_events_while_codex_rejects_missing_identity() {
+fn a_prompt_without_a_prompt_id_allocates_distinct_events() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
     start(&e, "claude", "thread");
-    start(&e, "codex", "thread");
     for _ in 0..2 {
-        let input = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt":"identical text"});
-        let out = run_hook_with_host_flag(&e, &e.workspace, "user-prompt-submit", input, "claude");
+        let out = prompt(&e, "claude", "thread", None, "identical text");
         assert!(context(&out).contains("current event e-"));
     }
-    let refused = prompt(&e, "codex", "thread", None, "must not persist");
-    assert!(refused.status.success());
-    assert!(refused.stdout.is_empty());
     assert_eq!(count(&e, "learning_events"), 2);
 }
 
+/// Only the Claude Code plugin's command line names a host. A hook that names
+/// none, or another one, is not supported: it stays fail-open and captures
+/// nothing.
 #[test]
-fn ambiguous_host_flag_is_fail_open_without_capture() {
+fn a_hook_that_names_no_host_or_another_host_captures_nothing() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", "thread");
-    let input = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","host_kind":"codex","turn_id":"a","prompt":"PRIVATE_UNACCEPTED"});
-    let out = run_hook_with_host_flag(&e, &e.workspace, "user-prompt-submit", input, "claude");
-    assert!(out.status.success());
-    assert!(out.stdout.is_empty());
+    start(&e, "claude", "thread");
+    let input = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":"a","prompt":"PRIVATE_UNACCEPTED"});
+    for out in [
+        run_hook_without_host_flag(&e, "user-prompt-submit", input.clone()),
+        run_hook_with_host_flag(&e, &e.workspace, "user-prompt-submit", input, "other-agent"),
+    ] {
+        assert!(out.status.success());
+        assert!(out.stdout.is_empty());
+    }
     assert_eq!(count(&e, "learning_events"), 0);
     let info = e.command().args(["info", "--json"]).output().unwrap();
     assert!(!String::from_utf8_lossy(&info.stdout).contains("PRIVATE_UNACCEPTED"));
@@ -84,15 +97,15 @@ fn ambiguous_host_flag_is_fail_open_without_capture() {
 fn finalized_tutor_delivery_is_observed_separately_and_never_learner_work() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    start(&e, "codex", "thread");
+    start(&e, "claude", "thread");
     prompt(
         &e,
-        "codex",
+        "claude",
         "thread",
         Some("t"),
         "b is the fixed coefficient",
     );
-    let stop = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"Stop","turn_id":"t","stop_hook_active":false,"last_assistant_message":"A coefficient labels a fixed quantity."});
+    let stop = json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"t","stop_hook_active":false,"last_assistant_message":"A coefficient labels a fixed quantity."});
     assert!(run_hook(&e, "stop", stop.clone()).status.success());
     assert!(run_hook(&e, "stop", stop).status.success());
     let conn =
@@ -203,10 +216,10 @@ fn claude_code_wire_traffic_binds_the_lesson_and_captures_both_sides_of_a_turn()
     );
 }
 
-/// The Claude plugin names its host on the MCP command line, so an inherited
-/// Codex thread is ignored, and a conversation left by /clear is refused.
+/// The Claude plugin names its host on the MCP command line, and a
+/// conversation left by /clear is refused.
 #[test]
-fn claude_launched_server_trusts_only_claude_identity_and_refuses_a_cleared_conversation() {
+fn claude_launched_server_binds_claude_identity_and_refuses_a_cleared_conversation() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
     let meta = json!({
@@ -214,13 +227,7 @@ fn claude_launched_server_trusts_only_claude_identity_and_refuses_a_cleared_conv
         "io.modelcontextprotocol/clientInfo": {"name": "claude-code", "version": "2.1.293"},
         "io.modelcontextprotocol/clientCapabilities": {},
     });
-    let mut mcp = McpClient::spawn_claude(
-        &e,
-        &[
-            ("CODEX_THREAD_ID", "outer-codex"),
-            ("CLAUDE_CODE_SESSION_ID", "conv"),
-        ],
-    );
+    let mut mcp = McpClient::spawn_claude(&e, &[("CLAUDE_CODE_SESSION_ID", "conv")]);
     mcp.request(1, "server/discover", json!({"_meta": meta}));
     let start = json!({"schema":"learner-model/v2","action":"update","request_id":"start","session":{"operation":"start","client_ref":"s","goal":"Coefficients"}});
     let started = mcp.request(
@@ -270,32 +277,35 @@ fn claude_launched_server_trusts_only_claude_identity_and_refuses_a_cleared_conv
     mcp.close_cleanly();
 }
 
-/// Codex started from a Claude Code shell inherits `CLAUDE_CODE_SESSION_ID`.
-/// The Codex plugin names its host on the MCP command line, so that inherited
-/// Claude session never binds the lesson.
+/// Magnesium is built for Claude Code only. A tool server launched for any
+/// other host stops at once with a plain message and touches no study folder.
 #[test]
-fn codex_launched_server_ignores_an_inherited_claude_session() {
+fn a_server_launched_for_another_host_says_it_is_not_supported() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
-    let mut mcp = McpClient::spawn_codex(&e, &[("CLAUDE_CODE_SESSION_ID", "outer-claude")]);
-    mcp.initialize();
-    let start = json!({"schema":"learner-model/v2","action":"update","request_id":"start","session":{"operation":"start","client_ref":"s","goal":"Coefficients"}});
-    mcp.request(
-        2,
-        "tools/call",
-        json!({"name": "learning_step", "arguments": start}),
+    let output = e
+        .command()
+        .args([
+            "_internal",
+            "mcp-server",
+            "--plugin-version",
+            env!("CARGO_PKG_VERSION"),
+            "--adapter-protocol-version",
+            "2",
+            "--host-kind",
+            "other-agent",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let message = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        message.contains("--host-kind other-agent")
+            && message.contains("Magnesium supports only Claude Code"),
+        "{message}"
     );
-    let claude_bindings: i64 =
-        Connection::open(e.workspace.join(support::CONTROL_DIR).join("state.sqlite"))
-            .unwrap()
-            .query_row(
-                "SELECT COUNT(*) FROM host_bindings WHERE host_kind = 'claude'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-    assert_eq!(claude_bindings, 0);
-    mcp.close_cleanly();
+    assert_eq!(count(&e, "host_bindings"), 0);
 }
 
 /// Claude's desktop app wraps pasted text in `pasted_content` tag lines that

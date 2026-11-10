@@ -96,7 +96,7 @@ impl Tools<'_> {
             serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap())
                 .unwrap()
         } else {
-            let output = v2::tool_output(self.environment, "codex", "halves", name, arguments);
+            let output = v2::tool_output(self.environment, "claude", "halves", name, arguments);
             serde_json::from_slice(&output.stdout).unwrap()
         }
     }
@@ -114,11 +114,11 @@ fn reproduce_and_repair(mcp: bool) {
     )
     .unwrap();
     // Separate synthetic earlier input exercises the no-bulk-attachment boundary.
-    connection.execute("INSERT INTO learning_events(event_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,captured_at_ms,processing) VALUES('unrelated-algebra','codex','earlier-thread','earlier','learner','message','host_observed','I confuse b with x.','{}',0,'pending')",[]).unwrap();
+    connection.execute("INSERT INTO learning_events(event_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,captured_at_ms,processing) VALUES('unrelated-algebra','claude','earlier-thread','earlier','learner','message','host_observed','I confuse b with x.','{}',0,'pending')",[]).unwrap();
     let learner_text = original[0]["native_capture"]["text"].as_str().unwrap();
     let notice = v2::context(&v2::prompt(
         &environment,
-        "codex",
+        "claude",
         "halves",
         Some("halves-first"),
         learner_text,
@@ -132,7 +132,7 @@ fn reproduce_and_repair(mcp: bool) {
         .unwrap();
     let mut client = mcp.then(|| {
         let mut client =
-            McpClient::spawn_with_env(&environment, true, &[("CODEX_THREAD_ID", "halves")]);
+            McpClient::spawn_with_env(&environment, true, &[("CLAUDE_CODE_SESSION_ID", "halves")]);
         client.initialize();
         client
     });
@@ -187,7 +187,7 @@ fn reproduce_and_repair(mcp: bool) {
         0
     );
 
-    let served=tools.call("context",json!({"action":"instructions","host":"codex","stage":"interpret_and_repair","operation":"tool_recipes"}));
+    let served=tools.call("context",json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}));
     let mut repaired = recipe(served["text"].as_str().unwrap());
     repaired["turn_ref"] = json!(event);
     assert_eq!(

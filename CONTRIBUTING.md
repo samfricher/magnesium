@@ -4,9 +4,7 @@ Start with the [architecture](docs/architecture/learner-model.md) for the main c
 
 ## Build and test
 
-Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11+
-and Node.js. The OpenCode plugin test in `tests/opencode_adapter.rs` runs the
-dependency-free `opencode-plugin/tests.mjs`. Optional hosted CI uses Node.js 24.
+Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11+.
 The study window under `app/` is a separate Cargo workspace. `python3 ci/check.py`
 does not build or test it. Its own check is `app/scripts/check.sh`.
 
@@ -22,8 +20,7 @@ the release executable built by the same command. Missing prerequisites and
 failed checks stop the run. The builds, lint, Python tests, and documentation
 checks overlap and print each command's output when it finishes; the Rust tests
 and native source check then run alone because the tests are sensitive to CPU
-load, except that the `opencode_adapter` test, which mostly waits, runs beside the
-other Rust tests. The Rust tests keep their temporary files on a RAM disk
+load. The Rust tests keep their temporary files on a RAM disk
 (macOS) or in `/dev/shm` (Linux) that the command removes afterwards; set
 `MAGNESIUM_CI_DISK_TMP=1` to use the default temporary directory instead.
 
@@ -32,8 +29,7 @@ For a smaller loop, select `core`, `python`, or `docs`, for example
 to require Cargo's cached dependencies. Individual `cargo test` commands remain
 useful while working on a particular behavior.
 
-Native-host installation tests that need a real Codex CLI are explicit opt-in
-tests. An ignored test is not a pass. Live tutoring and
+An ignored test is not a pass. Live tutoring and
 conversion-quality checks need their own environments. Never use personal
 learning history as test data.
 
@@ -76,7 +72,7 @@ Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in
 To make a release:
 
 1. Open an issue for the release, such as `Release v0.3.0`. Create a branch for it, such as `chore/<issue-number>-release-v0.3.0`.
-2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin tests app ':!*.lock' ':!app/package-lock.json'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin tests app ':!*.lock' ':!app/package-lock.json'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
 3. Open a pull request titled `chore(release): raise the version to 0.3.0`, and merge it as described in Make a change. End its description with `Refs #N`, not `Closes #N`, because the release does not exist until step 4.
 4. Create the tag and its release page on the merged version bump, not on whatever is newest on `main`, which may include a pull request merged after it. Find the bump's squash commit with `gh pr view <pull-request-number> --json mergeCommit -q .mergeCommit.oid`, then run:
 

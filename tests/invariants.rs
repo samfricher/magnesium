@@ -16,14 +16,14 @@ fn open_state(environment: &TestEnvironment) -> Connection {
 }
 
 fn update(environment: &TestEnvironment, request: Value) -> Value {
-    let receipt = v2::tool(environment, "codex", THREAD, "learning_step", request);
+    let receipt = v2::tool(environment, "claude", THREAD, "learning_step", request);
     assert_eq!(receipt["update_status"], "committed", "{receipt}");
     receipt
 }
 
 /// One captured event, one observation, one memory and one review suggestion.
 fn seed_learner_state(environment: &TestEnvironment) {
-    let started = v2::start(environment, "codex", THREAD);
+    let started = v2::start(environment, "claude", THREAD);
     let session = started["references"]["session"].as_str().unwrap();
     let captured = update(
         environment,

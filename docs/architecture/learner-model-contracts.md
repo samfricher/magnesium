@@ -164,12 +164,6 @@ With recording enabled, `mode:"complete_captured"` can finish a scoped pending l
 
 Raw capture commits separately. Semantic records, dispositions and the successful receipt commit atomically. A recoverable index-only failure may leave canonical data committed with a dirty index; storage failure is not an empty result. Cancellation or response loss after commit does not imply rollback. Optional context receipts record packet preparation, not delivery or learning.
 
-## Host adapter waits
-
-The OpenCode adapter bounds each session metadata lookup to five seconds. It passes an abort signal through the supplied SDK client and also settles locally if the client ignores abort. Unverified results skip capture and remain retryable on the next turn. Native hook execution has its own five-second limit. Queue wait and separate phases can make the total callback take longer. Failure telemetry has a one-second limit and does not delay host callbacks.
-
-The SDK client accepts a per-call `signal` through the [request options](https://github.com/anomalyco/opencode/blob/aec0b9a6d8898f68f923aaf08b7306d931fd9d76/packages/sdk/js/src/gen/client/types.gen.ts#L9-L64). The [session lookup](https://github.com/anomalyco/opencode/blob/aec0b9a6d8898f68f923aaf08b7306d931fd9d76/packages/sdk/js/src/gen/sdk.gen.ts#L455-L460) and [telemetry](https://github.com/anomalyco/opencode/blob/aec0b9a6d8898f68f923aaf08b7306d931fd9d76/packages/sdk/js/src/gen/sdk.gen.ts#L790-L799) definitions in OpenCode v1.18.34 forward those options.
-
 ## Resource limits
 
 All sizes are UTF-8 bytes; encoded records must also fit their response envelope. Learner-state reads are bounded by cancellation, a two-second deadline and a SQLite instruction budget.

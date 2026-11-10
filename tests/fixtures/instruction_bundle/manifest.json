@@ -91,25 +91,11 @@
       "stage": "papers-loop"
     },
     {
-      "path": "adapters/codex.md",
-      "role": "adapter",
-      "required_for_activation": true,
-      "sha256": "3a1b136e8f965d6a1c6bdd631d0690f253f0df16d9b25e18c892e143a8cb9e53",
-      "host": "codex"
-    },
-    {
       "path": "adapters/claude.md",
       "role": "adapter",
       "required_for_activation": true,
       "sha256": "98b3bc5967f76e3909efa58b057cc0ac35765e72d3fd15bb03a7cf02ec92a627",
       "host": "claude"
-    },
-    {
-      "path": "adapters/opencode.md",
-      "role": "adapter",
-      "required_for_activation": true,
-      "sha256": "e3f3c8f6ca8ddc470101d9588a940a6f1ac350b84beaa699e4a49d6d7ae74442",
-      "host": "opencode"
     }
   ]
 }

@@ -195,7 +195,7 @@ fn fresh_initialization_installs_instructions_and_preserves_study_materials() {
     initialize(&environment);
     let response = cli_instruction_request(
         &environment,
-        &json!({"action":"instructions","stage":"orient_and_probe","host":"codex"}),
+        &json!({"action":"instructions","stage":"orient_and_probe","host":"claude"}),
     );
     assert_eq!(response["status"], "served");
     assert!(
@@ -266,7 +266,7 @@ fn cli_and_mcp_serve_the_same_approved_bundle_without_mutation() {
     let request = json!({
         "action": "instructions",
         "stage": "teach_and_practice",
-        "host": "codex"
+        "host": "claude"
     });
 
     let cli = cli_instruction_request(&environment, &request);
@@ -359,13 +359,13 @@ fn instruction_action_requires_bounded_stage_and_host_and_rejects_other_context_
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
     initialize(&environment);
     for request in [
-        json!({"action":"instructions","host":"codex"}),
+        json!({"action":"instructions","host":"claude"}),
         json!({"action":"instructions","stage":"teach_and_practice"}),
-        json!({"action":"instructions","stage":"anything","host":"codex"}),
+        json!({"action":"instructions","stage":"anything","host":"claude"}),
         json!({"action":"instructions","stage":"teach_and_practice","host":"anything"}),
-        json!({"action":"instructions","stage":"teach_and_practice","host":"codex","operation":"anything"}),
-        json!({"action":"instructions","stage":"teach_and_practice","host":"codex","goal":"unexpected instruction field"}),
-        json!({"action":"status","stage":"teach_and_practice","host":"codex"}),
+        json!({"action":"instructions","stage":"teach_and_practice","host":"claude","operation":"anything"}),
+        json!({"action":"instructions","stage":"teach_and_practice","host":"claude","goal":"unexpected instruction field"}),
+        json!({"action":"status","stage":"teach_and_practice","host":"claude"}),
     ] {
         let mut mcp = McpClient::spawn(&environment, true);
         mcp.initialize();
@@ -405,7 +405,7 @@ fn read_only_authorization_uses_local_boundaries_without_global_routing() {
     let request = json!({
         "action": "instructions",
         "stage": "orient_and_probe",
-        "host": "codex"
+        "host": "claude"
     });
 
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
@@ -516,7 +516,7 @@ fn instruction_authorization_rejects_symlinked_control_for_cli_and_mcp() {
     let request = json!({
         "action": "instructions",
         "stage": "orient_and_probe",
-        "host": "codex"
+        "host": "claude"
     });
 
     let cli = cli_instruction_output(&environment, &environment.workspace, &request);

@@ -54,18 +54,6 @@ impl McpClient {
         )
     }
 
-    /// A server launched as the Codex plugin launches it.
-    pub fn spawn_codex(environment: &TestEnvironment, variables: &[(&str, &str)]) -> Self {
-        Self::spawn_with_args(
-            environment,
-            &environment.workspace.clone(),
-            None,
-            true,
-            variables,
-            &["--host-kind", "codex"],
-        )
-    }
-
     fn spawn_bound_with_env(
         environment: &TestEnvironment,
         current_dir: &Path,

@@ -11,9 +11,7 @@ pub fn init(environment: &TestEnvironment) {
 }
 fn host_env(host: &str) -> &str {
     match host {
-        "codex" => "CODEX_THREAD_ID",
         "claude" => "CLAUDE_CODE_SESSION_ID",
-        "opencode" => "OPENCODE_SESSION_ID",
         _ => panic!("unsupported test host"),
     }
 }
@@ -78,11 +76,17 @@ pub fn prompt(
     turn: Option<&str>,
     text: &str,
 ) -> Output {
-    let mut input = json!({"session_id":thread,"cwd":environment.workspace,"hook_event_name":"UserPromptSubmit","prompt":text,"host_kind":host});
+    let mut input = json!({"session_id":thread,"cwd":environment.workspace,"hook_event_name":"UserPromptSubmit","prompt":text});
     if let Some(turn) = turn {
-        input["turn_id"] = json!(turn);
+        input["prompt_id"] = json!(turn);
     }
-    super::run_hook(environment, "user-prompt-submit", input)
+    super::run_hook_with_host_flag(
+        environment,
+        &environment.workspace,
+        "user-prompt-submit",
+        input,
+        host,
+    )
 }
 pub fn count(environment: &TestEnvironment, table: &str) -> i64 {
     Connection::open(

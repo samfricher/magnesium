@@ -11,8 +11,11 @@ struct Client<'a> {
 impl<'a> Client<'a> {
     fn new(environment: &'a TestEnvironment, mcp: bool) -> Self {
         let mcp = mcp.then(|| {
-            let mut client =
-                McpClient::spawn_with_env(environment, true, &[("CODEX_THREAD_ID", "recipes")]);
+            let mut client = McpClient::spawn_with_env(
+                environment,
+                true,
+                &[("CLAUDE_CODE_SESSION_ID", "recipes")],
+            );
             client.initialize();
             client
         });
@@ -32,7 +35,7 @@ impl<'a> Client<'a> {
             );
             parse_response(response["result"]["content"][0]["text"].as_str().unwrap())
         } else {
-            let response = v2::tool_output(self.environment, "codex", "recipes", name, arguments);
+            let response = v2::tool_output(self.environment, "claude", "recipes", name, arguments);
             serde_json::from_slice(&response.stdout).unwrap()
         }
     }
@@ -89,7 +92,7 @@ fn run(mcp: bool) {
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&environment);
     let mut client = Client::new(&environment, mcp);
-    let served = client.call("context", json!({"action":"instructions","host":"codex","stage":"interpret_and_repair","operation":"tool_recipes"}));
+    let served = client.call("context", json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}));
     let text = served["text"].as_str().unwrap();
     let events: Vec<_> = (0..9).map(|i| json!({"external_event_key":format!("input-{i}"),"speaker":"learner","kind":"message","text":format!("Reported coefficient attempt {i}")})).collect();
     let start = client.update(json!({"schema":"learner-model/v2","action":"update","request_id":"start","session":{"operation":"start","client_ref":"lesson","goal":"Coefficient roles"},"reported_events":events}));
@@ -326,13 +329,13 @@ fn default_prepare_budget_preserves_the_full_checkpoint_after_small_budget_rejec
 
 #[test]
 fn cold_native_capture_rejects_changed_bytes_and_fallback_keeps_its_origin() {
-    for (index, altered) in ["π = 2", "π  = 2\n", "pi = 2\n"].iter().enumerate() {
+    for (index, altered) in ["π = 3", "π  = 2", "pi = 2"].iter().enumerate() {
         let environment = TestEnvironment::from_fixture("basic").unwrap();
         v2::init(&environment);
-        let original = "π = 2\n";
+        let original = "π = 2";
         let notice = v2::context(&v2::prompt(
             &environment,
-            "codex",
+            "claude",
             "recipes",
             Some("cold-turn"),
             original,

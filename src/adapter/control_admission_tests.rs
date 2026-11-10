@@ -26,7 +26,7 @@ impl Fixture {
         let workspace = Workspace::discover(&root).unwrap().unwrap();
         let store = LearnerStore::initialize(&workspace.store_path(), "control-review").unwrap();
         let host = HostContext {
-            host_kind: "codex".into(),
+            host_kind: "claude".into(),
             host_thread_id: "control-review-thread".into(),
         };
         Self {
@@ -453,7 +453,7 @@ fn default_journal_read_snapshot_does_not_delay_the_other_host_deny_boundary() {
 fn adapter_routes_pending_work_directory_from_both_read_tools_and_fresh_hooks() {
     let f = Fixture::new();
     f.start();
-    f.store.conn.execute("INSERT INTO learning_events(event_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,captured_at_ms,processing) VALUES('foreign-unbound','codex','earlier-thread','earlier-turn','learner','message','host_observed','Saved learner answer, still uninterpreted.','{}',123,'pending')",[]).unwrap();
+    f.store.conn.execute("INSERT INTO learning_events(event_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,captured_at_ms,processing) VALUES('foreign-unbound','claude','earlier-thread','earlier-turn','learner','message','host_observed','Saved learner answer, still uninterpreted.','{}',123,'pending')",[]).unwrap();
     let fresh = HostContext {
         host_thread_id: "fresh-recovery-thread".into(),
         ..f.host.clone()
@@ -474,7 +474,7 @@ fn adapter_routes_pending_work_directory_from_both_read_tools_and_fresh_hooks() 
         assert!(packet["pending_work"][0]["session_id"].is_null());
         assert_eq!(packet["pending_work"][0]["read_ref"]["kind"], "event");
     }
-    let native = super::HostIdentity::codex("fresh-native-recovery").unwrap();
+    let native = super::HostIdentity::claude("fresh-native-recovery").unwrap();
     let notice = super::host_session_start(&f.root, &native)
         .unwrap()
         .unwrap();
