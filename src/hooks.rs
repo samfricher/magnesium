@@ -11,6 +11,14 @@ use crate::workspace::Workspace;
 
 const MAX_HOOK_INPUT_BYTES: u64 = 4 * 1024 * 1024;
 
+/// Hook events the plugin no longer registers. A plugin copy from before
+/// their removal, or a Claude Code session started before the program was
+/// replaced, still runs them. Exit code 2 from a PreCompact hook blocks
+/// compaction, so these names must keep parsing and must succeed: they exit
+/// 0 at once, with no output, without reading their input or recording
+/// anything.
+pub(crate) const RETIRED_EVENTS: [&str; 2] = ["pre-compact", "post-compact"];
+
 #[derive(Clone, Copy, Debug)]
 enum HookEvent {
     SessionStart,
@@ -74,6 +82,9 @@ pub(crate) fn run(
     protocol_version: Option<String>,
     host_kind_flag: Option<String>,
 ) -> ExitCode {
+    if RETIRED_EVENTS.contains(&command_event) {
+        return ExitCode::SUCCESS;
+    }
     let event = HookEvent::from_command(command_event).expect("clap validates hook events");
     let current_workspace = std::env::current_dir()
         .ok()

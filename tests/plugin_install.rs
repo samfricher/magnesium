@@ -464,6 +464,66 @@ fn incompatible_hook_fails_open_without_workspace_mutation() {
     assert_eq!(before, snapshot(&environment));
 }
 
+/// A plugin copy from before the compaction hooks were removed, or a Claude
+/// Code session started before the program was replaced, still runs them.
+/// Exit code 2 from a PreCompact hook blocks compaction, so both retired
+/// commands succeed silently and record nothing, inside a study folder or
+/// outside one, whatever their input holds.
+#[test]
+fn retired_compaction_hooks_from_an_older_plugin_copy_exit_cleanly() {
+    let environment = TestEnvironment::from_fixture("basic").expect("test environment");
+    let init = environment
+        .command()
+        .arg("init")
+        .output()
+        .expect("initialize");
+    assert!(init.status.success());
+    let outside = environment.root.join("outside");
+    fs::create_dir(&outside).expect("folder outside any study folder");
+    let before = snapshot(&environment);
+    for (event, name) in [
+        ("pre-compact", "PreCompact"),
+        ("post-compact", "PostCompact"),
+    ] {
+        let payload = json!({
+            "session_id": "older-plugin", "cwd": environment.workspace,
+            "hook_event_name": name, "trigger": "auto", "custom_instructions": ""
+        })
+        .to_string();
+        for folder in [&environment.workspace, &outside] {
+            for input in [payload.as_bytes(), b"", b"not json"] {
+                // The exact command line an older plugin copy registered.
+                let mut child = environment
+                    .command_with(test_binary(), folder)
+                    .args([
+                        "_internal",
+                        "hook",
+                        event,
+                        "--plugin-version",
+                        env!("CARGO_PKG_VERSION"),
+                        "--adapter-protocol-version",
+                        "2",
+                        "--host-kind",
+                        "claude",
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("spawn retired hook");
+                // The hook may exit before it reads its input.
+                let _ = child.stdin.take().expect("hook stdin").write_all(input);
+                let output = child.wait_with_output().expect("hook output");
+                assert_eq!(output.status.code(), Some(0), "{event}: {output:?}");
+                assert!(output.stdout.is_empty(), "{event}: {output:?}");
+                assert!(output.stderr.is_empty(), "{event}: {output:?}");
+            }
+        }
+    }
+    assert_eq!(before, snapshot(&environment));
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+}
+
 fn snapshot(environment: &TestEnvironment) -> Vec<(String, Vec<u8>)> {
     let mut result = Vec::new();
     collect(
