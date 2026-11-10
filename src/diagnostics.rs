@@ -20,7 +20,8 @@ pub(crate) fn record_hook_error(workspace: &Workspace, event: &str, failure: Hoo
         return;
     }
     let event = match event {
-        "SessionStart" | "UserPromptSubmit" | "Stop" | "SessionEnd" => event,
+        "SessionStart" | "UserPromptSubmit" | "Stop" | "PreCompact" | "PostCompact"
+        | "SessionEnd" => event,
         _ => "hook",
     };
     let value = json!({"event":event,"failure":format!("{failure:?}"),"at_ms":chrono::Utc::now().timestamp_millis()});
@@ -55,6 +56,8 @@ pub(crate) fn latest_hook_failure(workspace: &Workspace) -> Value {
             "SessionStart",
             "UserPromptSubmit",
             "Stop",
+            "PreCompact",
+            "PostCompact",
             "SessionEnd",
             "hook",
         ]
@@ -123,5 +126,40 @@ pub(crate) fn print_info(as_json: bool) -> ExitCode {
             eprintln!("magnesium: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_hook_event_is_named_in_the_latest_failure() {
+        let root =
+            std::env::temp_dir().join(crate::learner::store::new_id("diagnostics-test").unwrap());
+        let control = root.join(crate::workspace::CONTROL_DIR);
+        std::fs::create_dir_all(&control).unwrap();
+        std::fs::write(
+            control.join("config.toml"),
+            "schema_version = 1\nworkspace_id = \"diagnostics-test\"\n",
+        )
+        .unwrap();
+        let workspace = Workspace::discover(&root).unwrap().unwrap();
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "Stop",
+            "PreCompact",
+            "PostCompact",
+            "SessionEnd",
+        ] {
+            record_hook_error(&workspace, event, HookFailure::HookProcessing);
+            let latest = latest_hook_failure(&workspace);
+            assert_eq!(latest["event"], event, "{latest}");
+            assert_eq!(latest["failure"], "HookProcessing", "{latest}");
+        }
+        record_hook_error(&workspace, "Unknown", HookFailure::HookProcessing);
+        assert_eq!(latest_hook_failure(&workspace)["event"], "hook");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

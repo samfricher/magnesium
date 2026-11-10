@@ -29,3 +29,15 @@ It writes machine-readable results under `target/validation/` on failure too.
 Update worker stubs when its Docling API usage changes; use the
 [conversion gate](../README.md#run-tests) for the separately installed optional
 full conversion stack. Stub success is not conversion-quality evidence.
+
+## Stub converter settings
+
+The stub `docling` package reads two environment variables, which
+`test_worker.py` sets per case:
+
+- `MAGNESIUM_STUB_MODE`: `items` (default) returns a successful conversion,
+  `partial` returns `partial_success`, `failure` returns `failure`, `raise`
+  makes the converter raise, and `empty` returns a document with no items.
+  Statuses are members of a `str`-mixin enum, as in Docling itself.
+- `MAGNESIUM_STUB_ITEMS`: a JSON list of `{"label", "text", "pages"}` objects
+  replacing the default four items.

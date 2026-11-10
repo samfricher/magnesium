@@ -6,8 +6,8 @@
 # preparation install, run from the repository root into a dedicated
 # virtualenv on the packaging machine, never a user-managed pip environment:
 #
-#   python3 -m venv /opt/magnesium-docling
-#   /opt/magnesium-docling/bin/pip install -r workers/docling/requirements.txt
+#   python3 -m venv /tmp/magnesium-docling
+#   /tmp/magnesium-docling/bin/pip install -r workers/docling/requirements.txt
 #
 # The worker itself needs no third-party packages beyond Docling; the
 # requirements below are the conversion stack only. Model/asset downloads

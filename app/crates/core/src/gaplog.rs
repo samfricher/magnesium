@@ -153,7 +153,7 @@ fn first_number(text: &str) -> Option<u32> {
 }
 
 /// One row of the gap log: one lost mark and the proof that it was repaired.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Gap {
     pub paper: String,
     pub question: String,

@@ -391,7 +391,6 @@ pub(crate) fn empty_report(generation: i64) -> ManifestReport {
         moved: 0,
         deleted: 0,
         unchanged: 0,
-        metadata_only: 0,
         excluded: 0,
         content_reads: 0,
         content_bytes: 0,
@@ -552,7 +551,9 @@ pub(crate) fn reconcile_entry(
                 .execute(
                     "UPDATE source_manifest
                      SET file_size = ?2, modified_unix_ns = ?3, present = 1,
-                         observed_generation = ?4, last_error = NULL
+                         observed_generation = ?4, last_error = NULL,
+                         index_status = CASE WHEN index_status = 'stale'
+                             THEN 'pending' ELSE index_status END
                      WHERE manifest_id = ?1",
                     params![
                         record.manifest_id,
@@ -562,7 +563,6 @@ pub(crate) fn reconcile_entry(
                     ],
                 )
                 .map_err(|source| sqlite(index_path, "refresh manifest metadata", source))?;
-            progress.report.metadata_only += 1;
         } else {
             stale_candidates(transaction, record.manifest_id, index_path)?;
             transaction

@@ -15,14 +15,6 @@ fn open_state(environment: &TestEnvironment) -> Connection {
     .unwrap()
 }
 
-fn row_count(environment: &TestEnvironment, table: &str) -> i64 {
-    open_state(environment)
-        .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |row| {
-            row.get(0)
-        })
-        .unwrap()
-}
-
 fn update(environment: &TestEnvironment, request: Value) -> Value {
     let receipt = v2::tool(environment, "codex", THREAD, "learning_step", request);
     assert_eq!(receipt["update_status"], "committed", "{receipt}");
@@ -100,7 +92,7 @@ fn diagnostics_and_reindex_do_not_change_canonical_learning_state() {
         "memory_changes",
         "review_items",
     ] {
-        assert!(row_count(&environment, table) > 0, "{table} was not seeded");
+        assert!(v2::count(&environment, table) > 0, "{table} was not seeded");
     }
     let before = state(&environment);
     for arguments in [vec!["info", "--json"], vec!["memory", "reindex"]] {

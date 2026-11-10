@@ -152,13 +152,13 @@ fn insert_active_memories(conn: &Connection, memory_id: Option<&str>) -> rusqlit
             r.get::<_, String>(7)?,
         ))
     })?;
+    let mut ts =
+        conn.prepare("SELECT topic FROM memory_topics WHERE memory_id=?1 ORDER BY topic")?;
     for row in values {
         let (no, id, title, scope, summary, state, note, cues) = row?;
         let cues: Vec<String> = serde_json::from_str(&cues)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         let cues = indexed_labels(cues);
-        let mut ts =
-            conn.prepare("SELECT topic FROM memory_topics WHERE memory_id=?1 ORDER BY topic")?;
         let topics = indexed_labels(
             ts.query_map([&id], |r| r.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?,

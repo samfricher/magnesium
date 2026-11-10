@@ -9,6 +9,10 @@ import { Markdown } from "./Markdown";
 import { busy, tutorText, type Card, type SessionState } from "./lesson";
 import type { Answer, Decision, Question, Rail as RailData } from "./types";
 
+/** True while an input method is composing. WebKit reports the keydown that confirms a word with keyCode 229 and isComposing false. */
+export const composing = (event: { nativeEvent: KeyboardEvent; keyCode: number }) =>
+  event.nativeEvent.isComposing || event.keyCode === 229;
+
 const CONFIDENCE: Record<string, string> = { S: "sure", U: "unsure", G: "guess" };
 
 /** The time now, refreshed on a slow tick. */
@@ -161,7 +165,7 @@ function QuestionCard(props: {
             value={own[index] ?? ""}
             onChange={(e) => setOwn((old) => ({ ...old, [index]: e.target.value }))}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && complete) props.onAnswer(card.id, answersNow());
+              if (e.key === "Enter" && !composing(e) && complete) props.onAnswer(card.id, answersNow());
             }}
           />
         </div>
@@ -231,7 +235,7 @@ function Composer(props: { disabled: boolean; onSend: (text: string) => void; on
         autoFocus
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (e.key === "Enter" && !e.shiftKey && !composing(e)) {
             e.preventDefault();
             send();
           }
@@ -419,7 +423,7 @@ export function Session(props: {
                   placeholder="one line: where you are, and what comes next"
                   onChange={(e) => setLine(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") props.onStop(line);
+                    if (e.key === "Enter" && !composing(e)) props.onStop(line);
                     if (e.key === "Escape") setStopping(false);
                   }}
                 />

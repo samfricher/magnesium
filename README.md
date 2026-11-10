@@ -63,8 +63,9 @@ Magnesium stores your learning history in `.magnesium/` inside the study folder.
 | --- | --- |
 | Use Magnesium in a study session | [User guide](docs/user-guide.md) |
 | Build, test, or change the project | [Contributing](CONTRIBUTING.md) |
+| Use or change the study window | [App README](app/README.md) |
 | Understand the design | [Architecture](docs/architecture/learner-model.md) |
-| Work with the tools and data | [API reference](docs/architecture/learner-model-contracts.md) · [Database schema](src/learner/schema.sql) |
+| Work with the tools and data | [API reference](docs/architecture/learner-model-contracts.md) · [What is stored](docs/architecture/learner-model.md#what-is-stored) |
 | Understand privacy and trust boundaries | [Security model](docs/security/threat-model.md) |
 
 ## License

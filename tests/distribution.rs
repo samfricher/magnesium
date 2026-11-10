@@ -1,6 +1,5 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::time::Instant;
 
 use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
 use serde_json::Value;
@@ -26,17 +25,8 @@ fn selected_native_content_dependencies_work_without_sidecars() {
     );
 
     let pdf = readable_pdf_fixture();
-    let started = Instant::now();
-    let mut pages = Vec::new();
-    for _ in 0..100 {
-        pages = pdf_extract::extract_text_from_mem_by_pages(&pdf)
-            .expect("extract readable PDF text by page");
-    }
-    eprintln!(
-        "pdf-extract 0.12.0: 100 iterations, {} input bytes, {:?}",
-        pdf.len(),
-        started.elapsed()
-    );
+    let pages = pdf_extract::extract_text_from_mem_by_pages(&pdf)
+        .expect("extract readable PDF text by page");
     assert_eq!(pages.len(), 2);
     assert!(pages[0].contains("Alpha page anchor"));
     assert!(pages[1].contains("Beta page anchor"));

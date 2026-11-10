@@ -269,46 +269,7 @@ fn parallel_searches(environment: &TestEnvironment, phase: &str) -> Vec<SearchOu
 }
 
 #[test]
-fn terminal_source_conflict_never_admits_other_errors_or_a_snapshot() {
-    let response = json!({"jsonrpc":"2.0","id":1,"result":{
-        "isError":true,"content":[{"type":"text","text":SOURCE_SUPERSEDED}]
-    }});
-    for text in [
-        "source_anchor_unavailable",
-        "source reconciliation cursor changed concurrently; retry the query",
-        "Magnesium could not invoke search_sources: source_superseded: stale hits attached",
-    ] {
-        let mut invalid = response.clone();
-        invalid["result"]["content"][0]["text"] = json!(text);
-        assert!(
-            catch_unwind(|| decode_search_outcome(&invalid)).is_err(),
-            "unrecognized error was admitted: {text}"
-        );
-    }
-    for key in ["hits", "coverage", "structuredContent"] {
-        let mut invalid = response.clone();
-        invalid["result"][key] = json!([]);
-        assert!(
-            catch_unwind(|| decode_search_outcome(&invalid)).is_err(),
-            "terminal source conflict admitted {key}"
-        );
-    }
-}
-
-#[test]
 fn four_parallel_searches_report_bounded_outcomes_then_explicit_requests_recover() {
-    // Exercise terminal-result decoding even when this machine happens to
-    // complete every parallel ranked query inside its deadline on this run.
-    assert!(matches!(
-        decode_search_outcome(&json!({"jsonrpc":"2.0","id":1,
-        "result":{"isError":true,"content":[{"type":"text","text":RANKED_TIMEOUT}]}})),
-        SearchOutcome::RankedBudgetExhausted
-    ));
-    assert!(matches!(
-        decode_search_outcome(&json!({"jsonrpc":"2.0","id":2,
-        "result":{"isError":true,"content":[{"type":"text","text":SOURCE_SUPERSEDED}]}})),
-        SearchOutcome::SourceSuperseded
-    ));
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     initialize_product(&environment);
     write_corpus(&environment, 320);

@@ -33,7 +33,7 @@ fn open(path: &Path) -> Option<Connection> {
 
 /// A quick check from chat: something the learner got wrong, to be reproduced
 /// alone on later days.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Check {
     pub label: String,
     pub passes: u8,

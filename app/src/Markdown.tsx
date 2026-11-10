@@ -6,6 +6,12 @@ import { renderMarkdown } from "./render";
 
 let diagrams = 0;
 
+// A reply that is still streaming brings its images back with every chunk, and
+// each read sends the whole file over the bridge. Until the reply is final,
+// an image already read is reused. The final pass reads it afresh and lets go
+// of the kept copy.
+const pictures = new Map<string, Promise<string>>();
+
 async function drawDiagrams(root: HTMLElement) {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>("pre > code.language-mermaid"));
   if (blocks.length === 0) return;
@@ -16,20 +22,21 @@ async function drawDiagrams(root: HTMLElement) {
   for (const block of blocks) {
     const pre = block.parentElement;
     if (!pre || !pre.isConnected) continue;
+    const id = `mg-diagram-${++diagrams}`;
     try {
-      const { svg } = await mermaid.render(`mg-diagram-${++diagrams}`, block.textContent ?? "");
+      const { svg } = await mermaid.render(id, block.textContent ?? "");
       const holder = document.createElement("div");
       holder.className = "diagram";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
     } catch {
       // A diagram that will not draw stays as the text the tutor wrote.
-      document.querySelectorAll(`#dmg-diagram-${diagrams}`).forEach((leftover) => leftover.remove());
+      document.querySelectorAll(`#d${id}`).forEach((leftover) => leftover.remove());
     }
   }
 }
 
-async function loadImages(root: HTMLElement) {
+async function loadImages(root: HTMLElement, final: boolean) {
   const images = Array.from(root.querySelectorAll<HTMLImageElement>("img[data-src]"));
   if (images.length === 0) return;
   const api = await core();
@@ -48,7 +55,20 @@ async function loadImages(root: HTMLElement) {
       missing("images from the web are not loaded");
     } else {
       try {
-        image.src = await api.image(decodeURI(src.replace(/^file:\/\//, "")));
+        const path = decodeURI(src.replace(/^file:\/\//, ""));
+        let picture = final ? undefined : pictures.get(path);
+        if (final) {
+          // The finished reply keeps its own copy, so nothing is held here.
+          pictures.delete(path);
+        }
+        if (!picture) {
+          picture = api.image(path);
+          if (!final) {
+            pictures.set(path, picture);
+            picture.catch(() => pictures.delete(path));
+          }
+        }
+        image.src = await picture;
       } catch (error) {
         missing(String(error));
       }
@@ -81,13 +101,16 @@ export const Markdown = memo(function Markdown({ text, final, onNote }: Props) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    void loadImages(root);
+    void loadImages(root, final);
     markPaths(root);
     if (final) void drawDiagrams(root);
   }, [html, final]);
 
   const onClick = async (event: React.MouseEvent<HTMLDivElement>) => {
     const path = (event.target as HTMLElement).closest("code.path");
+    const link = (event.target as HTMLElement).closest("a");
+    // Stop the webview following an anchor before anything is awaited.
+    if (path || link) event.preventDefault();
     if (path) {
       try {
         await (await core()).openFile((path.textContent ?? "").trim());
@@ -96,9 +119,7 @@ export const Markdown = memo(function Markdown({ text, final, onNote }: Props) {
       }
       return;
     }
-    const link = (event.target as HTMLElement).closest("a");
     if (!link) return;
-    event.preventDefault();
     const href = link.getAttribute("href") ?? "";
     if (href === "" || href.startsWith("#")) return;
     const api = await core();

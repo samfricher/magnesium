@@ -15,7 +15,6 @@ import argparse
 import os
 import struct
 import subprocess
-import sys
 import tempfile
 import zipfile
 import zlib
@@ -42,7 +41,7 @@ def find_chrome(explicit=None):
     raise SystemExit("no headless Chrome found; pass --chrome PATH")
 
 
-def print_pdf(chrome, html, out_path, columns=False):
+def print_pdf(chrome, html, out_path):
     with tempfile.TemporaryDirectory(prefix="magnesium-docling-sample-") as staged:
         page = os.path.join(staged, "page.html")
         with open(page, "w") as handle:
@@ -242,7 +241,7 @@ def minimal_docx(paragraphs, tables=()):
 
 
 def minimal_pptx(slides):
-    def slide(texts, slide_id, layout_id="2"):
+    def slide(texts):
         shapes = "".join(
             '<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="%d" name="t%d"/>'
             '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr/>'
@@ -292,7 +291,7 @@ def minimal_pptx(slides):
          + "</Relationships>"),
     ]
     for i, texts in enumerate(slides):
-        parts.append((f"ppt/slides/slide{i + 1}.xml", slide(texts, i + 1)))
+        parts.append((f"ppt/slides/slide{i + 1}.xml", slide(texts)))
         parts.append((f"ppt/slides/_rels/slide{i + 1}.xml.rels",
                       '<?xml version="1.0" encoding="UTF-8"?>'
                       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'))
@@ -435,7 +434,7 @@ def main(argv=None):
     ]:
         parts = minimal_epub(title, chapters)
         mimetype = ("mimetype", "application/epub+zip")
-        write_zip(os.path.join(out, name), [p for p in parts],
+        write_zip(os.path.join(out, name), parts,
                   stored_first=mimetype)
         manifest.append({"file": name, "kind": "epub",
                          "anchors": [{"chapter": i + 1, "text": body[:60]}

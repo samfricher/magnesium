@@ -7,3 +7,11 @@
 # Python bytecode caches anywhere (worker harnesses, scripts).
 __pycache__/
 *.py[cod]
+
+# Output of the optional Docling gate: the generated sample (the generator stays tracked) and its results.
+/workers/docling/sample/*
+!/workers/docling/sample/generate.py
+docling-gate-results.json
+
+# macOS folder metadata.
+.DS_Store

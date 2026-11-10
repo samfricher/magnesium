@@ -8,24 +8,27 @@
 # The first run builds the app, which takes a few minutes.
 set -eu
 ROOT=$(cd "$(dirname "$0")" && pwd)
-cd "$ROOT"
-APP="$ROOT/target/release/bundle/macos/Magnesium.app"
-BIN="$APP/Contents/MacOS/magnesium-window"
-
 BUILD=no
 if [ "${1:-}" = "--build" ]; then
   BUILD=yes
   shift
 fi
+# A folder given as a relative path is meant from where the command was typed.
+FOLDER=${1:-}
+if [ -n "$FOLDER" ]; then
+  FOLDER=$(cd "$FOLDER" && pwd)
+fi
+cd "$ROOT"
+APP="$ROOT/target/release/bundle/macos/Magnesium.app"
+BIN="$APP/Contents/MacOS/magnesium-window"
+
 [ -x "$BIN" ] || BUILD=yes
 if [ "$BUILD" = yes ]; then
   [ -d node_modules ] || npm install
   npx tauri build --bundles app
 fi
 
-FOLDER=${1:-}
 if [ -n "$FOLDER" ]; then
-  FOLDER=$(cd "$FOLDER" && pwd)
   exec "$BIN" "$FOLDER"
 fi
 exec "$BIN"

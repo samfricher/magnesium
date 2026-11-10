@@ -46,7 +46,6 @@ pub(crate) struct ManifestReport {
     pub(crate) moved: usize,
     pub(crate) deleted: usize,
     pub(crate) unchanged: usize,
-    pub(crate) metadata_only: usize,
     pub(crate) excluded: usize,
     pub(crate) content_reads: usize,
     pub(crate) content_bytes: u64,
@@ -156,9 +155,11 @@ impl fmt::Display for ManifestError {
             Self::SourceSuperseded => formatter.write_str("source_superseded: a newer source state won; no old result was published. Repeat the source request if it is still useful"),
             Self::Cancelled => formatter.write_str("source_operation_cancelled: request cancelled; retry only if retrieval is still wanted"),
             Self::BudgetExhausted => formatter.write_str("source_search_budget_exhausted: retrieval is incomplete; narrow the query or path scope and retry; this is not evidence that no source exists"),
-            Self::PdfTimeout => {
-                formatter.write_str("PDF extraction exceeded the 5-second deadline")
-            }
+            Self::PdfTimeout => write!(
+                formatter,
+                "PDF extraction exceeded the {}-second deadline",
+                pdf::PDF_DEADLINE.as_secs()
+            ),
         }
     }
 }
@@ -275,13 +276,6 @@ pub(crate) fn hex_digest(digest: impl AsRef<[u8]>) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
-}
-
-pub(crate) fn anchor_name(kind: AnchorKind) -> &'static str {
-    match kind {
-        AnchorKind::Line => "line",
-        AnchorKind::Page => "page",
-    }
 }
 
 pub(crate) fn json_column<T: DeserializeOwned>(

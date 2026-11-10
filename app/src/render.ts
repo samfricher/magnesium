@@ -130,12 +130,21 @@ function renderMath({ tex, display }: Math): string {
 
 let hooked = false;
 
-function clean(html: string): string {
+// The mathematics of the text being cleaned. A token inside an attribute value,
+// such as an image's alt text or a link's title, cannot hold markup, so it goes
+// back as the TeX source. It does so before the cleaner checks the value.
+let lifted: Math[] = [];
+
+function clean(html: string, math: Math[]): string {
+  lifted = math;
   if (!hooked) {
     hooked = true;
     // An image is never loaded by the page itself. A local one is fetched
     // through the core, which keeps it inside the study folder. A remote one
     // is not fetched at all: the window makes no network request of its own.
+    DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+      data.attrValue = data.attrValue.replace(/MGMATH(\d+)ENDMG/g, (whole, index: string) => lifted[Number(index)]?.tex ?? whole);
+    });
     DOMPurify.addHook("afterSanitizeAttributes", (node) => {
       if (node.nodeName === "IMG") {
         const src = node.getAttribute("src") ?? "";
@@ -146,8 +155,8 @@ function clean(html: string): string {
     });
   }
   return DOMPurify.sanitize(html, {
-    FORBID_TAGS: ["style", "form", "input", "button", "iframe", "video", "audio", "object", "embed", "svg", "math"],
-    FORBID_ATTR: ["style", "srcset"],
+    FORBID_TAGS: ["style", "form", "input", "button", "iframe", "video", "audio", "object", "embed", "svg", "math", "map", "area"],
+    FORBID_ATTR: ["style", "srcset", "usemap"],
   });
 }
 
@@ -155,7 +164,7 @@ marked.setOptions({ gfm: true, breaks: false });
 
 export function renderMarkdown(src: string): string {
   const { text, math } = liftMath(src);
-  let html = clean(marked.parse(text, { async: false }) as string);
+  let html = clean(marked.parse(text, { async: false }) as string, math);
   if (math.length > 0) {
     html = html.replace(/MGMATH(\d+)ENDMG/g, (whole, index: string) => {
       const item = math[Number(index)];

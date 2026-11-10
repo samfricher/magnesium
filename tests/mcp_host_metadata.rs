@@ -11,13 +11,6 @@ use support::{
 
 fn client(e: &TestEnvironment, name: &str, variables: &[(&str, &str)]) -> McpClient {
     let mut command = e.command_with(test_binary(), &e.workspace);
-    for name in [
-        "CODEX_THREAD_ID",
-        "CLAUDE_CODE_SESSION_ID",
-        "OPENCODE_SESSION_ID",
-    ] {
-        command.env_remove(name);
-    }
     for (name, value) in variables {
         command.env(name, value);
     }
@@ -26,7 +19,7 @@ fn client(e: &TestEnvironment, name: &str, variables: &[(&str, &str)]) -> McpCli
             "_internal",
             "mcp-server",
             "--plugin-version",
-            "0.2.0",
+            env!("CARGO_PKG_VERSION"),
             "--adapter-protocol-version",
             "2",
         ])

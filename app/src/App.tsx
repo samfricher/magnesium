@@ -8,7 +8,7 @@ import { Palette, type Command } from "./Palette";
 import { Paper } from "./Paper";
 import { Progress } from "./Progress";
 import { Session } from "./Session";
-import { busy, emptySession, reduce, tutorText } from "./lesson";
+import { busy, emptySession, reduce } from "./lesson";
 import type { AgentEvent, Answer, Core, Decision, Home, Paper as PaperInfo, Progress as ProgressData, Rail } from "./types";
 
 type View = "loading" | "welcome" | "entrance" | "session" | "progress" | "paper";
@@ -29,8 +29,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, home, session });
-  now.current = { api, view, home, session };
+  const now = useRef({ api, view, home, session, palette });
+  now.current = { api, view, home, session, palette };
 
   const refreshRail = useCallback(async () => {
     const { api } = now.current;
@@ -170,6 +170,8 @@ export function App() {
     }
   };
 
+  const onNote = useCallback((text: string) => dispatch({ type: "note", notice: { kind: "other", text } }), []);
+
   const guard = (work: (api: Core) => Promise<unknown>) => async () => {
     const { api } = now.current;
     if (!api) return;
@@ -197,6 +199,7 @@ export function App() {
   const openProgress = async (target: string | null) => {
     const { api } = now.current;
     if (!api) return;
+    setError(null);
     setView("progress");
     try {
       setProgress(await api.progress(target));
@@ -291,8 +294,6 @@ export function App() {
     setAsking,
     setView: (next: string) => setView(next as View),
   };
-  const actionsRef = useRef(actions);
-  actionsRef.current = actions;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -308,7 +309,7 @@ export function App() {
         event.preventDefault();
         setView("entrance");
         setAsking(true);
-      } else if (event.key === "Escape" && view === "progress") {
+      } else if (event.key === "Escape" && view === "progress" && !event.defaultPrevented && !now.current.palette) {
         back();
       }
     };
@@ -377,7 +378,10 @@ export function App() {
         onNewLesson={(goal) => void newLesson(goal)}
         onAsk={setAsking}
         onPaper={openPaper}
-        onRetry={() => void refreshHome()}
+        onRetry={() => {
+          setError(null);
+          void refreshHome();
+        }}
         onPalette={() => setPalette(true)}
       />
     );
@@ -389,16 +393,26 @@ export function App() {
         blockMinutes={home.block_minutes}
         onSend={(text) => void say(text)}
         onInterrupt={() => void guard((api) => api.interrupt())()}
-        onDecide={(id: string, decision: Decision) => void guard((api) => api.decide(id, decision))()}
-        onAnswer={(id: string, answers: Answer[]) => void guard((api) => api.answer(id, answers))()}
+        onDecide={(id: string, decision: Decision) =>
+          void guard(async (api) => {
+            await api.decide(id, decision);
+            dispatch({ type: "event", event: { type: "withdrawn", id } });
+          })()
+        }
+        onAnswer={(id: string, answers: Answer[]) =>
+          void guard(async (api) => {
+            await api.answer(id, answers);
+            dispatch({ type: "event", event: { type: "withdrawn", id } });
+          })()
+        }
         onStop={(line) => void stop(line)}
-        onNote={(text) => dispatch({ type: "note", notice: { kind: "other", text } })}
+        onNote={onNote}
         onDismiss={(text) => dispatch({ type: "dismiss", text })}
         onPalette={() => setPalette(true)}
       />
     );
   } else if (home && view === "progress") {
-    screen = <Progress data={progress} folderName={home.name} onView={setProgressView} onPalette={() => setPalette(true)} />;
+    screen = <Progress data={progress} error={error} folderName={home.name} onView={setProgressView} onPalette={() => setPalette(true)} />;
   } else if (home && view === "paper") {
     screen = (
       <Paper
@@ -415,7 +429,7 @@ export function App() {
   }
 
   return (
-    <div className="win" data-view={view} data-busy={busy(session) ? "yes" : "no"} data-reply={session.live ? tutorText(session.live).length : 0}>
+    <div className="win" data-busy={busy(session) ? "yes" : "no"}>
       {screen}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
     </div>

@@ -14,6 +14,12 @@ const IMAGES: [&str; 9] = [
     "heic", "heif", "jpg", "jpeg", "png", "tif", "tiff", "webp", "bmp",
 ];
 const MAX_BYTES: u64 = 200 * 1024 * 1024;
+/// What a link in a reply may open. A link must never start a program, so
+/// anything else, such as an app, a script or a web shortcut, stays closed.
+/// The same list as the file names the page marks as paths.
+const DOCUMENTS: [&str; 10] = [
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "md", "tex", "txt", "csv",
+];
 
 fn extension(path: &Path) -> String {
     path.extension()
@@ -150,23 +156,46 @@ pub fn inside(root: &Path, path: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-/// Open a paper or a source in the system's own viewer. An answer key is
-/// refused: the key stays closed until the tutor has marked the work.
-pub fn open(root: &Path, path: &str) -> Result<(), String> {
+/// The file `open` would hand to the system's viewer, or why it will not.
+pub fn openable(root: &Path, path: &str) -> Result<PathBuf, String> {
     let resolved = inside(root, path)?;
     if looks_like_a_key(&resolved) {
         return Err("That looks like an answer key, so the window leaves it closed.".into());
     }
+    if !resolved.is_file() || !DOCUMENTS.contains(&extension(&resolved).as_str()) {
+        return Err(
+            "The window only opens documents and images: PDF, PNG, JPEG, GIF, WebP, Markdown, TeX, text and CSV."
+                .into(),
+        );
+    }
+    Ok(resolved)
+}
+
+/// Open a paper or a source in the system's own viewer. An answer key is
+/// refused: the key stays closed until the tutor has marked the work.
+pub fn open(root: &Path, path: &str) -> Result<(), String> {
+    launch(&openable(root, path)?)
+}
+
+/// Hand a file `openable` allowed to the system's viewer.
+pub fn launch(resolved: &Path) -> Result<(), String> {
     let opener = if cfg!(target_os = "macos") {
         "open"
     } else {
         "xdg-open"
     };
-    Command::new(opener)
-        .arg(&resolved)
+    let mut child = Command::new(opener)
+        .arg(resolved)
         .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("The file could not be opened: {e}."))
+        .map_err(|e| format!("The file could not be opened: {e}."))?;
+    // Waited for, so no finished process is left behind. `open` returns at
+    // once; `xdg-open` can wait for the viewer, so it is waited for apart.
+    if cfg!(target_os = "macos") {
+        let _ = child.wait();
+    } else {
+        std::thread::spawn(move || child.wait());
+    }
+    Ok(())
 }
 
 /// An image inside the study folder as a data address the page can show.
@@ -183,10 +212,10 @@ pub fn image(root: &Path, path: &str) -> Result<String, String> {
         "svg" => "image/svg+xml",
         _ => return Err("That is not an image the window can show.".into()),
     };
-    let bytes = fs::read(&resolved).map_err(|e| e.to_string())?;
-    if bytes.len() > 20 * 1024 * 1024 {
+    if fs::metadata(&resolved).map_err(|e| e.to_string())?.len() > 20 * 1024 * 1024 {
         return Err("That image is larger than 20 MB.".into());
     }
+    let bytes = fs::read(&resolved).map_err(|e| e.to_string())?;
     Ok(format!("data:{mime};base64,{}", base64(&bytes)))
 }
 
@@ -271,5 +300,61 @@ mod tests {
         fs::write(root.path().join("Study/m/papers/PaperB-key.pdf"), b"x").unwrap();
         let refused = open(root.path(), "Study/m/papers/PaperB-key.pdf").unwrap_err();
         assert!(refused.contains("answer key"));
+    }
+
+    #[test]
+    fn a_large_image_is_refused_before_it_is_read() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("big.png");
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(21 * 1024 * 1024)
+            .unwrap();
+        // Unreadable, so only its size can refuse it.
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        let refused = image(root.path(), "big.png").unwrap_err();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(refused.contains("larger than 20 MB"), "{refused}");
+    }
+
+    #[test]
+    fn only_documents_and_images_are_opened() {
+        let root = tempfile::tempdir().unwrap();
+        let notes = root.path().join("Study/notes");
+        fs::create_dir_all(&notes).unwrap();
+        for name in [
+            "a.pdf", "b.PNG", "c.jpg", "d.jpeg", "e.gif", "f.webp", "g.md", "h.txt", "i.tex",
+            "j.csv",
+        ] {
+            fs::write(notes.join(name), b"x").unwrap();
+            let path = format!("Study/notes/{name}");
+            assert!(openable(root.path(), &path).is_ok(), "{name} should open");
+        }
+        fs::create_dir_all(notes.join("Tool.app/Contents")).unwrap();
+        fs::create_dir_all(notes.join("folder.pdf")).unwrap();
+        for name in [
+            "run.command",
+            "run.sh",
+            "link.webloc",
+            "flow.workflow",
+            "README",
+        ] {
+            fs::write(notes.join(name), b"x").unwrap();
+        }
+        for name in [
+            "run.command",
+            "run.sh",
+            "link.webloc",
+            "flow.workflow",
+            "README",
+            "Tool.app",
+            "folder.pdf",
+            ".",
+        ] {
+            let path = format!("Study/notes/{name}");
+            let refused = openable(root.path(), &path).unwrap_err();
+            assert!(refused.contains("only opens"), "{name}: {refused}");
+        }
     }
 }

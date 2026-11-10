@@ -68,6 +68,7 @@ function chipsOf(data: ProgressData): { name: string; style: string }[] {
 
 export function Progress(props: {
   data: ProgressData | null;
+  error: string | null;
   folderName: string;
   onView: (view: string) => void;
   onPalette: () => void;
@@ -79,6 +80,7 @@ export function Progress(props: {
         <div className="top" data-tauri-drag-region>
           <span>{props.folderName}</span>
         </div>
+        {props.error && <div className="note warn selectable">{props.error}</div>}
       </section>
     );
   }
@@ -173,7 +175,7 @@ export function Progress(props: {
                   <div>
                     Sure but wrong:{" "}
                     {sure.map((score, index) => (
-                      <span key={score.paper}>
+                      <span key={`${score.paper}${score.date}`}>
                         {index > 0 && ", then "}
                         <b>
                           {(score.sure_total ?? 0) - (score.sure_right ?? 0)} of {score.sure_total}

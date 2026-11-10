@@ -64,6 +64,8 @@ pub(super) fn resolve_change_basis(
         references: Vec::with_capacity(input.len()),
         participating_event_ids: BTreeSet::new(),
     };
+    let mut statement =
+        conn.prepare("SELECT event_id FROM observation_events WHERE observation_id = ?1")?;
     for item in input {
         let reference = match item {
             ChangeBasisRef::Observation(reference) | ChangeBasisRef::NewObservation(reference) => {
@@ -75,8 +77,6 @@ pub(super) fn resolve_change_basis(
                 )?;
                 // New observations have already been inserted. Resolve both
                 // forms through the same canonical relation, never request text.
-                let mut statement = conn
-                    .prepare("SELECT event_id FROM observation_events WHERE observation_id = ?1")?;
                 for event in statement.query_map([&id], |row| row.get::<_, String>(0))? {
                     resolved.participating_event_ids.insert(event?);
                 }

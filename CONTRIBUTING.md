@@ -7,6 +7,8 @@ Start with the [architecture](docs/architecture/learner-model.md) for the main c
 Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11+
 and Node.js. The OpenCode plugin test in `tests/opencode_adapter.rs` runs the
 dependency-free `opencode-plugin/tests.mjs`. Optional hosted CI uses Node.js 24.
+The study window under `app/` is a separate Cargo workspace. `python3 ci/check.py`
+does not build or test it. Its own check is `app/scripts/check.sh`.
 
 From the repository root, run the ordinary local checks:
 
@@ -74,7 +76,7 @@ Version numbers are `MAJOR.MINOR.PATCH`. Below 1.0, a new feature or a change in
 To make a release:
 
 1. Open an issue for the release, such as `Release v0.3.0`. Create a branch for it, such as `chore/<issue-number>-release-v0.3.0`.
-2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin 'tests/*.rs'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
+2. Raise `version` in `Cargo.toml` to the new version. Replace the old version with the new one in each file that `git grep -lF <old-version> -- claude-plugin codex-plugin tests app ':!*.lock' ':!app/package-lock.json'` lists. Check that each match is Magnesium's version and not a dependency's. Then run `cargo build` without `--locked`. It updates the `magnesium` entry in `Cargo.lock`. `magnesium --version` prints this version, and the runtime refuses a plugin that names a different one.
 3. Open a pull request titled `chore(release): raise the version to 0.3.0`, and merge it as described in Make a change. End its description with `Refs #N`, not `Closes #N`, because the release does not exist until step 4.
 4. Create the tag and its release page on the merged version bump, not on whatever is newest on `main`, which may include a pull request merged after it. Find the bump's squash commit with `gh pr view <pull-request-number> --json mergeCommit -q .mergeCommit.oid`, then run:
 
@@ -83,5 +85,3 @@ To make a release:
    ```
 
    `--generate-notes` writes release notes that list the pull requests merged since the previous release. Then close the release issue.
-
-The first release tags the current `main` commit as `v0.2.0`, the version that `Cargo.toml` already declares. It needs no version change, so it starts at step 4. With no version bump, take the commit from `git rev-parse origin/main` after `git fetch origin`.

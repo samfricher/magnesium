@@ -40,6 +40,32 @@ fn a_graph_is_read_in_flow_and_block_form_with_comments() {
 }
 
 #[test]
+fn a_block_list_may_sit_at_its_key_indent_and_under_an_ignored_field() {
+    let graph = parse_graph(
+        "tags:\n  a:\n    pages:\n    - notes.pdf p4\n    - notes.pdf p9\n    needs:\n    - b\n    - c\n    key_need:\n      - b\n    touches:\n    - c\n  b:\n    contains: []\n  c:\n    needs: []\n",
+    )
+    .unwrap();
+    assert_eq!(graph.order, ["a", "b", "c"]);
+    let a = &graph.tags["a"];
+    assert_eq!(a.needs, ["b", "c"]);
+    assert_eq!(a.key_need, ["b"]);
+    assert!(a.contains.is_empty());
+}
+
+#[test]
+fn the_shipped_template_is_read() {
+    let graph = parse_graph(include_str!(
+        "../../claude-plugin/skills/papers/templates/graph.yaml"
+    ))
+    .unwrap();
+    assert_eq!(graph.order, ["<tag>", "<foundation_tag>"]);
+    let tag = &graph.tags["<tag>"];
+    assert_eq!(tag.needs, ["<foundation_tag>"]);
+    assert_eq!(tag.key_need, ["<foundation_tag>"]);
+    assert_eq!(tag.contains, ["<foundation_tag>"]);
+}
+
+#[test]
 fn a_graph_it_cannot_be_sure_of_is_refused_with_its_line() {
     let error = parse_graph("tags:\n  a:\n    needs: b, c\n").unwrap_err();
     assert!(error.starts_with("line 3:"), "{error}");

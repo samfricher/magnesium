@@ -125,7 +125,7 @@ fn chunk_markdown(text: &str) -> Vec<ChunkDraft> {
     let mut sections = Vec::new();
     let mut start = 0;
     let mut current_path = None;
-    let mut heading_stack = Vec::<String>::new();
+    let mut heading_stack = Vec::<(usize, String)>::new();
     let mut fence = None;
     for (index, line) in lines.iter().enumerate() {
         let content = text[line.start..line.end].trim_end_matches(['\r', '\n']);
@@ -151,19 +151,22 @@ fn chunk_markdown(text: &str) -> Vec<ChunkDraft> {
         if index > start {
             sections.push((start, index, current_path.clone()));
         }
-        heading_stack.truncate(level.saturating_sub(1));
-        heading_stack.push(bounded_text(heading, MAX_METADATA_TEXT_BYTES));
+        while heading_stack.last().is_some_and(|(top, _)| *top >= level) {
+            heading_stack.pop();
+        }
+        heading_stack.push((level, bounded_text(heading, MAX_METADATA_TEXT_BYTES)));
         current_path = Some(bounded_text(
-            &heading_stack.join(" > "),
+            &heading_stack
+                .iter()
+                .map(|(_, text)| text.as_str())
+                .collect::<Vec<_>>()
+                .join(" > "),
             MAX_STRUCTURAL_PATH_BYTES,
         ));
         start = index;
     }
     if start < lines.len() {
         sections.push((start, lines.len(), current_path));
-    }
-    if sections.is_empty() {
-        return bounded_chunks(text, 1, ChunkKind::Fallback, None, None);
     }
     let mut chunks = Vec::new();
     for (start, end, path) in sections {
@@ -209,8 +212,8 @@ fn chunk_code(text: &str, language: Language, language_name: &'static str) -> Ve
     for symbol in symbols {
         if symbol.start_byte() > previous_byte {
             let gap = &text[previous_byte..symbol.start_byte()];
-            let start_line = line_at_byte(text, previous_byte);
             if !gap.trim().is_empty() {
+                let start_line = line_at_byte(text, previous_byte);
                 let mut gap_chunks = bounded_chunks(
                     gap,
                     start_line,
@@ -577,7 +580,10 @@ fn bounded_chunks(
         if end == lines.len() {
             break;
         }
-        let overlap = if matches!(kind, ChunkKind::Fallback | ChunkKind::Module) {
+        // Overlap only chunks long enough that it stays under half of each one.
+        let overlap = if matches!(kind, ChunkKind::Fallback | ChunkKind::Module)
+            && end - start > 2 * OVERLAP_LINES
+        {
             OVERLAP_LINES
         } else {
             0
@@ -712,6 +718,61 @@ mod tests {
         let fallback = chunk_text(Path::new("opaque.txt"), &lines);
         assert_eq!((fallback[0].line_start, fallback[0].line_end), (1, 120));
         assert_eq!(fallback[1].line_start, 113);
+    }
+
+    #[test]
+    fn markdown_heading_paths_follow_levels_when_levels_skip() {
+        let paths = |markdown: &str| {
+            chunk_text(Path::new("lesson.md"), markdown)
+                .into_iter()
+                .map(|chunk| chunk.structural_path)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            paths("## A\na\n## B\nb\n## C\nc\n"),
+            [Some("A".into()), Some("B".into()), Some("C".into())]
+        );
+        assert_eq!(
+            paths("# T\nt\n### x\nx\n### y\ny\n"),
+            [Some("T".into()), Some("T > x".into()), Some("T > y".into())]
+        );
+        assert_eq!(
+            paths("# T\nt\n## A\na\n### x\nx\n## B\nb\n# U\nu\n"),
+            [
+                Some("T".into()),
+                Some("T > A".into()),
+                Some("T > A > x".into()),
+                Some("T > B".into()),
+                Some("U".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn long_lines_keep_overlap_to_a_small_share_of_each_chunk() {
+        let line = format!("{}\n", "a".repeat(1_999));
+        let text = line.repeat(40);
+        let chunks = chunk_text(Path::new("long.txt"), &text);
+        let stored = chunks.iter().map(|chunk| chunk.body.len()).sum::<usize>();
+        assert!(
+            stored <= text.len() * 2,
+            "{} chunks store {stored} bytes for {} input bytes",
+            chunks.len(),
+            text.len()
+        );
+        assert_eq!(chunks.last().map(|chunk| chunk.line_end), Some(40));
+
+        let text = format!(
+            "{}{}\n",
+            "short\n".repeat(8),
+            "b".repeat(MAX_CHUNK_BYTES + 1)
+        );
+        let chunks = chunk_text(Path::new("long.txt"), &text);
+        let short = chunks
+            .iter()
+            .filter(|chunk| chunk.body.starts_with("short"))
+            .count();
+        assert_eq!(short, 1, "short lines before a long line were repeated");
     }
 
     #[test]

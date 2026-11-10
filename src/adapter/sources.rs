@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use super::helpers::resolve_workspace;
+use super::sha256_hex;
 use super::types::{SourceAction, SourcesRequest};
 #[cfg(test)]
 use crate::retrieval::manifest_test_facts::{
@@ -41,8 +42,7 @@ use crate::retrieval::{
 };
 use crate::workspace::ResolvedWorkspace;
 
-/// Bounded original/excerpt caps for one `sources` response. The excerpt cap
-/// matches the search snippet bound; the original cap keeps one anchor's raw
+/// Bounded original cap for one `sources` response: it keeps one anchor's raw
 /// bytes inspectable without importing a whole book into model context.
 pub(crate) const SOURCES_ORIGINAL_BYTE_CAP: usize = 64 * 1024;
 /// Text sources above this size are excluded at discovery (`too_large`); the
@@ -62,8 +62,7 @@ pub(crate) fn handle_sources(cwd: &Path, request: &SourcesRequest) -> Result<Val
     {
         return Err(format!("unsupported MCP schema version: {version}"));
     }
-    let (_cwd, workspace) = resolve_workspace(cwd)?;
-    let Some(workspace) = workspace else {
+    let Some(workspace) = resolve_workspace(cwd)? else {
         return Ok(json!({
             "schema_version": 1,
             "action": action,
@@ -762,7 +761,7 @@ fn read_bounded_original(
         &cancellation,
     )
     .map_err(|error| error.to_string())?;
-    if hex_sha256(&bytes) != current_hash {
+    if sha256_hex(&bytes) != current_hash {
         return Err(
             "source changed after reconciliation; rerun search before inspection".to_owned(),
         );
@@ -852,10 +851,6 @@ pub(crate) fn read_bounded_bytes(
     }
     cancellation.check()?;
     Ok(bytes)
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    hex_digest(&Sha256::digest(bytes))
 }
 
 fn hex_digest(digest: &[u8]) -> String {
@@ -973,7 +968,7 @@ fn verified_current_bytes(
         open_current_file(root, relative, cancellation).map_err(CurrentBytesError::Source)?;
     let bytes = read_bounded_bytes(opened.file, &opened.path, limit, cancellation)
         .map_err(CurrentBytesError::Source)?;
-    if hex_sha256(&bytes) != expected_hash {
+    if sha256_hex(&bytes) != expected_hash {
         return Err(CurrentBytesError::Changed);
     }
     Ok(bytes)
@@ -1076,14 +1071,14 @@ mod tests {
             ("lesson*draft.pdf", pdf.as_slice(), "page"),
         ] {
             let request: SourcesRequest = serde_json::from_value(json!({
-                "action":"inspect", "path":path, "content_sha256":hex_sha256(bytes),
+                "action":"inspect", "path":path, "content_sha256":sha256_hex(bytes),
                 "anchor_kind":kind, "anchor_start":1, "anchor_end":1,
             }))
             .unwrap();
             let value = exact_inspection(root, &request);
             assert_eq!(value["coverage"]["status"], "complete", "{value}");
-            assert_eq!(value["file"]["content_sha256"], hex_sha256(bytes));
-            assert_eq!(value["original"]["content_sha256"], hex_sha256(bytes));
+            assert_eq!(value["file"]["content_sha256"], sha256_hex(bytes));
+            assert_eq!(value["original"]["content_sha256"], sha256_hex(bytes));
             if kind == "line" {
                 assert_eq!(
                     value["original"]["text"],
@@ -1094,7 +1089,7 @@ mod tests {
             }
         }
         assert_eq!(
-            read_authorized_pdf(root, "lesson*draft.pdf", &hex_sha256(pdf), &token).unwrap(),
+            read_authorized_pdf(root, "lesson*draft.pdf", &sha256_hex(pdf), &token).unwrap(),
             pdf
         );
         assert_eq!(
@@ -1149,7 +1144,7 @@ mod tests {
         let path = root.join("lesson.txt");
         std::fs::write(&path, original).unwrap();
         let request: SourcesRequest = serde_json::from_value(
-            json!({"action":"inspect", "path":"lesson.txt", "content_sha256":hex_sha256(original)}),
+            json!({"action":"inspect", "path":"lesson.txt", "content_sha256":sha256_hex(original)}),
         )
         .unwrap();
         assert_eq!(
@@ -1192,7 +1187,7 @@ mod tests {
         let root = &environment.workspace;
         let pdf = include_bytes!("../../tests/fixtures/interaction/statistics/source-pages.pdf");
         std::fs::write(root.join("source.pdf"), pdf).unwrap();
-        let hash = hex_sha256(pdf);
+        let hash = sha256_hex(pdf);
         let index = root
             .join(crate::workspace::CONTROL_DIR)
             .join("index/source-search.sqlite");
@@ -1433,7 +1428,7 @@ mod tests {
         let environment = support::TestEnvironment::from_fixture("basic").unwrap();
         let pdf = include_bytes!("../../tests/fixtures/interaction/statistics/source-pages.pdf");
         fs::write(environment.workspace.join("math.pdf"), pdf).unwrap();
-        let hash = hex_sha256(pdf);
+        let hash = sha256_hex(pdf);
         let root = &environment.workspace;
         let index = root
             .join(crate::workspace::CONTROL_DIR)
@@ -1523,7 +1518,7 @@ mod tests {
         .unwrap();
         let writer = Connection::open(&index).unwrap();
         writer.execute_batch("BEGIN IMMEDIATE").unwrap();
-        let (_, resolved) = resolve_workspace(root).unwrap();
+        let resolved = resolve_workspace(root).unwrap();
         let resolved = resolved.unwrap();
         let reference = SourcesRequest {
             action: SourceAction::Inspect,
@@ -1694,7 +1689,7 @@ mod tests {
         assert_eq!(first.len(), second.len());
         assert_ne!(first, second.as_slice());
         std::fs::write(root.join("doc.pdf"), first).expect("write revision one");
-        let hash_v1 = hex_sha256(first);
+        let hash_v1 = sha256_hex(first);
         let row = pdf_row(&hash_v1, first.len() as u64);
         let anchor = page_anchor();
         let inspected = read_bounded_original(
@@ -1758,7 +1753,7 @@ mod tests {
         };
         let token = OperationCancellation::with_flag(flag.clone());
         let (hash, size) = hash_pdf_reference(&mut probe, bytes.len(), &token).unwrap();
-        assert_eq!(hash, hex_sha256(&bytes));
+        assert_eq!(hash, sha256_hex(&bytes));
         assert_eq!(size, bytes.len());
         assert_eq!(probe.largest_request, 64 * 1024);
         assert_eq!(probe.reads, 5);
@@ -1786,11 +1781,11 @@ mod tests {
             atomic::{AtomicBool, Ordering},
         };
         let pdf = include_bytes!("../../tests/fixtures/interaction/statistics/source-pages.pdf");
-        let hash = hex_sha256(pdf);
+        let hash = sha256_hex(pdf);
         let mut replacement = pdf.to_vec();
         replacement[7] = if replacement[7] == b'7' { b'6' } else { b'7' };
         assert_eq!(replacement.len(), pdf.len());
-        assert_ne!(hex_sha256(&replacement), hash);
+        assert_ne!(sha256_hex(&replacement), hash);
         for action in [SourceAction::Status, SourceAction::Inspect] {
             for bound_hash in [false, true] {
                 for deleted in [false, true] {
@@ -1873,7 +1868,7 @@ mod tests {
                         assert!(report.hits.is_empty());
                     }
                     assert!(prepared, "PDF fixture preparation request cap exhausted");
-                    let (_, resolved) = resolve_workspace(root).unwrap();
+                    let resolved = resolve_workspace(root).unwrap();
                     let resolved = resolved.unwrap();
                     let reference = SourcesRequest {
                         action: SourceAction::Inspect,
@@ -1976,7 +1971,7 @@ mod tests {
             CoordinatorBudget::default(),
         )
         .unwrap();
-        let (_, resolved) = resolve_workspace(root).unwrap();
+        let resolved = resolve_workspace(root).unwrap();
         let resolved = resolved.unwrap();
         let published = Arc::new(AtomicBool::new(false));
         let published_hook = published.clone();

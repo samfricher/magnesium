@@ -312,9 +312,13 @@ fn a_closed_lesson_is_resumed_with_its_earlier_turns() {
         manager.send("second").unwrap();
         events.turn_end();
         manager.stop(Some("step 3: what result collects")).unwrap();
-        events.until("exit", |e| {
-            matches!(e, AgentEvent::Exited { expected: true, .. })
-        });
+        // A stopped conversation says nothing more, so the end is read from
+        // the agent's own log.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while bench.logged("end").is_empty() {
+            assert!(Instant::now() < deadline, "the process never ended");
+            std::thread::sleep(Duration::from_millis(50));
+        }
         session_id
     };
 
@@ -360,6 +364,74 @@ fn a_closed_lesson_is_resumed_with_its_earlier_turns() {
         .unwrap()
         .iter()
         .any(|a| a.as_str().unwrap().starts_with("--resume")));
+}
+
+#[test]
+fn a_replaced_conversation_says_nothing_more() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(true).unwrap();
+    manager.send("SLOW").unwrap();
+    events.until("first words", |e| matches!(e, AgentEvent::TextDelta { .. }));
+
+    // A new lesson while the old reply is still being written.
+    manager.open_session(false).unwrap();
+    events.seen.clear();
+    manager.send("hello new lesson").unwrap();
+    let ready = events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }));
+    let AgentEvent::Ready { session_id, .. } = ready else {
+        unreachable!()
+    };
+    assert!(ended_well(&events.turn_end()));
+    assert_eq!(events.take_text(), "You said: hello new lesson");
+
+    // Wait for the old process to end, then for anything it left behind.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while bench.logged("end").is_empty() {
+        assert!(Instant::now() < deadline, "the old process never ended");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(800));
+    let late: Vec<AgentEvent> = events.receiver.try_iter().collect();
+    assert!(
+        late.is_empty(),
+        "the old conversation still spoke: {late:#?}"
+    );
+
+    let folder = bench.folder.canonicalize().unwrap();
+    assert_eq!(
+        manager.store().folder(&folder).session_id,
+        Some(session_id),
+        "the new conversation's id is kept"
+    );
+}
+
+#[test]
+fn a_stopped_reply_says_nothing_more() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(true).unwrap();
+    manager.send("SLOW").unwrap();
+    events.until("first words", |e| matches!(e, AgentEvent::TextDelta { .. }));
+    manager.stop(None).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while bench.logged("end").is_empty() {
+        assert!(Instant::now() < deadline, "the process never ended");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(800));
+    let late: Vec<AgentEvent> = events.receiver.try_iter().collect();
+    assert!(
+        late.is_empty(),
+        "the stopped conversation still spoke: {late:#?}"
+    );
+    assert!(
+        bench
+            .logged("received")
+            .iter()
+            .any(|m| m["request"]["subtype"] == "interrupt"),
+        "a reply under way is interrupted before the input closes"
+    );
 }
 
 #[test]

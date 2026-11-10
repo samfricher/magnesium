@@ -1,5 +1,6 @@
 //! The only extraction publication owner: prepare without side effects, then
 //! compare one source revision before atomically publishing its entire outcome.
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 
@@ -9,9 +10,7 @@ use super::convert::ConverterProvenance;
 use super::extract::candidate_id;
 use super::schema::{INDEX_INITIALIZATION_BUDGET, begin_write};
 use super::status::stale_candidates;
-use super::{
-    AnchorKind, CurrentSource, ManifestError, PublishedSource, SourceCandidate, anchor_name, sqlite,
-};
+use super::{AnchorKind, CurrentSource, ManifestError, PublishedSource, SourceCandidate, sqlite};
 use crate::retrieval::chunking::{ChunkDraft, ChunkKind};
 use crate::retrieval::{OperationCancellation, SensitivityClass};
 
@@ -61,13 +60,10 @@ pub(super) fn prepare_extraction(
     extracted: Vec<ChunkDraft>,
     converter: Option<&ConverterProvenance>,
 ) -> Result<PreparedExtraction, ManifestError> {
-    let navigation = super::ranking::navigation_lines(
-        &extracted
-            .iter()
-            .map(|chunk| chunk.body.as_str())
-            .collect::<Vec<_>>(),
-    );
-    let candidates = extracted
+    // An identical piece at the same anchor (for example a long run of one
+    // repeated byte) gets the same candidate ID and adds nothing to search.
+    let mut seen = HashSet::new();
+    let extracted = extracted
         .into_iter()
         .map(|chunk| {
             let anchor_kind = if chunk.kind == ChunkKind::Page {
@@ -77,13 +73,26 @@ pub(super) fn prepare_extraction(
             };
             let candidate_id = candidate_id(
                 source.manifest_id,
-                anchor_name(anchor_kind),
+                anchor_kind.as_str(),
                 chunk.line_start,
                 chunk.line_end,
                 chunk.kind.as_str(),
                 chunk.structural_path.as_deref(),
                 &chunk.body,
             );
+            (anchor_kind, candidate_id, chunk)
+        })
+        .filter(|(_, candidate_id, _)| seen.insert(candidate_id.clone()))
+        .collect::<Vec<_>>();
+    let navigation = super::ranking::navigation_lines(
+        &extracted
+            .iter()
+            .map(|(_, _, chunk)| chunk.body.as_str())
+            .collect::<Vec<_>>(),
+    );
+    let candidates = extracted
+        .into_iter()
+        .map(|(anchor_kind, candidate_id, chunk)| {
             let definitions_json = serde_json::to_string(&chunk.definitions)
                 .map_err(|error| ManifestError::Invalid(error.to_string()))?;
             let imports_json = serde_json::to_string(&chunk.imports)

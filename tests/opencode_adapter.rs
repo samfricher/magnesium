@@ -5,8 +5,7 @@
 //!   on Unix because its executable hook stub uses /bin/sh. Node is required
 //!   in that lane; a missing Node installation fails explicitly.
 //! - The native checks cover the session-scoped post-compaction contract the
-//!   plugin emits: no turn identity, accepted without capture, and the next
-//!   prompt's hook context still tells the tutor to reread context.prepare.
+//!   plugin emits: no turn identity, accepted without capture.
 
 #[cfg(unix)]
 use std::path::Path;

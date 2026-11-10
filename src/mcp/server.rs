@@ -17,7 +17,10 @@ use super::{check_routing, compatibility_error, routing_error, tool_error, tool_
 use crate::adapter::{self, InvocationIdentity};
 use crate::request::{OperationCancellation, enter_request_cancellation};
 
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+/// Room for a 1 MiB semantic request and its JSON-RPC wrapper, so the adapter
+/// can answer one that is too large; the same bound as `adapter call` input.
+const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+const _: () = assert!(MAX_FRAME_BYTES > crate::learner::limits::REQUEST_BYTES);
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 
 /// Ordinary source/read work and validated controls have separate bounded
@@ -445,38 +448,54 @@ pub(crate) fn run(
     }
 }
 
-struct BoundedStdio {
-    input: tokio::io::Stdin,
-    output: Arc<Mutex<tokio::io::Stdout>>,
+struct BoundedStdio<R = tokio::io::Stdin, W = tokio::io::Stdout> {
+    input: R,
+    output: Arc<Mutex<W>>,
     buffered: Vec<u8>,
     discarding_oversized_frame: bool,
 }
 
+enum Frame {
+    Whole(Vec<u8>),
+    /// Longer than [`MAX_FRAME_BYTES`]: its bytes were dropped as they came.
+    Oversized,
+}
+
 impl BoundedStdio {
     fn new() -> Self {
+        Self::with(tokio::io::stdin(), tokio::io::stdout())
+    }
+}
+
+impl<R, W> BoundedStdio<R, W>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    fn with(input: R, output: W) -> Self {
         Self {
-            input: tokio::io::stdin(),
-            output: Arc::new(Mutex::new(tokio::io::stdout())),
+            input,
+            output: Arc::new(Mutex::new(output)),
             buffered: Vec::with_capacity(READ_CHUNK_BYTES),
             discarding_oversized_frame: false,
         }
     }
 
-    async fn receive_frame(&mut self) -> Option<Vec<u8>> {
+    async fn receive_frame(&mut self) -> Option<Frame> {
         loop {
             if let Some(newline) = self.buffered.iter().position(|byte| *byte == b'\n') {
                 let mut frame: Vec<u8> = self.buffered.drain(..=newline).collect();
                 let oversized = self.discarding_oversized_frame || frame.len() > MAX_FRAME_BYTES;
                 self.discarding_oversized_frame = false;
                 if oversized {
-                    continue;
+                    return Some(Frame::Oversized);
                 }
                 frame.pop();
                 if frame.last() == Some(&b'\r') {
                     frame.pop();
                 }
                 if !frame.is_empty() {
-                    return Some(frame);
+                    return Some(Frame::Whole(frame));
                 }
                 continue;
             }
@@ -496,7 +515,11 @@ impl BoundedStdio {
     }
 }
 
-impl rmcp::transport::Transport<RoleServer> for BoundedStdio {
+impl<R, W> rmcp::transport::Transport<RoleServer> for BoundedStdio<R, W>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     type Error = io::Error;
 
     fn send(
@@ -515,9 +538,39 @@ impl rmcp::transport::Transport<RoleServer> for BoundedStdio {
 
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleServer>> {
         loop {
-            let frame = self.receive_frame().await?;
-            if let Ok(message) = serde_json::from_slice(&frame) {
-                return Some(message);
+            // An error reply here carries the request's id when it can be
+            // read, so the host stops waiting for it. Bytes that are not JSON
+            // get no reply, as in rmcp's own transport: there is no id to
+            // answer, and a reply to garbage can start an error loop.
+            let (error, id) = match self.receive_frame().await? {
+                Frame::Whole(frame) => match serde_json::from_slice(&frame) {
+                    Ok(message) => return Some(message),
+                    Err(error) if error.is_syntax() || error.is_eof() => continue,
+                    Err(_) => {
+                        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&frame) else {
+                            continue;
+                        };
+                        // A notification gets no reply.
+                        let Some(id) = value.get("id") else {
+                            continue;
+                        };
+                        (
+                            ErrorData::invalid_request("Invalid request", None),
+                            serde_json::from_value(id.clone()).ok(),
+                        )
+                    }
+                },
+                Frame::Oversized => (
+                    ErrorData::invalid_request(
+                        format!("Invalid request: a message over {MAX_FRAME_BYTES} bytes"),
+                        None,
+                    ),
+                    None,
+                ),
+            };
+            let reply = TxJsonRpcMessage::<RoleServer>::error(error, id);
+            if rmcp::transport::Transport::send(self, reply).await.is_err() {
+                return None;
             }
         }
     }
@@ -555,9 +608,68 @@ mod runtime_bounds_tests {
     }
 
     use super::*;
+    use rmcp::transport::Transport;
     use std::sync::Mutex;
+    use tokio::io::AsyncBufReadExt;
 
     pub(super) static SERIAL: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn a_frame_too_long_or_unreadable_with_an_id_is_answered_and_garbage_is_not() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            let (mut client, server_in) = tokio::io::duplex(64 * 1024);
+            let (server_out, client_out) = tokio::io::duplex(64 * 1024);
+            let mut transport = BoundedStdio::with(server_in, server_out);
+            let mut replies = tokio::io::BufReader::new(client_out);
+            let writer = tokio::spawn(async move {
+                let mut oversized = vec![b'x'; MAX_FRAME_BYTES + 1];
+                oversized.push(b'\n');
+                client.write_all(&oversized).await.unwrap();
+                client.write_all(b"not json\n").await.unwrap();
+                client
+                    .write_all(
+                        b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":3}\n",
+                    )
+                    .await
+                    .unwrap();
+                client
+                    .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+                    .await
+                    .unwrap();
+                client
+            });
+            let message = transport.receive().await.expect("the valid frame after");
+            assert_eq!(
+                serde_json::to_value(&message).unwrap()["method"],
+                "notifications/initialized"
+            );
+            let mut lines = Vec::new();
+            for _ in 0..2 {
+                let mut line = String::new();
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    replies.read_line(&mut line),
+                )
+                .await
+                .expect("a reply within the deadline")
+                .unwrap();
+                lines.push(serde_json::from_str::<serde_json::Value>(&line).unwrap());
+            }
+            assert_eq!(lines[0]["error"]["code"], -32600, "{}", lines[0]);
+            assert!(lines[0].get("id").is_none_or(|id| id.is_null()));
+            assert_eq!(lines[1]["error"]["code"], -32600, "{}", lines[1]);
+            assert_eq!(lines[1]["id"], 7);
+            drop(writer.await.unwrap());
+            drop(transport);
+            let mut rest = String::new();
+            replies.read_line(&mut rest).await.unwrap();
+            assert_eq!(rest, "", "no reply to bytes that are not JSON");
+        });
+    }
 
     #[test]
     fn native_thread_identity_only_uses_valid_codex_envelope_metadata() {

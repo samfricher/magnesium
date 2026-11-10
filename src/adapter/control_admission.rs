@@ -242,24 +242,22 @@ pub(super) fn suppression_for(
     }
 }
 
+#[cfg(test)]
 pub(super) fn local_capture_suppressed(
     workspace: &Workspace,
     host: &crate::learner::HostContext,
 ) -> Result<bool, String> {
-    let key = format!(
-        "{}:{}:{}",
-        sha256_hex(&crate::workspace::native_path_key(workspace.root())),
-        host.host_kind,
-        host.host_thread_id
-    );
+    key_capture_suppressed(&suppression_key(workspace.root(), host))
+}
+fn key_capture_suppressed(key: &str) -> Result<bool, String> {
     Ok(suppressed()
         .lock()
         .map_err(|error| error.to_string())?
-        .contains(&key)
+        .contains(key)
         || recording_suppressed()
             .lock()
             .map_err(|error| error.to_string())?
-            .contains(&key))
+            .contains(key))
 }
 
 #[derive(Clone, Copy)]
@@ -520,7 +518,8 @@ impl<'a> Admission<'a> {
                 let mut value = serde_json::to_value(value).map_err(|e| e.to_string())?;
                 if resuming && let Err(error) = safety.after_resume() {
                     value["safety_error"] = json!(error);
-                    value["capture_admission"] = json!("requires_safety_metadata_recovery");
+                    value["capture_admission"] =
+                        json!(CaptureAdmission::RequiresSafetyMetadataRecovery);
                 }
                 Ok(value)
             }
@@ -531,7 +530,7 @@ impl<'a> Admission<'a> {
         let guard = Guard::acquire(self.workspace, self.host)?;
         let blocked = if guard.capture_blocked() {
             Some(CaptureBlock::SharedDeny)
-        } else if local_capture_suppressed(self.workspace, self.host)? {
+        } else if key_capture_suppressed(&self.key)? {
             Some(CaptureBlock::LocalDeny)
         } else {
             None
@@ -606,9 +605,6 @@ pub(crate) fn storage_failure(
     .into_value())
 }
 
-/// A tool-only current learner report can stop this running host even if the
-/// database cannot open. A native event reference alone is not re-certified
-/// without reading its current native capture; source/memory text cannot help.
 #[cfg(test)]
 pub(super) fn control_storage_failure(
     operation: &str,
@@ -619,6 +615,9 @@ pub(super) fn control_storage_failure(
     control_storage_failure_with_token(operation, request, key, &super::tool_host(), error)
         .map(|(result, _)| result.into_value())
 }
+/// A tool-only current learner report can stop this running host even if the
+/// database cannot open. A native event reference alone is not re-certified
+/// without reading its current native capture; source/memory text cannot help.
 fn control_storage_failure_with_token(
     operation: &str,
     request: &serde_json::Value,

@@ -135,7 +135,7 @@ pub fn prepare_text_fixture_separately(
 /// The current public status independently enforces live discovery policy;
 /// regular, contained authored bytes corroborate only this undiscovered case.
 /// No policy parser or permission grant is recreated by the fixture helper.
-pub fn observe_fixture_state(
+fn observe_fixture_state(
     environment: &TestEnvironment,
     client: &mut McpClient,
     id: u64,
@@ -280,13 +280,13 @@ pub fn prepare_source_fixture_with(
                             "response":response, "manifest":state}));
         let ready = fixture_ready(&response, state, path, kind, hash)
             .map_err(|error| format!("{error}; observations: {history:?}"))?;
+        if ready {
+            return Ok(history);
+        }
         if elapsed() >= deadline {
             return Err(format!(
                 "incomplete source fixture preparation: shared deadline exhausted during request; observations: {history:?}"
             ));
-        }
-        if ready {
-            return Ok(history);
         }
     }
     Err(format!(

@@ -151,11 +151,18 @@ fn open_url(url: String) -> Reply<()> {
     } else {
         "xdg-open"
     };
-    std::process::Command::new(opener)
+    let mut child = std::process::Command::new(opener)
         .arg(&url)
         .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    // Waited for, so no finished process is left behind. `open` returns at
+    // once; `xdg-open` can wait for the browser, so it is waited for apart.
+    if cfg!(target_os = "macos") {
+        let _ = child.wait();
+    } else {
+        std::thread::spawn(move || child.wait());
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]

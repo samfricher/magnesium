@@ -2,16 +2,7 @@ use std::{
     collections::BTreeSet,
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
 };
-
-fn git(args: &[&str]) -> Option<String> {
-    let result = Command::new("git").args(args).output().ok()?;
-    result
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&result.stdout).trim().to_owned())
-}
 
 fn read_reserved_file(name: &str) -> Vec<u8> {
     let path = Path::new(name);
@@ -197,73 +188,9 @@ fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)>
 }
 
 fn main() {
-    for path in [
-        "src",
-        "Cargo.toml",
-        "Cargo.lock",
-        "build.rs",
-        "codex-plugin",
-        "claude-plugin",
-        "opencode-plugin",
-        "docs/user-guide.md",
-    ] {
+    for path in ["src/workspace/learning", "build.rs"] {
         println!("cargo:rerun-if-changed={path}");
     }
-    for reference in ["HEAD", "index"] {
-        if let Some(path) = git(&["rev-parse", "--git-path", reference]) {
-            println!("cargo:rerun-if-changed={path}");
-        }
-    }
-    if let Some(reference) = git(&["symbolic-ref", "-q", "HEAD"])
-        && let Some(path) = git(&["rev-parse", "--git-path", &reference])
-    {
-        println!("cargo:rerun-if-changed={path}");
-    }
-    let commit = git(&["rev-parse", "--verify", "HEAD"]).unwrap_or_else(|| "unknown".into());
-    let dirty = git(&["status", "--porcelain", "--untracked-files=normal"])
-        .map(|status| if status.is_empty() { "false" } else { "true" })
-        .unwrap_or("unknown");
-    println!("cargo:rustc-env=MAGNESIUM_BUILD_COMMIT={commit}");
-    println!("cargo:rustc-env=MAGNESIUM_BUILD_DIRTY={dirty}");
-    let mut bytes = Vec::new();
-    // Explicit runtime bundle members: never embed arbitrary untracked files,
-    // credentials, build output or tests from a developer's plugin directory.
-    for name in [
-        "codex-plugin/.codex-plugin/plugin.json",
-        "codex-plugin/.mcp.json",
-        "codex-plugin/hooks/hooks.json",
-        "codex-plugin/skills/learn/SKILL.md",
-        "claude-plugin/.claude-plugin/plugin.json",
-        "claude-plugin/.claude-plugin/marketplace.json",
-        "claude-plugin/.mcp.json",
-        "claude-plugin/hooks/hooks.json",
-        "claude-plugin/skills/learn/SKILL.md",
-        "claude-plugin/skills/papers/SKILL.md",
-        "claude-plugin/skills/papers/templates/plan.md",
-        "claude-plugin/skills/papers/templates/gap-log.md",
-        "claude-plugin/skills/papers/templates/graph.yaml",
-        "claude-plugin/skills/papers/templates/drills.md",
-        "claude-plugin/skills/papers/templates/past-papers-README.md",
-        "claude-plugin/skills/papers/templates/preamble.tex",
-        "claude-plugin/skills/papers/templates/build.sh",
-        "claude-plugin/skills/papers/templates/paper.md",
-        "claude-plugin/skills/help/SKILL.md",
-        "docs/user-guide.md",
-        "opencode-plugin/magnesium.js",
-        "opencode-plugin/skills/learn/SKILL.md",
-    ] {
-        let content = fs::read(name).expect("adapter bundle file");
-        bytes.extend_from_slice(name.as_bytes());
-        bytes.push(0);
-        bytes.extend_from_slice(&(content.len() as u64).to_be_bytes());
-        bytes.extend_from_slice(&content);
-    }
-    fs::write(
-        Path::new(&env::var_os("OUT_DIR").expect("OUT_DIR")).join("adapter-bundle.bin"),
-        bytes,
-    )
-    .expect("write bundled adapter identity");
-
     // Package the active learner-model/v2 instructions reproducibly.
     let mut reserved = Vec::new();
     let inventory = reserved_inventory();

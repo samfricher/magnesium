@@ -497,8 +497,8 @@ mod runtime_bounds_tests {
     #[test]
     fn cancellation_after_process_start_terminates_running_child() {
         // The production extractor is replaced with the ignored in-test sleep
-        // helper so the child is running when cancellation arrives. The worker
-        // must kill it promptly rather than waiting for the 30s deadline.
+        // helper so the child is running when cancellation arrives. The helper
+        // sleeps 5s, so finishing well under that shows the worker killed it.
         let mut command =
             std::process::Command::new(std::env::current_exe().expect("test executable"));
         command
@@ -529,7 +529,7 @@ mod runtime_bounds_tests {
             "unexpected cancellation error: {error}"
         );
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < Duration::from_secs(3),
             "a running PDF child was not terminated promptly"
         );
     }

@@ -1,6 +1,10 @@
 /// The question an attempt stores; longer is cut, not refused.
 pub const ATTEMPT_QUESTION_BYTES: usize = 1000;
 pub const ATTEMPTS_PER_OBSERVATION: usize = 40;
+/// The gap-log rows and quick checks one answer counts for.
+pub const COUNTS_FOR_PER_ATTEMPT: usize = 12;
+pub const PRACTICE_EDITS_PER_BATCH: usize = 40;
+pub const ATTEMPT_CORRECTIONS_PER_BATCH: usize = 8;
 pub const REQUEST_BYTES: usize = 1024 * 1024;
 pub const EVENT_BYTES: usize = 256 * 1024;
 pub const PACKET_BYTES: usize = 64 * 1024;

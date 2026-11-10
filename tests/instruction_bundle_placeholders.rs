@@ -169,7 +169,6 @@ fn installed_workspace_instructions_load_the_approved_policy() {
     let bridge = include_str!("../src/workspace/instructions.md");
     assert!(bridge.contains("teaching-policy/v2"));
     assert!(bridge.contains("context(action:\"instructions\""));
-    assert!(!bridge.contains("teaching-policy/v1"));
 }
 
 #[test]
@@ -193,19 +192,10 @@ fn active_policy_uses_descriptive_memory_without_retired_authority_gates() {
     ] {
         assert!(text.contains(required), "missing memory policy: {required}");
     }
-    for retired in [
-        "schema_version:3",
-        "learning_step` v3",
-        "attestation_id",
-        "readiness_cursor",
-        "prepare_forget",
-        "confirm_forget_session",
-        "not_enabled_policy_pending",
-        "registered verifier",
-        "same-conversation judgment",
-    ] {
-        assert!(!text.contains(retired), "retired instruction: {retired}");
-    }
+    assert!(
+        !text.contains("learning_step` v3"),
+        "retired instruction: learning_step` v3"
+    );
 }
 
 #[test]

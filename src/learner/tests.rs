@@ -1133,6 +1133,209 @@ fn cancellation_after_commit_returns_and_replays_the_durable_receipt() {
 }
 
 #[test]
+fn complete_captured_refuses_an_attempt_before_checking_it() {
+    let f = Fixture::new();
+    let (event, observation, _) = pending_observation_with_help(&f);
+    let control = RawEvent {
+        external_event_key: "stop".into(),
+        speaker: Speaker::Learner,
+        kind: "message".into(),
+        text: "Stop".into(),
+        metadata: None,
+        occurred_at_ms: None,
+    };
+    f.store.control(&f.host, "stop", "stop", &control).unwrap();
+    let mut request = existing_observation_edit(&f, &event, &observation);
+    request["mode"] = json!("complete_captured");
+    request["observations"] = json!([{"client_ref":"answer","kind":"learner_work",
+        "description":"Used b=-5.","events":[{"event_id":event,"role":"learner_response"}],
+        "attempt":{"label":"","question":"What is b?","first_try":"right","help":"none","cold":false}}]);
+    let error = f.store.update(&f.host, request).unwrap_err();
+    assert_eq!(error.code, "invalid_variant");
+    assert!(
+        error
+            .message
+            .starts_with("complete_captured cannot record an attempt"),
+        "{}",
+        error.message
+    );
+}
+
+/// Labels made of letters only, so none reads as a problem.
+fn check_label(n: usize) -> String {
+    let letters = b"abcdefghijklmnopqrstuvwxyz";
+    format!(
+        "sign skill {}{}",
+        letters[n / 26] as char,
+        letters[n % 26] as char
+    )
+}
+
+/// Start a lesson in the fixture's conversation and leave `count` quick
+/// checks open, one per wrong chat answer. Returns the lesson and the first
+/// attempt.
+fn lesson_with_quick_checks(f: &Fixture, count: usize) -> (String, String) {
+    let session = f.start().references["session"].clone();
+    let event = f.event("answer", "b is 7", None);
+    let labels: Vec<String> = (0..count).map(check_label).collect();
+    for (batch, chunk) in labels
+        .chunks(crate::learner::limits::OBSERVATIONS_PER_BATCH)
+        .enumerate()
+    {
+        let observations: Vec<Value> = chunk
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                json!({"client_ref":format!("work-{i}"),"kind":"learner_work","description":"Took b as 7, dropping its sign.",
+                    "events":[{"event_id":event,"role":"learner_response"}],
+                    "attempt":{"label":label,"question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}})
+            })
+            .collect();
+        f.store
+            .update(
+                &f.host,
+                json!({"schema":SCHEMA,"action":"update","request_id":format!("answers-{batch}"),
+                    "turn_ref":event,"observations":observations}),
+            )
+            .unwrap();
+    }
+    let attempt = f
+        .store
+        .conn
+        .query_row(
+            "SELECT attempt_id FROM attempts ORDER BY attempt_no LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    (session, attempt)
+}
+
+/// Everything a practice write or a lesson close could change.
+fn practice_state(f: &Fixture) -> Value {
+    let one = |sql: &str| -> Value {
+        f.store
+            .conn
+            .query_row(sql, [], |r| r.get::<_, Option<String>>(0))
+            .map(Value::from)
+            .unwrap()
+    };
+    json!([
+        one("SELECT group_concat(status||revision,',') FROM learning_sessions"),
+        one("SELECT group_concat(mark||help||cold,',') FROM attempts"),
+        one("SELECT group_concat(coalesce(next_question,'-'),',') FROM practice_items"),
+        one("SELECT count(*)||'' FROM practice_events"),
+        one("SELECT count(*)||'' FROM attempt_corrections"),
+        one("SELECT count(*)||'' FROM operation_receipts"),
+    ])
+}
+
+#[test]
+fn closing_a_lesson_from_an_inactive_conversation_cannot_carry_practice_writes() {
+    let f = Fixture::new();
+    let (session, attempt) = lesson_with_quick_checks(&f, 1);
+    let tuesday = HostContext {
+        host_kind: "test".into(),
+        host_thread_id: "tuesday".into(),
+    };
+    let pause = || {
+        json!({"schema":SCHEMA,"action":"update","request_id":"pause-with-writes",
+            "session":{"operation":"pause","session_id":session,"expected_revision":1}})
+    };
+    let mut with_observation = pause();
+    with_observation["observations"] = json!([{"client_ref":"work","kind":"learner_work",
+        "description":"Took b as 7.","events":[{"event_id":"e-00000000000000000000000000000000","role":"learner_response"}]}]);
+    let inactive = f.store.update(&tuesday, with_observation).unwrap_err();
+    assert_eq!(inactive.code, "learning_inactive");
+    let before = practice_state(&f);
+    let mut with_practice = pause();
+    with_practice["practice"] = json!([{"item":check_label(0),
+        "next":{"question":"In x² − 3x + 2 = 0, what is b?","answer_key":"−3"}}]);
+    let mut with_correction = pause();
+    with_correction["attempt_corrections"] =
+        json!([{"attempt_id":attempt,"reason":"The mark was wrong.","first_try":"right"}]);
+    for request in [with_practice, with_correction] {
+        let error = f.store.update(&tuesday, request).unwrap_err();
+        assert_eq!(
+            (&error.code, &error.message),
+            (&inactive.code, &inactive.message)
+        );
+        assert_eq!(practice_state(&f), before);
+    }
+    // The bare close itself is still admitted.
+    f.store.update(&tuesday, pause()).unwrap();
+}
+
+#[test]
+fn practice_corrections_and_counts_for_are_bounded() {
+    let f = Fixture::new();
+    lesson_with_quick_checks(&f, 40);
+    let attempts: Vec<String> = f
+        .store
+        .conn
+        .prepare("SELECT attempt_id FROM attempts ORDER BY attempt_no")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let update = |id: &str, field: &str, value: Value| {
+        let mut request = json!({"schema":SCHEMA,"action":"update","request_id":id});
+        request[field] = value;
+        f.store.update(&f.host, request)
+    };
+    let next = json!({"question":"In x² − 3x + 2 = 0, what is b?","answer_key":"−3"});
+    let edits = |n: usize| -> Value {
+        (0..n)
+            .map(|i| json!({"item":check_label(i % 40),"next":next}))
+            .collect()
+    };
+    let corrections = |n: usize| -> Value {
+        (0..n)
+            .map(|i| json!({"attempt_id":attempts[i],"reason":"The mark was wrong.","first_try":"right"}))
+            .collect()
+    };
+    let refused = |result: Result<UpdateResult>, field: &str| {
+        let error = result.unwrap_err();
+        assert_eq!(error.code, "field_too_large", "{}", error.message);
+        assert!(
+            error.message.starts_with(&format!("{field}: ")),
+            "{}",
+            error.message
+        );
+    };
+
+    let before = practice_state(&f);
+    refused(update("practice-41", "practice", edits(41)), "practice");
+    assert_eq!(practice_state(&f), before);
+    refused(
+        update("corrections-9", "attempt_corrections", corrections(9)),
+        "attempt_corrections",
+    );
+    assert_eq!(practice_state(&f), before);
+
+    let answer = |id: &str, n: usize| {
+        let event = f.event(id, "b is -7", None);
+        let mut request =
+            json!({"schema":SCHEMA,"action":"update","request_id":id,"turn_ref":event});
+        request["observations"] = json!([{"client_ref":"redo","kind":"learner_work","description":"Read b as −7.",
+            "events":[{"event_id":event,"role":"learner_response"}],
+            "attempt":{"label":check_label(0),"question":"In x² − 7x + 10 = 0, what is b?","first_try":"right","help":"none","cold":false,
+                "counts_for":vec![check_label(0); n]}}]);
+        f.store.update(&f.host, request)
+    };
+    refused(
+        answer("counts-13", 13),
+        "observations[0].attempt.counts_for",
+    );
+    assert_eq!(practice_state(&f), before);
+
+    update("practice-40", "practice", edits(40)).unwrap();
+    update("corrections-8", "attempt_corrections", corrections(8)).unwrap();
+    answer("counts-12", 12).unwrap();
+}
+
+#[test]
 fn resolved_change_basis_preserves_authored_order_and_never_processes_unrequested_events() {
     let f = Fixture::new();
     let (event, observation, _) = pending_observation_with_help(&f);

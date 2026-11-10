@@ -127,23 +127,3 @@ async def prepare_source_fixture(client, workspace, path, kind, expected_hash, r
         raise RuntimeError("incomplete preparation: attempt cap exhausted")
     except Exception as error:
         raise RuntimeError(f"{error}; observations: {json.dumps(record, ensure_ascii=False)}") from error
-
-
-def prepare_fixture_sources(env, workspace, binary, version, fixtures):
-    """Reuse the maintained bounded native transport for positive setup only.
-
-    fixtures contain (relative path, source kind, independently authored bytes).
-    Each target gets one fixed preparation deadline and attempt cap.
-    """
-    from ci.native_mcp import NativeMcpClient, TransportLimits
-    async def run():
-        records = []
-        async with NativeMcpClient(
-                [str(binary), "_internal", "mcp-server", "--plugin-version", version, "--adapter-protocol-version", "2"],
-                cwd=workspace, env=env, limits=TransportLimits(request_timeout=5)) as client:
-            for path, kind, authored_bytes in fixtures:
-                record = {"file": path, "kind": kind, "responses": []}
-                records.append(record)
-                await prepare_source_fixture(client, workspace, path, kind, hashlib.sha256(authored_bytes).hexdigest(), record)
-        return records
-    return asyncio.run(run())

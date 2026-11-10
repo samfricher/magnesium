@@ -294,9 +294,11 @@ def main(argv: list[str] | None = None) -> int:
         checks = 0
         if args.source_root:
             check_source_bundle(args.source_root)
-            if args.status:
-                check_release_report(args.status)
             checks += 1
+        if args.status:
+            check_release_report(args.status)
+            if not args.source_root:
+                checks += 1
         if args.candidate_bundle:
             check_candidate_bundle(args.candidate_bundle)
             checks += 1

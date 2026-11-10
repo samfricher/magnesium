@@ -284,7 +284,7 @@ pub struct Attempt {
     /// and the answer is not. On a fail, name only the rows whose tag holds
     /// the first error. At most 12.
     #[serde(default)]
-    #[schemars(length(max = 12))]
+    #[schemars(length(max = super::limits::COUNTS_FOR_PER_ATTEMPT))]
     pub counts_for: Vec<String>,
     /// On a paper answer that lost marks, or a full-mark answer that was too
     /// slow (type S): the gap-log row it makes. The runtime numbers the row,
@@ -747,11 +747,11 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     /// and quick checks. Never a date, pass or status: the runtime works those
     /// out. At most 40.
     #[serde(default)]
-    #[schemars(length(max = 40))]
+    #[schemars(length(max = super::limits::PRACTICE_EDITS_PER_BATCH))]
     pub practice: Vec<PracticeEdit>,
     /// At most 8.
     #[serde(default)]
-    #[schemars(length(max = 8))]
+    #[schemars(length(max = super::limits::ATTEMPT_CORRECTIONS_PER_BATCH))]
     pub attempt_corrections: Vec<AttemptCorrection>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]

@@ -128,8 +128,6 @@ pub type AgentResult<T> = Result<T, AgentError>;
 
 /// A coding agent the learner installed and signed in to.
 pub trait Harness: Send + Sync {
-    /// A short lower-case name, such as "claude".
-    fn name(&self) -> &'static str;
     /// Whether the agent's program can be found, and where.
     fn locate(&self) -> AgentResult<PathBuf>;
     /// Start, or continue, a conversation in a study folder.
@@ -150,8 +148,6 @@ pub trait Conversation: Send {
     fn interrupt(&mut self) -> AgentResult<()>;
     fn decide(&mut self, id: &str, decision: Decision) -> AgentResult<()>;
     fn answer(&mut self, id: &str, answers: &[Answer]) -> AgentResult<()>;
-    /// The agent's id for this conversation, once it has said it.
-    fn session_id(&self) -> Option<String>;
     /// End the process. The conversation can be continued later by its id.
     fn close(&mut self);
 }

@@ -4,7 +4,6 @@ use pdf_extract::{Document, Object, Stream, content::Content, content::Operation
 #[cfg(unix)]
 use serde_json::Value;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use support::TestEnvironment;
 use support::mcp::McpClient;
@@ -70,7 +69,6 @@ fn malformed_pdf_reports_text_unavailable_with_original_option() {
         "{external}"
     );
 
-    // Viewing used no learner-state path at all.
     client.close_cleanly();
 }
 
@@ -81,10 +79,7 @@ fn synthetic_math_pdf_inspection_keeps_physical_page_scope() {
     initialize_product(&environment);
     let pdf = include_bytes!("../fixtures/interaction/statistics/source-pages.pdf");
     fs::write(environment.workspace.join("math.pdf"), pdf).unwrap();
-    let hash = Sha256::digest(pdf)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let hash = support::sources::fixture_hash(pdf);
     let mut client = McpClient::spawn(&environment, true);
     client.initialize();
     let preparation =
@@ -94,19 +89,11 @@ fn synthetic_math_pdf_inspection_keeps_physical_page_scope() {
     assert_eq!(inspected["anchor"]["physical_end"], 2);
     let excerpt = inspected["excerpt"].as_str().unwrap();
     assert!(
-        excerpt.contains("bound"),
-        "{inspected}; preparation: {preparation:?}"
-    );
-    assert!(
         excerpt.contains("A bound that the text layer cannot verify"),
-        "{inspected}"
+        "{inspected}; preparation: {preparation:?}"
     );
     assert!(!excerpt.contains("proof-first outline"));
     assert!(!excerpt.contains("pentagon"));
-    assert_eq!(
-        inspected["file"]["content_sha256"].as_str().unwrap().len(),
-        64
-    );
     assert_eq!(inspected["file"]["content_sha256"], hash);
     assert_eq!(inspected["original"]["content_sha256"], hash);
     assert_eq!(inspected["original"]["physical_page"], 2);

@@ -192,6 +192,35 @@ class HelperTests(unittest.TestCase):
             gate.runtime_version({}, ".")
 
 
+class PlatformTests(unittest.TestCase):
+    def test_peak_rss_is_unknown_where_resource_is_missing(self):
+        with patch.dict(sys.modules, {"resource": None}):
+            self.assertIsNone(gate.peak_rss_mb())
+
+    def test_gate_still_reports_when_peak_rss_is_unknown(self):
+        with tempfile.TemporaryDirectory() as root:
+            for index in range(12):
+                Path(root, f"sample-{index}.pdf").write_bytes(b"fixture")
+            Path(root, "manifest.json").write_text(json.dumps({"documents": [entry(f"sample-{index}.pdf") for index in range(12)]}))
+            out = Path(root, "result.json")
+            async def baseline(*_, **__):
+                return [{"file": f"sample-{i}.pdf", "status": "PASS"} for i in range(12)]
+            with patch.dict(sys.modules, {"resource": None}), patch.object(gate, "run_binary", return_value=subprocess.CompletedProcess([], 0, "", "")), patch.object(gate, "native_baseline", side_effect=baseline), patch.object(gate, "try_docling", return_value=(None, "not installed", 0)), patch.object(gate, "package_size_mb", return_value=None):
+                gate.main(["--sample", root, "--out", str(out)])
+            self.assertIsNone(json.loads(out.read_text())["budgets"]["child_process_peak_rss_mb"])
+
+    def test_worker_frames_up_to_the_worker_limit_are_accepted(self):
+        payload = json.dumps({"version": 1, "pad": "x" * (5 * 1024 * 1024)}).encode()
+        stdout = b"MAGNESIUM_DOCS_V1 %d\n" % len(payload) + payload
+        with patch.object(gate.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout, b"")):
+            result, _, _ = gate.worker_convert("snapshot.pdf", HASH, "pdf")
+        self.assertEqual(result["version"], 1)
+        oversized = b"x" * (gate.MAX_RESPONSE_BYTES + 1)
+        stdout = b"MAGNESIUM_DOCS_V1 %d\n" % len(oversized) + oversized
+        with patch.object(gate.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout, b"")), self.assertRaisesRegex(RuntimeError, "invalid/big frame"):
+            gate.worker_convert("snapshot.pdf", HASH, "pdf")
+
+
 class SampleManifestTests(unittest.TestCase):
     def test_fixed_sample_explicit_native_expectations_and_chrome_option(self):
         spec = importlib.util.spec_from_file_location("sample_generator", Path(gate.HERE, "sample/generate.py"))

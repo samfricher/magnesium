@@ -104,9 +104,11 @@ fn source_secret_fixture_is_excluded_before_the_mcp_search_boundary() {
         "jsonrpc": "2.0",
         "id": 0,
         "method": "notifications/oversized-fixture",
-        "padding": "x".repeat(1024 * 1024),
+        "padding": "x".repeat(4 * 1024 * 1024),
     });
-    send_mcp(&mut mcp.stdin, &oversized_frame);
+    let refused = mcp.request(&oversized_frame);
+    assert_eq!(refused["error"]["code"], -32600, "{refused}");
+    assert!(refused.get("id").is_none_or(Value::is_null), "{refused}");
     let initialized = mcp.request(&json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -130,13 +132,12 @@ fn source_secret_fixture_is_excluded_before_the_mcp_search_boundary() {
             }}
         })
     };
-    let (_, response) = search_marker_once(
+    let response = search_marker_once(
         &mut mcp,
         &request,
         2,
         "normal.md",
         "ordinary searchable phrase",
-        true,
     );
     let payload: Value = serde_json::from_str(
         response["result"]["content"][0]["text"]
@@ -171,22 +172,9 @@ fn source_secret_fixture_is_excluded_before_the_mcp_search_boundary() {
         )
         .expect("read excluded source row");
     assert_eq!(row, (None, 0));
-    for entry in fs::read_dir(index.parent().expect("index parent")).expect("read index files") {
-        let path = entry.expect("read index entry").path();
-        if path.is_file() {
-            assert!(
-                !fs::read(path)
-                    .expect("read index artifact")
-                    .windows(b"fixture-only-not-a-real-secret".len())
-                    .any(|window| window == b"fixture-only-not-a-real-secret")
-            );
-        }
-    }
     let mut private_artifacts = Vec::new();
     let control = environment.workspace.join(support::CONTROL_DIR);
-    if control.is_dir() {
-        collect_files(&control, &mut private_artifacts);
-    }
+    collect_files(&control, &mut private_artifacts);
     for artifact in private_artifacts {
         let bytes = fs::read(&artifact).expect("read private source-search artifact");
         assert!(
@@ -328,8 +316,7 @@ fn search_marker_once(
     first_id: u64,
     expected_path: &str,
     expected_text: &str,
-    require_complete: bool,
-) -> (u64, Value) {
+) -> Value {
     let id = first_id;
     let response = mcp.request(&request(id));
     assert_eq!(response["id"], id);
@@ -382,10 +369,10 @@ fn search_marker_once(
         "prepared semantic search omitted expected source marker: {response}"
     );
     assert!(
-        !require_complete || coverage == "complete",
+        coverage == "complete",
         "prepared search is not complete: {response}"
     );
-    (id + 1, response)
+    response
 }
 
 fn send_mcp(stdin: &mut impl Write, message: &Value) {

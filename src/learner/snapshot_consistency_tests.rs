@@ -213,10 +213,15 @@ fn expensive_literal_scan_cancels_explicitly_and_restores_connection() {
         "Expensive literal scan must disclose interruption: {:?}",
         result.warnings
     );
+    // A plain count(*) runs in a handful of steps, under the handler's
+    // interval; this one visits every row, so a handler left behind stops it.
     assert_eq!(
-        c.query_row("SELECT count(*) FROM learner_memories", [], |r| r
-            .get::<_, i64>(0))
-            .unwrap(),
+        c.query_row(
+            "SELECT count(*) FROM learner_memories WHERE summary LIKE '%needle%'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
         50000
     );
 }

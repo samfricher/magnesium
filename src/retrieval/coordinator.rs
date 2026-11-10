@@ -32,8 +32,8 @@ const INITIAL_CURSOR_VERSION: u32 = 1;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CoordinatorBudget {
     /// Hard per-call limit on newly classified paths and their metadata work.
-    /// Re-enumerated `ReadDir` entries are reported separately and remain under
-    /// the cooperative deadline because `ReadDir` has no portable durable offset.
+    /// Re-enumerated `ReadDir` entries remain under the cooperative deadline
+    /// because `ReadDir` has no portable durable offset.
     pub(crate) max_metadata_entries: usize,
     pub(crate) max_duration: Duration,
     pub(crate) max_on_demand: usize,
@@ -202,7 +202,7 @@ pub(crate) struct CoordinatorMetrics {
     pub(crate) content_reads: usize,
     #[cfg(test)]
     pub(crate) bytes_read: u64,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) reconciliation_attempts: usize,
     /// On-demand extraction slots consumed by the whole run, including
     /// retries. Distinct from `indexed_on_demand`, which counts only sources
@@ -228,6 +228,8 @@ impl OperationCancellation {
 pub(crate) struct CoordinatorReport {
     pub(crate) generation: i64,
     pub(crate) reconciliation: ReconciliationOutcome,
+    /// Production callers work out coverage after their own extractions.
+    #[cfg(test)]
     pub(crate) coverage: IndexCoverage,
     #[cfg(test)]
     pub(crate) candidates: Vec<SourceCandidate>,
@@ -320,7 +322,6 @@ pub(crate) fn coordinate_source_query_with_allowlist_and_cancellation(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn coordinate_source_query_with_policy(
     workspace_root: &Path,
     index_path: &Path,
@@ -446,7 +447,6 @@ pub(crate) fn prepare_explicit_source_query(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn prepare_source_query_with_policy(
     workspace_root: &Path,
     index_path: &Path,
@@ -521,7 +521,7 @@ fn prepare_source_query_with_policy(
         }
     }
     let coverage = if report.reconciliation.deferred() {
-        report.coverage
+        index_coverage(index_path, 0, true)?
     } else {
         index_coverage(
             index_path,
@@ -692,6 +692,28 @@ fn coordinate_one_pass(
         let frame_index = cursor.directories.len() - 1;
         let frame = cursor.directories[frame_index].clone();
         let relative = decode_native_path(&frame.relative_path).map_err(ManifestError::Invalid)?;
+        // A saved directory may have become a symlink, an ignored or nested
+        // repository directory, or similar since it was queued.
+        if !relative.as_os_str().is_empty() {
+            match classify_scoped_path(workspace_root, &relative, rules) {
+                Ok(Some(ClassifiedPath::Directory)) => {}
+                Ok(Some(ClassifiedPath::Entry(entry))) => {
+                    cursor.directories.pop();
+                    if batch.keys.insert(native_path_key(&entry.relative_path)) {
+                        batch.entries.push(entry);
+                    }
+                    continue;
+                }
+                Ok(None) => {
+                    cursor.directories.pop();
+                    continue;
+                }
+                // Reported as unreadable by the listing below.
+                Err(ManifestError::Io { source, .. })
+                    if source.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
         let directory = workspace_root.join(&relative);
         let iterator = match fs::read_dir(&directory) {
             Ok(iterator) => iterator,
@@ -818,7 +840,6 @@ fn coordinate_one_pass(
             break;
         }
         cancellation.check()?;
-        run.consume_on_demand();
         let Some((status, size)) = source_status_and_size(index_path, &relative)? else {
             continue;
         };
@@ -826,24 +847,24 @@ fn coordinate_one_pass(
         // explicit request retries it.
         let unindexed =
             status == "pending" || (status == "failed" && allowed_source_paths.is_some());
+        // Only tests read the candidates of an already indexed source.
+        let load_indexed = cfg!(test) && status == "indexed";
+        if !unindexed && !load_indexed {
+            continue;
+        }
         if unindexed {
+            run.consume_on_demand();
             indexed_on_demand += 1;
             extraction_bytes = extraction_bytes.saturating_add(size);
         }
-        if unindexed || status == "indexed" {
-            let extracted = if allowed_source_paths.is_some() {
-                extract_source_with_cancellation(
-                    workspace_root,
-                    index_path,
-                    &relative,
-                    cancellation,
-                )
-            } else {
-                extract_for_search(workspace_root, index_path, &relative, cancellation)
-            };
-            candidates.extend(extracted?);
-        }
+        let extracted = if allowed_source_paths.is_some() {
+            extract_source_with_cancellation(workspace_root, index_path, &relative, cancellation)
+        } else {
+            extract_for_search(workspace_root, index_path, &relative, cancellation)
+        };
+        candidates.extend(extracted?);
     }
+    #[cfg(test)]
     let coverage = index_coverage(index_path, indexed_on_demand, false)?;
     #[cfg(not(test))]
     let _ = (attempt, extraction_bytes);
@@ -852,6 +873,7 @@ fn coordinate_one_pass(
     Ok(CoordinatorReport {
         generation: manifest_report.generation,
         reconciliation: ReconciliationOutcome::Reconciled,
+        #[cfg(test)]
         coverage,
         #[cfg(test)]
         candidates,
@@ -864,6 +886,7 @@ fn coordinate_one_pass(
             bytes_read: manifest_report
                 .content_bytes
                 .saturating_add(extraction_bytes),
+            #[cfg(test)]
             reconciliation_attempts: attempt,
             on_demand_used: run.on_demand_used(),
             indexed_on_demand,
@@ -879,10 +902,14 @@ fn deferred_reconciliation_report(
     attempt: usize,
     run: &RunBudget<'_>,
 ) -> Result<CoordinatorReport, ManifestError> {
+    #[cfg(test)]
     let coverage = index_coverage(index_path, 0, true)?;
+    #[cfg(not(test))]
+    let _ = attempt;
     Ok(CoordinatorReport {
         generation: super::manifest::current_generation(index_path)?,
         reconciliation: ReconciliationOutcome::DeferredConcurrentUpdate,
+        #[cfg(test)]
         coverage,
         #[cfg(test)]
         candidates: Vec::new(),
@@ -893,6 +920,7 @@ fn deferred_reconciliation_report(
             content_reads: 0,
             #[cfg(test)]
             bytes_read: 0,
+            #[cfg(test)]
             reconciliation_attempts: attempt,
             on_demand_used: run.on_demand_used(),
             indexed_on_demand: 0,
@@ -1406,14 +1434,6 @@ mod tests {
         fixture.write("b-pending.md", b"pending source\n");
         finish_metadata_scan(&fixture, budget(8));
         let selected = [PathBuf::from("a-selected.md")];
-        coordinate_source_query(
-            &fixture.root,
-            &fixture.index(),
-            Path::new(""),
-            &selected,
-            budget(8),
-        )
-        .expect("index selected source first");
 
         let one_slot = CoordinatorBudget {
             max_on_demand: 1,
@@ -1429,7 +1449,8 @@ mod tests {
             &OperationCancellation::none(),
         )
         .expect("prepare with selected path consuming only slot");
-        assert_eq!(exhausted.coverage, IndexCoverage::Partial);
+        assert_eq!(exhausted.coverage, IndexCoverage::IndexingOnDemand);
+        assert_eq!(source_status(&fixture.index(), "a-selected.md"), "indexed");
         assert_eq!(source_status(&fixture.index(), "b-pending.md"), "pending");
 
         let two_slots = CoordinatorBudget {
@@ -2186,6 +2207,74 @@ mod tests {
         assert_eq!(present(&fixture.index(), "finder-mid-scan.pdf"), 1);
     }
 
+    /// Run passes until the scan has saved `nested` on its cursor with some
+    /// of its entries still to list.
+    fn leave_nested_directory_unfinished(fixture: &Fixture, budget: CoordinatorBudget) {
+        for _ in 0..8 {
+            coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
+                .expect("run bounded metadata batch");
+            let (_, cursor) = persisted_cursor(&fixture.index());
+            let cursor: serde_json::Value =
+                serde_json::from_str(&cursor).expect("parse persisted cursor");
+            let directories = cursor["directories"]
+                .as_array()
+                .expect("cursor directories");
+            if directories.len() == 1
+                && directories[0]["relative_path"] == serde_json::json!(b"nested".to_vec())
+                && !directories[0]["processed_entries"]
+                    .as_array()
+                    .expect("processed entries")
+                    .is_empty()
+            {
+                return;
+            }
+        }
+        panic!("scan never saved an unfinished nested directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resumed_scan_skips_a_saved_directory_replaced_by_an_outside_symlink() {
+        let fixture = Fixture::new("resume-symlink");
+        for index in 0..8 {
+            fixture.write(&format!("nested/inside-{index}.md"), b"inside note\n");
+        }
+        let budget = budget(3);
+        leave_nested_directory_unfinished(&fixture, budget);
+
+        let outside = fixture.root.with_extension("outside");
+        fs::create_dir_all(&outside).expect("create outside directory");
+        fs::write(outside.join("outside.md"), b"outside note\n").expect("write outside note");
+        fs::remove_dir_all(fixture.root.join("nested")).expect("remove nested directory");
+        std::os::unix::fs::symlink(&outside, fixture.root.join("nested"))
+            .expect("replace nested directory with symlink");
+
+        let resumed =
+            coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget);
+        fs::remove_dir_all(&outside).expect("remove outside directory");
+        resumed.expect("resume after the directory became a symlink");
+        finish_metadata_scan(&fixture, budget);
+        assert_no_manifest_row(&fixture.index(), "nested/outside.md");
+        assert_eq!(manifest_count(&fixture.index()), 0);
+    }
+
+    #[test]
+    fn resumed_scan_skips_a_saved_directory_that_became_ignored() {
+        let fixture = Fixture::new("resume-ignored");
+        for index in 0..8 {
+            fixture.write(&format!("nested/inside-{index}.md"), b"inside note\n");
+        }
+        let budget = budget(3);
+        leave_nested_directory_unfinished(&fixture, budget);
+        // Files this scan already listed stay until the next scan.
+        let listed_before = manifest_count(&fixture.index());
+        assert!(listed_before < 8);
+
+        fixture.write("nested/.git/HEAD", b"ref: refs/heads/main\n");
+        finish_metadata_scan(&fixture, budget);
+        assert_eq!(manifest_count(&fixture.index()), listed_before);
+    }
+
     #[test]
     fn bounded_reconciliation_preserves_identity_for_a_verified_rename() {
         let fixture = Fixture::new("rename");
@@ -2723,6 +2812,7 @@ mod tests {
         .expect("run warm large-repository query");
         assert!(warm.metrics.metadata_entries_reconciled <= 64);
         assert_eq!(warm.metrics.indexed_on_demand, 0);
+        assert_eq!(warm.metrics.on_demand_used, 0);
         assert_eq!(warm.candidates.len(), 1);
     }
 

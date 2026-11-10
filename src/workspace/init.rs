@@ -27,7 +27,6 @@ const SKILL_MD: &str = include_str!("../../codex-plugin/skills/learn/SKILL.md");
 const OPENCODE_PLUGIN_JS: &str = include_str!("../../opencode-plugin/magnesium.js");
 const OPENCODE_SKILL_MD: &str = include_str!("../../opencode-plugin/skills/learn/SKILL.md");
 const OPENCODE_SCHEMA: &str = "https://opencode.ai/config.json";
-const OPENCODE_ADAPTER_PROTOCOL_VERSION: &str = "2";
 const AGENTS_MD_BEGIN: &str = "<!-- magnesium:begin -->";
 const AGENTS_MD_END: &str = "<!-- magnesium:end -->";
 
@@ -52,9 +51,7 @@ pub(crate) fn run_init(
         }
         Err(error) => {
             eprintln!("magnesium init failed: {error}");
-            eprintln!(
-                "No existing workspace files were replaced. Fix the reported path and rerun `magnesium init` to resume."
-            );
+            eprintln!("Fix the reported path and rerun `magnesium init` to resume.");
             ExitCode::from(1)
         }
     }
@@ -276,15 +273,8 @@ fn initialize(
         }
     }
 
-    if let Some(adapter_name) = adapter {
-        match adapter_name {
-            "agents-md" => apply_agents_md_adapter(&root, &mut report)?,
-            other => {
-                return Err(InitError::Invalid(format!(
-                    "unsupported adapter type `{other}`; supported values: `agents-md`"
-                )));
-            }
-        }
+    if adapter == Some("agents-md") {
+        apply_agents_md_adapter(&root, &mut report)?;
     }
 
     let (plugin_status, needs_approval) = setup_codex_plugin(&root, &global_paths.marketplace());
@@ -796,7 +786,7 @@ fn opencode_mcp_entry(binary: &Path, version: &str) -> Value {
             "--plugin-version",
             version,
             "--adapter-protocol-version",
-            OPENCODE_ADAPTER_PROTOCOL_VERSION,
+            crate::adapter::SUPPORTED_PROTOCOL_VERSION.to_string(),
             // OpenCode can run inside a Claude Code terminal, which exports
             // CLAUDE_CODE_SESSION_ID; only OpenCode's own session may bind.
             "--host-kind",
@@ -978,6 +968,15 @@ fn register_opencode_mcp(config_dir: &Path, binary: &Path, version: &str) -> Ope
             let Some(mcp) = root.get_mut("mcp").and_then(Value::as_object_mut) else {
                 return manual(json_path);
             };
+            // Keep the user's own choice to disable the server.
+            let mut entry = entry;
+            if let Some(enabled) = mcp
+                .get("magnesium")
+                .and_then(|existing| existing.get("enabled"))
+                .and_then(Value::as_bool)
+            {
+                entry["enabled"] = Value::Bool(enabled);
+            }
             if mcp.get("magnesium") == Some(&entry) {
                 return OpenCodeMcpStatus::Registered;
             }
@@ -2164,7 +2163,7 @@ impl InitReport {
                 version.as_deref().unwrap_or("unknown")
             ),
             PluginStatus::Unavailable => println!(
-                "plugin: not registered; workspace files were not changed (install the packaged Magnesium plugin globally when available)"
+                "plugin: not registered (install the packaged Magnesium plugin globally when available)"
             ),
             PluginStatus::CodexMissing => {
                 println!(

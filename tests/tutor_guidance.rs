@@ -1191,7 +1191,7 @@ fn codex_status(e: &TestEnvironment, thread: &str) -> Value {
 }
 
 #[test]
-fn every_stage_serves_the_core_rules_and_they_name_the_four_changed_rules() {
+fn every_stage_serves_the_core_rules() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let core = served_core(&e);

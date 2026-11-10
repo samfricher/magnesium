@@ -256,50 +256,7 @@ pub fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
 }
 
 pub fn run_hook(environment: &TestEnvironment, event: &str, input: Value) -> process::Output {
-    run_hook_in(environment, &environment.workspace, event, input)
-}
-
-pub fn run_hook_in(
-    environment: &TestEnvironment,
-    current_dir: &Path,
-    event: &str,
-    input: Value,
-) -> process::Output {
-    run_hook_in_with(environment, test_binary(), current_dir, event, input)
-}
-
-pub fn run_hook_in_with(
-    environment: &TestEnvironment,
-    executable: impl AsRef<Path>,
-    current_dir: &Path,
-    event: &str,
-    input: Value,
-) -> process::Output {
-    use std::io::Write;
-
-    let mut child = environment
-        .command_with(executable, current_dir)
-        .args([
-            "_internal",
-            "hook",
-            event,
-            "--plugin-version",
-            "0.2.0",
-            "--adapter-protocol-version",
-            "2",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn hook process");
-    child
-        .stdin
-        .take()
-        .expect("piped hook stdin")
-        .write_all(&serde_json::to_vec(&input).expect("serialize hook input"))
-        .expect("write hook input");
-    child.wait_with_output().expect("wait for hook process")
+    spawn_hook(environment, &environment.workspace, event, &[], input)
 }
 
 /// Hook invocation with the installed `--host-kind` flag, mirroring the
@@ -312,8 +269,22 @@ pub fn run_hook_with_host_flag(
     input: Value,
     host_kind: &str,
 ) -> process::Output {
-    use std::io::Write;
+    spawn_hook(
+        environment,
+        current_dir,
+        event,
+        &["--host-kind", host_kind],
+        input,
+    )
+}
 
+fn spawn_hook(
+    environment: &TestEnvironment,
+    current_dir: &Path,
+    event: &str,
+    extra_args: &[&str],
+    input: Value,
+) -> process::Output {
     let mut child = environment
         .command_with(test_binary(), current_dir)
         .args([
@@ -321,12 +292,11 @@ pub fn run_hook_with_host_flag(
             "hook",
             event,
             "--plugin-version",
-            "0.2.0",
+            magnesium_version(),
             "--adapter-protocol-version",
             "2",
-            "--host-kind",
-            host_kind,
         ])
+        .args(extra_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -339,4 +309,14 @@ pub fn run_hook_with_host_flag(
         .write_all(&serde_json::to_vec(&input).expect("serialize hook input"))
         .expect("write hook input");
     child.wait_with_output().expect("wait for hook process")
+}
+
+/// Magnesium's own version, read from the root manifest so a release bump
+/// needs no edit here (this crate has its own version).
+pub fn magnesium_version() -> &'static str {
+    include_str!("../../Cargo.toml")
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("root Cargo.toml version")
 }

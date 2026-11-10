@@ -209,7 +209,7 @@ fn day_range(first: Weekday, last: Weekday) -> WeekdaySet {
 }
 
 #[cfg(test)]
-pub(super) const UNREADABLE_SESSIONS: &str = "- If it is Monday to Friday except Wednesday at 08:00, then I do the due cold redos.\n\
+const UNREADABLE_SESSIONS: &str = "- If it is Monday to Friday except Wednesday at 08:00, then I do the due cold redos.\n\
     - If it is a weekday at 8am, then I do the due cold redos.\n\
     - If it is Monday at 7:30 pm, then I do the due cold redos.\n\
     - If it is Monday at 25:00, then I do the due cold redos.\n\

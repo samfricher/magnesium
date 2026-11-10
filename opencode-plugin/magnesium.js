@@ -330,28 +330,27 @@ export const Magnesium = async ({ directory, client }) => {
           const sessionID =
             typeof properties.sessionID === "string" ? properties.sessionID : "";
           if (!sessionID) return;
+          // Idle ends a prompt loop, not the session. Keep the entry (its
+          // verified kind and any pending startContext) and reset only the
+          // per-turn state. Entries are removed on session.deleted.
           const tracked = sessions.get(sessionID);
-          if (tracked && tracked.child) {
-            sessions.delete(sessionID);
-            return;
-          }
-          if (!tracked || typeof tracked.turn !== "string" || tracked.turn.length === 0) {
-            sessions.delete(sessionID);
-            return;
-          }
-          if (tracked.stopped) {
-            sessions.delete(sessionID);
-            return;
-          }
+          if (!tracked || tracked.child) return;
+          if (typeof tracked.turn !== "string" || tracked.turn.length === 0) return;
+          if (tracked.stopped) return;
+          const turn = tracked.turn;
           tracked.stopped = true;
           await runMagnesiumHook(client, "stop", {
             session_id: sessionID,
             cwd,
             host_kind: "opencode",
-            turn_id: tracked.turn,
+            turn_id: turn,
             stop_hook_active: true,
           });
-          sessions.delete(sessionID);
+          const current = sessions.get(sessionID);
+          if (current && current.turn === turn) {
+            current.turn = "";
+            current.stopped = false;
+          }
           return;
         }
         if (event.type === "session.compacted") {

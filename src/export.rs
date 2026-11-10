@@ -245,10 +245,9 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
             ));
         }
     }
-    let attempts = crate::attempts::list(&snapshot).map_err(|e| e.to_string())?;
     readable.push_str(&format!(
         "## Answers\n\n{} answers marked. Each is a row of `attempts` in learner.json, and `magnesium attempts` lists them.\n\n",
-        attempts.len()
+        data["attempts"].as_array().map_or(0, Vec::len)
     ));
     let mut files = vec![
         // Publish the exclusion marker before any private content enters the

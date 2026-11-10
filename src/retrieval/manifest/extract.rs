@@ -481,11 +481,11 @@ pub(super) fn try_worker_for_blank_pdf(
     {
         return Ok(Some((PdfOutcome::Sensitive(sensitivity), None)));
     }
-    // Every converted block links to its original anchor: page blocks keep
-    // their physical file index, section blocks fall back to their start
-    // page with the converter warning intact for the #206 original view.
-    // Provenance travels beside the drafts so the derived index records
-    // which converter produced this generation.
+    // Each converted block becomes one page chunk at its start page: page
+    // blocks keep their physical file index and section blocks fall back to
+    // their start page. The block's end anchor, anchor kind and warning are
+    // not stored. Provenance travels beside the drafts so the derived index
+    // records which converter produced this generation.
     let provenance = extraction.provenance();
     Ok(Some((
         PdfOutcome::Drafts(
