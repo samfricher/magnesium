@@ -393,9 +393,26 @@ fn handle(
             )?;
             Ok(Some(json!({})))
         }
-        // Compaction needs no capture work: the prompt notice already tells
-        // the tutor to reread context.prepare after a compaction.
-        HookEvent::PreCompact | HookEvent::PostCompact => Ok(Some(json!({}))),
+        HookEvent::PreCompact => Ok(Some(json!({}))),
+        // A compaction drops the stage instructions with the tool results
+        // that carried them, so the runtime restates the core rules. Claude
+        // Code gets them from its SessionStart hook, which fires again with
+        // source "compact". OpenCode puts this hook's context in front of the
+        // next turn. Codex allows too few bytes at session start, so its next
+        // tool result carries them instead.
+        HookEvent::PostCompact => {
+            let Some(core) = adapter::core_rules_after_compaction(workspace, &host)? else {
+                return Ok(Some(json!({})));
+            };
+            match host.kind() {
+                HostKind::OpenCode => Ok(Some(additional_context(event, core.to_owned()))),
+                HostKind::Codex => {
+                    adapter::host::mark_core_rules_owed(workspace, &host)?;
+                    Ok(Some(json!({})))
+                }
+                HostKind::Claude => Ok(Some(json!({}))),
+            }
+        }
         HookEvent::SessionEnd => {
             if host.kind() == HostKind::Claude
                 && matches!(input.reason.as_deref(), Some("clear" | "resume"))
@@ -414,7 +431,7 @@ fn inactive_output(_event: HookEvent) -> Option<Value> {
 fn additional_context(event: HookEvent, context: String) -> Value {
     debug_assert!(matches!(
         event,
-        HookEvent::SessionStart | HookEvent::UserPromptSubmit
+        HookEvent::SessionStart | HookEvent::UserPromptSubmit | HookEvent::PostCompact
     ));
     json!({
         "hookSpecificOutput": {

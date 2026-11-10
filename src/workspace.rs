@@ -67,6 +67,24 @@ impl Workspace {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
+    fn config_path(&self) -> PathBuf {
+        self.control.join("config.toml")
+    }
+
+    /// Whether the runtime restates the core teaching rules after a
+    /// compaction in this study folder. An unreadable config means on.
+    pub(crate) fn core_rules_on(&self) -> bool {
+        config::WorkspaceConfig::load(&self.config_path())
+            .map_or(true, |config| config.core_rules())
+    }
+
+    pub(crate) fn set_core_rules(&self, on: bool) -> io::Result<()> {
+        let invalid = |error| io::Error::new(io::ErrorKind::InvalidData, error);
+        let mut config = config::WorkspaceConfig::load(&self.config_path()).map_err(invalid)?;
+        config.set_core_rules(on);
+        config.save().map_err(invalid)
+    }
+
     pub(crate) fn private_dir(&self, relative: &Path) -> io::Result<PathBuf> {
         let path = self.control.join(relative);
         reject_symlink_components(&path, &self.control)?;

@@ -142,15 +142,59 @@ pub(crate) fn launch_host() -> Option<HostKind> {
 }
 
 const ENDED_SESSIONS: &str = "cache/ended-sessions";
+const CORE_RULES_OWED: &str = "cache/core-rules-owed";
 
-fn ended_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
+fn session_marker(
+    workspace: &Workspace,
+    directory: &str,
+    stored_session_id: &str,
+) -> Result<PathBuf, String> {
     let directory = workspace
-        .private_dir(Path::new(ENDED_SESSIONS))
+        .private_dir(Path::new(directory))
         .map_err(|error| error.to_string())?;
-    let path = directory.join(format!("{}.ended", stored_session_hash(stored_session_id)));
+    let path = directory.join(format!("{}.marker", stored_session_hash(stored_session_id)));
     crate::workspace::reject_symlink_components(&path, workspace.control())
         .map_err(|error| error.to_string())?;
     Ok(path)
+}
+
+fn ended_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
+    session_marker(workspace, ENDED_SESSIONS, stored_session_id)
+        .map(|path| path.with_extension("ended"))
+}
+
+fn remove_if_present(path: &Path) -> Result<bool, String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Codex allows too few bytes at session start for the core rules, so after
+/// a compaction its hook marks the conversation, and the next tool result in
+/// that conversation carries them.
+pub(crate) fn mark_core_rules_owed(
+    workspace: &Workspace,
+    host: &HostIdentity,
+) -> Result<(), String> {
+    crate::workspace::write_private_atomic(
+        &session_marker(workspace, CORE_RULES_OWED, &host.stored_session_id())?,
+        b"",
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// True once per mark: the caller delivers the core rules.
+pub(crate) fn take_core_rules_owed(
+    workspace: &Workspace,
+    stored_session_id: &str,
+) -> Result<bool, String> {
+    remove_if_present(&session_marker(
+        workspace,
+        CORE_RULES_OWED,
+        stored_session_id,
+    )?)
 }
 
 /// Claude Code keeps a stdio MCP server, and its spawn-time session ID,
@@ -168,11 +212,7 @@ pub(crate) fn clear_session_ended(
     workspace: &Workspace,
     host: &HostIdentity,
 ) -> Result<(), String> {
-    match std::fs::remove_file(ended_marker(workspace, &host.stored_session_id())?) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.to_string()),
-    }
+    remove_if_present(&ended_marker(workspace, &host.stored_session_id())?).map(|_| ())
 }
 
 pub(crate) fn session_ended(

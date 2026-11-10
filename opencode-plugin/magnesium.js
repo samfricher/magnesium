@@ -366,12 +366,19 @@ export const Magnesium = async ({ directory, client }) => {
             }
             return;
           }
-          await runMagnesiumHook(client, "post-compact", {
+          const response = await runMagnesiumHook(client, "post-compact", {
             session_id: sessionID,
             cwd,
             host_kind: "opencode",
             trigger: "auto",
           });
+          // The core teaching rules go in front of the next turn, as the
+          // session-start context does.
+          const context = additionalContext(response);
+          if (context) {
+            const current = sessions.get(sessionID) || {};
+            sessions.set(sessionID, { ...current, child: false, startContext: context });
+          }
           return;
         }
         if (event.type === "session.deleted") {

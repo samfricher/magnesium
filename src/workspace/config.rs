@@ -10,6 +10,7 @@ use super::{reject_symlink_components, validate_workspace_id, write_private_atom
 
 pub(crate) const CONFIG_SCHEMA_VERSION: i64 = 1;
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
+const CORE_RULES_KEY: &str = "core_rules";
 
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspaceConfig {
@@ -73,6 +74,23 @@ impl WorkspaceConfig {
 
     pub(crate) fn workspace_id(&self) -> &str {
         &self.workspace_id
+    }
+
+    /// Whether the runtime restates the core teaching rules after a
+    /// compaction. Absent or not a boolean means on.
+    pub(crate) fn core_rules(&self) -> bool {
+        self.document
+            .get(CORE_RULES_KEY)
+            .and_then(toml_edit::Item::as_bool)
+            .unwrap_or(true)
+    }
+
+    pub(crate) fn set_core_rules(&mut self, on: bool) {
+        if on {
+            self.document.remove(CORE_RULES_KEY);
+        } else {
+            self.document[CORE_RULES_KEY] = value(false);
+        }
     }
 
     pub(crate) fn save(&mut self) -> Result<(), ConfigError> {
@@ -246,6 +264,40 @@ mod tests {
         config.save().unwrap();
         let saved: DocumentMut = fs::read_to_string(&path).unwrap().parse().unwrap();
         assert_eq!(saved["tools"]["tectonic"].as_str(), Some("declined"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_core_rules_switch_sits_above_the_tools_table_and_turns_back_on() {
+        let root = std::env::temp_dir().join(format!(
+            "magnesium-config-{}",
+            crate::workspace::os_random_hex(16).unwrap()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("config.toml");
+        fs::write(
+            &path,
+            "schema_version = 1\nworkspace_id = \"workspace-a\"\n\n[tools]\ntectonic = \"declined\"\n",
+        )
+        .unwrap();
+        let mut config = WorkspaceConfig::load(&path).unwrap();
+        assert!(config.core_rules());
+        config.set_core_rules(false);
+        config.save().unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.find("core_rules = false").unwrap() < text.find("[tools]").unwrap(),
+            "{text}"
+        );
+        let mut config = WorkspaceConfig::load(&path).unwrap();
+        assert!(!config.core_rules());
+        assert_eq!(
+            config.document["tools"]["tectonic"].as_str(),
+            Some("declined")
+        );
+        config.set_core_rules(true);
+        config.save().unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("core_rules"));
         fs::remove_dir_all(root).unwrap();
     }
 }

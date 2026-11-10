@@ -46,6 +46,10 @@ pub fn run() -> ExitCode {
             diagnostics::print_info(json)
         }
         Some(("digest", _)) => digest::print_digest(),
+        Some(("core-rules", matches)) => {
+            let on = matches.get_one::<String>("state").map(String::as_str) == Some("on");
+            adapter::set_core_rules(on)
+        }
         Some(("export", matches)) => {
             let destination = matches
                 .get_one::<PathBuf>("destination")

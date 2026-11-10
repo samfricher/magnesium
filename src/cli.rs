@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 6] = [
+const PUBLIC_COMMANDS: [(&str, &str); 7] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -15,6 +15,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 6] = [
     ),
     ("export", "Export a readable scope-safe learner-data copy"),
     ("memory", "Maintain workspace learner-memory search"),
+    (
+        "core-rules",
+        "Turn on or off the core teaching rules the runtime restates after a compaction",
+    ),
 ];
 
 pub(crate) fn command() -> ClapCommand {
@@ -84,6 +88,14 @@ pub(crate) fn command() -> ClapCommand {
                             .help("Replace an existing destination")
                             .action(ArgAction::SetTrue),
                     )
+            } else if name == "core-rules" {
+                subcommand.arg(
+                    Arg::new("state")
+                        .value_name("STATE")
+                        .value_parser(["on", "off"])
+                        .required(true)
+                        .help("off asks the tutor to reload its instructions after a compaction instead, as before"),
+                )
             } else if name == "memory" {
                 subcommand.subcommand_required(true)
                     .subcommand(ClapCommand::new("reindex").about("Rebuild local learner-memory FTS indexes"))
