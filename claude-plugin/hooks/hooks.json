@@ -9,7 +9,7 @@
             "type": "command",
             "command": "magnesium _internal hook session-start --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
             "timeout": 2,
-            "additionalContextLimit": 1024
+            "additionalContextLimit": 4096
           }
         ]
       }

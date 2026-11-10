@@ -266,7 +266,10 @@ fn notice_limits_match_the_claude_plugin_hooks() {
     let hooks: serde_json::Value =
         serde_json::from_str(include_str!("../../claude-plugin/hooks/hooks.json")).unwrap();
     for (event, hook) in [
-        ("SessionStart", NoticeHook::SessionStart),
+        (
+            "SessionStart",
+            NoticeHook::SessionStart { core_rules: true },
+        ),
         ("UserPromptSubmit", NoticeHook::UserPromptSubmit),
     ] {
         assert_eq!(

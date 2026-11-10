@@ -1,5 +1,6 @@
 pub(crate) mod control_admission;
 pub(crate) mod control_safety;
+pub(crate) mod core_rules;
 use crate::workspace::Workspace;
 #[cfg(test)]
 use control_admission::{
@@ -283,6 +284,46 @@ pub(crate) fn dispatch_with_host(
     request: serde_json::Value,
     native_host: Option<crate::learner::HostContext>,
 ) -> Result<serde_json::Value, String> {
+    let codex_thread = native_host
+        .clone()
+        .or_else(|| host::process_host_identity().map(|host| host_context(&host)))
+        .filter(|host| host.host_kind == HostKind::Codex.as_str())
+        .map(|host| host.host_thread_id);
+    let mut result = dispatch_inner(cwd, operation, request, native_host)?;
+    if let Some(thread) = codex_thread {
+        deliver_owed_core_rules(cwd, &thread, &mut result);
+    }
+    Ok(result)
+}
+/// After a Codex compaction, the first tool result in that conversation
+/// carries the core rules. An instruction load already holds them in
+/// `MAGNESIUM.md`, so it only settles the debt.
+fn deliver_owed_core_rules(cwd: &Path, thread: &str, result: &mut serde_json::Value) {
+    let Some(fields) = result.as_object_mut() else {
+        return;
+    };
+    let Ok(Some(workspace)) = Workspace::discover(cwd) else {
+        return;
+    };
+    if check_workspace_binding(&workspace).is_err()
+        || !host::take_core_rules_owed(&workspace, thread).unwrap_or(false)
+    {
+        return;
+    }
+    let loaded_orchestrator = fields
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|files| files.iter().any(|file| file == "MAGNESIUM.md"));
+    if !loaded_orchestrator {
+        fields.insert("core_rules".into(), core_rules::text().into());
+    }
+}
+fn dispatch_inner(
+    cwd: &Path,
+    operation: &str,
+    request: serde_json::Value,
+    native_host: Option<crate::learner::HostContext>,
+) -> Result<serde_json::Value, String> {
     use serde_json::json;
     if operation == "learning_step"
         && serde_json::to_vec(&request)
@@ -396,7 +437,14 @@ pub(crate) fn host_session_start(
     check_workspace_binding(&workspace)?;
     let store = open_store(&workspace)?;
     let host = host_context(host);
-    let mut notice = hook_notice(&store, &host, None, NoticeHook::SessionStart)?;
+    let mut notice = hook_notice(
+        &store,
+        &host,
+        None,
+        NoticeHook::SessionStart {
+            core_rules: workspace.core_rules_on(),
+        },
+    )?;
     if host.host_kind == "claude" {
         let folder_has_lessons = store
             .conn
@@ -409,6 +457,56 @@ pub(crate) fn host_session_start(
         }
     }
     Ok(Some(notice))
+}
+/// `magnesium core-rules on|off` in the current study folder.
+pub(crate) fn set_core_rules(on: bool) -> std::process::ExitCode {
+    let result = std::env::current_dir()
+        .and_then(|cwd| Workspace::discover(&cwd))
+        .map_err(|error| error.to_string())
+        .and_then(|workspace| {
+            workspace.ok_or_else(|| {
+                "no Magnesium study folder here; run `magnesium init` first".to_owned()
+            })
+        })
+        .and_then(|workspace| {
+            workspace
+                .set_core_rules(on)
+                .map_err(|error| error.to_string())
+        });
+    match result {
+        Ok(()) if on => {
+            println!(
+                "Core rules on: after a compaction during a lesson, Magnesium puts its core teaching rules in front of the tutor."
+            );
+            std::process::ExitCode::SUCCESS
+        }
+        Ok(()) => {
+            println!(
+                "Core rules off: after a compaction during a lesson, Magnesium asks the tutor to reload its instructions, as before."
+            );
+            std::process::ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("magnesium: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+/// The core rules to restate after a compaction, when this study folder
+/// keeps them on and this conversation has an active lesson.
+pub(crate) fn core_rules_after_compaction(
+    workspace: &Workspace,
+    host: &HostIdentity,
+) -> Result<Option<&'static str>, String> {
+    check_workspace_binding(workspace)?;
+    if !workspace.core_rules_on() {
+        return Ok(None);
+    }
+    let store = open_store(workspace)?;
+    let (_, active, _) = store
+        .binding(&host_context(host))
+        .map_err(|e| e.to_string())?;
+    Ok(active.then(core_rules::text))
 }
 /// "New here?" is said once per machine, not once per study folder. The
 /// marker lives in Magnesium's per-user data folder, which `magnesium init`
@@ -430,13 +528,18 @@ fn first_greeting_on_this_machine(folder_has_lessons: bool) -> bool {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NoticeHook {
-    SessionStart,
+    /// `core_rules` is this study folder's switch: on, the core rules replace
+    /// the line that asks the tutor to reload its instructions.
+    SessionStart {
+        core_rules: bool,
+    },
     UserPromptSubmit,
 }
 impl NoticeHook {
+    /// Must match `additionalContextLimit` in the Claude Code hooks file.
     const fn additional_context_limit(self) -> usize {
         match self {
-            Self::SessionStart => 1024,
+            Self::SessionStart { .. } => 4096,
             Self::UserPromptSubmit => 512,
         }
     }
@@ -474,12 +577,19 @@ fn hook_notice(
     match (claude, active, recording) {
         (true, true, true) => {
             clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
-            if hook == NoticeHook::SessionStart {
+            if hook == (NoticeHook::SessionStart { core_rules: false }) {
                 clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
             }
         }
         (true, false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
+    }
+    // The lesson's teaching rules hold whether or not it is recording.
+    if claude && active && hook == (NoticeHook::SessionStart { core_rules: true }) {
+        clauses.push((
+            Clause::Required,
+            format!("\n\n{}", core_rules::text()).into(),
+        ));
     }
     if unbound > 0 {
         let recovery = if claude {

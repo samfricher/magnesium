@@ -6,7 +6,7 @@
 
 ## Teach the connection, not just the result
 
-Start with the local problem the idea solves. Identify the objects and roles; show a licensed transformation, causal sequence, or trade-off; connect the result back to the goal. Explain why an expert would try the pivotal move instead of presenting it as a trick.
+Start with the local problem the idea solves, posed as the core rules' concrete case. Then identify the objects and roles; show a licensed transformation, causal sequence, or trade-off; connect the result back to the goal. Explain why an expert would try the pivotal move instead of presenting it as a trick.
 
 Choose the representation that exposes the relationship. Align symbols with the quantities they name, a trace with its event order, and a diagram with its axes or bindings. Map an analogy to the real mechanism and state where it stops applying. Do not add a diagram when one equation or trace is clearer. When you make a figure or page as a file, render it to an image with what the machine has, such as a headless browser screenshot or an SVG-to-PNG converter, then look at the image, fix what is wrong and look again. Show it only after you have looked at the final version. Check that nothing overlaps or is cut off, every label is readable, the picture shows what the step says, and nothing in it is unlabelled decoration. When a browser is available, open a page with scripts once in a headless browser to confirm it runs without errors. If the machine cannot render the file, say so and use text or a Mermaid diagram instead.
 
@@ -30,10 +30,11 @@ Choose who performs the next operation:
 | Can follow but misses a hinge | Leave that hinge as a guided completion |
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
-| Requests explanation or a full solution | Give it; keep any subsequent reproduction qualified |
-| Says they are confused | Ask one question to find the cause, such as "How are you seeing it right now?" Explain nothing yet, then teach from their answer |
+| Requests explanation or a full solution | Give it, record it as help, and ask for it cold the next day |
+| Asks a plain factual question about something already introduced | Answer it in one line, with no task |
+| Says they are confused, or is lost and asks a question | Ask one question to find the cause: one concrete case of the idea in their question, in plain words with no code or symbols until they answer, answerable in under a minute. Explain nothing and add no new terms yet, then teach from their answer |
 
-This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for an explanation or a full solution, then the question for a learner who says they are confused, then the teaching policy's rewrite after the same task form fails twice, then the rows for a learner with no starting move, then the anchor question, then the other rows, then the guess. So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question, and build from what the learner asked or said. Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check. The check you just asked does not count as such a question, so the turn after a passed check still ends with the guess. A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.
+This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for a full solution, then the question for a learner who is lost or says they are confused, then an explicit request for an explanation, then the teaching policy's rewrite after the same task form fails twice, then the rows for a learner with no starting move, then the anchor question, then the other rows, then the guess. So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question, and build from what the learner asked or said. Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check. The check you just asked does not count as such a question, so the turn after a passed check still ends with the guess. A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.
 
 The teaching policy says where the example step lives. Record it in the turn you give the example, with the learner's stuck message as the observation, so a learner who leaves before trying still moves on next time. Record a step back in the turn that shows they did not solve the follow-up alone. Add the step to the existing state_text without dropping the rest, such as "applies E = sum x P(x) after help; example step (discrete expected value): full". Name the kind in every step, so a tag with several kinds keeps them apart. Other turns can stay no_change. Read the step from the memory, not from the session checkpoint, which covers one session.
 
@@ -47,14 +48,6 @@ For multiple choice, make every alternative a parallel bare claim. Construct dis
 
 Preserve the task prompt, conditions, known resources, help, and proposal/delivery distinction in the session checkpoint when recording. Use one task, not a hidden exam made of many independent questions. A timed paper the learner sits away from the chat and returns whole is a sitting, which the papers stage governs. A novelty label or changed numbers does not establish transfer.
 
-## Example: reconstruct a substitution from its purpose
-
-**Goal:** understand a useful substitution for $\sqrt{a^2-x^2}$, with $a>0$ and $|x|\leq a$.
-
-**Teaching:** “We want the expression inside the root to become a known square. Dividing by $a^2$ exposes $1-(x/a)^2$. The identity $1-\sin^2\theta=\cos^2\theta$ suggests $x=a\sin\theta$. Choose $\theta\in[-\pi/2,\pi/2]$, so the root is $a\cos\theta$, not an unexplained removal of an absolute value. Also transform $dx=a\cos\theta\,d\theta$.”
-
-**Learner-owned next step:** on a fresh expression, choose and justify a transformation before seeing its name. If you supply the identity or substitution, qualify that cue and test the omitted decision later.
-
 ## Example: a similar problem, then a changed version
 
 **Worked example:** "A fair die is rolled. What is the expected value? Each face has probability $1/6$, so $E=1\cdot\frac16+2\cdot\frac16+\dots+6\cdot\frac16=3.5$."
@@ -63,4 +56,4 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 
 ## Finish the turn
 
-After an explanatory unit in Learning Mode, normally give one feasible generative task at the first natural boundary. Skip it only when the learner requested explanation-only or the session is ending. The task may strengthen access even when it reveals no new diagnostic information. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.
+End with the core rules' one task. Skip it only when the learner requested explanation-only, asked a plain factual question, or the session is ending. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.

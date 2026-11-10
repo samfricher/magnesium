@@ -248,6 +248,29 @@ await check("top-level capture appends context", async () => {
   assert.match(appended[0].text, /Magnesium note for test/);
 });
 
+// 1b. The core rules the runtime returns after a compaction go in front of
+// the next turn, once.
+await check("compaction context leads the next turn once", async () => {
+  const hooks = await Magnesium({
+    directory: cwd,
+    client: mockClient(async () => ({ data: { id: "ses-compact" } })),
+  });
+  await hooks.event({ event: { type: "session.compacted", properties: { sessionID: "ses-compact" } } });
+  const first = userTurn("msg-compact-1", ["where were we?"]);
+  await hooks["chat.message"]({ sessionID: "ses-compact" }, first);
+  const second = userTurn("msg-compact-2", ["and next?"]);
+  await hooks["chat.message"]({ sessionID: "ses-compact" }, second);
+  assert.deepEqual(invocations().map((call) => call.op), [
+    "post-compact",
+    "user-prompt-submit",
+    "user-prompt-submit",
+  ]);
+  const [lead] = first.parts.filter((part) => part.synthetic);
+  assert.equal(lead.text, "Magnesium note for test\n\nMagnesium note for test");
+  const [plain] = second.parts.filter((part) => part.synthetic);
+  assert.equal(plain.text, "Magnesium note for test");
+});
+
 // 2. SDK error objects never authorize capture.
 await check("error-object lookup skips capture", async () => {
   const hooks = await Magnesium({
