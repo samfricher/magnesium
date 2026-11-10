@@ -293,7 +293,7 @@ pub(crate) fn update_summary(
             }
             if !item.state.closed() && item.facts.next_question.is_none() {
                 todo.push(format!(
-                    "{}: no next question stored; send practice {{item: \"{}\", next: {{question, answer_key}}}}.",
+                    "{}: no next question stored; send practice {{item: \"{}\", next: {{question, answer_key}}}}, a new problem that asks for a result and never names or points at the skill, tag, method, form of answer, step or earlier mistake (\"Solve …\", not \"Solve … by <method>\"), and to which each earlier miss gives a different answer from the right one.",
                     item.name(),
                     item.name()
                 ));
@@ -441,7 +441,8 @@ fn sha256(text: &str) -> String {
 }
 
 fn backup(workspace: &Workspace, plan: &str, kind: &str, text: &str) -> std::io::Result<String> {
-    let backups = workspace.private_dir(Path::new("cache/gap-log-backups"))?;
+    let backups =
+        workspace.private_dir(&Path::new(crate::learner::store::BACKUP_DIR).join("gap-logs"))?;
     let stamp = Local::now().format("%Y%m%dT%H%M%S%3f");
     let path = backups.join(format!("{plan}-{kind}{stamp}.md"));
     crate::workspace::write_private_atomic(&path, text.as_bytes())?;
@@ -587,7 +588,6 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
         };
         let repair = cell("Repair done").unwrap_or_default();
         // An older log had no Next redo: a repaired open row there is due now.
-        // An older log had no Next redo: a repaired open row there is due now.
         // A row part-way through its redos with no date is due now too, or
         // it could never fall due again.
         let next_on = match next_on {
@@ -668,7 +668,7 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
 }
 
 /// Bring one plan's gap log into the store, once. Ok(true) when it had a
-/// file; the original is kept in `.magnesium/cache/gap-log-backups/`.
+/// file; the original is kept in `.magnesium/backups/gap-logs/`.
 fn import(
     workspace: &Workspace,
     conn: &Connection,

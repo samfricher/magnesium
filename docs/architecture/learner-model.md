@@ -25,11 +25,11 @@ Original input is captured before optional interpretation. One transaction saves
 | Location | Purpose |
 |---|---|
 | `.magnesium/state.sqlite` | Canonical learner events, observations, current memories, history, sessions and receipts, one row per marked answer in `attempts`, and the practice items (quick checks and gap-log rows) with what happened to each |
-| `.magnesium/backups/` | The copy of the learner store made before it was upgraded from schema 2 or 3, kept as the way back |
+| `.magnesium/backups/` | The copy of the learner store made before it was upgraded from schema 2 or 3, kept as the way back, and in `gap-logs/` each gap log as it was brought in or before a hand edit was written over |
 | `.magnesium/index/source-search.sqlite` | Rebuildable search cache for subject files; separate from learner memory |
 | Search indexes | Derived from stored state; never new evidence about the learner |
 | `.magnesium/sittings.sqlite` | Sittings, the quick checks each took, and what became of each. Before schema 4 it also held the quick checks; they move to the learner store the first time this runtime opens it |
-| `Study/<plan>/gap-log.md` | The learner's page of a plan's gap-log rows. The runtime writes its Gaps table from the learner store after each change; the tutor writes Scores and Stretch items. The original of a log brought in, and any Gaps table edited by hand, are saved in `.magnesium/cache/gap-log-backups/` |
+| `Study/<plan>/gap-log.md` | The learner's page of a plan's gap-log rows. The runtime writes its Gaps table from the learner store after each change; the tutor writes Scores and Stretch items. The original of a log brought in, and any Gaps table edited by hand, are saved in `.magnesium/backups/gap-logs/` |
 | `.magnesium/sittings.log` | One JSON line per sitting, rewritten from `sittings.sqlite`: what was due, posed, answered, declined, passed or failed, and how many more checks were due than the sitting took |
 
 Learner payloads use `learner-model/v2` and database schema 4. The [SQL schema](../../src/learner/schema.sql), the [tables schema 3 added](../../src/learner/schema_v3.sql) and the [tables and columns schema 4 added](../../src/learner/schema_v4.sql) define the fresh learner database.

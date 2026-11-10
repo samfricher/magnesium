@@ -385,7 +385,7 @@ fn the_spaced_redo_rules_are_served_with_the_tool_recipes() {
         "Magnesium keeps each row's schedule and writes the Gaps table of `gap-log.md` from the learner record: read it, never edit it, and write no date, pass or status.",
         "When a repair is done, send practice {item: \"<plan>#<n>\", repaired, next: {question, answer_key}}.",
         "Each redo's attempt names in counts_for every row it counts for",
-        "Each lost mark is its answer's gap {type, what_went_wrong}",
+        "Each answer that lost marks carries one gap {type, what_went_wrong}, for its first error",
     ] {
         assert!(text.contains(rule), "{host}/papers_loop: {rule}");
     }

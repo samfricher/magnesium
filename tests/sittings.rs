@@ -206,7 +206,7 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         )),
         "{gap_log}"
     );
-    let backups = std::fs::read_dir(e.workspace.join(".magnesium/cache/gap-log-backups"))
+    let backups = std::fs::read_dir(e.workspace.join(".magnesium/backups/gap-logs"))
         .unwrap()
         .count();
     assert_eq!(backups, 1);

@@ -274,7 +274,7 @@ The tutor marks them and helps you fix each gap.
 3. The tutor writes your plan and papers, starting with the Diagnostic.
 4. **Sit the Diagnostic** alone and timed. Write `?` where you would look something up. After each answer, write S (sure), U (unsure) or G (guess).
 5. **Send photos or a PDF** of your answers. Then say "mark my Diagnostic".
-6. The tutor marks your answers. Magnesium logs each lost mark.
+6. The tutor marks your answers. Magnesium logs each part that lost marks.
 7. **Repair** each gap with the tutor.
 8. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
 

@@ -302,7 +302,7 @@ fn a_gap_log_from_an_earlier_template_is_brought_in_with_its_rows_and_dates() {
     ] {
         assert!(row(&text, n).ends_with(ending), "{n}: {text}");
     }
-    let backups = std::fs::read_dir(e.workspace.join(".magnesium/cache/gap-log-backups"))
+    let backups = std::fs::read_dir(e.workspace.join(".magnesium/backups/gap-logs"))
         .unwrap()
         .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
         .collect::<Vec<_>>();

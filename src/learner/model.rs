@@ -316,7 +316,11 @@ pub struct GapReport {
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NextQuestion {
-    /// A new question that needs the skill unprompted, posed as is.
+    /// A new problem the learner has not seen, posed as is, that needs the
+    /// skill unprompted. It asks for a result and never names or points at
+    /// the skill, tag, method, form of answer, step or earlier mistake:
+    /// "Solve …", not "Solve … by <method>" or "Write … in the form …". Each
+    /// earlier miss gives it a different answer from the right one.
     pub question: String,
     /// Its answer and how to mark it. Held back until the learner answers.
     pub answer_key: String,

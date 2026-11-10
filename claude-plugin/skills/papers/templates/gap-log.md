@@ -1,6 +1,6 @@
 # Gap log: <target>
 
-One row per lost mark. Magnesium writes the Gaps table from the learner record after each change: the tutor reports each lost mark, repair and redo, and Magnesium works out the passes, the status and the next date. A row closes after three cold passes on three different days. The first redo is at least a day after the repair, never on the same day. The next two are at least 3 and then 7 days apart, or closer when the assessment is near. Marks and scores live here; the learner record holds the interpreted state.
+One row per part that lost marks, tagged where its first error lies. Magnesium writes the Gaps table from the learner record after each change: the tutor reports each such part, repair and redo, and Magnesium works out the passes, the status and the next date. A row closes after three cold passes on three different days. The first redo is at least a day after the repair, never on the same day. The next two are at least 3 and then 7 days apart, or closer when the assessment is near. Marks and scores live here; the learner record holds the interpreted state.
 
 Status: open, 1 of 3, 2 of 3 or closed. Passes: the date and result of each redo, such as 2026-10-17 pass, or 2026-10-20 pass (MockA Q3) for a pass in a sitting. A fail starts the list again, such as 2026-10-24 fail. Next redo: the date the next redo is due. It is empty until the repair is done, again after a fail until the new repair, and once the row closes.
 
