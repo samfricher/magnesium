@@ -18,7 +18,10 @@ use std::{
     path::{Path, PathBuf},
 };
 const DOMAIN: &[u8] = b"magnesium/native-initial-capture/v2\0";
-pub(crate) const TTL_MS: i64 = 5 * 60 * 1000;
+/// Long enough for a tutor to load instructions and read sources before its
+/// first `learning_step`. The next learner message replaces the marker, so a
+/// ticket still certifies only the latest turn.
+pub(crate) const TTL_MS: i64 = 30 * 60 * 1000;
 /// Left-truncated HMAC-SHA256 tag (RFC 2104 section 5): 128 bits.
 const TAG_BYTES: usize = 16;
 const MAX_MARKERS: usize = 128;

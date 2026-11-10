@@ -136,6 +136,7 @@ impl LearnerStore {
             revisions.insert(id.clone(), revision);
         }
         let mut used_events = BTreeSet::new();
+        let mut shortened = Vec::new();
         apply_observations(
             &tx,
             host,
@@ -143,7 +144,7 @@ impl LearnerStore {
             &session,
             &mut refs,
             &mut used_events,
-            now,
+            (now, &mut shortened),
         )?;
         // Allocate all new IDs before edits so retirement can refer to same-batch creations.
         for edit in &r.memory_edits {
@@ -172,7 +173,7 @@ impl LearnerStore {
                 &mut revisions,
                 &mut edited,
                 &support,
-                (now, edit_index),
+                (now, edit_index, &mut shortened),
             )?;
         }
         for edit in &r.memory_edits {
@@ -271,6 +272,7 @@ impl LearnerStore {
             index_status,
             references: refs,
             revisions,
+            shortened,
         };
         // Independently committed capture survives cancellation. This semantic
         // transaction is still safely rollbackable until the receipt/commit

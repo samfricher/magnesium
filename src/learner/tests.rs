@@ -52,6 +52,68 @@ impl Drop for Fixture {
     }
 }
 #[test]
+fn an_over_long_record_and_an_unlabeled_source_are_saved_and_the_cuts_named() {
+    let f = Fixture::new();
+    f.start();
+    let e = f.event("1", "Is b another unknown?", Some(100));
+    let mut payload = f.learning("write", &e);
+    payload["observations"][0]["source_refs"] = json!([
+        {"path":"notes/ch7.pdf","location":"p. 3","available_form":"pdf"},
+        {"path":"notes/ch7.md"},
+        {"path":"notes/ch8.md","available_form":"excerpt"}
+    ]);
+    let record = &mut payload["memory_edits"][0]["record"];
+    record["summary"] = json!(format!("{}tail words", "é".repeat(600)));
+    record["retrieval_cues"] = json!((0..20).map(|i| format!("cue {i}")).collect::<Vec<_>>());
+    record["topics"] = json!(["Algebra", "x".repeat(200)]);
+    let saved = f.store.update(&f.host, payload.clone()).unwrap();
+    assert_eq!(saved.update_status, "committed");
+    let notes = saved.shortened.join("\n");
+    for expected in [
+        "observations[0].source_refs [0, 1]: available_form was missing",
+        "memory_edits[0].record.summary was 1210 bytes, over its 1024-byte limit",
+        "memory_edits[0].record.retrieval_cues had 20 labels, over its limit of 16: kept the first 16 and cut \"cue 16\", \"cue 17\", \"cue 18\", \"cue 19\"",
+        "memory_edits[0].record.topics: cut 1 label(s) longer than 128 bytes",
+    ] {
+        assert!(notes.contains(expected), "{expected}: {notes}");
+    }
+    assert_eq!(saved.shortened.len(), 4, "{notes}");
+
+    let (summary, cues): (String, String) = f
+        .store
+        .conn
+        .query_row(
+            "SELECT summary, retrieval_cues_json FROM learner_memories",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(
+        summary.len() <= limits::SUMMARY_BYTES && summary.ends_with('…'),
+        "{summary}"
+    );
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(&cues).unwrap().len(),
+        16
+    );
+    let sources: String = f
+        .store
+        .conn
+        .query_row("SELECT source_refs_json FROM observations", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let forms: Vec<String> = serde_json::from_str::<Vec<Value>>(&sources)
+        .unwrap()
+        .iter()
+        .map(|source| source["available_form"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(forms, ["model_reported", "model_reported", "excerpt"]);
+    // A retry replays the same receipt, notes included.
+    let replayed = f.store.update(&f.host, payload).unwrap();
+    assert_eq!(replayed.shortened, saved.shortened);
+}
+#[test]
 fn bundled_schema_roundtrip_and_retry() {
     let f = Fixture::new();
     f.start();

@@ -57,6 +57,12 @@ impl GlobalPaths {
         self.root.join("marketplace")
     }
 
+    /// Present once any study folder on this machine has pointed a learner at
+    /// `/magnesium:help`, or has a recorded lesson.
+    pub(crate) fn greeted_marker(&self) -> PathBuf {
+        self.root.join("greeted")
+    }
+
     /// Claude Code loads this directory in place as a one-plugin marketplace.
     pub(crate) fn claude_plugin(&self) -> PathBuf {
         self.root.join("claude-plugin")

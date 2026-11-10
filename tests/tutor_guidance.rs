@@ -84,7 +84,8 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     let second = claude_prompt(&e, "conv", "p-3", "so the margin halves?");
     assert!(second.contains(" Previous reply: 849 words."), "{second}");
     assert!(second.contains(REMINDER), "{second}");
-    assert!(!second.contains(WHEN_CONFUSED), "{second}");
+    assert!(second.contains(WHEN_CONFUSED), "{second}");
+    assert!(!second.contains("Read context.prepare"), "{second}");
     assert!(second.len() <= 512, "{} bytes: {second}", second.len());
 
     claude_stop(
@@ -143,32 +144,40 @@ fn claude_reminder_stays_without_feedback_while_recording_is_off() {
 }
 
 #[test]
-fn claude_session_start_points_a_new_learner_at_help_until_a_session_exists() {
+fn claude_session_start_points_a_new_learner_at_help_once_per_machine() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let session_start = |host: &str, thread: &str| {
-        let input = json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"SessionStart","source":"startup"});
+    let session_start = |folder: &std::path::Path, host: &str, thread: &str| {
+        let input = json!({"session_id":thread,"cwd":folder,"hook_event_name":"SessionStart","source":"startup"});
         v2::context(&run_hook_with_host_flag(
             &e,
-            &e.workspace,
+            folder,
             "session-start",
             input,
             host,
         ))
     };
 
-    let fresh = session_start("claude", "first");
+    let codex = session_start(&e.workspace, "codex", "first");
+    assert!(!codex.contains("/magnesium:help"), "{codex}");
+    let fresh = session_start(&e.workspace, "claude", "first");
     assert!(
         fresh.contains("\"New here? Type /magnesium:help.\""),
         "{fresh}"
     );
-    let codex = session_start("codex", "first");
-    assert!(!codex.contains("/magnesium:help"), "{codex}");
+    let again = session_start(&e.workspace, "claude", "second");
+    assert!(again.contains("context.prepare"), "{again}");
+    assert!(!again.contains("/magnesium:help"), "{again}");
 
-    v2::start(&e, "claude", "first");
-    let returning = session_start("claude", "second");
-    assert!(returning.contains("context.prepare"), "{returning}");
-    assert!(!returning.contains("/magnesium:help"), "{returning}");
+    // A new study folder on the same machine has no lessons, but the learner
+    // has already been greeted.
+    let other = e.root.join("second-study-folder");
+    std::fs::create_dir_all(&other).unwrap();
+    let init = e.command_in(&other).arg("init").output().unwrap();
+    assert!(init.status.success(), "{init:?}");
+    let other_folder = session_start(&other, "claude", "third");
+    assert!(other_folder.contains("context.prepare"), "{other_folder}");
+    assert!(!other_folder.contains("/magnesium:help"), "{other_folder}");
 }
 
 #[test]
@@ -1054,7 +1063,7 @@ fn malformed_context_calls_name_both_complete_shapes() {
     for request in [
         json!({"action":"instructions","host":"claude","stage":"start"}),
         json!({"action":"instructions","host":"claude"}),
-        json!({"host":"claude","stage":"orient_and_probe"}),
+        json!({"host":"claude"}),
     ] {
         let output = v2::tool_output(&e, "claude", "conv", "context", request.clone());
         assert!(!output.status.success(), "{request}");
@@ -1066,6 +1075,38 @@ fn malformed_context_calls_name_both_complete_shapes() {
         ] {
             assert!(stderr.contains(required), "{request}: {stderr}");
         }
+    }
+}
+
+#[test]
+fn context_without_an_action_loads_a_stage_or_prepares_a_goal() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    for request in [
+        json!({"stage":"orient_and_probe"}),
+        json!({"host":"claude","stage":"orient_and_probe"}),
+        json!({"action":"instructions","stage":"orient_and_probe"}),
+    ] {
+        let loaded = v2::tool(&e, "claude", "conv", "context", request.clone());
+        assert_eq!(loaded["status"], "served", "{request}: {loaded}");
+        assert_eq!(
+            loaded["files"],
+            json!([
+                "MAGNESIUM.md",
+                "teaching-policy.md",
+                "adapters/claude.md",
+                "workflows/orient-and-probe.md"
+            ]),
+            "{request}: {loaded}"
+        );
+    }
+    for request in [
+        json!({"goal":"confidence intervals"}),
+        json!({"schema":"learner-model/v2","goal":"confidence intervals","original_query":"can we do intervals?"}),
+    ] {
+        let prepared = v2::tool(&e, "claude", "conv", "context", request.clone());
+        assert_eq!(prepared["memory_generation"], 0, "{request}: {prepared}");
+        assert!(prepared["memories"].is_array(), "{request}: {prepared}");
     }
 }
 

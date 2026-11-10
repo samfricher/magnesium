@@ -186,6 +186,9 @@ pub struct SourceRef {
     pub hash: Option<String>,
     pub version: Option<String>,
     pub location: Option<String>,
+    /// One of original, excerpt, model_reported or unavailable. A missing or
+    /// unknown value is saved as model_reported.
+    #[serde(default)]
     pub available_form: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -542,6 +545,10 @@ pub struct UpdateResult {
     pub index_status: String,
     pub references: std::collections::BTreeMap<String, String>,
     pub revisions: std::collections::BTreeMap<String, i64>,
+    /// What the runtime cut or relabeled to save this request instead of
+    /// refusing it. Absent when nothing was changed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortened: Vec<String>,
 }
 
 /// Bounded provenance/context only; no alternate learner profile in event metadata.

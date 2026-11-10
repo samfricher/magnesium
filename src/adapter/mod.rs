@@ -210,7 +210,7 @@ pub(crate) fn host_context(host: &HostIdentity) -> crate::learner::HostContext {
 }
 /// `context` serves two request shapes; a tutor that mixes them gets both in
 /// full rather than one missing field per retry.
-const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude"|"codex"|"opencode","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage"#;
+const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude"|"codex"|"opencode","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
 const MEMORY_SHAPES: &str = r#"memory takes {"schema":"learner-model/v2","action":"search","goal":"<topic>","original_query":"<learner's words>"}, {"schema":"learner-model/v2","action":"read","refs":[{"kind":"current_memory"|"observation"|"event","id":"<id>"}]}, or {"schema":"learner-model/v2","action":"browse"} with optional "topic"; other actions are topics, history, reviews, observations and pending_work"#;
 /// Native process environment is adapter context, not a model-supplied identity.
 /// A tool-only connection gets its own ephemeral thread; it never borrows a
@@ -226,6 +226,40 @@ fn tool_host() -> crate::learner::HostContext {
             .get_or_init(|| crate::learner::store::new_id("tool").expect("host identity entropy"))
             .clone(),
     }
+}
+/// Tutors often call `context` with only a stage or only a goal. A stage
+/// means "load that stage's instructions" and a goal means "prepare", so fill
+/// in the action, and the host or schema the runtime already knows, instead of
+/// failing the call. An explicit action is never changed.
+fn complete_context_request(
+    mut request: serde_json::Value,
+    native_host: Option<&crate::learner::HostContext>,
+) -> serde_json::Value {
+    let Some(fields) = request.as_object_mut() else {
+        return request;
+    };
+    if !fields.contains_key("action") {
+        if fields.contains_key("stage") {
+            fields.insert("action".into(), "instructions".into());
+        } else if fields.contains_key("goal") {
+            fields.insert("action".into(), "prepare".into());
+            fields
+                .entry("schema")
+                .or_insert_with(|| crate::learner::SCHEMA.into());
+        }
+    }
+    if fields.get("action").and_then(serde_json::Value::as_str) == Some("instructions")
+        && !fields.contains_key("host")
+    {
+        let kind = native_host
+            .and_then(|host| HostKind::parse(&host.host_kind).ok())
+            .or_else(|| host::process_host_identity().map(|host| host.kind()))
+            .or_else(host::launch_host);
+        if let Some(kind) = kind {
+            fields.insert("host".into(), kind.as_str().into());
+        }
+    }
+    request
 }
 fn open_store(workspace: &Workspace) -> Result<crate::learner::LearnerStore, String> {
     crate::learner::LearnerStore::open(
@@ -258,6 +292,11 @@ pub(crate) fn dispatch_with_host(
     {
         return Err("field_too_large: semantic request exceeds 1 MiB".into());
     }
+    let request = if operation == "context" {
+        complete_context_request(request, native_host.as_ref())
+    } else {
+        request
+    };
     if operation == "context" && request["action"] == "instructions" {
         let request: InstructionRequest =
             serde_json::from_value(request).map_err(|e| format!("{e}. {CONTEXT_SHAPES}"))?;
@@ -358,17 +397,36 @@ pub(crate) fn host_session_start(
     let store = open_store(&workspace)?;
     let host = host_context(host);
     let mut notice = hook_notice(&store, &host, None, NoticeHook::SessionStart)?;
-    if host.host_kind == "claude"
-        && !store
+    if host.host_kind == "claude" {
+        let folder_has_lessons = store
             .conn
             .query_row("SELECT EXISTS(SELECT 1 FROM learning_sessions)", [], |r| {
                 r.get::<_, bool>(0)
             })
-            .map_err(|e| e.to_string())?
-    {
-        notice.push_str(CLAUDE_NEW_LEARNER_GUIDANCE);
+            .map_err(|e| e.to_string())?;
+        if first_greeting_on_this_machine(folder_has_lessons) {
+            notice.push_str(CLAUDE_NEW_LEARNER_GUIDANCE);
+        }
     }
     Ok(Some(notice))
+}
+/// "New here?" is said once per machine, not once per study folder. The
+/// marker lives in Magnesium's per-user data folder, which `magnesium init`
+/// creates; this never creates that folder, so without it the hint falls back
+/// to checking only this study folder.
+fn first_greeting_on_this_machine(folder_has_lessons: bool) -> bool {
+    let Ok(paths) = crate::workspace::GlobalPaths::resolve() else {
+        return !folder_has_lessons;
+    };
+    let marker = paths.greeted_marker();
+    if marker.exists() {
+        return false;
+    }
+    if paths.installed() {
+        // A failed write only means the hint may be repeated once more.
+        let _ = crate::workspace::write_private_atomic(&marker, b"");
+    }
+    !folder_has_lessons
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NoticeHook {
@@ -390,11 +448,15 @@ enum Clause {
     TaskReminder,
     ReplyFeedback,
 }
+/// Over the limit, the state line first loses its context.prepare advice;
+/// only then do clauses give way, in this order. The confusion reminder goes
+/// last because a turn after a long reply is when it matters most.
 const GIVE_WAY_ORDER: [Clause; 3] = [
-    Clause::ConfusionReminder,
     Clause::TaskReminder,
     Clause::ReplyFeedback,
+    Clause::ConfusionReminder,
 ];
+const STATE_ADVICE: &str = " Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.";
 fn hook_notice(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
@@ -404,7 +466,7 @@ fn hook_notice(
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
     let state = format!(
-        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}. Read context.prepare on new conversation, compaction, changed goal or contradiction; learning_step revises memory without an assessment gate.",
+        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}.",
         event.unwrap_or("unavailable (use labeled reported events)")
     );
     let claude = host.host_kind == "claude";
@@ -443,9 +505,15 @@ fn hook_notice(
     }
     Ok(fit(state, clauses, hook.additional_context_limit()))
 }
-fn fit(state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: usize) -> String {
+fn fit(mut state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: usize) -> String {
+    let length = |state: &str, clauses: &[(Clause, Cow<'static, str>)]| {
+        state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>()
+    };
+    if length(&state, &clauses) + STATE_ADVICE.len() <= limit {
+        state.push_str(STATE_ADVICE);
+    }
     for droppable in GIVE_WAY_ORDER {
-        if state.len() + clauses.iter().map(|(_, text)| text.len()).sum::<usize>() <= limit {
+        if length(&state, &clauses) <= limit {
             break;
         }
         clauses.retain(|(clause, _)| *clause != droppable);
@@ -458,9 +526,9 @@ const CLAUDE_LESSON_GUIDANCE: &str =
     " A lesson is active: interpret this learner turn with learning_step.";
 const CLAUDE_RELOAD_GUIDANCE: &str =
     " After a new conversation or compaction, load the learn skill and its instructions first.";
-const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed or review, load the learn skill and start or resume a session.";
+const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study, catch up or prepare for an exam, midterm or final, load the learn skill and start or resume a session.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
-const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder yet, so the learner is probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
+const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
     cwd: &Path,
     host: &HostIdentity,
