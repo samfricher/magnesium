@@ -31,7 +31,8 @@ Choose who performs the next operation:
 | Can execute with specific help | Remove that help on a fresh task |
 | Can execute a familiar case independently | Test uncued selection, a boundary, or adaptation |
 | Requests explanation or a full solution | Give it, record it as help, and ask for it cold the next day |
-| Says they are confused, or is lost and asks a question | Ask one question to find the cause: one concrete case of the idea, answerable in under a minute. Explain nothing yet, then teach from their answer |
+| Asks a plain factual question about something already introduced | Answer it in one line, with no task |
+| Says they are confused, or is lost and asks a question | Ask one question to find the cause: one concrete case of the idea, answerable in under a minute. Explain nothing and add no new terms yet, then teach from their answer |
 
 This is a branching menu, not a compulsory sequence. When rows conflict, take them in this order: an explicit request for a full solution, then the question for a learner who is lost or says they are confused, then an explicit request for an explanation, then the teaching policy's rewrite after the same task form fails twice, then the rows for a learner with no starting move, then the anchor question, then the other rows, then the guess. So skip the anchor question after an explicit request, a fails-twice rewrite, or any question you just asked, such as the confusion question, and build from what the learner asked or said. Skip the guess in the same cases, when a learner with no starting move gets a worked example, and in a turn that repairs a missed check. The check you just asked does not count as such a question, so the turn after a passed check still ends with the guess. A learner who knows how to start tries first, with no anchor question. A learner with no starting move gets the example or problem in their row, never the anchor question first.
 
@@ -55,4 +56,4 @@ Preserve the task prompt, conditions, known resources, help, and proposal/delive
 
 ## Finish the turn
 
-End with the core rules' one task. Skip it only when the learner requested explanation-only or the session is ending. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.
+End with the core rules' one task. Skip it only when the learner requested explanation-only, asked a plain factual question, or the session is ending. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.

@@ -272,7 +272,7 @@ fn served_instructions_skip_the_task_only_on_the_learners_terms() {
     let text = served["text"].as_str().unwrap();
     assert!(
         text.contains(
-            "Skip it only when the learner requested explanation-only or the session is ending."
+            "Skip it only when the learner requested explanation-only, asked a plain factual question, or the session is ending."
         ),
         "{host}"
     );
@@ -1197,6 +1197,8 @@ fn every_stage_serves_the_core_rules_and_they_name_the_four_changed_rules() {
         "they guess what comes next and why.",
         "A new topic, and a question from a learner who is lost, get one concrete case of the target idea that takes under a minute to answer.",
         "Names, symbols and definitions come after the learner has done a step.",
+        "For a lost learner, the case is about the step they asked about and is the whole reply, with no explanation and no new terms.",
+        "A plain factual question about something already introduced, such as what a name stands for, gets its answer in one line, with no task and no question back.",
         "If the wrong idea could have given the same answer, one more question tells the two apart.",
         "A plan item is ticked only after an unaided answer on a later day.",
         "A model answer the learner asks for is given, recorded as help, and asked for cold the next day, not in the same hour.",

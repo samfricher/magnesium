@@ -8,7 +8,7 @@
       "path": "MAGNESIUM.md",
       "role": "orchestrator",
       "required_for_activation": true,
-      "sha256": "1e91ebe001f9ac4b6f981ed021c806292ef966dd586f64dbc831fd08946c81cd"
+      "sha256": "179edfc12af1a980c08a59dccf69d4bb646ec4e856fe1af0da2a9084a5f8f453"
     },
     {
       "path": "teaching-policy.md",
@@ -52,7 +52,7 @@
       "path": "workflows/teach-and-practice.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "29be7b330e15078b4bba0faa02319504d233e1609e6bbe0554f96578fa14b9b7",
+      "sha256": "55730def810896eeca27c606344d336ae386a4eed982250c754a93cfc11c5b5f",
       "stage": "teach-and-practice"
     },
     {
