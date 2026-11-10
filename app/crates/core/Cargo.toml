@@ -1,0 +1,15 @@
+[package]
+name = "mg-core"
+version = "0.1.0"
+edition = "2021"
+description = "Everything Magnesium's window does that is not drawing: the agent pipe and the readers of local study state."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
