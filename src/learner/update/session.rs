@@ -579,6 +579,17 @@ pub(super) fn resolve_checkpoint(
             "checkpoint.memory_refs",
         ));
     }
+    if c.goal_steps.len() > limits::GOAL_STEPS
+        || c.goal_steps
+            .iter()
+            .any(|step| step.step.trim().is_empty() || step.step.len() > limits::GOAL_STEP_BYTES)
+    {
+        return Err(field_error(
+            "checkpoint.goal_steps",
+            "At most 12 goal steps, each 1–300 bytes",
+            host,
+        ));
+    }
     let mut value = serde_json::to_value(c)?;
     for (i, m) in c.memory_refs.iter().enumerate() {
         let id = refs.get(&m.memory_id).unwrap_or(&m.memory_id);

@@ -7,6 +7,7 @@
 //! library target is not a public Rust SDK commitment.
 
 mod adapter;
+mod attempts;
 mod cli;
 mod diagnostics;
 mod digest;
@@ -47,6 +48,7 @@ pub fn run() -> ExitCode {
             diagnostics::print_info(json)
         }
         Some(("digest", _)) => digest::print_digest(),
+        Some(("attempts", matches)) => attempts::print_attempts(matches.get_flag("json")),
         Some(("core-rules", matches)) => {
             let on = matches.get_one::<String>("state").map(String::as_str) == Some("on");
             adapter::set_core_rules(on)

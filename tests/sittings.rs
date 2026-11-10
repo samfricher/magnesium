@@ -57,7 +57,7 @@ fn attempt(
         json!({"schema":"learner-model/v2","action":"update","request_id":id,
             "observations":[{"client_ref":"work","kind":kind,"description":description,
                 "events":[{"event_id":event,"role":"learner_response"}],
-                "attempt":{"label":LABEL,"first_try":first_try,"help":"none"}}],
+                "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":first_try,"help":"none","cold":false}}],
             "event_dispositions":[{"event_id":event,"outcome":"processed"}]}),
     )
 }
@@ -269,7 +269,7 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_on_a_host_without_reply_text(
             json!({"schema":"learner-model/v2","action":"update","request_id":id,
                 "observations":[{"client_ref":"work","kind":"learner_work","description":"Answer to b.",
                     "events":[{"event_id":event,"role":"learner_response"}],
-                    "attempt":{"label":LABEL,"first_try":first_try,"help":"none"}}]}),
+                    "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":first_try,"help":"none","cold":false}}]}),
         )
     };
     v2::start(&e, "opencode", "oc");
@@ -332,7 +332,7 @@ fn an_attempt_needs_the_learners_own_message_and_a_bounded_label() {
             json!({"schema":"learner-model/v2","action":"update","request_id":format!("bad-{index}"),
                 "observations":[{"client_ref":"work","kind":"teaching_response","description":"Explained b.",
                     "events":[{"event_id":tutor_event,"role":role}],
-                    "attempt":{"label":label,"first_try":"wrong","help":"none"}}]}),
+                    "attempt":{"label":label,"question":"Solve x² − 7x + 10 = 0","first_try":"wrong","help":"none","cold":false}}]}),
         );
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["error"]["recovery"]["field_path"], path, "{value}");

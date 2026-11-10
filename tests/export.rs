@@ -183,7 +183,10 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             .map(String::as_str)
             .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from([
+            "anchors",
+            "attempts",
             "context_receipts",
+            "help_levels",
             "host_bindings",
             "learner_memories",
             "learning_events",
@@ -194,6 +197,7 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             "observation_events",
             "observations",
             "operation_receipts",
+            "practice_items",
             "review_items",
             "workspace_meta",
         ])

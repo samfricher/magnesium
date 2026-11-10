@@ -123,14 +123,7 @@ fn day_after(day: NaiveDate, days: u64) -> NaiveDate {
     day.checked_add_days(Days::new(days)).unwrap_or(day)
 }
 
-/// Labels match whatever their case and spacing.
-pub(crate) fn label_key(label: &str) -> String {
-    label
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
+pub(crate) use crate::learner::label_key;
 
 fn clip(text: &str, chars: usize) -> String {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -629,7 +622,8 @@ fn apply(
         Ok(())
     };
     match attempt.first_try {
-        FirstTry::Wrong => {
+        // A partly right answer still holds the misunderstanding.
+        FirstTry::Wrong | FirstTry::Partly => {
             let miss = clip(&attempt.description, MAX_MISS_CHARS);
             if let Some(item) = &item {
                 settle(&item.id, "failed")?;
@@ -757,8 +751,9 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
     text
 }
 
-/// The attempts in a committed update, with their observation IDs from its
-/// `references`. Nothing for a rejected or uncommitted update.
+/// The chat attempts in a committed update, with their observation IDs from
+/// its `references`. Nothing for a rejected or uncommitted update. An answer
+/// on a paper moves no quick check: its gap-log row has its own redos.
 pub(crate) fn recorded_attempts(request: &Value, result: &Value) -> Vec<RecordedAttempt> {
     if result["update_status"] != "committed" {
         return Vec::new();
@@ -770,6 +765,9 @@ pub(crate) fn recorded_attempts(request: &Value, result: &Value) -> Vec<Recorded
         .filter_map(|observation| {
             let attempt: crate::learner::Attempt =
                 serde_json::from_value(observation.get("attempt")?.clone()).ok()?;
+            if attempt.paper.is_some() {
+                return None;
+            }
             let client_ref = observation["client_ref"].as_str()?;
             let observation_id = result["references"][client_ref].as_str()?.to_owned();
             Some(RecordedAttempt {
