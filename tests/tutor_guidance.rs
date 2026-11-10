@@ -31,6 +31,15 @@ fn claude_notices_say_when_to_start_and_continue_a_lesson_and_codex_notices_do_n
         inactive.contains("load the learn skill and start or resume a session"),
         "{inactive}"
     );
+    assert!(
+        inactive.contains("exam, midterm or final to prepare for, load the papers skill"),
+        "{inactive}"
+    );
+    assert!(
+        inactive.len() <= 512,
+        "{} bytes: {inactive}",
+        inactive.len()
+    );
 
     v2::start(&e, "claude", "conv");
     let active = claude_prompt(&e, "conv", "p-2", "is it 950?");

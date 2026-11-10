@@ -1,6 +1,6 @@
 ---
 name: learn
-description: Tutoring with persistent learner memory in a folder set up with Magnesium (it has a .magnesium directory). Use when the user asks to learn or understand a topic, to be taught, quizzed or tested, to practise or practice with exercises, to review or revise, to plan their study, to catch up, or to prepare for an exam, midterm or final (for example "teach me", "quiz me", "can we practise", "help me study", "make me a study plan", "I need to catch up on week 3"), and whenever a Magnesium notice says a lesson is active. Ordinary coding or repository work does not start a lesson.
+description: Tutoring with persistent learner memory in a folder set up with Magnesium (it has a .magnesium directory). Use when the user asks to learn or understand a topic, to be taught, quizzed or tested, to practise or practice with exercises, to review or revise, to plan their study, or to catch up (for example "teach me", "quiz me", "can we practise", "help me study", "make me a study plan", "I need to catch up on week 3"), and whenever a Magnesium notice says a lesson is active. When the learner names an exam, midterm or final to prepare for, use the papers skill instead. Ordinary coding or repository work does not start a lesson.
 ---
 
 # Magnesium Claude adapter

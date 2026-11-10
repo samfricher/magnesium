@@ -526,7 +526,7 @@ const CLAUDE_LESSON_GUIDANCE: &str =
     " A lesson is active: interpret this learner turn with learning_step.";
 const CLAUDE_RELOAD_GUIDANCE: &str =
     " After a new conversation or compaction, load the learn skill and its instructions first.";
-const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study, catch up or prepare for an exam, midterm or final, load the learn skill and start or resume a session.";
+const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study or catch up, load the learn skill and start or resume a session; when they name an exam, midterm or final to prepare for, load the papers skill instead.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
