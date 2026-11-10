@@ -15,7 +15,7 @@ impl Fixture {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(crate::learner::store::SCHEMA_SQL)
             .unwrap();
-        conn.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'event-paging','learner-model/v2',4,0)", []).unwrap();
+        conn.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'event-paging','learner-model/v2',5,0)", []).unwrap();
         Self {
             store: LearnerStore {
                 conn,

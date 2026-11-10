@@ -21,6 +21,7 @@ use keys::validate_batch_keys;
 pub(crate) use memories::memory_snapshot;
 use memories::{apply_memory, resolve_change_basis};
 use observations::apply_observations;
+pub(crate) use observations::check_kind;
 pub(crate) use receipts::payload_hash;
 use receipts::{cas, read_receipt, validate_receipt_host};
 use reviews::apply_reviews;

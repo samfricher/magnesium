@@ -14,7 +14,8 @@ use std::process::ExitCode;
 pub(crate) fn list(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
     let mut statement = conn.prepare(
         "SELECT attempt_id,answered_at_ms,question,paper,paper_question,mark,marks,out_of,
-                help,confidence,cold,seconds,label,observation_id,response_event_id,session_id
+                help,confidence,cold,seconds,label,observation_id,response_event_id,session_id,
+                problem_kind,no_start
          FROM attempts ORDER BY answered_at_ms,attempt_no",
     )?;
     statement
@@ -36,6 +37,8 @@ pub(crate) fn list(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
                 "observation_id": r.get::<_, String>(13)?,
                 "response_event_id": r.get::<_, String>(14)?,
                 "session_id": r.get::<_, Option<String>>(15)?,
+                "kind": r.get::<_, Option<String>>(16)?,
+                "no_start": r.get::<_, bool>(17)?,
             }))
         })?
         .collect()
@@ -99,6 +102,12 @@ fn render(attempts: &[Value]) -> String {
         ];
         if let Some(seconds) = a["seconds"].as_i64() {
             facts.push(format!("{seconds} s"));
+        }
+        if let Some(kind) = a["kind"].as_str() {
+            facts.push(match a["no_start"] == true {
+                true => format!("kind {kind}, no starting move"),
+                false => format!("kind {kind}"),
+            });
         }
         text.push_str(&format!(
             "{}  {}\n    {}. Tests: {}\n",

@@ -59,6 +59,7 @@ const TABLES: &[&str] = &[
     "gap_logs",
     "attempt_corrections",
     "help_levels",
+    "imported_readings",
     "anchors",
 ];
 fn workspace(root: &Path) -> Result<Workspace, String> {

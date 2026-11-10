@@ -680,7 +680,7 @@ pub(crate) fn first_date(text: &str) -> Option<NaiveDate> {
         .find_map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
 }
 
-fn names_target(goal: &str, target: &str, title: Option<&str>) -> bool {
+pub(crate) fn names_target(goal: &str, target: &str, title: Option<&str>) -> bool {
     let goal = goal.to_lowercase();
     let spaced = target.replace(['-', '_'], " ").to_lowercase();
     goal.contains(&target.to_lowercase())

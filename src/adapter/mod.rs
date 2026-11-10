@@ -335,7 +335,8 @@ fn sittings_here(cwd: &Path, write: bool) -> Option<(Workspace, crate::sittings:
 /// what its attempts did to practice items goes in the result and settles
 /// the sitting's checks. A practice change, or a paper stage load, brings in
 /// and writes the gap logs. The first tool result of a sitting then carries
-/// the opener. None of this can fail the call.
+/// the opener. Last, the result states the help levels and readings the
+/// update or load concerns. None of this can fail the call.
 fn open_sitting(
     cwd: &Path,
     update: Option<&serde_json::Value>,
@@ -414,6 +415,7 @@ fn open_sitting(
     if let Some(gap_logs) = report.to_json() {
         result["gap_logs"] = gap_logs;
     }
+    crate::readings::add_to_result(&workspace, committed, practice_change, paper_stage, result);
 }
 /// Whether this conversation records: no control latch denies capture, and
 /// recording is on for it.

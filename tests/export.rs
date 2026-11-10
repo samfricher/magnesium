@@ -190,6 +190,7 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             "gap_logs",
             "help_levels",
             "host_bindings",
+            "imported_readings",
             "learner_memories",
             "learning_events",
             "learning_sessions",

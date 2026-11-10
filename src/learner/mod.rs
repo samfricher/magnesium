@@ -1,4 +1,5 @@
 pub mod capture;
+pub(crate) mod help;
 pub mod limits;
 pub mod model;
 pub(crate) mod practice;
