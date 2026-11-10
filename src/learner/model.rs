@@ -253,8 +253,11 @@ pub struct Attempt {
     /// the full solution before giving any answer: record that with help
     /// solution, and the step is asked for cold the next day.
     pub first_try: FirstTry,
-    /// The most help given before the first try: none, hint, step (a worked
-    /// step or example) or solution.
+    /// The most help given on this question before the first try: none,
+    /// hint, step (a worked step of this question) or solution. A worked or
+    /// partly worked example on another problem is not help on this one, so
+    /// the changed version or full problem that follows it is none unless
+    /// you helped with that question itself.
     pub help: AttemptHelp,
     /// true only when the answer was unaided, from a blank page, on a later
     /// day than the teaching. Never true with help other than none, nor when

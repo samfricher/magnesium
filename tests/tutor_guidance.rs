@@ -332,7 +332,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
         "When rows conflict, take them in this order: an explicit request",
         "Before you reply to a learner with no starting move, record their message as an attempt with first_try declined, kind and no_start true",
-        "Send the same kind on the changed version or full problem: the example given on another problem is not help on it, and an answer not right alone moves the step back.",
+        "Send the same kind on the changed version or full problem, with help none unless you helped on that question itself: the example on another problem is not help on it, and an answer not right alone moves the step back.",
         "Never write a step in a memory or the checkpoint.",
     ] {
         assert!(teach.contains(required), "{host}: {required}");
