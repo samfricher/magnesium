@@ -8,7 +8,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -166,7 +166,27 @@ pub fn light_command(program: &Path) -> Command {
 }
 
 /// Run a short command and return its standard output, or a plain error.
-pub fn run(mut command: Command, limit: Duration) -> Result<String, String> {
+pub fn run(command: Command, limit: Duration) -> Result<String, String> {
+    let (status, out, err) = run_to_end(command, limit)?;
+    if status.success() {
+        Ok(out)
+    } else {
+        let message = err.trim();
+        Err(if message.is_empty() {
+            format!("it ended with {status}")
+        } else {
+            message.lines().last().unwrap_or(message).to_owned()
+        })
+    }
+}
+
+/// Run a short command to its end and return how it ended, with its standard
+/// output and error. For a program that answers a question through its exit
+/// status, such as one that ends with 1 when signed out.
+pub fn run_to_end(
+    mut command: Command,
+    limit: Duration,
+) -> Result<(ExitStatus, String, String), String> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -200,14 +220,5 @@ pub fn run(mut command: Command, limit: Duration) -> Result<String, String> {
     };
     let out = out.join().unwrap_or_default();
     let err = err.join().unwrap_or_default();
-    if status.success() {
-        Ok(out)
-    } else {
-        let message = err.trim();
-        Err(if message.is_empty() {
-            format!("it ended with {status}")
-        } else {
-            message.lines().last().unwrap_or(message).to_owned()
-        })
-    }
+    Ok((status, out, err))
 }

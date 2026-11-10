@@ -580,6 +580,34 @@ fn upgrade_known_bundle(
     Ok(InstallDisposition::Upgraded { previous })
 }
 
+/// Whether this workspace's active teaching instructions are an earlier
+/// Magnesium version's, which `magnesium init --upgrade-instructions`
+/// switches. It reads the active pointer only and changes nothing, so a
+/// caller can ask before the switch.
+pub(crate) fn earlier_bundle_active(control: &Path) -> bool {
+    compiled_bundle().is_ok_and(|bundle| earlier_known_bundle_active(control, &bundle))
+}
+
+fn earlier_known_bundle_active(control: &Path, bundle: &Bundle) -> bool {
+    if bundle.status != "active" {
+        return false;
+    }
+    let Ok(bytes) = read_installed_file(
+        &control.join("instructions/active.json"),
+        ACTIVE_POINTER_LIMIT,
+    ) else {
+        return false;
+    };
+    // The same test `activate_current_bundle` makes before it refuses with
+    // `PreviousBundleActive`.
+    serde_json::from_slice::<ActivePointer>(&bytes).is_ok_and(|pointer| {
+        pointer.bundle_version == bundle.version
+            && pointer.bundle_hash != bundle.hash
+            && is_bundle_hash(&pointer.bundle_hash)
+            && serde_json::to_vec(&pointer).is_ok_and(|canonical| canonical == bytes)
+    })
+}
+
 fn is_bundle_hash(value: &str) -> bool {
     value.len() == 64
         && value
@@ -1875,6 +1903,33 @@ mod tests {
         assert_eq!(current.version, 2);
         fs::remove_dir_all(old_control).unwrap();
         fs::remove_dir_all(fresh_control).unwrap();
+    }
+
+    #[test]
+    fn an_earlier_active_bundle_is_seen_without_a_change() {
+        let control = temp_control("earlier-bundle-seen");
+        let old = synthetic_bundle();
+        let current = revised_synthetic_bundle();
+        assert!(!super::earlier_known_bundle_active(&control, &current));
+        install_known_bundle(&control, &old).unwrap();
+        let pointer = control.join("instructions/active.json");
+        let before = fs::read(&pointer).unwrap();
+        assert!(super::earlier_known_bundle_active(&control, &current));
+        assert_eq!(
+            fs::read(&pointer).unwrap(),
+            before,
+            "looking changes nothing"
+        );
+        assert!(
+            !control.join("instructions/v2").join(&current.hash).exists(),
+            "looking stages nothing"
+        );
+        assert!(!super::earlier_known_bundle_active(&control, &old));
+        // An edited pointer is not an earlier version's, and the upgrade
+        // would refuse it, so it is not reported as one.
+        fs::write(&pointer, b"{\"bundle_version\":2, \"bundle_hash\":\"x\"}").unwrap();
+        assert!(!super::earlier_known_bundle_active(&control, &current));
+        fs::remove_dir_all(control).unwrap();
     }
 
     #[test]

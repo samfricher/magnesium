@@ -62,7 +62,7 @@ The binary is `target/release/magnesium` on macOS and Linux, and `target\release
 
 Put the binary on the user's PATH. Ask first, then do one of these:
 
-- Copy it into a folder that is already on PATH, such as `~/.local/bin` on macOS or Linux.
+- Copy it into a folder that is already on PATH, such as `~/.local/bin` on macOS or Linux. Magnesium's Mac app installs its copy there too, so both ways leave one program on the Mac.
 - Add the repository's `target/release` folder to PATH in the user's shell profile.
 
 Claude Code starts `magnesium` by name, so the command must resolve in a new terminal.

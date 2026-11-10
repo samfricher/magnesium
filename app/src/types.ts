@@ -20,7 +20,7 @@ export type PaperSitting = {
   started_ms: number;
 };
 
-export type HomeState = "ready" | "empty" | "not_set_up" | "no_runtime" | "unreadable";
+export type HomeState = "ready" | "empty" | "not_set_up" | "no_runtime" | "needs_upgrade" | "unreadable";
 
 export type Home = {
   folder: string;
@@ -101,15 +101,59 @@ export type AgentEvent =
 
 export type Words = { shown: string; sent: string };
 
+/** How lessons are paid for: the learner's Claude plan, or an API key paid per use. */
+export type Payment = "plan" | "api_key";
+
+/** The agent on this Mac, as it reports itself. The window never reads a credential. */
+export type Account = {
+  name: string;
+  installed: boolean;
+  signed_in: boolean;
+  paid_with: Payment | null;
+  detail: string | null;
+  problem: string | null;
+  install_page: string | null;
+};
+
+/** A magnesium program, and the version it reports: "0.3.0+<commit>" from the download's build. */
+export type Program = { shown_path: string; version: string };
+
+export type RuntimeState = "ready" | "missing" | "different" | "kept" | "failed";
+
+export type RuntimeSetup = {
+  state: RuntimeState;
+  installed: Program | null;
+  /** The copy inside the app. null for the window run from source. */
+  bundled: Program | null;
+  installed_now: boolean;
+  message: string | null;
+};
+
+export type Setup = { runtime: RuntimeSetup; account: Account; payment: Payment };
+
+/** The window's version, and the commit the download was built from. */
+export type About = { version: string; commit: string | null };
+
 /** Everything the page may ask of the core. The window and the demo both implement it. */
 export interface Core {
   initialFolder(): Promise<string | null>;
   recent(): Promise<string[]>;
   pickFolder(): Promise<string | null>;
   pickFiles(): Promise<string[]>;
+  /** A path for a new study folder, from a save dialog, or null. */
+  pickNewFolder(): Promise<string | null>;
   openFolder(path: string): Promise<Home>;
+  newFolder(path: string): Promise<Home>;
   home(): Promise<Home>;
   setUp(): Promise<Home>;
+  upgradeFolder(): Promise<Home>;
+  setup(): Promise<Setup>;
+  replaceRuntime(): Promise<RuntimeSetup>;
+  keepRuntime(): Promise<RuntimeSetup>;
+  account(): Promise<Account>;
+  setPayment(payment: Payment): Promise<Account>;
+  signIn(): Promise<void>;
+  about(): Promise<About>;
   openSession(resume: boolean): Promise<Opened>;
   send(text: string): Promise<void>;
   sendNewLesson(goal: string): Promise<void>;

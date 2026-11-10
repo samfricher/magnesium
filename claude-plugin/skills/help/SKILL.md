@@ -46,6 +46,7 @@ Run `magnesium digest` once. It changes nothing. It prints JSON facts that code 
 - `unreadable`, inside each plan: what the digest could not read in the plan's files. Each item has a `file`, a `section`, a `line` and a `reason`. The counts leave these out, so a plan with any items is not counted in full.
 - `record.sessions`: the latest Magnesium sessions, newest first. Each has a `goal`, the checkpoint's `current_problem` and `next_action`, and `days_ago`, which counts from the session's last change, not from a paper's date.
 - `record.reviews`: `ready` is the count of review suggestions ready now, with their `ready_purposes`. A suggestion is an offer, not a task the learner must clear.
+- `upgrade_needed`: present when an earlier Magnesium set the folder up. The digest then holds no plans and no record, because reading the record would upgrade it. Tell the learner that `magnesium init --upgrade-instructions`, run in the study folder, upgrades it and keeps a copy of the record first.
 
 Use these facts as printed. Do not recount them or redo their date sums. If `magnesium digest` fails, leave out the record and look at the folder yourself. The study folder is the nearest folder, at or above the working directory, that holds `.magnesium/`. List it two levels deep: the folder itself, then each subfolder. Skip `.magnesium`, `.claude`, `.git`, other hidden entries, and `AGENTS.md` or `CLAUDE.md`, which setup can write.
 

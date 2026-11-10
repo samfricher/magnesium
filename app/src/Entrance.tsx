@@ -29,44 +29,16 @@ export function clockText(leftSeconds: number): string {
   return `${over ? "+" : ""}${mm}:${ss}`;
 }
 
-export function Welcome(props: { recent: string[]; error: string | null; onPick: () => void; onOpen: (path: string) => void }) {
-  return (
-    <section className="scr">
-      <div className="top" data-tauri-drag-region>
-        <span>magnesium</span>
-      </div>
-      <div className="col">
-        <div className="card">
-          <div className="meta">no folder open</div>
-          <h2 className="q">Open a study folder</h2>
-          <div className="sub">The folder with your course files. Your record stays in it.</div>
-          <div className="row">
-            <button className="btn pri" autoFocus onClick={props.onPick}>
-              Open a folder &#8629;
-            </button>
-          </div>
-          {props.error && <div className="note warn selectable">{props.error}</div>}
-          {props.recent.length > 0 && (
-            <div className="recent">
-              {props.recent.slice(0, 5).map((path) => (
-                <button key={path} onClick={() => props.onOpen(path)}>
-                  {path.split("/").filter(Boolean).pop()}
-                  <span>{path}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function Entrance(props: {
   home: Home;
   /** True while the card asks what to learn, for a new lesson in a folder that has one. */
   asking: boolean;
   error: string | null;
+  /** One line that something finished, such as an upgrade. */
+  notice: string | null;
+  /** True while the folder is being upgraded. */
+  upgrading: boolean;
+  onUpgrade: () => void;
   onContinue: (skipChecks: boolean) => void;
   onNewLesson: (goal: string) => void;
   onAsk: (asking: boolean) => void;
@@ -76,6 +48,9 @@ export function Entrance(props: {
 }) {
   const { home } = props;
   const [goal, setGoal] = useState("");
+  // "Not now" to the upgrade, for this folder while it stays open.
+  const [declined, setDeclined] = useState(false);
+  useEffect(() => setDeclined(false), [home.folder]);
   const now = useNow(1000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
@@ -102,6 +77,37 @@ export function Entrance(props: {
           <button className="btn pri" autoFocus onClick={props.onRetry}>
             Try again &#8629;
           </button>
+        </div>
+      </>
+    );
+  } else if (home.state === "needs_upgrade") {
+    card = declined ? (
+      <>
+        <div className="meta">not upgraded</div>
+        <h2 className="q">This folder stays as it was</h2>
+        <div className="sub">
+          The window cannot start a lesson here until the folder is upgraded, and nothing in it was changed. Another folder opens from &#8984;K.
+        </div>
+        <div className="row">
+          <button className="btn" disabled={props.upgrading} onClick={props.onUpgrade}>
+            Upgrade
+          </button>
+        </div>
+      </>
+    ) : (
+      <>
+        <div className="meta">one step first</div>
+        <h2 className="q">Upgrade this folder?</h2>
+        <div className="sub selectable">{home.message}</div>
+        <div className="row">
+          <button className="btn pri" autoFocus disabled={props.upgrading} onClick={props.onUpgrade}>
+            {props.upgrading ? "Upgrading…" : "Upgrade \u21b5"}
+          </button>
+          {!props.upgrading && (
+            <button className="btn ghost" onClick={() => setDeclined(true)}>
+              Not now
+            </button>
+          )}
         </div>
       </>
     );
@@ -224,6 +230,7 @@ export function Entrance(props: {
           <div className="last">&nbsp;</div>
         )}
         <div className="card">{card}</div>
+        {props.notice && <div className="note selectable">{props.notice}</div>}
         {props.error && <div className="note warn selectable">{props.error}</div>}
       </div>
     </section>

@@ -18,6 +18,12 @@ What a turn does is chosen by a word in the learner's message:
   HELPER      a helper agent writes text that must never be shown
   LIMIT       end the turn at a usage limit
   HISTORY     say how many turns this conversation has had
+
+It also answers `auth status --json` and `auth login`, as Claude Code does:
+signed in to a Claude Max plan, or with the API key in ANTHROPIC_API_KEY when
+one is set. STAND_IN_SIGNED_OUT=1 starts it signed out, until `auth login`
+runs. STAND_IN_KEY_HELPER=1 makes it pay with a key from its own settings,
+which no environment change removes.
 """
 
 import json
@@ -50,7 +56,47 @@ def emit(value):
 
 
 args = sys.argv[1:]
-log("start", {"args": args, "cwd": os.getcwd(), "path": os.environ.get("PATH", "")})
+log(
+    "start",
+    {
+        "args": args,
+        "cwd": os.getcwd(),
+        "path": os.environ.get("PATH", ""),
+        "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+    },
+)
+
+
+def key_source():
+    if os.environ.get("STAND_IN_KEY_HELPER") == "1":
+        return "apiKeyHelper"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "ANTHROPIC_API_KEY"
+    return "none"
+
+
+def signed_in():
+    if os.environ.get("STAND_IN_SIGNED_OUT") != "1":
+        return True
+    return bool(STATE) and os.path.exists(os.path.join(STATE, "signed-in"))
+
+
+if args[:2] == ["auth", "status"]:
+    if not signed_in():
+        print(json.dumps({"loggedIn": False, "authMethod": "none", "apiProvider": "firstParty"}))
+        sys.exit(1)
+    if key_source() == "none":
+        status = {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty", "subscriptionType": "max"}
+    else:
+        status = {"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty", "apiKeySource": key_source()}
+    print(json.dumps(status))
+    sys.exit(0)
+if args[:2] == ["auth", "login"]:
+    # The real program opens Anthropic's page and waits for the browser.
+    time.sleep(0.3)
+    if STATE:
+        open(os.path.join(STATE, "signed-in"), "w").close()
+    sys.exit(0)
 
 if "--bare" in args:
     sys.stderr.write("stand-in: --bare would skip the plugin\n")
@@ -103,6 +149,7 @@ def init_message():
         "mcp_servers": [],
         "plugins": [],
         "slash_commands": ["help"],
+        "apiKeySource": key_source(),
     }
     if not NO_PLUGIN:
         message["tools"].append("mcp__plugin_magnesium_magnesium__learning_step")

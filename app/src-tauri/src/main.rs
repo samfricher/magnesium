@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use mg_core::agent::{AgentEvent, Answer, Decision};
+use mg_core::agent::{Account, AgentEvent, Answer, Decision, Payment};
 use mg_core::claude::ClaudeCode;
-use mg_core::manager::Opened;
+use mg_core::install::RuntimeSetup;
+use mg_core::manager::{Opened, Setup};
 use mg_core::store::PaperSitting;
 use mg_core::study::{Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
@@ -61,6 +62,67 @@ fn home(shell: State<'_, Shell>) -> Reply<Home> {
 #[tauri::command(async)]
 fn set_up(shell: State<'_, Shell>) -> Reply<Home> {
     plain(shell.manager.set_up())
+}
+
+#[tauri::command(async)]
+fn upgrade_folder(shell: State<'_, Shell>) -> Reply<Home> {
+    plain(shell.manager.upgrade_folder())
+}
+
+#[tauri::command(async)]
+fn new_folder(shell: State<'_, Shell>, path: String) -> Reply<Home> {
+    plain(shell.manager.new_folder(Path::new(&path)))
+}
+
+/// The `magnesium` program, Claude Code and the way of paying. Installs the
+/// app's own program first when none is installed.
+#[tauri::command(async)]
+fn setup(shell: State<'_, Shell>) -> Setup {
+    shell.manager.setup()
+}
+
+#[tauri::command(async)]
+fn replace_runtime(shell: State<'_, Shell>) -> RuntimeSetup {
+    shell.manager.replace_runtime()
+}
+
+#[tauri::command(async)]
+fn keep_runtime(shell: State<'_, Shell>) -> RuntimeSetup {
+    shell.manager.keep_runtime()
+}
+
+#[tauri::command(async)]
+fn account(shell: State<'_, Shell>) -> Account {
+    shell.manager.account()
+}
+
+#[tauri::command(async)]
+fn set_payment(shell: State<'_, Shell>, payment: Payment) -> Account {
+    shell.manager.set_payment(payment)
+}
+
+#[tauri::command(async)]
+fn sign_in(shell: State<'_, Shell>) -> Reply<()> {
+    plain(shell.manager.sign_in())
+}
+
+/// The window's version and the commit it was built from. The download's
+/// build passes the commit in; a build from source has none.
+#[derive(Serialize)]
+struct About {
+    version: String,
+    commit: Option<String>,
+}
+
+#[tauri::command]
+fn about(app: tauri::AppHandle) -> About {
+    About {
+        version: app.package_info().version.to_string(),
+        commit: option_env!("MAGNESIUM_BUILD_COMMIT")
+            .map(str::trim)
+            .filter(|commit| !commit.is_empty())
+            .map(str::to_owned),
+    }
 }
 
 #[tauri::command(async)]
@@ -234,6 +296,15 @@ fn main() {
             open_folder,
             home,
             set_up,
+            upgrade_folder,
+            new_folder,
+            setup,
+            replace_runtime,
+            keep_runtime,
+            account,
+            set_payment,
+            sign_in,
+            about,
             open_session,
             send,
             send_new_lesson,

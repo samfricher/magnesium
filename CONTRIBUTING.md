@@ -81,3 +81,14 @@ To make a release:
    ```
 
    `--generate-notes` writes release notes that list the pull requests merged since the previous release. Then close the release issue.
+
+### The Mac download
+
+The study window ships as a disk image for Apple Silicon Macs, with the `magnesium` program inside it. The workflow **Mac download** (`.github/workflows/mac-download.yml`) builds it on a GitHub-hosted Mac, so that no file in it holds a builder's home folder path. It never runs on a push or a pull request.
+
+1. On GitHub, open Actions, then Mac download, then Run workflow, on `main`. Give a release-candidate tag such as `v0.3.0-rc.1`. Its version must be the `version` in `Cargo.toml`.
+2. The workflow builds the window and the program from that commit, passes the commit to both builds, signs the app ad hoc, checks that the program reports the commit and that no file holds a home folder path, and uploads `Magnesium-0.3.0-rc.1-arm64.dmg` to a draft pre-release.
+3. Check a copy downloaded with a browser, as the app README describes. A copy built on your own Mac carries no download flag, so it shows nothing of what first open does.
+4. Publish the draft yourself. The workflow never does. As a pre-release, it does not change what `gh release view` prints, so the install guide still finds the newest release.
+
+`app/scripts/package.sh` is the build the workflow runs.

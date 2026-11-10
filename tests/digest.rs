@@ -301,3 +301,79 @@ fn digest_of_a_new_study_folder_is_empty_and_outside_one_is_inactive() {
     assert_eq!(value["record"]["reviews"]["ready"], 0);
     assert_eq!(value["files"]["listed"], json!(["lesson.md"]));
 }
+
+/// The copies of the record kept before an upgrade.
+fn record_copies(control: &Path) -> usize {
+    fs::read_dir(control.join("backups"))
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("state-schema-")
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[test]
+fn digest_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_changes_nothing() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let control = e.workspace.join(support::CONTROL_DIR);
+    let store = control.join("state.sqlite");
+    let id: String = rusqlite::Connection::open(&store)
+        .unwrap()
+        .query_row("SELECT workspace_id FROM workspace_meta", [], |r| r.get(0))
+        .unwrap();
+    // The record as the release of 21 October made it.
+    fs::remove_file(&store).unwrap();
+    let old = rusqlite::Connection::open(&store).unwrap();
+    old.execute_batch(include_str!("fixtures/learner_model/schema-2.sql"))
+        .unwrap();
+    old.execute(
+        "INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms)
+           VALUES(1,?1,'learner-model/v2',2,1000)",
+        [&id],
+    )
+    .unwrap();
+    drop(old);
+    let before = fs::read(&store).unwrap();
+
+    let value = digest(&e);
+    assert_eq!(value["active"], true, "{value}");
+    assert_eq!(value["upgrade_needed"], true, "{value}");
+    assert!(value.get("plans").is_none(), "{value}");
+    assert_eq!(fs::read(&store).unwrap(), before, "the record is as it was");
+    assert_eq!(record_copies(&control), 0, "no copy was made");
+
+    // The upgrade keeps a copy, and the digest then reads the record.
+    let output = e
+        .command()
+        .args(["init", "--upgrade-instructions", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(record_copies(&control), 1);
+    let value = digest(&e);
+    assert!(value.get("upgrade_needed").is_none(), "{value}");
+    assert_eq!(value["record"]["sessions"], json!([]));
+
+    // Teaching instructions an earlier version installed also need the upgrade.
+    let pointer = control.join("instructions/active.json");
+    let current = fs::read(&pointer).unwrap();
+    fs::write(
+        &pointer,
+        format!(
+            "{{\"bundle_version\":2,\"bundle_hash\":\"{}\"}}",
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+    assert_eq!(digest(&e)["upgrade_needed"], true);
+    fs::write(&pointer, current).unwrap();
+    assert!(digest(&e).get("upgrade_needed").is_none());
+}

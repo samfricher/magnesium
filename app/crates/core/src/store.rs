@@ -1,6 +1,8 @@
 //! What the window itself remembers, kept on this computer and nowhere else:
 //! which folders were opened, which conversation each one was in, the line the
-//! learner stopped at, and the turns the window showed.
+//! learner stopped at, the turns the window showed, how the learner chose to
+//! pay for lessons, and an installed `magnesium` they chose to keep. Never a
+//! credential.
 //!
 //! None of it is learning state. The learner record belongs to the runtime.
 
@@ -13,6 +15,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::Payment;
 use crate::paths;
 
 /// Set this to keep the window's files somewhere else. For tests.
@@ -50,6 +53,12 @@ struct Data {
     block_minutes: Option<u32>,
     #[serde(default)]
     progress_view: Option<String>,
+    #[serde(default)]
+    payment: Option<Payment>,
+    /// What `--version` printed for an installed `magnesium` the learner chose
+    /// to keep over the one inside the app. Asked again for any other.
+    #[serde(default)]
+    kept_runtime: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -200,6 +209,26 @@ impl Store {
             data.progress_view = Some(view.to_owned());
             self.save(&data);
         }
+    }
+
+    pub fn payment(&self) -> Payment {
+        self.lock().payment.unwrap_or_default()
+    }
+
+    pub fn set_payment(&self, payment: Payment) {
+        let mut data = self.lock();
+        data.payment = Some(payment);
+        self.save(&data);
+    }
+
+    pub fn kept_runtime(&self) -> Option<String> {
+        self.lock().kept_runtime.clone()
+    }
+
+    pub fn set_kept_runtime(&self, version: Option<&str>) {
+        let mut data = self.lock();
+        data.kept_runtime = version.map(str::to_owned);
+        self.save(&data);
     }
 
     fn transcript(&self, folder: &Path) -> PathBuf {

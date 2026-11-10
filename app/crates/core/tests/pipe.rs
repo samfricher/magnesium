@@ -558,7 +558,7 @@ fn a_program_that_is_missing_gives_a_plain_message() {
     let error = manager
         .open_session(true)
         .expect_err("no program, no session");
-    assert!(error.to_string().contains("could not start Claude Code"));
+    assert!(error.to_string().contains("Claude Code is not installed"));
 }
 
 #[test]

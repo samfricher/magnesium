@@ -54,6 +54,19 @@ fn digest(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let id = workspace.id().map_err(|e| e.to_string())?;
     reject_symlink_components(&workspace.store_path(), workspace.control())
         .map_err(|e| e.to_string())?;
+    // Opening an earlier version's record upgrades it. The digest changes
+    // nothing, so it says so and stops: `magnesium init
+    // --upgrade-instructions` upgrades the folder, after keeping a copy.
+    if crate::learner::store::needs_upgrade(&workspace.store_path()).map_err(|e| e.to_string())?
+        || crate::workspace::instruction_bundle::earlier_bundle_active(workspace.control())
+    {
+        return Ok(json!({
+            "active": true,
+            "upgrade_needed": true,
+            "today": today.to_string(),
+            "study_folder": workspace.root().to_string_lossy(),
+        }));
+    }
     let store = LearnerStore::open(&workspace.store_path(), &id).map_err(|e| e.to_string())?;
     let snapshot = store
         .conn

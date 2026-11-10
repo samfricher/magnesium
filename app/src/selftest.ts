@@ -32,6 +32,19 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     const home = await api.home();
     steps.home = { state: home.state, name: home.name };
 
+    // The setup calls, through the shell. The stand-in is signed in to a plan
+    // and finds no API key, so choosing a key says the plan would be used.
+    const setup = await api.setup();
+    steps.setup = { runtime: setup.runtime.state, signed_in: setup.account.signed_in, paid_with: setup.account.paid_with };
+    if (!setup.account.signed_in || setup.account.paid_with !== "plan") throw new Error("the stand-in agent was not read as signed in to a plan");
+    const withKey = await api.setPayment("api_key");
+    const back = await api.setPayment("plan");
+    steps.payment = { key: withKey.problem !== null, plan: back.problem === null };
+    if (withKey.problem === null || back.problem !== null) throw new Error("the choice of payment did not reach the agent's check");
+    const about = await api.about();
+    steps.about = about;
+    if (!about.version) throw new Error("the window did not report its version");
+
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
     const page = document.createElement("div");
     page.innerHTML = renderMarkdown(

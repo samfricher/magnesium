@@ -43,6 +43,8 @@ Magnesium uses Claude Code's existing model connection. Your usual model limits 
 
 Hand this repository to your coding agent and ask it to install Magnesium by following [docs/install.md](docs/install.md). The agent asks before it installs anything beyond the build.
 
+On an Apple Silicon Mac you can instead download the study window, which installs Magnesium and sets up each study folder itself, with no terminal. The [app README](app/README.md#download) gives the steps.
+
 In Claude Code, type `/magnesium:help` first. It shows a short guide and suggests a next step for your folder, such as adding your materials, studying a chapter, or continuing your study plan. To read about one topic, type `/magnesium:help papers`, `/magnesium:help recording`, `/magnesium:help setup`, or `/magnesium:help trouble`.
 
 To start a lesson, ask for one. For example:

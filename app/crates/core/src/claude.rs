@@ -24,8 +24,8 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::agent::{
-    AgentError, AgentEvent, AgentResult, Answer, Choice, Conversation, Decision, EventSink,
-    Harness, NoticeKind, Question, StartOptions,
+    Account, AgentError, AgentEvent, AgentResult, Answer, Choice, Conversation, Decision,
+    EventSink, Harness, NoticeKind, Payment, Question, StartOptions,
 };
 use crate::paths;
 
@@ -39,6 +39,104 @@ pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_AGENT";
 pub const TRACE_ENV: &str = "MAGNESIUM_APP_TRACE";
 
 const PLUGIN: &str = "magnesium";
+const NAME: &str = "Claude Code";
+/// Anthropic's page for installing Claude Code. The window links to it and
+/// never runs an installer itself.
+const INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
+/// How long a sign-in may wait for the learner in the browser.
+const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+/// Start Claude Code so that the learner's choice of payment holds. Started
+/// by another program, Claude Code uses an API key in its environment over
+/// the learner's plan, and does not ask. With the plan chosen, it gets none.
+/// Keys Claude Code keeps itself, such as a Console sign-in, stay as they
+/// are: `account` reports them, so the window never claims the plan wrongly.
+fn apply_payment(command: &mut std::process::Command, payment: Payment) {
+    if payment == Payment::Plan {
+        command.env_remove("ANTHROPIC_API_KEY");
+        command.env_remove("ANTHROPIC_AUTH_TOKEN");
+    }
+}
+
+/// What `claude auth status --json` says, in the window's words.
+fn read_account(status: &Value, payment: Payment) -> Account {
+    let mut account = Account {
+        name: NAME.into(),
+        installed: true,
+        ..Account::default()
+    };
+    account.signed_in = status["loggedIn"].as_bool() == Some(true);
+    if !account.signed_in {
+        account.problem = Some(
+            match payment {
+                Payment::Plan => "Claude Code is not signed in. Sign in with your Claude account.",
+                Payment::ApiKey => {
+                    "Claude Code is not signed in. Sign in with an Anthropic Console account, which pays per use."
+                }
+            }
+            .into(),
+        );
+        return account;
+    }
+    let text = |key: &str| {
+        status[key]
+            .as_str()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+    };
+    let provider = text("apiProvider").unwrap_or("firstParty");
+    let plan =
+        provider == "firstParty" && matches!(text("authMethod"), Some("claude.ai" | "oauth_token"));
+    if plan {
+        account.paid_with = Some(Payment::Plan);
+        let tier = match text("subscriptionType") {
+            Some("max") => "your Claude Max plan".to_owned(),
+            Some("pro") => "your Claude Pro plan".to_owned(),
+            Some("team") => "your Claude Team plan".to_owned(),
+            Some("enterprise") => "your Claude Enterprise plan".to_owned(),
+            _ => "your Claude plan".to_owned(),
+        };
+        account.detail = Some(tier);
+        if text("subscriptionType") == Some("free") {
+            account.problem = Some(
+                "Your Claude account has no paid plan, and Claude Code needs one: Pro or Max, or an Anthropic Console account that pays per use."
+                    .into(),
+            );
+            return account;
+        }
+    } else {
+        account.paid_with = Some(Payment::ApiKey);
+        account.detail = Some(if provider != "firstParty" {
+            format!("your {provider} account, per use")
+        } else {
+            key_words(text("apiKeySource"))
+        });
+    }
+    account.problem = match (payment, account.paid_with) {
+        (Payment::Plan, Some(Payment::ApiKey)) => Some(format!(
+            "Claude Code would pay with {}, not your Claude plan. Sign in with your Claude account to use the plan.",
+            account.detail.as_deref().unwrap_or("an API key")
+        )),
+        (Payment::ApiKey, Some(Payment::Plan)) => Some(format!(
+            "Claude Code found no API key, so it would use {}. Sign in with an Anthropic Console account to pay per use.",
+            account.detail.as_deref().unwrap_or("your Claude plan")
+        )),
+        _ => None,
+    };
+    account
+}
+
+/// Where an API key came from, in plain words. Never the key itself.
+fn key_words(source: Option<&str>) -> String {
+    match source {
+        Some("ANTHROPIC_API_KEY") => "an API key set in ANTHROPIC_API_KEY, per use".to_owned(),
+        Some("ANTHROPIC_AUTH_TOKEN") => "a token set in ANTHROPIC_AUTH_TOKEN, per use".to_owned(),
+        Some("apiKeyHelper") => "the API key helper in Claude Code's settings, per use".to_owned(),
+        Some("/login managed key") => "your Anthropic Console sign-in, per use".to_owned(),
+        Some(other) => format!("an API key ({other}), per use"),
+        None => "an API key, per use".to_owned(),
+    }
+}
 
 #[derive(Default)]
 pub struct ClaudeCode {
@@ -60,15 +158,18 @@ impl ClaudeCode {
 
 impl Harness for ClaudeCode {
     fn locate(&self) -> AgentResult<PathBuf> {
-        if let Some(program) = &self.program {
-            return Ok(program.clone());
+        let named = self.program.clone().or_else(|| {
+            env::var_os(PROGRAM_ENV)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+        });
+        match named {
+            Some(program) => Some(program).filter(|p| p.is_file()),
+            None => paths::find_program("claude"),
         }
-        if let Some(named) = env::var_os(PROGRAM_ENV).filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(named));
-        }
-        paths::find_program("claude").ok_or_else(|| {
+        .ok_or_else(|| {
             AgentError(
-                "Claude Code is not installed, or the window cannot find it. Install it, sign in once in a terminal, then open the window again."
+                "Claude Code is not installed, or the window cannot find it. Install it, then check again from the start screen."
                     .into(),
             )
         })
@@ -77,6 +178,7 @@ impl Harness for ClaudeCode {
     fn start(&self, options: StartOptions, sink: EventSink) -> AgentResult<Box<dyn Conversation>> {
         let program = self.locate()?;
         let mut command = paths::command(&program);
+        apply_payment(&mut command, options.payment);
         command
             .current_dir(&options.folder)
             .env("PWD", &options.folder)
@@ -124,6 +226,7 @@ impl Harness for ClaudeCode {
             ready_sent: AtomicBool::new(false),
             counter: AtomicU64::new(0),
             interrupts: AtomicU64::new(0),
+            payment: options.payment,
             trace: env::var_os(TRACE_ENV)
                 .filter(|path| !path.is_empty())
                 .and_then(|path| {
@@ -181,6 +284,83 @@ impl Harness for ClaudeCode {
     fn papers(&self, request: &str) -> String {
         format!("/magnesium:papers {}", request.trim())
     }
+
+    fn account(&self, payment: Payment) -> Account {
+        let Ok(program) = self.locate() else {
+            return Account {
+                name: NAME.into(),
+                problem: Some("Claude Code is not on this Mac, or the window cannot find it. Install it, then check again.".into()),
+                install_page: Some(INSTALL_PAGE.into()),
+                ..Account::default()
+            };
+        };
+        // A short question: the PATH a terminal has is not needed, and the
+        // start screen does not wait for the shell to give it.
+        let mut command = paths::light_command(&program);
+        apply_payment(&mut command, payment);
+        command.args(["auth", "status", "--json"]);
+        // Signed out, it ends with 1 and still prints its answer.
+        let answer =
+            paths::run_to_end(command, Duration::from_secs(20)).and_then(|(_, out, err)| {
+                serde_json::from_str::<Value>(out.trim()).map_err(|_| {
+                    let said = err
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("it gave no answer");
+                    clip(said, 200)
+                })
+            });
+        match answer {
+            Ok(status) => read_account(&status, payment),
+            Err(why) => Account {
+                name: NAME.into(),
+                installed: true,
+                problem: Some(format!("Claude Code could not say whether you are signed in ({why}). It may be too old: update it, then check again.")),
+                ..Account::default()
+            },
+        }
+    }
+
+    fn sign_in(&self, payment: Payment) -> AgentResult<()> {
+        let program = self.locate()?;
+        let mut command = paths::light_command(&program);
+        apply_payment(&mut command, payment);
+        command
+            .args([
+                "auth",
+                "login",
+                match payment {
+                    Payment::Plan => "--claudeai",
+                    Payment::ApiKey => "--console",
+                },
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = command.spawn().map_err(|e| {
+            AgentError(format!(
+                "The window could not start Claude Code's sign-in: {e}."
+            ))
+        })?;
+        // It opens Anthropic's page and waits for the browser to report
+        // back. It is left to finish, and stopped if nobody ever does.
+        thread::spawn(move || {
+            let started = Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => return,
+                    Ok(None) if started.elapsed() > SIGN_IN_LIMIT => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return;
+                    }
+                    Ok(None) => thread::sleep(Duration::from_millis(250)),
+                }
+            }
+        });
+        Ok(())
+    }
 }
 
 fn is_session_id(id: &str) -> bool {
@@ -224,6 +404,8 @@ struct Shared {
     counter: AtomicU64,
     /// Counts interrupts, so a watchdog only acts on the one that set it.
     interrupts: AtomicU64,
+    /// How the learner chose to pay, to check against what the agent uses.
+    payment: Payment,
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
 }
@@ -378,7 +560,7 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
 }
 
 const SIGN_IN: &str =
-    "Claude Code is signed out. Run claude in a terminal, sign in, then send your message again.";
+    "Claude Code is signed out. Press ⌘K and choose Sign in to Claude Code, then send your message again.";
 
 fn looks_signed_out(text: &str) -> bool {
     let text = text.to_ascii_lowercase();
@@ -500,6 +682,12 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
     }
     if !shared.ready_sent.swap(true, Ordering::SeqCst) {
         let session_id = lock(&shared.session_id).clone().unwrap_or_default();
+        if let Some(text) = payment_notice(shared.payment, value) {
+            shared.emit(AgentEvent::Notice {
+                kind: NoticeKind::SignIn,
+                text,
+            });
+        }
         let problems = init_problems(value);
         shared.emit(AgentEvent::Ready {
             session_id,
@@ -508,6 +696,24 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
                 .any(|problem| problem.contains("plugin did not load")),
             problems,
         });
+    }
+}
+
+/// A lesson paid another way than the learner chose, in one line. Claude
+/// Code's first report names the key it uses, or "none" for the plan.
+fn payment_notice(payment: Payment, init: &Value) -> Option<String> {
+    let source = init["apiKeySource"].as_str()?;
+    let plan = source == "none";
+    match payment {
+        Payment::Plan if !plan => Some(format!(
+            "This lesson is paid with {}, not your Claude plan. To use the plan, sign in with your Claude account (⌘K, Sign in to Claude Code).",
+            key_words(Some(source))
+        )),
+        Payment::ApiKey if plan => Some(
+            "This lesson uses your Claude plan, because Claude Code found no API key. To pay per use, sign in with an Anthropic Console account (⌘K, Sign in to Claude Code)."
+                .into(),
+        ),
+        _ => None,
     }
 }
 
@@ -1075,6 +1281,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_account_is_read_from_claude_codes_own_words() {
+        let plan = read_account(
+            &json!({"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "firstParty", "subscriptionType": "pro"}),
+            Payment::Plan,
+        );
+        assert_eq!(plan.paid_with, Some(Payment::Plan));
+        assert_eq!(plan.detail.as_deref(), Some("your Claude Pro plan"));
+        assert_eq!(plan.problem, None);
+        // The plan in use when the learner chose an API key.
+        let wanted_key = read_account(
+            &json!({"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "max"}),
+            Payment::ApiKey,
+        );
+        assert!(wanted_key.problem.unwrap().contains("found no API key"));
+        // A Console sign-in pays per use.
+        let console = read_account(
+            &json!({"loggedIn": true, "authMethod": "api_key", "apiKeySource": "/login managed key"}),
+            Payment::Plan,
+        );
+        assert_eq!(console.paid_with, Some(Payment::ApiKey));
+        assert!(console.detail.unwrap().contains("Console"));
+        // Signed out, and a free account.
+        let out = read_account(
+            &json!({"loggedIn": false, "authMethod": "none"}),
+            Payment::ApiKey,
+        );
+        assert!(!out.signed_in && out.problem.unwrap().contains("Console"));
+        let free = read_account(
+            &json!({"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "free"}),
+            Payment::Plan,
+        );
+        assert!(free.problem.unwrap().contains("no paid plan"));
+    }
+
+    #[test]
+    fn a_lesson_paid_another_way_than_chosen_is_named() {
+        let plan = json!({"apiKeySource": "none"});
+        let key = json!({"apiKeySource": "ANTHROPIC_API_KEY"});
+        assert_eq!(payment_notice(Payment::Plan, &plan), None);
+        assert_eq!(payment_notice(Payment::ApiKey, &key), None);
+        assert!(payment_notice(Payment::Plan, &key)
+            .unwrap()
+            .contains("ANTHROPIC_API_KEY"));
+        assert!(payment_notice(Payment::ApiKey, &plan)
+            .unwrap()
+            .contains("Claude plan"));
+        // An older Claude Code that does not say is not guessed at.
+        assert_eq!(payment_notice(Payment::Plan, &json!({})), None);
+    }
+
+    #[test]
     fn a_report_without_the_plugin_is_a_problem() {
         let value = json!({"plugins": [], "mcp_servers": [], "tools": ["Read"], "slash_commands": ["help"]});
         let problems = init_problems(&value);
@@ -1176,6 +1433,7 @@ mod tests {
             ready_sent: AtomicBool::new(false),
             counter: AtomicU64::new(0),
             interrupts: AtomicU64::new(0),
+            payment: Payment::Plan,
             trace: None,
             started: Instant::now(),
         });

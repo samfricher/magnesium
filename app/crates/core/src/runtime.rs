@@ -17,7 +17,8 @@ pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_RUNTIME";
 
 pub fn program() -> Option<PathBuf> {
     if let Some(named) = env::var_os(PROGRAM_ENV).filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(named));
+        let named = PathBuf::from(named);
+        return named.is_file().then_some(named);
     }
     paths::find_program("magnesium")
 }
@@ -47,6 +48,19 @@ pub fn attempts(folder: &Path) -> Option<Vec<Value>> {
 /// `magnesium init`: set a folder up for study.
 pub fn init(folder: &Path) -> Result<(), String> {
     run(folder, &["init", "--json"], Duration::from_secs(30)).map(|_| ())
+}
+
+/// `magnesium init --upgrade-instructions`, in the study root: upgrade a
+/// folder an earlier version set up. The runtime copies the record to
+/// `.magnesium/backups` before it changes it, and switches the folder to this
+/// version's teaching instructions. A large record takes a while to copy.
+pub fn upgrade(root: &Path) -> Result<(), String> {
+    run(
+        root,
+        &["init", "--upgrade-instructions", "--json"],
+        Duration::from_secs(180),
+    )
+    .map(|_| ())
 }
 
 pub fn version() -> Option<String> {

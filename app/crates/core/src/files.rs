@@ -16,9 +16,10 @@ const IMAGES: [&str; 9] = [
 const MAX_BYTES: u64 = 200 * 1024 * 1024;
 /// What a link in a reply may open. A link must never start a program, so
 /// anything else, such as an app, a script or a web shortcut, stays closed.
-/// The same list as the file names the page marks as paths.
-const DOCUMENTS: [&str; 10] = [
-    "pdf", "png", "jpg", "jpeg", "gif", "webp", "md", "tex", "txt", "csv",
+/// An HTML page, such as a paper or a figure the tutor wrote, opens in the
+/// browser. The same list as the file names the page marks as paths.
+const DOCUMENTS: [&str; 11] = [
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "md", "tex", "txt", "csv", "html",
 ];
 
 fn extension(path: &Path) -> String {
@@ -164,7 +165,7 @@ pub fn openable(root: &Path, path: &str) -> Result<PathBuf, String> {
     }
     if !resolved.is_file() || !DOCUMENTS.contains(&extension(&resolved).as_str()) {
         return Err(
-            "The window only opens documents and images: PDF, PNG, JPEG, GIF, WebP, Markdown, TeX, text and CSV."
+            "The window only opens documents, web pages and images: PDF, HTML, PNG, JPEG, GIF, WebP, Markdown, TeX, text and CSV."
                 .into(),
         );
     }
@@ -324,8 +325,17 @@ mod tests {
         let notes = root.path().join("Study/notes");
         fs::create_dir_all(&notes).unwrap();
         for name in [
-            "a.pdf", "b.PNG", "c.jpg", "d.jpeg", "e.gif", "f.webp", "g.md", "h.txt", "i.tex",
+            "a.pdf",
+            "b.PNG",
+            "c.jpg",
+            "d.jpeg",
+            "e.gif",
+            "f.webp",
+            "g.md",
+            "h.txt",
+            "i.tex",
             "j.csv",
+            "paper.html",
         ] {
             fs::write(notes.join(name), b"x").unwrap();
             let path = format!("Study/notes/{name}");
@@ -336,6 +346,7 @@ mod tests {
         for name in [
             "run.command",
             "run.sh",
+            "script.js",
             "link.webloc",
             "flow.workflow",
             "README",
@@ -345,6 +356,7 @@ mod tests {
         for name in [
             "run.command",
             "run.sh",
+            "script.js",
             "link.webloc",
             "flow.workflow",
             "README",
