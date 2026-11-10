@@ -1,0 +1,31 @@
+#!/bin/sh
+# Open Magnesium's window.
+#
+#   ./run                      the folder you had open last time
+#   ./run ~/path/to/course     that study folder
+#   ./run --build              build the app first, then open it
+#
+# The first run builds the app, which takes a few minutes.
+set -eu
+ROOT=$(cd "$(dirname "$0")" && pwd)
+cd "$ROOT"
+APP="$ROOT/target/release/bundle/macos/Magnesium.app"
+BIN="$APP/Contents/MacOS/magnesium-window"
+
+BUILD=no
+if [ "${1:-}" = "--build" ]; then
+  BUILD=yes
+  shift
+fi
+[ -x "$BIN" ] || BUILD=yes
+if [ "$BUILD" = yes ]; then
+  [ -d node_modules ] || npm install
+  npx tauri build --bundles app
+fi
+
+FOLDER=${1:-}
+if [ -n "$FOLDER" ]; then
+  FOLDER=$(cd "$FOLDER" && pwd)
+  exec "$BIN" "$FOLDER"
+fi
+exec "$BIN"

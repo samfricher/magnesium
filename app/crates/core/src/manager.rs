@@ -1,0 +1,398 @@
+//! One open study folder and its one conversation.
+//!
+//! The window is a layer: every teaching rule stays in the runtime and the
+//! plugin. So this sends the learner's plain words and nothing more, and a
+//! button such as "I'm lost" sends those two words.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use chrono::Local;
+use serde::Serialize;
+
+use crate::agent::{
+    AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink, Harness,
+    StartOptions,
+};
+use crate::files;
+use crate::runtime;
+use crate::store::{PaperSitting, Store, Turn};
+use crate::study::{self, Home, Paper, Progress, Rail};
+
+#[derive(Default)]
+struct Buffer {
+    session: Option<String>,
+    learner: String,
+    tutor: Vec<String>,
+    /// Words of a block that has not finished. An interrupt can leave some.
+    writing: String,
+    /// Whether this process has reported what it loaded.
+    ready: bool,
+    /// Whether this process has ended.
+    ended: bool,
+}
+
+struct Inner {
+    folder: Option<PathBuf>,
+    conversation: Option<Box<dyn Conversation>>,
+    buffer: Arc<Mutex<Buffer>>,
+}
+
+pub struct Manager {
+    store: Arc<Store>,
+    harness: Arc<dyn Harness>,
+    sink: EventSink,
+    inner: Mutex<Inner>,
+}
+
+/// What the session screen needs when it opens.
+#[derive(Clone, Debug, Serialize)]
+pub struct Opened {
+    pub resumed: bool,
+    pub turns: Vec<Turn>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+fn none_open() -> AgentError {
+    AgentError("Open a study folder first.".into())
+}
+
+impl Manager {
+    pub fn new(store: Arc<Store>, harness: Arc<dyn Harness>, sink: EventSink) -> Self {
+        Self {
+            store,
+            harness,
+            sink,
+            inner: Mutex::new(Inner {
+                folder: None,
+                conversation: None,
+                buffer: Arc::new(Mutex::new(Buffer::default())),
+            }),
+        }
+    }
+
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
+    pub fn folder(&self) -> Option<PathBuf> {
+        lock(&self.inner).folder.clone()
+    }
+
+    fn need_folder(&self) -> AgentResult<PathBuf> {
+        self.folder().ok_or_else(none_open)
+    }
+
+    pub fn recent(&self) -> Vec<String> {
+        self.store.recent()
+    }
+
+    /// The folder to show when the window opens with none named.
+    pub fn folder_to_open(&self) -> Option<String> {
+        study::folder_to_open(&self.store.recent())
+    }
+
+    /// Open a study folder. Any conversation in the previous folder is ended;
+    /// it stays on disk and continues the next time that folder is opened.
+    pub fn open_folder(&self, path: &Path) -> AgentResult<Home> {
+        let folder = path
+            .canonicalize()
+            .ok()
+            .filter(|p| p.is_dir())
+            .ok_or_else(|| AgentError("That folder does not exist.".into()))?;
+        {
+            let mut inner = lock(&self.inner);
+            if let Some(mut conversation) = inner.conversation.take() {
+                conversation.close();
+            }
+            inner.folder = Some(folder.clone());
+        }
+        self.store.opened(&folder);
+        Ok(study::home(&folder, &self.store))
+    }
+
+    pub fn home(&self) -> AgentResult<Home> {
+        Ok(study::home(&self.need_folder()?, &self.store))
+    }
+
+    pub fn progress(&self, target: Option<&str>) -> AgentResult<Progress> {
+        Ok(study::progress(&self.need_folder()?, target, &self.store))
+    }
+
+    pub fn rail(&self) -> AgentResult<Rail> {
+        Ok(study::rail(&self.need_folder()?))
+    }
+
+    /// Set a folder up for Magnesium, which adds a `.magnesium` folder to it.
+    pub fn set_up(&self) -> AgentResult<Home> {
+        let folder = self.need_folder()?;
+        runtime::init(&folder)
+            .map_err(|e| AgentError(format!("Magnesium could not set this folder up: {e}.")))?;
+        Ok(study::home(&folder, &self.store))
+    }
+
+    /// The sink the agent writes to. It keeps the window's own copy of each
+    /// turn and remembers the conversation's id, then passes the event on.
+    fn sink_for(&self, folder: PathBuf, buffer: Arc<Mutex<Buffer>>) -> EventSink {
+        let store = Arc::clone(&self.store);
+        let out = Arc::clone(&self.sink);
+        Arc::new(move |event: AgentEvent| {
+            match &event {
+                AgentEvent::Ready { session_id, .. } if !session_id.is_empty() => {
+                    let mut buffer = lock(&buffer);
+                    buffer.session = Some(session_id.clone());
+                    buffer.ready = true;
+                    let id = session_id.clone();
+                    store.update(&folder, |state| state.session_id = Some(id));
+                }
+                // An agent that ends before it reports anything was most
+                // likely asked for a conversation it no longer has. Forget
+                // the id, so the next message starts a new conversation.
+                AgentEvent::Exited { expected, .. } => {
+                    let mut buffer = lock(&buffer);
+                    buffer.ended = true;
+                    if !expected && !buffer.ready {
+                        store.update(&folder, |state| state.session_id = None);
+                    }
+                }
+                AgentEvent::TextDelta { text } => lock(&buffer).writing.push_str(text),
+                AgentEvent::TextDone { text } => {
+                    let mut buffer = lock(&buffer);
+                    buffer.writing.clear();
+                    buffer.tutor.push(text.clone());
+                }
+                AgentEvent::TurnEnded { interrupted, .. } => {
+                    let mut buffer = lock(&buffer);
+                    let unfinished = std::mem::take(&mut buffer.writing);
+                    if !unfinished.trim().is_empty() {
+                        buffer.tutor.push(unfinished);
+                    }
+                    let tutor = buffer.tutor.join("\n\n");
+                    let learner = std::mem::take(&mut buffer.learner);
+                    buffer.tutor.clear();
+                    if let Some(session) = buffer.session.clone() {
+                        if !tutor.trim().is_empty() || !learner.trim().is_empty() {
+                            store.append_turn(
+                                &folder,
+                                &Turn {
+                                    session,
+                                    ms: Local::now().timestamp_millis(),
+                                    learner,
+                                    tutor,
+                                    interrupted: *interrupted,
+                                },
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+            out(event);
+        })
+    }
+
+    /// Open the session screen. With `resume`, the folder's last conversation
+    /// continues and its earlier turns come back. Without, the next message
+    /// starts a new conversation.
+    pub fn open_session(&self, resume: bool) -> AgentResult<Opened> {
+        let folder = self.need_folder()?;
+        let mut inner = lock(&self.inner);
+        let running = inner.conversation.is_some() && !lock(&inner.buffer).ended;
+        if running && resume {
+            let session = lock(&inner.buffer).session.clone();
+            let turns = session
+                .map(|id| self.store.turns(&folder, &id))
+                .unwrap_or_default();
+            return Ok(Opened {
+                resumed: true,
+                turns,
+            });
+        }
+        if let Some(mut old) = inner.conversation.take() {
+            old.close();
+        }
+        let remembered = self.store.folder(&folder).session_id.filter(|_| resume);
+        if !resume {
+            self.store.update(&folder, |state| {
+                state.session_id = None;
+                state.stopped_at = None;
+                state.stopped_ms = None;
+            });
+        }
+        let buffer = Arc::new(Mutex::new(Buffer {
+            session: remembered.clone(),
+            ..Buffer::default()
+        }));
+        let conversation = self.harness.start(
+            StartOptions {
+                folder: folder.clone(),
+                resume: remembered.clone(),
+            },
+            self.sink_for(folder.clone(), Arc::clone(&buffer)),
+        )?;
+        inner.conversation = Some(conversation);
+        inner.buffer = buffer;
+        let turns = remembered
+            .as_deref()
+            .map(|id| self.store.turns(&folder, id))
+            .unwrap_or_default();
+        Ok(Opened {
+            resumed: remembered.is_some(),
+            turns,
+        })
+    }
+
+    fn with_conversation<T>(
+        &self,
+        act: impl FnOnce(&mut dyn Conversation) -> AgentResult<T>,
+    ) -> AgentResult<T> {
+        let mut inner = lock(&self.inner);
+        let ended = lock(&inner.buffer).ended;
+        let conversation = inner
+            .conversation
+            .as_mut()
+            .filter(|_| !ended)
+            .ok_or_else(|| {
+                AgentError("The tutor is not running. Send your message again to start it.".into())
+            })?;
+        act(conversation.as_mut())
+    }
+
+    fn send_as(&self, shown: &str, sent: &str) -> AgentResult<()> {
+        let buffer = Arc::clone(&lock(&self.inner).buffer);
+        lock(&buffer).learner = shown.to_owned();
+        self.with_conversation(|conversation| conversation.send(sent))
+    }
+
+    /// Send the learner's words exactly as typed.
+    pub fn send(&self, text: &str) -> AgentResult<()> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.send_as(text, text)
+    }
+
+    /// Start a new lesson on what the learner named.
+    pub fn send_new_lesson(&self, goal: &str) -> AgentResult<()> {
+        let goal = goal.trim();
+        if goal.is_empty() {
+            return Ok(());
+        }
+        self.send_as(goal, &self.harness.new_lesson(goal))
+    }
+
+    pub fn interrupt(&self) -> AgentResult<()> {
+        self.with_conversation(|conversation| conversation.interrupt())
+    }
+
+    pub fn decide(&self, id: &str, decision: Decision) -> AgentResult<()> {
+        self.with_conversation(|conversation| conversation.decide(id, decision))
+    }
+
+    pub fn answer(&self, id: &str, answers: &[Answer]) -> AgentResult<()> {
+        self.with_conversation(|conversation| conversation.answer(id, answers))
+    }
+
+    /// End the sitting. The line the learner stopped at opens the next one.
+    pub fn stop(&self, stopped_at: Option<&str>) -> AgentResult<()> {
+        let folder = self.need_folder()?;
+        let line = stopped_at
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned);
+        self.store.update(&folder, |state| {
+            state.stopped_at = line;
+            state.stopped_ms = Some(Local::now().timestamp_millis());
+        });
+        if let Some(mut conversation) = lock(&self.inner).conversation.take() {
+            conversation.close();
+        }
+        Ok(())
+    }
+
+    /// Copy a photo or PDF of the learner's work into the study folder.
+    pub fn attach(&self, source: &Path, group: &str) -> AgentResult<String> {
+        let folder = self.need_folder()?;
+        files::hand_in(&folder, group, source).map_err(AgentError)
+    }
+
+    pub fn open_file(&self, path: &str) -> AgentResult<()> {
+        files::open(&self.need_folder()?, path).map_err(AgentError)
+    }
+
+    pub fn image(&self, path: &str) -> AgentResult<String> {
+        files::image(&self.need_folder()?, path).map_err(AgentError)
+    }
+
+    /// Begin a timed paper. The clock is the start time on disk, so it keeps
+    /// running if the window is closed.
+    pub fn paper_start(&self, paper: &Paper, minutes: u32) -> AgentResult<PaperSitting> {
+        let folder = self.need_folder()?;
+        let sitting = PaperSitting {
+            target: paper.target.clone(),
+            name: paper.name.clone(),
+            path: Some(paper.path.clone()),
+            minutes: minutes.clamp(1, 600),
+            started_ms: Local::now().timestamp_millis(),
+        };
+        let saved = sitting.clone();
+        self.store
+            .update(&folder, |state| state.paper = Some(saved));
+        // The paper opens in the system viewer so it can be printed. A paper
+        // that will not open does not stop the clock: the learner may hold a
+        // printed copy.
+        let _ = files::open(&folder, &paper.path);
+        Ok(sitting)
+    }
+
+    /// End a timed paper. With files, the learner's work is copied into the
+    /// study folder and the words that ask the tutor to mark it are returned.
+    pub fn paper_end(&self, hand_in: &[PathBuf]) -> AgentResult<Option<(String, String)>> {
+        let folder = self.need_folder()?;
+        let Some(sitting) = self.store.folder(&folder).paper else {
+            return Ok(None);
+        };
+        let mut copied = Vec::new();
+        for source in hand_in {
+            copied.push(files::hand_in(&folder, &sitting.name, source).map_err(AgentError)?);
+        }
+        self.store.update(&folder, |state| state.paper = None);
+        if copied.is_empty() {
+            return Ok(None);
+        }
+        let used = ((Local::now().timestamp_millis() - sitting.started_ms) / 60_000).max(0);
+        let used = used.min(i64::from(sitting.minutes) * 3);
+        let words = format!(
+            "Mark my {}. I used {} of {} minutes. My work: {}",
+            sitting.name,
+            used,
+            sitting.minutes,
+            copied.join(", ")
+        );
+        Ok(Some((words.clone(), self.harness.papers(&words))))
+    }
+
+    /// Send words that are shown one way and worded another for the agent.
+    pub fn send_shown(&self, shown: &str, sent: &str) -> AgentResult<()> {
+        self.send_as(shown, sent)
+    }
+
+    pub fn set_block_minutes(&self, minutes: u32) {
+        self.store.set_block_minutes(minutes);
+    }
+
+    pub fn set_progress_view(&self, view: &str) {
+        self.store.set_progress_view(view);
+    }
+
+    /// End the conversation when the window closes.
+    pub fn shut_down(&self) {
+        if let Some(mut conversation) = lock(&self.inner).conversation.take() {
+            conversation.close();
+        }
+    }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "magnesium-window"
+version = "0.1.0"
+edition = "2021"
+description = "Magnesium's own window: one window, made for studying, over the learner's own coding agent."
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "magnesium-window"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mg-core = { path = "../crates/core" }

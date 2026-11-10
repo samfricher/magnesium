@@ -1,0 +1,10 @@
+target/
+node_modules/
+dist/
+.DS_Store
+src-tauri/gen/
+*.log
+shots/
+.npm-cache/
+# A local npm setting, such as a cache folder of your own.
+.npmrc

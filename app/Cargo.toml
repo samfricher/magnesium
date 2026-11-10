@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "src-tauri"]
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 1
