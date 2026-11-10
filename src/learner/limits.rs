@@ -109,4 +109,5 @@ pub const RAW_EVENTS_PER_BATCH: usize = 32;
 pub const REFERENCE_BYTES: usize = 256;
 pub const EVENT_METADATA_BYTES: usize = 16 * 1024;
 pub const SOURCE_REFS_BYTES: usize = 8 * 1024;
+pub const ATTEMPT_LABEL_BYTES: usize = 120;
 pub const EXCERPTS_BYTES: usize = 16 * 1024;

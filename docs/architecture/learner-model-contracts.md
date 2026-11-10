@@ -30,6 +30,8 @@ Magnesium exposes five tools. Actions are request fields, not separate tool name
 
 A PDF content failure can return a hashed original-page reference only after successful guarded publication and matching current facts. That reference returns no PDF bytes and does not establish that the requested page exists. Source copies require an indexed, authorized PDF and an exact current hash. Cancellation, storage, identity, policy I/O, worker failures, and superseded publication remain errors.
 
+The first result of any tool in a new sitting may carry `sitting_opener`, the text of the quick checks and paper redos due, once per sitting. With `magnesium opener block`, an instruction load for `orient_and_probe`, `plan_and_route` or `teach_and_practice` returns `status:"unavailable"` with error code `due_checks_first` while a quick check is neither posed nor declined.
+
 The MCP server advertises tools only. It exposes no UI resources or navigation links.
 
 Learner-state requests require `schema:"learner-model/v2"`. `context.instructions` uses its own [instruction request](../../src/adapter/mod.rs); source tools use separate [source request types](../../src/adapter/types.rs). Old learner payloads/stores are rejected without migration.
@@ -91,6 +93,7 @@ See [read request types](../../src/learner/read/requests.rs) for action-specific
 | `session` / `checkpoint` | Lesson transition and optional complete checkpoint replacement |
 | `event_dispositions` | Mark input `processed` or `no_change` |
 | `review_updates` | Create a suggestion or update its status at an expected revision |
+| `observations[].attempt` | `{label, first_try, help}` for a learner's first try at a task: `first_try` is `right`, `wrong` or `declined`, and `help` is `none`, `hint`, `step` or `solution`. The label is 1–120 bytes. A wrong first try, a right one reached through a full `solution`, or a request for the full solution before any answer (`declined` with `solution`), schedules a quick check for the next day. It needs a `learner_response` event, and `complete_captured` refuses it. A label names the skill or misunderstanding, so one with an equation or a question number, such as `Q3`, is refused. A committed update with an attempt returns `quick_checks.open_labels`, for reuse. It schedules quick checks outside the learner store and is not stored in it |
 
 Here is a two-call fallback example. First, start a lesson and capture an exact learner message:
 

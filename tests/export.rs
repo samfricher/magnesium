@@ -198,6 +198,17 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             "workspace_meta",
         ])
     );
+    // The quick checks and sittings beside the learner record come too.
+    let sittings = read_json(&destination.join("sittings.json"));
+    assert_eq!(
+        sittings
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["attempts", "items", "sitting_items", "sittings"]
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

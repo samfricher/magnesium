@@ -8,7 +8,7 @@
       "path": "MAGNESIUM.md",
       "role": "orchestrator",
       "required_for_activation": true,
-      "sha256": "a68aca86b79649fb2091ba0b2e5f7e6f20930f9856c3bffe1726ca4a3d5f9278"
+      "sha256": "2f8f64603753ee433570ef0f4242dc8af54e02985711e5f4dffe3e8e32163e0d"
     },
     {
       "path": "teaching-policy.md",
@@ -32,7 +32,7 @@
       "path": "contracts/tool-recipes.md",
       "role": "contract",
       "required_for_activation": true,
-      "sha256": "41d59da0f6aabeb1fda3885f29c1a667349c04d0943f2c7f1d8613bcb2a03245"
+      "sha256": "db21fde2ef1b599f386a4ac49529bf1a59af611abf80a2b39b6804fa75600fab"
     },
     {
       "path": "workflows/orient-and-probe.md",
@@ -66,7 +66,7 @@
       "path": "workflows/review-and-transfer.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "0380ce380d5d19cec95d6646e1da75a37b9789c38e449e771233eae2086857f7",
+      "sha256": "8ec41ddf1a0801cdb5aa81443292a2dd5e2ef538034369f0efd9ba939462375b",
       "stage": "review-and-transfer"
     },
     {

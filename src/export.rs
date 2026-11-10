@@ -89,6 +89,26 @@ fn rows(conn: &Connection, table: &str) -> Result<Value, String> {
         .map_err(|e| e.to_string())?;
     Ok(json!(result))
 }
+/// The quick checks and sittings kept beside the learner record, when this
+/// study folder has any.
+fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
+    let path = w.control().join(crate::sittings::STORE_FILE);
+    if !path.try_exists().map_err(|e| e.to_string())? {
+        return Ok(None);
+    }
+    reject_symlink_components(&path, w.control()).map_err(|e| e.to_string())?;
+    let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_secs(2))
+        .map_err(|e| e.to_string())?;
+    let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut data = serde_json::Map::new();
+    // Table identifiers come from this fixed list, as for the learner tables.
+    for table in ["items", "attempts", "sittings", "sitting_items"] {
+        data.insert(table.into(), rows(&snapshot, table)?);
+    }
+    Ok(Some(Value::Object(data)))
+}
 // Revalidate an existing directory before touching even its reserved marker.
 fn validate_export_directory(destination: &Path) -> Result<(), String> {
     let manifest = destination.join("manifest.json");
@@ -222,6 +242,12 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
         ),
         ("README.md".to_owned(), readable.into_bytes()),
     ];
+    if let Some(sittings) = sittings_data(&w)? {
+        files.push((
+            "sittings.json".to_owned(),
+            serde_json::to_vec_pretty(&sittings).map_err(|e| e.to_string())?,
+        ));
+    }
     let mut source_coverage = Vec::new();
     let mut copied_paths = std::collections::BTreeSet::new();
     if options.include_source_copies {

@@ -88,6 +88,33 @@ pub(super) fn apply_observations(
             }
             used_events.insert(e.event_id.clone());
         }
+        if let Some(attempt) = &o.attempt {
+            let label = attempt.label.trim();
+            if label.is_empty()
+                || label.len() > limits::ATTEMPT_LABEL_BYTES
+                || label.chars().any(char::is_control)
+            {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].attempt.label"),
+                    "An attempt label is 1–120 bytes without control characters",
+                    host,
+                ));
+            }
+            if names_a_problem(label) {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].attempt.label"),
+                    "A label names the skill or misunderstanding in a few words, such as \"sign of b in the quadratic formula\", never the problem: no equation and no question number. One check per label, so reuse an open check's label exactly when it is the same skill",
+                    host,
+                ));
+            }
+            if !learner_response {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].events"),
+                    "An attempt is the learner's, so cite their message under role learner_response",
+                    host,
+                ));
+            }
+        }
         if matches!(
             o.kind,
             ObservationKind::LearnerWork
@@ -193,4 +220,51 @@ fn labeled_sources(
         ));
     }
     sources
+}
+
+/// A label that names one problem rather than a skill: it holds an equation,
+/// or a question number such as "Q3" or "question 2".
+fn names_a_problem(label: &str) -> bool {
+    let words = label
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let numbered = |word: &str| word.chars().next().is_some_and(|c| c.is_ascii_digit());
+    label.contains('=')
+        || words.iter().any(|word| {
+            word.strip_prefix('q')
+                .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+        })
+        || words.windows(2).any(|pair| {
+            matches!(
+                pair[0].as_str(),
+                "q" | "question" | "problem" | "exercise" | "task"
+            ) && numbered(&pair[1])
+        })
+}
+
+#[cfg(test)]
+mod label_tests {
+    #[test]
+    fn a_label_that_names_one_problem_is_refused() {
+        for label in [
+            "quadratic formula: 2x² − 3x − 2 = 0",
+            "Q3 of the diagnostic",
+            "question 2",
+            "problem 4b",
+        ] {
+            assert!(super::names_a_problem(label), "{label}");
+        }
+        for label in [
+            "sign of b in the quadratic formula",
+            "two-step equations",
+            "quotient rule",
+            "base 10 logarithms",
+            "questions about limits",
+        ] {
+            assert!(!super::names_a_problem(label), "{label}");
+        }
+    }
 }
