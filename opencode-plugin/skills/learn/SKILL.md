@@ -1,6 +1,6 @@
 ---
 name: learn
-description: Use Magnesium when active host context or an explicit learning, teaching, practice, or review request calls for it; repository work alone does not activate a lesson.
+description: Use Magnesium when active host context or an explicit learning, teaching, practice, or review request calls for it, including a request to plan their study or catch up; repository work alone does not activate a lesson.
 ---
 
 # Magnesium Opencode adapter

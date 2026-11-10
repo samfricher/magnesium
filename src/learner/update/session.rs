@@ -56,31 +56,35 @@ impl HostBinding {
     }
 }
 
-/// A pause control stops capture in its own conversation only; the tutor then
-/// pauses or completes the lesson from that same, now inactive, conversation.
-/// A bare stop of this conversation's own still-active lesson only reduces
-/// activity, so it is admitted. Any other edit keeps the inactive refusal and
-/// its complete_captured route.
-fn bare_stop_of_active_lesson(
-    conn: &Connection,
-    r: &UpdateRequest,
-    transition: SessionTransition<'_>,
-    bound: Option<&str>,
-) -> Result<bool> {
-    let target = match transition {
-        SessionTransition::Pause(PauseSessionEdit { session_id, .. })
-        | SessionTransition::Complete(CompleteSessionEdit { session_id, .. }) => session_id,
-        _ => return Ok(false),
-    };
-    let bare = r.native_capture.is_none()
+/// A request that only pauses or completes a lesson and records nothing else.
+fn bare_close(r: &UpdateRequest) -> bool {
+    r.native_capture.is_none()
         && r.turn_ref.is_none()
         && r.reported_events.is_empty()
         && r.observations.is_empty()
         && r.memory_edits.is_empty()
         && r.checkpoint.is_none()
         && r.event_dispositions.is_empty()
-        && r.review_updates.is_empty();
-    if !bare || bound != Some(target.as_str()) {
+        && r.review_updates.is_empty()
+}
+
+/// A pause control stops capture in its own conversation only; the tutor then
+/// pauses or completes the lesson. A learner who comes back in a new
+/// conversation must be able to close an old lesson too, so a bare pause or
+/// complete of any open lesson is admitted from any conversation: it only
+/// reduces activity. Any other edit keeps the inactive refusal and its
+/// complete_captured route.
+fn bare_close_of_open_lesson(
+    conn: &Connection,
+    r: &UpdateRequest,
+    transition: SessionTransition<'_>,
+) -> Result<bool> {
+    let target = match transition {
+        SessionTransition::Pause(PauseSessionEdit { session_id, .. })
+        | SessionTransition::Complete(CompleteSessionEdit { session_id, .. }) => session_id,
+        _ => return Ok(false),
+    };
+    if !bare_close(r) {
         return Ok(false);
     }
     let status: Option<String> = conn
@@ -90,7 +94,11 @@ fn bare_stop_of_active_lesson(
             |row| row.get(0),
         )
         .optional()?;
-    Ok(status.as_deref() == Some("active"))
+    Ok(match status.as_deref() {
+        Some("active") => true,
+        Some("paused") => matches!(transition, SessionTransition::Complete(_)),
+        _ => false,
+    })
 }
 
 /// Semantic admission is independent of raw capture admission. A completion
@@ -117,7 +125,7 @@ pub(super) fn admit_semantic_update(
             && !SessionEdit::accepts_capture_operation(
                 r.session.as_ref().map(SessionEdit::operation),
             )
-            && !bare_stop_of_active_lesson(conn, r, transition, bound.as_deref())?
+            && !bare_close_of_open_lesson(conn, r, transition)?
         {
             let mut error = LearnerError::new(
                 "learning_inactive",
@@ -408,12 +416,16 @@ pub(super) fn apply_session(
             session_id,
             expected_revision,
         }) => {
+            // Closing a lesson this conversation is not bound to must record
+            // nothing else, so no evidence is filed under another lesson, and
+            // must not reopen a completed one.
             if !matches!(transition, SessionTransition::Resume(_))
                 && existing.as_ref() != Some(session_id)
+                && !bare_close_of_open_lesson(conn, r, transition)?
             {
                 return Err(LearnerError::new(
                     "event_scope_conflict",
-                    "Pause/complete requires this host's bound session",
+                    "Pausing or completing a lesson from another conversation must be its own request, with no observations, memory edits, events or checkpoint, and the lesson must still be active or paused",
                 ));
             }
             let next = cas(
@@ -437,13 +449,21 @@ pub(super) fn apply_session(
             (session_id.clone(), status == "active")
         }
     };
-    conn.execute(
-        "INSERT INTO host_bindings(host_kind, host_thread_id, session_id, learning_active)
-         VALUES(?1, ?2, ?3, ?4)
-         ON CONFLICT(host_kind, host_thread_id) DO UPDATE
-         SET session_id = excluded.session_id, learning_active = excluded.learning_active",
-        params![host.host_kind, host.host_thread_id, id, active],
-    )?;
+    // Closing another conversation's lesson leaves this conversation's own
+    // binding, and any lesson it is running, as it was.
+    let closes_unbound_lesson = matches!(
+        transition,
+        SessionTransition::Pause(_) | SessionTransition::Complete(_)
+    ) && existing.as_ref() != Some(&id);
+    if !closes_unbound_lesson {
+        conn.execute(
+            "INSERT INTO host_bindings(host_kind, host_thread_id, session_id, learning_active)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(host_kind, host_thread_id) DO UPDATE
+             SET session_id = excluded.session_id, learning_active = excluded.learning_active",
+            params![host.host_kind, host.host_thread_id, id, active],
+        )?;
+    }
     // Several conversations may share an active lesson (a fork resumes it
     // alongside the original), but a paused or completed lesson stops capture
     // in every conversation still bound to it, not only the one that asked.

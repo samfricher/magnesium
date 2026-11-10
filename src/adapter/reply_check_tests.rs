@@ -168,7 +168,7 @@ fn assert_note(note: &str, task: bool, confusion: bool, feedback: bool, unbound:
     assert!(note.len() <= 512, "{} bytes: {note}", note.len());
 }
 #[test]
-fn the_task_reminder_outlasts_the_confusion_reminder_and_the_feedback() {
+fn a_long_reply_shortens_the_state_line_and_keeps_every_reminder() {
     let (root, store, host) = claude_lesson();
     store
         .conn
@@ -177,21 +177,16 @@ fn the_task_reminder_outlasts_the_confusion_reminder_and_the_feedback() {
     claude_prompt(&root, &host, "one");
 
     claude_stop(&root, &host, "one", "Good. Your turn: solve 2x = 6.").unwrap();
-    assert_note(
-        &claude_prompt(&root, &host, "two"),
-        true,
-        true,
-        false,
-        false,
-    );
+    let short_reply = claude_prompt(&root, &host, "two");
+    assert_note(&short_reply, true, true, false, false);
+    assert!(short_reply.contains(STATE_ADVICE), "{short_reply}");
 
     claude_stop(&root, &host, "two", &long_reply()).unwrap();
-    assert_note(
-        &claude_prompt(&root, &host, "three"),
-        true,
-        false,
-        true,
-        false,
+    let after_long_reply = claude_prompt(&root, &host, "three");
+    assert_note(&after_long_reply, true, true, true, false);
+    assert!(
+        !after_long_reply.contains(STATE_ADVICE),
+        "{after_long_reply}"
     );
 
     leave_unbound_work(&store);
@@ -199,19 +194,13 @@ fn the_task_reminder_outlasts_the_confusion_reminder_and_the_feedback() {
     assert_note(
         &claude_prompt(&root, &host, "four"),
         true,
-        false,
+        true,
         false,
         true,
     );
 
     claude_stop(&root, &host, "four", &long_reply()).unwrap();
-    assert_note(
-        &claude_prompt(&root, &host, "five"),
-        true,
-        false,
-        true,
-        true,
-    );
+    assert_note(&claude_prompt(&root, &host, "five"), true, true, true, true);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -242,6 +231,7 @@ fn claude_prompt_notice_keeps_required_clauses_within_512_bytes_at_extreme_count
         CLAUDE_LESSON_GUIDANCE,
         "context.pending_work unbound_only:true",
         " Previous reply: 123456 words.",
+        reply_check::CONFUSION_REMINDER,
     ] {
         assert!(notice.contains(required), "{required}: {notice}");
     }
@@ -257,10 +247,17 @@ fn notice_clauses_give_way_in_order_and_required_ones_stay() {
         (Clause::ReplyFeedback, " feedback".into()),
     ];
     let fit_to = |limit| fit("state".into(), clauses.clone(), limit);
-    assert_eq!(fit_to(512), "state lesson task confused feedback");
+    let full = 35 + STATE_ADVICE.len();
+    assert_eq!(
+        fit_to(full),
+        format!("state{STATE_ADVICE} lesson task confused feedback")
+    );
+    // The state line loses its advice before any clause gives way.
+    assert_eq!(fit_to(full - 1), "state lesson task confused feedback");
     assert_eq!(fit_to(35), "state lesson task confused feedback");
-    assert_eq!(fit_to(34), "state lesson task feedback");
-    assert_eq!(fit_to(25), "state lesson feedback");
+    assert_eq!(fit_to(34), "state lesson confused feedback");
+    assert_eq!(fit_to(30), "state lesson confused feedback");
+    assert_eq!(fit_to(29), "state lesson confused");
     assert_eq!(fit_to(20), "state lesson");
     assert_eq!(fit_to(1), "state lesson");
 }

@@ -112,9 +112,8 @@ pub(super) fn apply_memory(
     revisions: &mut BTreeMap<String, i64>,
     edited: &mut BTreeSet<String>,
     support: &ResolvedChangeBasis,
-    position: (i64, usize),
+    (now, edit_index, notes): (i64, usize, &mut Vec<String>),
 ) -> Result<()> {
-    let (now, edit_index) = position;
     let (id, revision, kind, reason) = match edit {
         MemoryEdit::Create(CreateMemoryEdit {
             client_ref, reason, ..
@@ -186,21 +185,7 @@ pub(super) fn apply_memory(
     match edit {
         MemoryEdit::Create(CreateMemoryEdit { record, .. })
         | MemoryEdit::Revise(ReviseMemoryEdit { record, .. }) => {
-            for (name, value, max) in [
-                ("title", record.title.as_str(), limits::TITLE_BYTES),
-                ("scope", record.scope.as_str(), limits::SCOPE_BYTES),
-                ("summary", record.summary.as_str(), limits::SUMMARY_BYTES),
-                (
-                    "state_text",
-                    record.state_text.as_str(),
-                    limits::STATE_BYTES,
-                ),
-            ] {
-                limits::text(name, value, max)?;
-            }
-            if let Some(note) = &record.review_note {
-                limits::text("review_note", note, limits::REVIEW_NOTE_BYTES)?;
-            }
+            let record = &shorten_record(record, edit_index, notes);
             if record.current_basis.is_empty() || record.current_basis.len() > 8 {
                 return Err(LearnerError::new(
                     "invalid_variant",
@@ -454,6 +439,52 @@ pub(super) fn apply_memory(
     )?;
     revisions.insert(id, revision);
     Ok(())
+}
+/// Save an over-long record shortened rather than refuse it; `notes` says
+/// what was cut so the tutor can revise the memory if the cut mattered.
+fn shorten_record(
+    record: &MemoryRecord,
+    edit_index: usize,
+    notes: &mut Vec<String>,
+) -> MemoryRecord {
+    let path = |field: &str| format!("memory_edits[{edit_index}].record.{field}");
+    let mut text =
+        |field: &str, value: &str, max: usize| limits::shorten(&path(field), value, max, notes);
+    let title = text("title", &record.title, limits::TITLE_BYTES);
+    let scope = text("scope", &record.scope, limits::SCOPE_BYTES);
+    let summary = text("summary", &record.summary, limits::SUMMARY_BYTES);
+    let state_text = text("state_text", &record.state_text, limits::STATE_BYTES);
+    let review_note = record
+        .review_note
+        .as_deref()
+        .map(|note| text("review_note", note, limits::REVIEW_NOTE_BYTES));
+    let mut labels = |field: &str, labels: &Option<Vec<String>>, count: usize, max: usize| {
+        labels
+            .as_deref()
+            .map(|labels| limits::shorten_labels(&path(field), labels, count, max, notes))
+    };
+    let topics = labels(
+        "topics",
+        &record.topics,
+        limits::TOPIC_COUNT,
+        limits::TOPIC_BYTES,
+    );
+    let retrieval_cues = labels(
+        "retrieval_cues",
+        &record.retrieval_cues,
+        limits::CUE_COUNT,
+        limits::CUE_BYTES,
+    );
+    MemoryRecord {
+        title,
+        scope,
+        summary,
+        state_text,
+        topics,
+        retrieval_cues,
+        review_note,
+        current_basis: record.current_basis.clone(),
+    }
 }
 fn normalize_labels(labels: &[String], count: usize, max: usize) -> Result<Vec<String>> {
     if labels.len() > count {

@@ -7,7 +7,7 @@ pub(super) fn apply_observations(
     session: &Option<String>,
     refs: &mut BTreeMap<String, String>,
     used_events: &mut BTreeSet<String>,
-    now: i64,
+    (now, notes): (i64, &mut Vec<String>),
 ) -> Result<()> {
     for (observation_index, o) in observations.iter().enumerate() {
         limits::text(
@@ -101,15 +101,8 @@ pub(super) fn apply_observations(
                 host,
             ));
         }
-        for source in &o.source_refs {
-            if !["original", "excerpt", "model_reported", "unavailable"]
-                .contains(&source.available_form.as_str())
-            {
-                return Err(LearnerError::new(
-                    "invalid_variant",
-                    "source.available_form",
-                ));
-            }
+        let source_refs = labeled_sources(&o.source_refs, observation_index, notes);
+        for source in &source_refs {
             if let Some(path) = &source.path
                 && (std::path::Path::new(path).is_absolute()
                     || std::path::Path::new(path)
@@ -136,7 +129,7 @@ pub(super) fn apply_observations(
                 o.description,
                 o.conditions_text,
                 o.assistance_text,
-                serde_json::to_string(&o.source_refs)?,
+                serde_json::to_string(&source_refs)?,
                 observed,
                 now
             ],
@@ -171,4 +164,33 @@ pub(super) fn apply_observations(
         )?;
     }
     Ok(())
+}
+/// A source with a missing or unknown available_form is still saved: the
+/// tutor reported it, so it is labeled model_reported and the note says so.
+fn labeled_sources(
+    sources: &[SourceRef],
+    observation_index: usize,
+    notes: &mut Vec<String>,
+) -> Vec<SourceRef> {
+    const FORMS: [&str; 4] = ["original", "excerpt", "model_reported", "unavailable"];
+    let mut relabeled = Vec::new();
+    let sources = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let mut source = source.clone();
+            if !FORMS.contains(&source.available_form.as_str()) {
+                relabeled.push(index);
+                source.available_form = "model_reported".into();
+            }
+            source
+        })
+        .collect();
+    if !relabeled.is_empty() {
+        notes.push(format!(
+            "observations[{observation_index}].source_refs {relabeled:?}: available_form was missing or not one of {}, so it was saved as model_reported",
+            FORMS.join(", ")
+        ));
+    }
+    sources
 }

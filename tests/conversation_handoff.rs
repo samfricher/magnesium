@@ -177,6 +177,87 @@ fn completing_a_shared_lesson_stops_capture_in_every_conversation() {
 }
 
 #[test]
+fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
+    let (e, session) = lesson_started_in_original();
+    const LATER: &str = "later";
+    // The learner comes back days later in a new conversation and starts a
+    // different lesson there.
+    let other = v2::start(&e, "claude", LATER);
+    let other_session = other["references"]["session"].as_str().unwrap();
+    let event = v2::context(&v2::prompt(
+        &e,
+        "claude",
+        LATER,
+        Some("l-1"),
+        "close the old lesson",
+    ))
+    .split_once("current event ")
+    .unwrap()
+    .1
+    .split('.')
+    .next()
+    .unwrap()
+    .to_owned();
+
+    // Closing someone else's lesson records nothing else alongside it.
+    let mixed = call(
+        &e,
+        LATER,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"mixed","session":{"operation":"pause","session_id":session,"expected_revision":1},"observations":observation(&event)}),
+    );
+    assert_eq!(mixed["error"]["code"], "event_scope_conflict", "{mixed}");
+
+    let paused = call(
+        &e,
+        LATER,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"pause-old","session":{"operation":"pause","session_id":session,"expected_revision":1}}),
+    );
+    assert_eq!(paused["update_status"], "committed", "{paused}");
+    // The old lesson stops in its own conversation; this one keeps its lesson.
+    assert_eq!(active(&e), [(LATER.into(), true), (ORIGINAL.into(), false)]);
+    let completed = call(
+        &e,
+        LATER,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete-old","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
+    );
+    assert_eq!(completed["update_status"], "committed", "{completed}");
+    let statuses: Vec<(String, String)> = db(&e)
+        .prepare("SELECT session_id, status FROM learning_sessions ORDER BY session_id = ?1 DESC")
+        .unwrap()
+        .query_map([&session], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            (session.clone(), "completed".to_owned()),
+            (other_session.to_owned(), "active".to_owned())
+        ]
+    );
+    // A completed lesson is not reopened by a late pause.
+    let reopened = call(
+        &e,
+        LATER,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"pause-completed","session":{"operation":"pause","session_id":session,"expected_revision":3}}),
+    );
+    assert_eq!(
+        reopened["error"]["code"], "event_scope_conflict",
+        "{reopened}"
+    );
+
+    // A fresh conversation with no lesson of its own can close one too.
+    let (e, session) = lesson_started_in_original();
+    let completed = call(
+        &e,
+        "fresh",
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete-from-fresh","session":{"operation":"complete","session_id":session,"expected_revision":1}}),
+    );
+    assert_eq!(completed["update_status"], "committed", "{completed}");
+    assert_eq!(active(&e), [(ORIGINAL.into(), false)]);
+}
+
+#[test]
 fn served_pause_control_recipe_pauses_the_current_conversation() {
     let (e, _) = lesson_started_in_original();
     let served = v2::tool(

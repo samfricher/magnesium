@@ -112,6 +112,28 @@ fn pending_proof_metadata_stores_neither_learner_text_nor_its_digest() {
     );
 }
 #[test]
+fn a_ticket_outlasts_a_slow_first_reply_and_then_expires() {
+    let f = Fixture::new();
+    let text = "Teach me coefficient roles";
+    let ticket = native_capture::issue(&f.workspace, &f.host, "turn", text, 1000).unwrap();
+    // A tutor that loads instructions and reads sources first may take
+    // several minutes before its first learning_step.
+    let twenty_minutes = 20 * 60 * 1000;
+    assert!(
+        native_capture::verify(&f.workspace, &f.host, &ticket, text, 1000 + twenty_minutes).is_ok()
+    );
+    assert!(
+        native_capture::verify(
+            &f.workspace,
+            &f.host,
+            &ticket,
+            text,
+            1001 + native_capture::TTL_MS
+        )
+        .is_err()
+    );
+}
+#[test]
 fn successful_start_retry_survives_expiry_and_signer_rotation_without_recapture() {
     let f = Fixture::new();
     let text = "Teach me coefficient roles";
