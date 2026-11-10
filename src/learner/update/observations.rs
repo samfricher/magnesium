@@ -332,6 +332,25 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
             host,
         ));
     }
+    if let Some(kind) = &attempt.kind {
+        check_kind(&format!("{path}.kind"), kind, host)?;
+    }
+    if attempt.no_start {
+        if attempt.kind.is_none() {
+            return Err(field_error(
+                &format!("{path}.kind"),
+                "no_start needs the kind of problem, so its help level can move: give kind, such as \"discrete expected value\", or the tag when there is a course graph",
+                host,
+            ));
+        }
+        if !matches!(attempt.first_try, FirstTry::Declined | FirstTry::Wrong) {
+            return Err(field_error(
+                &format!("{path}.first_try"),
+                "A learner with no starting move has no answer: first_try is declined when they wrote nothing, or wrong",
+                host,
+            ));
+        }
+    }
     if let Some(paper) = &attempt.paper {
         let name = paper.name.trim();
         let question = paper.question.trim();
@@ -418,6 +437,29 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
     Ok(())
 }
 
+/// A kind of problem is named as a label is: a few words, never the problem.
+pub(crate) fn check_kind(path: &str, kind: &str, host: &HostContext) -> Result<()> {
+    let kind = kind.trim();
+    if kind.is_empty()
+        || kind.len() > limits::ATTEMPT_LABEL_BYTES
+        || kind.chars().any(char::is_control)
+    {
+        return Err(field_error(
+            path,
+            "A kind of problem is 1–120 bytes without control characters",
+            host,
+        ));
+    }
+    if names_a_problem(kind) {
+        return Err(field_error(
+            path,
+            "A kind names the method problems share in a few words, such as \"discrete expected value\", never one problem: no equation and no question number",
+            host,
+        ));
+    }
+    Ok(())
+}
+
 /// The question of an attempt on the same label answered earlier on the same
 /// local day, from an earlier request, if there is one.
 fn earlier_today(
@@ -483,12 +525,14 @@ fn insert_attempt(
         limits::ATTEMPT_QUESTION_BYTES,
         notes,
     );
+    let kind = attempt.kind.as_deref().map(crate::learner::help::kind_text);
     tx.execute(
         "INSERT INTO attempts(
             attempt_id, observation_id, response_event_id, session_id, question,
             paper, paper_question, label, label_key, mark, marks, out_of, help,
-            confidence, cold, answered_at_ms, seconds, created_at_ms, slow
-         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+            confidence, cold, answered_at_ms, seconds, created_at_ms, slow,
+            problem_kind, kind_key, no_start
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
         params![
             attempt_id,
             observation_id,
@@ -508,9 +552,15 @@ fn insert_attempt(
             answered_at,
             attempt.seconds,
             now,
-            attempt.slow
+            attempt.slow,
+            kind,
+            kind.as_deref().map(crate::learner::label_key),
+            attempt.no_start
         ],
     )?;
+    if let Some(kind) = &kind {
+        crate::learner::help::refresh(tx, &crate::learner::label_key(kind), now)?;
+    }
     Ok(attempt_id)
 }
 

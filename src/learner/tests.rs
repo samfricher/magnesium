@@ -261,13 +261,13 @@ fn unknown_store_and_workspace_rejected_without_mutation() {
         LearnerStore::open(&f.path, "wrong").err().unwrap().code,
         "workspace_mismatch"
     );
-    // The schema CHECK pins version 4, so a store from a newer build can only
+    // The schema CHECK pins version 5, so a store from a newer build can only
     // be simulated with constraint checking off.
     f.store
         .conn
         .execute_batch(
             "PRAGMA ignore_check_constraints=ON;
-             UPDATE workspace_meta SET schema_version=5;
+             UPDATE workspace_meta SET schema_version=6;
              PRAGMA ignore_check_constraints=OFF;
              CREATE TABLE unrelated(value TEXT)",
         )

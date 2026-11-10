@@ -1,14 +1,15 @@
--- Runtime schema for Magnesium learner-model/v2, fresh-store revision 4.
+-- Runtime schema for Magnesium learner-model/v2, fresh-store revision 5.
 -- Initialize a NEW database only. Do not run against an old learner store.
--- The tables schemas 3 and 4 added are in schema_v3.sql and schema_v4.sql,
--- which a fresh store runs after this file and the upgrade runs on their own.
+-- The tables schemas 3, 4 and 5 added are in schema_v3.sql, schema_v4.sql and
+-- schema_v5.sql, which a fresh store runs after this file and the upgrade runs
+-- on their own.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE workspace_meta (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   workspace_id TEXT NOT NULL UNIQUE,
   storage_family TEXT NOT NULL CHECK (storage_family = 'learner-model/v2'),
-  schema_version INTEGER NOT NULL CHECK (schema_version = 4),
+  schema_version INTEGER NOT NULL CHECK (schema_version = 5),
   memory_generation INTEGER NOT NULL DEFAULT 0,
   observation_generation INTEGER NOT NULL DEFAULT 0,
   event_generation INTEGER NOT NULL DEFAULT 0,

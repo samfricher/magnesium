@@ -5,7 +5,7 @@ fn fixture() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(crate::learner::store::SCHEMA_SQL)
         .unwrap();
-    conn.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'read-tests','learner-model/v2',4,0)",[]).unwrap();
+    conn.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'read-tests','learner-model/v2',5,0)",[]).unwrap();
     conn
 }
 fn run(conn: &Connection, mut request: Value) -> Result<Value, String> {

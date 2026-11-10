@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 fn fixture() -> Connection {
     let c = Connection::open_in_memory().unwrap();
     c.execute_batch(crate::learner::store::SCHEMA_SQL).unwrap();
-    c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w','learner-model/v2',4,0)",[]).unwrap();
+    c.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,'w','learner-model/v2',5,0)",[]).unwrap();
     c
 }
 fn memory(c: &Connection, id: &str, summary: &str) {

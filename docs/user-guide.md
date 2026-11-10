@@ -38,7 +38,7 @@ Ordinary project work doesn't start a lesson. Ask explicitly:
 
 Give the tutor your attempts, questions and constraints. It can use authorized local files and preserve a checkpoint. You don't need to maintain memories yourself.
 
-If a new kind of problem leaves you without a way to start, the tutor works through a similar problem, then gives you a changed version to solve yourself. If that kind of problem stops you again, the tutor leaves some steps for you to fill in. After that, you get the problem alone. If you can't finish the practice problem yourself, or forget the method later, the tutor goes back a step and gives you more help next time. If you say you are confused, or ask a question because you are lost, it first asks one question, a small concrete case of the idea in plain words, without code or symbols, that takes under a minute, and uses your answer to choose what to explain. A plain factual question about something already covered, such as what a name stands for, gets a one-line answer and no question back.
+If a new kind of problem leaves you without a way to start, the tutor works through a similar problem, then gives you a changed version to solve yourself. If that kind of problem stops you again, the tutor leaves some steps for you to fill in. After that, you get the problem alone. If you can't finish the practice problem yourself, or forget the method later, the tutor goes back a step and gives you more help next time. Magnesium keeps count of this for each kind of problem from your marked answers, so the help fades even when you come back days later in a new conversation. If you say you are confused, or ask a question because you are lost, it first asks one question, a small concrete case of the idea in plain words, without code or symbols, that takes under a minute, and uses your answer to choose what to explain. A plain factual question about something already covered, such as what a name stands for, gets a one-line answer and no question back.
 
 When the tutor needs to find out where you stand, it asks one question aimed near the top of what your goal needs, not at the basics. It is a concrete case you can answer in under a minute, not a definition to recite. For Bayesian updating, that is "1 in 100 people have a disease, and the test flags 90 of 100 who have it and 10 of 100 who don't. You test positive: about how likely is it you have it?" rather than "state Bayes' rule". Names and symbols come after you have done a step. After a confident correct answer, any next question is much harder. A basic question comes only after a miss.
 
@@ -79,18 +79,27 @@ Magnesium keeps every gap-log row in your learning history and writes the Gaps t
 
 The first time the tutor loads a paper stage for a plan, Magnesium brings in that plan's gap log with its rows, passes and dates, from any earlier template, and keeps the original in `.magnesium/backups/gap-logs/`. A row it cannot read stops that: `magnesium digest` lists it, and saying "fix my plan files" has the tutor correct it.
 
+Magnesium also works out where you stand on each tag in `graph.yaml`, from the gap log, your marked answers and the graph:
+
+- **untested:** no answer from a blank page yet;
+- **open:** a gap-log row on it that has not passed a redo since its repair;
+- **conditional:** a row part way through its three redos, a tag it relies on that is open, or passed only slowly, partly, with help or on the day it was taught;
+- **sound:** answered right from a blank page, on your own and in time, itself or as part of a bigger question, with nothing it relies on open.
+
+These choose what the tutor repairs and what the next mock covers. They change as soon as a row changes, for example from open to conditional when you pass the first redo. If `graph.yaml` cannot be read, the tutor is told which line is wrong, and the gap log alone decides until it is fixed.
+
 ## See every answer you gave
 
 Each answer the tutor marks, in chat or on a paper, is kept as its own row: the question, the mark, when, the help you had before answering, how sure you said you were, the skill it tests and whether it was cold, meaning unaided, from a blank page, on a later day than the teaching. An answer you were helped with stays marked as helped, and only your first answer on a skill each day can count as cold. From the study folder, `magnesium attempts` lists them, for example:
 
 ```text
 2026-11-10 09:15  MockA Q2a: Find E(X) for the table
-    partly 1.5/3, help none, confidence unsure, cold. Tests: expected value
+    partly 1.5/3, help none, confidence unsure, cold, kind discrete expected value. Tests: expected value
 ```
 
 Add `--json` for the rows as data. They are also in an export.
 
-The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
+The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
 ## Long lessons
 

@@ -4,17 +4,20 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 pub(crate) const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// The tables schema 3 added. A fresh store and the upgrade from schema 2
 /// both run it.
 pub(crate) const SCHEMA_V3_SQL: &str = include_str!("schema_v3.sql");
-/// The tables and columns schema 4 added. A fresh store and every upgrade
-/// run it.
+/// The tables and columns schema 4 added. A fresh store and the upgrade from
+/// schema 2 or 3 run it.
 pub(crate) const SCHEMA_V4_SQL: &str = include_str!("schema_v4.sql");
+/// The tables and columns schema 5 added. A fresh store and every upgrade
+/// run it.
+pub(crate) const SCHEMA_V5_SQL: &str = include_str!("schema_v5.sql");
 /// The earlier schemas this runtime upgrades in place. Schema 2 is the last
-/// release's; schema 3 was only ever on the main branch.
-const UPGRADEABLE_SCHEMA_VERSIONS: [i64; 2] = [2, 3];
+/// release's; schemas 3 and 4 were only ever on the main branch.
+const UPGRADEABLE_SCHEMA_VERSIONS: [i64; 3] = [2, 3, 4];
 /// Beside the store: the copy made before an upgrade, kept as the way back.
 pub const BACKUP_DIR: &str = "backups";
 pub struct LearnerStore {
@@ -69,6 +72,7 @@ impl LearnerStore {
         tx.execute_batch(crate::learner::store::SCHEMA_SQL)?;
         tx.execute_batch(SCHEMA_V3_SQL)?;
         tx.execute_batch(SCHEMA_V4_SQL)?;
+        tx.execute_batch(SCHEMA_V5_SQL)?;
         tx.execute("INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms) VALUES(1,?1,?2,?3,?4)",params![workspace_id,SCHEMA,SCHEMA_VERSION,now_ms()])?;
         tx.commit()?;
         Ok(Self {
@@ -85,7 +89,7 @@ impl LearnerStore {
         {
             return Err(LearnerError::new(
                 "incompatible_store",
-                "Unsupported storage family/version. Preserve the existing store and initialize a fresh workspace; this runtime upgrades only schemas 2 and 3.",
+                "Unsupported storage family/version. Preserve the existing store and initialize a fresh workspace; this runtime upgrades only schemas 2, 3 and 4.",
             ));
         }
         if meta.0 != workspace_id {
@@ -125,9 +129,10 @@ fn read_meta(conn: &Connection) -> Result<Meta> {
     })
 }
 
-/// Upgrade a schema 2 or 3 store in place, once. Under the write lock, copy
-/// it to `backups/` beside it, then add the tables of each later schema and
-/// raise the version in one transaction. The copy is a whole store of the
+/// Upgrade a schema 2, 3 or 4 store in place, once. Under the write lock,
+/// copy it to `backups/` beside it, then add the tables of each later schema,
+/// read the help levels and readings the memories state in words, and raise
+/// the version in one transaction. The copy is a whole store of the
 /// old version, so the runtime that made it still opens it: put it back as
 /// `state.sqlite` to go back. If any step fails, the store is left as it was.
 fn upgrade(path: &Path, conn: &Connection) -> Result<()> {
@@ -149,7 +154,11 @@ fn upgrade(path: &Path, conn: &Connection) -> Result<()> {
         if version == 2 {
             conn.execute_batch(SCHEMA_V3_SQL)?;
         }
-        conn.execute_batch(SCHEMA_V4_SQL)?;
+        if version <= 3 {
+            conn.execute_batch(SCHEMA_V4_SQL)?;
+        }
+        conn.execute_batch(SCHEMA_V5_SQL)?;
+        crate::learner::help::import_phrases(conn, now_ms())?;
         conn.execute(
             "UPDATE workspace_meta SET schema_version=?1 WHERE singleton=1",
             [SCHEMA_VERSION],
@@ -174,7 +183,7 @@ CREATE TABLE workspace_meta_next (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   workspace_id TEXT NOT NULL UNIQUE,
   storage_family TEXT NOT NULL CHECK (storage_family = 'learner-model/v2'),
-  schema_version INTEGER NOT NULL CHECK (schema_version = 4),
+  schema_version INTEGER NOT NULL CHECK (schema_version = 5),
   memory_generation INTEGER NOT NULL DEFAULT 0,
   observation_generation INTEGER NOT NULL DEFAULT 0,
   event_generation INTEGER NOT NULL DEFAULT 0,
@@ -184,7 +193,7 @@ CREATE TABLE workspace_meta_next (
   created_at_ms INTEGER NOT NULL
 );
 INSERT INTO workspace_meta_next
-  SELECT singleton,workspace_id,storage_family,4,memory_generation,
+  SELECT singleton,workspace_id,storage_family,5,memory_generation,
          observation_generation,event_generation,review_generation,
          memory_fts_generation,observation_fts_generation,created_at_ms
   FROM workspace_meta;
@@ -425,13 +434,13 @@ mod upgrade_tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         // The history is intact: every old row is still there, unchanged but
         // for the version number.
         for (table, old) in OLD_TABLES.iter().zip(&before) {
             let mut old = old.clone();
             if *table == "workspace_meta" {
-                old[0][3] = "4".into();
+                old[0][3] = "5".into();
             }
             assert_eq!(&rows(&store.conn, table), &old, "{table}");
         }
@@ -501,7 +510,7 @@ mod upgrade_tests {
     }
 
     #[test]
-    fn a_schema_3_store_upgrades_to_4_with_its_attempts_and_keeps_a_schema_3_copy() {
+    fn a_schema_3_store_upgrades_to_5_with_its_attempts_and_keeps_a_schema_3_copy() {
         let dir = folder();
         let path = schema_3_store(&dir);
         let before = {
@@ -515,12 +524,13 @@ mod upgrade_tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(version, 4);
-        // Each attempt keeps its row and gains slow, false.
+        assert_eq!(version, 5);
+        // Each attempt keeps its row and gains slow, kind_key and no_start:
+        // false, none and false.
         let after = rows(&store.conn, "attempts");
         assert_eq!(after.len(), 1);
         assert_eq!(after[0][..before[0].len()], before[0][..]);
-        assert_eq!(after[0].last().unwrap(), "0");
+        assert_eq!(after[0][before[0].len()..], ["0", "NULL", "0"]);
         let copies = backups(&dir);
         assert_eq!(copies.len(), 1, "{copies:?}");
         assert!(
@@ -537,6 +547,92 @@ mod upgrade_tests {
         assert_eq!(shape(&copy), shape(&fresh_schema_3));
         let fresh = LearnerStore::initialize(&dir.join("fresh.sqlite"), WORKSPACE).unwrap();
         assert_eq!(shape(&store.conn), shape(&fresh.conn));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The schema 4 SQL exactly as the main branch had it before schema 5.
+    const SCHEMA_4: &str = include_str!("../../tests/fixtures/learner_model/schema-4.sql");
+
+    /// A store the main branch made at schema 4, whose memories state help
+    /// levels and readings in words, as the tutor used to write them.
+    fn schema_4_store(dir: &Path) -> PathBuf {
+        let path = dir.join("state.sqlite");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(SCHEMA_4).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspace_meta(singleton,workspace_id,storage_family,schema_version,created_at_ms)
+               VALUES(1,'upgrade-test','learner-model/v2',4,1000);
+             INSERT INTO learning_sessions VALUES('s-1','Probability','active','{}',1,1000,2000);
+             INSERT INTO learning_events(event_id,session_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,occurred_at_ms,captured_at_ms,processing)
+               VALUES('e-1','s-1','claude','conv','p-1','learner','message','host_observed','no idea','{}',1500,1500,'processed');
+             INSERT INTO observations(observation_id,session_id,kind,description,conditions_text,assistance_text,source_refs_json,observed_at_ms,created_at_ms)
+               VALUES('o-1','s-1','learner_work','No start.','','none','[]',1500,1600);
+             INSERT INTO learner_memories(memory_id,title,scope,summary,state_text,current_basis_json,lifecycle,revision,created_at_ms,updated_at_ms)
+               VALUES('m-1','Expected value','Probability','Needs a start.','Applies E = sum x P(x) after help; example step (Discrete expected value): full','[{\"observation_id\":\"o-1\"}]','active',1,1600,1600),
+                     ('m-2','Expected value again','Probability','Merged.','example step (discrete  expected value): partly worked','[{\"observation_id\":\"o-1\"}]','active',1,1600,1600),
+                     ('m-3','Chain rule','Calculus','Sound.','sound from MockA Q3 part b','[{\"observation_id\":\"o-1\"}]','active',1,1600,1600),
+                     ('m-4','Old','Calculus','Retired.','example step (limits): full; sound from Diagnostic Q1','[{\"observation_id\":\"o-1\"}]','retired',1,1600,1600);
+             INSERT INTO memory_topics VALUES('m-3','chain-rule'),('m-4','limits');",
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn a_schema_4_store_upgrades_to_5_and_reads_the_steps_and_readings_its_memories_state() {
+        let dir = folder();
+        let path = schema_4_store(&dir);
+        let store = LearnerStore::open(&path, WORKSPACE).unwrap();
+        let version: i64 = store
+            .conn
+            .query_row("SELECT schema_version FROM workspace_meta", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 5);
+        // Two memories state a step for one kind: the less help is kept, as
+        // a merge kept it. A retired memory states nothing.
+        assert_eq!(
+            rows(&store.conn, "help_levels")
+                .into_iter()
+                .map(|row| row[..6].to_vec())
+                .collect::<Vec<_>>(),
+            [[
+                "discrete expected value",
+                "discrete expected value",
+                "partial",
+                "m-2",
+                "partial",
+                "NULL"
+            ]]
+        );
+        assert_eq!(
+            rows(&store.conn, "imported_readings")
+                .into_iter()
+                .map(|row| row[..5].to_vec())
+                .collect::<Vec<_>>(),
+            [[
+                "chain-rule",
+                "chain-rule",
+                "sound",
+                "sound from MockA Q3 part b",
+                "m-3"
+            ]]
+        );
+        let copies = backups(&dir);
+        assert_eq!(copies.len(), 1, "{copies:?}");
+        let copy = Connection::open(&copies[0]).unwrap();
+        assert_eq!(read_meta(&copy).unwrap().2, 4);
+        let fresh_schema_4 = Connection::open_in_memory().unwrap();
+        fresh_schema_4.execute_batch(SCHEMA_4).unwrap();
+        assert_eq!(shape(&copy), shape(&fresh_schema_4));
+        let fresh = LearnerStore::initialize(&dir.join("fresh.sqlite"), WORKSPACE).unwrap();
+        assert_eq!(shape(&store.conn), shape(&fresh.conn));
+        // Opening it again reads nothing twice.
+        drop(store);
+        let again = LearnerStore::open(&path, WORKSPACE).unwrap();
+        assert_eq!(rows(&again.conn, "help_levels").len(), 1);
+        assert_eq!(backups(&dir).len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

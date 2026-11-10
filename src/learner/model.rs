@@ -253,8 +253,11 @@ pub struct Attempt {
     /// the full solution before giving any answer: record that with help
     /// solution, and the step is asked for cold the next day.
     pub first_try: FirstTry,
-    /// The most help given before the first try: none, hint, step (a worked
-    /// step or example) or solution.
+    /// The most help given on this question before the first try: none,
+    /// hint, step (a worked step of this question) or solution. A worked or
+    /// partly worked example on another problem is not help on this one, so
+    /// the changed version or full problem that follows it is none unless
+    /// you helped with that question itself.
     pub help: AttemptHelp,
     /// true only when the answer was unaided, from a blank page, on a later
     /// day than the teaching. Never true with help other than none, nor when
@@ -295,6 +298,24 @@ pub struct Attempt {
     /// after each pass.
     #[serde(default)]
     pub next: Option<NextQuestion>,
+    /// The kind of problem: problems that share one method, such as
+    /// "discrete expected value", 1–120 bytes. With a course graph it is the
+    /// tag. Reuse a name from known_kinds in an earlier result for the same
+    /// method. Give it when the learner has no starting move (no_start), on
+    /// the changed version or full problem that follows an example, and on
+    /// each later problem, cold redo or check of that kind. The runtime keeps
+    /// the kind's help level from these: a first try that is not right
+    /// without help moves it back one step, and the result's help_levels
+    /// states it. An example given on another problem is not help on this one.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// true when the learner has no starting move on a new problem of this
+    /// kind, with first_try declined (they wrote nothing) or wrong. Needs
+    /// kind. The runtime moves the help level forward and the result's
+    /// help_levels says which help to give now. Never for the same problem
+    /// or its changed version.
+    #[serde(default)]
+    pub no_start: bool,
 }
 /// A gap-log row, as the tutor reports it. Dates, passes and status are the
 /// runtime's.
@@ -373,6 +394,11 @@ pub struct AttemptCorrection {
     /// Replaces the rows and checks it counts for.
     #[serde(default)]
     pub counts_for: Option<Vec<String>>,
+    /// Replaces the kind of problem; an empty string takes it away.
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub no_start: Option<bool>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

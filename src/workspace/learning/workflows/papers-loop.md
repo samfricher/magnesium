@@ -8,23 +8,23 @@ A sitting is a timed paper the learner works away from the chat under stated con
 
 ## Read the marks through the graph
 
-Each tag has one reading, in its memory: untested (no cold evidence), open (a gap row at `open`), conditional (a gap row at `1 of 3` or `2 of 3`, passed only slow, partial, scaffolded or through touches, or a key_need tag is open) or sound (passed cold, unaided, at the planned level, with nothing in needs open). A tag with a gap row not closed is never sound, whatever the rules below say. Derive it again at every marking from the gap log, the memories and the graph. After marking, apply these in order:
+Each tag has one reading: untested (no cold evidence), open (a gap row at `open`), conditional (a gap row at `1 of 3` or `2 of 3`, passed only slow, partly, helped or not cold, or a key_need tag open) or sound (passed cold, unaided, in full and in time, itself or through contains, with nothing in needs open). Magnesium works each out from the gap log, the attempts and `graph.yaml`, and states them, with why and any tag's help level, in readings when you load this stage, start or resume the session, or record marks. Use those, and never write a reading into a memory. After marking, apply these in order:
 
-1. Tag a part that lost marks where its first consequential error lies, which can be a tag in the question's needs. The primary tag then reads conditional.
+1. Label each part's attempt with its key's primary tag, or for a part that lost marks the tag where its first consequential error lies, which can be in the question's needs.
 2. A cold, unaided, full-mark, in-time pass is evidence for the primary tag and every tag in its contains; touches get nothing. A slow pass (Type S) counts for the primary tag only, as conditional.
-3. When a tag gets an open row, each tag with it in key_need reads conditional, and a sound reading that was inferred, not tested, is revoked. Move their planned questions after that tag's repair.
-4. Read the evidence in each marked question two ways, and say which way in the memory. Direct: each tag on its key's `Tags:` line whose part was fully correct and in time reads sound, "from PAPER Qn part x" ("from PAPER Qn" for a one-part question), with or without a graph edge. Inferred: from those tags, follow contains edges only; a tag reached that way that is never a question's primary tag reads sound, "inferred from PAPER Qn via contains". In a partly correct question, a tag used after the first error gets nothing. When a `Tags:` line names a tag that the graph does not connect to the primary tag, decide which file is wrong, fix it and log it under Changes. Set the ramp from the readings, not from the question count alone.
+3. When a tag gets an open row, move the planned questions of each tag with it in key_need after that tag's repair.
+4. When a `Tags:` line names a tag that the graph does not connect to the primary tag, decide which file is wrong, fix it and log it under Changes, since readings follow the graph. Set the ramp from the readings, not from the question count alone.
 5. A row for tag T gets a pass, without asking, when a later cold sitting passes in full and in time a question whose primary tag has T in contains: name the row in that answer's counts_for, and Magnesium passes it if its Next redo has come. Never count a Type S row this way, since slowness is retested directly. A touches edge only lets you skip the drills and go straight to the cold redo.
 6. When a tag fails in two sittings, or fails a cold redo, start the next repair with its key_need tags (drills and one check each), then the tag. Recheck the question and its key. Then rewrite the next planned question on that tag, in its paper or redo file, with smaller steps or a worked example first. The mark scheme and the pass bar do not change.
 7. When the first consequential error on tag Y lies in a tag X that is not in Y's needs, in two separate sittings, add X to Y's needs (and to key_need when the work runs through it).
-8. Revise each affected tag memory with its new reading and reason. When an open tag needs a skill a fully correct part shows, answered with no hint, step or solution from you, add an "anchor:" line to that skill's tag memory, unless an anchor there already covers it. The readings choose the next block.
+8. Revise a tag memory only when its description changes. When an open tag needs a skill a fully correct part shows, answered with no hint, step or solution from you, add an "anchor:" line to that skill's tag memory, unless an anchor there already covers it. The readings choose the next block.
 
 Log each move, rewrite and new edge as a line under Changes.
 
 Size each repair:
 
 - **Tighten** an N, A or R gap in minutes with a one-line correction, the exam-ready wording and one check.
-- **Repair** one unknown rule or step, or slowness, in about 15 minutes with the missing connection, the tag's next example step if they could not start, or under rule 6 a worked example, two or three checks of the same form, one varied check, then the spaced redos.
+- **Repair** one unknown rule or step, or slowness, in about 15 minutes with the missing connection, the help its readings name if they could not start (their attempt sends kind, the tag, and no_start), or under rule 6 a worked example, two or three checks of the same form, one varied check, then the spaced redos.
 - **Teach** an unknown topic or mostly blank section in a block of an hour or more before the next paper, with that same shape per sub-skill, then the drills and the spaced redos.
 
 ## Spaced redos
@@ -48,6 +48,6 @@ Make ordinary changes yourself, log each as one line under Changes, and rewrite 
 Magnesium writes the Gaps table of `gap-log.md`; Scores and Stretch items are yours, and the learner record holds interpreted state.
 
 - **Sitting.** One learner_work observation cites the learner event with the answers as learner_response and describes the work, never a score. Its attempts give each answer's marks, Conf and gap. conditions_text gives the timing, aids and duration the learner reported; assistance_text is "none reported".
-- **Gap tag.** One memory per tag, with the tag string in topics; find it by that label, not by title. Each edit revises or creates it with the observation as current_basis and change_basis, and its state_text gives the reading in words, such as "conditional: needs TAG, which is open; example step (KIND): full". An update holds 8 memory edits; more tags go in a second update citing the observation by id.
+- **Gap tag.** One memory per tag, with the tag string in topics; find it by that label, not by title. Each edit revises or creates it with the observation as current_basis and change_basis; its state_text describes the work, never the reading or help level. An update holds 8 memory edits; more tags go in a second update citing the observation by id.
 - **Checkpoint.** Its text carries the paper, unfixed gaps, next redo and next block; memory_refs name the gap memories.
 - **Review.** A gap-log row's Next redo is its only schedule, so create no review suggestion for it. A cold redo revises the tag memory; its attempt's counts_for names its row. A pass from above revises the memory with change_kind new_observation and the passing observation as basis, and the reason "pass in PAPER Qn".

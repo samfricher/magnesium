@@ -384,7 +384,7 @@ pub(crate) fn confidence(text: Option<&str>) -> Option<Confidence> {
     }
 }
 
-fn first_try(text: &str) -> FirstTry {
+pub(crate) fn first_try(text: &str) -> FirstTry {
     match text {
         "right" => FirstTry::Right,
         "partly" => FirstTry::Partly,
@@ -393,7 +393,7 @@ fn first_try(text: &str) -> FirstTry {
     }
 }
 
-fn help(text: &str) -> AttemptHelp {
+pub(crate) fn help(text: &str) -> AttemptHelp {
     match text {
         "hint" => AttemptHelp::Hint,
         "step" => AttemptHelp::Step,
@@ -933,7 +933,7 @@ pub(crate) fn apply_corrections(
         let before = tx
             .query_row(
                 "SELECT json_object('mark',mark,'marks',marks,'out_of',out_of,'help',help,
-                    'cold',cold,'slow',slow,'counts_for',
+                    'cold',cold,'slow',slow,'kind',problem_kind,'no_start',no_start,'counts_for',
                     (SELECT json_group_array(item_id) FROM practice_events
                      WHERE attempt_id=?1 AND kind='attempt'))
                  FROM attempts WHERE attempt_id=?1",
@@ -1037,6 +1037,34 @@ pub(crate) fn apply_corrections(
             ));
         }
         let slow = correction.slow.unwrap_or(slow);
+        let (old_kind, old_no_start): (Option<String>, bool) = tx.query_row(
+            "SELECT problem_kind, no_start FROM attempts WHERE attempt_id=?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let kind = match correction.kind.as_deref().map(str::trim) {
+            None => old_kind.clone(),
+            Some("") => None,
+            Some(kind) => {
+                crate::learner::update::check_kind(&format!("{path}.kind"), kind, host)?;
+                Some(crate::learner::help::kind_text(kind))
+            }
+        };
+        let no_start = correction.no_start.unwrap_or(old_no_start) && kind.is_some();
+        if correction.no_start == Some(true) && kind.is_none() {
+            return Err(field_error(
+                &format!("{path}.kind"),
+                "no_start needs the kind of problem: give kind too",
+                host,
+            ));
+        }
+        if no_start && !matches!(mark, FirstTry::Declined | FirstTry::Wrong) {
+            return Err(field_error(
+                &format!("{path}.first_try"),
+                "A learner with no starting move has no answer: first_try is declined or wrong",
+                host,
+            ));
+        }
         tx.execute(
             "INSERT INTO attempt_corrections(attempt_id,before_json,reason,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![
@@ -1047,9 +1075,29 @@ pub(crate) fn apply_corrections(
             ],
         )?;
         tx.execute(
-            "UPDATE attempts SET mark=?2, marks=?3, help=?4, cold=?5, slow=?6 WHERE attempt_id=?1",
-            params![id, mark, marks, help, cold, slow],
+            "UPDATE attempts SET mark=?2, marks=?3, help=?4, cold=?5, slow=?6,
+                problem_kind=?7, kind_key=?8, no_start=?9 WHERE attempt_id=?1",
+            params![
+                id,
+                mark,
+                marks,
+                help,
+                cold,
+                slow,
+                kind,
+                kind.as_deref().map(label_key),
+                no_start
+            ],
         )?;
+        // The ladder of each kind it was or is now on is worked out again.
+        for key in [old_kind.as_deref(), kind.as_deref()]
+            .into_iter()
+            .flatten()
+            .map(label_key)
+            .collect::<BTreeSet<_>>()
+        {
+            crate::learner::help::refresh(tx, &key, now)?;
+        }
         if let Some(names) = &correction.counts_for {
             if names.len() > 12 {
                 return Err(field_error(

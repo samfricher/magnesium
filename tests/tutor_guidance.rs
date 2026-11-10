@@ -294,11 +294,10 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "The next time means a later problem of that kind, not another message about the same problem or its changed version.",
         "Help goes back as well as down: when the learner does not solve the changed version or the full problem alone, or later fails a cold redo or delayed check of that kind, move the step back one level, so \"partly worked\" becomes \"full\" and \"full\" is removed.",
         "A learner who can start gets no example step.",
-        "When you give one, record \"example step (KIND): full\" or \"example step (KIND): partly worked\"",
-        "With no course graph, it is the memory with the kind in topics. Search memory for that label, and create the memory if none has it.",
-        "Keep one step per kind.",
-        "Read that memory in full. No example step there means a full worked example.",
-        "A requested full solution and a fails-twice rewrite record none.",
+        "Magnesium keeps each kind's step from your attempts, so never write it in a memory.",
+        "Name the kind on each attempt of it, its tag when a course graph has one.",
+        "When the learner has no starting move on a new problem, record that attempt with no_start before you reply, and give the help its result's help_levels names.",
+        "A requested full solution and a fails-twice rewrite are not no_start.",
         "rewrite the task with smaller steps or a worked example first, whatever the example step;",
         "The worked example is never the question they must answer or a later paper question, unless the learner asks for that question's full solution.",
     ];
@@ -320,26 +319,30 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         for rule in rules {
             assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
+        // No stage asks for the step as a phrase in a memory any more.
+        assert!(!text.contains("example step ("), "{host}/{stage}");
+        assert!(!text.contains("record \"example step"), "{host}/{stage}");
     }
     let teach = served("teach_and_practice");
     for required in [
         "| Knows how to start | Let the learner try first |",
-        "| No starting move, no example step recorded for this kind of problem | Work a similar problem",
-        "| No starting move on a later problem of this kind, \"example step (KIND): full\" recorded | Give a partly worked example",
-        "| No starting move on a later problem of this kind, \"example step (KIND): partly worked\" recorded | Give the problem only",
+        "| No starting move on a new problem of a kind, help_levels says full | Work a similar problem",
+        "| No starting move on a new problem of a kind, help_levels says partly worked | Give a partly worked example",
+        "| No starting move on a new problem of a kind, help_levels says problem only | Give the problem only",
         "| No starting move on the same problem or its changed version | Take a smaller step from the example already given, with no new example |",
-        "Record a step back in the turn that shows they did not solve the follow-up alone.",
-        "Name the kind in every step, so a tag with several kinds keeps them apart.",
         "When rows conflict, take them in this order: an explicit request",
-        "Record it in the turn you give the example",
-        "Add the step to the existing state_text without dropping the rest",
+        "Before you reply to a learner with no starting move, record their message as an attempt with first_try declined, kind and no_start true",
+        "Send the same kind on the changed version or full problem, with help none unless you helped on that question itself: the example on another problem is not help on it, and an answer not right alone moves the step back.",
+        "Never write a step in a memory or the checkpoint.",
     ] {
         assert!(teach.contains(required), "{host}: {required}");
     }
     let papers = served("papers_loop");
     for required in [
-        "the tag's next example step if they could not start, or under rule 6 a worked example,",
-        "\"conditional: needs TAG, which is open; example step (KIND): full\"",
+        "the help its readings name if they could not start (their attempt sends kind, the tag, and no_start), or under rule 6 a worked example,",
+        "Magnesium works each out from the gap log, the attempts and `graph.yaml`, and states them, with why and any tag's help level, in readings",
+        "Use those, and never write a reading into a memory.",
+        "its state_text describes the work, never the reading or help level.",
     ] {
         assert!(papers.contains(required), "{host}: {required}");
     }
@@ -354,7 +357,8 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         .unwrap()
         .to_owned();
     assert!(
-        contract.contains("Every rewrite or merge of a memory keeps each \"example step (KIND)\" from the state_text it replaces, unless it records a step back, and a merge that finds two steps for one kind keeps \"partly worked\"."),
+        contract.contains("Magnesium keeps each kind's help level and each plan tag's reading, and its results state them; a memory never records either.")
+            && !contract.contains("example step (KIND)"),
         "{host}"
     );
 }
@@ -550,7 +554,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
     let rules = [
         "then forward from an anchor, a skill or way of thinking the learner's own work has shown, not a learning style. Say which anchor you build on, if any.",
         "another anchor or representation",
-        "Keep any example step or anchor in its state_text.",
+        "Keep any anchor in its state_text; Magnesium keeps example steps and tag readings.",
     ];
     let question = "\"What do you already know that looks like this?\"";
     let skip_cases = [
