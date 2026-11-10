@@ -118,6 +118,11 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     assert!(!notice.contains("Sitting quick checks"), "{notice}");
     let missed = attempt(&e, "miss", &current_event(&notice), "wrong", MISS);
     assert_eq!(missed["update_status"], "committed", "{missed}");
+    assert_eq!(
+        missed["quick_checks"]["open_labels"],
+        json!([LABEL]),
+        "{missed}"
+    );
     let due: String = sittings(&e)
         .query_row("SELECT due_day FROM items", [], |r| r.get(0))
         .unwrap();
@@ -146,7 +151,7 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     let opener = status["sitting_opener"].as_str().unwrap();
     for text in [
         &format!("1. Label \"{LABEL}\". Earlier misses: {MISS}"),
-        "Begin each with \"Quick check <number>:\"",
+        "Your first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them",
         "lettered options",
         "first_try declined",
         "Study/midterm-1/gap-log.md: 1 due, first Diagnostic Q3.",
@@ -235,6 +240,7 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     assert_eq!(last["posed"], json!([LABEL]));
     assert_eq!(last["declined"], json!([LABEL]));
     assert_eq!(last["passed"], json!([]));
+    assert_eq!(last["due_not_taken"], 0);
     assert_eq!(last["paper_redos_due"][0]["first"], "Diagnostic Q3");
 }
 
@@ -308,6 +314,11 @@ fn an_attempt_needs_the_learners_own_message_and_a_bounded_label() {
     for (index, (label, role, path)) in [
         (LABEL, "teaching_context", "observations[0].events"),
         ("", "teaching_context", "observations[0].attempt.label"),
+        (
+            "Q2: 2x² − 3x − 2 = 0",
+            "teaching_context",
+            "observations[0].attempt.label",
+        ),
     ]
     .into_iter()
     .enumerate()

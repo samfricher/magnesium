@@ -349,7 +349,15 @@ fn open_sitting(
     if message {
         let _ = sittings.note_learner_message(now);
     }
-    let _ = sittings.apply_attempts(&attempts, now);
+    if !attempts.is_empty()
+        && sittings.apply_attempts(&attempts, now).is_ok()
+        && let Ok(labels) = sittings.open_labels()
+    {
+        result["quick_checks"] = serde_json::json!({
+            "open_labels": labels,
+            "note": "One quick check per misunderstanding. When an attempt shows the same misunderstanding as one of these, even in another form or another step, reuse its label exactly. Make a new label only for a different misunderstanding.",
+        });
+    }
     if workspace.opener() == crate::workspace::OpenerMode::Off {
         return;
     }

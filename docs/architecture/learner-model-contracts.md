@@ -93,7 +93,7 @@ See [read request types](../../src/learner/read/requests.rs) for action-specific
 | `session` / `checkpoint` | Lesson transition and optional complete checkpoint replacement |
 | `event_dispositions` | Mark input `processed` or `no_change` |
 | `review_updates` | Create a suggestion or update its status at an expected revision |
-| `observations[].attempt` | `{label, first_try, help}` for a learner's first try at a task: `first_try` is `right`, `wrong` or `declined`, and `help` is `none`, `hint`, `step` or `solution`. The label is 1–120 bytes. It needs a `learner_response` event, and `complete_captured` refuses it. It schedules quick checks outside the learner store and is not stored in it |
+| `observations[].attempt` | `{label, first_try, help}` for a learner's first try at a task: `first_try` is `right`, `wrong` or `declined`, and `help` is `none`, `hint`, `step` or `solution`. The label is 1–120 bytes. A wrong first try, or a right one reached through a full `solution`, schedules a quick check for the next day. It needs a `learner_response` event, and `complete_captured` refuses it. A label names the skill or misunderstanding, so one with an equation or a question number, such as `Q3`, is refused. A committed update with an attempt returns `quick_checks.open_labels`, for reuse. It schedules quick checks outside the learner store and is not stored in it |
 
 Here is a two-call fallback example. First, start a lesson and capture an exact learner message:
 

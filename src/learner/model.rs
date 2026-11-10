@@ -218,7 +218,8 @@ pub struct ObservationInput {
     /// Give this when the observation is the learner's first try at a task you
     /// set, or their decline of a quick check. A wrong first try schedules a
     /// quick check on its label for the next day; a later right, unaided first
-    /// try on a due check passes it. Needs a learner_response event.
+    /// try on a due check passes it. A right first try reached through a full
+    /// solution is asked for cold the next day. Needs a learner_response event.
     #[serde(default)]
     pub attempt: Option<Attempt>,
 }
@@ -227,9 +228,10 @@ pub struct ObservationInput {
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Attempt {
-    /// A short name for the skill or misunderstanding, 1–120 bytes, such as
-    /// "sign of b in the quadratic formula". Reuse a quick check's label
-    /// exactly when recording its answer or decline.
+    /// A short name, 1–120 bytes, for the skill or misunderstanding in words,
+    /// such as "sign of b in the quadratic formula". Never the problem: no
+    /// equation and no question number. Reuse an open quick check's label
+    /// exactly for the same skill, and when recording its answer or decline.
     pub label: String,
     /// right or wrong for the first try before any correction; declined when
     /// the learner declines a quick check.

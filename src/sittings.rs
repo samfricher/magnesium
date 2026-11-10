@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS items(
 );
 CREATE TABLE IF NOT EXISTS attempts(
   observation_id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
   label_key TEXT NOT NULL,
   first_try TEXT NOT NULL,
   help TEXT NOT NULL,
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS sittings(
   started_ms INTEGER NOT NULL,
   day TEXT NOT NULL,
   opener_delivered INTEGER NOT NULL DEFAULT 0,
-  redos_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(redos_json))
+  redos_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(redos_json)),
+  not_taken INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS sitting_items(
   sitting_id TEXT NOT NULL REFERENCES sittings(sitting_id),
@@ -379,9 +381,10 @@ impl Sittings {
             }
             let effect = apply(&tx, attempt, sitting.as_deref(), today, now)?;
             tx.execute(
-                "INSERT INTO attempts(observation_id,label_key,first_try,help,day,sitting_id,effect,created_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                "INSERT INTO attempts(observation_id,label,label_key,first_try,help,day,sitting_id,effect,created_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     attempt.observation_id,
+                    attempt.label,
                     label_key(&attempt.label),
                     attempt.first_try.as_str(),
                     attempt.help.as_str(),
@@ -398,6 +401,22 @@ impl Sittings {
         Ok(())
     }
 
+    /// Open checks' labels, soonest due first, so a later attempt on the same
+    /// skill can reuse one exactly.
+    pub(crate) fn open_labels(&self) -> Result<Vec<String>, String> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT label FROM items WHERE status='open' ORDER BY due_day, created_ms LIMIT 12",
+            )
+            .map_err(error)?;
+        statement
+            .query_map([], |r| r.get(0))
+            .map_err(error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(error)
+    }
+
     /// Rewrite the local log, one JSON line per sitting, from this store.
     fn write_log(&self) {
         if let Ok(lines) = self.log_lines() {
@@ -409,7 +428,7 @@ impl Sittings {
         let mut statement = self
             .conn
             .prepare(
-                "SELECT sitting_id,started_ms,redos_json FROM (SELECT * FROM sittings ORDER BY sitting_no DESC LIMIT ?1) ORDER BY sitting_no",
+                "SELECT sitting_id,started_ms,redos_json,not_taken FROM (SELECT * FROM sittings ORDER BY sitting_no DESC LIMIT ?1) ORDER BY sitting_no",
             )
             .map_err(error)?;
         let sittings = statement
@@ -418,6 +437,7 @@ impl Sittings {
                     r.get::<_, String>(0)?,
                     r.get::<_, i64>(1)?,
                     r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
                 ))
             })
             .map_err(error)?
@@ -430,7 +450,7 @@ impl Sittings {
             )
             .map_err(error)?;
         let mut out = String::new();
-        for (sitting, started, redos) in sittings {
+        for (sitting, started, redos, not_taken) in sittings {
             let rows = items
                 .query_map([&sitting], |r| {
                     Ok((
@@ -462,6 +482,7 @@ impl Sittings {
                 "passed": with(&|_, outcome| outcome == Some("passed")),
                 "failed": with(&|_, outcome| outcome == Some("failed")),
                 "helped": with(&|_, outcome| outcome == Some("helped")),
+                "due_not_taken": not_taken,
                 "paper_redos_due": serde_json::from_str::<Value>(&redos).unwrap_or(Value::Null),
             });
             out.push_str(&line.to_string());
@@ -499,6 +520,47 @@ fn begin(tx: &Transaction<'_>, now: i64) -> Result<(), String> {
          SELECT ?1, item_id, row_number() OVER (ORDER BY due_day, created_ms, seq), label
          FROM (SELECT rowid AS seq, * FROM items WHERE status='open' AND due_day<=?2 ORDER BY due_day, created_ms, rowid LIMIT ?3)",
         params![sitting, today, MAX_CHECKS_PER_SITTING],
+    )
+    .map_err(error)?;
+    // Checks due beyond the three a sitting takes wait for a later sitting.
+    tx.execute(
+        "UPDATE sittings SET not_taken=(SELECT count(*) FROM items WHERE status='open' AND due_day<=?2)-(SELECT count(*) FROM sitting_items WHERE sitting_id=?1) WHERE sitting_id=?1",
+        params![sitting, today],
+    )
+    .map_err(error)?;
+    Ok(())
+}
+
+/// Make the check for a label, or start it over: due the next day with no
+/// passes. A miss joins its earlier misses, which become the wrong options.
+fn schedule_next_day(
+    tx: &Transaction<'_>,
+    item: Option<&Item>,
+    (label, key): (&str, &str),
+    miss: Option<String>,
+    today: NaiveDate,
+    now: i64,
+) -> Result<(), String> {
+    let due = day_after(today, INTERVAL_DAYS[0]).to_string();
+    let Some(item) = item else {
+        let id = crate::learner::store::new_id("check").map_err(error)?;
+        tx.execute(
+            "INSERT INTO items(item_id,label,label_key,status,passes,due_day,misses_json,created_ms,updated_ms) VALUES(?1,?2,?3,'open',0,?4,?5,?6,?6)",
+            params![id, label, key, due, json!(miss.into_iter().collect::<Vec<_>>()).to_string(), now],
+        )
+        .map_err(error)?;
+        return Ok(());
+    };
+    let mut misses: Vec<String> = serde_json::from_str(&item.misses).unwrap_or_default();
+    if let Some(miss) = miss {
+        misses.retain(|kept| kept != &miss);
+        misses.push(miss);
+        let excess = misses.len().saturating_sub(MAX_MISSES_KEPT);
+        misses.drain(..excess);
+    }
+    tx.execute(
+        "UPDATE items SET label=?2,status='open',passes=0,due_day=?3,last_pass_day=NULL,misses_json=?4,updated_ms=?5 WHERE item_id=?1",
+        params![item.id, label, due, json!(misses).to_string(), now],
     )
     .map_err(error)?;
     Ok(())
@@ -569,30 +631,19 @@ fn apply(
     match attempt.first_try {
         FirstTry::Wrong => {
             let miss = clip(&attempt.description, MAX_MISS_CHARS);
-            let due = day_after(today, INTERVAL_DAYS[0]).to_string();
-            match item {
-                None => {
-                    let id = crate::learner::store::new_id("check").map_err(error)?;
-                    tx.execute(
-                        "INSERT INTO items(item_id,label,label_key,status,passes,due_day,misses_json,created_ms,updated_ms) VALUES(?1,?2,?3,'open',0,?4,?5,?6,?6)",
-                        params![id, label, key, due, json!([miss]).to_string(), now],
-                    )
-                    .map_err(error)?;
-                }
-                Some(Item { id, misses, .. }) => {
-                    let mut misses: Vec<String> = serde_json::from_str(&misses).unwrap_or_default();
-                    misses.retain(|kept| kept != &miss);
-                    misses.push(miss);
-                    let excess = misses.len().saturating_sub(MAX_MISSES_KEPT);
-                    misses.drain(..excess);
-                    settle(&id, "failed")?;
-                    tx.execute(
-                        "UPDATE items SET label=?2,status='open',passes=0,due_day=?3,last_pass_day=NULL,misses_json=?4,updated_ms=?5 WHERE item_id=?1",
-                        params![id, label, due, json!(misses).to_string(), now],
-                    )
-                    .map_err(error)?;
-                }
+            if let Some(item) = &item {
+                settle(&item.id, "failed")?;
             }
+            schedule_next_day(tx, item.as_ref(), (&label, &key), Some(miss), today, now)?;
+            Ok("scheduled")
+        }
+        // A right answer reached only through a full solution is the
+        // solution's, not the learner's: it is asked for cold the next day.
+        FirstTry::Right if attempt.help == AttemptHelp::Solution => {
+            if let Some(item) = &item {
+                settle(&item.id, "helped")?;
+            }
+            schedule_next_day(tx, item.as_ref(), (&label, &key), None, today, now)?;
             Ok("scheduled")
         }
         FirstTry::Right => {
@@ -673,7 +724,7 @@ fn opener_text(checks: &[(i64, String, Vec<String>)], redos: &[crate::digest::Du
                 text.push_str(&format!(" Earlier misses: {}", misses.join(" | ")));
             }
         }
-        text.push_str("\nBegin each with \"Quick check <number>:\" and pose a new instance the learner has not seen, answered in a line or two. After their answer, show lettered options for that instance: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, first_try: right or wrong, help}. A decline is recorded the same way with first_try declined.");
+        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Each is a new instance the learner has not seen, answered in a line or two, chosen so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that instance: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, first_try, help}. first_try is right only when the answer, and any reason the learner gives, rules out each earlier miss. A right final answer whose reason still holds an earlier miss is wrong. A decline is recorded the same way with first_try declined.");
     }
     if !redos.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -997,6 +1048,15 @@ mod tests {
         );
         assert!(s.note_learner_message(noon(1)).unwrap());
         assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 0 }));
+        let not_taken: i64 = s
+            .conn
+            .query_row(
+                "SELECT not_taken FROM sittings ORDER BY sitting_no DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(not_taken, 2, "five due, three taken");
         // "Quick check 1" is not "Quick check 12"; a decline settles a check.
         s.note_reply("Quick check 12 is not here.").unwrap();
         assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 0 }));
@@ -1016,6 +1076,81 @@ mod tests {
         assert!(s.note_learner_message(noon(2)).unwrap());
         let opener = s.take_opener(&workspace, noon(2)).unwrap().unwrap();
         assert!(opener.contains("Label \"skill 1\""), "{opener}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_right_answer_reached_through_a_full_solution_is_asked_for_cold_the_next_day() {
+        let (root, workspace) = fixture();
+        let mut s = Sittings::open(&workspace).unwrap();
+        s.note_learner_message(noon(0)).unwrap();
+        s.apply_attempts(
+            &[attempt(
+                "o1",
+                "completing the square",
+                FirstTry::Right,
+                AttemptHelp::Solution,
+            )],
+            noon(0),
+        )
+        .unwrap();
+        let state = |s: &Sittings| -> (String, i64, Option<String>, String) {
+            s.conn
+                .query_row(
+                    "SELECT status,passes,due_day,misses_json FROM items",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .unwrap()
+        };
+        let tomorrow = local_day(noon(1)).to_string();
+        assert_eq!(
+            state(&s),
+            ("open".into(), 0, Some(tomorrow.clone()), "[]".into()),
+            "no miss to offer as a wrong option"
+        );
+        // A hint or a step is not the whole answer, so it schedules nothing.
+        for (id, help) in [("o2", AttemptHelp::Hint), ("o3", AttemptHelp::Step)] {
+            s.apply_attempts(&[attempt(id, "factoring", FirstTry::Right, help)], noon(0))
+                .unwrap();
+        }
+        let items: i64 = s
+            .conn
+            .query_row("SELECT count(*) FROM items", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(items, 1);
+        // On a passed check, a solution-led answer starts it over.
+        s.note_learner_message(noon(1)).unwrap();
+        s.apply_attempts(
+            &[attempt(
+                "o4",
+                "completing the square",
+                FirstTry::Right,
+                AttemptHelp::None,
+            )],
+            noon(1),
+        )
+        .unwrap();
+        assert_eq!(state(&s).1, 1);
+        s.apply_attempts(
+            &[attempt(
+                "o5",
+                "completing the square",
+                FirstTry::Right,
+                AttemptHelp::Solution,
+            )],
+            noon(1),
+        )
+        .unwrap();
+        assert_eq!(
+            state(&s),
+            (
+                "open".into(),
+                0,
+                Some(local_day(noon(2)).to_string()),
+                "[]".into()
+            )
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }
