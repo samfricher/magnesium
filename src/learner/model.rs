@@ -102,6 +102,7 @@ protocol_enum!(FirstTry { Right => "right", Partly => "partly", Wrong => "wrong"
 protocol_enum!(Confidence { Sure => "sure", Unsure => "unsure", Guess => "guess" });
 protocol_enum!(GoalStepStatus { Todo => "todo", Doing => "doing", Done => "done" });
 protocol_enum!(AttemptHelp { None => "none", Hint => "hint", Step => "step", Solution => "solution" });
+protocol_enum!(GapType { K => "K", S => "S", N => "N", A => "A", R => "R" });
 
 /// Serde's internally tagged enum derive buffers payload fields and loses their
 /// nested diagnostic path. The runtime variants still derive the wire/schema
@@ -220,9 +221,10 @@ pub struct ObservationInput {
     /// Give this when the observation is the learner's first try at a task you
     /// set, or their decline of a quick check. The runtime stores it as one
     /// row per answer. A wrong or partly right first try schedules a quick
-    /// check on its label for the next day; a later right, unaided first try
-    /// on a due check passes it. A right first try reached through a full
-    /// solution is asked for cold the next day. Needs a learner_response event.
+    /// check on its label for the next day; a later right, cold first try on
+    /// a due check passes it. A right first try reached through a full
+    /// solution is asked for cold the next day. The runtime works out every
+    /// pass, status and next date. Needs a learner_response event.
     #[serde(default)]
     pub attempt: Option<Attempt>,
     /// Instead of attempt, for a marked paper: one attempt per answered
@@ -269,6 +271,108 @@ pub struct Attempt {
     /// marks. first_try is right for full marks, wrong for none, else partly.
     #[serde(default)]
     pub paper: Option<PaperMark>,
+    /// true when the answer was right but over the time allowed. A Type S
+    /// row never passes on a slow answer.
+    #[serde(default)]
+    pub slow: bool,
+    /// The gap-log rows, such as "midterm-1#3", or quick-check labels this
+    /// answer is a redo of. The runtime counts it for each: a pass when it is
+    /// due and the answer is right, cold and unaided; a fail when it is due
+    /// and the answer is not. On a fail, name only the rows whose tag holds
+    /// the first error. At most 12.
+    #[serde(default)]
+    #[schemars(length(max = 12))]
+    pub counts_for: Vec<String>,
+    /// On a paper answer that lost marks, or a full-mark answer that was too
+    /// slow (type S): the gap-log row it makes. The runtime numbers the row,
+    /// writes it into the plan's gap-log.md and dates its redos once you
+    /// report its repair. Needed on every lost mark unless counts_for names
+    /// the row it fails or paper.stretch is true.
+    #[serde(default)]
+    pub gap: Option<GapReport>,
+    /// The next question to pose cold on the item this answer makes or
+    /// redoes, with its answer key. Write it when the item is made and again
+    /// after each pass.
+    #[serde(default)]
+    pub next: Option<NextQuestion>,
+}
+/// A gap-log row, as the tutor reports it. Dates, passes and status are the
+/// runtime's.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GapReport {
+    /// K did not know, S slow, N notation or missing step, A arithmetic, R
+    /// misread.
+    #[serde(rename = "type")]
+    pub gap_type: GapType,
+    /// What was written, and what the mark scheme needed. Over 1,000 bytes
+    /// is cut.
+    pub what_went_wrong: String,
+    /// The plan's folder under Study/, such as "midterm-1". Needed only when
+    /// the study folder has more than one plan.
+    #[serde(default)]
+    pub plan: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NextQuestion {
+    /// A new problem the learner has not seen, posed as is, that needs the
+    /// skill unprompted. It asks for a result and never names or points at
+    /// the skill, tag, method, form of answer, step or earlier mistake:
+    /// "Solve …", not "Solve … by <method>" or "Write … in the form …". Each
+    /// earlier miss gives it a different answer from the right one.
+    pub question: String,
+    /// Its answer and how to mark it. Held back until the learner answers.
+    pub answer_key: String,
+}
+/// A change to one gap-log row or quick check. Name it as the gap log or the
+/// sitting opener does: "midterm-1#3" for a row, or a quick check's label.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PracticeEdit {
+    pub item: String,
+    /// The repair is done: what it was, such as "taught the slope; two
+    /// checks". The first redo falls due the next day, never the same day.
+    /// Report it again after a failed redo's new repair.
+    #[serde(default)]
+    pub repaired: Option<String>,
+    #[serde(default)]
+    pub next: Option<NextQuestion>,
+    /// Correct a row's type.
+    #[serde(default, rename = "type")]
+    pub gap_type: Option<GapType>,
+    /// Correct a row's description.
+    #[serde(default)]
+    pub what_went_wrong: Option<String>,
+    /// Take the item out, when it was logged in error: why. Its attempts stay.
+    #[serde(default)]
+    pub dropped: Option<String>,
+}
+/// Correct a stored attempt, such as when the learner shows a mark was wrong.
+/// Give only the fields that change. The runtime keeps the attempt as it was,
+/// and works out every item it counts for again.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AttemptCorrection {
+    /// From practice.attempts in the result that stored it, or `magnesium
+    /// attempts --json`.
+    pub attempt_id: String,
+    /// Why, in a sentence.
+    pub reason: String,
+    #[serde(default)]
+    pub first_try: Option<FirstTry>,
+    /// A paper answer's marks. first_try follows them.
+    #[serde(default)]
+    pub marks: Option<f64>,
+    #[serde(default)]
+    pub help: Option<AttemptHelp>,
+    #[serde(default)]
+    pub cold: Option<bool>,
+    #[serde(default)]
+    pub slow: Option<bool>,
+    /// Replaces the rows and checks it counts for.
+    #[serde(default)]
+    pub counts_for: Option<Vec<String>>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -279,6 +383,9 @@ pub struct PaperMark {
     pub question: String,
     pub marks: f64,
     pub out_of: f64,
+    /// true for a question beyond the plan's scope: it makes no gap-log row.
+    #[serde(default)]
+    pub stretch: bool,
 }
 /// One step of the lesson's current goal.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -610,6 +717,16 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     pub event_dispositions: Vec<EventDisposition>,
     #[serde(default)]
     pub review_updates: Vec<R>,
+    /// Report a repair, the next question, or a correction, on gap-log rows
+    /// and quick checks. Never a date, pass or status: the runtime works those
+    /// out. At most 40.
+    #[serde(default)]
+    #[schemars(length(max = 40))]
+    pub practice: Vec<PracticeEdit>,
+    /// At most 8.
+    #[serde(default)]
+    #[schemars(length(max = 8))]
+    pub attempt_corrections: Vec<AttemptCorrection>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateResult {

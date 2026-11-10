@@ -1,5 +1,5 @@
-//! A sitting opens with what is due: quick checks the runtime scheduled from
-//! recorded attempts, and paper redos from gap logs.
+//! A sitting opens with what is due: quick checks and paper redos, which the
+//! runtime schedules from recorded attempts.
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::{TestEnvironment, run_hook_with_host_flag, v2};
@@ -66,18 +66,40 @@ fn sittings(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/sittings.sqlite")).unwrap()
 }
 
-/// What a later day looks like to the runtime: the check is due, and the
-/// last learner message was more than three hours ago.
+fn store(e: &TestEnvironment) -> Connection {
+    Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
+}
+
+/// What a later day looks like to the runtime: every recorded answer and
+/// change moves a day and two hours back, so a check made today is due, and
+/// the last learner message was more than three hours ago.
 fn next_day(e: &TestEnvironment) {
-    let conn = sittings(e);
-    let today = chrono_today();
-    conn.execute("UPDATE items SET due_day=?1", [&today])
-        .unwrap();
+    let back = 26 * HOUR_MS;
+    let conn = store(e);
     conn.execute(
-        "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
-        [4 * HOUR_MS],
+        "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
+        [back],
     )
     .unwrap();
+    conn.execute("UPDATE practice_events SET at_ms=at_ms-?1", [back])
+        .unwrap();
+    sittings(e)
+        .execute(
+            "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
+            [4 * HOUR_MS],
+        )
+        .unwrap();
+}
+
+/// The quick checks in the learner store.
+fn checks(e: &TestEnvironment) -> i64 {
+    store(e)
+        .query_row(
+            "SELECT count(*) FROM practice_items WHERE origin='chat'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
 }
 
 fn chrono_today() -> String {
@@ -123,12 +145,12 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         json!([LABEL]),
         "{missed}"
     );
-    let due: String = sittings(&e)
-        .query_row("SELECT due_day FROM items", [], |r| r.get(0))
-        .unwrap();
+    let check = &missed["practice"]["items"][0];
+    assert_eq!(check["item"], LABEL, "{missed}");
+    assert_eq!(check["status"], "open", "{missed}");
     assert!(
-        due > chrono_today(),
-        "a miss is due the next day, not today"
+        check["next_redo"].as_str().unwrap() > chrono_today().as_str(),
+        "a miss is due the next day, not today: {missed}"
     );
 
     // A later day: the first learner message begins a sitting.
@@ -170,13 +192,21 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     );
     assert!(again.get("sitting_opener").is_none(), "{again}");
 
-    // The older gap log was converted, so its row could fall due.
+    // The older gap log was brought in, so its row could fall due, and the
+    // runtime wrote its table.
     let gap_log = std::fs::read_to_string(e.workspace.join("Study/midterm-1/gap-log.md")).unwrap();
     assert!(
         gap_log.contains("| Repair done | Passes | Next redo | Status |"),
         "{gap_log}"
     );
-    let backups = std::fs::read_dir(e.workspace.join(".magnesium/cache/gap-log-backups"))
+    assert!(
+        gap_log.contains(&format!(
+            "| 1 | 2026-10-20 | Diagnostic | 3 | km | slope read as intercept | K |  | taught the slope |  | {} | open |",
+            chrono_today()
+        )),
+        "{gap_log}"
+    );
+    let backups = std::fs::read_dir(e.workspace.join(".magnesium/backups/gap-logs"))
         .unwrap()
         .count();
     assert_eq!(backups, 1);
@@ -226,12 +256,14 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         json!({"action":"instructions","host":"claude","stage":"teach_and_practice"}),
     );
     assert_eq!(load["status"], "served", "{load}");
-    let (status, passes): (String, i64) = sittings(&e)
-        .query_row("SELECT status,passes FROM items", [], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .unwrap();
-    assert_eq!((status.as_str(), passes), ("open", 0));
+    assert_eq!(
+        declined["practice"]["items"][0]["status"], "open",
+        "{declined}"
+    );
+    assert_eq!(
+        declined["practice"]["attempts"][0]["items"][0]["effect"], "declined",
+        "{declined}"
+    );
 
     // One line per sitting in the local log.
     let log = std::fs::read_to_string(e.workspace.join(".magnesium/sittings.log")).unwrap();
@@ -269,7 +301,7 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_on_a_host_without_reply_text(
             json!({"schema":"learner-model/v2","action":"update","request_id":id,
                 "observations":[{"client_ref":"work","kind":"learner_work","description":"Answer to b.",
                     "events":[{"event_id":event,"role":"learner_response"}],
-                    "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":first_try,"help":"none","cold":false}}]}),
+                    "attempt":{"label":LABEL,"question":"Solve x² − 7x + 10 = 0","first_try":first_try,"help":"none","cold":first_try == "right"}}]}),
         )
     };
     v2::start(&e, "opencode", "oc");
@@ -292,10 +324,10 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_on_a_host_without_reply_text(
         })
         .unwrap();
     assert_eq!(outcome, "passed");
-    let passes: i64 = conn
-        .query_row("SELECT passes FROM items", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(passes, 1);
+    assert_eq!(
+        passed["practice"]["items"][0]["status"], "1 of 3",
+        "{passed}"
+    );
 }
 
 #[test]
@@ -337,13 +369,7 @@ fn an_attempt_needs_the_learners_own_message_and_a_bounded_label() {
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["error"]["recovery"]["field_path"], path, "{value}");
     }
-    assert!(
-        !e.workspace.join(".magnesium/sittings.sqlite").exists()
-            || sittings(&e)
-                .query_row("SELECT count(*) FROM items", [], |r| r.get::<_, i64>(0))
-                .unwrap()
-                == 0
-    );
+    assert_eq!(checks(&e), 0);
 }
 
 #[test]
@@ -408,7 +434,7 @@ fn one_command_turns_the_opener_off_or_adds_a_block_on_new_material() {
 }
 
 #[test]
-fn loading_a_paper_stage_converts_an_older_gap_log_even_with_the_opener_off() {
+fn loading_a_paper_stage_brings_in_an_older_gap_log_even_with_the_opener_off() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     old_paper_plan(&e);
@@ -425,6 +451,11 @@ fn loading_a_paper_stage_converts_an_older_gap_log_even_with_the_opener_off() {
     );
     assert_eq!(load["status"], "served", "{load}");
     assert!(load.get("sitting_opener").is_none(), "{load}");
+    assert_eq!(
+        load["gap_logs"]["imported"],
+        json!(["Study/midterm-1/gap-log.md"]),
+        "{load}"
+    );
     let after = std::fs::read_to_string(&path).unwrap();
     assert_ne!(before, after);
     assert!(after.contains("| Passes | Next redo | Status |"), "{after}");

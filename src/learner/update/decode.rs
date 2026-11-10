@@ -89,5 +89,7 @@ pub(crate) fn decode_update_request(payload: &Value, host: &HostContext) -> Resu
         checkpoint: envelope.checkpoint,
         event_dispositions: envelope.event_dispositions,
         review_updates,
+        practice: envelope.practice,
+        attempt_corrections: envelope.attempt_corrections,
     })
 }

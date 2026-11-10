@@ -379,11 +379,13 @@ fn the_spaced_redo_rules_are_served_with_the_tool_recipes() {
     for rule in [
         "A gap-log row closes after three cold passes on three different days.",
         "The first redo is at least 1 day after the repair, never on the repair day.",
-        "The second is at least 3 days after the first pass, and the third at least 7 days after the second.",
-        "move Status from `open` to `1 of 3`, `2 of 3`, then `closed`",
+        "The second is at least 3 days after the first pass, and the third at least 7 days after the second, sooner to fit before the plan's When date.",
         "An attempt while Next redo is empty or still to come counts neither way.",
-        "A due redo that is not a pass fails the row.",
-        "Spaced redos overrides any one-pass rule left in the log or plan.",
+        "A due redo that is not a pass fails the row, which waits for a new repair",
+        "Magnesium keeps each row's schedule and writes the Gaps table of `gap-log.md` from the learner record: read it, never edit it, and write no date, pass or status.",
+        "When a repair is done, send practice {item: \"<plan>#<n>\", repaired, next: {question, answer_key}}.",
+        "Each redo's attempt names in counts_for every row it counts for",
+        "Each answer that lost marks carries one gap {type, what_went_wrong}, for its first error",
     ] {
         assert!(text.contains(rule), "{host}/papers_loop: {rule}");
     }
@@ -396,7 +398,7 @@ fn the_spaced_redo_rules_are_served_with_the_tool_recipes() {
 }
 
 #[test]
-fn the_gap_log_upgrade_is_served_and_the_papers_skill_adds_only_the_template_steps() {
+fn the_runtime_brings_in_an_old_gap_log_and_the_papers_skill_adds_only_the_template_steps() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let host = "claude";
@@ -409,22 +411,19 @@ fn the_gap_log_upgrade_is_served_and_the_papers_skill_adds_only_the_template_ste
     );
     let text = papers["text"].as_str().unwrap();
     for step in [
-        "## Upgrade an old gap log",
-        "Rename `Cold-redo date` to `Next redo`",
-        "after an empty `Passes` column.",
-        "write Status as exactly `closed`",
-        "gets tomorrow's date if it has none and its Repair done is filled",
-        "If the log has no Conf column, add one after Type, empty in every row. In a log that already has `Next redo`, change no other column or cell, since an open row with an empty Next redo there waits for a new repair. A `gap-log.md` without a `Next redo` column predates spaced redos.",
-        "Dismiss the plan's old gap review suggestions",
-        "log the upgrade as one line under Changes in `plan.md`",
+        "## An older gap log",
+        "Magnesium brings in a gap log from any earlier template when a paper stage loads, keeps a copy, and lists one it cannot read under gap_logs.not_imported",
+        "With the papers skill's templates, also follow its template steps.",
     ] {
         assert!(text.contains(step), "{host}: {step}");
     }
-    let (_, old_log_steps) = text.split_once("predates spaced redos.").unwrap();
-    assert!(
-        old_log_steps.contains("gets tomorrow's date"),
-        "{host}: the date fill applies only to a log without Next redo"
-    );
+    for retired in [
+        "Rename `Cold-redo date`",
+        "## Upgrade an old gap log",
+        "tomorrow's date",
+    ] {
+        assert!(!text.contains(retired), "{host}: {retired}");
+    }
     let skill = include_str!("../claude-plugin/skills/papers/SKILL.md");
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
     let section = section.split("\n## ").next().unwrap();
@@ -821,7 +820,7 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
     for required in [
         "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
         "One letter on a question covers its parts.",
-        "Copy each letter into its rows' Conf, or a blank, as for a lone `?`.",
+        "Send each letter as its answer's confidence, or none, as for a lone `?`.",
         "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
         "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
         "Conf takes any letter the failing answer has",

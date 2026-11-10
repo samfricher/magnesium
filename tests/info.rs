@@ -23,7 +23,7 @@ fn info_reports_fresh_family_counts_and_instruction_identity_without_writes() {
     let before = fs::read(&path).unwrap();
     let report = info(&e);
     assert_eq!(report["schema"], "learner-model/v2");
-    assert_eq!(report["schema_version"], 3);
+    assert_eq!(report["schema_version"], 4);
     assert_eq!(report["runtime_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(report["current_memory_count"], 0);
     assert_eq!(report["pending_event_count"], 0);

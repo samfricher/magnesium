@@ -79,9 +79,11 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
         {"label":"quadratic formula","question":"Solve 2x² − 7x + 3 = 0","first_try":"right","help":"none","cold":true,"confidence":"sure",
          "paper":{"name":"MockA","question":"1","marks":4,"out_of":4}},
         {"label":"expected value","question":"Find E(X) for the table","first_try":"partly","help":"none","cold":true,"confidence":"unsure",
-         "paper":{"name":"MockA","question":"2a","marks":1.5,"out_of":3}},
+         "paper":{"name":"MockA","question":"2a","marks":1.5,"out_of":3},
+         "gap":{"type":"A","what_went_wrong":"Summed x·P(x) but dropped one term; the key needs all four."}},
         {"label":"variance","question":"Find Var(X)","first_try":"wrong","help":"none","cold":true,"confidence":"guess",
-         "paper":{"name":"MockA","question":"2b","marks":0,"out_of":3}}
+         "paper":{"name":"MockA","question":"2b","marks":0,"out_of":3},
+         "gap":{"type":"K","what_went_wrong":"Wrote ?; the key needs E(X²) − E(X)²."}}
     ]);
     let marked = step(&e, update("paper", paper));
     assert_eq!(marked["update_status"], "committed", "{marked}");

@@ -68,13 +68,13 @@ fn digest(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    drop(snapshot);
-    let plans = plans(workspace.root(), today, &sessions);
+    let plans = plans(workspace.root(), today, &sessions, Some(&snapshot));
     let recent = sessions
         .iter()
         .take(MAX_RECENT_SESSIONS)
         .map(|s| s.value.clone())
         .collect::<Vec<_>>();
+    drop(snapshot);
     Ok(json!({
         "active": true,
         "today": today.to_string(),
@@ -225,7 +225,14 @@ fn reviews(conn: &Connection, now_ms: i64, today: NaiveDate) -> rusqlite::Result
 }
 
 /// Each `Study/<target>/plan.md` with its date, blocks and gap-log state.
-fn plans(root: &Path, today: NaiveDate, sessions: &[Session]) -> Vec<Value> {
+/// The gap-log state of a plan the runtime has taken over comes from the
+/// learner store, so an edit to its Markdown table changes nothing.
+fn plans(
+    root: &Path,
+    today: NaiveDate,
+    sessions: &[Session],
+    store: Option<&Connection>,
+) -> Vec<Value> {
     let study = root.join("Study");
     let Ok(entries) = fs::read_dir(&study) else {
         return Vec::new();
@@ -251,6 +258,19 @@ fn plans(root: &Path, today: NaiveDate, sessions: &[Session]) -> Vec<Value> {
                 today,
                 sessions,
             );
+            if let Some(recorded) =
+                store.and_then(|conn| crate::practice::plan_gaps(conn, root, &target, today))
+            {
+                for field in ["unfixed_gaps", "redos_due", "first_due"] {
+                    value[field] = recorded[field].clone();
+                }
+                value["gap_log_from"] = json!("record");
+                if let Some(list) = value["unreadable"].as_array_mut() {
+                    list.retain(|item| item["file"] != json!(gap_log_file(&target)));
+                }
+                return Some(value);
+            }
+            value["gap_log_from"] = json!("file");
             if gaps.is_none() && fs::symlink_metadata(&gap_path).is_ok() {
                 let unreadable = Unreadable::file(
                     gap_log_file(&target),
@@ -265,176 +285,29 @@ fn plans(root: &Path, today: NaiveDate, sessions: &[Session]) -> Vec<Value> {
         .collect()
 }
 
-/// Paper redos due today or earlier, per plan: the gap log, how many, and the
-/// first one's paper and question. A sitting's opener names them.
-pub(crate) struct DueRedos {
-    pub(crate) gap_log: String,
-    pub(crate) due: u64,
-    pub(crate) first: Option<String>,
-}
-
-pub(crate) fn due_redos(root: &Path, today: NaiveDate) -> Vec<DueRedos> {
-    plans(root, today, &[])
-        .iter()
-        .filter_map(|plan| {
-            let due = plan["redos_due"].as_u64().filter(|due| *due > 0)?;
-            let target = plan["target"].as_str()?;
-            let first = &plan["first_due"];
-            let first = [first["paper"].as_str(), first["question"].as_str()]
-                .into_iter()
-                .flatten()
-                .map(|cell| cell.chars().take(MAX_QUOTED_CHARS).collect::<String>())
-                .collect::<Vec<_>>()
-                .join(" Q");
-            Some(DueRedos {
-                gap_log: gap_log_file(target),
-                due,
-                first: (!first.is_empty()).then_some(first),
-            })
-        })
-        .collect()
-}
-
-/// Bring each plan's gap log up to the current template, which gives every
-/// row a Passes and a Next redo cell. A log from an older template has no
-/// Next redo column, so none of its rows could ever fall due. The original
-/// is kept in `.magnesium/cache/gap-log-backups/`. Returns the logs changed.
-pub(crate) fn convert_gap_logs(workspace: &Workspace, today: NaiveDate) -> Vec<String> {
-    let study = workspace.root().join("Study");
-    let Ok(entries) = fs::read_dir(&study) else {
-        return Vec::new();
-    };
-    let mut converted = Vec::new();
-    for entry in entries.filter_map(Result::ok) {
-        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-            continue;
-        }
-        let target = entry.file_name().to_string_lossy().into_owned();
-        let dir = study.join(&target);
-        if target.starts_with('.') || read_small(&dir.join("plan.md")).is_none() {
-            continue;
-        }
-        let path = dir.join("gap-log.md");
-        let Some(old) = read_small(&path) else {
-            continue;
-        };
-        let Some(new) = convert_gap_log(&old, today) else {
-            continue;
-        };
-        let written = (|| -> std::io::Result<()> {
-            reject_symlink_components(&path, workspace.root())?;
-            let backups = workspace.private_dir(Path::new("cache/gap-log-backups"))?;
-            let stamp = Local::now().format("%Y%m%dT%H%M%S");
-            crate::workspace::write_private_atomic(
-                &backups.join(format!("{target}-{stamp}.md")),
-                old.as_bytes(),
-            )?;
-            crate::workspace::write_user_owned_atomic(&path, new.as_bytes())
-        })();
-        if written.is_ok() {
-            converted.push(gap_log_file(&target));
-        }
-    }
-    converted.sort();
-    converted
-}
-
-/// The gap log with Passes and Next redo columns added, or None when it
-/// already has a Next redo column or has no Gaps table to convert. An older
-/// "Cold-redo date" column becomes Next redo. An open row whose repair is
-/// written down, and that has no date there, is due today; a row still
-/// waiting for its repair stays empty, as the template says.
-fn convert_gap_log(text: &str, today: NaiveDate) -> Option<String> {
-    let table = Table::parse(section(text, "Gaps"));
-    if table.header.is_empty() || table.column("Next redo").is_some() {
-        return None;
-    }
-    let status = table.column("Status")?;
-    table.column("Date")?;
-    let renamed = table.column("Cold-redo date");
-    let mut header = table.header.clone();
-    let next_redo = match renamed {
-        Some(index) => {
-            header[index] = "Next redo".to_owned();
-            index
-        }
-        None => {
-            header.insert(status, "Next redo".to_owned());
-            status
-        }
-    };
-    let passes = table.column("Passes").is_none().then_some(next_redo);
-    if passes.is_some() {
-        header.insert(next_redo, "Passes".to_owned());
-    }
-    let width = table.header.len();
-    let repair = table.column("Repair done");
-    let row_cells = |cells: &[String]| -> Vec<String> {
-        let mut cells = cells.to_vec();
-        let cell = |index: Option<usize>| index.and_then(|i| cells.get(i)).map(String::as_str);
-        let closed = cell(Some(status)).is_some_and(says_closed);
-        let dated = !cell(table.column("Date")).is_none_or(is_placeholder);
-        let repaired = !cell(repair).is_none_or(is_placeholder);
-        let old = renamed
-            .and_then(|i| cells.get(i))
-            .and_then(|c| first_date(c));
-        let due = match old {
-            Some(date) => date.to_string(),
-            None if dated && repaired && !closed => today.to_string(),
-            None => String::new(),
-        };
-        match renamed {
-            Some(index) => cells[index] = due,
-            None => cells.insert(next_redo, due),
-        }
-        if passes.is_some() {
-            cells.insert(next_redo, String::new());
-        }
-        cells
-    };
-    let first = table.header_line;
-    let mut out = String::with_capacity(text.len() + 64);
-    let mut in_table = false;
-    for (index, line) in text.split_inclusive('\n').enumerate() {
-        let number = index + 1;
-        let trimmed = line.trim();
-        in_table = if number == first {
-            true
-        } else {
-            in_table && trimmed.starts_with('|')
-        };
-        if !in_table {
-            out.push_str(line);
-            continue;
-        }
-        let cells = split_cells(trimmed);
-        let cells = if number == first {
-            header.clone()
-        } else if is_separator(&cells) {
-            vec!["---".to_owned(); header.len()]
-        } else if cells.len() == width {
-            row_cells(&cells)
-        } else {
-            out.push_str(line);
-            continue;
-        };
-        let ending = &line[line.trim_end_matches(['\n', '\r']).len()..];
-        let joined = cells
-            .iter()
-            .map(|cell| cell.replace('|', "\\|"))
-            .collect::<Vec<_>>()
-            .join(" | ");
-        out.push_str(&format!("| {joined} |{ending}"));
-    }
-    Some(out)
-}
-
-fn read_small(path: &Path) -> Option<String> {
+pub(crate) fn read_small(path: &Path) -> Option<String> {
     let metadata = fs::symlink_metadata(path).ok()?;
     if !metadata.is_file() || metadata.len() > MAX_PLAN_BYTES {
         return None;
     }
     fs::read_to_string(path).ok()
+}
+
+/// The test date a plan states in its Facts table's When row, if any.
+pub(crate) fn plan_test_date(root: &Path, plan: &str) -> Option<NaiveDate> {
+    let text = read_small(&root.join("Study").join(plan).join("plan.md"))?;
+    let facts = Table::parse(section(&text, "Facts"));
+    facts
+        .rows
+        .iter()
+        .find(|row| {
+            facts
+                .cell(row, "Item")
+                .is_some_and(|c| c.eq_ignore_ascii_case("When"))
+        })
+        .and_then(|row| facts.cell(row, "Value"))
+        .filter(|value| !is_placeholder(value))
+        .and_then(first_date)
 }
 
 fn plan_digest(
@@ -522,7 +395,7 @@ fn plan_digest(
     })
 }
 
-fn gap_log_file(target: &str) -> String {
+pub(crate) fn gap_log_file(target: &str) -> String {
     format!("Study/{target}/gap-log.md")
 }
 
@@ -672,19 +545,19 @@ impl<'a> GapLog<'a> {
     }
 }
 
-fn says_closed(status: &str) -> bool {
+pub(crate) fn says_closed(status: &str) -> bool {
     let status = status.replace(['*', '_'], "").trim().to_lowercase();
     status == "closed" || status == "3 of 3"
 }
 
 /// The body of a `## ` section and the 1-based line of the file it starts on.
-struct Section<'a> {
-    text: &'a str,
-    first_line: usize,
+pub(crate) struct Section<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) first_line: usize,
 }
 
 /// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
-fn section<'a>(text: &'a str, name: &str) -> Section<'a> {
+pub(crate) fn section<'a>(text: &'a str, name: &str) -> Section<'a> {
     let mut start = None;
     let mut offset = 0;
     let mut first_line = 0;
@@ -709,24 +582,24 @@ fn section<'a>(text: &'a str, name: &str) -> Section<'a> {
     }
 }
 
-struct Row {
-    line: usize,
-    cells: Vec<String>,
+pub(crate) struct Row {
+    pub(crate) line: usize,
+    pub(crate) cells: Vec<String>,
 }
 
 /// The first Markdown table in a section. Columns are found by header name,
 /// because the agent may add, drop or reorder columns in its copy of a template.
 /// A line that is not a table row ends the table; `later_rows` holds the line
 /// of each table row after that, so a reader can report what it did not read.
-struct Table {
-    header: Vec<String>,
-    header_line: usize,
-    rows: Vec<Row>,
-    later_rows: Vec<usize>,
+pub(crate) struct Table {
+    pub(crate) header: Vec<String>,
+    pub(crate) header_line: usize,
+    pub(crate) rows: Vec<Row>,
+    pub(crate) later_rows: Vec<usize>,
 }
 
 impl Table {
-    fn parse(section: Section) -> Self {
+    pub(crate) fn parse(section: Section) -> Self {
         let mut lines = section
             .text
             .lines()
@@ -756,21 +629,21 @@ impl Table {
         }
     }
 
-    fn column(&self, name: &str) -> Option<usize> {
+    pub(crate) fn column(&self, name: &str) -> Option<usize> {
         self.header
             .iter()
             .position(|h| h.eq_ignore_ascii_case(name))
     }
 
     /// The cell in `row` under the header `name`, ignoring case.
-    fn cell<'a>(&self, row: &'a Row, name: &str) -> Option<&'a str> {
+    pub(crate) fn cell<'a>(&self, row: &'a Row, name: &str) -> Option<&'a str> {
         row.cells.get(self.column(name)?).map(String::as_str)
     }
 }
 
 /// The cells of one table line. One leading and one trailing pipe frame the
 /// row, and `\|` is a pipe inside a cell, not a separator.
-fn split_cells(line: &str) -> Vec<String> {
+pub(crate) fn split_cells(line: &str) -> Vec<String> {
     let inner = line.strip_prefix('|').unwrap_or(line);
     let inner = match inner.strip_suffix('|') {
         Some(rest) if !rest.ends_with('\\') => rest,
@@ -797,11 +670,11 @@ fn is_separator(cells: &[String]) -> bool {
         .all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
 }
 
-fn is_placeholder(cell: &str) -> bool {
+pub(crate) fn is_placeholder(cell: &str) -> bool {
     cell.is_empty() || cell.starts_with('<')
 }
 
-fn first_date(text: &str) -> Option<NaiveDate> {
+pub(crate) fn first_date(text: &str) -> Option<NaiveDate> {
     text.char_indices()
         .filter_map(|(i, _)| text.get(i..i + 10))
         .find_map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
@@ -821,44 +694,6 @@ mod tests {
 
     const PLAN: &str = "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | 2026-10-23 18:00 |\n| Length | <minutes> |\n\n## 6. Blocks\n\n| # | Block | Purpose |\n|---|---|---|\n| 1 | Diagnostic | find gaps |\n| 2 | Cold redo | close gaps |\n\n## 7. Must know cold\n\n- Km\n";
     const GAPS: &str = "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Status |\n|---|---|---|---|\n| 1 | 2026-10-14 | Diagnostic | open |\n| 2 | 2026-10-14 | Diagnostic | closed |\n| 3 | 2026-10-14 | Diagnostic | Open |\n\n## Scores\n\n| Paper | Date | Score | Time used |\n|---|---|---|---|\n| Diagnostic | 2026-10-14 | 14/30 | 40/45 min |\n| <PAPER> | <YYYY-MM-DD> | <score> | |\n";
-
-    #[test]
-    fn an_older_gap_log_gains_passes_and_next_redo_and_its_rows_can_fall_due() {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
-        let old = "# Gap log\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | km | slope | K | taught the slope | 2026-10-25 | open |\n| 2 | 2026-10-20 | Diagnostic | 4 | vmax | read a\\|b | R | reread | | open |\n| 3 | 2026-10-20 | Diagnostic | 5 | km | units | N | | | open |\n| 4 | 2026-10-20 | Diagnostic | 6 | km | slip | A | fixed | | closed |\n\n## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-20 | 10/20 |\n";
-        let new = convert_gap_log(old, today).unwrap();
-        assert!(new.contains("| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |"), "{new}");
-        assert!(new.contains("| 1 | 2026-10-20 | Diagnostic | 3 | km | slope | K | taught the slope |  | 2026-10-25 | open |"), "{new}");
-        assert!(new.contains("| 2 | 2026-10-20 | Diagnostic | 4 | vmax | read a\\|b | R | reread |  | 2026-11-09 | open |"), "{new}");
-        assert!(
-            new.contains("| 3 | 2026-10-20 | Diagnostic | 5 | km | units | N |  |  |  | open |"),
-            "{new}"
-        );
-        assert!(
-            new.contains("| 6 | km | slip | A | fixed |  |  | closed |"),
-            "{new}"
-        );
-        assert!(new.ends_with("## Scores\n\n| Paper | Date | Score |\n|---|---|---|\n| Diagnostic | 2026-10-20 | 10/20 |\n"), "{new}");
-        assert_eq!(
-            convert_gap_log(&new, today),
-            None,
-            "a converted log stays as it is"
-        );
-        let value = plan_digest("midterm-1", PLAN, &new, today, &[]);
-        assert_eq!(value["unfixed_gaps"], 3);
-        assert_eq!(value["redos_due"], 2);
-        assert_eq!(value["unreadable"], json!([]));
-
-        // A log with neither column gets both, before Status.
-        let plain = "## Gaps\n\n| # | Date | Paper | Q | Repair done | Status |\n|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Mock | 2 | taught | open |\n";
-        let new = convert_gap_log(plain, today).unwrap();
-        assert_eq!(
-            new,
-            "## Gaps\n\n| # | Date | Paper | Q | Repair done | Passes | Next redo | Status |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 1 | 2026-10-20 | Mock | 2 | taught |  | 2026-11-09 | open |\n"
-        );
-        let template = include_str!("../claude-plugin/skills/papers/templates/gap-log.md");
-        assert_eq!(convert_gap_log(template, today), None);
-    }
 
     #[test]
     fn plan_digest_reads_facts_blocks_gaps_and_scores() {
@@ -1461,14 +1296,15 @@ mod tests {
     }
 
     #[test]
-    fn the_gap_log_template_does_not_invite_a_date_before_the_repair() {
+    fn the_gap_log_template_leaves_the_gaps_table_to_the_runtime() {
         let template = include_str!("../claude-plugin/skills/papers/templates/gap-log.md");
+        let gaps = section(template, "Gaps").text;
         let table = Table::parse(section(template, "Gaps"));
-        let row = &table.rows[0];
-        for name in ["Passes", "Next redo"] {
-            let cell = table.cell(row, name).unwrap();
-            assert!(cell.starts_with("<empty until"), "{name}: {cell}");
+        assert!(table.rows.is_empty(), "no row for the tutor to fill in");
+        for name in ["Passes", "Next redo", "Status", "Conf"] {
+            assert!(table.column(name).is_some(), "{name}");
         }
+        assert!(gaps.contains("Magnesium writes this table"));
     }
 
     #[test]

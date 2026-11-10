@@ -15,6 +15,7 @@ mod export;
 mod hooks;
 pub(crate) mod learner;
 mod mcp;
+mod practice;
 mod request;
 mod retrieval;
 mod sittings;

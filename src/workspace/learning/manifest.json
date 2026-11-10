@@ -87,7 +87,7 @@
       "path": "workflows/papers-loop.md",
       "role": "workflow",
       "required_for_activation": true,
-      "sha256": "fb56296f9f6f369d321d58b4fcb4f99abc410a3d5a28747f4e34fb772c30454d",
+      "sha256": "10b0f5683071d6c001d430a164e077964e63f2771b171e96f475aeda74794345",
       "stage": "papers-loop"
     },
     {

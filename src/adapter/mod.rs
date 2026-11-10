@@ -289,8 +289,16 @@ pub(crate) fn dispatch_with_host(
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)))
         .filter(|host| host.host_kind == HostKind::Codex.as_str())
         .map(|host| host.host_thread_id);
-    if let Some(refusal) = due_checks_first(cwd, operation, &request) {
+    let caller = native_host
+        .clone()
+        .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
+    if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
+    }
+    // A sittings store from before #30 moves its quick checks into the
+    // learner store before an update can make a check on the same label.
+    if operation == "learning_step" {
+        let _ = sittings_here(cwd, false);
     }
     let update = (operation == "learning_step").then(|| request.clone());
     let paper_stage = operation == "context"
@@ -302,7 +310,13 @@ pub(crate) fn dispatch_with_host(
     if let Some(thread) = codex_thread {
         deliver_owed_core_rules(cwd, &thread, &mut result);
     }
-    open_sitting(cwd, update.as_ref(), paper_stage, &mut result);
+    open_sitting(
+        cwd,
+        update.as_ref(),
+        paper_stage,
+        caller.as_ref(),
+        &mut result,
+    );
     Ok(result)
 }
 /// The study folder's sittings, when this call runs in one it is bound to.
@@ -317,53 +331,132 @@ fn sittings_here(cwd: &Path, write: bool) -> Option<(Workspace, crate::sittings:
     };
     Some((workspace, sittings))
 }
-/// After a committed update, its learner input notes a learner message and
-/// its attempts move quick checks. The first tool result of a sitting then
-/// carries the opener. A paper stage load converts an older gap log first.
-/// None of this can fail the call.
+/// After a committed update, its learner input notes a learner message, and
+/// what its attempts did to practice items goes in the result and settles
+/// the sitting's checks. A practice change, or a paper stage load, brings in
+/// and writes the gap logs. The first tool result of a sitting then carries
+/// the opener. None of this can fail the call.
 fn open_sitting(
     cwd: &Path,
     update: Option<&serde_json::Value>,
     paper_stage: bool,
+    caller: Option<&crate::learner::HostContext>,
     result: &mut serde_json::Value,
 ) {
     if !result.is_object() {
         return;
     }
+    let Ok(Some(workspace)) = Workspace::discover(cwd) else {
+        return;
+    };
+    if check_workspace_binding(&workspace).is_err() {
+        return;
+    }
     let now = crate::sittings::now_ms();
-    if paper_stage
-        && let Ok(Some(workspace)) = Workspace::discover(cwd)
-        && check_workspace_binding(&workspace).is_ok()
+    let today = crate::sittings::local_day(now);
+    let committed = update.filter(|_| result["update_status"] == "committed");
+    let practice_change = committed.is_some_and(touches_practice);
+    // Bringing a gap log in copies the learner's rows into the learner
+    // store, so it waits while this conversation records nothing.
+    let records = caller.is_none_or(|host| records_here(&workspace, host));
+    let mut report = crate::practice::GapLogReport::default();
+    if records && (paper_stage || practice_change) {
+        report = crate::practice::sync_gap_logs(&workspace, today);
+    }
+    let mut outcomes = Vec::new();
+    if let Some(request) = committed.filter(|_| practice_change)
+        && let Ok(store) = crate::practice::open_store(&workspace)
+        && let Ok(items) = crate::practice::snapshot(&store.conn, workspace.root())
     {
-        crate::digest::convert_gap_logs(&workspace, crate::sittings::local_day(now));
+        let effects = crate::practice::attempt_effects(&store.conn, &items, request, result);
+        if let Some(summary) =
+            crate::practice::update_summary(&items, &effects, request, &store.conn)
+        {
+            result["practice"] = summary;
+        }
+        let chat = |id: &str| {
+            items.iter().any(|item| {
+                item.facts.item_id == id
+                    && item.facts.origin == crate::learner::practice::Origin::Chat
+            })
+        };
+        for attempt in &effects {
+            for (item, effect) in &attempt.effects {
+                if chat(item)
+                    && let Some(outcome) = crate::sittings::outcome(effect)
+                {
+                    outcomes.push((item.clone(), outcome));
+                }
+            }
+        }
+        if has_chat_attempt(request) {
+            result["quick_checks"] = serde_json::json!({
+                "open_labels": crate::practice::open_labels(&items),
+                "note": "One quick check per misunderstanding. When an attempt shows the same misunderstanding as one of these, even in another form or another step, reuse its label exactly. Make a new label only for a different misunderstanding.",
+            });
+        }
     }
     let message =
         update.is_some_and(|request| crate::sittings::carries_learner_message(request, result));
-    let attempts = update
-        .map(|request| crate::sittings::recorded_attempts(request, result))
-        .unwrap_or_default();
-    let Some((workspace, mut sittings)) = sittings_here(cwd, message || !attempts.is_empty())
-    else {
-        return;
+    if let Some((workspace, mut sittings)) = sittings_here(cwd, message || !outcomes.is_empty()) {
+        if message {
+            let _ = sittings.note_learner_message(&workspace, now);
+        }
+        let _ = sittings.settle(&outcomes);
+        if records && workspace.opener() != crate::workspace::OpenerMode::Off {
+            let mut synced = crate::practice::GapLogReport::default();
+            if let Ok(Some(opener)) = sittings.take_opener(&workspace, now, &mut synced) {
+                result["sitting_opener"] = opener.into();
+            }
+            report.merge(synced);
+        }
+    }
+    if let Some(gap_logs) = report.to_json() {
+        result["gap_logs"] = gap_logs;
+    }
+}
+/// Whether this conversation records: no control latch denies capture, and
+/// recording is on for it.
+fn records_here(workspace: &Workspace, host: &crate::learner::HostContext) -> bool {
+    let allowed = control_admission::Admission::new(workspace, host)
+        .capture_guard()
+        .is_ok_and(|guard| guard.blocked.is_none());
+    allowed
+        && open_store(workspace)
+            .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
+            .is_ok_and(|(_, _, recording)| recording)
+}
+/// An update that records an attempt, or changes or corrects a practice
+/// item.
+fn touches_practice(request: &serde_json::Value) -> bool {
+    let nonempty = |field: &str| {
+        request[field]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
     };
-    if message {
-        let _ = sittings.note_learner_message(now);
-    }
-    if !attempts.is_empty()
-        && sittings.apply_attempts(&attempts, now).is_ok()
-        && let Ok(labels) = sittings.open_labels()
-    {
-        result["quick_checks"] = serde_json::json!({
-            "open_labels": labels,
-            "note": "One quick check per misunderstanding. When an attempt shows the same misunderstanding as one of these, even in another form or another step, reuse its label exactly. Make a new label only for a different misunderstanding.",
-        });
-    }
-    if workspace.opener() == crate::workspace::OpenerMode::Off {
-        return;
-    }
-    if let Ok(Some(opener)) = sittings.take_opener(&workspace, now) {
-        result["sitting_opener"] = opener.into();
-    }
+    nonempty("practice")
+        || nonempty("attempt_corrections")
+        || request["observations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|o| {
+                o.get("attempt").is_some_and(|a| !a.is_null())
+                    || o["attempts"].as_array().is_some_and(|a| !a.is_empty())
+            })
+}
+/// An answer in chat: an attempt with no paper that names no item, so it
+/// makes or answers the quick check on its label.
+fn has_chat_attempt(request: &serde_json::Value) -> bool {
+    request["observations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|o| o.get("attempt").filter(|a| a.is_object()))
+        .any(|a| {
+            a.get("paper").is_none_or(serde_json::Value::is_null)
+                && a["counts_for"].as_array().is_none_or(Vec::is_empty)
+        })
 }
 /// With the opener's block on, a stage that brings new material is refused
 /// while a quick check of this sitting is neither posed nor declined.
@@ -371,6 +464,7 @@ fn due_checks_first(
     cwd: &Path,
     operation: &str,
     request: &serde_json::Value,
+    caller: Option<&crate::learner::HostContext>,
 ) -> Option<serde_json::Value> {
     let stage = request.get("stage")?.as_str()?;
     if operation != "context"
@@ -390,11 +484,19 @@ fn due_checks_first(
     }
     let counts = sittings.open_counts().ok()??;
     let now = crate::sittings::now_ms();
-    let opener = sittings
-        .take_opener(&workspace, now)
-        .ok()
-        .flatten()
-        .or_else(|| sittings.opener_now(&workspace, now).ok().flatten());
+    let mut synced = crate::practice::GapLogReport::default();
+    // Claiming the opener brings gap logs in, which waits while this
+    // conversation records nothing.
+    let records = caller.is_none_or(|host| records_here(&workspace, host));
+    let claimed = if records {
+        sittings
+            .take_opener(&workspace, now, &mut synced)
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let opener = claimed.or_else(|| sittings.opener_now(&workspace, now).ok().flatten());
     let mut refusal = serde_json::json!({
         "status": "unavailable",
         "recommended_stage": stage,
@@ -408,6 +510,9 @@ fn due_checks_first(
     });
     if let Some(opener) = opener {
         refusal["sitting_opener"] = opener.into();
+    }
+    if let Some(gap_logs) = synced.to_json() {
+        refusal["gap_logs"] = gap_logs;
     }
     Some(refusal)
 }
@@ -800,7 +905,7 @@ pub(crate) fn host_user_prompt_submit(
     // A learner message in a conversation that records may begin a sitting.
     // Only its time is kept, never its text.
     if recording && let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
-        let _ = sittings.note_learner_message(crate::sittings::now_ms());
+        let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
     }
     let sitting = crate::sittings::notice_clause(&workspace);
     if !active && recording {
