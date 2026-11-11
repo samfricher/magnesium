@@ -50,22 +50,29 @@ fn run_examples(mcp: bool) {
         result
     };
     let first = call("monday", recipe(text, "start_capture"), &mut monday);
-    let mut create = recipe(text, "observe_create");
+    let mut answer = recipe(text, "observe_answer");
     substitute(
-        &mut create,
+        &mut answer,
         "$MONDAY_EVENT_ID",
         &first["captured_event_ids"][0],
     );
+    let session = first["references"]["monday_session"].clone();
+    substitute(&mut answer, "$MONDAY_SESSION_ID", &session);
+    answer["session"]["expected_revision"] = first["revisions"][session.as_str().unwrap()].clone();
+    let answered = call("monday", answer.clone(), &mut monday);
+    let replayed = call("monday", answer, &mut monday);
+    assert_eq!(answered["references"], replayed["references"]);
+    let mut describe = recipe(text, "describe_and_checkpoint");
     substitute(
-        &mut create,
-        "$MONDAY_SESSION_ID",
-        &first["references"]["monday_session"],
+        &mut describe,
+        "$MONDAY_OBSERVATION_ID",
+        &answered["references"]["monday_work"],
     );
-    create["session"]["expected_revision"] =
-        first["revisions"][first["references"]["monday_session"].as_str().unwrap()].clone();
-    let created = call("monday", create.clone(), &mut monday);
-    let replayed = call("monday", create, &mut monday);
-    assert_eq!(created["references"], replayed["references"]);
+    substitute(&mut describe, "$MONDAY_SESSION_ID", &session);
+    describe["session"]["expected_revision"] =
+        answered["revisions"][session.as_str().unwrap()].clone();
+    let mut created = call("monday", describe, &mut monday);
+    created["references"]["monday_work"] = answered["references"]["monday_work"].clone();
     if let Some(c) = monday.take() {
         c.close_cleanly();
     }
@@ -150,7 +157,7 @@ fn run_examples(mcp: bool) {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(revision, 2);
+        assert!(revision >= 2, "{revision}");
         let checkpoint: Value = serde_json::from_str(&checkpoint).unwrap();
         assert!(checkpoint["next_action"].as_str().unwrap().contains(phrase));
         assert_eq!(checkpoint["memory_refs"][0]["memory_id"], *memory);

@@ -31,6 +31,8 @@ const shots = [
   ["session-writing", "session:stream", 5400],
   ["session-lost", "session:lost", 2800],
   ["session-dont-know", "session:idk", 2400],
+  ["session-hint", "session:hint", 2400],
+  ["session-working", "session:slow", 2400],
   ["session-permission", "session:permission", 2400],
   ["session-diagram", "session:diagram", 5600],
   ["session-plan", "session:plan", 2000],

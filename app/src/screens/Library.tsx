@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { IconButton, PROOF_HINT, PaletteKey, Ring, TopBar, Week, agoText, clockText, daysLeftText, proofShare, urgency, useNow } from "../ui/bits";
+import { IconButton, PROOF_HINT, PaletteKey, Ring, TopBar, Week, agoText, clockText, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
 import type { Activity, Card } from "../types";
 
 /** A folder's name as a title: "Demo-Course" reads "Demo Course". */
@@ -64,7 +64,8 @@ function CourseCard(props: {
   }, [props.focus]);
 
   const proofs = card.proofs;
-  const hasProofs = proofs.total > 0;
+  const hasProofs = proofs.levelled && proofs.total > 0;
+  const counts = skillCounts(proofs);
   const sitting = card.sitting;
   const leftSeconds = sitting ? Math.round((sitting.started_ms + sitting.minutes * 60_000 - now) / 1000) : 0;
 
@@ -158,6 +159,7 @@ function CourseCard(props: {
             {card.due} due today
           </span>
         )}
+        {counts && <span className="cc-meta">{counts}</span>}
         {hasProofs && (
           <span className="cc-meta">
             {props.hero ? `${proofs.earned} of ${proofs.total} proofs` : `Level ${proofs.level}`}

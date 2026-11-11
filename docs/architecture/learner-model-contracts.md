@@ -173,7 +173,7 @@ All sizes are UTF-8 bytes; encoded records must also fit their response envelope
 | Request / inline event | 1 MiB / 256 KiB |
 | One message to the tool server | 4 MiB; a longer one is not read and gets JSON-RPC error -32600 |
 | Learner packet, default / maximum | 24 / 64 KiB |
-| Instruction load response (core + workflow + operation contract) | 32 KiB |
+| Instruction load response (core + workflow + operation contract) | 36 KiB |
 | Title / scope / summary / review note | 256 / 512 / 1,024 / 1,024 bytes |
 | Memory description / observation description | 16 / 8 KiB |
 | Conditions / assistance / checkpoint | 2 / 2 / 16 KiB |

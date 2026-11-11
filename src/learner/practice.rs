@@ -301,6 +301,13 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Helped
                         }
+                        // Right only with a hint or a step, before the check
+                        // is due: the help, not the learner, closed the gap,
+                        // so it is asked for cold the next day, as a miss is.
+                        (FirstTry::Right, AttemptHelp::Hint | AttemptHelp::Step) if !due => {
+                            restart(&mut state, Some(days_after(day, 1)));
+                            Effect::Helped
+                        }
                         (FirstTry::Declined, AttemptHelp::Solution) => {
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Declined
@@ -653,6 +660,8 @@ pub(crate) fn record_attempt(
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    // The same name the attempt was stored under.
+    let label = crate::learner::update::observations::plan_tag_named(tx, &label).unwrap_or(label);
     let mut touched = Vec::new();
     for item in resolve_all(tx, &format!("{path}.counts_for"), &attempt.counts_for, host)? {
         insert_event(
@@ -715,9 +724,14 @@ pub(crate) fn record_attempt(
                 |r| r.get(0),
             )
             .optional()?;
+        // A right answer reached with a hint or a step makes a check for the
+        // next day, as a wrong first try does: help that is never taken away
+        // would never show what the learner can do alone.
         let makes = matches!(attempt.first_try, FirstTry::Wrong | FirstTry::Partly)
             || attempt.help == AttemptHelp::Solution
-                && matches!(attempt.first_try, FirstTry::Right | FirstTry::Declined);
+                && matches!(attempt.first_try, FirstTry::Right | FirstTry::Declined)
+            || attempt.first_try == FirstTry::Right
+                && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
         match existing {
             Some(item) => {
                 // Taken out by the tutor: a new miss puts it back.

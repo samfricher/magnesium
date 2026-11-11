@@ -545,6 +545,13 @@ fn dispatch_inner(
             &serde_json::from_value(request).map_err(|e| e.to_string())?,
         );
     }
+    if operation == crate::mcp::catalog::REPLY_TOOL && crate::mcp::catalog::window_surface() {
+        let request: ReplyRequest = serde_json::from_value(request)
+            .map_err(|e| format!("{e}. reply takes {{\"text\":\"<your whole reply>\"}}"))?;
+        let host = native_host.unwrap_or_else(tool_host);
+        host_reply(cwd, &host, &request.text)?;
+        return Ok(json!({"shown": true}));
+    }
     if !matches!(operation, "context" | "memory" | "learning_step") {
         return Err(format!("unknown tool: {operation}"));
     }
@@ -635,6 +642,9 @@ pub(crate) fn host_session_start(
         .map_err(|e| e.to_string())?;
     if first_greeting_on_this_machine(folder_has_lessons) {
         notice.push_str(CLAUDE_NEW_LEARNER_GUIDANCE);
+    }
+    if crate::mcp::catalog::window_surface() {
+        notice.push_str(CLAUDE_WINDOW_REPLY_GUIDANCE);
     }
     Ok(Some(notice))
 }
@@ -815,6 +825,10 @@ const CLAUDE_RELOAD_GUIDANCE: &str =
 const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study or catch up, load the learn skill and start or resume a session; when they name an exam, midterm or final to prepare for, load the papers skill instead.";
 const NATIVE_TICKET_FALLBACK: &str =
     " Native ticket unavailable; use labeled model-reported fallback.";
+/// The study window draws the `reply` tool's input as the tutor's words while
+/// they are written; text after a tool call would arrive in one piece. Only
+/// the delivery differs from a terminal: the teaching is the same.
+const CLAUDE_WINDOW_REPLY_GUIDANCE: &str = " This conversation is in the Magnesium study window: send each reply to the learner as the text of Magnesium's reply tool, after any learning_step, and write no other text. Teach exactly as you would in a terminal.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
@@ -929,6 +943,119 @@ fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
     notice
 }
 
+/// The external key of a reply sent through the window's `reply` tool: the
+/// key of the learner message it answers, so the reply check can pair them.
+/// A second reply in the same turn gets a number.
+const REPLY_KEY_PREFIX: &str = "reply:";
+pub(crate) fn reply_key(learner_key: &str, nth: usize) -> String {
+    if nth <= 1 {
+        format!("{REPLY_KEY_PREFIX}{learner_key}")
+    } else {
+        format!("{REPLY_KEY_PREFIX}{learner_key}#{nth}")
+    }
+}
+/// The key of the learner message a recorded reply answers. A reply from the
+/// end-of-turn hook is keyed by its turn; one from the `reply` tool by the
+/// message it answers.
+pub(crate) fn answered_key(reply_key: &str) -> String {
+    match reply_key.strip_prefix(REPLY_KEY_PREFIX) {
+        Some(rest) => rest.split('#').next().unwrap_or(rest).to_owned(),
+        None => native_capture::event_key(reply_key),
+    }
+}
+/// Replies already recorded from the `reply` tool for one learner message.
+fn tool_replies(
+    store: &crate::learner::LearnerStore,
+    host: &crate::learner::HostContext,
+    learner_key: &str,
+) -> Result<Vec<String>, String> {
+    let first = reply_key(learner_key, 1);
+    let mut statement = store
+        .conn
+        .prepare("SELECT text FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND speaker='tutor' AND kind='delivery' AND (external_event_key=?3 OR substr(external_event_key,1,length(?3)+1)=?3||'#') ORDER BY event_no")
+        .map_err(|e| e.to_string())?;
+    statement
+        .query_map(
+            rusqlite::params![host.host_kind, host.host_thread_id, first],
+            |r| r.get::<_, String>(0),
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+/// The tutor's reply, from the window's `reply` tool, recorded as it is
+/// delivered: the window shows this text as the tutor writes it. It is kept
+/// as the end-of-turn hook keeps a reply, and only while the lesson records.
+pub(crate) fn host_reply(
+    cwd: &Path,
+    host: &crate::learner::HostContext,
+    text: &str,
+) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("reply text is empty: put the whole reply in text".into());
+    }
+    crate::learner::limits::text("text", text, crate::learner::limits::EVENT_BYTES)
+        .map_err(|e| e.to_string())?;
+    let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    check_workspace_binding(&workspace)?;
+    let safety = control_admission::Admission::new(&workspace, host).capture_guard()?;
+    if safety.blocked.is_some() {
+        return Ok(());
+    }
+    if let Ok(Some(mut sittings)) = crate::sittings::Sittings::open_existing(&workspace) {
+        let _ = sittings.note_reply(text);
+    }
+    let store = open_store(&workspace)?;
+    let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
+    if !(active && recording) {
+        return Ok(());
+    }
+    // The message this reply answers is the conversation's latest learner
+    // message: the prompt hook or the session start captured it this turn.
+    let learner_key: Option<String> = store
+        .conn
+        .query_row(
+            "SELECT external_event_key FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker='learner' AND kind='message' ORDER BY event_no DESC LIMIT 1",
+            rusqlite::params![host.host_kind, host.host_thread_id],
+            |r| r.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            e => Err(e.to_string()),
+        })?;
+    let key = match learner_key {
+        Some(learner_key) => {
+            let earlier = tool_replies(&store, host, &learner_key)?;
+            if earlier.iter().any(|said| said == text) {
+                return Ok(());
+            }
+            reply_key(&learner_key, earlier.len() + 1)
+        }
+        None => format!(
+            "{REPLY_KEY_PREFIX}unpaired:{}",
+            crate::learner::store::new_id("r").map_err(|e| e.to_string())?
+        ),
+    };
+    let event = crate::learner::RawEvent {
+        external_event_key: key,
+        speaker: crate::learner::Speaker::Tutor,
+        kind: "delivery".into(),
+        text: text.into(),
+        metadata: Some(crate::learner::EventMetadata {
+            delivery: Some(crate::learner::Delivery::Observed),
+            ..Default::default()
+        }),
+        occurred_at_ms: None,
+    };
+    store
+        .capture(host, &[event], "host_observed", false)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub(crate) fn host_response_stop_with_delivery(
     cwd: &Path,
     host: &HostIdentity,
@@ -944,6 +1071,17 @@ pub(crate) fn host_response_stop_with_delivery(
     let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
     if safety.blocked.is_some() {
         return Ok(());
+    }
+    // In the window the reply came through the `reply` tool and is already
+    // kept. Text the tutor wrote besides it is kept too, unless it repeats
+    // the reply, so a reply is never lost and never kept twice.
+    {
+        let store = open_store(&workspace)?;
+        let sent = tool_replies(&store, &context, &native_capture::event_key(turn))?;
+        let said = text.trim();
+        if !sent.is_empty() && (said.is_empty() || sent.iter().any(|reply| reply.contains(said))) {
+            return Ok(());
+        }
     }
     // A reply that says "Quick check 2" poses that check. Only the fact is
     // kept, never the reply.

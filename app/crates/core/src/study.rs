@@ -420,13 +420,25 @@ pub struct Proofs {
     pub level: u32,
     /// Proofs still to earn before the next level. 0 at the top level.
     pub to_next: u32,
+    /// Whether the course has a level. A folder with no plan has none: its
+    /// skills are counted, as proven and in progress, and no level is given.
+    pub levelled: bool,
 }
 
 impl Proofs {
     /// The numbers under `progress` in what `magnesium progress` printed.
     fn from_record(progress: &Value) -> Option<Self> {
         let number = |name: &str| progress[name].as_u64().map(|n| n as u32);
+        if progress.get("level").is_none() {
+            // Skills in no plan: counts, and no level.
+            return Some(Self {
+                proven: number("proven")?,
+                skills: number("skills")?,
+                ..Self::default()
+            });
+        }
         Some(Self {
+            levelled: true,
             earned: number("passes")?,
             total: number("of")?,
             proven: number("proven")?,
@@ -1119,12 +1131,19 @@ mod tests {
     }
 
     #[test]
-    fn a_course_with_no_plan_shows_the_skills_in_no_plan_and_their_level() {
+    fn a_course_with_no_plan_shows_the_skills_in_no_plan_and_their_counts() {
         let dir = tempfile::tempdir().unwrap();
         let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
-        let board = record_board(&record(), dir.path(), None, today).unwrap();
+        let mut record = record();
+        record["other"]["progress"] = json!({"skills": 1, "proven": 0, "in_progress": 1});
+        let board = record_board(&record, dir.path(), None, today).unwrap();
         assert_eq!(board.in_progress.len(), 1);
         assert_eq!(board.in_progress[0].name, "sign of b");
+        let proofs = board.proofs.unwrap();
+        assert!(!proofs.levelled, "{proofs:?}");
+        assert_eq!((proofs.skills, proofs.proven, proofs.total), (1, 0, 0));
+        // A runtime from before #48 gave the skills in no plan a level.
+        let board = record_board(&self::record(), dir.path(), None, today).unwrap();
         assert_eq!(board.proofs.unwrap().level, 4);
     }
 

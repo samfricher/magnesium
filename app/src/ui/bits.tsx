@@ -125,6 +125,15 @@ export function Ring(props: { share: number; size: number; stroke?: number; tone
   );
 }
 
+/**
+ * A folder with no plan has no level: its skills are counted, as proven and
+ * in progress. Null when there is nothing to count, or when there is a level.
+ */
+export function skillCounts(proofs: Proofs): string | null {
+  if (proofs.levelled || proofs.skills === 0) return null;
+  return `${proofs.proven} proven · ${proofs.skills - proofs.proven} in progress`;
+}
+
 /** The share of a course's proofs that are earned. */
 export function proofShare(proofs: Proofs): number {
   return proofs.total === 0 ? 0 : proofs.earned / proofs.total;

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, urgency, useNow } from "../ui/bits";
+import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
 import type { Home, Paper, Progress, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -248,7 +248,15 @@ export function Course(props: {
                 <div className="exam-line none">{usable && home.state === "ready" ? "No exam set" : " "}</div>
               )}
             </div>
-            {proofs && proofs.total > 0 && (
+            {proofs && skillCounts(proofs) && (
+              <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
+                <span>
+                  <b>Skills</b>
+                  <small>{skillCounts(proofs)}</small>
+                </span>
+              </button>
+            )}
+            {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
                 <Ring share={proofShare(proofs)} size={64} label={`Level ${proofs.level}`}>
                   <b>{proofs.level}</b>

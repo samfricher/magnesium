@@ -171,8 +171,11 @@ const row = (dots: [number, number, number], name: string, what: string, note: s
 const proofs = (earned: number, proven: number, skills: number): Proofs => {
   const total = skills * 3;
   const level = total === 0 ? 1 : 1 + Math.floor((earned * 9) / total);
-  return { earned, total, proven, skills, level, to_next: total === 0 || level >= 10 ? 0 : Math.ceil((level * total) / 9) - earned };
+  return { earned, total, proven, skills, level, to_next: total === 0 || level >= 10 ? 0 : Math.ceil((level * total) / 9) - earned, levelled: true };
 };
+
+/** A course with no plan: its skills are counted, with no level. */
+const counted = (proven: number, skills: number): Proofs => ({ earned: 0, total: 0, proven, skills, level: 0, to_next: 0, levelled: false });
 
 const card = (name: string, more: Partial<Card>): Card => ({
   folder: `/Users/you/Study/${name}`,
@@ -212,6 +215,11 @@ function library(): Card[] {
       goal: "The cdf method for $U = \\sqrt{Y}$",
       days_ago: 6,
       proofs: proofs(6, 1, 14),
+    }),
+    card("Music-Theory", {
+      goal: "Reading figured bass",
+      days_ago: 3,
+      proofs: counted(2, 5),
     }),
     card("Organic-Chemistry", { state: "not_set_up" }),
   ];
@@ -339,8 +347,9 @@ export function demoCore(): Core {
     const lower = text.toLowerCase();
     await wait(250);
     if (lower.includes("lost")) return write(LOST);
+    if (lower.includes("hint")) return write("Look at where the line meets the $1/v$ axis. What is $1/[S]$ there?");
     if (lower.includes("don't know")) {
-      emit({ type: "working" });
+      emit({ type: "working", doing: null });
       emit({
         type: "question",
         id: "q1",
@@ -361,15 +370,17 @@ export function demoCore(): Core {
       return write(`You said: ${chosen}. A short repair now, and this returns tomorrow as a question.\n\n**Task.** At $1/[S] = 0$, what is $1/v$?`);
     }
     if (lower.includes("permission")) {
-      emit({ type: "working" });
+      emit({ type: "working", doing: "building the papers" });
       emit({ type: "permission", id: "p1", title: "Run a command", detail: "tectonic Study/midterm-1/papers/PaperC.tex", can_always: true });
       const decision = await new Promise<string>((done) => (waiting = done));
       return write(decision === "refuse" ? "No problem. I'll leave the paper unbuilt for now." : "Paper C is built. Sit it when you are ready.");
     }
     if (lower.includes("diagram")) return write(DIAGRAM);
     if (lower.includes("slow")) {
-      emit({ type: "working" });
-      await wait(60_000);
+      emit({ type: "working", doing: "writing paper 2" });
+      await wait(30_000);
+      emit({ type: "working", doing: "writing paper 3" });
+      await wait(30_000);
       return write("Done.");
     }
     if (lower.includes("stream")) return write(REPLY, true);
@@ -544,6 +555,7 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     const words: Record<string, string> = {
       lost: "I'm lost",
       idk: "I don't know",
+      hint: "Can I have a hint?",
       permission: "please build paper C (permission)",
       diagram: "show me a diagram",
       stream: "Vmax is 4 µM/s (stream)",

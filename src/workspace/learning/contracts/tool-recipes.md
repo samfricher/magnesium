@@ -13,14 +13,27 @@ native_capture:{ticket,text}: exact bytes, start/resume only. Start needs sessio
 
 $MONDAY_EVENT_ID=captured_event_ids[0]; $MONDAY_SESSION_ID=references.monday_session.
 
-## Observe
+## Observe an answer
 
-<!-- executable-recipe: observe_create -->
+Observation and attempt only. The description says what the answer shows, never the answer: the runtime keeps the learner's words.
+
+<!-- executable-recipe: observe_answer -->
 ```json
-{"schema":"learner-model/v2","action":"update","request_id":"monday-interpret","observations":[{"client_ref":"monday_work","kind":"learner_work","description":"Correct coefficients and roots.","events":[{"event_id":"$MONDAY_EVENT_ID","role":"learner_response"}],"conditions_text":"One equation.","assistance_text":"Earlier help unknown."}],"memory_edits":[{"operation":"create","client_ref":"quadratic_memory","record":{"title":"Coefficients","scope":"Quadratics","summary":"One correct substitution.","state_text":"Monday: correct substitution; transfer untested.","current_basis":[{"new_observation":"monday_work"}]},"reason":"Record work.","change_basis":[{"new_observation":"monday_work"}]}],"event_dispositions":[{"event_id":"$MONDAY_EVENT_ID","outcome":"processed"}],"session":{"operation":"use","session_id":"$MONDAY_SESSION_ID","expected_revision":1},"checkpoint":{"current_problem":"Coefficients","working_diagnosis":"One success","next_action":"Confirm the correct work; ask why.","memory_refs":[{"memory_id":"quadratic_memory","revision":"after_edit"}]}}
+{"schema":"learner-model/v2","action":"update","request_id":"monday-answer","observations":[{"client_ref":"monday_work","kind":"learner_work","description":"Reads all three coefficients and both roots correctly.","events":[{"event_id":"$MONDAY_EVENT_ID","role":"learner_response"}],"attempt":{"label":"Quadratic coefficients","question":"a, b, c and the roots of x²−5x+6=0","first_try":"right","help":"none","cold":false}}],"event_dispositions":[{"event_id":"$MONDAY_EVENT_ID","outcome":"processed"}],"session":{"operation":"use","session_id":"$MONDAY_SESSION_ID","expected_revision":1}}
 ```
 
-Require committed. $MONDAY_OBSERVATION_ID=references.monday_work; $MEMORY_ID=references.quadratic_memory.
+Require committed. $MONDAY_OBSERVATION_ID=references.monday_work.
+
+## When a description or the task changes
+
+A checkpoint replaces the last one whole, goal_steps included.
+
+<!-- executable-recipe: describe_and_checkpoint -->
+```json
+{"schema":"learner-model/v2","action":"update","request_id":"monday-describe","memory_edits":[{"operation":"create","client_ref":"quadratic_memory","record":{"title":"Coefficients","scope":"Quadratics","summary":"One correct substitution.","state_text":"Monday: correct substitution; transfer untested.","current_basis":[{"observation_id":"$MONDAY_OBSERVATION_ID"}]},"reason":"Record work.","change_basis":[{"observation_id":"$MONDAY_OBSERVATION_ID"}]}],"session":{"operation":"use","session_id":"$MONDAY_SESSION_ID","expected_revision":2},"checkpoint":{"current_problem":"Coefficients","working_diagnosis":"One success","next_action":"Confirm the correct work; ask why.","goal_steps":[{"step":"Read a, b, c","status":"done"},{"step":"Use the formula","status":"doing"}],"memory_refs":[{"memory_id":"quadratic_memory","revision":"after_edit"}]}}
+```
+
+Require committed. $MEMORY_ID=references.quadratic_memory.
 
 ## Another conversation
 

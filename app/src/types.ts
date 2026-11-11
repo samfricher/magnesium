@@ -40,7 +40,7 @@ export type Home = {
 };
 
 /** One proof is one answer reproduced alone on a separate day. Three prove a skill. */
-export type Proofs = { earned: number; total: number; proven: number; skills: number; level: number; to_next: number };
+export type Proofs = { earned: number; total: number; proven: number; skills: number; level: number; to_next: number; levelled: boolean };
 
 /** One study folder in the library, read without opening it. */
 export type Card = {
@@ -125,7 +125,7 @@ export type AgentEvent =
   | { type: "turn_started" }
   | { type: "text_delta"; text: string }
   | { type: "text_done"; text: string }
-  | { type: "working" }
+  | { type: "working"; doing: string | null }
   | { type: "permission"; id: string; title: string; detail: string; can_always: boolean }
   | { type: "question"; id: string; questions: Question[] }
   | { type: "withdrawn"; id: string }

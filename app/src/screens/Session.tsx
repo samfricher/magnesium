@@ -362,6 +362,12 @@ function Composer(props: { disabled: boolean; onSend: (text: string) => void; on
         </div>
       </div>
       <div className="outs">
+        {/* Plain words, as the other two send. The tutor gives the smallest
+            help that lets the learner take the next step, and the runtime asks
+            a skill got right with a hint again, cold, the next day. */}
+        <button disabled={props.disabled} onClick={() => props.onSend("Can I have a hint?")}>
+          Hint
+        </button>
         <button disabled={props.disabled} onClick={() => props.onSend("I don't know")}>
           I don&apos;t know
         </button>
@@ -373,12 +379,20 @@ function Composer(props: { disabled: boolean; onSend: (text: string) => void; on
   );
 }
 
-function Thinking(props: { since: number; status: string; quiet: boolean; onInterrupt: () => void }) {
+/** The line the lesson shows while the tutor works, as a plain sentence. */
+export function workingLabel(seconds: number, status: string, doing: string | null): string {
+  const minutes = seconds >= 60 ? ` · ${Math.floor(seconds / 60)} min` : "";
+  if (status === "working" && doing) return `${doing.charAt(0).toUpperCase()}${doing.slice(1)}${minutes}`;
+  return seconds < 60 ? (status === "working" && seconds >= 8 ? "Working" : "") : `Working${minutes}`;
+}
+
+function Thinking(props: { since: number; status: string; doing: string | null; quiet: boolean; onInterrupt: () => void }) {
   const now = useNow(5_000);
   const seconds = Math.max(0, Math.floor((now - props.since) / 1000));
   // A plan can take half an hour to build. One quiet line says the window is
-  // alive, and it changes once a minute, not once a second.
-  const label = seconds < 60 ? (props.status === "working" && seconds >= 8 ? "Working" : "") : `Working · ${Math.floor(seconds / 60)} min`;
+  // alive and names the work in hand when it can, such as "Writing paper 2".
+  // It is one line that changes, not a log.
+  const label = workingLabel(seconds, props.status, props.doing);
   return (
     <div className="thinking" data-role="thinking">
       {!props.quiet && (
@@ -493,7 +507,7 @@ export function Session(props: {
             )}
             {!live && <p className="hint">Say what you want to work on.</p>}
             {live && isBusy && state.cards.length === 0 && (
-              <Thinking since={live.since} status={live.status} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
+              <Thinking since={live.since} status={live.status} doing={live.doing} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
             )}
             {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
             {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}

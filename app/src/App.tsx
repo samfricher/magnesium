@@ -411,8 +411,10 @@ export function App() {
       { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
       skipChecks,
     );
-    // The window wrote these words, so they are not sent as an answer.
-    return begin(true, words, (api) => api.sendShown(words, words));
+    // The window wrote these words, so they are not sent as an answer. They go
+    // through the learn skill, as a new lesson's goal does: the window's
+    // tutor has no tool to load a skill by itself.
+    return begin(true, words, (api) => api.sendNewLesson(words));
   };
 
   const newLesson = async (goal: string) => {

@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Dots, PaletteKey, RUN_HINT, Ring, TopBar, Weeks, daysLeftText, proofShare, urgency } from "../ui/bits";
+import { Dots, PaletteKey, RUN_HINT, Ring, TopBar, Weeks, daysLeftText, proofShare, skillCounts, urgency } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -102,7 +102,7 @@ export function Progress(props: {
       <div className="scroll">
         <div className="board">
           <header className="board-head">
-            {!data.level_unknown && (
+            {!data.level_unknown && proofs.levelled && (
               <Ring share={proofShare(proofs)} size={104} stroke={8} label={`Level ${proofs.level}`}>
                 <b>{proofs.level}</b>
                 <small>level</small>
@@ -127,7 +127,8 @@ export function Progress(props: {
                   </div>
                 )
               )}
-              {proofs.total > 0 && (
+              {skillCounts(proofs) && <p className="board-sum">{skillCounts(proofs)}. A course with no plan has no level.</p>}
+              {proofs.levelled && proofs.total > 0 && (
                 <p className="board-sum">
                   <b>{proofs.earned}</b> of {proofs.total} proofs · <b>{proofs.proven}</b> of {proofs.skills} skills proven
                   {proofs.to_next > 0 && (

@@ -34,7 +34,7 @@ pub(crate) fn feedback(
         return Ok(None);
     };
     let prompt = latest("learner", "message", "''")?.map(|(key, _)| key);
-    let answers_previous_prompt = prompt == Some(super::native_capture::event_key(&reply_turn));
+    let answers_previous_prompt = prompt == Some(super::answered_key(&reply_turn));
     Ok(answers_previous_prompt.then(|| judge(&reply)).flatten())
 }
 

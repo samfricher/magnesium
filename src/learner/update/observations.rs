@@ -528,6 +528,7 @@ fn insert_attempt(
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    let label = plan_tag_named(tx, &label).unwrap_or(label);
     let question = limits::shorten(
         &format!("{path}.question"),
         attempt.question.trim(),
@@ -571,6 +572,38 @@ fn insert_attempt(
         crate::learner::help::refresh(tx, &crate::learner::label_key(kind), now)?;
     }
     Ok(attempt_id)
+}
+
+/// The tag of a plan's course graph that a label names, written the way the
+/// graph writes it. "Chain rule" names `chain-rule`: case, spaces, hyphens
+/// and underscores aside, the words are the same. A chat answer on a skill a
+/// plan's graph names is then recorded under that name, and moves the plan's
+/// level. A label that could name tags of two spellings is kept as it is.
+pub(crate) fn plan_tag_named(tx: &Connection, label: &str) -> Option<String> {
+    let loose = |text: &str| -> String {
+        text.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let wanted = loose(label);
+    if wanted.is_empty() {
+        return None;
+    }
+    let root = crate::learner::practice::study_root(tx)?;
+    let mut found: Option<String> = None;
+    for plan in crate::learner::practice::plans(&root) {
+        let Ok(graph) = crate::readings::read_graph(&root, &plan) else {
+            continue;
+        };
+        for tag in graph.tags.keys().filter(|tag| loose(tag) == wanted) {
+            match &found {
+                Some(other) if other != tag => return None,
+                _ => found = Some(tag.clone()),
+            }
+        }
+    }
+    found.filter(|tag| tag != label)
 }
 
 /// A label that names one problem rather than a skill: it holds an equation,
