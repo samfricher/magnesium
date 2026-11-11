@@ -1039,3 +1039,154 @@ fn a_notice_after_the_turns_end_reaches_the_page() {
     );
     manager.shut_down();
 }
+
+/// Write a memory as a plugin lesson's tutor writes one, through the
+/// runtime's own tool call, in a conversation of its own.
+fn plugin_memory(bench: &Bench, state_text: &str) -> String {
+    use std::io::Write;
+    let call = |request: Value| -> Value {
+        let mut child = Command::new(&bench.runtime)
+            .current_dir(&bench.root)
+            .env("CLAUDE_CODE_SESSION_ID", "plugin-lesson")
+            .args([
+                "adapter",
+                "call",
+                "learning_step",
+                "--protocol-version",
+                "2",
+                "--json-input",
+                "-",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(request.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(value.get("error").is_none(), "{value}");
+        value
+    };
+    let started = call(
+        serde_json::json!({"schema": "learner-model/v2", "action": "update", "request_id": "plugin-start",
+        "session": {"operation": "start", "client_ref": "lesson", "goal": "quadratics"},
+        "reported_events": [{"external_event_key": "plugin-1", "speaker": "learner", "kind": "message", "text": "b is 5"}]}),
+    );
+    let event = started["captured_event_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let made = call(
+        serde_json::json!({"schema": "learner-model/v2", "action": "update", "request_id": "plugin-memory",
+        "observations": [{"client_ref": "w", "kind": "learner_work", "description": "Drops the sign of b.",
+            "events": [{"event_id": event, "role": "learner_response"}]}],
+        "memory_edits": [{"operation": "create", "client_ref": "memory",
+            "record": {"title": "sign of b", "scope": "Quadratics", "summary": "Their summary.",
+                "state_text": state_text, "current_basis": [{"new_observation": "w"}]},
+            "reason": "Record work.", "change_basis": [{"new_observation": "w"}]}]}),
+    );
+    made["references"]["memory"].as_str().unwrap().to_owned()
+}
+
+fn memory_text(bench: &Bench, memory_id: &str) -> (String, i64) {
+    bench
+        .store()
+        .query_row(
+            "SELECT state_text, revision FROM learner_memories WHERE memory_id=?1",
+            [memory_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+}
+
+#[test]
+fn a_memory_edit_keeps_the_plugins_lines_and_rewrites_its_own_in_place() {
+    let bench = Bench::new(None, &[]);
+    // A memory the plugin wrote: an anchor, and a long description.
+    let theirs = format!(
+        "Reads coefficients in standard form.\nanchor: reads a from a bare x² (check question after the formula)\n{}",
+        "Earlier work on signs. ".repeat(500)
+    );
+    let memory = plugin_memory(&bench, &theirs);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    let first = bench.logged("message").pop().unwrap();
+    assert!(
+        first["state"]
+            .as_str()
+            .unwrap()
+            .contains("- m1: sign of b: Their summary."),
+        "{first}"
+    );
+    // The tutor revises m1: the plugin's text stays byte for byte.
+    manager
+        .send("MEMORY found Drops the minus sign of b.")
+        .unwrap();
+    done(&manager, &mut events);
+    let (text, revision) = memory_text(&bench, &memory);
+    assert_eq!(revision, 2, "revised");
+    assert!(
+        text.starts_with(&theirs),
+        "the plugin's lines are kept byte for byte"
+    );
+    assert_eq!(
+        &text[theirs.len()..],
+        "\nMisunderstanding found in a lesson: Drops the minus sign of b."
+    );
+    // A second edit of the same misunderstanding rewrites that line.
+    manager.send("MEMORY found Writes b = 5 for −5x.").unwrap();
+    done(&manager, &mut events);
+    let (text, _) = memory_text(&bench, &memory);
+    assert!(text.starts_with(&theirs));
+    assert_eq!(
+        text.matches("in a lesson:").count(),
+        1,
+        "one line, rewritten"
+    );
+    assert!(text.ends_with("Misunderstanding found in a lesson: Writes b = 5 for −5x."));
+    // Cleared: said in that line, with no date.
+    manager
+        .send("MEMORY cleared Keeps the sign with its number.")
+        .unwrap();
+    done(&manager, &mut events);
+    let (text, _) = memory_text(&bench, &memory);
+    assert!(text.starts_with(&theirs));
+    assert!(
+        text.ends_with("\nMisunderstanding cleared in a lesson: Keeps the sign with its number.")
+    );
+    assert!(!text.contains("2026-"), "no date line");
+    let memories: i64 = bench
+        .store()
+        .query_row("SELECT count(*) FROM learner_memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(memories, 1, "no copy was made");
+    manager.shut_down();
+}
+
+#[test]
+fn a_memory_at_the_runtimes_limit_is_left_as_it_was() {
+    let bench = Bench::new(None, &[]);
+    let theirs = format!(
+        "anchor: reads a from a bare x²\n{}",
+        "x".repeat(mg_core::record::STATE_LIMIT - 40)
+    );
+    let memory = plugin_memory(&bench, &theirs);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    manager
+        .send("MEMORY found Drops the minus sign of b.")
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (text, revision) = memory_text(&bench, &memory);
+    assert_eq!((text.as_str(), revision), (theirs.as_str(), 1), "unchanged");
+    manager.shut_down();
+}

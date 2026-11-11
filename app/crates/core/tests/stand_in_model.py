@@ -22,6 +22,8 @@ What a turn does is chosen by words in the learner's message (inside
                stream it whole
   CUTSHORT     stream only the start of the reply; the finished message has
                all of it, block included
+  MEMORY found <text> / MEMORY cleared <text>   note a misunderstanding of
+               "sign of b", revising the last memory id the state showed
 
 The hidden request (it says the block "could not be read") is answered with
 the block alone, after STAND_IN_REPAIR_DELAY seconds.
@@ -144,6 +146,13 @@ def reply_for(learner, state):
             return "I cannot.", False
         return "<record>\n" + json.dumps({"answer": None, "help": "none", "task": None}) + "\n</record>", False
     last_learner[0] = learner
+    for found in re.findall(r"- (m\d+): ", state):
+        memory_ids.append(found)
+    if learner.startswith("MEMORY "):
+        cleared = learner.startswith("MEMORY cleared ")
+        text = learner.split(" ", 2)[2]
+        note = {"id": memory_ids[-1] if memory_ids else None, "skill": "sign of b", "text": text, "cleared": cleared}
+        return "Noted." + block(note="A misunderstanding.", memory=note), False
     if "RECORDING OFF" in learner:
         return "Recording is off now." + block(control="recording_off"), False
     if "RECORDING ON" in learner:
@@ -177,6 +186,7 @@ def reply_for(learner, state):
 
 
 last_learner = [""]
+memory_ids = []
 
 
 def turn(content):
