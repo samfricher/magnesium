@@ -18,7 +18,7 @@ use crate::digest::{
     Table, first_date, gap_log_file, is_placeholder, plan_test_date, read_small, says_closed,
     section,
 };
-use crate::learner::practice::{ItemFacts, ItemState, Origin, derive, load_items, plans};
+use crate::learner::practice::{Effect, ItemFacts, ItemState, Origin, derive, load_items, plans};
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 
@@ -36,6 +36,19 @@ pub(crate) struct Item {
 impl Item {
     pub(crate) fn name(&self) -> String {
         self.facts.name()
+    }
+
+    /// Whether a sitting takes it after the other due checks: a right first
+    /// answer made it, and no miss, decline or help has touched it since.
+    /// The repair of a miss matters more.
+    pub(crate) fn waits_behind_misses(&self) -> bool {
+        self.facts.made_by_a_right_answer()
+            && !self.state.effects.iter().any(|(_, effect)| {
+                matches!(
+                    effect,
+                    Effect::Failed | Effect::Restarted | Effect::Helped | Effect::Declined
+                )
+            })
     }
 }
 
@@ -65,13 +78,21 @@ pub(crate) fn snapshot(conn: &Connection, root: &Path) -> Result<Vec<Item>, Stri
         .collect())
 }
 
-/// Quick checks due on `day`, the longest due first.
+/// Quick checks due on `day`, in the order a sitting takes them: first the
+/// checks a miss, a decline or help made or touched, then those a right
+/// first answer made, each group the longest due first.
 pub(crate) fn due_checks(items: &[Item], day: NaiveDate) -> Vec<&Item> {
     let mut due = items
         .iter()
         .filter(|item| item.facts.origin == Origin::Chat && item.state.due_on(day))
         .collect::<Vec<_>>();
-    due.sort_by_key(|item| (item.state.next_on, item.facts.created_at_ms));
+    due.sort_by_key(|item| {
+        (
+            item.waits_behind_misses(),
+            item.state.next_on,
+            item.facts.created_at_ms,
+        )
+    });
     due
 }
 

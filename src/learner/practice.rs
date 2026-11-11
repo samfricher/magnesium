@@ -85,6 +85,20 @@ pub(crate) struct ItemFacts {
 }
 
 impl ItemFacts {
+    /// Whether a right, unaided first answer on its skill made it: a quick
+    /// check that no miss, decline or help made.
+    pub(crate) fn made_by_a_right_answer(&self) -> bool {
+        self.origin == Origin::Chat
+            && self
+                .events
+                .iter()
+                .find(|event| event.kind == EventKind::Made)
+                .and_then(|event| event.attempt.as_ref())
+                .is_some_and(|attempt| {
+                    attempt.mark == FirstTry::Right && attempt.help == AttemptHelp::None
+                })
+    }
+
     /// How the tutor names it: "midterm-1#3" for a gap-log row, the label
     /// for a quick check.
     pub(crate) fn name(&self) -> String {

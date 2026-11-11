@@ -273,6 +273,68 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     assert_eq!(last["paper_redos_due"][0]["first"], "Diagnostic Q3");
 }
 
+/// One answer on `label` in its own turn, with its first try and help.
+fn answer_on(e: &TestEnvironment, id: &str, label: &str, first_try: &str, help: &str) {
+    let notice = claude_prompt(e, id, "my answer");
+    let kind = if first_try == "declined" {
+        "self_report"
+    } else {
+        "learner_work"
+    };
+    let value = step(
+        e,
+        json!({"schema":"learner-model/v2","action":"update","request_id":id,
+            "observations":[{"client_ref":"work","kind":kind,"description":"The learner's answer.",
+                "events":[{"event_id":current_event(&notice),"role":"learner_response"}],
+                "attempt":{"label":label,"question":format!("A task on {label}"),"first_try":first_try,"help":help,"cold":false}}]}),
+    );
+    assert_eq!(value["update_status"], "committed", "{value}");
+}
+
+/// The labels a sitting took, in the order it numbered them.
+fn taken(e: &TestEnvironment) -> Vec<String> {
+    let conn = sittings(e);
+    let mut statement = conn
+        .prepare(
+            "SELECT label FROM sitting_items WHERE sitting_id=
+               (SELECT sitting_id FROM sittings ORDER BY started_ms DESC LIMIT 1) ORDER BY number",
+        )
+        .unwrap();
+    statement
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+#[test]
+fn a_sitting_takes_a_check_made_by_a_miss_before_checks_made_by_right_answers() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    claude_prompt(&e, "p-1", "teach me fractions");
+    v2::start(&e, "claude", "conv");
+    // Three skills answered right alone make three checks, then a miss
+    // makes a fourth, the last made.
+    answer_on(&e, "a-1", "adding fractions", "right", "none");
+    answer_on(&e, "a-2", "common denominators", "right", "none");
+    answer_on(&e, "a-3", "simplifying fractions", "right", "none");
+    answer_on(&e, "a-4", "dividing fractions", "wrong", "none");
+    assert_eq!(checks(&e), 4);
+
+    // The next day all four are due, and a sitting takes three.
+    next_day(&e);
+    let notice = claude_prompt(&e, "p-2", "hi again");
+    assert!(notice.contains("Sitting quick checks: due 3"), "{notice}");
+    assert_eq!(
+        taken(&e),
+        [
+            "dividing fractions",
+            "adding fractions",
+            "common denominators"
+        ]
+    );
+}
+
 #[test]
 fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no_reply_text() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
