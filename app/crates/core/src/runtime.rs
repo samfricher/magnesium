@@ -84,3 +84,18 @@ pub fn version() -> Option<String> {
     let out = paths::run(command, Duration::from_secs(5)).ok()?;
     out.split_whitespace().last().map(str::to_owned)
 }
+
+/// `magnesium searchable --json`: for each named file, whether the tutor's
+/// source search will read it, and why not when it will not. The paths are
+/// from the folder's root. None when this version of the runtime has no such
+/// command. The command works in a folder that is not set up yet, and
+/// changes nothing.
+pub fn searchable(folder: &Path, paths: &[String]) -> Option<Vec<Value>> {
+    let mut args = vec!["searchable", "--json", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    // Each PDF is read to see whether it has any text.
+    let out = run(folder, &args, Duration::from_secs(90)).ok()?;
+    let value: Value = serde_json::from_str(&out).ok()?;
+    let files = value["files"].as_array().cloned()?;
+    (files.len() == paths.len()).then_some(files)
+}

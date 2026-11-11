@@ -437,18 +437,22 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_eq!(progress.helped, vec!["units of a rate".to_owned()]);
 
     // The proofs and the level are the runtime's: three proofs for each
-    // skill, the untested one and the two from chat included, earned by the
-    // passes that count. 4 of 18 is level 1 + 4·9/18 = 3.
+    // skill of the plan, the untested one included, earned by the passes
+    // that count. The two skills from chat are in no plan: they are listed,
+    // and count in no level, so starting something new cannot lower it.
+    // 4 of 12 is level 1 + 4·9/12 = 4.
     let earned: usize = written.iter().map(|(_, status)| passes_of(status)).sum();
     assert!(!progress.level_unknown);
+    assert!(progress.proofs.levelled);
     assert_eq!(progress.proofs.earned as usize, earned, "{progress:#?}");
-    assert_eq!(
-        progress.proofs.skills as usize,
-        written.len() + 1 + chat.len()
-    );
+    assert_eq!(progress.proofs.skills as usize, written.len() + 1);
     assert_eq!(progress.proofs.proven as usize, closed.len());
     assert_eq!(progress.proofs.total, progress.proofs.skills * 3);
-    assert_eq!(progress.proofs.level, 3);
+    assert_eq!(
+        progress.proofs.level as usize,
+        1 + earned * 9 / (progress.proofs.total as usize)
+    );
+    assert_eq!(progress.proofs.level, 4);
 
     // The study days are the days with a marked answer, as the record has them.
     assert_eq!(

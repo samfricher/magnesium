@@ -269,6 +269,22 @@ fn total<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     })
 }
 
+/// Skills in no plan: how many are proven and how many are in progress. A
+/// list of names that grows with every lesson is no fixed whole, so it gets
+/// no level.
+fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
+    let (mut count, mut proven) = (0u64, 0u64);
+    for skill in skills {
+        count += 1;
+        proven += u64::from(skill.proven());
+    }
+    json!({
+        "skills": count,
+        "proven": proven,
+        "in_progress": count - proven,
+    })
+}
+
 /// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
     if items.is_empty() {
@@ -439,8 +455,10 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
                 "plan": plan,
                 "from": "record",
                 "skills": skills.iter().map(Skill::to_json).collect::<Vec<_>>(),
-                // Skills in no plan belong to the folder, so each plan counts them.
-                "progress": total(skills.iter().chain(&other)),
+                // A plan's graph is a fixed whole, so its level counts its
+                // own skills only, and cannot fall when the learner starts
+                // something new.
+                "progress": total(skills.iter()),
             }),
         })
         .collect();
@@ -456,7 +474,7 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
         "plans": plans_json,
         "other": {
             "skills": other.iter().map(Skill::to_json).collect::<Vec<_>>(),
-            "progress": total(other.iter()),
+            "progress": counts(other.iter()),
         },
         "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
         "days": answered_days(&answers),
@@ -525,9 +543,10 @@ fn render(value: &Value) -> String {
         .cloned()
         .unwrap_or_default();
     if !other.is_empty() {
+        let counts = &value["other"]["progress"];
         text.push_str(&format!(
-            "In no plan: {}\n",
-            progress_line(&value["other"]["progress"])
+            "In no plan: {} proven, {} in progress\n",
+            counts["proven"], counts["in_progress"]
         ));
         for skill in &other {
             text.push_str(&skill_line(skill));

@@ -301,7 +301,25 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Helped
                         }
+                        // Right only with a hint or a step, before the check
+                        // is due: it is asked for cold the next day, and the
+                        // passes already earned stay. The help field is the
+                        // least sure one a tutor sends, so the smallest help
+                        // costs no pass. A proven skill stays proven.
+                        (FirstTry::Right, AttemptHelp::Hint | AttemptHelp::Step) if !due => {
+                            if !state.closed() {
+                                state.next_on = Some(days_after(day, 1));
+                            }
+                            Effect::Helped
+                        }
                         (FirstTry::Declined, AttemptHelp::Solution) => {
+                            restart(&mut state, Some(days_after(day, 1)));
+                            Effect::Declined
+                        }
+                        // "I don't know" on a task the tutor set brings the
+                        // check to the next day, as a miss does, with no miss
+                        // kept. A declined check that is due stays free.
+                        (FirstTry::Declined, _) if !due && !state.closed() => {
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Declined
                         }
@@ -653,6 +671,8 @@ pub(crate) fn record_attempt(
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    // The same name the attempt was stored under.
+    let label = crate::learner::update::observations::plan_tag_named(tx, &label).unwrap_or(label);
     let mut touched = Vec::new();
     for item in resolve_all(tx, &format!("{path}.counts_for"), &attempt.counts_for, host)? {
         insert_event(
@@ -715,9 +735,17 @@ pub(crate) fn record_attempt(
                 |r| r.get(0),
             )
             .optional()?;
-        let makes = matches!(attempt.first_try, FirstTry::Wrong | FirstTry::Partly)
-            || attempt.help == AttemptHelp::Solution
-                && matches!(attempt.first_try, FirstTry::Right | FirstTry::Declined);
+        // A right answer reached with a hint or a step, and an "I don't
+        // know", make a check for the next day, as a wrong first try does:
+        // help that is never taken away would never show what the learner
+        // can do alone, and a task never answered would never come back.
+        let makes = matches!(
+            attempt.first_try,
+            FirstTry::Wrong | FirstTry::Partly | FirstTry::Declined
+        ) || attempt.help == AttemptHelp::Solution
+            && attempt.first_try == FirstTry::Right
+            || attempt.first_try == FirstTry::Right
+                && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
         match existing {
             Some(item) => {
                 // Taken out by the tutor: a new miss puts it back.

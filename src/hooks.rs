@@ -25,6 +25,8 @@ enum HookEvent {
     UserPromptSubmit,
     Stop,
     SessionEnd,
+    /// After Magnesium's `reply` tool, in a session the study window starts.
+    PostToolUse,
 }
 
 impl HookEvent {
@@ -34,6 +36,7 @@ impl HookEvent {
             "user-prompt-submit" => Some(Self::UserPromptSubmit),
             "stop" => Some(Self::Stop),
             "session-end" => Some(Self::SessionEnd),
+            "post-tool-use" => Some(Self::PostToolUse),
             _ => None,
         }
     }
@@ -44,6 +47,7 @@ impl HookEvent {
             Self::UserPromptSubmit => "UserPromptSubmit",
             Self::Stop => "Stop",
             Self::SessionEnd => "SessionEnd",
+            Self::PostToolUse => "PostToolUse",
         }
     }
 }
@@ -65,6 +69,9 @@ struct HookInput {
     reason: Option<String>,
     stop_hook_active: Option<bool>,
     last_assistant_message: Option<String>,
+    tool_name: Option<String>,
+    tool_input: Option<Value>,
+    tool_response: Option<Value>,
 }
 
 /// The host comes from the installed `--host-kind` hook flag, because Claude
@@ -223,6 +230,11 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
             input.reason.as_deref(),
             &["other", "clear", "resume"],
         ),
+        HookEvent::PostToolUse => input
+            .tool_name
+            .as_deref()
+            .map(|_| ())
+            .ok_or_else(|| "PostToolUse is missing tool_name".to_owned()),
     }
 }
 
@@ -279,6 +291,23 @@ fn handle(
     adapter::check_workspace_binding(workspace)?;
     let host = &HostIdentity::new(kind, &input.session_id)
         .map_err(|detail| format!("unavailable_capture: {detail}"))?;
+    if let HookEvent::PostToolUse = event {
+        let tool = input.tool_name.as_deref();
+        let ends = match tool_kind(tool) {
+            Some(MagnesiumTool::Reply) => !save_after(input.tool_input.as_ref()),
+            // The notes the tutor sends after its reply are the turn's last
+            // write, once they are saved. A refused save gets one retry, and
+            // the turn ends after it either way. In a terminal no reply tool
+            // exists, so this never fires.
+            Some(MagnesiumTool::LearningStep) => {
+                adapter::replied_this_turn(&input.cwd, host)?
+                    && (committed(input.tool_response.as_ref())
+                        || adapter::refused_save_after_reply(&input.cwd, host)?)
+            }
+            None => false,
+        };
+        return Ok(ends.then(end_turn));
+    }
     match event {
         HookEvent::SessionStart => {
             adapter::host::clear_session_ended(workspace, host)?;
@@ -328,7 +357,64 @@ fn handle(
             }
             Ok(None)
         }
+        HookEvent::PostToolUse => Ok(None),
     }
+}
+
+/// The turn ends at its last write in the window: at the reply, or, when a
+/// memory edit or checkpoint is due, at the one learning_step after it. A
+/// tutor asked to write nothing more still wrote a closing line in most turns
+/// of the live runs of 2026-11-11 ("Your question is above"), which the
+/// window would show as a second message, and which cost seconds. Other
+/// tools, and every terminal session, are left alone.
+fn end_turn() -> Value {
+    json!({"continue": false, "suppressOutput": true})
+}
+
+#[derive(Debug, PartialEq)]
+enum MagnesiumTool {
+    Reply,
+    LearningStep,
+}
+
+fn tool_kind(tool: Option<&str>) -> Option<MagnesiumTool> {
+    let tool = tool?;
+    if !(tool.starts_with("mcp__") && tool.contains("magnesium")) {
+        return None;
+    }
+    if tool.ends_with(&format!("__{}", crate::mcp::catalog::REPLY_TOOL)) {
+        Some(MagnesiumTool::Reply)
+    } else if tool.ends_with("__learning_step") {
+        Some(MagnesiumTool::LearningStep)
+    } else {
+        None
+    }
+}
+
+/// Whether a learning_step's result says the update committed. Claude Code
+/// hands an MCP tool's result to the hook as its content, whose text holds
+/// the runtime's JSON, so every string is read as JSON too.
+fn committed(response: Option<&Value>) -> bool {
+    fn walk(value: &Value, depth: u8) -> bool {
+        if depth > 6 {
+            return false;
+        }
+        match value {
+            Value::Object(fields) => {
+                fields.get("update_status").and_then(Value::as_str) == Some("committed")
+                    || fields.values().any(|field| walk(field, depth + 1))
+            }
+            Value::Array(items) => items.iter().any(|item| walk(item, depth + 1)),
+            Value::String(text) => serde_json::from_str::<Value>(text)
+                .is_ok_and(|parsed| !parsed.is_string() && walk(&parsed, depth + 1)),
+            _ => false,
+        }
+    }
+    response.is_some_and(|response| walk(response, 0))
+}
+
+fn save_after(input: Option<&Value>) -> bool {
+    input.and_then(|input| input["save_after"].as_bool()) == Some(true)
 }
 
 fn additional_context(event: HookEvent, context: String) -> Value {
@@ -354,7 +440,56 @@ fn record_if_active(workspace: Option<&Workspace>, event: HookEvent, failure: Ho
 mod tests {
     use std::io::Cursor;
 
-    use super::{MAX_HOOK_INPUT_BYTES, read_bounded_input, validate_turn_identifier};
+    use super::{
+        MAX_HOOK_INPUT_BYTES, MagnesiumTool, committed, end_turn, read_bounded_input, save_after,
+        tool_kind, validate_turn_identifier,
+    };
+
+    #[test]
+    fn only_a_committed_update_counts_as_saved() {
+        let text = |value: serde_json::Value| serde_json::json!([{"type": "text", "text": value.to_string()}]);
+        assert!(committed(Some(&text(
+            serde_json::json!({"update_status": "committed", "references": {}})
+        ))));
+        assert!(committed(Some(
+            &serde_json::json!({"content": text(serde_json::json!({"update_status": "committed"}))})
+        )));
+        let refused = text(
+            serde_json::json!({"error": {"code": "unknown_reference", "message": "obs-1"}, "schema": "learner-model/v2"}),
+        );
+        assert!(!committed(Some(&refused)));
+        assert!(!committed(Some(&serde_json::json!(
+            "Magnesium could not invoke learning_step: invalid_variant"
+        ))));
+        assert!(!committed(None));
+    }
+
+    #[test]
+    fn only_magnesiums_reply_and_learning_step_can_end_the_turn() {
+        assert_eq!(end_turn()["continue"], false);
+        assert_eq!(
+            tool_kind(Some("mcp__plugin_magnesium_magnesium__reply")),
+            Some(MagnesiumTool::Reply)
+        );
+        assert_eq!(
+            tool_kind(Some("mcp__plugin_magnesium_magnesium__learning_step")),
+            Some(MagnesiumTool::LearningStep)
+        );
+        for other in [
+            "mcp__other__reply",
+            "Write",
+            "reply",
+            "mcp__plugin_magnesium_magnesium__context",
+        ] {
+            assert_eq!(tool_kind(Some(other)), None, "{other}");
+        }
+        assert_eq!(tool_kind(None), None);
+        assert!(save_after(Some(
+            &serde_json::json!({"text": "x", "save_after": true})
+        )));
+        assert!(!save_after(Some(&serde_json::json!({"text": "x"}))));
+        assert!(!save_after(None));
+    }
 
     #[test]
     fn hook_input_accepts_exact_limit_and_rejects_one_byte_over() {

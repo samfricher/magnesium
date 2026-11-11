@@ -96,6 +96,51 @@ fn short_ticket_verifies_only_the_exact_current_turn_text_and_conversation() {
 }
 
 #[test]
+fn the_window_opener_is_certified_as_the_goal_whichever_way_the_tutor_echoes_it() {
+    let (root, workspace, host) = fixture();
+    // The study window opens a lesson with this line. The hook sees all of
+    // it; the tutor sees the skill the command expands to, and may echo the
+    // whole line or only the goal.
+    let opener = "/magnesium:learn adding fractions with different denominators";
+    let goal = "adding fractions with different denominators";
+    let ticket = issue(&workspace, &host, "turn-1", opener, 1_000).unwrap();
+    for echo in [
+        opener,
+        goal,
+        "/magnesium:learn  adding fractions with different denominators\n",
+    ] {
+        let event = verify(&workspace, &host, &ticket, echo, 1_500).unwrap();
+        assert_eq!(event.text, goal, "echo {echo:?}");
+    }
+    // The ticket still shows the answer is what the learner typed.
+    assert_eq!(
+        verify(&workspace, &host, &ticket, "adding fractions", 1_500).err(),
+        Some(failure())
+    );
+    for (raw, stored) in [
+        ("/magnesium:papers midterm on 3 March", "midterm on 3 March"),
+        ("/magnesium:learn\n\nlimits", "limits"),
+        // A command alone, another program's command, or a command glued to
+        // a word is the learner's own text.
+        ("/magnesium:learn", "/magnesium:learn"),
+        ("/magnesium:learn   ", "/magnesium:learn"),
+        ("/other:learn limits", "/other:learn limits"),
+        ("/magnesium:learnlimits", "/magnesium:learnlimits"),
+        ("/magnesium:Learn limits", "/magnesium:Learn limits"),
+        ("why /magnesium:learn limits", "why /magnesium:learn limits"),
+    ] {
+        assert_eq!(learner_text(&host, raw), stored, "{raw:?}");
+        assert_eq!(learner_text(&host, stored), stored, "{stored:?}");
+    }
+    let tool_only = HostContext {
+        host_kind: "tool_only".into(),
+        ..host.clone()
+    };
+    assert_eq!(learner_text(&tool_only, opener), opener);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn claude_paste_markup_is_certified_and_stored_as_the_learner_wrote_it() {
     let (root, workspace, host) = fixture();
     let words = "Why is E(w, b) a bowl?\n$$X^\\top X w = X^\\top t$$";

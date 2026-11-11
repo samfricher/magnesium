@@ -22,15 +22,24 @@ const shots = [
   ["course-quiet", "course:quiet", 900],
   ["course-new-folder", "course:new", 900],
   ["course-new-lesson", "course:ask", 900],
+  ["course-material", "course:material", 1400],
+  ["course-drop", "course:drop", 900],
+  ["course-paste", "course:paste", 900],
   ["course-upgrade", "course:upgrade", 900],
   ["course-broken", "course:broken", 900],
   ["session", "session", 1800],
   ["session-reply", "session:answer", 3600],
+  ["session-source", "session:source", 5200],
+  ["session-key", "session:key", 3600],
+  ["session-material", "session:material", 3600],
+  ["session-drop", "session:drop", 2400],
   ["session-math-answer", "session:math", 3600],
   ["session-typing-math", "session:typing", 2200],
   ["session-writing", "session:stream", 5400],
   ["session-lost", "session:lost", 2800],
   ["session-dont-know", "session:idk", 2400],
+  ["session-hint", "session:hint", 2400],
+  ["session-working", "session:slow", 2400],
   ["session-permission", "session:permission", 2400],
   ["session-diagram", "session:diagram", 5600],
   ["session-plan", "session:plan", 2000],
@@ -46,7 +55,7 @@ const shots = [
 ].filter(([name]) => !only || name.includes(only));
 
 // Screens also photographed in the light scheme.
-const light = ["library", "course", "session-reply", "progress", "summary"];
+const light = ["library", "course", "course-new-folder", "course-material", "session-reply", "session-source", "progress", "summary"];
 
 const server = await createServer({ server: { port: 1431, strictPort: false }, logLevel: "error" });
 await server.listen();
@@ -69,7 +78,14 @@ for (const scheme of ["dark", "light"]) {
     await page.close();
   }
 }
-// The same lesson in a narrow window.
+// The same lesson in a narrow window, and with a source open in one.
+if (!only || "session-source-narrow".includes(only)) {
+  const page = await browser.newPage({ viewport: { width: 720, height: 640 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await page.goto(`${base}#session:source`);
+  await page.waitForTimeout(5200);
+  await page.screenshot({ path: "shots/session-source-narrow.png" });
+  await page.close();
+}
 if (!only || "session-narrow".includes(only)) {
   const page = await browser.newPage({ viewport: { width: 720, height: 560 }, deviceScaleFactor: 2, colorScheme: "dark" });
   await page.goto(`${base}#session:answer`);

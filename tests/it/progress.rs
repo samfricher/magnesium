@@ -83,7 +83,11 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     let empty = progress(&e);
     assert_eq!(empty["active"], true, "{empty}");
     assert_eq!(empty["other"]["skills"], json!([]), "{empty}");
-    assert_eq!(empty["other"]["progress"]["level"], 1, "{empty}");
+    assert_eq!(
+        empty["other"]["progress"],
+        json!({"skills": 0, "proven": 0, "in_progress": 0}),
+        "a folder with no plan prints no level: {empty}"
+    );
     assert_eq!(empty["days"], json!([]), "{empty}");
 
     // Day one. A right, cold, unaided answer on a skill that is never got
@@ -165,16 +169,27 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(sign["last_pass_on"], json!(today.to_string()), "{sign}");
     assert_eq!(skill(&value, "units of a rate")["passes"], 2, "{value}");
+    // Right only after a hint: no pass, and a check due the next day.
+    let hinted = skill(&value, "competitive inhibition");
     assert_eq!(
-        skill(&value, "competitive inhibition")["passes"],
-        0,
-        "{value}"
+        (
+            hinted["passes"].as_i64(),
+            hinted["quick_check"].as_bool(),
+            hinted["due"].as_bool()
+        ),
+        (Some(0), Some(true), Some(false)),
+        "{hinted}"
+    );
+    assert_eq!(
+        hinted["next_on"],
+        json!(today.checked_add_days(Days::new(1)).unwrap().to_string()),
+        "{hinted}"
     );
 
-    // Three skills, nine passes to earn, three earned: level 1 + 3·9/9 = 4.
+    // Three skills in no plan: counts, and no level.
     assert_eq!(
         value["other"]["progress"],
-        json!({"passes": 3, "of": 9, "proven": 0, "skills": 3, "level": 4, "to_next": 1}),
+        json!({"skills": 3, "proven": 0, "in_progress": 3}),
         "{value}"
     );
     assert_eq!(value["due"], json!({"redos": 0, "checks": 0}), "{value}");
@@ -191,7 +206,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(
-        text.contains("In no plan: level 4 of 10 · 3 of 9 passes · 0 of 3 skills proven"),
+        text.contains("In no plan: 0 proven, 3 in progress"),
         "{text}"
     );
     assert!(text.contains("●●○  units of a rate"), "{text}");
@@ -199,6 +214,71 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         text.contains("Days with a marked answer: 2 in all."),
         "{text}"
     );
+}
+
+const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax from the double reciprocal plot\n    kind: course\n    needs: [reciprocals]\n    key_need: [reciprocals]\n    contains: [reciprocals]\n    touches: []\n  reciprocals:\n    covers: 1/x and its inverse\n    kind: foundation\n    needs: []\n    key_need: []\n    contains: []\n    touches: []\n";
+
+#[test]
+fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_something_new() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | <YYYY-MM-DD> |\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
+    )
+    .unwrap();
+    fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
+    v2::start(&e, "claude", THREAD);
+    let plan_progress = |value: &Value| value["plans"][0]["progress"].clone();
+
+    // A chat answer on a skill the graph names, written another way, is
+    // recorded under the graph's name and moves the plan's level.
+    answer(
+        &e,
+        "a-1",
+        "Km is minus one over the x intercept",
+        json!({"label":"Lineweaver Burk","question":"Read Km from this plot.","first_try":"right","help":"none","cold":true}),
+    );
+    let before = progress(&e);
+    assert_eq!(
+        plan_progress(&before),
+        json!({"passes": 1, "of": 6, "proven": 0, "skills": 2, "level": 2, "to_next": 1}),
+        "{before}"
+    );
+    let label: String = store(&e)
+        .query_row("SELECT label FROM attempts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(label, "lineweaver-burk");
+
+    // Answers under new names in no plan, right and wrong, leave the plan's
+    // level as it was. They are listed with their passes, in no level.
+    answer(
+        &e,
+        "a-2",
+        "µM per second",
+        json!({"label":"units of a rate","question":"What are the units of Vmax?","first_try":"right","help":"none","cold":true}),
+    );
+    answer(
+        &e,
+        "a-3",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
+    );
+    let after = progress(&e);
+    assert_eq!(plan_progress(&after), plan_progress(&before), "{after}");
+    assert_eq!(
+        after["other"]["progress"],
+        json!({"skills": 2, "proven": 0, "in_progress": 2}),
+        "{after}"
+    );
+    assert!(after["other"]["progress"].get("level").is_none(), "{after}");
 }
 
 #[test]
@@ -242,4 +322,49 @@ fn progress_outside_a_study_folder_says_so() {
     assert_eq!(value["active"], false, "{value}");
     let output = e.command().arg("progress").output().unwrap();
     assert!(!output.status.success(), "{output:?}");
+}
+
+#[test]
+fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    answer(
+        &e,
+        "a-1",
+        "3/5",
+        json!({"label":"adding fractions with the same denominator","question":"1/5 + 2/5 of a pizza","first_try":"right","help":"none","cold":false}),
+    );
+    answer(
+        &e,
+        "a-2",
+        "µM per second",
+        json!({"label":"units of a rate","question":"What are the units of Vmax?","first_try":"right","help":"none","cold":true}),
+    );
+    // Another topic that shares only common words with the goal: "what",
+    // "with", "find".
+    answer(
+        &e,
+        "a-3",
+        "4",
+        json!({"label":"what to find with a mean","question":"Find the mean of 2, 4 and 6. What is it?","first_try":"right","help":"none","cold":true}),
+    );
+    let started = v2::tool(
+        &e,
+        "claude",
+        "another-conversation",
+        "learning_step",
+        json!({"schema":"learner-model/v2","action":"update","request_id":"again",
+            "session":{"operation":"start","client_ref":"s","goal":"What to find when adding fractions with different denominators"}}),
+    );
+    assert_eq!(started["update_status"], "committed", "{started}");
+    let earlier = started["earlier_answers"]
+        .as_array()
+        .expect("earlier answers");
+    assert_eq!(earlier.len(), 1, "{started}");
+    assert_eq!(
+        earlier[0]["label"],
+        "adding fractions with the same denominator"
+    );
+    assert_eq!(earlier[0]["mark"], "right");
 }

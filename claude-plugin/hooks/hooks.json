@@ -48,6 +48,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_magnesium_magnesium__(reply|learning_step)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "magnesium _internal hook post-tool-use --plugin-version 0.2.0 --adapter-protocol-version 2 --host-kind claude",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }

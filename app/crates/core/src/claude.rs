@@ -3,9 +3,10 @@
 //! The window starts `claude` as Anthropic publishes it, in the study folder,
 //! and talks to it over its own standard input and output. It never reads a
 //! credential and never changes how Claude Code signs in. The session loads
-//! the folder's hooks, skills and tool server exactly as a terminal session
-//! does, so `--bare` is never passed and the first report is checked for the
-//! Magnesium plugin.
+//! Magnesium's plugin, with its hooks, skills and tool server, as a terminal
+//! session does, so `--bare` is never passed and the first report is checked
+//! for the Magnesium plugin. Of the learner's own setup it loads nothing else:
+//! see [`lesson_args`].
 //!
 //! The wire format is the one the open-source Agent SDKs use: one JSON object
 //! per line each way, with `control_request` and `control_response` objects for
@@ -14,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -45,6 +46,104 @@ const NAME: &str = "Claude Code";
 const INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
 /// How long a sign-in may wait for the learner in the browser.
 const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+/// Set on every Claude Code the window starts, and so on Magnesium's hooks
+/// and tool server under it. The tool server then offers its `reply` tool,
+/// whose input the window draws as the tutor's words while they are written.
+pub const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
+const SURFACE: &str = "window";
+/// Claude Code's switch for the tool servers of the learner's Claude account.
+pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
+
+/// The model a lesson runs on: the one Claude Code chose by default on
+/// 2026-11-11. It is named, so a later change of that default cannot change
+/// the tutor unseen.
+pub const MODEL: &str = "claude-fable-5-2";
+
+/// Claude Code's own tools a lesson may use. Everything else Claude Code
+/// offers is left out, and so is the learner's own setup: no other tool
+/// server, account connector, plugin or skill. Magnesium's five tools come
+/// from its plugin, which is loaded by itself.
+pub const TOOLS: [&str; 9] = [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "AskUserQuestion",
+    "WebSearch",
+    "WebFetch",
+    "Bash",
+];
+
+/// Where `magnesium init` keeps the plugin for Claude Code on this Mac.
+fn plugin_dir() -> Option<PathBuf> {
+    let dir = paths::home().join("Library/Application Support/magnesium/claude-plugin");
+    dir.join(".claude-plugin/plugin.json")
+        .is_file()
+        .then_some(dir)
+}
+
+/// What a lesson loads, beyond the pipe itself.
+///
+/// - Settings come from the study folder only (`project,local`), so the
+///   learner's user settings, with their plugins, hooks and skills, stay out.
+///   Tool servers and account connectors from the learner's account come
+///   with those settings, and are left out with them.
+/// - Magnesium's plugin is loaded from where `magnesium init` put it, so its
+///   hooks, skills and tool server load as in a terminal. Its tools are in
+///   the session from the first turn, as there are too few to defer.
+/// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
+///   `.magnesium/`. Permission cards are unchanged: a sandboxed command still
+///   asks.
+/// - The model is named. The effort is Claude Code's default, as in a
+///   terminal.
+///
+/// Without the plugin on this Mac, the folder's settings still name it, and
+/// the first report then says the plugin did not load.
+pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "--setting-sources".into(),
+        "project,local".into(),
+        "--tools".into(),
+        TOOLS.join(","),
+        "--model".into(),
+        MODEL.into(),
+    ];
+    // No effort is passed: a lesson thinks as hard as in a terminal. Low
+    // effort was tried on 2026-11-11 and called context.prepare at 1 of 11
+    // lesson starts, so it waits for a timing on the final build that shows
+    // a large gap, and then for the terminal too.
+    if let Some(plugin) = plugin {
+        args.push("--plugin-dir".into());
+        args.push(plugin.display().to_string());
+    }
+    let mut folders = vec![folder.to_path_buf()];
+    if let Ok(real) = std::fs::canonicalize(folder) {
+        if real != folder {
+            folders.push(real);
+        }
+    }
+    let deny: Vec<String> = folders
+        .iter()
+        .flat_map(|folder| {
+            let rule = format!("/{}/.magnesium/**", folder.display());
+            [format!("Write({rule})"), format!("Edit({rule})")]
+        })
+        .collect();
+    let settings = json!({
+        "sandbox": {
+            "enabled": true,
+            "autoAllowBashIfSandboxed": false,
+            "allowUnsandboxedCommands": false,
+        },
+        "permissions": {"deny": deny},
+        "enableAllProjectMcpServers": false,
+    });
+    args.push("--settings".into());
+    args.push(settings.to_string());
+    args
+}
 
 /// Start Claude Code so that the learner's choice of payment holds. Started
 /// by another program, Claude Code uses an API key in its environment over
@@ -182,6 +281,12 @@ impl Harness for ClaudeCode {
         command
             .current_dir(&options.folder)
             .env("PWD", &options.folder)
+            .env(SURFACE_ENV, SURFACE)
+            // The learner's account connectors (mail, calendar, drive) come
+            // from their Claude account, not their settings, so the setting
+            // sources alone leave them in: a live check on 2026-11-11 found
+            // 62 of their tools in a window lesson without this.
+            .env(CONNECTORS_ENV, "false")
             .args([
                 "-p",
                 "--input-format",
@@ -193,6 +298,7 @@ impl Harness for ClaudeCode {
                 "--permission-prompt-tool",
                 "stdio",
             ])
+            .args(lesson_args(&options.folder, plugin_dir().as_deref()))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -218,6 +324,9 @@ impl Harness for ClaudeCode {
             pending: Mutex::new(HashMap::new()),
             allowed: Mutex::new(HashSet::new()),
             seen_text: Mutex::new(HashMap::new()),
+            reply_blocks: Mutex::new(HashMap::new()),
+            replies: Mutex::new(Vec::new()),
+            folder: options.folder.clone(),
             stderr_tail: Mutex::new(String::new()),
             closing: AtomicBool::new(false),
             interrupting: AtomicBool::new(false),
@@ -393,6 +502,13 @@ struct Shared {
     allowed: Mutex<HashSet<String>>,
     /// Text blocks already shown, by the id of the message they belong to.
     seen_text: Mutex<HashMap<String, Vec<String>>>,
+    /// The `reply` calls being written, by their block's index.
+    reply_blocks: Mutex<HashMap<u64, ReplyStream>>,
+    /// The replies already shown this turn. Text written besides them is held
+    /// back until it is whole, and shown only when it says something new.
+    replies: Mutex<Vec<String>>,
+    /// The study folder, to name the files the tutor works on.
+    folder: PathBuf,
     stderr_tail: Mutex<String>,
     closing: AtomicBool,
     interrupting: AtomicBool,
@@ -816,22 +932,230 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
         return;
     }
     let event = &value["event"];
+    let index = event["index"].as_u64().unwrap_or(0);
     match event["type"].as_str() {
-        Some("message_start") => begin_turn(shared),
+        Some("message_start") => {
+            lock(&shared.reply_blocks).clear();
+            begin_turn(shared);
+        }
         Some("content_block_start") => match event["content_block"]["type"].as_str() {
             Some("text") | None => {}
-            Some(_) => shared.emit(AgentEvent::Working),
-        },
-        Some("content_block_delta") if event["delta"]["type"].as_str() == Some("text_delta") => {
-            if let Some(text) = event["delta"]["text"].as_str().filter(|t| !t.is_empty()) {
+            Some("tool_use") if is_reply_tool(event["content_block"]["name"].as_str()) => {
                 begin_turn(shared);
-                shared.emit(AgentEvent::TextDelta {
-                    text: text.to_owned(),
+                lock(&shared.reply_blocks).insert(index, ReplyStream::default());
+            }
+            // Each step is named when it starts, from the tool's name alone,
+            // so the line moves while a long record is still being written.
+            // The finished block names the file, where there is one.
+            Some("tool_use" | "server_tool_use") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working {
+                    doing: event["content_block"]["name"]
+                        .as_str()
+                        .and_then(|tool| doing(tool, &Value::Null, &shared.folder)),
                 });
             }
-        }
+            Some("thinking" | "redacted_thinking") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working {
+                    doing: Some(THINKING.into()),
+                });
+            }
+            Some(_) => shared.emit(AgentEvent::Working { doing: None }),
+        },
+        Some("content_block_delta") => match event["delta"]["type"].as_str() {
+            Some("text_delta") => {
+                // Once the tutor has replied through the tool, other text
+                // waits until it is whole, so the reply is never shown twice.
+                if !lock(&shared.replies).is_empty() {
+                    return;
+                }
+                if let Some(text) = event["delta"]["text"].as_str().filter(|t| !t.is_empty()) {
+                    begin_turn(shared);
+                    shared.emit(AgentEvent::TextDelta {
+                        text: text.to_owned(),
+                    });
+                }
+            }
+            Some("input_json_delta") => {
+                let more = event["delta"]["partial_json"].as_str().unwrap_or_default();
+                let fresh = lock(&shared.reply_blocks)
+                    .get_mut(&index)
+                    .map(|stream| stream.push(more))
+                    .unwrap_or_default();
+                if !fresh.is_empty() {
+                    shared.emit(AgentEvent::TextDelta { text: fresh });
+                }
+            }
+            _ => {}
+        },
         _ => {}
     }
+}
+
+/// The work a tool call does, in a few plain words for the line the lesson
+/// shows while the tutor works, or None when the window cannot tell. A file
+/// is named only when it is inside the study folder and outside
+/// `.magnesium/`; a tool's name, a command and an outside path never are.
+pub fn doing(tool: &str, input: &Value, folder: &Path) -> Option<String> {
+    let file = || {
+        input["file_path"]
+            .as_str()
+            .or_else(|| input["path"].as_str())
+            .and_then(|path| file_words(path, folder))
+    };
+    let magnesium = |name: &str| tool.starts_with("mcp__") && tool.ends_with(&format!("__{name}"));
+    let line = match tool {
+        "Write" | "Edit" | "MultiEdit" => match file() {
+            Some(name) => format!("writing {name}"),
+            None => "writing a file".into(),
+        },
+        "Read" => match file() {
+            Some(name) => format!("reading {name}"),
+            None => "reading".into(),
+        },
+        "Grep" | "Glob" => "looking through your files".into(),
+        "WebSearch" => "searching the web".into(),
+        "WebFetch" => "reading a web page".into(),
+        "Bash" => {
+            let command = input["command"].as_str().unwrap_or_default();
+            if ["latexmk", "pdflatex", "xelatex", "lualatex", "build.sh"]
+                .iter()
+                .any(|word| command.contains(word))
+            {
+                "building the papers".into()
+            } else {
+                return None;
+            }
+        }
+        _ if magnesium("search_sources") => "searching your course material".into(),
+        _ if magnesium("sources") => "reading your course material".into(),
+        _ if magnesium("context") || magnesium("memory") => "reading your record".into(),
+        _ if magnesium("learning_step") => "saving your work".into(),
+        _ => return None,
+    };
+    Some(line)
+}
+
+/// A file's name in plain words, as "paper 2" for `Study/stats/paper-2.md`,
+/// when the file is in the study folder and outside `.magnesium/`.
+fn file_words(path: &str, folder: &Path) -> Option<String> {
+    let path = Path::new(path);
+    let inside = |root: &Path| path.strip_prefix(root).ok().map(Path::to_path_buf);
+    let relative = if path.is_absolute() {
+        inside(folder).or_else(|| {
+            std::fs::canonicalize(folder)
+                .ok()
+                .and_then(|real| inside(&real))
+        })?
+    } else {
+        path.to_path_buf()
+    };
+    if relative.components().any(|part| {
+        matches!(part, std::path::Component::ParentDir)
+            || part.as_os_str().to_string_lossy().starts_with('.')
+    }) {
+        return None;
+    }
+    let stem = relative.file_stem()?.to_string_lossy();
+    let words = stem
+        .split(|c: char| c == '-' || c == '_' || c == '.' || c.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!words.is_empty() && words.len() <= 60).then_some(words)
+}
+
+/// The line while the tutor thinks, before it starts any step.
+const THINKING: &str = "thinking";
+
+/// Magnesium's `reply` tool, under whichever name Claude Code gives it:
+/// `mcp__plugin_magnesium_magnesium__reply` when it comes from the plugin.
+fn is_reply_tool(name: Option<&str>) -> bool {
+    name.is_some_and(|name| {
+        name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__reply")
+    })
+}
+
+/// A `reply` call as it streams: the input so far, and how much of its text
+/// is already on screen.
+#[derive(Default)]
+struct ReplyStream {
+    input: String,
+    shown: usize,
+}
+
+impl ReplyStream {
+    /// Take more of the call's input, and give back the text not yet shown.
+    fn push(&mut self, more: &str) -> String {
+        self.input.push_str(more);
+        let text = partial_text(&self.input);
+        let fresh = text.get(self.shown..).unwrap_or_default().to_owned();
+        self.shown = text.len();
+        fresh
+    }
+}
+
+/// The `text` field of a JSON object that is still being written, decoded as
+/// far as it is whole. An escape cut off at the end waits for the rest.
+pub fn partial_text(input: &str) -> String {
+    let Some(key) = input.find("\"text\"") else {
+        return String::new();
+    };
+    let rest = input[key + 6..].trim_start();
+    let Some(rest) = rest.strip_prefix(':') else {
+        return String::new();
+    };
+    let Some(body) = rest.trim_start().strip_prefix('"') else {
+        return String::new();
+    };
+    let mut text = String::new();
+    let mut chars = body.chars().peekable();
+    let mut pending_high: Option<u32> = None;
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => break,
+            '\\' => {
+                let Some(escape) = chars.next() else { break };
+                let decoded = match escape {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    'b' => '\u{8}',
+                    'f' => '\u{c}',
+                    'u' => {
+                        let hex: String = chars.by_ref().take(4).collect();
+                        let Ok(unit) =
+                            u32::from_str_radix(&hex, 16).map_err(|_| ()).and_then(|u| {
+                                if hex.len() == 4 {
+                                    Ok(u)
+                                } else {
+                                    Err(())
+                                }
+                            })
+                        else {
+                            break;
+                        };
+                        if (0xD800..0xDC00).contains(&unit) {
+                            pending_high = Some(unit);
+                            continue;
+                        }
+                        let code = match pending_high.take() {
+                            Some(high) if (0xDC00..0xE000).contains(&unit) => {
+                                0x10000 + ((high - 0xD800) << 10) + (unit - 0xDC00)
+                            }
+                            _ => unit,
+                        };
+                        char::from_u32(code).unwrap_or('\u{fffd}')
+                    }
+                    other => other,
+                };
+                text.push(decoded);
+            }
+            c => text.push(c),
+        }
+    }
+    text
 }
 
 fn begin_turn(shared: &Arc<Shared>) {
@@ -855,6 +1179,14 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                 let Some(text) = block["text"].as_str().filter(|t| !t.trim().is_empty()) else {
                     continue;
                 };
+                // Text that repeats a reply sent through the tool is not
+                // shown again.
+                if lock(&shared.replies)
+                    .iter()
+                    .any(|reply| reply.contains(text.trim()))
+                {
+                    continue;
+                }
                 // The agent may send a message once per block or once whole.
                 // Either way each block is shown one time.
                 let fresh = {
@@ -874,9 +1206,34 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                     });
                 }
             }
-            Some("tool_use" | "server_tool_use" | "thinking") => {
+            Some("tool_use") if is_reply_tool(block["name"].as_str()) => {
+                let Some(text) = block["input"]["text"]
+                    .as_str()
+                    .filter(|t| !t.trim().is_empty())
+                else {
+                    continue;
+                };
                 begin_turn(shared);
-                shared.emit(AgentEvent::Working);
+                let mut replies = lock(&shared.replies);
+                if !replies.iter().any(|said| said == text) {
+                    replies.push(text.to_owned());
+                    drop(replies);
+                    shared.emit(AgentEvent::TextDone {
+                        text: text.to_owned(),
+                    });
+                }
+            }
+            Some("tool_use" | "server_tool_use") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working {
+                    doing: block["name"]
+                        .as_str()
+                        .and_then(|tool| doing(tool, &block["input"], &shared.folder)),
+                });
+            }
+            Some("thinking") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working { doing: None });
             }
             _ => {}
         }
@@ -900,6 +1257,8 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
     shared.in_turn.store(false, Ordering::SeqCst);
     shared.awaiting.store(false, Ordering::SeqCst);
     lock(&shared.seen_text).clear();
+    lock(&shared.replies).clear();
+    lock(&shared.reply_blocks).clear();
     let waiting: Vec<String> = lock(&shared.pending).drain().map(|(id, _)| id).collect();
     for id in waiting {
         shared.emit(AgentEvent::Withdrawn { id });
@@ -1240,9 +1599,13 @@ impl Conversation for ClaudeConversation {
 
     fn close(&mut self) {
         self.shared.closing.store(true, Ordering::SeqCst);
+        // Once the reply is on screen, what is left of the turn is the save
+        // of its notes, the memory edit and the checkpoint. It is let finish:
+        // the agent ends the turn on its own once the input is closed.
+        let saving_notes = self.shared.turn_active() && !lock(&self.shared.replies).is_empty();
         // Closing the input does not stop a reply under way, so the reply is
         // interrupted first.
-        if self.shared.turn_active() {
+        if self.shared.turn_active() && !saving_notes {
             self.shared.interrupting.store(true, Ordering::SeqCst);
             let id = self.shared.next_id();
             let _ = self.shared.write(&json!({
@@ -1257,8 +1620,9 @@ impl Conversation for ClaudeConversation {
         // time before it is stopped.
         *lock(&self.shared.stdin) = None;
         let shared = Arc::clone(&self.shared);
+        let grace = Duration::from_secs(if saving_notes { 30 } else { 6 });
         thread::spawn(move || {
-            thread::sleep(Duration::from_secs(6));
+            thread::sleep(grace);
             shared.signal("TERM");
             thread::sleep(Duration::from_secs(5));
             if let Some(child) = lock(&shared.child).as_mut() {
@@ -1425,6 +1789,9 @@ mod tests {
             pending: Mutex::new(HashMap::new()),
             allowed: Mutex::new(HashSet::new()),
             seen_text: Mutex::new(HashMap::new()),
+            reply_blocks: Mutex::new(HashMap::new()),
+            replies: Mutex::new(Vec::new()),
+            folder: PathBuf::from("/study"),
             stderr_tail: Mutex::new(String::new()),
             closing: AtomicBool::new(false),
             interrupting: AtomicBool::new(false),
@@ -1467,5 +1834,311 @@ mod tests {
         assert!(!is_session_id("--dangerously-skip-permissions"));
         assert!(!is_session_id("a b"));
         assert!(!is_session_id(""));
+    }
+
+    #[test]
+    fn a_reply_streams_from_its_unfinished_input() {
+        let whole = r#"{"text": "Right: $\\frac{3}{4}$.\n\n**Task.** Say \"why\" é 😀"}"#;
+        let decoded = "Right: $\\frac{3}{4}$.\n\n**Task.** Say \"why\" é 😀";
+        assert_eq!(partial_text(whole), decoded);
+        // Fed a few bytes at a time, the pieces add up to the whole text, and
+        // an escape cut in two waits for its other half.
+        let mut stream = ReplyStream::default();
+        let mut shown = String::new();
+        let bytes = whole.as_bytes();
+        let mut start = 0;
+        while start < bytes.len() {
+            let mut end = (start + 3).min(bytes.len());
+            while !whole.is_char_boundary(end) {
+                end += 1;
+            }
+            shown.push_str(&stream.push(&whole[start..end]));
+            assert!(decoded.starts_with(&shown), "{shown:?}");
+            start = end;
+        }
+        assert_eq!(shown, decoded);
+        assert_eq!(partial_text(r#"{"te"#), "");
+        assert_eq!(partial_text(r#"{"text": "a\"#), "a");
+        assert_eq!(partial_text(r#"{"text": "a\u00"#), "a");
+    }
+
+    #[test]
+    fn the_reply_tool_is_known_by_its_plugin_name() {
+        assert!(is_reply_tool(Some(
+            "mcp__plugin_magnesium_magnesium__reply"
+        )));
+        assert!(!is_reply_tool(Some("mcp__other__reply")));
+        assert!(!is_reply_tool(Some(
+            "mcp__plugin_magnesium_magnesium__learning_step"
+        )));
+        assert!(!is_reply_tool(None));
+    }
+
+    #[test]
+    fn the_working_line_names_the_work_and_never_a_tool_command_or_outside_path() {
+        let folder = Path::new("/study/stats");
+        let line = |tool: &str, input: Value| doing(tool, &input, folder);
+        assert_eq!(
+            line(
+                "Write",
+                json!({"file_path": "/study/stats/Study/midterm/paper-2.md"})
+            )
+            .as_deref(),
+            Some("writing paper 2")
+        );
+        assert_eq!(
+            line(
+                "Read",
+                json!({"file_path": "/study/stats/week4-slides.pdf"})
+            )
+            .as_deref(),
+            Some("reading week4 slides")
+        );
+        assert_eq!(
+            line("Read", json!({"file_path": "Study/midterm/answer_key.md"})).as_deref(),
+            Some("reading answer key")
+        );
+        // Outside the study folder, in .magnesium, or up and out: no name.
+        for path in [
+            "/Users/me/secret-plans.md",
+            "/study/stats/.magnesium/config.toml",
+            "/study/stats/../other/x.md",
+        ] {
+            assert_eq!(
+                line("Read", json!({"file_path": path})).as_deref(),
+                Some("reading"),
+                "{path}"
+            );
+        }
+        assert_eq!(
+            line(
+                "Bash",
+                json!({"command": "cd Study && latexmk -pdf paper-2.tex"})
+            )
+            .as_deref(),
+            Some("building the papers")
+        );
+        assert_eq!(
+            line(
+                "Bash",
+                json!({"command": "rm -rf /tmp/x", "description": "Clean up"})
+            ),
+            None
+        );
+        assert_eq!(
+            line("mcp__plugin_magnesium_magnesium__search_sources", json!({})).as_deref(),
+            Some("searching your course material")
+        );
+        assert_eq!(line("mcp__other__thing", json!({})), None);
+        for tool in [
+            "Write",
+            "Read",
+            "Grep",
+            "WebSearch",
+            "WebFetch",
+            "Bash",
+            "mcp__plugin_magnesium_magnesium__learning_step",
+        ] {
+            let words = line(
+                tool,
+                json!({"file_path": "/study/stats/a.md", "command": "latexmk"}),
+            )
+            .unwrap();
+            assert!(
+                !words.contains(tool) && !words.contains("mcp") && !words.contains("latexmk"),
+                "{words}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lesson_loads_the_nine_tools_magnesiums_plugin_and_nothing_of_the_learners() {
+        let folder = Path::new("/study/stats");
+        let plugin = Path::new("/home/me/Library/Application Support/magnesium/claude-plugin");
+        let args = lesson_args(folder, Some(plugin));
+        let after = |flag: &str| {
+            let at = args
+                .iter()
+                .position(|a| a == flag)
+                .unwrap_or_else(|| panic!("{flag} in {args:?}"));
+            args[at + 1].clone()
+        };
+        assert_eq!(after("--setting-sources"), "project,local");
+        assert_eq!(
+            after("--tools"),
+            "Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash"
+        );
+        assert_eq!(after("--model"), MODEL);
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "a lesson thinks as in a terminal"
+        );
+        assert_eq!(after("--plugin-dir"), plugin.display().to_string());
+        let settings: Value = serde_json::from_str(&after("--settings")).unwrap();
+        assert_eq!(settings["sandbox"]["enabled"], true);
+        assert_eq!(settings["sandbox"]["allowUnsandboxedCommands"], false);
+        assert_eq!(settings["sandbox"]["autoAllowBashIfSandboxed"], false);
+        let deny: Vec<&str> = settings["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(
+            deny.contains(&"Write(//study/stats/.magnesium/**)"),
+            "{deny:?}"
+        );
+        assert!(
+            deny.contains(&"Edit(//study/stats/.magnesium/**)"),
+            "{deny:?}"
+        );
+        assert!(!args.iter().any(|a| a == "--bare"));
+        assert!(!lesson_args(folder, None)
+            .iter()
+            .any(|a| a == "--plugin-dir"));
+    }
+
+    /// A conversation with no program behind it, and the events it shows.
+    fn listening() -> (Arc<Shared>, Arc<Mutex<Vec<AgentEvent>>>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let kept = Arc::clone(&seen);
+        let shared = Arc::new(Shared {
+            sink: Arc::new(move |event| lock(&kept).push(event)),
+            stdin: Mutex::new(None),
+            child: Mutex::new(None),
+            session_id: Mutex::new(None),
+            pending: Mutex::new(HashMap::new()),
+            allowed: Mutex::new(HashSet::new()),
+            seen_text: Mutex::new(HashMap::new()),
+            reply_blocks: Mutex::new(HashMap::new()),
+            replies: Mutex::new(Vec::new()),
+            folder: PathBuf::from("/study"),
+            stderr_tail: Mutex::new(String::new()),
+            closing: AtomicBool::new(false),
+            interrupting: AtomicBool::new(false),
+            awaiting: AtomicBool::new(false),
+            in_turn: AtomicBool::new(false),
+            ready_sent: AtomicBool::new(false),
+            counter: AtomicU64::new(0),
+            interrupts: AtomicU64::new(0),
+            payment: Payment::Plan,
+            trace: None,
+            started: Instant::now(),
+        });
+        (shared, seen)
+    }
+
+    #[test]
+    fn the_window_shows_a_reply_from_the_tool_as_it_is_written_and_only_once() {
+        let (shared, seen) = listening();
+        let stream = |event: Value| {
+            handle(
+                &shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        let name = "mcp__plugin_magnesium_magnesium__reply";
+        stream(json!({"type": "message_start"}));
+        stream(
+            json!({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "name": name, "input": {}}}),
+        );
+        for piece in [
+            r#"{"te"#,
+            r#"xt": "Two"#,
+            r#" thirds.\n\n**Task.**"#,
+            r#" Why?"}"#,
+        ] {
+            stream(
+                json!({"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": piece}}),
+            );
+        }
+        let reply = "Two thirds.\n\n**Task.** Why?";
+        handle(
+            &shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [
+            {"type": "tool_use", "name": name, "input": {"text": reply}}]}}),
+        );
+        // The tutor writes the same words again as ordinary text: nothing new
+        // is shown, not even while it streams.
+        stream(json!({"type": "message_start"}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}}),
+        );
+        stream(
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Two thirds."}}),
+        );
+        handle(
+            &shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
+            {"type": "text", "text": "Two thirds."}]}}),
+        );
+        // Text that says something new is still shown, whole.
+        handle(
+            &shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
+            {"type": "text", "text": "(Saved.)"}]}}),
+        );
+        let events = lock(&seen).clone();
+        let deltas: String = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, reply, "{events:?}");
+        let done: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDone { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(done, [reply, "(Saved.)"]);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::Working { .. })),
+            "{events:?}"
+        );
+        // The next turn starts with no replies remembered.
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        assert!(lock(&shared.replies).is_empty());
+    }
+
+    #[test]
+    fn each_step_is_named_when_it_starts() {
+        let (shared, seen) = listening();
+        let stream = |event: Value| {
+            handle(
+                &shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start"}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}}),
+        );
+        stream(
+            json!({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "name": "mcp__plugin_magnesium_magnesium__learning_step", "input": {}}}),
+        );
+        stream(
+            json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "name": "Bash", "input": {}}}),
+        );
+        let lines: Vec<Option<String>> = lock(&seen)
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Working { doing } => Some(doing.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                Some("thinking".to_owned()),
+                Some("saving your work".to_owned()),
+                None
+            ]
+        );
     }
 }

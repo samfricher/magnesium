@@ -892,7 +892,7 @@ fn served_instructions_repair_sure_mistakes_first() {
 }
 
 #[test]
-fn served_orientation_aims_its_one_question_near_the_top() {
+fn served_orientation_opens_a_new_topic_with_three_graded_questions() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let host = "claude";
@@ -907,11 +907,13 @@ fn served_orientation_aims_its_one_question_near_the_top() {
         .unwrap()
         .to_owned();
     for rule in [
-        "Ask at most one discriminating question at a time.",
-        "Aim it at the hardest step the goal needs that the learner might already know, not at the basics,",
-        "Pose it as one concrete case that takes under a minute to answer, never as a definition to state; names and symbols come after the learner has done a step.",
-        "After a confident correct answer, aim any further question sharply higher. Ask a basic question only after a miss.",
-        "You test positive: about how likely is it you have it?\", not a request to state Bayes' rule.",
+        "When a lesson starts on a topic with no answer in the record, ask up to three opening questions, one per turn: an easy one, one from the middle of the route, then the hardest step the goal needs.",
+        "Each is one concrete case that takes about a minute to answer, never a definition to state; names and symbols come after the learner has done a step.",
+        "Explain nothing between them. Record each answer as an attempt, as any first try.",
+        "Stop at the first miss, and start teaching there: say in one line what the learner got right, build on it, and do not teach it again.",
+        "After three right answers, aim higher",
+        "Skip the set when the record already holds answers on the topic, as the session start's earlier_answers or a memory shows, for a plain factual question, or when the learner says where to start.",
+        "Then ask at most one discriminating question at a time",
     ] {
         assert!(text.contains(rule), "{host}/orient_and_probe: {rule}");
     }
@@ -1166,7 +1168,7 @@ fn every_stage_serves_the_core_rules() {
     for rule in [
         "teaches one idea in under 200 words and ends with one task the learner answers in chat.",
         "they guess what comes next and why.",
-        "A new topic, and a question from a learner who is lost, get one concrete case of the target idea that takes under a minute to answer.",
+        "A new topic opens with orient-and-probe's opening questions, each one concrete case; a question from a learner who is lost gets one concrete case of the target idea. Each takes under a minute to answer.",
         "Names, symbols and definitions come after the learner has done a step.",
         "For a lost learner, the case is about the idea in their question, in plain words with no code or symbols until they answer, and is the whole reply, with no explanation and no new terms.",
         "A plain factual question about something already introduced, such as what a name stands for, gets its answer in one line, with no task and no question back.",

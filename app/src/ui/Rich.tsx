@@ -7,7 +7,8 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { renderInline, renderMarkdown, withoutOpenMath } from "../render";
+import { renderInline, renderMarkdown, setSourcesApart, withoutOpenMath } from "../render";
+import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
 
@@ -124,10 +125,21 @@ type Props = {
   /** False while the text is still being written. Diagrams wait for the end. */
   final: boolean;
   onNote?: (note: string) => void;
+  /**
+   * Whether a link to a PDF or a text file in the study folder opens. False
+   * while the learner has yet to answer the task in this reply, when it reads
+   * as plain text.
+   */
+  linksOpen?: boolean;
+  /** Called with a link that opens a source beside the lesson. Without it such a link opens in the system's viewer. */
+  onSource?: (source: SourceRef) => void;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote }: Props) {
-  const html = useMemo(() => renderMarkdown(final ? text : withoutOpenMath(text)), [text, final]);
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource }: Props) {
+  const html = useMemo(
+    () => (onSource ? setSourcesApart(renderMarkdown(final ? text : withoutOpenMath(text)), linksOpen) : renderMarkdown(final ? text : withoutOpenMath(text))),
+    [text, final, linksOpen, onSource],
+  );
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -154,6 +166,11 @@ export const Rich = memo(function Rich({ text, final, onNote }: Props) {
     if (!link) return;
     const href = link.getAttribute("href") ?? "";
     if (href === "" || href.startsWith("#")) return;
+    const source = onSource ? sourceRef(href) : null;
+    if (source) {
+      if (linksOpen) onSource?.(source);
+      return;
+    }
     const api = await core();
     try {
       if (/^https?:\/\//i.test(href)) await api.openUrl(href);

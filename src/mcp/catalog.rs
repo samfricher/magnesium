@@ -9,14 +9,35 @@ pub(crate) const CANONICAL_OPERATIONS: [&str; 5] = [
     "search_sources",
     "sources",
 ];
+/// The tool that carries the tutor's reply to the learner. It is offered only
+/// in a session the study window starts, which the window marks with
+/// [`SURFACE_ENV`]. Its input streams to the window as the tutor writes it,
+/// where text after a tool call would arrive in one piece.
+pub(crate) const REPLY_TOOL: &str = "reply";
+pub(crate) const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
+pub(crate) fn window_surface() -> bool {
+    std::env::var(SURFACE_ENV).is_ok_and(|surface| surface == "window")
+}
 pub(crate) fn tool_definitions() -> Vec<Tool> {
+    tool_definitions_for(window_surface())
+}
+pub(crate) fn tool_definitions_for(window: bool) -> Vec<Tool> {
     CANONICAL_OPERATIONS
         .iter()
-        .filter_map(|name| get_tool(name))
+        .copied()
+        .chain(window.then_some(REPLY_TOOL))
+        .filter_map(|name| tool_for(name, window))
         .collect()
 }
 pub(crate) fn get_tool(name: &str) -> Option<Tool> {
+    tool_for(name, window_surface())
+}
+fn tool_for(name: &str, window: bool) -> Option<Tool> {
     let (description, schema) = match name {
+        REPLY_TOOL if window => (
+            "Show your reply to the learner. In this session the learner sees only what this tool sends, as you write it. Record the answer's observation and attempt first; then put the whole reply, task included, in text, as you would write it in chat. When a memory edit or a checkpoint is due, set save_after and send them in one learning_step after this call; otherwise the turn ends here. Write no other text. One call per turn.",
+            generated_schema::<crate::adapter::ReplyRequest>(),
+        ),
         "context" => (
             "Read workspace learner-state status or prepare current descriptions for the goal.",
             generated_schema::<crate::adapter::ContextRequest>(),
@@ -49,7 +70,7 @@ pub(crate) fn get_tool(name: &str) -> Option<Tool> {
     };
     let tool = Tool::new(name.to_owned(), description, schema).annotate(
         ToolAnnotations::new()
-            .read_only(name != "learning_step")
+            .read_only(!matches!(name, "learning_step" | REPLY_TOOL))
             .destructive(false),
     );
     Some(tool)

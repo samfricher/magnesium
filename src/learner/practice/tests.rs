@@ -239,3 +239,87 @@ fn a_quick_check_follows_the_rules_of_26() {
         (Some(Effect::Restarted), 0, Some(day(3)))
     );
 }
+
+#[test]
+fn a_right_answer_reached_with_a_hint_is_asked_cold_the_next_day_and_keeps_its_passes() {
+    for help in [AttemptHelp::Hint, AttemptHelp::Step] {
+        // Made by the helped answer itself.
+        let mut check = item(Origin::Chat);
+        check.events = vec![event(
+            1,
+            EventKind::Made,
+            0,
+            Some(answer(FirstTry::Right, help, false)),
+        )];
+        let state = derive(&check, None);
+        assert_eq!((state.passes, state.next_on), (0, Some(day(1))), "{help:?}");
+        assert!(state.misses.is_empty(), "a helped answer is not a miss");
+        // Asked cold the next day, it passes, and is next due 3 days on.
+        check.events.push(right(1, 2));
+        assert_eq!(derive(&check, None).passes, 1);
+        // Helped again before that: back to the next day, its pass kept.
+        check.events.push(event(
+            3,
+            EventKind::Attempt,
+            2,
+            Some(answer(FirstTry::Right, help, false)),
+        ));
+        let state = derive(&check, None);
+        assert_eq!(
+            (state.effect_of(3), state.passes, state.next_on),
+            (Some(Effect::Helped), 1, Some(day(3)))
+        );
+        // On the due day, an answer after a hint earns no pass and stays due.
+        check.events.push(event(
+            4,
+            EventKind::Attempt,
+            3,
+            Some(answer(FirstTry::Right, help, false)),
+        ));
+        let state = derive(&check, None);
+        assert_eq!(
+            (state.effect_of(4), state.passes, state.next_on),
+            (Some(Effect::Helped), 1, Some(day(3)))
+        );
+    }
+}
+
+#[test]
+fn i_dont_know_brings_a_check_the_next_day_and_a_declined_due_check_stays_free() {
+    // "I don't know" on a new task makes a check for the next day.
+    let mut check = item(Origin::Chat);
+    check.events = vec![event(
+        1,
+        EventKind::Made,
+        0,
+        Some(answer(FirstTry::Declined, AttemptHelp::None, false)),
+    )];
+    let state = derive(&check, None);
+    assert_eq!((state.passes, state.next_on), (0, Some(day(1))));
+    assert!(state.misses.is_empty(), "a decline is not a miss");
+    // Declined when due: free, still due.
+    check.events.push(event(
+        2,
+        EventKind::Attempt,
+        1,
+        Some(answer(FirstTry::Declined, AttemptHelp::None, false)),
+    ));
+    let state = derive(&check, None);
+    assert_eq!(
+        (state.effect_of(2), state.next_on),
+        (Some(Effect::Declined), Some(day(1)))
+    );
+    // Passed, then "I don't know" before the next is due: the next day again.
+    check.events.push(right(1, 3));
+    check.events.push(event(
+        4,
+        EventKind::Attempt,
+        2,
+        Some(answer(FirstTry::Declined, AttemptHelp::None, false)),
+    ));
+    let state = derive(&check, None);
+    assert_eq!(
+        (state.effect_of(4), state.passes, state.next_on),
+        (Some(Effect::Declined), 0, Some(day(3)))
+    );
+}

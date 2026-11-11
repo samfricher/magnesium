@@ -8,6 +8,8 @@
 //!   progress page show.
 //! - [`activity`] keeps the days the learner studied, and [`find`] looks for
 //!   study folders set up in a terminal.
+//! - [`material`] copies course material the learner adds into the study
+//!   folder and words what search can and cannot read of it.
 //! - [`manager`] holds one open study folder and its one conversation.
 //!
 //! No teaching rule lives here. The runtime and its plugin hold them all, so
@@ -21,6 +23,7 @@ pub mod find;
 pub mod gaplog;
 pub mod install;
 pub mod manager;
+pub mod material;
 pub mod paths;
 pub mod peek;
 pub mod runtime;

@@ -17,10 +17,10 @@ const BUNDLE_VERSION: u64 = 2;
 const SUPPORTED_SCHEMA: u64 = 2;
 /// Caps the instruction text in one load. Across every stage, the MCP text
 /// block adds at most about 4% of JSON escapes and 477 bytes of fields, so
-/// 32 KiB of text makes an MCP text block of at most about 34,600 bytes. The
+/// 36 KiB of text makes an MCP text block of at most about 38,800 bytes. The
 /// binding host limit is higher: Claude Code saves a result over 50,000
 /// characters to a file.
-const RESPONSE_LIMIT: usize = 32 * 1024;
+const RESPONSE_LIMIT: usize = 36 * 1024;
 const MAX_APPROVED_ASSET_BYTES: usize = 1024 * 1024;
 const MAX_BUNDLE_DIRECTORY_DEPTH: usize = 4;
 const MAX_APPROVED_MANIFEST_BYTES: usize = 64 * 1024;

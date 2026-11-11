@@ -188,6 +188,18 @@ fn one_process_holds_a_lesson_across_several_turns() {
         "bare mode would skip Magnesium's hooks"
     );
     assert!(args.contains(&"--include-partial-messages"));
+    // A lesson loads nine of Claude Code's tools, the folder's settings only,
+    // and no account connector, and Magnesium's server knows it is the
+    // window's, so it offers its reply tool.
+    let after = |flag: &str| args.iter().position(|a| *a == flag).map(|at| args[at + 1]);
+    assert_eq!(after("--setting-sources"), Some("project,local"));
+    assert_eq!(
+        after("--tools"),
+        Some("Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash")
+    );
+    assert_eq!(after("--model"), Some(mg_core::claude::MODEL));
+    assert_eq!(starts[0]["surface"], "window");
+    assert_eq!(starts[0]["connectors"], "false");
     assert_eq!(
         Path::new(starts[0]["cwd"].as_str().unwrap())
             .canonicalize()

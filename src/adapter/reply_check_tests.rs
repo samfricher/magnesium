@@ -297,3 +297,92 @@ fn notice_limits_match_the_claude_plugin_hooks() {
         );
     }
 }
+fn deliveries(store: &crate::learner::LearnerStore, host: &HostIdentity) -> Vec<(String, String)> {
+    let context = host_context(host);
+    let mut statement = store
+        .conn
+        .prepare("SELECT external_event_key,text FROM learning_events WHERE host_thread_id=?1 AND speaker='tutor' AND kind='delivery' ORDER BY event_no")
+        .unwrap();
+    statement
+        .query_map([&context.host_thread_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+}
+#[test]
+fn a_reply_from_the_window_tool_is_kept_once_and_answers_its_prompt() {
+    let (root, store, host) = claude_lesson();
+    let context = host_context(&host);
+    claude_prompt(&root, &host, "one");
+    let long = "word ".repeat(300);
+    host_reply(&root, &context, &long).unwrap();
+    // A repeated call with the same words keeps one reply.
+    host_reply(&root, &context, &long).unwrap();
+    // The end-of-turn hook sees the same words, or none, and keeps nothing more.
+    claude_stop(&root, &host, "one", long.trim()).unwrap();
+    assert_eq!(deliveries(&store, &host).len(), 1);
+    let learner_key = native_capture::event_key(&host.stored_turn_id("one").unwrap());
+    assert_eq!(deliveries(&store, &host)[0].0, reply_key(&learner_key, 1));
+    assert_eq!(answered_key(&reply_key(&learner_key, 2)), learner_key);
+    // The reply check pairs it with the prompt it answers.
+    let second = claude_prompt(&root, &host, "two");
+    assert!(second.contains(" Previous reply: 300 words."), "{second}");
+
+    // Text written besides the reply is kept as well, so nothing is lost.
+    host_reply(&root, &context, "Right. Now: what is c?").unwrap();
+    claude_stop(&root, &host, "two", "One more line the tutor wrote.").unwrap();
+    let kept = deliveries(&store, &host);
+    assert_eq!(kept.len(), 3, "{kept:?}");
+    assert_eq!(kept[2].1, "One more line the tutor wrote.");
+
+    assert!(host_reply(&root, &context, "  ").is_err(), "an empty reply");
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn a_reply_outside_a_recording_lesson_is_shown_and_not_kept() {
+    let (root, store, _) = super::tests::fixture();
+    let host = HostIdentity::claude("no-lesson").unwrap();
+    host_reply(
+        &root,
+        &host_context(&host),
+        "Hello. What would you like to learn?",
+    )
+    .unwrap();
+    assert!(deliveries(&store, &host).is_empty());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn a_learning_step_after_the_reply_is_known_as_the_turns_last_write() {
+    let (root, store, host) = claude_lesson();
+    let context = host_context(&host);
+    claude_prompt(&root, &host, "one");
+    assert!(!replied_this_turn(&root, &host).unwrap(), "no reply yet");
+    host_reply(&root, &context, "Right. Now: what is c?").unwrap();
+    assert!(replied_this_turn(&root, &host).unwrap());
+    // The next learner message starts a turn with no reply.
+    claude_prompt(&root, &host, "two");
+    assert!(!replied_this_turn(&root, &host).unwrap());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn a_refused_save_after_the_reply_gets_one_retry() {
+    let (root, store, host) = claude_lesson();
+    claude_prompt(&root, &host, "one");
+    host_reply(&root, &host_context(&host), "Right. Now: what is c?").unwrap();
+    assert!(
+        !refused_save_after_reply(&root, &host).unwrap(),
+        "the first refusal: retry"
+    );
+    assert!(
+        refused_save_after_reply(&root, &host).unwrap(),
+        "the retry refused too: the turn ends"
+    );
+    // A new turn starts with its own retry.
+    claude_prompt(&root, &host, "two");
+    assert!(!refused_save_after_reply(&root, &host).unwrap());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

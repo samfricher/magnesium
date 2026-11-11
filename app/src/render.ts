@@ -14,6 +14,8 @@ import DOMPurify from "dompurify";
 import katex from "katex";
 import { marked } from "marked";
 
+import { sourceRef } from "./sources";
+
 type Math = { tex: string; display: boolean };
 
 const token = (index: number) => `MGMATH${index}ENDMG`;
@@ -312,4 +314,53 @@ export function renderPlain(src: string): string {
 /** Whether the text holds mathematics the page would draw. */
 export function hasMath(src: string): boolean {
   return liftMath(src).math.length > 0;
+}
+
+const tasks = new Map<string, boolean>();
+
+/**
+ * Whether a reply sets a task: the same test that draws the task box. The
+ * page closes a source when the tutor poses the next one.
+ */
+export function hasTask(src: string): boolean {
+  let found = tasks.get(src);
+  if (found === undefined) {
+    found = renderMarkdown(src).includes('class="task"');
+    if (tasks.size > 400) tasks.clear();
+    tasks.set(src, found);
+  }
+  return found;
+}
+
+/** The links in a reply that open a source beside the lesson, in the order written. */
+export function sourceLinks(src: string): { text: string; href: string }[] {
+  const holder = document.createElement("template");
+  holder.innerHTML = renderMarkdown(src);
+  return Array.from(holder.content.querySelectorAll("a[href]"))
+    .map((link) => ({ text: (link.textContent ?? "").trim(), href: link.getAttribute("href") ?? "" }))
+    .filter((link) => link.text !== "" && sourceRef(link.href) !== null);
+}
+
+/**
+ * Mark the links that open a source beside the lesson. While `open` is false
+ * they are plain text, not links: a passage next to a question often holds
+ * the answer, so it stays shut until the learner has answered.
+ */
+export function setSourcesApart(html: string, open: boolean): string {
+  if (!html.includes("<a ")) return html;
+  const holder = document.createElement("template");
+  holder.innerHTML = html;
+  const links = Array.from(holder.content.querySelectorAll("a[href]")).filter((a) => sourceRef(a.getAttribute("href") ?? "") !== null);
+  if (links.length === 0) return html;
+  for (const link of links) {
+    if (open) {
+      link.classList.add("source");
+      continue;
+    }
+    const plain = document.createElement("span");
+    plain.className = "source-shut";
+    plain.replaceChildren(...Array.from(link.childNodes));
+    link.replaceWith(plain);
+  }
+  return holder.innerHTML;
 }

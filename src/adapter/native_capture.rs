@@ -200,10 +200,41 @@ pub(crate) fn invalidate(workspace: &Workspace, host: &HostContext) -> Result<()
 /// hook's text and the echo agree; the first line keeps its indentation.
 /// Every matched pair is removed in one pass, so applying this twice changes
 /// nothing. Other hosts' text stays exact.
+///
+/// A message that opens with one of Magnesium's own commands, such as the
+/// study window's `/magnesium:learn <goal>`, is certified as the words after
+/// the command. The hook sees the whole line, but the tutor sees the command
+/// expanded into its skill, and echoes either the whole line or the goal
+/// alone; both now give the same text. What is kept is still exactly what the
+/// learner typed after the command. A command with nothing after it is kept
+/// whole.
 pub(crate) fn learner_text<'a>(host: &HostContext, text: &'a str) -> Cow<'a, str> {
     if host.host_kind != "claude" {
         return Cow::Borrowed(text);
     }
+    match without_paste_tags(text) {
+        Cow::Borrowed(text) => Cow::Borrowed(without_magnesium_command(text)),
+        Cow::Owned(text) => Cow::Owned(without_magnesium_command(&text).to_owned()),
+    }
+}
+/// The words after a leading `/magnesium:<skill>` command, or the text as it
+/// is. Applying it twice changes nothing more, unless the learner typed the
+/// command twice.
+fn without_magnesium_command(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("/magnesium:") else {
+        return text;
+    };
+    let name_end = rest
+        .find(|c: char| !(c.is_ascii_lowercase() || c == '-'))
+        .unwrap_or(rest.len());
+    let (name, after) = rest.split_at(name_end);
+    if name.is_empty() || !(after.is_empty() || after.starts_with(char::is_whitespace)) {
+        return text;
+    }
+    let words = trim_blank_lines(after.trim_start_matches([' ', '\t']));
+    if words.trim().is_empty() { text } else { words }
+}
+fn without_paste_tags(text: &str) -> Cow<'_, str> {
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     let mut open: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut removed = vec![false; lines.len()];

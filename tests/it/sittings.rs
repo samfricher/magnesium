@@ -481,8 +481,8 @@ fn served_instructions_ask_for_an_attempt_and_open_each_sitting_with_what_is_due
         };
         let review = served("review_and_transfer");
         for text in [
-            "with an attempt on their first try at a task you set (a guess gets none)",
-            "An answer needs only its observation and attempt; the runtime schedules quick checks from it.",
+            "with an attempt carrying the mark of every first try at a task you set, \"I don't know\" (declined, not wrong) and a right answer after a hint included (a guess gets none)",
+            "Most answers are ordinary: send only the observation and its attempt.",
             "Each sitting opens with what is due: the runtime's sitting opener lists the quick checks and paper redos.",
             "A decline is free and is recorded as the learner's; a no-quiz preference, refusal, skip or pause wins.",
         ] {

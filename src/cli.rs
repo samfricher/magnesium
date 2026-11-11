@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 10] = [
+const PUBLIC_COMMANDS: [(&str, &str); 11] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -20,6 +20,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 10] = [
     (
         "progress",
         "Show each skill's passes, the level, what is due, and the days with a marked answer",
+    ),
+    (
+        "searchable",
+        "Report whether the tutor's source search will read each named file, and why not",
     ),
     ("export", "Export a readable scope-safe learner-data copy"),
     ("memory", "Maintain workspace learner-memory search"),
@@ -101,6 +105,22 @@ pub(crate) fn command() -> ClapCommand {
                         })
                         .action(ArgAction::SetTrue),
                 )
+            } else if name == "searchable" {
+                subcommand
+                    .arg(
+                        Arg::new("paths")
+                            .value_name("PATH")
+                            .value_parser(value_parser!(PathBuf))
+                            .num_args(1..)
+                            .required(true)
+                            .help("Files in this study folder, from its root or from where you are"),
+                    )
+                    .arg(
+                        Arg::new("json")
+                            .long("json")
+                            .help("Print the answers as JSON instead of text")
+                            .action(ArgAction::SetTrue),
+                    )
             } else if name == "export" {
                 subcommand
                     .arg(
@@ -212,6 +232,7 @@ pub(crate) fn command() -> ClapCommand {
                             "user-prompt-submit",
                             "stop",
                             "session-end",
+                            "post-tool-use",
                             crate::hooks::RETIRED_EVENTS[0],
                             crate::hooks::RETIRED_EVENTS[1],
                         ])),

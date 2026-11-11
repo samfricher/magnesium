@@ -14,6 +14,8 @@ export type Live = {
   done: string[];
   streaming: string;
   status: Status;
+  /** The work in hand, in plain words, while the tutor works: "writing paper 2". */
+  doing: string | null;
   since: number;
   error: string | null;
   interrupted: boolean;
@@ -57,7 +59,7 @@ export function tutorText(live: Live): string {
 }
 
 function blankLive(learner: string, now: number, status: Status): Live {
-  return { learner, done: [], streaming: "", status, since: now, error: null, interrupted: false };
+  return { learner, done: [], streaming: "", status, doing: null, since: now, error: null, interrupted: false };
 }
 
 function asTurn(live: Live): Turn | null {
@@ -83,11 +85,15 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     case "turn_started":
       return { ...state, live: { ...live, status: "writing" }, notices: state.notices.filter((n) => n.kind !== "retry") };
     case "text_delta":
-      return { ...state, live: { ...live, streaming: live.streaming + event.text, status: "writing" } };
+      return { ...state, live: { ...live, streaming: live.streaming + event.text, status: "writing", doing: null } };
     case "text_done":
-      return { ...state, live: { ...live, done: [...live.done, event.text], streaming: "", status: "writing" } };
+      // A block already on screen is not shown twice.
+      if (live.done.includes(event.text)) return { ...state, live: { ...live, streaming: "", status: "writing", doing: null } };
+      return { ...state, live: { ...live, done: [...live.done, event.text], streaming: "", status: "writing", doing: null } };
     case "working":
-      return { ...state, live: { ...live, status: "working" } };
+      // The line names the latest work the window can name, and keeps it
+      // while the next step starts.
+      return { ...state, live: { ...live, status: "working", doing: event.doing ?? live.doing } };
     case "permission":
       return {
         ...state,

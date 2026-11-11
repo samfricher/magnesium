@@ -164,3 +164,24 @@ fn generated_write_schema_advertises_only_valid_basis_and_closed_choices() {
         serde_json::json!(["suggested", "done", "dismissed"])
     );
 }
+
+#[test]
+fn the_reply_tool_is_offered_only_in_a_session_the_window_starts() {
+    let names = |window: bool| -> Vec<String> {
+        tool_definitions_for(window)
+            .into_iter()
+            .map(|tool| tool.name.into_owned())
+            .collect()
+    };
+    assert_eq!(
+        names(false),
+        CANONICAL_OPERATIONS.map(String::from).to_vec()
+    );
+    let window = names(true);
+    assert_eq!(window.len(), CANONICAL_OPERATIONS.len() + 1);
+    assert_eq!(window.last().map(String::as_str), Some(REPLY_TOOL));
+    let reply = tool_for(REPLY_TOOL, true).unwrap();
+    let schema = serde_json::to_value(&reply.input_schema).unwrap();
+    assert_eq!(schema["required"], serde_json::json!(["text"]));
+    assert!(tool_for(REPLY_TOOL, false).is_none());
+}

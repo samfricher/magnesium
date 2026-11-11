@@ -739,6 +739,187 @@ pub(crate) fn add_to_result(
     if let Some(readings) = readings_json(&store.conn, workspace.root(), &plans) {
         result["readings"] = readings;
     }
+    if let Some(request) = committed
+        && let Some(answers) = earlier_answers(&store.conn, request, result)
+    {
+        result["earlier_answers"] = answers;
+    }
+}
+
+/// Words of four letters or more that name no topic, so they never make an
+/// answer an earlier answer on the goal.
+const COMMON_WORDS: &[&str] = &[
+    "about",
+    "after",
+    "again",
+    "also",
+    "answer",
+    "basic",
+    "basics",
+    "before",
+    "being",
+    "between",
+    "both",
+    "calculate",
+    "case",
+    "cases",
+    "check",
+    "compute",
+    "does",
+    "each",
+    "every",
+    "example",
+    "explain",
+    "find",
+    "first",
+    "from",
+    "give",
+    "have",
+    "help",
+    "into",
+    "just",
+    "know",
+    "learn",
+    "learning",
+    "lesson",
+    "like",
+    "make",
+    "more",
+    "most",
+    "much",
+    "need",
+    "only",
+    "other",
+    "over",
+    "practice",
+    "practise",
+    "problem",
+    "problems",
+    "question",
+    "questions",
+    "quick",
+    "review",
+    "same",
+    "show",
+    "solve",
+    "some",
+    "start",
+    "step",
+    "steps",
+    "study",
+    "such",
+    "teach",
+    "than",
+    "that",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "through",
+    "understand",
+    "understanding",
+    "using",
+    "very",
+    "want",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "will",
+    "with",
+    "without",
+    "work",
+    "working",
+    "would",
+    "write",
+    "your",
+];
+
+/// At a session start or resume, the learner's latest answers on the goal:
+/// those whose label or kind shares with it a word of four letters or more
+/// that names a topic, at most eight, newest first. The question is left
+/// out: its everyday words ("pizza", "what") say nothing about the topic. A new conversation can then tell that
+/// the record already holds answers on the topic, and skip the opening
+/// questions, without a search the tutor may not make. None when there are
+/// none.
+fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option<Value> {
+    if !matches!(
+        request["session"]["operation"].as_str(),
+        Some("start" | "resume")
+    ) {
+        return None;
+    }
+    let goal = request["session"]["goal"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| {
+            let id = request["session"]["session_id"].as_str()?;
+            conn.query_row(
+                "SELECT goal FROM learning_sessions WHERE session_id=?1",
+                [id],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+        })?;
+    let words = |text: &str| -> BTreeSet<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| word.chars().count() >= 4)
+            .map(str::to_lowercase)
+            .filter(|word| !COMMON_WORDS.contains(&word.as_str()))
+            .collect()
+    };
+    let wanted = words(&goal);
+    if wanted.is_empty() {
+        return None;
+    }
+    // This request's own answers are not earlier ones.
+    let own: BTreeSet<&str> = result["captured_event_ids"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let mut statement = conn
+        .prepare(
+            "SELECT label, question, mark, help, answered_at_ms, response_event_id,
+                    COALESCE(problem_kind, '') FROM attempts
+             ORDER BY answered_at_ms DESC, attempt_no DESC LIMIT 400",
+        )
+        .ok()?;
+    let rows = statement
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+            ))
+        })
+        .ok()?;
+    let answers: Vec<Value> = rows
+        .filter_map(std::result::Result::ok)
+        .filter(|(label, _, _, _, _, event, kind)| {
+            !own.contains(event.as_str()) && !wanted.is_disjoint(&words(&format!("{label} {kind}")))
+        })
+        .take(8)
+        .map(|(label, question, mark, help, at, _, _)| {
+            json!({
+                "label": label,
+                "question": question,
+                "mark": mark,
+                "help": help,
+                "day": crate::learner::practice::local_day(at).to_string(),
+            })
+        })
+        .collect();
+    (!answers.is_empty()).then_some(Value::Array(answers))
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ mod decode;
 mod indexes;
 mod keys;
 mod memories;
-mod observations;
+pub(crate) mod observations;
 mod receipts;
 mod reviews;
 mod session;

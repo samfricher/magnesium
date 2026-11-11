@@ -30,8 +30,11 @@ pub enum AgentEvent {
     /// came before it.
     TextDone { text: String },
     /// The tutor is doing something other than writing: reading, saving,
-    /// building a plan. The window shows one quiet line.
-    Working,
+    /// building a plan. The window shows one quiet line. `doing` names the
+    /// work in plain words, such as "writing paper 2", when the window can
+    /// tell; it never holds a tool's name, a command, or a path outside the
+    /// study folder.
+    Working { doing: Option<String> },
     /// The tutor wants to do something that needs the learner's yes.
     Permission {
         id: String,

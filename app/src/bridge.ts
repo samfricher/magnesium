@@ -30,6 +30,7 @@ async function tauriCore(): Promise<Core> {
           ],
         }),
       ),
+    pickMaterial: async () => list(await dialog.open({ multiple: true, title: "Add course material" })),
     pickNewFolder: async () => (await dialog.save({ title: "Make a new study folder", defaultPath: "My course" })) ?? null,
     openFolder: (path) => invoke("open_folder", { path }),
     newFolder: (path) => invoke("new_folder", { path }),
@@ -55,6 +56,22 @@ async function tauriCore(): Promise<Core> {
     progress: (target) => invoke("progress", { target }),
     setBlockMinutes: (minutes) => invoke("set_block_minutes", { minutes }),
     attach: (path, group) => invoke("attach", { path, group }),
+    addMaterial: (paths) => invoke("add_material", { paths }),
+    addPastedText: (text) => invoke("add_pasted_text", { text }),
+    onDrop: async (handler, hover) => {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      return getCurrentWebview().onDragDropEvent((event) => {
+        const drag = event.payload;
+        if (drag.type === "enter" || drag.type === "over") hover(true);
+        else if (drag.type === "leave") hover(false);
+        else if (drag.type === "drop") {
+          hover(false);
+          handler(drag.paths);
+        }
+      });
+    },
+    source: (path) => invoke("source", { path }),
+    sourcePdf: (path) => invoke("source_pdf", { path }),
     openFile: (path) => invoke("open_file", { path }),
     openUrl: (url) => invoke("open_url", { url }),
     image: (path) => invoke("image", { path }),

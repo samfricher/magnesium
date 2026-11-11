@@ -47,3 +47,16 @@ pub(crate) struct SourcesRequest {
     #[serde(default)]
     pub(crate) anchor_end: Option<u32>,
 }
+
+/// The tutor's reply, sent through the window's `reply` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReplyRequest {
+    /// The whole reply, as it would be written in chat.
+    pub(crate) text: String,
+    /// True when a memory edit or a checkpoint is due after this answer. The
+    /// turn then goes on to that one learning_step after the reply, instead
+    /// of ending at the reply.
+    #[serde(default)]
+    pub(crate) save_after: bool,
+}

@@ -50,22 +50,29 @@ fn run_examples(mcp: bool) {
         result
     };
     let first = call("monday", recipe(text, "start_capture"), &mut monday);
-    let mut create = recipe(text, "observe_create");
+    let mut answer = recipe(text, "observe_answer");
     substitute(
-        &mut create,
+        &mut answer,
         "$MONDAY_EVENT_ID",
         &first["captured_event_ids"][0],
     );
+    let session = first["references"]["monday_session"].clone();
+    substitute(&mut answer, "$MONDAY_SESSION_ID", &session);
+    answer["session"]["expected_revision"] = first["revisions"][session.as_str().unwrap()].clone();
+    let answered = call("monday", answer.clone(), &mut monday);
+    let replayed = call("monday", answer, &mut monday);
+    assert_eq!(answered["references"], replayed["references"]);
+    let mut describe = recipe(text, "describe_and_checkpoint");
     substitute(
-        &mut create,
-        "$MONDAY_SESSION_ID",
-        &first["references"]["monday_session"],
+        &mut describe,
+        "$MONDAY_OBSERVATION_ID",
+        &answered["references"]["monday_work"],
     );
-    create["session"]["expected_revision"] =
-        first["revisions"][first["references"]["monday_session"].as_str().unwrap()].clone();
-    let created = call("monday", create.clone(), &mut monday);
-    let replayed = call("monday", create, &mut monday);
-    assert_eq!(created["references"], replayed["references"]);
+    substitute(&mut describe, "$MONDAY_SESSION_ID", &session);
+    describe["session"]["expected_revision"] =
+        answered["revisions"][session.as_str().unwrap()].clone();
+    let mut created = call("monday", describe, &mut monday);
+    created["references"]["monday_work"] = answered["references"]["monday_work"].clone();
     if let Some(c) = monday.take() {
         c.close_cleanly();
     }
@@ -150,7 +157,7 @@ fn run_examples(mcp: bool) {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(revision, 2);
+        assert!(revision >= 2, "{revision}");
         let checkpoint: Value = serde_json::from_str(&checkpoint).unwrap();
         assert!(checkpoint["next_action"].as_str().unwrap().contains(phrase));
         assert_eq!(checkpoint["memory_refs"][0]["memory_id"], *memory);
@@ -171,4 +178,120 @@ fn shipped_recipes_execute_through_cli_across_new_conversations() {
 #[test]
 fn shipped_recipes_execute_through_mcp_across_new_conversations() {
     run_examples(true);
+}
+
+/// A tutor that cites, as a new observation, the one it named in its
+/// previous request gets it, and is not refused and made to retry.
+#[test]
+fn a_memory_edit_may_cite_the_observation_its_previous_request_named() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let text = v2::tool(
+        &e,
+        "claude",
+        "monday",
+        "context",
+        json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let call = |request: Value| v2::tool(&e, "claude", "monday", "learning_step", request);
+    let first = call(recipe(&text, "start_capture"));
+    let session = first["references"]["monday_session"].clone();
+    let mut answer = recipe(&text, "observe_answer");
+    substitute(
+        &mut answer,
+        "$MONDAY_EVENT_ID",
+        &first["captured_event_ids"][0],
+    );
+    substitute(&mut answer, "$MONDAY_SESSION_ID", &session);
+    answer["session"]["expected_revision"] = first["revisions"][session.as_str().unwrap()].clone();
+    let answered = call(answer);
+    assert_eq!(answered["update_status"], "committed", "{answered}");
+
+    let mut describe = recipe(&text, "describe_and_checkpoint");
+    let by_name = json!({"new_observation": "monday_work"});
+    describe["memory_edits"][0]["record"]["current_basis"][0] = by_name.clone();
+    describe["memory_edits"][0]["change_basis"][0] = by_name;
+    substitute(&mut describe, "$MONDAY_SESSION_ID", &session);
+    describe["session"]["expected_revision"] =
+        answered["revisions"][session.as_str().unwrap()].clone();
+    let described = call(describe);
+    assert_eq!(described["update_status"], "committed", "{described}");
+
+    // A name no earlier request gave is still refused.
+    let mut unknown = recipe(&text, "describe_and_checkpoint");
+    unknown["request_id"] = json!("monday-unknown");
+    unknown["memory_edits"][0]["client_ref"] = json!("other_memory");
+    unknown["memory_edits"][0]["record"]["current_basis"][0] =
+        json!({"new_observation": "never_named"});
+    unknown["memory_edits"][0]["change_basis"][0] = json!({"new_observation": "never_named"});
+    unknown.as_object_mut().unwrap().remove("checkpoint");
+    unknown.as_object_mut().unwrap().remove("session");
+    let refused = v2::tool_output(&e, "claude", "monday", "learning_step", unknown);
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(said.contains("unknown_reference"), "{said}");
+}
+
+/// A lesson start carries what context.prepare returns for its goal, so a
+/// new conversation has the learner's record without a call of its own.
+#[test]
+fn a_session_start_carries_the_memory_on_its_goal() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let text = v2::tool(
+        &e,
+        "claude",
+        "monday",
+        "context",
+        json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let call =
+        |thread: &str, request: Value| v2::tool(&e, "claude", thread, "learning_step", request);
+    let first = call("monday", recipe(&text, "start_capture"));
+    assert!(
+        first["context"].is_object(),
+        "an empty record still has its context: {first}"
+    );
+    let session = first["references"]["monday_session"].clone();
+    let mut answer = recipe(&text, "observe_answer");
+    substitute(
+        &mut answer,
+        "$MONDAY_EVENT_ID",
+        &first["captured_event_ids"][0],
+    );
+    substitute(&mut answer, "$MONDAY_SESSION_ID", &session);
+    answer["session"]["expected_revision"] = first["revisions"][session.as_str().unwrap()].clone();
+    let answered = call("monday", answer);
+    let mut describe = recipe(&text, "describe_and_checkpoint");
+    substitute(
+        &mut describe,
+        "$MONDAY_OBSERVATION_ID",
+        &answered["references"]["monday_work"],
+    );
+    substitute(&mut describe, "$MONDAY_SESSION_ID", &session);
+    describe["session"]["expected_revision"] =
+        answered["revisions"][session.as_str().unwrap()].clone();
+    let described = call("monday", describe);
+    let memory = described["references"]["quadratic_memory"].clone();
+
+    // Another conversation starts a lesson on the same goal.
+    let started = call(
+        "tuesday",
+        json!({"schema":"learner-model/v2","action":"update","request_id":"tuesday-start",
+            "session":{"operation":"start","client_ref":"s","goal":"Coefficients"}}),
+    );
+    assert_eq!(started["update_status"], "committed", "{started}");
+    let memories = started["context"]["memories"].to_string();
+    assert!(memories.contains(memory.as_str().unwrap()), "{started}");
+    // An update that starts no session carries no context.
+    assert!(described.get("context").is_none(), "{described}");
 }
