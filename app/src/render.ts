@@ -240,7 +240,7 @@ marked.setOptions({ gfm: true, breaks: false });
  * The words a tutor opens a task with. A paragraph that starts with one of
  * them in bold is the thing to do next, and the page sets it apart.
  */
-const TASK = /<p>(<strong>(?:task|check|quick check|question|your turn|try it|try this|redo|now you)\b[^<]{0,40}<\/strong>)/gi;
+const TASK = /<p>(<strong>(?:task|check|quick check|question|your turn|try it|try this|redo|paper redo|now you)\b[^<]{0,40}<\/strong>)/gi;
 
 export function renderMarkdown(src: string): string {
   const { text, math } = liftMath(src);

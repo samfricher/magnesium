@@ -2,12 +2,12 @@
 //!
 //! The whole state goes with the first message of a conversation. After
 //! that only what changed goes, so each turn's text stays small: the time,
-//! newly due quick checks, the help a kind of problem now needs, and the
-//! names already in use for skills with an open quick check.
+//! newly due quick checks and paper redos, the help a kind of problem now
+//! needs, and the names already in use for skills with an open quick check.
 
 use serde_json::Value;
 
-use crate::record::{clip, DueCheck, Lesson};
+use crate::record::{clip, DueCheck, DueRedo, Lesson};
 
 /// The facts a turn's state is made from, beyond the lesson itself.
 #[derive(Debug, Default)]
@@ -20,12 +20,15 @@ pub struct Facts {
     pub full: bool,
     /// Where the lesson stopped last time: the checkpoint's next action.
     pub stopped_at: Option<String>,
-    /// The learner chose to go on without the quick checks for now.
+    /// The learner chose to go on without what is due for now.
     pub skip_checks: bool,
     /// The quick checks newly due, to list in this turn.
     pub new_checks: Vec<DueCheck>,
-    /// Paper questions due for a redo.
-    pub redos_due: u64,
+    /// The paper redos newly due, to list in this turn.
+    pub new_redos: Vec<DueRedo>,
+    /// How long the learner took to answer the open task, when it is a
+    /// timed paper redo and the window saw it posed.
+    pub took: Option<std::time::Duration>,
     /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
     /// What the record knows about the learner on this goal: one line each.
@@ -68,8 +71,51 @@ fn check_line(check: &DueCheck) -> String {
     line
 }
 
-/// The text of `<lesson-state>` for one turn, or None when nothing is worth
-/// saying beyond the time.
+/// One paper redo, as the tutor needs it: the rows are the program's to
+/// record, the rest is for making and marking the question.
+fn redo_line(redo: &DueRedo) -> String {
+    let mut line = format!("{}. Tag \"{}\"", redo.number, redo.tag);
+    if !redo.from.is_empty() {
+        line.push_str(&format!(", from {}", redo.from.join(" and ")));
+    }
+    line.push('.');
+    if !redo.misses.is_empty() {
+        line.push_str(&format!(
+            " What went wrong: {}.",
+            redo.misses
+                .iter()
+                .map(|miss| clip(miss, 240))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
+    }
+    if redo.timed {
+        line.push_str(" Timed: it was lost for slowness, so it passes only in time.");
+    }
+    match (&redo.question, &redo.key) {
+        (Some(question), Some(key)) => line.push_str(&format!(
+            " Stored question: {} Key, for you alone until they answer: {}",
+            clip(question, 400),
+            clip(key, 400)
+        )),
+        (Some(question), None) => {
+            line.push_str(&format!(" Stored question: {}", clip(question, 400)))
+        }
+        _ => line.push_str(" No stored question: make a new one."),
+    }
+    line
+}
+
+/// A time as the tutor reads it: "4 min 10 s".
+fn minutes(took: std::time::Duration) -> String {
+    let seconds = took.as_secs();
+    match seconds / 60 {
+        0 => format!("{seconds} s"),
+        minutes => format!("{minutes} min {} s", seconds % 60),
+    }
+}
+
+/// The text of `<lesson-state>` for one turn.
 pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     let mut lines = vec![format!("Now: {}", facts.now)];
     if let Some(halt) = &facts.halt {
@@ -135,22 +181,35 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     }
     if facts.skip_checks {
         lines.push(
-            "The learner chose to go on without the quick checks for now. They stay due: do not pose them."
+            "The learner chose to go on without the quick checks and paper redos for now. They stay due: do not pose them."
                 .to_owned(),
         );
-    } else if !facts.new_checks.is_empty() {
-        lines.push(
-            "A new sitting has begun. Quick checks due, one at a time, before new material:"
+    } else {
+        if !facts.new_checks.is_empty() {
+            lines.push(
+                "A new sitting has begun. Quick checks due, one at a time, before new material:"
+                    .to_owned(),
+            );
+            lines.extend(facts.new_checks.iter().map(check_line));
+        } else if facts.full {
+            lines.push("Quick checks due: none".to_owned());
+        }
+        if !facts.new_redos.is_empty() {
+            lines.push(
+                if facts.new_checks.is_empty() {
+                    "A new sitting has begun. Paper redos due, one at a time, before new material:"
+                } else {
+                    "Paper redos due, one at a time, after the quick checks:"
+                }
                 .to_owned(),
-        );
-        lines.extend(facts.new_checks.iter().map(check_line));
-    } else if facts.full {
-        lines.push("Quick checks due: none".to_owned());
+            );
+            lines.extend(facts.new_redos.iter().map(redo_line));
+        }
     }
-    if facts.redos_due > 0 {
+    if let Some(took) = facts.took {
         lines.push(format!(
-            "Paper questions due for a redo: {}. They are done in a lesson with the Claude Code tutor, not here.",
-            facts.redos_due
+            "The open task is a timed paper redo: this message came {} after the window showed it.",
+            minutes(took)
         ));
     }
     if !facts.help.is_empty() {
@@ -225,7 +284,28 @@ mod tests {
             earlier_answers: vec![
                 json!({"day": "2026-11-11", "mark": "wrong", "help": "none", "question": "What is b?", "label": "sign of b"}),
             ],
-            redos_due: 2,
+            new_redos: vec![
+                DueRedo {
+                    number: 1,
+                    rows: vec!["midterm-1#1".into(), "midterm-1#4".into()],
+                    tag: "km".into(),
+                    timed: true,
+                    from: vec!["Diagnostic Q3".into(), "Mock A Q2".into()],
+                    misses: vec!["slope read as intercept".into()],
+                    question: None,
+                    key: None,
+                },
+                DueRedo {
+                    number: 2,
+                    rows: vec!["midterm-1#2".into()],
+                    tag: "rate law".into(),
+                    timed: false,
+                    from: vec![],
+                    misses: vec![],
+                    question: Some("Write the rate law.".into()),
+                    key: Some("v = k[A]".into()),
+                },
+            ],
             ..Facts::default()
         };
         let full = text(&lesson, &facts);
@@ -235,10 +315,14 @@ mod tests {
             "Open task: none",
             "- 2026-11-11 wrong, help none: \"What is b?\" (skill \"sign of b\")",
             "1. Skill \"sign of b\". Earlier misses: took b as 5. Stored question: What is b in x² − 3x? Key, for you alone until they answer: −3",
-            "Paper questions due for a redo: 2.",
+            "Paper redos due, one at a time, after the quick checks:",
+            "1. Tag \"km\", from Diagnostic Q3 and Mock A Q2. What went wrong: slope read as intercept. Timed: it was lost for slowness, so it passes only in time. No stored question: make a new one.",
+            "2. Tag \"rate law\". Stored question: Write the rate law. Key, for you alone until they answer: v = k[A]",
         ] {
             assert!(full.contains(part), "{part}\n{full}");
         }
+        // The rows are the program's to record: the tutor is not shown them.
+        assert!(!full.contains("midterm-1#"), "{full}");
         let later = text(
             &lesson,
             &Facts {
@@ -250,6 +334,39 @@ mod tests {
             },
         );
         assert!(!later.contains("Goal:"), "{later}");
+        assert!(!later.contains("redo"), "{later}");
+        // A sitting with redos alone, the learner's skip, and a timed answer.
+        let redos_only = text(
+            &lesson,
+            &Facts {
+                new_redos: facts.new_redos.clone(),
+                took: Some(std::time::Duration::from_secs(250)),
+                ..Facts::default()
+            },
+        );
+        assert!(
+            redos_only.contains(
+                "A new sitting has begun. Paper redos due, one at a time, before new material:"
+            ),
+            "{redos_only}"
+        );
+        assert!(
+            redos_only.contains("this message came 4 min 10 s after the window showed it"),
+            "{redos_only}"
+        );
+        let skipped = text(
+            &lesson,
+            &Facts {
+                skip_checks: true,
+                new_redos: facts.new_redos.clone(),
+                ..Facts::default()
+            },
+        );
+        assert!(
+            skipped.contains("They stay due: do not pose them."),
+            "{skipped}"
+        );
+        assert!(!skipped.contains("Tag \"km\""), "{skipped}");
         assert!(later.contains("\"discrete expected value\" (level full): if the learner is stuck on a new one: a partly worked example"), "{later}");
         assert_eq!(
             message("Now: x", "hello"),

@@ -27,7 +27,6 @@ const shots = [
   ["course-quiet", "course:quiet", 900],
   ["course-new-folder", "course:new", 900],
   ["course-new-lesson", "course:ask", 900],
-  ["course-magnesium", "course:magnesium", 900],
   ["course-material", "course:material", 1400],
   ["course-drop", "course:drop", 900],
   ["course-paste", "course:paste", 900],

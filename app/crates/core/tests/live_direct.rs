@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 use mg_core::agent::AgentEvent;
 use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
+use mg_core::host_client::{self, HostClient};
 use mg_core::store::Engine;
 use mg_core::{peek, Manager, Store};
 use rusqlite::{Connection, OpenFlags};
@@ -330,6 +331,133 @@ fn a_lesson_you_play() {
         .unwrap();
     }
     manager.shut_down();
+    std::mem::forget(scratch);
+}
+
+/// A plan with one paper question to redo, as a lesson with the Claude Code
+/// tutor leaves it: marked, repaired, and with the next question stored.
+/// The runtime is spoken to as that tutor's conversation would speak to it.
+/// Then the day's first sitting is made to look hours old, so the lesson
+/// under test opens a new one.
+fn a_paper_question_to_redo(scratch: &Scratch, question: &str, key: &str) {
+    let dir = scratch.folder.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | quadratic formula | took b as 5 in x² − 5x + 6 = 0, dropping its sign | K | taught the sign of b; two checks | | open |\n",
+    )
+    .unwrap();
+    let version = Command::new(&scratch.runtime)
+        .arg("--version")
+        .output()
+        .unwrap();
+    let version = String::from_utf8_lossy(&version.stdout)
+        .split_whitespace()
+        .last()
+        .unwrap()
+        .to_owned();
+    let host = HostClient::new(
+        scratch.runtime.clone(),
+        scratch.folder.clone(),
+        "0b0e7c3a-1111-4222-8333-444455556666".into(),
+        version,
+    );
+    let words = "Mark my Diagnostic";
+    let notice = host
+        .hook(
+            "user-prompt-submit",
+            "UserPromptSubmit",
+            json!({"prompt_id": "seed-1", "prompt": words}),
+        )
+        .unwrap()
+        .unwrap_or_default();
+    let ticket = host_client::ticket(&notice).expect("a capture ticket");
+    // The lesson's start opens the sitting, which brings the gap log in.
+    host.call(
+        "learning_step",
+        json!({"schema": "learner-model/v2", "action": "update", "request_id": "seed-start",
+            "native_capture": {"ticket": ticket, "text": words},
+            "session": {"operation": "start", "client_ref": "lesson", "goal": "Midterm 1"}}),
+    )
+    .unwrap();
+    let stored = host
+        .call(
+            "learning_step",
+            json!({"schema": "learner-model/v2", "action": "update", "request_id": "seed-next",
+                "practice": [{"item": "midterm-1#1", "next": {"question": question, "answer_key": key}}]}),
+        )
+        .unwrap();
+    assert_eq!(stored["update_status"], "committed", "{stored}");
+    host.close();
+    Connection::open(scratch.folder.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
+            [4 * 60 * 60 * 1000_i64],
+        )
+        .unwrap();
+}
+
+/// A sitting opens with the paper redo that is due, and the answer counts
+/// for its gap-log row. The mark is the tutor's: it is printed, not judged.
+#[test]
+#[ignore = "starts a model on your own subscription"]
+fn a_direct_lesson_opens_with_a_due_paper_redo_and_its_answer_counts_for_the_row() {
+    let scratch = Scratch::new();
+    let question = "Solve 2x² − 7x + 3 = 0.";
+    a_paper_question_to_redo(&scratch, question, "x = 3 or x = 1/2");
+    let (manager, events) = scratch.manager();
+    manager.open_session(false).unwrap();
+    manager
+        .send_new_lesson("I'm back. Let's continue.")
+        .unwrap();
+    let posed = turn(&manager, &events);
+    println!("turn 1: {posed:#?}");
+    assert!(
+        posed.reply.contains("Paper redo 1"),
+        "the reply poses the redo by its number: {}",
+        posed.reply
+    );
+    assert!(
+        !posed.reply.contains("midterm-1#") && !posed.reply.contains("1/2"),
+        "no row name and no key on screen: {}",
+        posed.reply
+    );
+
+    manager.send("x = 3 or x = 1/2").unwrap();
+    let marked = turn(&manager, &events);
+    println!("turn 2: {marked:#?}");
+    assert!(marked.notices.is_empty(), "{:?}", marked.notices);
+    let attempts = scratch.attempts();
+    println!("attempts: {attempts:#?}");
+    assert_eq!(attempts.len(), 1, "the answer has its mark");
+    assert_eq!(attempts[0]["label"], "quadratic formula");
+    // The answer names the row: the row holds an event for it.
+    let store = Connection::open_with_flags(
+        scratch.folder.join(".magnesium/state.sqlite"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let (counted, next): (i64, Option<String>) = store
+        .query_row(
+            "SELECT (SELECT count(*) FROM practice_events e WHERE e.item_id=i.item_id AND e.kind='attempt'),
+                    next_question
+             FROM practice_items i WHERE plan='midterm-1' AND row_no=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(counted, 1, "the answer counts for the row");
+    println!("the row's next question: {next:?}");
+    let log = fs::read_to_string(scratch.folder.join("Study/midterm-1/gap-log.md")).unwrap();
+    println!("gap log:\n{log}");
+    manager.shut_down();
+    println!("study folder: {}", scratch.folder.display());
     std::mem::forget(scratch);
 }
 
