@@ -42,7 +42,15 @@ fn help_lists_only_the_reserved_public_commands() {
 
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).expect("help is UTF-8");
-    for command in ["init", "memory", "update", "info", "digest", "export"] {
+    for command in [
+        "init",
+        "memory",
+        "update",
+        "info",
+        "digest",
+        "searchable",
+        "export",
+    ] {
         assert!(help.contains(command), "help omitted {command}");
     }
     for forbidden in ["_internal", "chat", "trace", "unlink", "link"] {

@@ -3,7 +3,9 @@
 // Nothing here ships a real course, a real grade or a real learner's words.
 
 import type { Actions } from "./App";
+import { tinyPdf } from "./demoPdf";
 import type {
+  Added,
   Account,
   Activity,
   AgentEvent,
@@ -20,6 +22,7 @@ import type {
   Row,
   RuntimeSetup,
   Setup,
+  Source,
   Turn,
 } from "./types";
 
@@ -311,7 +314,7 @@ const earlier: Turn[] = [
   ["1/Vmax", "Yes, $1/V_{max}$."],
   [
     "ok so what is Vmax",
-    "The line meets the y-axis where $1/[S] = 0$, so the intercept is $1/V_{max}$, not $V_{max}$.\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?",
+    "The line meets the y-axis where $1/[S] = 0$, so the intercept is $1/V_{max}$, not $V_{max}$.\n\nThe slide that draws it is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?",
   ],
 ].map(([learner, tutor], index) => ({ session: "demo", ms: Date.now() - (7 - index) * 60_000, learner, tutor, interrupted: false }));
 
@@ -322,6 +325,54 @@ const LOST = "One smaller case first. Take the reciprocal of one number.\n\n**Ta
 
 const DIAGRAM =
   "Here is the reading as a picture.\n\n```mermaid\ngraph LR\n  A[rate equation] --> B[take reciprocals]\n  B --> C{is 1/S zero?}\n  C -- yes --> D[intercept is 1 over Vmax]\n  C -- no --> E[slope is Km over Vmax]\n  D --> F[Vmax]\n  E --> G[Km]\n  F --> G\n```\n\n| 1/[S] | 1/v |\n|---|---|\n| 0 | 0.25 |\n| 1 | 0.75 |\n| 2 | 1.25 |\n| 4 | 2.25 |\n\n**Task.** Which column would change if the enzyme were twice as fast?";
+
+const SLIDE_LINES = [
+  "Enzymes speed up reactions",
+  "The rate equation",
+  "Michaelis and Menten",
+  "Initial rates",
+  "Saturation",
+  "Vmax and Km",
+  "Fitting a curve by eye",
+  "Why straight lines help",
+  "Taking reciprocals",
+  "Reciprocals of both sides",
+  "The Lineweaver-Burk plot",
+  "1/v against 1/[S]: the intercept is 1/Vmax",
+  "The slope is Km / Vmax",
+  "Worked example",
+];
+const SLIDES = () => tinyPdf(SLIDE_LINES);
+
+/** What the core would say of a cited file, for the demo's made-up course. */
+function demoSource(path: string): Source {
+  const name = path.split("/").pop() ?? path;
+  if (/key|solution|answer/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
+  if (/\.pdf$/i.test(path)) return { name, kind: "pdf", text: null, truncated: false, image: null };
+  if (/\.(md|txt)$/i.test(path)) {
+    return { name, kind: "text", text: "# Week 4\n\nThe intercept of the Lineweaver-Burk line is 1/Vmax.\nThe slope is Km/Vmax.", truncated: false, image: null };
+  }
+  throw new Error("The window shows PDFs, text and images beside a lesson. Other files stay closed.");
+}
+
+/** What adding these made-up files would say, worded as the core words it. */
+function material(paths: string[], pasted = false): Added {
+  const names = paths.map((path) => path.split("/").pop() ?? path);
+  const keys = names.filter((name) => /key|solution|answer/i.test(name) && !/tokens?/i.test(name));
+  const shown = names.filter((name) => !keys.includes(name));
+  const lines: string[] = [];
+  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}".` : `Added "${shown[0]}" to Study/materials.`);
+  else if (shown.length > 1) lines.push(`Added ${shown.length} files to Study/materials.`);
+  if (keys.length > 0) lines.push(`${keys.length} ${keys.length === 1 ? "file looks" : "files look"} like an answer ${keys.length === 1 ? "key" : "keys"}. ${keys.length === 1 ? "It is" : "They are"} added, and this window keeps ${keys.length === 1 ? "it" : "them"} closed.`);
+  const trouble = shown.flatMap((name) => {
+    if (/scan/i.test(name)) return [`"${name}" is a scan with no text, so its text cannot be searched.`];
+    if (/tokens?/i.test(name)) return [`Search leaves out "${name}" because its name has the word "tokens". Rename it and add it again.`];
+    if (/\.pptx?$/i.test(name)) return [`Search does not read .pptx files, so "${name}" cannot be searched. A PDF of it can be.`];
+    return [];
+  });
+  if (shown.length > 0) lines.push(...(trouble.length > 0 ? trouble : [shown.length === 1 ? "Search can read it." : "Search can read all of it."]));
+  return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
+}
 
 export function demoCore(): Core {
   const handlers = new Set<(event: AgentEvent) => void>();
@@ -375,6 +426,12 @@ export function demoCore(): Core {
       const decision = await new Promise<string>((done) => (waiting = done));
       return write(decision === "refuse" ? "No problem. I'll leave the paper unbuilt for now." : "Paper C is built. Sit it when you are ready.");
     }
+    if (lower.includes("(source)")) {
+      return write("Right, $V_{max} = 4$ µM/s. Look at the slide again while I set the next step: [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).");
+    }
+    if (lower.includes("(key)")) {
+      return write("The marking guide for this is [the answer key](Study/midterm-1/papers/PaperB-key.pdf).");
+    }
     if (lower.includes("diagram")) return write(DIAGRAM);
     if (lower.includes("slow")) {
       emit({ type: "working", doing: "writing paper 2" });
@@ -388,7 +445,7 @@ export function demoCore(): Core {
       return write(
         lower.includes("no checks")
           ? "No checks now; they stay due.\n\nYou stopped at step 3. The line meets the y-axis where $1/[S] = 0$.\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?"
-          : "Welcome back. Two quick checks first, then step 3.\n\n**Check 1 of 2.** A rate doubles when [S] doubles. Is [S] well below or well above Km? One line, with the reason.",
+          : "Welcome back. Two quick checks first, then step 3. The slide behind them is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Check 1 of 2.** A rate doubles when [S] doubles. Is [S] well below or well above Km? One line, with the reason.",
       );
     }
     if (lower.includes("limit")) {
@@ -419,6 +476,7 @@ export function demoCore(): Core {
     activity: async () => activity(),
     pickFolder: async () => "/Users/you/Study/Demo-Course",
     pickFiles: async () => ["/Users/you/Desktop/IMG_0412.heic"],
+    pickMaterial: async () => ["/Users/you/Desktop/Week 4 slides.pdf"],
     pickNewFolder: async () => "/Users/you/Study/New-Course",
     openFolder: async (path) => {
       const name = path.split("/").filter(Boolean).pop() ?? "Demo-Course";
@@ -484,6 +542,39 @@ export function demoCore(): Core {
       blockMinutes = minutes;
     },
     attach: async () => "Study/handed-in/working/2026-11-10/IMG_0412.jpg",
+    addMaterial: async (paths) => {
+      await wait(500);
+      return material(paths);
+    },
+    addPastedText: async () => {
+      await wait(300);
+      return material(["Pasted text 2026-11-11 14-03-22.txt"], true);
+    },
+    onDrop: async (handler, hover) => {
+      // A browser drops a file with a name and no path, which is enough to show the screens.
+      const over = (event: DragEvent) => {
+        if (!event.dataTransfer?.types.includes("Files")) return;
+        event.preventDefault();
+        hover(true);
+      };
+      const leave = () => hover(false);
+      const drop = (event: DragEvent) => {
+        event.preventDefault();
+        hover(false);
+        const names = Array.from(event.dataTransfer?.files ?? []).map((file) => `/Users/you/Desktop/${file.name}`);
+        if (names.length > 0) handler(names);
+      };
+      window.addEventListener("dragover", over);
+      window.addEventListener("dragleave", leave);
+      window.addEventListener("drop", drop);
+      return () => {
+        window.removeEventListener("dragover", over);
+        window.removeEventListener("dragleave", leave);
+        window.removeEventListener("drop", drop);
+      };
+    },
+    source: async (path) => demoSource(path),
+    sourcePdf: async () => SLIDES().buffer as ArrayBuffer,
     openFile: async (path) => {
       if (/key|solution/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
     },
@@ -562,9 +653,21 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       slow: "build my plan (slow)",
       limit: "one more (limit)",
       answer: "Vmax is 4 µM/s",
+      source: "Vmax is 4 µM/s (source)",
+      key: "show me the key (key)",
       math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
     };
     if (state && words[state]) await actions.say(words[state]);
+    if (state === "source" || state === "key") {
+      await wait(300);
+      await quiet();
+      if (state === "source") document.querySelector<HTMLButtonElement>('[data-role="source-chip"]')?.click();
+      else document.querySelector<HTMLAnchorElement>(".tutor a.source")?.click();
+    }
+    if (state === "material") {
+      await actions.addMaterial(["/Users/you/Desktop/Week 4 slides.pdf", "/Users/you/Desktop/Scanned lecture notes.pdf"]);
+    }
+    if (state === "drop") actions.setDragging(true);
     if (state === "stop") document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click();
     if (state === "earlier") document.querySelector<HTMLButtonElement>('[data-role="earlier"]')?.click();
     if (state === "plan") document.querySelector<HTMLButtonElement>('[data-role="track"]')?.click();
@@ -583,6 +686,18 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     actions.openPaper(null);
   } else if (screen === "course" && state === "ask") {
     actions.setAsking(true);
+  } else if (screen === "course" && state === "material") {
+    await actions.addMaterial([
+      "/Users/you/Desktop/Week 4 slides.pdf",
+      "/Users/you/Desktop/Scanned lecture notes.pdf",
+      "/Users/you/Desktop/api tokens.md",
+      "/Users/you/Desktop/Week 4 deck.pptx",
+      "/Users/you/Desktop/Midterm answer key.pdf",
+    ]);
+  } else if (screen === "course" && state === "drop") {
+    actions.setDragging(true);
+  } else if (screen === "course" && state === "paste") {
+    actions.pasteText("Bayes' rule: the posterior is proportional to the prior times the likelihood.");
   } else if (screen === "palette") {
     actions.setPalette(true);
   } else if (screen === "setup" || (screen === "welcome" && !state)) {

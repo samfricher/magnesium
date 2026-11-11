@@ -118,6 +118,16 @@ Add `--json` for the same facts as data. The study window reads them from there.
 
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
+## Add course material, and read a source beside the lesson
+
+In the study window, drop files on a course or a lesson, or choose them with the paperclip or the button on the course page. You can also paste text. The window copies each file into `Study/materials/` in the study folder, under its own name. Pasted text is saved there as a `.txt` file. The tutor's source search reads that folder like any other. A folder you make in the window offers this as its first step.
+
+After it adds, the window says in a few plain lines what it added and what search cannot read. A PDF with no text, such as a scan, is listed as one whose text cannot be searched. A file whose name has the word key, keys, token, tokens, secret or credential is left out of search, and the window names the word. So is a kind of file search does not read, such as a slide deck. A file that looks like an answer key is added, and the window never names it or opens it.
+
+From a terminal, `magnesium searchable PATH...` says the same for the files you name, and `--json` prints it as data. It changes nothing, and it works in a folder that is not set up yet.
+
+When the tutor cites a passage, the reply shows a link such as "Week 4 slides, p. 12". The link reads as plain text until you have answered that reply's task. After that it opens that page in a panel beside the lesson. Nothing leaves your Mac. The panel closes when the tutor sets the next task, or when you close it. The window opens PDFs, text and images from the study folder, and never an answer key.
+
 ## Long lessons
 
 A long conversation can get compacted: Claude Code replaces its older part with a summary. The tutor's detailed instructions are lost with it. During a lesson, Magnesium then puts a short set of core teaching rules in front of the tutor itself: one idea and one task per reply, a guess before each new step, and the rules above about concrete cases, telling mistakes apart, finishing alone on a later day and ending a plan with a task. Claude Code gets them before the next reply.

@@ -7,8 +7,11 @@ import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState
 
 import { core } from "../bridge";
 import { busy, opening, tutorText, type Card, type SessionState } from "../lesson";
-import { hasMath, renderPlain } from "../render";
+import { hasMath, hasTask, renderPlain, sourceLinks } from "../render";
+import { sourceRef, type SourceRef } from "../sources";
 import { Line, Rich } from "../ui/Rich";
+import { AddMenu, MaterialNote } from "../ui/Material";
+import { SourcePanel } from "../ui/SourcePanel";
 import { Icon } from "../ui/icons";
 import { PaletteKey, Ring, TopBar, composing, useNow } from "../ui/bits";
 import type { Answer, Decision, Question, Rail as RailData } from "../types";
@@ -247,7 +250,13 @@ function QuestionCard(props: {
   );
 }
 
-function Composer(props: { disabled: boolean; onSend: (text: string) => void; onNote: (text: string) => void }) {
+function Composer(props: {
+  disabled: boolean;
+  onSend: (text: string) => void;
+  onNote: (text: string) => void;
+  onAddFiles: () => void;
+  onPasteText: () => void;
+}) {
   const [text, setText] = useState("");
   const [confidence, setConfidence] = useState<string | null>(null);
   const [files, setFiles] = useState<string[]>([]);
@@ -342,6 +351,7 @@ function Composer(props: { disabled: boolean; onSend: (text: string) => void; on
           <button className="icon-btn" title="Add a photo of your working" aria-label="Add a photo of your working" onClick={addPhoto}>
             <Icon name="camera" size={17} />
           </button>
+          <AddMenu disabled={false} onFiles={props.onAddFiles} onPaste={props.onPasteText} />
           <button className="icon-btn" title="Write mathematics between $ signs" aria-label="Insert mathematics" onClick={addMath}>
             <Icon name="sigma" size={17} />
           </button>
@@ -422,6 +432,11 @@ export function Session(props: {
   onNote: (text: string) => void;
   onDismiss: (text: string) => void;
   onPalette: () => void;
+  /** What adding course material said, until it is dismissed. */
+  material: string[] | null;
+  onDismissMaterial: () => void;
+  onAddFiles: () => void;
+  onPasteText: () => void;
 }) {
   const { state } = props;
   const live = state.live;
@@ -459,6 +474,31 @@ export function Session(props: {
 
   const text = useDeferredValue(live ? tutorText(live) : "");
   const earlier = state.earlier.length;
+
+  // A source a reply cited opens beside the lesson, but only after the learner
+  // has answered that reply's task, and it closes when the tutor poses the
+  // next one. Until then the link reads as plain text. A reply that sets no
+  // task has nothing to answer, so its links are open.
+  const [source, setSource] = useState<{ ref: SourceRef; posed: number } | null>(null);
+  const setsTask = useMemo(() => state.earlier.map((turn) => hasTask(turn.tutor)), [state.earlier]);
+  const liveSetsTask = text !== "" && hasTask(text);
+  const posed = setsTask.filter(Boolean).length + (liveSetsTask ? 1 : 0);
+  /** Whether the learner has said something real since the reply `index` of the earlier turns. */
+  const answered = (index: number) => {
+    const next = state.earlier[index + 1]?.learner ?? live?.learner ?? "";
+    return next.trim() !== "" && !opening(next);
+  };
+  useEffect(() => {
+    if (source && posed > source.posed) setSource(null);
+  }, [posed, source]);
+  const openSource = (ref: SourceRef) => setSource({ ref, posed });
+  // The passages of the reply just answered, in reach while the next one is written.
+  const last = earlier - 1;
+  const passages = useMemo(
+    () => (last >= 0 && setsTask[last] ? sourceLinks(state.earlier[last].tutor) : []),
+    [last, setsTask, state.earlier],
+  );
+  const showPassages = passages.length > 0 && answered(last) && !liveSetsTask;
   const blockOver = state.startedMs !== null && now - state.startedMs >= props.blockMinutes * 60_000;
 
   return (
@@ -478,106 +518,133 @@ export function Session(props: {
           </>
         }
       />
-      <div className="scroll stage">
-        <div className="column">
-          {earlier > 0 && (
-            <button className="earlier-toggle" onClick={() => setShowEarlier(!showEarlier)} data-role="earlier">
-              <Icon name="history" size={14} />
-              {showEarlier ? "Hide" : "Show"} {earlier} earlier {earlier === 1 ? "turn" : "turns"}
-            </button>
-          )}
-          {showEarlier && (
-            <div className="earlier">
-              {state.earlier.map((turn, index) => (
-                <div className="exchange" key={index}>
-                  {turn.learner && <Turn text={turn.learner} />}
-                  <div className="tutor">
-                    <Rich text={turn.tutor} final onNote={props.onNote} />
+      <div className={source ? "session-body with-source" : "session-body"}>
+        <div className="session-main">
+          <div className="scroll stage">
+            <div className="column">
+              {earlier > 0 && (
+                <button className="earlier-toggle" onClick={() => setShowEarlier(!showEarlier)} data-role="earlier">
+                  <Icon name="history" size={14} />
+                  {showEarlier ? "Hide" : "Show"} {earlier} earlier {earlier === 1 ? "turn" : "turns"}
+                </button>
+              )}
+              {showEarlier && (
+                <div className="earlier">
+                  {state.earlier.map((turn, index) => (
+                    <div className="exchange" key={index}>
+                      {turn.learner && <Turn text={turn.learner} />}
+                      <div className="tutor">
+                        <Rich text={turn.tutor} final onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className={showEarlier ? "exchange now anchored" : "exchange now"} ref={liveRef}>
+                {live?.learner && <Turn text={live.learner} />}
+                {text !== "" && (
+                  <div className={isBusy ? "tutor writing" : "tutor"} data-role="tutor">
+                    <Rich text={text} final={!isBusy} onNote={props.onNote} linksOpen={!isBusy && !liveSetsTask} onSource={openSource} />
                   </div>
+                )}
+                {!live && <p className="hint">Say what you want to work on.</p>}
+                {live && isBusy && state.cards.length === 0 && (
+                  <Thinking since={live.since} status={live.status} doing={live.doing} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
+                )}
+                {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
+                {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
+              </div>
+              {showPassages && (
+                <div className="passages" data-role="passages">
+                  <span className="eyebrow">Passages from the last reply</span>
+                  {passages.slice(0, 4).map((passage) => (
+                    <button
+                      key={passage.href}
+                      className={source?.ref.path === sourceRef(passage.href)?.path ? "passage on" : "passage"}
+                      data-role="source-chip"
+                      onClick={() => {
+                        const ref = sourceRef(passage.href);
+                        if (ref) openSource(ref);
+                      }}
+                    >
+                      <Icon name="paper" size={13} />
+                      {passage.text}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {state.cards.map((card) =>
+                card.kind === "permission" ? (
+                  <PermissionCard key={card.id} card={card} onDecide={props.onDecide} />
+                ) : (
+                  <QuestionCard key={card.id} card={card} onAnswer={props.onAnswer} />
+                ),
+              )}
+              {state.notices.map((notice) => (
+                <div className="banner warn selectable" key={notice.text}>
+                  <span>{notice.text}</span>
+                  <button className="icon-btn" aria-label="Dismiss" onClick={() => props.onDismiss(notice.text)}>
+                    <Icon name="close" size={14} />
+                  </button>
                 </div>
               ))}
             </div>
-          )}
-          <div className={showEarlier ? "exchange now anchored" : "exchange now"} ref={liveRef}>
-            {live?.learner && <Turn text={live.learner} />}
-            {text !== "" && (
-              <div className={isBusy ? "tutor writing" : "tutor"} data-role="tutor">
-                <Rich text={text} final={!isBusy} onNote={props.onNote} />
-              </div>
-            )}
-            {!live && <p className="hint">Say what you want to work on.</p>}
-            {live && isBusy && state.cards.length === 0 && (
-              <Thinking since={live.since} status={live.status} doing={live.doing} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
-            )}
-            {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
-            {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
           </div>
-          {state.cards.map((card) =>
-            card.kind === "permission" ? (
-              <PermissionCard key={card.id} card={card} onDecide={props.onDecide} />
-            ) : (
-              <QuestionCard key={card.id} card={card} onAnswer={props.onAnswer} />
-            ),
-          )}
-          {state.notices.map((notice) => (
-            <div className="banner warn selectable" key={notice.text}>
-              <span>{notice.text}</span>
-              <button className="icon-btn" aria-label="Dismiss" onClick={() => props.onDismiss(notice.text)}>
-                <Icon name="close" size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="dock">
-        <div className="column">
-          {stopping ? (
-            <div className="sheet" data-role="stop-sheet">
-              <span className="eyebrow">Where did you stop?</span>
-              <input
-                ref={stopInput}
-                className="field"
-                value={line}
-                placeholder="One line: where you are, and what comes next"
-                onChange={(e) => setLine(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !composing(e)) props.onStop(line);
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    setStopping(false);
-                  }
-                }}
-              />
-              <div className="row">
-                <button className="btn primary" onClick={() => props.onStop(line)}>
-                  Save and end <kbd>&#8629;</kbd>
-                </button>
-                <button className="btn ghost" onClick={() => setStopping(false)}>
-                  Keep going
-                </button>
-                <span className="aside">Your next sitting opens on this line.</span>
-              </div>
-            </div>
-          ) : (
-            <>
-              {blockOver && !nudged && !isBusy && (
-                <div className="banner nudge">
-                  <span>
-                    <b>{props.blockMinutes} minutes done.</b> A good place to stop?
-                  </span>
-                  <span className="grow" />
-                  <button className="btn small" onClick={beginStop}>
-                    End here
-                  </button>
-                  <button className="btn ghost small" onClick={() => setNudged(true)}>
-                    Keep going
-                  </button>
+          <div className="dock">
+            <div className="column">
+              {stopping ? (
+                <div className="sheet" data-role="stop-sheet">
+                  <span className="eyebrow">Where did you stop?</span>
+                  <input
+                    ref={stopInput}
+                    className="field"
+                    value={line}
+                    placeholder="One line: where you are, and what comes next"
+                    onChange={(e) => setLine(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !composing(e)) props.onStop(line);
+                      if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setStopping(false);
+                      }
+                    }}
+                  />
+                  <div className="row">
+                    <button className="btn primary" onClick={() => props.onStop(line)}>
+                      Save and end <kbd>&#8629;</kbd>
+                    </button>
+                    <button className="btn ghost" onClick={() => setStopping(false)}>
+                      Keep going
+                    </button>
+                    <span className="aside">Your next sitting opens on this line.</span>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  {blockOver && !nudged && !isBusy && (
+                    <div className="banner nudge">
+                      <span>
+                        <b>{props.blockMinutes} minutes done.</b> A good place to stop?
+                      </span>
+                      <span className="grow" />
+                      <button className="btn small" onClick={beginStop}>
+                        End here
+                      </button>
+                      <button className="btn ghost small" onClick={() => setNudged(true)}>
+                        Keep going
+                      </button>
+                    </div>
+                  )}
+                  {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
+                  {state.cards.length === 0 && (
+                    <Composer disabled={isBusy} onSend={props.onSend} onNote={props.onNote} onAddFiles={props.onAddFiles} onPasteText={props.onPasteText} />
+                  )}
+                </>
               )}
-              {state.cards.length === 0 && <Composer disabled={isBusy} onSend={props.onSend} onNote={props.onNote} />}
-            </>
-          )}
+            </div>
+          </div>
         </div>
+        {source && <SourcePanel source={source.ref} onClose={() => setSource(null)} onNote={props.onNote} />}
       </div>
     </section>
   );

@@ -8,7 +8,10 @@
 
 import type { Actions } from "./App";
 import { tutorText, type SessionState } from "./lesson";
-import { renderInline, renderMarkdown, renderPlain, withoutOpenMath } from "./render";
+import { tinyPdf } from "./demoPdf";
+import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
+import { sourceRef } from "./sources";
+import { drawPage, openPdf } from "./ui/SourcePanel";
 import type { Core } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
@@ -19,6 +22,11 @@ async function until(what: string, test: () => boolean, limitMs = 30_000): Promi
     if (Date.now() - started > limitMs) throw new Error(`timed out waiting for ${what}`);
     await wait(50);
   }
+}
+
+/** A step that never finishes is a failure with a name, not a window that says nothing. */
+function within<T>(what: string, work: Promise<T>, limitMs = 20_000): Promise<T> {
+  return Promise.race([work, new Promise<T>((_, no) => window.setTimeout(() => no(new Error(`${what} did not finish in ${limitMs / 1000} s`)), limitMs))]);
 }
 
 export async function run(api: Core, actions: Actions, session: () => SessionState): Promise<void> {
@@ -91,6 +99,51 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.task = { boxes: task.querySelectorAll("div.task").length, blocks: box?.children.length ?? 0, before: task.firstElementChild?.tagName };
     if (!box || box.children.length !== 3 || task.firstElementChild?.tagName !== "P" || box.querySelectorAll(".katex-display").length !== 1) {
       throw new Error(`the task was not set apart as one box: ${task.innerHTML.slice(0, 200)}`);
+    }
+
+    // A link to a PDF or a text file is a source: shut as plain text until the
+    // task is answered, open as a link after. A web link and an image stay as they are.
+    const cited = renderMarkdown("See [Week 4 slides, p. 12](Study/stats/week%204.pdf#page=12) and [the web](https://example.com).\n\n**Task.** Say why.");
+    const shut = document.createElement("div");
+    shut.innerHTML = setSourcesApart(cited, false);
+    const open = document.createElement("div");
+    open.innerHTML = setSourcesApart(cited, true);
+    const ref = sourceRef("Study/stats/week%204.pdf#page=12");
+    steps.sources = {
+      shutLinks: shut.querySelectorAll("a").length,
+      shutText: shut.querySelectorAll(".source-shut").length,
+      openLinks: open.querySelectorAll("a.source").length,
+      ref,
+      task: hasTask("A line.\n\n**Task.** Say why."),
+      noTask: hasTask("Just a line."),
+    };
+    if (shut.querySelectorAll("a").length !== 1 || shut.querySelectorAll(".source-shut").length !== 1) throw new Error("a source link was not shut as text");
+    if (open.querySelectorAll("a.source").length !== 1) throw new Error("a source link did not open once answered");
+    if (ref?.path !== "Study/stats/week 4.pdf" || ref.page !== 12) throw new Error(`the page of a source link was not read: ${JSON.stringify(ref)}`);
+    if (!hasTask("A line.\n\n**Task.** Say why.") || hasTask("Just a line.")) throw new Error("a task was not told from a reply with none");
+
+    // The PDF reader and its worker load in this window, from its own files and under its content policy.
+    const pdf = await within("opening a PDF", openPdf(tinyPdf(["one", "two", "three"])));
+    const canvas = document.createElement("canvas");
+    await within("drawing a PDF page", drawPage(pdf, 2, canvas, 300));
+    const pixels = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data ?? new Uint8ClampedArray();
+    let ink = 0;
+    for (let i = 0; i < pixels.length; i += 4) if (pixels[i] < 128) ink += 1;
+    steps.pdf = { pages: pdf.numPages, width: canvas.width, ink };
+    if (pdf.numPages !== 3 || ink < 200) throw new Error(`the PDF page did not draw: ${JSON.stringify(steps.pdf)}`);
+
+    // Course material through the shell: pasted text is saved as a text file in
+    // the study folder; the core reads it back for the panel, and refuses what
+    // lies outside the folder. Nothing here needs a file on this Mac.
+    const pasted = await within("saving pasted text", api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood."));
+    const savedAs = pasted.saved[0];
+    steps.material = { saved: pasted.saved.length, lines: pasted.lines };
+    if (!savedAs?.startsWith("Study/materials/Pasted text ") || !savedAs.endsWith(".txt")) throw new Error(`pasted text was not saved as a text file: ${JSON.stringify(pasted)}`);
+    const readBack = await within("reading a saved text file", api.source(savedAs));
+    if (readBack.kind !== "text" || !readBack.text?.includes("posterior")) throw new Error("a saved text file did not open as text");
+    for (const outside of ["../outside.pdf", "/etc/hosts", "Study/midterm-1/papers/PaperB-key.pdf"]) {
+      const refused = await within(`opening ${outside}`, api.source(outside)).then(() => null, (problem) => String(problem));
+      if (refused === null) throw new Error(`a source outside the study folder, or an answer key, opened: ${outside}`);
     }
 
     // The library and the study days, through the shell. The folder that is

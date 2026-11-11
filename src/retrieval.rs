@@ -15,6 +15,7 @@ mod coordinator;
 #[cfg(test)]
 mod evaluation;
 mod manifest;
+mod readable;
 mod search;
 pub(crate) use boundary::{RetrievalRequest, retrieve_workspace_sources};
 pub(crate) use coordinator::CoordinatorBudget;
@@ -28,6 +29,7 @@ pub(crate) use manifest::schema::{
     validate_index_integrity,
 };
 pub(crate) use manifest::source::{OpenSource, open_workspace_source};
+pub(crate) use readable::run as run_searchable;
 pub(crate) use search::{MAX_RESULTS as MAX_SEARCH_RESULTS, SourceSearchRequest};
 
 #[cfg(test)]
@@ -324,6 +326,16 @@ pub(crate) fn source_relative_path_is_excluded(
     workspace_root: &Path,
     relative: &Path,
 ) -> Result<bool, DiscoveryError> {
+    source_exclusion(workspace_root, relative).map(|reason| reason.is_some())
+}
+
+/// The same policy as `source_relative_path_is_excluded`, naming the first
+/// rule that leaves the file out. A study window reads it through
+/// `magnesium searchable`, so it can say why a file is missing from search.
+pub(crate) fn source_exclusion(
+    workspace_root: &Path,
+    relative: &Path,
+) -> Result<Option<ExclusionReason>, DiscoveryError> {
     let workspace_root = fs::canonicalize(workspace_root).map_err(|source| DiscoveryError::Io {
         action: "resolve discovery workspace",
         path: workspace_root.to_path_buf(),
@@ -338,7 +350,7 @@ pub(crate) fn source_relative_path_is_excluded(
         path: workspace_root.clone(),
         source,
     })? {
-        return Ok(true);
+        return Ok(Some(ExclusionReason::PrivateExport));
     }
     let rules = read_magnesiumignore(&workspace_root)?;
     let components: Vec<Component> = relative.components().collect();
@@ -346,7 +358,7 @@ pub(crate) fn source_relative_path_is_excluded(
     for (index, component) in components.iter().enumerate() {
         let Component::Normal(name) = component else {
             // Absolute, parent, or root components never name a workspace file.
-            return Ok(true);
+            return Ok(Some(ExclusionReason::EscapesWorkspace));
         };
         prefix.push(name);
         // Discovery never follows a symlink, so a symlinked component revokes
@@ -354,9 +366,11 @@ pub(crate) fn source_relative_path_is_excluded(
         // this also closes the alias to a sensitive or built-in directory.
         let component_path = workspace_root.join(&prefix);
         match fs::symlink_metadata(&component_path) {
-            Ok(metadata) if metadata.file_type().is_symlink() => return Ok(true),
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Ok(Some(ExclusionReason::Symlink));
+            }
             Ok(metadata) if index + 1 < components.len() && !metadata.is_dir() => {
-                return Ok(true);
+                return Ok(Some(ExclusionReason::Unsupported));
             }
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -369,14 +383,17 @@ pub(crate) fn source_relative_path_is_excluded(
             }
         }
         if index + 1 < components.len() {
-            if classify_sensitive_directory(name).is_some()
-                || is_excluded_directory(name)
-                || rules_exclude(&rules, &prefix, true)
-            {
-                return Ok(true);
+            if let Some(sensitivity) = classify_sensitive_directory(name) {
+                return Ok(Some(ExclusionReason::Sensitive(sensitivity)));
+            }
+            if is_excluded_directory(name) {
+                return Ok(Some(ExclusionReason::BuiltIn));
+            }
+            if rules_exclude(&rules, &prefix, true) {
+                return Ok(Some(ExclusionReason::Magnesiumignore));
             }
             match excluded_source_boundary(&component_path) {
-                Ok(Some(_)) => return Ok(true),
+                Ok(Some(reason)) => return Ok(Some(reason)),
                 Ok(None) => {}
                 Err(source) => {
                     return Err(DiscoveryError::Io {
@@ -386,11 +403,13 @@ pub(crate) fn source_relative_path_is_excluded(
                     });
                 }
             }
-        } else if classify_sensitivity(&prefix).is_some() || rules_exclude(&rules, &prefix, false) {
-            return Ok(true);
+        } else if let Some(sensitivity) = classify_sensitivity(&prefix) {
+            return Ok(Some(ExclusionReason::Sensitive(sensitivity)));
+        } else if rules_exclude(&rules, &prefix, false) {
+            return Ok(Some(ExclusionReason::Magnesiumignore));
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -663,29 +682,36 @@ fn classify_sensitivity(path: &Path) -> Option<SensitivityClass> {
     {
         return Some(SensitivityClass::PrivateKey);
     }
+    if credential_word_in_name(path).is_some() {
+        Some(SensitivityClass::Credential)
+    } else {
+        None
+    }
+}
+
+/// The words in a file name that make search leave the file out.
+const CREDENTIAL_NAME_WORDS: &[&str] = &[
+    "credential",
+    "credentials",
+    "key",
+    "keys",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
+];
+
+/// The word in a file's name that makes it look like a credential, if any.
+pub(crate) fn credential_word_in_name(path: &Path) -> Option<&'static str> {
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     let stem = path
         .file_stem()
         .and_then(OsStr::to_str)
         .unwrap_or(&name)
         .to_ascii_lowercase();
-    let tokens = stem.split(|character: char| !character.is_ascii_alphanumeric());
-    if tokens.into_iter().any(|token| {
-        matches!(
-            token,
-            "credential"
-                | "credentials"
-                | "key"
-                | "keys"
-                | "secret"
-                | "secrets"
-                | "token"
-                | "tokens"
-        )
-    }) {
-        Some(SensitivityClass::Credential)
-    } else {
-        None
-    }
+    stem.split(|character: char| !character.is_ascii_alphanumeric())
+        .find_map(|token| CREDENTIAL_NAME_WORDS.iter().find(|word| **word == token))
+        .copied()
 }
 
 fn classify_sensitive_directory(name: &OsStr) -> Option<SensitivityClass> {
