@@ -701,14 +701,17 @@ const CREDENTIAL_NAME_WORDS: &[&str] = &[
     "tokens",
 ];
 
-/// Kinds of document a course hands out. A name such as "Token economies.pdf"
-/// is a title, so in these the words above, other than key and keys, never
-/// leave the file out. Their text is still checked for passwords and keys.
-/// "key" still does: such a document may be an answer key.
+/// Kinds of document that come out of an export or a publisher, never typed
+/// by hand in a text editor. A name such as "Token economies.pdf" is a
+/// title, so in these the words above, other than key and keys, never leave
+/// the file out. Their text is still checked for passwords and keys. "key"
+/// still does: such a document may be an answer key. A file a person edits
+/// as text, such as Markdown, plain text, HTML or a config file, keeps the
+/// name rule, since a pasted secret would land there.
 const DOCUMENT_EXTENSIONS: &[&str] = &[
-    "pdf", "doc", "docx", "odt", "rtf", "pages", "ppt", "pptx", "odp", "md", "mdx", "markdown",
-    "rst", "adoc", "tex", "html", "htm", "xhtml", "epub", "mobi", "djvu", "png", "jpg", "jpeg",
-    "gif", "webp", "heic", "tif", "tiff", "bmp", "svg",
+    "pdf", "doc", "docx", "odt", "rtf", "pages", "ppt", "pptx", "odp", "xls", "xlsx", "ods",
+    "numbers", "epub", "mobi", "djvu", "png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff",
+    "bmp",
 ];
 
 /// The word in a file's name that makes it look like a credential, if any.

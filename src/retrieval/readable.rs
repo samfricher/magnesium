@@ -457,9 +457,9 @@ mod tests {
         let dir = folder();
         for (name, word) in [
             ("Study/stats/api-key notes.txt", "key"),
-            ("Study/stats/Week 4 Tokens.txt", "tokens"),
+            ("Study/stats/Week 4 Tokens.md", "tokens"),
             ("Study/stats/secret.txt", "secret"),
-            ("Study/stats/my_credentials.json", "credentials"),
+            ("Study/stats/my_credentials.md", "credentials"),
         ] {
             put(dir.path(), name, "text");
             let verdict = check(dir.path(), Path::new(name), never);
@@ -497,26 +497,29 @@ mod tests {
                 "{name}"
             );
         }
-        put(dir.path(), "Study/Week 4 tokens.md", "Tokens in a grammar.");
-        assert!(check(dir.path(), Path::new("Study/Week 4 tokens.md"), never).searchable);
         // Its text is still checked.
-        put(dir.path(), "Study/secrets.md", "password = hunter2\n");
-        assert_eq!(
-            check(dir.path(), Path::new("Study/secrets.md"), never).reason,
-            Some("secret_content")
-        );
         let pdf = check(
             dir.path(),
             Path::new("Study/The secret life of bees.pdf"),
             pages(&["password = hunter2"]),
         );
         assert_eq!(pdf.reason, Some("secret_content"));
-        // A file of another kind is still left out by the word.
-        put(dir.path(), "Study/tokens.json", "{}");
-        assert_eq!(
-            check(dir.path(), Path::new("Study/tokens.json"), never).word,
-            Some("tokens")
-        );
+        // A file a person types as text is still left out by the word: a
+        // pasted secret would land there.
+        for (name, word) in [
+            ("Study/api tokens.md", "tokens"),
+            ("Study/secret.html", "secret"),
+            ("Study/notes on secrets.txt", "secrets"),
+            ("Study/tokens.json", "tokens"),
+        ] {
+            put(dir.path(), name, "text");
+            let verdict = check(dir.path(), Path::new(name), never);
+            assert_eq!(
+                (verdict.reason, verdict.word),
+                (Some("name_word"), Some(word)),
+                "{name}"
+            );
+        }
         // "key" in a document's name still leaves it out: it may be an
         // answer key.
         for name in [
