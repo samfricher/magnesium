@@ -579,7 +579,6 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
         let started = Instant::now();
         let mut replied = false;
         let mut text = String::new();
-        let before = saved_state(&folder);
         loop {
             match live
                 .events
@@ -595,6 +594,8 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
                 {
                     println!("\n== {} . notes being saved after the reply, at {} ms; closing the lesson ==", n + 2, started.elapsed().as_millis());
                     println!("reply: {}", text.chars().take(300).collect::<String>());
+                    // Taken now, so only a save after the close can change it.
+                    let before = saved_state(&folder);
                     live.manager.stop(None).unwrap();
                     let deadline = Instant::now() + Duration::from_secs(45);
                     while Instant::now() < deadline && saved_state(&folder) == before {
