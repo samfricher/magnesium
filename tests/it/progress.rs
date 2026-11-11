@@ -74,7 +74,7 @@ fn skill<'a>(value: &'a Value, name: &str) -> &'a Value {
 }
 
 #[test]
-fn chat_lessons_earn_passes_on_the_checks_their_answers_make() {
+fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
@@ -90,8 +90,9 @@ fn chat_lessons_earn_passes_on_the_checks_their_answers_make() {
     );
     assert_eq!(empty["days"], json!([]), "{empty}");
 
-    // Day one. A right, cold, unaided first answer on a skill and a miss:
-    // each makes a quick check for the next day.
+    // Day one. A right, cold, unaided first answer on a skill earns its
+    // first pass and makes a check for 3 days on. A miss makes a check for
+    // the next day.
     answer(
         &e,
         "a-1",
@@ -108,7 +109,7 @@ fn chat_lessons_earn_passes_on_the_checks_their_answers_make() {
     let units = skill(&first_day, "units of a rate");
     assert_eq!(
         (units["passes"].as_i64(), units["quick_check"].as_bool()),
-        (Some(0), Some(true)),
+        (Some(1), Some(true)),
         "{units}"
     );
     let sign = skill(&first_day, "sign of b");
@@ -127,11 +128,12 @@ fn chat_lessons_earn_passes_on_the_checks_their_answers_make() {
         "{first_day}"
     );
 
-    // Day two. Both checks are due, and passing each cold earns its first
-    // pass.
+    // Day two. The miss's check is due, and passing it cold earns its first
+    // pass. The other skill is answered right again before its check is
+    // due, which counts neither way.
     days_pass(&e, 1);
     let due = progress(&e);
-    assert_eq!(due["due"]["checks"], 2, "{due}");
+    assert_eq!(due["due"]["checks"], 1, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
     answer(
         &e,
@@ -224,20 +226,12 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
     let plan_progress = |value: &Value| value["plans"][0]["progress"].clone();
 
     // A chat answer on a skill the graph names, written another way, is
-    // recorded under the graph's name. It makes a check, and the check's
-    // pass the next day moves the plan's level.
+    // recorded under the graph's name and moves the plan's level.
     answer(
         &e,
         "a-1",
         "Km is minus one over the x intercept",
         json!({"label":"Lineweaver Burk","question":"Read Km from this plot.","first_try":"right","help":"none","cold":true}),
-    );
-    days_pass(&e, 1);
-    answer(
-        &e,
-        "a-4",
-        "minus one over the x intercept",
-        json!({"label":"Lineweaver Burk","question":"Read Km from this other plot.","first_try":"right","help":"none","cold":true}),
     );
     let before = progress(&e);
     assert_eq!(
@@ -246,7 +240,7 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
         "{before}"
     );
     let label: String = store(&e)
-        .query_row("SELECT label FROM attempts LIMIT 1", [], |r| r.get(0))
+        .query_row("SELECT label FROM attempts", [], |r| r.get(0))
         .unwrap();
     assert_eq!(label, "lineweaver-burk");
 
@@ -360,7 +354,7 @@ fn checks_on(e: &TestEnvironment, label: &str) -> i64 {
 }
 
 #[test]
-fn a_right_unaided_first_answer_puts_the_skill_on_the_schedule_once() {
+fn a_right_first_answer_that_is_not_cold_makes_a_check_for_the_next_day_with_no_pass() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
@@ -421,6 +415,58 @@ fn a_right_unaided_first_answer_puts_the_skill_on_the_schedule_once() {
     );
     assert_eq!(checks_on(&e, "mean"), 0);
     assert_eq!(skill(&progress(&e), "mean")["passes"], 1);
+}
+
+#[test]
+fn a_clean_first_answer_keeps_its_pass_and_its_check_comes_back_on_the_spacing_date() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    let units = |id: &str| {
+        json!({"label":"units of a rate","question":format!("Units, {id}?"),
+            "first_try":"right","help":"none","cold":true})
+    };
+    answer(&e, "a-1", "µM per second", units("a-1"));
+    let today = Local::now().date_naive();
+    let first = progress(&e);
+    let held = skill(&first, "units of a rate");
+    // One pass at once, held by a check that comes back 3 days on.
+    assert_eq!(
+        (
+            held["passes"].as_i64(),
+            held["best_passes"].as_i64(),
+            held["quick_check"].as_bool(),
+            held["due"].as_bool()
+        ),
+        (Some(1), Some(1), Some(true), Some(false)),
+        "{held}"
+    );
+    assert_eq!(
+        held["next_on"],
+        json!(today.checked_add_days(Days::new(3)).unwrap().to_string()),
+        "{held}"
+    );
+    assert_eq!(held["last_pass_on"], json!(today.to_string()), "{held}");
+    assert_eq!(
+        first["today_counts"],
+        json!({"answered": 1, "started": 1, "passes": 1, "due_tomorrow": 0}),
+        "{first}"
+    );
+    assert_eq!(checks_on(&e, "units of a rate"), 1);
+
+    // On that date the check is due, and a clean answer is the second pass.
+    days_pass(&e, 3);
+    assert_eq!(progress(&e)["due"]["checks"], 1);
+    answer(&e, "b-1", "µM/s", units("b-1"));
+    let second = progress(&e);
+    let held = skill(&second, "units of a rate");
+    assert_eq!(held["passes"], 2, "{held}");
+    assert_eq!(
+        held["next_on"],
+        json!(today.checked_add_days(Days::new(7)).unwrap().to_string()),
+        "{held}"
+    );
+    assert_eq!(second["today_counts"]["passes"], 1, "{second}");
 }
 
 #[test]

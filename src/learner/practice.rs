@@ -246,6 +246,18 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                 // asked for cold the next day. A paper row waits for its
                 // repair.
                 restart(&mut state, (!paper).then(|| days_after(day, 1)));
+                // A check made by a skill's first answer, right, alone, cold
+                // and in time, keeps that answer's pass, and comes back when
+                // the spacing after a first pass says.
+                if let Some(attempt) = attempt
+                    && !paper
+                    && attempt.mark == FirstTry::Right
+                    && attempt.help == AttemptHelp::None
+                    && attempt.cold
+                    && !attempt.slow
+                {
+                    pass(&mut state, &mut last_pass, item, attempt, day, None);
+                }
                 Effect::Made
             }
             (EventKind::Repair, _) => {

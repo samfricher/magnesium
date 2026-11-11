@@ -323,3 +323,35 @@ fn i_dont_know_brings_a_check_the_next_day_and_a_declined_due_check_stays_free()
         (Some(Effect::Declined), 0, Some(day(3)))
     );
 }
+
+#[test]
+fn a_check_made_by_a_clean_first_answer_holds_its_pass_and_follows_the_spacing() {
+    let mut check = item(Origin::Chat);
+    check.events = vec![event(
+        1,
+        EventKind::Made,
+        0,
+        Some(answer(FirstTry::Right, AttemptHelp::None, true)),
+    )];
+    let state = derive(&check, None);
+    assert_eq!(
+        (state.passes, state.next_on, state.effect_of(1)),
+        (1, Some(day(3)), Some(Effect::Made))
+    );
+    // Not due before then, and a second pass on the spacing date.
+    check.events.push(right(1, 2));
+    assert_eq!(derive(&check, None).effect_of(2), Some(Effect::NoCount));
+    check.events.push(right(3, 3));
+    let state = derive(&check, None);
+    assert_eq!((state.passes, state.next_on), (2, Some(day(10))));
+
+    // Right and alone but not cold, or slow: no pass, and due the next day.
+    for (cold, slow) in [(false, false), (true, true)] {
+        let mut check = item(Origin::Chat);
+        let mut first = answer(FirstTry::Right, AttemptHelp::None, cold);
+        first.slow = slow;
+        check.events = vec![event(1, EventKind::Made, 0, Some(first))];
+        let state = derive(&check, None);
+        assert_eq!((state.passes, state.next_on), (0, Some(day(1))));
+    }
+}

@@ -157,8 +157,19 @@ fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
                 running = 0;
                 restarted_on = day_of(*event_no);
             }
-            // The item was made again, by a new miss with no redo between.
-            Effect::Made => running = 0,
+            // The item was made, or made again by a new miss with no redo
+            // between. A check made by a clean first answer holds its pass.
+            Effect::Made => {
+                running = item
+                    .state
+                    .passes_after
+                    .iter()
+                    .find(|(no, _)| no == event_no)
+                    .map_or(0, |(_, passes)| *passes);
+                if running > 0 {
+                    last_pass_on = day_of(*event_no).or(last_pass_on);
+                }
+            }
             _ => {}
         }
     }
@@ -497,20 +508,24 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
         .iter()
         .map(|item| label_key(&item.facts.label))
         .collect();
+    // An item earns a pass at each event that adds one to its passes.
     let item_passes: usize = items
         .iter()
         .map(|item| {
-            item.state
-                .effects
-                .iter()
-                .filter(|(_, effect)| matches!(effect, Effect::Passed | Effect::Closed))
-                .filter(|(event_no, _)| {
-                    item.facts
-                        .events
-                        .iter()
-                        .any(|event| event.event_no == *event_no && event.day == today)
-                })
-                .count()
+            let mut before = item.facts.base_passes.clamp(0, PASSES_TO_CLOSE);
+            let mut earned = 0;
+            for (event_no, passes) in &item.state.passes_after {
+                let on_today = item
+                    .facts
+                    .events
+                    .iter()
+                    .any(|event| event.event_no == *event_no && event.day == today);
+                if on_today && *passes > before {
+                    earned += 1;
+                }
+                before = *passes;
+            }
+            earned
         })
         .sum();
     let answer_passes: usize = first_day
