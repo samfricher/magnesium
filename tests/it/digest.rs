@@ -290,7 +290,7 @@ fn digest_of_a_new_study_folder_is_empty_and_outside_one_is_inactive() {
     let outside = digest(&e);
     assert_eq!(
         outside,
-        json!({"active":false,"reason":"workspace_not_initialized"})
+        json!({"active":false,"reason":"workspace_not_initialized","window_features":1})
     );
     assert!(!e.workspace.join(crate::support::CONTROL_DIR).exists());
 
