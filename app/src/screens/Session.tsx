@@ -392,6 +392,7 @@ function Composer(props: {
 /** The line the lesson shows while the tutor works, as a plain sentence. */
 export function workingLabel(seconds: number, status: string, doing: string | null): string {
   const minutes = seconds >= 60 ? ` · ${Math.floor(seconds / 60)} min` : "";
+  // A named step shows at once, from the first second of the turn.
   if (status === "working" && doing) return `${doing.charAt(0).toUpperCase()}${doing.slice(1)}${minutes}`;
   return seconds < 60 ? (status === "working" && seconds >= 8 ? "Working" : "") : `Working${minutes}`;
 }

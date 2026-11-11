@@ -944,6 +944,23 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
                 begin_turn(shared);
                 lock(&shared.reply_blocks).insert(index, ReplyStream::default());
             }
+            // Each step is named when it starts, from the tool's name alone,
+            // so the line moves while a long record is still being written.
+            // The finished block names the file, where there is one.
+            Some("tool_use" | "server_tool_use") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working {
+                    doing: event["content_block"]["name"]
+                        .as_str()
+                        .and_then(|tool| doing(tool, &Value::Null, &shared.folder)),
+                });
+            }
+            Some("thinking" | "redacted_thinking") => {
+                begin_turn(shared);
+                shared.emit(AgentEvent::Working {
+                    doing: Some(THINKING.into()),
+                });
+            }
             Some(_) => shared.emit(AgentEvent::Working { doing: None }),
         },
         Some("content_block_delta") => match event["delta"]["type"].as_str() {
@@ -1048,6 +1065,9 @@ fn file_words(path: &str, folder: &Path) -> Option<String> {
         .join(" ");
     (!words.is_empty() && words.len() <= 60).then_some(words)
 }
+
+/// The line while the tutor thinks, before it starts any step.
+const THINKING: &str = "thinking";
 
 /// Magnesium's `reply` tool, under whichever name Claude Code gives it:
 /// `mcp__plugin_magnesium_magnesium__reply` when it comes from the plugin.
@@ -2079,5 +2099,41 @@ mod tests {
         // The next turn starts with no replies remembered.
         on_result(&shared, &json!({"type": "result", "subtype": "success"}));
         assert!(lock(&shared.replies).is_empty());
+    }
+
+    #[test]
+    fn each_step_is_named_when_it_starts() {
+        let (shared, seen) = listening();
+        let stream = |event: Value| {
+            handle(
+                &shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start"}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}}),
+        );
+        stream(
+            json!({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "name": "mcp__plugin_magnesium_magnesium__learning_step", "input": {}}}),
+        );
+        stream(
+            json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "name": "Bash", "input": {}}}),
+        );
+        let lines: Vec<Option<String>> = lock(&seen)
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Working { doing } => Some(doing.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                Some("thinking".to_owned()),
+                Some("saving your work".to_owned()),
+                None
+            ]
+        );
     }
 }
