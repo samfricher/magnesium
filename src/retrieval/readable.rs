@@ -140,14 +140,17 @@ fn left_out(shown: &str, relative: &Path, reason: &ExclusionReason) -> Verdict {
             if credential_word_in_name(relative).is_some() =>
         {
             let word = credential_word_in_name(relative).unwrap_or_default();
+            let why = if matches!(word, "key" | "keys") {
+                "in case it is an answer key or holds a password"
+            } else {
+                "in case it holds a password"
+            };
             Verdict {
                 word: Some(word),
                 ..Verdict::no(
                     shown,
                     "name_word",
-                    &format!(
-                        "Search leaves out a file whose name has the word \"{word}\", in case it holds a password."
-                    ),
+                    &format!("Search leaves out a file whose name has the word \"{word}\", {why}."),
                 )
             }
         }
@@ -454,9 +457,9 @@ mod tests {
         let dir = folder();
         for (name, word) in [
             ("Study/stats/api-key notes.txt", "key"),
-            ("Study/stats/Week 4 Tokens.md", "tokens"),
+            ("Study/stats/Week 4 Tokens.txt", "tokens"),
             ("Study/stats/secret.txt", "secret"),
-            ("Study/stats/my_credentials.md", "credentials"),
+            ("Study/stats/my_credentials.json", "credentials"),
         ] {
             put(dir.path(), name, "text");
             let verdict = check(dir.path(), Path::new(name), never);
@@ -475,6 +478,59 @@ mod tests {
             )
             .searchable
         );
+    }
+
+    #[test]
+    fn a_course_document_is_never_a_credential_by_its_name_alone() {
+        let dir = folder();
+        for name in [
+            "Study/Token economies.pdf",
+            "Study/The secret life of bees.pdf",
+            "Study/Teaching credentials.PDF",
+        ] {
+            put(dir.path(), name, "%PDF");
+            let verdict = check(dir.path(), Path::new(name), pages(&["Bees"]));
+            assert!(verdict.searchable, "{name}: {verdict:?}");
+            assert!(
+                !crate::retrieval::source_relative_path_is_excluded(dir.path(), Path::new(name))
+                    .unwrap(),
+                "{name}"
+            );
+        }
+        put(dir.path(), "Study/Week 4 tokens.md", "Tokens in a grammar.");
+        assert!(check(dir.path(), Path::new("Study/Week 4 tokens.md"), never).searchable);
+        // Its text is still checked.
+        put(dir.path(), "Study/secrets.md", "password = hunter2\n");
+        assert_eq!(
+            check(dir.path(), Path::new("Study/secrets.md"), never).reason,
+            Some("secret_content")
+        );
+        let pdf = check(
+            dir.path(),
+            Path::new("Study/The secret life of bees.pdf"),
+            pages(&["password = hunter2"]),
+        );
+        assert_eq!(pdf.reason, Some("secret_content"));
+        // A file of another kind is still left out by the word.
+        put(dir.path(), "Study/tokens.json", "{}");
+        assert_eq!(
+            check(dir.path(), Path::new("Study/tokens.json"), never).word,
+            Some("tokens")
+        );
+        // "key" in a document's name still leaves it out: it may be an
+        // answer key.
+        for name in [
+            "Study/Midterm answer key.pdf",
+            "Study/Secret answer key.pdf",
+        ] {
+            put(dir.path(), name, "%PDF");
+            let key = check(dir.path(), Path::new(name), never);
+            assert_eq!(
+                (key.reason, key.word),
+                (Some("name_word"), Some("key")),
+                "{name}"
+            );
+        }
     }
 
     #[test]

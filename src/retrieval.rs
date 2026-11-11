@@ -701,6 +701,16 @@ const CREDENTIAL_NAME_WORDS: &[&str] = &[
     "tokens",
 ];
 
+/// Kinds of document a course hands out. A name such as "Token economies.pdf"
+/// is a title, so in these the words above, other than key and keys, never
+/// leave the file out. Their text is still checked for passwords and keys.
+/// "key" still does: such a document may be an answer key.
+const DOCUMENT_EXTENSIONS: &[&str] = &[
+    "pdf", "doc", "docx", "odt", "rtf", "pages", "ppt", "pptx", "odp", "md", "mdx", "markdown",
+    "rst", "adoc", "tex", "html", "htm", "xhtml", "epub", "mobi", "djvu", "png", "jpg", "jpeg",
+    "gif", "webp", "heic", "tif", "tiff", "bmp", "svg",
+];
+
 /// The word in a file's name that makes it look like a credential, if any.
 pub(crate) fn credential_word_in_name(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
@@ -709,8 +719,21 @@ pub(crate) fn credential_word_in_name(path: &Path) -> Option<&'static str> {
         .and_then(OsStr::to_str)
         .unwrap_or(&name)
         .to_ascii_lowercase();
+    let document = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| {
+            DOCUMENT_EXTENSIONS
+                .iter()
+                .any(|document| extension.eq_ignore_ascii_case(document))
+        });
+    let applies = |word: &str| !document || matches!(word, "key" | "keys");
     stem.split(|character: char| !character.is_ascii_alphanumeric())
-        .find_map(|token| CREDENTIAL_NAME_WORDS.iter().find(|word| **word == token))
+        .find_map(|token| {
+            CREDENTIAL_NAME_WORDS
+                .iter()
+                .find(|word| **word == token && applies(word))
+        })
         .copied()
 }
 
