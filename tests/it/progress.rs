@@ -74,7 +74,7 @@ fn skill<'a>(value: &'a Value, name: &str) -> &'a Value {
 }
 
 #[test]
-fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
+fn chat_lessons_earn_passes_on_the_checks_their_answers_make() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
@@ -90,8 +90,8 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(empty["days"], json!([]), "{empty}");
 
-    // Day one. A right, cold, unaided answer on a skill that is never got
-    // wrong, a miss that makes a quick check, and a declined question.
+    // Day one. A right, cold, unaided first answer on a skill and a miss:
+    // each makes a quick check for the next day.
     answer(
         &e,
         "a-1",
@@ -108,7 +108,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     let units = skill(&first_day, "units of a rate");
     assert_eq!(
         (units["passes"].as_i64(), units["quick_check"].as_bool()),
-        (Some(1), Some(false)),
+        (Some(0), Some(true)),
         "{units}"
     );
     let sign = skill(&first_day, "sign of b");
@@ -127,11 +127,11 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "{first_day}"
     );
 
-    // Day two. The check is due, and passing it cold earns its first pass.
-    // The other skill is answered right again, on its second day.
+    // Day two. Both checks are due, and passing each cold earns its first
+    // pass.
     days_pass(&e, 1);
     let due = progress(&e);
-    assert_eq!(due["due"]["checks"], 1, "{due}");
+    assert_eq!(due["due"]["checks"], 2, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
     answer(
         &e,
@@ -168,7 +168,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "the second pass is at least three days after the first: {sign}"
     );
     assert_eq!(sign["last_pass_on"], json!(today.to_string()), "{sign}");
-    assert_eq!(skill(&value, "units of a rate")["passes"], 2, "{value}");
+    assert_eq!(skill(&value, "units of a rate")["passes"], 1, "{value}");
     // Right only after a hint: no pass, and a check due the next day.
     let hinted = skill(&value, "competitive inhibition");
     assert_eq!(
@@ -209,7 +209,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         text.contains("In no plan: 0 proven, 3 in progress"),
         "{text}"
     );
-    assert!(text.contains("●●○  units of a rate"), "{text}");
+    assert!(text.contains("●○○  units of a rate"), "{text}");
     assert!(
         text.contains("Days with a marked answer: 2 in all."),
         "{text}"
@@ -224,12 +224,20 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
     let plan_progress = |value: &Value| value["plans"][0]["progress"].clone();
 
     // A chat answer on a skill the graph names, written another way, is
-    // recorded under the graph's name and moves the plan's level.
+    // recorded under the graph's name. It makes a check, and the check's
+    // pass the next day moves the plan's level.
     answer(
         &e,
         "a-1",
         "Km is minus one over the x intercept",
         json!({"label":"Lineweaver Burk","question":"Read Km from this plot.","first_try":"right","help":"none","cold":true}),
+    );
+    days_pass(&e, 1);
+    answer(
+        &e,
+        "a-4",
+        "minus one over the x intercept",
+        json!({"label":"Lineweaver Burk","question":"Read Km from this other plot.","first_try":"right","help":"none","cold":true}),
     );
     let before = progress(&e);
     assert_eq!(
@@ -238,7 +246,7 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
         "{before}"
     );
     let label: String = store(&e)
-        .query_row("SELECT label FROM attempts", [], |r| r.get(0))
+        .query_row("SELECT label FROM attempts LIMIT 1", [], |r| r.get(0))
         .unwrap();
     assert_eq!(label, "lineweaver-burk");
 
@@ -339,6 +347,80 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
         json!({"passes": 0, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
         "{failed}"
     );
+}
+
+fn checks_on(e: &TestEnvironment, label: &str) -> i64 {
+    store(e)
+        .query_row(
+            "SELECT COUNT(*) FROM practice_items WHERE label_key=?1",
+            [label],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn a_right_unaided_first_answer_puts_the_skill_on_the_schedule_once() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    let units = |id: &str, cold: bool| {
+        json!({"label":"units of a rate","question":format!("Units, {id}?"),
+            "first_try":"right","help":"none","cold":cold})
+    };
+    // The first answer on a skill, right and alone, makes a check for tomorrow.
+    answer(&e, "a-1", "µM per second", units("a-1", false));
+    let today = Local::now().date_naive();
+    let tomorrow = today.checked_add_days(Days::new(1)).unwrap();
+    let first = progress(&e);
+    let skill_now = skill(&first, "units of a rate");
+    assert_eq!(
+        (
+            skill_now["passes"].as_i64(),
+            skill_now["quick_check"].as_bool(),
+            skill_now["due"].as_bool()
+        ),
+        (Some(0), Some(true), Some(false)),
+        "{skill_now}"
+    );
+    assert_eq!(skill_now["next_on"], json!(tomorrow.to_string()));
+    // A second right answer on it makes nothing new.
+    answer(&e, "a-2", "µM/s", units("a-2", false));
+    assert_eq!(checks_on(&e, "units of a rate"), 1);
+
+    // Tomorrow the check is due, and a cold pass moves it on by 3 days,
+    // as every check does.
+    days_pass(&e, 1);
+    assert_eq!(progress(&e)["due"]["checks"], 1);
+    answer(&e, "b-1", "µM per second", units("b-1", true));
+    let passed = progress(&e);
+    let skill_now = skill(&passed, "units of a rate");
+    assert_eq!(skill_now["passes"], 1, "{skill_now}");
+    assert_eq!(
+        skill_now["next_on"],
+        json!(today.checked_add_days(Days::new(3)).unwrap().to_string()),
+        "{skill_now}"
+    );
+    assert_eq!(checks_on(&e, "units of a rate"), 1);
+
+    // A skill answered before, on a paper, gets no check from a right
+    // chat answer: its passes are still counted from its answers.
+    answer(
+        &e,
+        "b-2",
+        "4",
+        json!({"label":"mean","question":"Mean of 2, 4, 6?","first_try":"right","help":"none","cold":true,
+            "paper":{"name":"MockA","question":"1","marks":2,"out_of":2}}),
+    );
+    assert_eq!(checks_on(&e, "mean"), 0);
+    answer(
+        &e,
+        "b-3",
+        "5",
+        json!({"label":"mean","question":"Mean of 4 and 6?","first_try":"right","help":"none","cold":false}),
+    );
+    assert_eq!(checks_on(&e, "mean"), 0);
+    assert_eq!(skill(&progress(&e), "mean")["passes"], 1);
 }
 
 #[test]

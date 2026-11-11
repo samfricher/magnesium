@@ -750,6 +750,20 @@ pub(crate) fn record_attempt(
             && attempt.first_try == FirstTry::Right
             || attempt.first_try == FirstTry::Right
                 && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
+        // The first answer on a skill, right and alone, makes a check for
+        // the next day too, so the skill is asked again and can earn its
+        // passes. Only when the skill has no item, open or closed, and no
+        // earlier answer, whose passes would be lost to the new check.
+        let first_right = existing.is_none()
+            && attempt.first_try == FirstTry::Right
+            && attempt.help == AttemptHelp::None
+            && !tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM practice_items WHERE label_key=?1 AND dropped IS NULL)
+                     OR EXISTS(SELECT 1 FROM attempts WHERE label_key=?1 AND attempt_id<>?2)",
+                params![label_key(&label), attempt_id],
+                |r| r.get::<_, bool>(0),
+            )?;
+        let makes = makes || first_right;
         match existing {
             Some(item) => {
                 // Taken out by the tutor: a new miss puts it back.
