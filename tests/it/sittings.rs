@@ -179,6 +179,12 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     ] {
         assert!(opener.contains(text), "{text}\n{opener}");
     }
+    // The same checks as data, for a program that runs the lesson itself.
+    let checks = status["sitting_checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 1, "{status}");
+    assert_eq!(checks[0]["number"], 1);
+    assert_eq!(checks[0]["label"], LABEL);
+    assert_eq!(checks[0]["misses"], json!([MISS]));
     let again = v2::tool(
         &e,
         "claude",
@@ -187,6 +193,7 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         json!({"schema":"learner-model/v2","action":"status"}),
     );
     assert!(again.get("sitting_opener").is_none(), "{again}");
+    assert!(again.get("sitting_checks").is_none(), "{again}");
 
     // The older gap log was brought in, so its row could fall due, and the
     // runtime wrote its table.
