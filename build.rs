@@ -1,64 +1,83 @@
-use std::{
-    collections::BTreeSet,
-    env, fs,
-    path::{Path, PathBuf},
-};
+//! Packs the tutor's instruction files into the program.
+//!
+//! `src/workspace/learning/manifest.json` lists the files and what each is
+//! for. The build adds each file's SHA-256 to that list, so an edit to an
+//! instruction file needs no other change. It writes two files to `OUT_DIR`:
+//! the list and the files as one pack, and the list's metadata as Rust.
+//! `src/workspace/instruction_bundle.rs` reads both and checks the pack
+//! again when the program runs.
 
-fn read_reserved_file(name: &str) -> Vec<u8> {
-    let path = Path::new(name);
-    let mut checked = PathBuf::new();
-    for component in path.components() {
-        checked.push(component.as_os_str());
-        let kind = fs::symlink_metadata(&checked)
-            .expect("reserved learning instruction path")
+use std::{collections::BTreeSet, env, fmt::Write as _, fs, path::Path};
+
+use sha2::{Digest, Sha256};
+
+const BUNDLE_DIR: &str = "src/workspace/learning";
+/// The line of a manifest entry that its hash is written after.
+const HASH_GOES_AFTER: &str = "\"required_for_activation\": true";
+
+/// Read a file of the bundle. No part of its path may be a symlink.
+fn read_bundle_file(relative: &str) -> Vec<u8> {
+    let path = Path::new(BUNDLE_DIR).join(relative);
+    for ancestor in path.ancestors().take(relative.split('/').count()) {
+        let kind = fs::symlink_metadata(ancestor)
+            .unwrap_or_else(|error| panic!("read {}: {error}", ancestor.display()))
             .file_type();
         assert!(
             !kind.is_symlink(),
-            "reserved bundle path is a symlink: {name}"
+            "bundle path is a symlink: {}",
+            ancestor.display()
         );
-        if checked == path {
-            assert!(kind.is_file(), "reserved bundle path is not a file: {name}");
-        } else {
-            assert!(
-                kind.is_dir(),
-                "reserved bundle parent is not a directory: {name}"
-            );
-        }
     }
-    fs::read(path).expect("reserved learning instruction file")
+    fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
-fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)> {
-    let bytes = read_reserved_file("src/workspace/learning/manifest.json");
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("learning manifest JSON");
-    assert_eq!(
-        manifest.as_object().unwrap().len(),
-        5,
-        "closed learning manifest schema"
-    );
-    assert_eq!(manifest["bundle_version"], 2);
-    assert!(matches!(
-        manifest["status"].as_str(),
-        Some("placeholder" | "active")
-    ));
-    assert_eq!(manifest["minimum_learning_step_schema"], 2);
-    assert_eq!(manifest["entrypoint"], "MAGNESIUM.md");
-    let entries = manifest["files"].as_array().expect("manifest files array");
-    assert_eq!(
-        entries.len(),
-        14,
-        "the reserved bundle has exactly 14 runtime-consumed files"
-    );
-    let mut inventory = Vec::with_capacity(entries.len());
+/// The role, stage and host that a file's place in the bundle gives it.
+fn metadata_for(path: &str) -> (&'static str, Option<&str>, Option<&str>) {
+    let name_in = |folder: &str| {
+        path.strip_prefix(folder)
+            .and_then(|name| name.strip_suffix(".md"))
+    };
+    if path == "MAGNESIUM.md" {
+        ("orchestrator", None, None)
+    } else if path == "teaching-policy.md" {
+        ("policy", None, None)
+    } else if name_in("contracts/").is_some() {
+        ("contract", None, None)
+    } else if let Some(stage) = name_in("workflows/") {
+        ("workflow", Some(stage), None)
+    } else if let Some(host) = name_in("adapters/") {
+        ("adapter", None, Some(host))
+    } else {
+        panic!("unexpected learning bundle path: {path}")
+    }
+}
+
+fn main() {
+    for path in [BUNDLE_DIR, "build.rs"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    let authored = String::from_utf8(read_bundle_file("manifest.json")).expect("UTF-8 manifest");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&authored).expect("learning manifest JSON");
+    // The packed manifest is the authored text with one line added to each
+    // entry. The bundle's identity is a hash that covers these bytes, so the
+    // text is kept as written: a study folder then sees a new bundle only
+    // when a file or the list changes, not when this script does.
+    let mut packed_manifest = String::new();
+    let mut rest = authored.as_str();
     let mut seen = BTreeSet::new();
-    let mut stages = BTreeSet::new();
-    for entry in entries {
-        let object = entry.as_object().expect("manifest file object");
+    let mut files = Vec::new();
+    let mut metadata = String::from(
+        "const GENERATED_METADATA: &[(&str, &str, Option<&str>, Option<&str>)] = &[\n",
+    );
+    for entry in manifest["files"]
+        .as_array_mut()
+        .expect("manifest files array")
+    {
+        let entry = entry.as_object_mut().expect("manifest file object");
         let path = entry["path"].as_str().expect("manifest path").to_owned();
         assert!(
-            !path.is_empty()
-                && !path.starts_with('/')
+            !path.starts_with('/')
                 && !path.contains('\\')
                 && path
                     .split('/')
@@ -67,161 +86,58 @@ fn reserved_inventory() -> Vec<(String, String, Option<String>, Option<String>)>
             "unsafe or duplicate learning manifest path: {path}"
         );
         assert!(
-            object.keys().all(|key| [
-                "path",
-                "role",
-                "required_for_activation",
-                "sha256",
-                "stage",
-                "host"
-            ]
-            .contains(&key.as_str())),
-            "unknown manifest file metadata: {path}"
+            !entry.contains_key("sha256"),
+            "the build fills in sha256; remove it from the manifest entry of {path}"
         );
-        assert_eq!(
-            entry["required_for_activation"], true,
-            "all files are required: {path}"
-        );
-        let digest = entry["sha256"].as_str().expect("manifest sha256");
-        assert_eq!(digest.len(), 64, "invalid manifest sha256: {path}");
-        assert!(
-            digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "invalid manifest sha256: {path}"
-        );
-        let role = entry["role"].as_str().expect("manifest role").to_owned();
-        let stage = entry
-            .get("stage")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        let host = entry
-            .get("host")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        let expected = if path == "MAGNESIUM.md" {
-            ("orchestrator", None, None)
-        } else if path == "teaching-policy.md" {
-            ("policy", None, None)
-        } else if path.starts_with("contracts/") {
-            assert!(
-                matches!(
-                    path.as_str(),
-                    "contracts/state-and-evidence.md"
-                        | "contracts/source-use.md"
-                        | "contracts/tool-recipes.md"
-                ),
-                "contract path has no runtime consumer: {path}"
-            );
-            ("contract", None, None)
-        } else if path.starts_with("workflows/") {
-            (
-                "workflow",
-                path.strip_prefix("workflows/")
-                    .and_then(|name| name.strip_suffix(".md")),
-                None,
-            )
-        } else if path.starts_with("adapters/") {
-            assert!(
-                path == "adapters/claude.md",
-                "adapter path has no runtime consumer: {path}"
-            );
-            (
-                "adapter",
-                None,
-                path.strip_prefix("adapters/")
-                    .and_then(|name| name.strip_suffix(".md")),
-            )
-        } else {
-            panic!("unexpected learning bundle path: {path}")
-        };
-        assert_eq!(role, expected.0, "wrong role: {path}");
-        assert_eq!(stage.as_deref(), expected.1, "wrong stage: {path}");
-        assert_eq!(host.as_deref(), expected.2, "wrong host: {path}");
-        if let Some(stage) = &stage {
-            stages.insert(stage.clone());
-        }
-        inventory.push((path, role, stage, host));
+        let (role, stage, host) = metadata_for(&path);
+        assert_eq!(entry["role"], role, "wrong role: {path}");
+        let text = |key: &str| entry.get(key).and_then(serde_json::Value::as_str);
+        assert_eq!(text("stage"), stage, "wrong stage: {path}");
+        assert_eq!(text("host"), host, "wrong host: {path}");
+        let content = read_bundle_file(&path);
+        let digest = Sha256::digest(&content)
+            .iter()
+            .fold(String::new(), |mut hex, byte| {
+                write!(hex, "{byte:02x}").expect("write to String");
+                hex
+            });
+        let (before, after) = rest
+            .split_once(HASH_GOES_AFTER)
+            .unwrap_or_else(|| panic!("manifest entry of {path} lacks {HASH_GOES_AFTER}"));
+        write!(
+            packed_manifest,
+            "{before}{HASH_GOES_AFTER},\n      \"sha256\": \"{digest}\""
+        )
+        .expect("write");
+        rest = after;
+        entry.insert("sha256".to_owned(), digest.into());
+        writeln!(metadata, "    ({path:?}, {role:?}, {stage:?}, {host:?}),").expect("write");
+        files.push((path, content));
     }
-    assert_eq!(
-        stages,
-        BTreeSet::from([
-            "orient-and-probe".to_owned(),
-            "plan-and-route".to_owned(),
-            "teach-and-practice".to_owned(),
-            "interpret-and-repair".to_owned(),
-            "review-and-transfer".to_owned(),
-            "consolidate-and-resume".to_owned(),
-            "papers".to_owned(),
-            "papers-loop".to_owned(),
-        ]),
-        "the learning manifest must include all required workflows"
-    );
-    let required_runtime_paths = BTreeSet::from([
-        "MAGNESIUM.md",
-        "teaching-policy.md",
-        "contracts/state-and-evidence.md",
-        "contracts/source-use.md",
-        "contracts/tool-recipes.md",
-        "workflows/orient-and-probe.md",
-        "workflows/plan-and-route.md",
-        "workflows/teach-and-practice.md",
-        "workflows/interpret-and-repair.md",
-        "workflows/review-and-transfer.md",
-        "workflows/consolidate-and-resume.md",
-        "workflows/papers.md",
-        "workflows/papers-loop.md",
-        "adapters/claude.md",
-    ]);
-    let actual_runtime_paths: BTreeSet<_> = inventory
-        .iter()
-        .map(|(path, _, _, _)| path.as_str())
-        .collect();
-    assert_eq!(
-        actual_runtime_paths, required_runtime_paths,
-        "the manifest must contain exactly the paths consumed by the runtime"
-    );
-    inventory
-}
+    metadata.push_str("];\nconst ALLOWED_PATHS: &[&str] = &[\n");
+    for (path, _) in &files {
+        writeln!(metadata, "    {path:?},").expect("write");
+    }
+    metadata.push_str("];\n");
 
-fn main() {
-    for path in ["src/workspace/learning", "build.rs"] {
-        println!("cargo:rerun-if-changed={path}");
-    }
-    // Package the active learner-model/v2 instructions reproducibly.
-    let mut reserved = Vec::new();
-    let inventory = reserved_inventory();
-    let mut generated = String::from("const ALLOWED_PATHS: &[&str] = &[\n");
-    for (relative, _, _, _) in &inventory {
-        generated.push_str(&format!("    {relative:?},\n"));
-    }
-    generated.push_str(
-        "];\nconst GENERATED_METADATA: &[(&str, &str, Option<&str>, Option<&str>)] = &[\n",
+    packed_manifest.push_str(rest);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&packed_manifest).expect("packed manifest JSON"),
+        manifest,
+        "each hash must land in its own manifest entry"
     );
-    for (path, role, stage, host) in &inventory {
-        generated.push_str(&format!(
-            "    ({path:?}, {role:?}, {:?}, {:?}),\n",
-            stage.as_deref(),
-            host.as_deref()
-        ));
-    }
-    generated.push_str("];\n");
-    fs::write(
-        Path::new(&env::var_os("OUT_DIR").expect("OUT_DIR")).join("learning-manifest.rs"),
-        generated,
-    )
-    .expect("write generated learning manifest metadata");
-    for relative in
-        std::iter::once("manifest.json".to_owned()).chain(inventory.into_iter().map(|row| row.0))
+    let mut pack = Vec::new();
+    for (name, content) in
+        std::iter::once(("manifest.json".to_owned(), packed_manifest.into_bytes())).chain(files)
     {
-        let name = format!("src/workspace/learning/{relative}");
-        let content = read_reserved_file(&name);
-        reserved.extend_from_slice(relative.as_bytes());
-        reserved.push(0);
-        reserved.extend_from_slice(&(content.len() as u64).to_be_bytes());
-        reserved.extend_from_slice(&content);
+        pack.extend_from_slice(name.as_bytes());
+        pack.push(0);
+        pack.extend_from_slice(&(content.len() as u64).to_be_bytes());
+        pack.extend_from_slice(&content);
     }
-    fs::write(
-        Path::new(&env::var_os("OUT_DIR").expect("OUT_DIR")).join("learning-instructions-v2.bin"),
-        reserved,
-    )
-    .expect("write reserved learning instruction bundle");
+    let out = env::var_os("OUT_DIR").expect("OUT_DIR");
+    fs::write(Path::new(&out).join("learning-manifest.rs"), metadata)
+        .expect("write learning manifest metadata");
+    fs::write(Path::new(&out).join("learning-instructions-v2.bin"), pack)
+        .expect("write learning instruction pack");
 }

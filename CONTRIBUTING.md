@@ -8,26 +8,43 @@ Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11
 The study window under `app/` is a separate Cargo workspace. `python3 ci/check.py`
 does not build or test it. Its own check is `app/scripts/check.sh`.
 
-From the repository root, run the ordinary local checks:
+From the repository root, run the local checks:
 
 ```sh
 python3 ci/check.py
 ```
 
-This runs Rust formatting, Clippy, the release build and tests, native source
-checks, Python tests, and documentation/instruction checks. Subprocess tests use
-the release executable built by the same command. Missing prerequisites and
-failed checks stop the run. The builds, lint, Python tests, and documentation
-checks overlap and print each command's output when it finishes; the Rust tests
-and native source check then run alone because the tests are sensitive to CPU
-load. The Rust tests keep their temporary files on a RAM disk
-(macOS) or in `/dev/shm` (Linux) that the command removes afterwards; set
-`MAGNESIUM_CI_DISK_TMP=1` to use the default temporary directory instead.
+This runs Rust formatting, Clippy, the Rust tests, the Python tests, and the
+documentation checks, one after another, and stops at the first failure. With
+a warm build it takes about half a minute. Select `core`, `python`, or `docs`
+to run a part, for example `python3 ci/check.py core docs`. Use `--list` to
+print the commands or `--offline` to require Cargo's cached dependencies.
 
-For a smaller loop, select `core`, `python`, or `docs`, for example
-`python3 ci/check.py core docs`. Use `--list` to inspect the commands or `--offline`
-to require Cargo's cached dependencies. Individual `cargo test` commands remain
-useful while working on a particular behavior.
+While you work on one behavior, run only its tests. Each of these takes a few
+seconds:
+
+```sh
+cargo test --lib learner::practice    # the unit tests of one module
+cargo test --test it sittings         # one file of integration tests
+```
+
+Unit tests sit beside the code. A module with more than a screen of tests
+keeps them in a file of their own, such as `src/digest/tests.rs` for
+`src/digest.rs`, so the source file holds only product code. Integration tests
+start the built `magnesium` program the way Claude Code or a learner does.
+They are one test program, `tests/it/`: a new file there needs a `mod` line in
+`tests/it/main.rs`, and its helpers are in `tests/it/support/`.
+
+The tests use the debug build that Cargo makes for them, so no release build
+is needed. They do not wait for the disk either. A flush to disk can take a
+Mac tens of milliseconds and the tests would make thousands, so the test helpers set
+`MAGNESIUM_UNSAFE_NO_SYNC=1` for each `magnesium` they start, and the unit
+tests never flush. Never set that variable to study: a crash or a power cut
+can then lose what was written last.
+
+The tutor's instruction files are in `src/workspace/learning/`. The build
+works out each file's SHA-256, so an edit there needs no other change. A new
+file needs an entry in `manifest.json` beside them.
 
 An ignored test is not a pass. Live tutoring and
 conversion-quality checks need their own environments. Never use personal

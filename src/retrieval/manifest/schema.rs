@@ -521,6 +521,8 @@ fn connect(
     validate_header_ownership(path, allow_empty, budget)?;
     let connection = Connection::open_with_flags(path, flags)
         .map_err(|source| sqlite(path, "open source index", source))?;
+    crate::workspace::apply_sync_policy(&connection)
+        .map_err(|source| sqlite(path, "apply the source-index sync policy", source))?;
     #[cfg(test)]
     sql_trace::attach(&connection);
     connection

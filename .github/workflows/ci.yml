@@ -40,8 +40,6 @@ jobs:
           key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-${{ runner.arch }}-
-      # Core builds the ordinary release binary and uses it for subprocess tests,
-      # including smoke. Do not repeat those gates here.
       - name: Run canonical core, Python, and docs checks
         run: python ci/check.py core python docs
 
@@ -85,5 +83,5 @@ jobs:
           key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-${{ runner.arch }}-
-      - name: Run canonical core checks through the ordinary release executable
+      - name: Run canonical core checks
         run: python ci/check.py core

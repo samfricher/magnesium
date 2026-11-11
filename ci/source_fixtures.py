@@ -44,11 +44,3 @@ def write_pdf(path, pages=TEXT_PAGES, *, image_only=False):
     output += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
     Path(path).write_bytes(output)
 
-
-def smoke_manifest():
-    return {"documents": [
-        {"file": "readable.pdf", "kind": "pdf", "anchors": [{"page": index, "text": text} for index, text in enumerate(TEXT_PAGES, 1)],
-         "native": {"support": "readable", "coverage": "complete"}},
-        {"file": "blank.pdf", "kind": "pdf", "anchors": [],
-         "native": {"support": "text_unavailable", "coverage": "text_unavailable", "anchor": {"page": 1}, "query": "unreadable scanned glyphs"}},
-    ]}

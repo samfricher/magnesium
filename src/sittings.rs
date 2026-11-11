@@ -171,6 +171,7 @@ impl Sittings {
         conn.busy_timeout(Duration::from_secs(2)).map_err(error)?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .map_err(error)?;
+        crate::workspace::apply_sync_policy(&conn).map_err(error)?;
         conn.execute_batch(SCHEMA).map_err(error)?;
         conn.execute(
             "INSERT OR IGNORE INTO meta(singleton,version) VALUES(1,?1)",

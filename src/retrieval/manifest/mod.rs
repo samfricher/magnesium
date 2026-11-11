@@ -69,6 +69,10 @@ pub(crate) struct ReconcileProgress<'a> {
     pub(crate) cancellation: &'a crate::retrieval::OperationCancellation,
     pub(crate) report: ManifestReport,
     pub(crate) hashed: std::collections::HashMap<Vec<u8>, reconcile::HashedContent>,
+    /// Whether each known path was missing when this pass first asked. Many
+    /// new files with the same content would otherwise each check every
+    /// known file with that content again.
+    pub(crate) missing: std::collections::HashMap<Vec<u8>, bool>,
     pub(crate) after_open: &'a mut dyn FnMut(&Path) -> Result<(), ManifestError>,
 }
 

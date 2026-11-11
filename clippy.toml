@@ -1,0 +1,6 @@
+# Every flush to disk goes through `workspace::sync_to_disk`, so that the
+# tests can skip it. A direct flush would make each test wait for the drive.
+disallowed-methods = [
+    { path = "std::fs::File::sync_all", reason = "call crate::workspace::sync_to_disk, which the tests turn off" },
+    { path = "std::fs::File::sync_data", reason = "call crate::workspace::sync_to_disk, which the tests turn off" },
+]
