@@ -1,18 +1,11 @@
-use std::collections::HashSet;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use tree_sitter::{Language, Node, Parser, Point};
 
 const MAX_CHUNK_BYTES: usize = 16 * 1024;
 const MAX_CHUNK_LINES: usize = 120;
 const OVERLAP_LINES: usize = 8;
-const MAX_IMPORTS_PER_CHUNK: usize = 128;
-const MAX_DEFINITIONS_PER_CHUNK: usize = 256;
-const MAX_REFERENCES_PER_CHUNK: usize = 512;
-const MAX_IMPORT_NAMES: usize = 64;
 const MAX_METADATA_TEXT_BYTES: usize = 256;
-const MAX_IMPORT_TEXT_BYTES_PER_CHUNK: usize = 8 * 1_024;
 const MAX_STRUCTURAL_PATH_BYTES: usize = 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,6 +13,9 @@ pub(crate) enum ChunkKind {
     Fallback,
     Heading,
     Page,
+    /// `Module` and `Symbol` pieces were cut from Python, JavaScript and
+    /// TypeScript files by earlier versions. New code files are split as
+    /// plain text; an index built earlier still holds and reads these.
     Module,
     Symbol,
 }
@@ -47,6 +43,8 @@ impl ChunkKind {
     }
 }
 
+/// Code metadata that earlier versions stored with each code piece. New
+/// pieces carry none, but search still reads it from an earlier index.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct SymbolDefinition {
     pub(crate) name: String,
@@ -89,17 +87,7 @@ pub(super) fn chunk_text(path: &Path, text: &str) -> Vec<ChunkDraft> {
         .map(str::to_ascii_lowercase);
     match extension.as_deref() {
         Some("md" | "markdown" | "mdx") => chunk_markdown(text),
-        Some("py") => chunk_code(text, tree_sitter_python::LANGUAGE.into(), "python"),
-        Some("js" | "mjs" | "cjs" | "jsx") => {
-            chunk_code(text, tree_sitter_javascript::LANGUAGE.into(), "javascript")
-        }
-        Some("ts" | "mts" | "cts") => chunk_code(
-            text,
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            "typescript",
-        ),
-        Some("tsx") => chunk_code(text, tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx"),
-        _ => bounded_chunks(text, 1, ChunkKind::Fallback, None, None),
+        _ => bounded_chunks(text, 1, ChunkKind::Fallback, None),
     }
 }
 
@@ -120,7 +108,7 @@ pub(super) fn page_chunk(page: u32, body: String) -> ChunkDraft {
 fn chunk_markdown(text: &str) -> Vec<ChunkDraft> {
     let lines = line_ranges(text);
     if lines.is_empty() {
-        return bounded_chunks(text, 1, ChunkKind::Fallback, None, None);
+        return bounded_chunks(text, 1, ChunkKind::Fallback, None);
     }
     let mut sections = Vec::new();
     let mut start = 0;
@@ -176,7 +164,7 @@ fn chunk_markdown(text: &str) -> Vec<ChunkDraft> {
         } else {
             ChunkKind::Fallback
         };
-        chunks.extend(bounded_chunks(body, lines[start].number, kind, path, None));
+        chunks.extend(bounded_chunks(body, lines[start].number, kind, path));
     }
     chunks
 }
@@ -190,354 +178,15 @@ fn markdown_heading(line: &str) -> Option<(usize, &str)> {
     (!heading.is_empty()).then_some((level, heading))
 }
 
-fn chunk_code(text: &str, language: Language, language_name: &'static str) -> Vec<ChunkDraft> {
-    let mut parser = Parser::new();
-    if parser.set_language(&language).is_err() {
-        return bounded_chunks(text, 1, ChunkKind::Fallback, None, Some(language_name));
-    }
-    let Some(tree) = parser.parse(text, None) else {
-        return bounded_chunks(text, 1, ChunkKind::Fallback, None, Some(language_name));
-    };
-    let root = tree.root_node();
-    let file_imports = imports_for(root, text);
-    let module_references = references_for(root, text, &[]);
-    let symbols = top_level_symbols(root);
-    if symbols.is_empty() {
-        let mut chunks = bounded_chunks(text, 1, ChunkKind::Module, None, Some(language_name));
-        annotate_module_chunks(&mut chunks, &file_imports, &module_references);
-        return chunks;
-    }
-    let mut chunks = Vec::new();
-    let mut previous_byte = 0;
-    for symbol in symbols {
-        if symbol.start_byte() > previous_byte {
-            let gap = &text[previous_byte..symbol.start_byte()];
-            if !gap.trim().is_empty() {
-                let start_line = line_at_byte(text, previous_byte);
-                let mut gap_chunks = bounded_chunks(
-                    gap,
-                    start_line,
-                    ChunkKind::Module,
-                    None,
-                    Some(language_name),
-                );
-                annotate_module_chunks(&mut gap_chunks, &file_imports, &module_references);
-                chunks.extend(gap_chunks);
-            }
-        }
-        chunks.extend(symbol_chunks(symbol, text, language_name));
-        previous_byte = symbol.end_byte();
-    }
-    if previous_byte < text.len() {
-        let gap = &text[previous_byte..];
-        if !gap.trim().is_empty() {
-            let mut gap_chunks = bounded_chunks(
-                gap,
-                line_at_byte(text, previous_byte),
-                ChunkKind::Module,
-                None,
-                Some(language_name),
-            );
-            annotate_module_chunks(&mut gap_chunks, &file_imports, &module_references);
-            chunks.extend(gap_chunks);
-        }
-    }
-    chunks
-}
-
-fn annotate_module_chunks(
-    chunks: &mut [ChunkDraft],
-    imports: &[SourceImport],
-    references: &[SymbolReference],
-) {
-    for chunk in chunks {
-        chunk.imports = imports_in_lines(imports, chunk.line_start, chunk.line_end);
-        chunk.references = references
-            .iter()
-            .filter(|reference| (chunk.line_start..=chunk.line_end).contains(&reference.line))
-            .cloned()
-            .collect();
-    }
-}
-
-fn top_level_symbols(root: Node<'_>) -> Vec<Node<'_>> {
-    let mut cursor = root.walk();
-    root.named_children(&mut cursor)
-        .filter_map(|node| {
-            if is_symbol_node(node.kind()) {
-                Some(node)
-            } else if matches!(node.kind(), "decorated_definition" | "export_statement") {
-                let mut nested = node.walk();
-                node.named_children(&mut nested)
-                    .find(|child| is_symbol_node(child.kind()))
-                    .map(|_| node)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn symbol_chunks(node: Node<'_>, source: &str, language: &'static str) -> Vec<ChunkDraft> {
-    let body = &source[node.start_byte()..node.end_byte()];
-    let definitions = definitions_for(node, source);
-    let imports = imports_for(node, source);
-    let structural_path = definitions
-        .first()
-        .map(|definition| definition.name.clone());
-    let references = references_for(node, source, &definitions);
-    let mut chunks = bounded_chunks(
-        body,
-        point_line(node.start_position()),
-        ChunkKind::Symbol,
-        structural_path,
-        Some(language),
-    );
-    for chunk in &mut chunks {
-        chunk.definitions =
-            metadata_in_lines(&definitions, chunk.line_start, chunk.line_end, |value| {
-                (value.line_start, value.line_end)
-            });
-        chunk.imports = imports_in_lines(&imports, chunk.line_start, chunk.line_end);
-        chunk.references = references
-            .iter()
-            .filter(|reference| (chunk.line_start..=chunk.line_end).contains(&reference.line))
-            .cloned()
-            .collect();
-    }
-    chunks
-}
-
-fn metadata_in_lines<T: Clone>(
-    values: &[T],
-    start: u32,
-    end: u32,
-    lines: impl Fn(&T) -> (u32, u32),
-) -> Vec<T> {
-    values
-        .iter()
-        .filter(|value| {
-            let (value_start, value_end) = lines(value);
-            value_start <= end && value_end >= start
-        })
-        .cloned()
-        .collect()
-}
-
-fn imports_in_lines(values: &[SourceImport], start: u32, end: u32) -> Vec<SourceImport> {
-    let mut remaining = MAX_IMPORT_TEXT_BYTES_PER_CHUNK;
-    let mut imports = Vec::new();
-    for value in values
-        .iter()
-        .filter(|value| value.line_start <= end && value.line_end >= start)
-    {
-        if value.module.len() > remaining {
-            break;
-        }
-        remaining -= value.module.len();
-        let mut value = value.clone();
-        value.names.retain(|name| {
-            if name.len() > remaining {
-                return false;
-            }
-            remaining -= name.len();
-            true
-        });
-        imports.push(value);
-    }
-    imports
-}
-
-fn definitions_for(node: Node<'_>, source: &str) -> Vec<SymbolDefinition> {
-    let mut definitions = Vec::new();
-    walk(node, &mut |candidate| {
-        let Some(kind) = definition_kind(candidate.kind()) else {
-            return;
-        };
-        let name_node = candidate.child_by_field_name("name").or_else(|| {
-            (candidate.kind() == "variable_declarator")
-                .then(|| candidate.named_child(0))
-                .flatten()
-        });
-        let Some(name_node) = name_node else {
-            return;
-        };
-        let Ok(name) = name_node.utf8_text(source.as_bytes()) else {
-            return;
-        };
-        if !name.trim().is_empty() && definitions.len() < MAX_DEFINITIONS_PER_CHUNK {
-            definitions.push(SymbolDefinition {
-                name: bounded_text(name, MAX_METADATA_TEXT_BYTES),
-                kind: kind.to_owned(),
-                line_start: point_line(candidate.start_position()),
-                line_end: end_line(candidate),
-            });
-        }
-    });
-    definitions
-}
-
-fn imports_for(node: Node<'_>, source: &str) -> Vec<SourceImport> {
-    let mut imports = Vec::new();
-    walk(node, &mut |candidate| {
-        if imports.len() >= MAX_IMPORTS_PER_CHUNK {
-            return;
-        }
-        let is_import = matches!(
-            candidate.kind(),
-            "import_statement" | "import_from_statement" | "import_declaration"
-        );
-        let is_require = candidate.kind() == "call_expression"
-            && candidate
-                .child_by_field_name("function")
-                .and_then(|function| function.utf8_text(source.as_bytes()).ok())
-                == Some("require");
-        if !is_import && !is_require {
-            return;
-        }
-        let Ok(statement) = candidate.utf8_text(source.as_bytes()) else {
-            return;
-        };
-        let module = import_module(candidate, statement, source);
-        let names = identifier_names(candidate, source, MAX_IMPORT_NAMES);
-        imports.push(SourceImport {
-            module,
-            names,
-            line_start: point_line(candidate.start_position()),
-            line_end: end_line(candidate),
-        });
-    });
-    imports
-}
-
-fn import_module(node: Node<'_>, statement: &str, source: &str) -> String {
-    let mut module = None;
-    walk(node, &mut |candidate| {
-        if module.is_none() && candidate.kind() == "string" {
-            module = candidate.utf8_text(source.as_bytes()).ok().map(|value| {
-                bounded_text(value.trim_matches(['\'', '"']), MAX_METADATA_TEXT_BYTES)
-            });
-        }
-    });
-    module.unwrap_or_else(|| {
-        let trimmed = statement.trim();
-        if let Some(rest) = trimmed.strip_prefix("from ") {
-            bounded_text(
-                rest.split_whitespace().next().unwrap_or(trimmed),
-                MAX_METADATA_TEXT_BYTES,
-            )
-        } else if let Some(rest) = trimmed.strip_prefix("import ") {
-            bounded_text(
-                rest.split([',', ' ', ';']).next().unwrap_or(trimmed),
-                MAX_METADATA_TEXT_BYTES,
-            )
-        } else {
-            bounded_text(trimmed, MAX_METADATA_TEXT_BYTES)
-        }
-    })
-}
-
-fn references_for(
-    node: Node<'_>,
-    source: &str,
-    definitions: &[SymbolDefinition],
-) -> Vec<SymbolReference> {
-    let definition_names = definitions
-        .iter()
-        .map(|definition| definition.name.as_str())
-        .collect::<HashSet<_>>();
-    let mut seen = HashSet::new();
-    let mut references = Vec::new();
-    walk(node, &mut |candidate| {
-        if references.len() >= MAX_REFERENCES_PER_CHUNK
-            || !matches!(
-                candidate.kind(),
-                "identifier"
-                    | "property_identifier"
-                    | "type_identifier"
-                    | "shorthand_property_identifier"
-            )
-        {
-            return;
-        }
-        let Ok(name) = candidate.utf8_text(source.as_bytes()) else {
-            return;
-        };
-        let line = point_line(candidate.start_position());
-        let name = bounded_text(name, MAX_METADATA_TEXT_BYTES);
-        if !definition_names.contains(name.as_str()) && seen.insert((name.clone(), line)) {
-            references.push(SymbolReference { name, line });
-        }
-    });
-    references
-}
-
-fn identifier_names(node: Node<'_>, source: &str, limit: usize) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut seen = HashSet::new();
-    walk(node, &mut |candidate| {
-        if names.len() < limit
-            && matches!(candidate.kind(), "identifier" | "type_identifier")
-            && let Ok(name) = candidate.utf8_text(source.as_bytes())
-        {
-            let name = bounded_text(name, MAX_METADATA_TEXT_BYTES);
-            if seen.insert(name.clone()) {
-                names.push(name);
-            }
-        }
-    });
-    names
-}
-
-fn definition_kind(kind: &str) -> Option<&'static str> {
-    match kind {
-        "function_definition" | "function_declaration" | "generator_function_declaration" => {
-            Some("function")
-        }
-        "class_definition" | "class_declaration" => Some("class"),
-        "method_definition" => Some("method"),
-        "interface_declaration" => Some("interface"),
-        "type_alias_declaration" => Some("type_alias"),
-        "enum_declaration" => Some("enum"),
-        "variable_declarator" => Some("variable"),
-        _ => None,
-    }
-}
-
-fn is_symbol_node(kind: &str) -> bool {
-    matches!(
-        kind,
-        "function_definition"
-            | "function_declaration"
-            | "generator_function_declaration"
-            | "class_definition"
-            | "class_declaration"
-            | "interface_declaration"
-            | "type_alias_declaration"
-            | "enum_declaration"
-            | "lexical_declaration"
-            | "variable_declaration"
-    )
-}
-
-fn walk(node: Node<'_>, visit: &mut impl FnMut(Node<'_>)) {
-    visit(node);
-    let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        walk(child, visit);
-    }
-}
-
 fn bounded_chunks(
     text: &str,
     base_line: u32,
     kind: ChunkKind,
     structural_path: Option<String>,
-    language: Option<&'static str>,
 ) -> Vec<ChunkDraft> {
     let lines = line_ranges(text);
     if lines.is_empty() {
-        return vec![empty_chunk(base_line, kind, structural_path, language)];
+        return vec![empty_chunk(base_line, kind, structural_path)];
     }
     let mut chunks = Vec::new();
     let mut start = 0;
@@ -555,7 +204,6 @@ fn bounded_chunks(
                     base_line.saturating_add(first.number - 1),
                     text[byte..end].to_owned(),
                     structural_path.clone(),
-                    language,
                 ));
                 byte = end;
             }
@@ -575,15 +223,12 @@ fn bounded_chunks(
             base_line.saturating_add(lines[end - 1].number - 1),
             text[first.start..lines[end - 1].end].to_owned(),
             structural_path.clone(),
-            language,
         ));
         if end == lines.len() {
             break;
         }
         // Overlap only chunks long enough that it stays under half of each one.
-        let overlap = if matches!(kind, ChunkKind::Fallback | ChunkKind::Module)
-            && end - start > 2 * OVERLAP_LINES
-        {
+        let overlap = if kind == ChunkKind::Fallback && end - start > 2 * OVERLAP_LINES {
             OVERLAP_LINES
         } else {
             0
@@ -593,13 +238,8 @@ fn bounded_chunks(
     chunks
 }
 
-fn empty_chunk(
-    line: u32,
-    kind: ChunkKind,
-    structural_path: Option<String>,
-    language: Option<&'static str>,
-) -> ChunkDraft {
-    draft(kind, line, line, String::new(), structural_path, language)
+fn empty_chunk(line: u32, kind: ChunkKind, structural_path: Option<String>) -> ChunkDraft {
+    draft(kind, line, line, String::new(), structural_path)
 }
 
 fn draft(
@@ -608,7 +248,6 @@ fn draft(
     line_end: u32,
     body: String,
     structural_path: Option<String>,
-    language: Option<&'static str>,
 ) -> ChunkDraft {
     ChunkDraft {
         kind,
@@ -616,7 +255,7 @@ fn draft(
         line_end,
         body,
         structural_path,
-        language,
+        language: None,
         definitions: Vec::new(),
         imports: Vec::new(),
         references: Vec::new(),
@@ -668,25 +307,6 @@ fn utf8_boundary_at_or_before(text: &str, mut index: usize) -> usize {
 fn bounded_text(value: &str, max_bytes: usize) -> String {
     let end = utf8_boundary_at_or_before(value, value.len().min(max_bytes));
     value[..end].to_owned()
-}
-
-fn line_at_byte(text: &str, byte: usize) -> u32 {
-    u32::try_from(text[..byte].bytes().filter(|value| *value == b'\n').count() + 1)
-        .unwrap_or(u32::MAX)
-}
-
-fn point_line(point: Point) -> u32 {
-    u32::try_from(point.row + 1).unwrap_or(u32::MAX)
-}
-
-fn end_line(node: Node<'_>) -> u32 {
-    let end = node.end_position();
-    let row = if end.column == 0 && end.row > node.start_position().row {
-        end.row
-    } else {
-        end.row + 1
-    };
-    u32::try_from(row).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]

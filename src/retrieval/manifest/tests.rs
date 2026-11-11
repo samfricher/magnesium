@@ -412,17 +412,13 @@ fn source_candidate_writes_take_ownership_before_fts_maintenance() {
 }
 
 #[test]
-fn semantic_chunks_persist_heading_and_code_structure_with_exact_provenance() {
+fn semantic_chunks_persist_heading_structure_with_exact_provenance() {
     let fixture = Fixture::new("semantic-chunks");
     fixture.write("guide.md", b"# Overview\nintro\n## Details\nmechanism\n");
     fixture.write(
-            "worker.py",
-            b"from helpers import normalize\n\ndef clean(value):\n    return normalize(value)\n\nclass Runner:\n    def run(self, value):\n        return clean(value)\n",
-        );
-    fixture.write(
-            "store.ts",
-            b"import { parse } from './parse';\nexport function load(input: string) {\n  return parse(input);\n}\n",
-        );
+        "worker.py",
+        b"from helpers import normalize\n\ndef clean(value):\n    return normalize(value)\n",
+    );
     fixture.write("long.txt", &vec![b'x'; 20_000]);
     let index = fixture.index();
     reconcile_manifest(&fixture.root, &index).expect("reconcile structured sources");
@@ -441,56 +437,13 @@ fn semantic_chunks_persist_heading_and_code_structure_with_exact_provenance() {
     assert_eq!((markdown[1].anchor_start, markdown[1].anchor_end), (3, 4));
 
     let python = extract_source(&fixture.root, &index, Path::new("worker.py"))
-        .expect("chunk Python symbols");
-    let clean = python
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("clean"))
-        .expect("persist Python function");
-    assert_eq!(clean.language.as_deref(), Some("python"));
-    assert_eq!((clean.anchor_start, clean.anchor_end), (3, 4));
-    assert!(clean.imports.is_empty());
-    assert!(
-        python
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .any(|source_import| source_import.module == "helpers")
-    );
-    assert!(
-        clean
-            .references
-            .iter()
-            .any(|reference| reference.name == "normalize")
-    );
-    let runner = python
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("Runner"))
-        .expect("persist Python class");
-    assert!(
-        runner
-            .definitions
-            .iter()
-            .any(|definition| definition.name == "run" && definition.kind == "function")
-    );
-
-    let typescript = extract_source(&fixture.root, &index, Path::new("store.ts"))
-        .expect("chunk TypeScript symbols");
-    let load = typescript
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("load"))
-        .expect("persist TypeScript function");
-    assert_eq!(load.language.as_deref(), Some("typescript"));
-    assert!(load.imports.is_empty());
-    assert!(
-        typescript
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .any(|source_import| source_import.module == "./parse")
-    );
-    assert!(
-        load.references
-            .iter()
-            .any(|reference| reference.name == "parse")
-    );
+        .expect("persist a code file as plain text");
+    assert_eq!(python.len(), 1);
+    assert_eq!(python[0].chunk_kind, ChunkKind::Fallback);
+    assert_eq!((python[0].anchor_start, python[0].anchor_end), (1, 4));
+    assert_eq!(python[0].structural_path, None);
+    assert_eq!(python[0].language, None);
+    assert!(python[0].definitions.is_empty() && python[0].imports.is_empty());
 
     let long = extract_source(&fixture.root, &index, Path::new("long.txt"))
         .expect("persist bounded pieces of one long line");
@@ -512,16 +465,13 @@ fn semantic_chunks_persist_heading_and_code_structure_with_exact_provenance() {
 }
 
 #[test]
-fn renaming_one_symbol_preserves_unaffected_chunk_identity() {
-    let fixture = Fixture::new("stable-symbols");
-    fixture.write(
-        "module.py",
-        b"def alpha(value):\n    return value + 1\n\ndef beta(value):\n    return value * 2\n",
-    );
+fn renaming_one_section_preserves_unaffected_chunk_identity() {
+    let fixture = Fixture::new("stable-sections");
+    fixture.write("module.md", b"# alpha\nvalue + 1\n\n# beta\nvalue * 2\n");
     let index = fixture.index();
     reconcile_manifest(&fixture.root, &index).expect("reconcile original module");
-    let before = extract_source(&fixture.root, &index, Path::new("module.py"))
-        .expect("extract original symbols");
+    let before = extract_source(&fixture.root, &index, Path::new("module.md"))
+        .expect("extract original sections");
     let alpha = before
         .iter()
         .find(|chunk| chunk.structural_path.as_deref() == Some("alpha"))
@@ -535,13 +485,10 @@ fn renaming_one_symbol_preserves_unaffected_chunk_identity() {
         .candidate_id
         .clone();
 
-    fixture.write(
-        "module.py",
-        b"def gamma(value):\n    return value + 1\n\ndef beta(value):\n    return value * 2\n",
-    );
-    reconcile_manifest(&fixture.root, &index).expect("reconcile renamed symbol");
-    let after = extract_source(&fixture.root, &index, Path::new("module.py"))
-        .expect("extract renamed symbols");
+    fixture.write("module.md", b"# gamma\nvalue + 1\n\n# beta\nvalue * 2\n");
+    reconcile_manifest(&fixture.root, &index).expect("reconcile renamed section");
+    let after = extract_source(&fixture.root, &index, Path::new("module.md"))
+        .expect("extract renamed sections");
     let gamma = after
         .iter()
         .find(|chunk| chunk.structural_path.as_deref() == Some("gamma"))
@@ -559,7 +506,7 @@ fn renaming_one_symbol_preserves_unaffected_chunk_identity() {
             [alpha],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .expect("read stale renamed symbol");
+        .expect("read stale renamed section");
     assert_eq!(stale_alpha, ("stale".into(), None));
 }
 
