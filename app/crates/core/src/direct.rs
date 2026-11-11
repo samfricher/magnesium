@@ -865,6 +865,7 @@ fn task_from_checkpoint(checkpoint: &Value) -> Option<record::OpenTask> {
         guess: plan.lines().any(|line| line == record::GUESS_LINE),
         check,
         again: plan.lines().any(|line| line == record::AGAIN_LINE),
+        stuck: false,
     })
 }
 
@@ -1535,6 +1536,7 @@ mod tests {
             guess: false,
             check: Some("sign of b".into()),
             again: false,
+            stuck: false,
         });
         let write = lesson.apply(
             &record::parse(r#"{"answer": null}"#).unwrap(),

@@ -377,6 +377,10 @@ pub struct OpenTask {
     pub check: Option<String>,
     /// Asked again after a mark: its next answer is not a first try.
     pub again: bool,
+    /// The learner already had no starting move on it. Having none again on
+    /// the same problem does not move its kind's help on a second time.
+    #[serde(default)]
+    pub stuck: bool,
 }
 
 /// What the engine knows of the lesson between turns.
@@ -595,7 +599,7 @@ impl Lesson {
             });
             if let Some(kind) = &record.kind {
                 attempt["kind"] = json!(kind);
-                if record.no_start && matches!(mark, Mark::Declined | Mark::Wrong) {
+                if record.no_start && !task.stuck && matches!(mark, Mark::Declined | Mark::Wrong) {
                     attempt["no_start"] = json!(true);
                 }
             }
@@ -627,6 +631,9 @@ impl Lesson {
         // The task now open.
         let answered = answer.is_some() && open.is_some();
         let answered_text = open.as_ref().map(|task| task.text.clone());
+        let was_stuck = open
+            .as_ref()
+            .is_some_and(|task| task.stuck || (record.no_start && marked));
         if answered {
             open = None;
         }
@@ -637,16 +644,21 @@ impl Lesson {
                     task.help = task.help.max(record.help);
                 }
                 _ => {
-                    let again = answered
+                    // After a decline there was no try, so the same task
+                    // asked again, often after a worked example, gets its
+                    // first one.
+                    let same = answered
                         && answered_text
                             .as_deref()
                             .is_some_and(|before| same_task(before, text));
+                    let again = same && answer != Some(Mark::Declined);
                     open = Some(OpenTask {
                         text: text.clone(),
                         help: record.help,
                         guess: record.guess,
                         check: posed.as_ref().map(|check| check.label.clone()),
                         again,
+                        stuck: same && was_stuck,
                     });
                 }
             },
@@ -864,6 +876,7 @@ mod tests {
             guess: true,
             check: None,
             again: false,
+            stuck: false,
         });
         let guess = lesson.apply(
             &record(r#"{"answer": "wrong", "skill": "expected value", "task": "Find E for the weighted die"}"#),
@@ -893,16 +906,17 @@ mod tests {
             guess: false,
             check: None,
             again: false,
+            stuck: false,
         });
-        let declined = lesson.apply(
+        let wrong = lesson.apply(
             &record(
-                r#"{"answer": "declined", "skill": "formula", "task": "Solve 3x²  −  2x − 8 = 0"}"#,
+                r#"{"answer": "wrong", "skill": "formula", "task": "Solve 3x²  −  2x − 8 = 0"}"#,
             ),
-            &message("no idea"),
-            "Here is how.",
+            &message("x = 8"),
+            "Not quite. Solve 3x² − 2x − 8 = 0",
             "r-1",
         );
-        assert!(declined.marked);
+        assert!(wrong.marked);
         assert!(lesson.task.as_ref().unwrap().again);
         let second = lesson.apply(
             &record(r#"{"answer": "right", "skill": "formula", "task": "Solve x² + 2x − 15 = 0"}"#),
@@ -920,6 +934,41 @@ mod tests {
             "r-3",
         );
         assert_eq!(lesson.task.as_ref().unwrap().help, Help::Hint);
+        // After a decline there was no try: the same task asked again, as
+        // after a worked example, gets its first one.
+        let declined = lesson.apply(
+            &record(
+                r#"{"answer": "declined", "skill": "formula", "task": "Solve x² + 2x − 15 = 0"}"#,
+            ),
+            &message("I don't know"),
+            "Here is a worked one. Now: Solve x² + 2x − 15 = 0",
+            "r-4",
+        );
+        assert!(declined.marked);
+        assert!(!lesson.task.as_ref().unwrap().again);
+        // No starting move on it, then none again on the same problem after
+        // the example: the kind's help moves on once, not twice.
+        let stuck = r#"{"answer": "declined", "skill": "formula", "kind": "quadratic formula", "no_start": true, "task": "Solve x² + 2x − 15 = 0"}"#;
+        let first = lesson.apply(
+            &record(stuck),
+            &message("no idea how to start"),
+            "Here is one worked.",
+            "r-5",
+        );
+        assert_eq!(
+            first.request["observations"][0]["attempt"]["no_start"],
+            true
+        );
+        assert!(lesson.task.as_ref().unwrap().stuck);
+        let second = lesson.apply(
+            &record(stuck),
+            &message("still no idea"),
+            "Row by row, then.",
+            "r-6",
+        );
+        assert!(second.request["observations"][0]["attempt"]
+            .get("no_start")
+            .is_none());
     }
 
     #[test]
