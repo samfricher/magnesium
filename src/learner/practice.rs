@@ -677,14 +677,31 @@ fn set_next(
 /// faster than sittings take them.
 pub(crate) const MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS: usize = 3;
 
-/// The open quick checks that a right first answer made, dropped ones left
-/// out.
-fn open_checks_from_right_answers(tx: &Connection) -> Result<usize> {
-    Ok(load_items(tx)?
-        .iter()
-        .filter(|item| item.dropped.is_none() && item.made_by_a_right_answer())
-        .filter(|item| !derive(item, None).closed())
-        .count())
+/// Whether a right first answer on `day` may make a check. Fewer than
+/// [`MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS`] open checks were made that way,
+/// and on the day the new check would first fall due fewer checks are due
+/// than a sitting takes, overdue ones included. So such a check books a
+/// place only on a day with room, and never waits for ever behind others.
+fn room_for_a_check(tx: &Connection, day: NaiveDate, clean: bool) -> Result<bool> {
+    let due_on = if clean {
+        after_pass(day, 1, None)
+    } else {
+        days_after(day, 1)
+    };
+    let (mut from_right_answers, mut due_then) = (0, 0);
+    for item in load_items(tx)? {
+        if item.dropped.is_some() || item.origin != Origin::Chat {
+            continue;
+        }
+        let state = derive(&item, None);
+        if state.closed() {
+            continue;
+        }
+        from_right_answers += usize::from(item.made_by_a_right_answer());
+        due_then += usize::from(state.due_on(due_on));
+    }
+    Ok(from_right_answers < MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS
+        && due_then < crate::sittings::MAX_CHECKS_PER_SITTING)
 }
 
 /// A stored attempt and where it came from, for [`record_attempt`].
@@ -795,10 +812,10 @@ pub(crate) fn record_attempt(
         // The first answer on a skill, right and alone, makes a check too,
         // so the skill is asked again and can earn its passes. Only when the
         // skill has no item, open or closed, and no earlier answer, whose
-        // passes would be lost to the new check. And only while fewer than
-        // MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS such checks are open, so that
-        // checks a sitting cannot take never pile up. Without one, the skill
-        // counts its clean answers as passes, as a skill never got wrong does.
+        // passes would be lost to the new check. And only when there is room
+        // for it, so that checks a sitting cannot take never pile up: see
+        // room_for_a_check. Without one, the skill counts its clean answers
+        // as passes, as a skill never got wrong does.
         let first_right = existing.is_none()
             && attempt.first_try == FirstTry::Right
             && attempt.help == AttemptHelp::None
@@ -808,7 +825,7 @@ pub(crate) fn record_attempt(
                 params![label_key(&label), attempt_id],
                 |r| r.get::<_, bool>(0),
             )?
-            && open_checks_from_right_answers(tx)? < MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS;
+            && room_for_a_check(tx, local_day(answered_at), attempt.cold && !attempt.slow)?;
         let makes = makes || first_right;
         match existing {
             Some(item) => {

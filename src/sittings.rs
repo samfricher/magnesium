@@ -27,7 +27,7 @@ const STORE_VERSION: i64 = 2;
 /// About three hours without a learner message ends a sitting.
 pub(crate) const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
 /// About a minute each, so about three minutes at the start of a sitting.
-const MAX_CHECKS_PER_SITTING: usize = 3;
+pub(crate) const MAX_CHECKS_PER_SITTING: usize = 3;
 const MAX_MISS_CHARS: usize = 240;
 const MAX_QUESTION_CHARS: usize = 400;
 const MAX_LOGGED_SITTINGS: i64 = 1000;
