@@ -11,6 +11,7 @@ import type {
   AgentEvent,
   Card,
   Core,
+  Engine,
   Home,
   Opened,
   Paper,
@@ -42,6 +43,13 @@ let studiedToday = true;
 // A sitting earns a proof when a check or a redo it opened with was passed.
 let sittingsDone = 0;
 let stoppedAt: string | null = "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.";
+// Answers the tutor marked today. Each answer sent in the demo is marked,
+// except at #summary:unmarked, which shows a sitting with none marked.
+let markedToday = 4;
+let marking = true;
+// What runs lessons, and the engine the demo course's conversation began on.
+let engineChosen: Engine = "plugin";
+let conversationEngine: Engine | null = "plugin";
 
 function home(): Home {
   const base: Home = {
@@ -100,6 +108,27 @@ function runtimeSetup(): RuntimeSetup {
   const bundled = program("0.3.0+4f1c2ad9e0b7");
   if (setupVariant === "replace") {
     return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  }
+  // Worded as the core words it: install.rs.
+  if (setupVariant === "too-old") {
+    return {
+      state: "too_old",
+      installed: program("0.2.0"),
+      bundled,
+      installed_now: false,
+      message:
+        "The magnesium program on this Mac, version 0.2.0, is older than this window needs. Replace it with the copy inside this app, version 0.3.0. Until then no lesson starts.",
+    };
+  }
+  if (setupVariant === "too-old-source") {
+    return {
+      state: "too_old",
+      installed: program("0.3.0"),
+      bundled: null,
+      installed_now: false,
+      message:
+        "The magnesium program on this Mac, version 0.3.0, is older than this window needs. Ask Claude Code to install the newest Magnesium with the install guide, docs/install.md in the Magnesium repository, then check again. Until then no lesson starts.",
+    };
   }
   return { state: "ready", installed: bundled, bundled, installed_now: setupVariant === "first", message: null };
 }
@@ -260,6 +289,7 @@ function progress(): Progress {
       checks_unknown: false,
       proofs: proofs(0, 0, 0),
       level_unknown: false,
+      today: null,
       message: "Nothing is proved yet. Progress fills in after your first marked paper or quick check.",
     };
   }
@@ -301,6 +331,7 @@ function progress(): Progress {
     checks_unknown: false,
     proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
     level_unknown: false,
+    today: { day: isoDay(0), answered: markedToday, started: 2, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
     message: null,
   };
 }
@@ -522,8 +553,21 @@ export function demoCore(): Core {
       window.setTimeout(() => (signedIn = true), 3000);
     },
     about: async () => ({ version: "0.3.0-rc.1", commit: "4f1c2ad9e0b7" }),
-    openSession: async (resume): Promise<Opened> => ({ resumed: resume, turns: resume && variant !== "new" ? earlier : [] }),
-    send: async (text) => void reply(text),
+    // A conversation stays on the engine it began on. Another pick starts a new one.
+    openSession: async (resume): Promise<Opened> => {
+      const carries = resume && conversationEngine === engineChosen;
+      conversationEngine = engineChosen;
+      return { resumed: carries, turns: carries && variant !== "new" ? earlier : [], engine: engineChosen };
+    },
+    engine: async () => ({ chosen: engineChosen, conversation: conversationEngine }),
+    setEngine: async (chosen) => {
+      engineChosen = chosen;
+      return { chosen: engineChosen, conversation: conversationEngine };
+    },
+    send: async (text) => {
+      if (marking) markedToday += 1;
+      void reply(text);
+    },
     sendNewLesson: async (goal) => void reply(goal),
     sendShown: async (shown) => void reply(shown),
     interrupt: async () => {
@@ -531,8 +575,10 @@ export function demoCore(): Core {
     },
     decide: async (_id, decision) => waiting?.(decision),
     answer: async (_id, answers) => waiting?.(answers[0]?.chosen.join(", ") ?? ""),
+    // A sitting with no answer marked earns no proof and makes no study day.
     stop: async (line) => {
       stoppedAt = line;
+      if (!marking) return;
       studiedToday = true;
       sittingsDone += 1;
     },
@@ -607,6 +653,9 @@ export function chooseVariant(): void {
   if (screen === "library" && state === "empty") shelf = "empty";
   // The end of a sitting shows today's day being earned.
   if (screen === "summary") studiedToday = false;
+  if (screen === "summary" && state === "unmarked") marking = false;
+  // Magnesium picked, with the demo course's conversation begun on Claude Code.
+  if (state === "magnesium") engineChosen = "direct";
   if (screen === "welcome" && state) {
     setupVariant = state;
     signedIn = state !== "signed-out";
@@ -627,6 +676,20 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     for (let n = 0; n < 200 && document.querySelector(".app")?.getAttribute("data-busy") === "yes"; n++) await wait(50);
   };
   await wait(50);
+  if (screen === "library" && state === "lesson") {
+    // A lesson open behind the library: the engine choice is disabled.
+    await actions.continueFolder("/Users/you/Study/Demo-Course");
+    await wait(300);
+    await quiet();
+    actions.showLibrary();
+    return;
+  }
+  if (screen === "library" && state === "continue") {
+    // Enter on the main card goes straight into its lesson.
+    await wait(300);
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return;
+  }
   if (screen === "session" || screen === "summary") {
     if (state === "fresh") {
       await actions.newLesson("teach me enzyme kinetics");

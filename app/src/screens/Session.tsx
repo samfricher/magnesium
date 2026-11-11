@@ -425,6 +425,8 @@ export function Session(props: {
   state: SessionState;
   rail: RailData | null;
   blockMinutes: number;
+  /** The name of the engine this conversation runs on, or null when the core cannot say. */
+  engine: string | null;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onDecide: (id: string, decision: Decision) => void;
@@ -514,6 +516,11 @@ export function Session(props: {
         center={<Track rail={props.rail} />}
         right={
           <>
+            {props.engine && (
+              <span className="engine-tag" title={`This lesson runs on ${props.engine}`} data-role="engine-tag">
+                {props.engine}
+              </span>
+            )}
             <Clock startedMs={state.startedMs} blockMinutes={props.blockMinutes} />
             <PaletteKey onClick={props.onPalette} />
           </>

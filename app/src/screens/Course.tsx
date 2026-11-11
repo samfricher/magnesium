@@ -10,6 +10,7 @@ import { Icon } from "../ui/icons";
 import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
 import type { Home, Paper, Progress, Row } from "../types";
 import { displayName } from "./Library";
+import { todayParts } from "./Summary";
 
 /** How far one skill is, as a word the styles colour. */
 function skillState(row: Row, group: "confirmed" | "in_progress" | "untested"): string {
@@ -257,6 +258,7 @@ export function Course(props: {
   }
 
   const inProgress = progress?.in_progress.length ?? 0;
+  const today = todayParts(progress?.today ?? null);
 
   return (
     <section className="screen course" data-screen="course">
@@ -311,6 +313,11 @@ export function Course(props: {
           <div className="next-card" data-card="next">
             {card}
           </div>
+          {usable && !sitting && today.length > 0 && (
+            <p className="today-line" data-role="today">
+              {today.join(" · ")}
+            </p>
+          )}
           {props.notice && <div className="banner selectable">{props.notice}</div>}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
           {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}

@@ -42,6 +42,8 @@ async function tauriCore(): Promise<Core> {
     keepRuntime: () => invoke("keep_runtime"),
     account: () => invoke("account"),
     setPayment: (payment) => invoke("set_payment", { payment }),
+    engine: () => invoke("engine"),
+    setEngine: (engine) => invoke("set_engine", { engine }),
     signIn: () => invoke("sign_in"),
     about: () => invoke("about"),
     openSession: (resume) => invoke("open_session", { resume }),
