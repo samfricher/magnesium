@@ -145,6 +145,8 @@ pub(crate) struct ItemState {
     pub(crate) misses: Vec<String>,
     /// Each event's effect, by event_no.
     pub(crate) effects: Vec<(i64, Effect)>,
+    /// The passes the item held after each event, by event_no.
+    pub(crate) passes_after: Vec<(i64, i64)>,
 }
 
 impl ItemState {
@@ -218,6 +220,7 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
         confidence: item.confidence,
         misses: item.base_misses.clone(),
         effects: Vec::new(),
+        passes_after: Vec::new(),
     };
     if state.closed() {
         state.next_on = None;
@@ -333,6 +336,7 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
             }
         };
         state.effects.push((event.event_no, effect));
+        state.passes_after.push((event.event_no, state.passes));
     }
     state
 }
