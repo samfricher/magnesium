@@ -2264,3 +2264,20 @@
     display: none;
   }
 }
+
+/* The engine's lines share one cell, so a new pick never changes the height. */
+.engine-lines {
+  display: grid;
+}
+
+.engine-lines > p {
+  grid-area: 1 / 1;
+}
+
+.engine-line.off {
+  visibility: hidden;
+}
+
+.today-line + .today-line {
+  margin-top: 2px;
+}

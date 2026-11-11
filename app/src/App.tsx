@@ -1009,6 +1009,7 @@ export function App() {
       <Course
         home={home}
         progress={progress}
+        engine={engine?.chosen ?? null}
         asking={asking}
         error={error}
         notice={notice}

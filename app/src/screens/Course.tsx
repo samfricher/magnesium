@@ -8,7 +8,7 @@ import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
 import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
-import type { Home, Paper, Progress, Row } from "../types";
+import type { Engine, Home, Paper, Progress, Row } from "../types";
 import { displayName } from "./Library";
 import { todayParts } from "./Summary";
 
@@ -41,6 +41,8 @@ export function SkillMarks({ progress, limit }: { progress: Progress; limit: num
 export function Course(props: {
   home: Home;
   progress: Progress | null;
+  /** The engine picked for lessons, or null when the core cannot say. */
+  engine: Engine | null;
   /** True while the card asks what to learn, for a new lesson in a folder that has one. */
   asking: boolean;
   error: string | null;
@@ -316,6 +318,12 @@ export function Course(props: {
           {usable && !sitting && today.length > 0 && (
             <p className="today-line" data-role="today">
               {today.join(" · ")}
+            </p>
+          )}
+          {/* Magnesium does no paper work, so its lessons leave the redos to Claude Code. */}
+          {home.state === "ready" && !sitting && props.engine === "direct" && home.redos_due > 0 && (
+            <p className="today-line" data-role="redo-engine">
+              Paper redos run on Claude Code.
             </p>
           )}
           {props.notice && <div className="banner selectable">{props.notice}</div>}

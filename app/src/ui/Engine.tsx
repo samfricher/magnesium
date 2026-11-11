@@ -69,8 +69,19 @@ export function EngineControl(props: {
         </div>
         {locked && <span className="engine-why">End the lesson to change this.</span>}
       </div>
-      <p className="engine-line">{engineLine(choice.chosen, props.payment)}</p>
-      {changes && !locked && <p className="engine-line">Your next lesson starts a new conversation. Your progress carries over.</p>}
+      {/* Both lines are laid out, one over the other, and the one not picked
+          is hidden, so the space they take never changes and nothing below
+          moves. The same holds for the line about a new conversation. */}
+      <div className="engine-lines">
+        {ENGINES.map((engine) => (
+          <p key={engine} className={engine === choice.chosen ? "engine-line" : "engine-line off"} aria-hidden={engine !== choice.chosen || undefined}>
+            {engineLine(engine, props.payment)}
+          </p>
+        ))}
+      </div>
+      <p className={changes && !locked ? "engine-line" : "engine-line off"} aria-hidden={!(changes && !locked) || undefined}>
+        Your next lesson starts a new conversation. Your progress carries over.
+      </p>
     </div>
   );
 }
