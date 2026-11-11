@@ -85,20 +85,6 @@ pub(crate) struct ItemFacts {
 }
 
 impl ItemFacts {
-    /// Whether a right, unaided first answer on its skill made it: a quick
-    /// check that no miss, decline or help made.
-    pub(crate) fn made_by_a_right_answer(&self) -> bool {
-        self.origin == Origin::Chat
-            && self
-                .events
-                .iter()
-                .find(|event| event.kind == EventKind::Made)
-                .and_then(|event| event.attempt.as_ref())
-                .is_some_and(|attempt| {
-                    attempt.mark == FirstTry::Right && attempt.help == AttemptHelp::None
-                })
-    }
-
     /// How the tutor names it: "midterm-1#3" for a gap-log row, the label
     /// for a quick check.
     pub(crate) fn name(&self) -> String {
@@ -671,39 +657,6 @@ fn set_next(
     Ok(())
 }
 
-/// At most this many open checks made by a right first answer. A sitting
-/// takes three checks, and a lesson can start several skills, so checks
-/// for skills the learner already got right would otherwise pile up
-/// faster than sittings take them.
-pub(crate) const MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS: usize = 3;
-
-/// Whether a right first answer on `day` may make a check. Fewer than
-/// [`MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS`] open checks were made that way,
-/// and on the day the new check would first fall due fewer checks are due
-/// than a sitting takes, overdue ones included. So such a check books a
-/// place only on a day with room, and never waits for ever behind others.
-fn room_for_a_check(tx: &Connection, day: NaiveDate, clean: bool) -> Result<bool> {
-    let due_on = if clean {
-        after_pass(day, 1, None)
-    } else {
-        days_after(day, 1)
-    };
-    let (mut from_right_answers, mut due_then) = (0, 0);
-    for item in load_items(tx)? {
-        if item.dropped.is_some() || item.origin != Origin::Chat {
-            continue;
-        }
-        let state = derive(&item, None);
-        if state.closed() {
-            continue;
-        }
-        from_right_answers += usize::from(item.made_by_a_right_answer());
-        due_then += usize::from(state.due_on(due_on));
-    }
-    Ok(from_right_answers < MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS
-        && due_then < crate::sittings::MAX_CHECKS_PER_SITTING)
-}
-
 /// A stored attempt and where it came from, for [`record_attempt`].
 pub(crate) struct NewAttempt<'a> {
     pub(crate) attempt_id: &'a str,
@@ -809,13 +762,10 @@ pub(crate) fn record_attempt(
             && attempt.first_try == FirstTry::Right
             || attempt.first_try == FirstTry::Right
                 && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
-        // The first answer on a skill, right and alone, makes a check too,
-        // so the skill is asked again and can earn its passes. Only when the
-        // skill has no item, open or closed, and no earlier answer, whose
-        // passes would be lost to the new check. And only when there is room
-        // for it, so that checks a sitting cannot take never pile up: see
-        // room_for_a_check. Without one, the skill counts its clean answers
-        // as passes, as a skill never got wrong does.
+        // The first answer on a skill, right and alone, makes a check for
+        // the next day too, so the skill is asked again and can earn its
+        // passes. Only when the skill has no item, open or closed, and no
+        // earlier answer, whose passes would be lost to the new check.
         let first_right = existing.is_none()
             && attempt.first_try == FirstTry::Right
             && attempt.help == AttemptHelp::None
@@ -824,8 +774,7 @@ pub(crate) fn record_attempt(
                      OR EXISTS(SELECT 1 FROM attempts WHERE label_key=?1 AND attempt_id<>?2)",
                 params![label_key(&label), attempt_id],
                 |r| r.get::<_, bool>(0),
-            )?
-            && room_for_a_check(tx, local_day(answered_at), attempt.cold && !attempt.slow)?;
+            )?;
         let makes = makes || first_right;
         match existing {
             Some(item) => {
