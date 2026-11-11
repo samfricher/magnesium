@@ -70,6 +70,7 @@ struct HookInput {
     stop_hook_active: Option<bool>,
     last_assistant_message: Option<String>,
     tool_name: Option<String>,
+    tool_input: Option<Value>,
 }
 
 /// The host comes from the installed `--host-kind` hook flag, because Claude
@@ -286,12 +287,20 @@ fn handle(
     // simultaneous windows, or a bound-root violation) rejects learning
     // writes here; ordinary host work continues because hooks always exit
     // successfully with degraded status instead of blocking.
-    if let HookEvent::PostToolUse = event {
-        return Ok(end_turn_after_reply(input.tool_name.as_deref()));
-    }
     adapter::check_workspace_binding(workspace)?;
     let host = &HostIdentity::new(kind, &input.session_id)
         .map_err(|detail| format!("unavailable_capture: {detail}"))?;
+    if let HookEvent::PostToolUse = event {
+        let tool = input.tool_name.as_deref();
+        let ends = match tool_kind(tool) {
+            Some(MagnesiumTool::Reply) => !save_after(input.tool_input.as_ref()),
+            // The notes the tutor sends after its reply are the turn's last
+            // write. In a terminal no reply tool exists, so this never fires.
+            Some(MagnesiumTool::LearningStep) => adapter::replied_this_turn(&input.cwd, host)?,
+            None => false,
+        };
+        return Ok(ends.then(end_turn));
+    }
     match event {
         HookEvent::SessionStart => {
             adapter::host::clear_session_ended(workspace, host)?;
@@ -345,16 +354,38 @@ fn handle(
     }
 }
 
-/// Once the reply tool has delivered the tutor's reply, the turn ends there.
-/// A tutor asked to write nothing after it still wrote a closing line in most
-/// turns of the live runs of 2026-11-11 ("Your question is above"), which the
-/// window would show as a second message, and which cost seconds. Any other
-/// tool, and so every terminal session, is left alone.
-fn end_turn_after_reply(tool: Option<&str>) -> Option<Value> {
+/// The turn ends at its last write in the window: at the reply, or, when a
+/// memory edit or checkpoint is due, at the one learning_step after it. A
+/// tutor asked to write nothing more still wrote a closing line in most turns
+/// of the live runs of 2026-11-11 ("Your question is above"), which the
+/// window would show as a second message, and which cost seconds. Other
+/// tools, and every terminal session, are left alone.
+fn end_turn() -> Value {
+    json!({"continue": false, "suppressOutput": true})
+}
+
+#[derive(Debug, PartialEq)]
+enum MagnesiumTool {
+    Reply,
+    LearningStep,
+}
+
+fn tool_kind(tool: Option<&str>) -> Option<MagnesiumTool> {
     let tool = tool?;
-    let reply = format!("__{}", crate::mcp::catalog::REPLY_TOOL);
-    (tool.starts_with("mcp__") && tool.contains("magnesium") && tool.ends_with(&reply))
-        .then(|| json!({"continue": false, "suppressOutput": true}))
+    if !(tool.starts_with("mcp__") && tool.contains("magnesium")) {
+        return None;
+    }
+    if tool.ends_with(&format!("__{}", crate::mcp::catalog::REPLY_TOOL)) {
+        Some(MagnesiumTool::Reply)
+    } else if tool.ends_with("__learning_step") {
+        Some(MagnesiumTool::LearningStep)
+    } else {
+        None
+    }
+}
+
+fn save_after(input: Option<&Value>) -> bool {
+    input.and_then(|input| input["save_after"].as_bool()) == Some(true)
 }
 
 fn additional_context(event: HookEvent, context: String) -> Value {
@@ -381,22 +412,35 @@ mod tests {
     use std::io::Cursor;
 
     use super::{
-        MAX_HOOK_INPUT_BYTES, end_turn_after_reply, read_bounded_input, validate_turn_identifier,
+        MAX_HOOK_INPUT_BYTES, MagnesiumTool, end_turn, read_bounded_input, save_after, tool_kind,
+        validate_turn_identifier,
     };
 
     #[test]
-    fn only_the_reply_tool_ends_the_turn() {
-        let ended = end_turn_after_reply(Some("mcp__plugin_magnesium_magnesium__reply")).unwrap();
-        assert_eq!(ended["continue"], false);
+    fn only_magnesiums_reply_and_learning_step_can_end_the_turn() {
+        assert_eq!(end_turn()["continue"], false);
+        assert_eq!(
+            tool_kind(Some("mcp__plugin_magnesium_magnesium__reply")),
+            Some(MagnesiumTool::Reply)
+        );
+        assert_eq!(
+            tool_kind(Some("mcp__plugin_magnesium_magnesium__learning_step")),
+            Some(MagnesiumTool::LearningStep)
+        );
         for other in [
-            "mcp__plugin_magnesium_magnesium__learning_step",
             "mcp__other__reply",
             "Write",
             "reply",
+            "mcp__plugin_magnesium_magnesium__context",
         ] {
-            assert_eq!(end_turn_after_reply(Some(other)), None, "{other}");
+            assert_eq!(tool_kind(Some(other)), None, "{other}");
         }
-        assert_eq!(end_turn_after_reply(None), None);
+        assert_eq!(tool_kind(None), None);
+        assert!(save_after(Some(
+            &serde_json::json!({"text": "x", "save_after": true})
+        )));
+        assert!(!save_after(Some(&serde_json::json!({"text": "x"}))));
+        assert!(!save_after(None));
     }
 
     #[test]

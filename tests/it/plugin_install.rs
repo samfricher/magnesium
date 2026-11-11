@@ -82,7 +82,9 @@ fn claude_plugin_is_exact_and_native() {
             "SessionStart" => Some(json!("startup|resume|clear|compact")),
             "SessionEnd" => Some(json!("other|clear|resume")),
             // Only the window's reply tool ends a turn.
-            "PostToolUse" => Some(json!("mcp__plugin_magnesium_magnesium__reply")),
+            "PostToolUse" => Some(json!(
+                "mcp__plugin_magnesium_magnesium__(reply|learning_step)"
+            )),
             _ => None,
         };
         assert_eq!(

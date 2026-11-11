@@ -551,9 +551,12 @@ fn dispatch_inner(
         let host = native_host.unwrap_or_else(tool_host);
         host_reply(cwd, &host, &request.text)?;
         // Without this, a tutor often writes the same reply again as text.
-        return Ok(
-            json!({"shown": true, "next": "End the turn now, with no text: the learner already has your reply."}),
-        );
+        let next = if request.save_after {
+            "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply."
+        } else {
+            "End the turn now, with no text: the learner already has your reply."
+        };
+        return Ok(json!({"shown": true, "next": next}));
     }
     if !matches!(operation, "context" | "memory" | "learning_step") {
         return Err(format!("unknown tool: {operation}"));
@@ -831,7 +834,7 @@ const NATIVE_TICKET_FALLBACK: &str =
 /// The study window draws the `reply` tool's input as the tutor's words while
 /// they are written; text after a tool call would arrive in one piece. Only
 /// the delivery differs from a terminal: the teaching is the same.
-const CLAUDE_WINDOW_REPLY_GUIDANCE: &str = " This conversation is in the Magnesium study window: send each reply to the learner as the text of Magnesium's reply tool, after any learning_step, and write no other text. Teach exactly as you would in a terminal.";
+const CLAUDE_WINDOW_REPLY_GUIDANCE: &str = " This conversation is in the Magnesium study window: record the answer's observation and attempt, then send the reply as the text of Magnesium's reply tool, then send any memory edit or checkpoint due in one learning_step (set save_after on the reply). Write no other text. Teach exactly as you would in a terminal.";
 /// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
@@ -966,6 +969,40 @@ pub(crate) fn answered_key(reply_key: &str) -> String {
         None => native_capture::event_key(reply_key),
     }
 }
+/// The key of the conversation's latest learner message: the prompt hook or
+/// the session start captured it this turn.
+fn latest_learner_key(
+    store: &crate::learner::LearnerStore,
+    host: &crate::learner::HostContext,
+) -> Result<Option<String>, String> {
+    store
+        .conn
+        .query_row(
+            "SELECT external_event_key FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker='learner' AND kind='message' ORDER BY event_no DESC LIMIT 1",
+            rusqlite::params![host.host_kind, host.host_thread_id],
+            |r| r.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            e => Err(e.to_string()),
+        })
+}
+/// Whether the `reply` tool already delivered a reply to the conversation's
+/// latest learner message: then a learning_step that follows it is the
+/// turn's last write.
+pub(crate) fn replied_this_turn(cwd: &Path, host: &HostIdentity) -> Result<bool, String> {
+    let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+    check_workspace_binding(&workspace)?;
+    let store = open_store(&workspace)?;
+    let context = host_context(host);
+    match latest_learner_key(&store, &context)? {
+        Some(key) => Ok(!tool_replies(&store, &context, &key)?.is_empty()),
+        None => Ok(false),
+    }
+}
 /// Replies already recorded from the `reply` tool for one learner message.
 fn tool_replies(
     store: &crate::learner::LearnerStore,
@@ -1016,19 +1053,8 @@ pub(crate) fn host_reply(
         return Ok(());
     }
     // The message this reply answers is the conversation's latest learner
-    // message: the prompt hook or the session start captured it this turn.
-    let learner_key: Option<String> = store
-        .conn
-        .query_row(
-            "SELECT external_event_key FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND origin='host_observed' AND speaker='learner' AND kind='message' ORDER BY event_no DESC LIMIT 1",
-            rusqlite::params![host.host_kind, host.host_thread_id],
-            |r| r.get(0),
-        )
-        .map(Some)
-        .or_else(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => Ok(None),
-            e => Err(e.to_string()),
-        })?;
+    // message.
+    let learner_key = latest_learner_key(&store, host)?;
     let key = match learner_key {
         Some(learner_key) => {
             let earlier = tool_replies(&store, host, &learner_key)?;

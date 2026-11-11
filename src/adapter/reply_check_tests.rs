@@ -353,3 +353,17 @@ fn a_reply_outside_a_recording_lesson_is_shown_and_not_kept() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn a_learning_step_after_the_reply_is_known_as_the_turns_last_write() {
+    let (root, store, host) = claude_lesson();
+    let context = host_context(&host);
+    claude_prompt(&root, &host, "one");
+    assert!(!replied_this_turn(&root, &host).unwrap(), "no reply yet");
+    host_reply(&root, &context, "Right. Now: what is c?").unwrap();
+    assert!(replied_this_turn(&root, &host).unwrap());
+    // The next learner message starts a turn with no reply.
+    claude_prompt(&root, &host, "two");
+    assert!(!replied_this_turn(&root, &host).unwrap());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

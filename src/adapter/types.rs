@@ -54,4 +54,9 @@ pub(crate) struct SourcesRequest {
 pub(crate) struct ReplyRequest {
     /// The whole reply, as it would be written in chat.
     pub(crate) text: String,
+    /// True when a memory edit or a checkpoint is due after this answer. The
+    /// turn then goes on to that one learning_step after the reply, instead
+    /// of ending at the reply.
+    #[serde(default)]
+    pub(crate) save_after: bool,
 }

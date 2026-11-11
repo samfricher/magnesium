@@ -60,12 +60,6 @@ pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
 /// the tutor unseen.
 pub const MODEL: &str = "claude-fable-5-2";
 
-/// The effort a lesson's model thinks with. Low was tried against the
-/// default on 2026-11-11: the same twenty answers of known marks were marked
-/// as often (16 of 20 each), and the first words came in a median of 8.9 s
-/// against 14.8 s. The thinking, not the tools, is most of the wait.
-pub const EFFORT: &str = "low";
-
 /// Claude Code's own tools a lesson may use. Everything else Claude Code
 /// offers is left out, and so is the learner's own setup: no other tool
 /// server, account connector, plugin or skill. Magnesium's five tools come
@@ -102,7 +96,8 @@ fn plugin_dir() -> Option<PathBuf> {
 /// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
 ///   `.magnesium/`. Permission cards are unchanged: a sandboxed command still
 ///   asks.
-/// - The model and its effort are named.
+/// - The model is named. The effort is Claude Code's default, as in a
+///   terminal.
 ///
 /// Without the plugin on this Mac, the folder's settings still name it, and
 /// the first report then says the plugin did not load.
@@ -114,9 +109,11 @@ pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
         TOOLS.join(","),
         "--model".into(),
         MODEL.into(),
-        "--effort".into(),
-        EFFORT.into(),
     ];
+    // No effort is passed: a lesson thinks as hard as in a terminal. Low
+    // effort was tried on 2026-11-11 and called context.prepare at 1 of 11
+    // lesson starts, so it waits for a timing on the final build that shows
+    // a large gap, and then for the terminal too.
     if let Some(plugin) = plugin {
         args.push("--plugin-dir".into());
         args.push(plugin.display().to_string());
@@ -1947,7 +1944,10 @@ mod tests {
             "Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash"
         );
         assert_eq!(after("--model"), MODEL);
-        assert_eq!(after("--effort"), "low");
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "a lesson thinks as in a terminal"
+        );
         assert_eq!(after("--plugin-dir"), plugin.display().to_string());
         let settings: Value = serde_json::from_str(&after("--settings")).unwrap();
         assert_eq!(settings["sandbox"]["enabled"], true);

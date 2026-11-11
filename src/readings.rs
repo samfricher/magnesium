@@ -746,9 +746,103 @@ pub(crate) fn add_to_result(
     }
 }
 
+/// Words of four letters or more that name no topic, so they never make an
+/// answer an earlier answer on the goal.
+const COMMON_WORDS: &[&str] = &[
+    "about",
+    "after",
+    "again",
+    "also",
+    "answer",
+    "basic",
+    "basics",
+    "before",
+    "being",
+    "between",
+    "both",
+    "calculate",
+    "case",
+    "cases",
+    "check",
+    "compute",
+    "does",
+    "each",
+    "every",
+    "example",
+    "explain",
+    "find",
+    "first",
+    "from",
+    "give",
+    "have",
+    "help",
+    "into",
+    "just",
+    "know",
+    "learn",
+    "learning",
+    "lesson",
+    "like",
+    "make",
+    "more",
+    "most",
+    "much",
+    "need",
+    "only",
+    "other",
+    "over",
+    "practice",
+    "practise",
+    "problem",
+    "problems",
+    "question",
+    "questions",
+    "quick",
+    "review",
+    "same",
+    "show",
+    "solve",
+    "some",
+    "start",
+    "step",
+    "steps",
+    "study",
+    "such",
+    "teach",
+    "than",
+    "that",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "through",
+    "understand",
+    "understanding",
+    "using",
+    "very",
+    "want",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "will",
+    "with",
+    "without",
+    "work",
+    "working",
+    "would",
+    "write",
+    "your",
+];
+
 /// At a session start or resume, the learner's latest answers on the goal:
-/// those whose label or question shares a word of four letters or more with
-/// it, at most eight, newest first. A new conversation can then tell that
+/// those whose label or kind shares with it a word of four letters or more
+/// that names a topic, at most eight, newest first. The question is left
+/// out: its everyday words ("pizza", "what") say nothing about the topic. A new conversation can then tell that
 /// the record already holds answers on the topic, and skip the opening
 /// questions, without a search the tutor may not make. None when there are
 /// none.
@@ -775,6 +869,7 @@ fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option
         text.split(|c: char| !c.is_alphanumeric())
             .filter(|word| word.chars().count() >= 4)
             .map(str::to_lowercase)
+            .filter(|word| !COMMON_WORDS.contains(&word.as_str()))
             .collect()
     };
     let wanted = words(&goal);
@@ -790,7 +885,8 @@ fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option
         .collect();
     let mut statement = conn
         .prepare(
-            "SELECT label, question, mark, help, answered_at_ms, response_event_id FROM attempts
+            "SELECT label, question, mark, help, answered_at_ms, response_event_id,
+                    COALESCE(problem_kind, '') FROM attempts
              ORDER BY answered_at_ms DESC, attempt_no DESC LIMIT 400",
         )
         .ok()?;
@@ -803,17 +899,17 @@ fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option
                 r.get::<_, String>(3)?,
                 r.get::<_, i64>(4)?,
                 r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })
         .ok()?;
     let answers: Vec<Value> = rows
         .filter_map(std::result::Result::ok)
-        .filter(|(label, question, _, _, _, event)| {
-            !own.contains(event.as_str())
-                && !wanted.is_disjoint(&words(&format!("{label} {question}")))
+        .filter(|(label, _, _, _, _, event, kind)| {
+            !own.contains(event.as_str()) && !wanted.is_disjoint(&words(&format!("{label} {kind}")))
         })
         .take(8)
-        .map(|(label, question, mark, help, at, _)| {
+        .map(|(label, question, mark, help, at, _, _)| {
             json!({
                 "label": label,
                 "question": question,

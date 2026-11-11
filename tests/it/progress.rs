@@ -341,13 +341,21 @@ fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
         "µM per second",
         json!({"label":"units of a rate","question":"What are the units of Vmax?","first_try":"right","help":"none","cold":true}),
     );
+    // Another topic that shares only common words with the goal: "what",
+    // "with", "find".
+    answer(
+        &e,
+        "a-3",
+        "4",
+        json!({"label":"what to find with a mean","question":"Find the mean of 2, 4 and 6. What is it?","first_try":"right","help":"none","cold":true}),
+    );
     let started = v2::tool(
         &e,
         "claude",
         "another-conversation",
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"again",
-            "session":{"operation":"start","client_ref":"s","goal":"Adding fractions with different denominators"}}),
+            "session":{"operation":"start","client_ref":"s","goal":"What to find when adding fractions with different denominators"}}),
     );
     assert_eq!(started["update_status"], "committed", "{started}");
     let earlier = started["earlier_answers"]
