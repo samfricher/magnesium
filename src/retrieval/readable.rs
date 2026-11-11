@@ -359,14 +359,17 @@ fn render(verdicts: &[Verdict]) -> String {
         .collect()
 }
 
-/// `magnesium searchable [--json] PATH...`, run in a study folder.
+/// `magnesium searchable [--json] PATH...`, run in a study folder. In a folder
+/// Magnesium has not been set up in, the folder itself is the root: the rules
+/// are the ones it will have once it is set up, with no ignore list yet.
 pub(crate) fn run(paths: &[PathBuf], as_json: bool) -> ExitCode {
     let result = (|| -> Result<Vec<Verdict>, String> {
         let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-        let workspace = Workspace::discover(&cwd)
-            .map_err(|error| error.to_string())?
-            .ok_or("this folder is not a Magnesium study folder")?;
-        Ok(verdicts(workspace.root(), &cwd, paths))
+        let root = match Workspace::discover(&cwd).map_err(|error| error.to_string())? {
+            Some(workspace) => workspace.root().to_path_buf(),
+            None => cwd.clone(),
+        };
+        Ok(verdicts(&root, &cwd, paths))
     })();
     match result {
         Ok(verdicts) => {

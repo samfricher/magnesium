@@ -171,7 +171,7 @@ fn it_changes_nothing_in_the_study_folder() {
 }
 
 #[test]
-fn text_form_and_a_folder_that_is_not_a_study_folder() {
+fn text_form_says_what_search_cannot_read() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     add(&e, "Study/stats/scan.pdf", &pdf(None));
@@ -185,14 +185,37 @@ fn text_form_and_a_folder_that_is_not_a_study_folder() {
         String::from_utf8_lossy(&output.stdout),
         "Study/stats/scan.pdf: left out of search. It is a scan with no text, so its text cannot be searched.\n"
     );
+}
 
+#[test]
+fn a_folder_not_set_up_yet_is_judged_by_the_rules_it_will_have() {
+    // A new folder's first step is adding material, before any lesson sets it up.
+    let e = TestEnvironment::from_fixture("basic").unwrap();
     let bare = e.root.join("bare");
-    fs::create_dir_all(&bare).unwrap();
+    fs::create_dir_all(bare.join("Study/materials")).unwrap();
+    fs::write(bare.join("Study/materials/scan.pdf"), pdf(None)).unwrap();
+    fs::write(bare.join("Study/materials/notes.md"), "Bayes").unwrap();
+    fs::write(bare.join("Study/materials/api key.md"), "Bayes").unwrap();
     let output = e
         .command_in(&bare)
-        .args(["searchable", "a.pdf"])
+        .args([
+            "searchable",
+            "--json",
+            "--",
+            "Study/materials/scan.pdf",
+            "Study/materials/notes.md",
+            "Study/materials/api key.md",
+        ])
         .output()
         .unwrap();
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("not a Magnesium study folder"));
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let reasons: Vec<Option<&str>> = value["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["reason"].as_str())
+        .collect();
+    assert_eq!(reasons, [Some("scanned"), None, Some("name_word")]);
+    assert!(!bare.join(".magnesium").exists(), "it set nothing up");
 }
