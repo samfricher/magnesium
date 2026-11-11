@@ -7,18 +7,24 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use std::time::Duration;
+
 use chrono::Local;
 use serde::Serialize;
+
+use crate::activity::Activity;
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
     Harness, Payment, StartOptions,
 };
 use crate::files;
+use crate::find;
 use crate::install::{self, RuntimeSetup};
+use crate::paths;
 use crate::runtime;
 use crate::store::{PaperSitting, Store, Turn};
-use crate::study::{self, Home, Paper, Progress, Rail};
+use crate::study::{self, Card, Home, Paper, Progress, Rail};
 
 #[derive(Default)]
 struct Buffer {
@@ -118,9 +124,36 @@ impl Manager {
         self.store.recent()
     }
 
-    /// The folder to show when the window opens with none named.
-    pub fn folder_to_open(&self) -> Option<String> {
-        study::folder_to_open(&self.store.recent())
+    /// Every folder in the library, most urgent first. It opens none of
+    /// them, so a lesson in the open folder goes on.
+    pub fn library(&self) -> Vec<Card> {
+        study::library(&self.store.recent(), &self.store)
+    }
+
+    /// Take a folder out of the library. The folder is not touched. The open
+    /// folder cannot be taken out while its conversation runs.
+    pub fn forget_folder(&self, path: &Path) -> AgentResult<()> {
+        let folder = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let mut inner = lock(&self.inner);
+        if inner.folder.as_deref() == Some(folder.as_path()) {
+            self.close_conversation(&mut inner);
+            inner.folder = None;
+        }
+        drop(inner);
+        self.store.forget(&folder);
+        Ok(())
+    }
+
+    /// Look under the home folder for study folders set up in a terminal,
+    /// and put them in the library. Returns how many were new.
+    pub fn find_folders(&self) -> usize {
+        let found = find::study_folders(&paths::home(), Duration::from_secs(6));
+        self.store.add_folders(&found)
+    }
+
+    /// The days the learner studied in the window, and the run they make.
+    pub fn activity(&self) -> Activity {
+        self.store.activity(study::today())
     }
 
     /// Open a study folder. Any conversation in the previous folder is ended;
@@ -145,7 +178,7 @@ impl Manager {
     }
 
     pub fn progress(&self, target: Option<&str>) -> AgentResult<Progress> {
-        Ok(study::progress(&self.need_folder()?, target, &self.store))
+        Ok(study::progress(&self.need_folder()?, target))
     }
 
     pub fn rail(&self) -> AgentResult<Rail> {
@@ -268,6 +301,9 @@ impl Manager {
                     let tutor = buffer.tutor.join("\n\n");
                     let learner = std::mem::take(&mut buffer.learner);
                     buffer.tutor.clear();
+                    if !learner.trim().is_empty() {
+                        store.count_turn(study::today());
+                    }
                     if let Some(session) = buffer.session.clone() {
                         if !tutor.trim().is_empty() || !learner.trim().is_empty() {
                             store.append_turn(
@@ -494,10 +530,6 @@ impl Manager {
 
     pub fn set_block_minutes(&self, minutes: u32) {
         self.store.set_block_minutes(minutes);
-    }
-
-    pub fn set_progress_view(&self, view: &str) {
-        self.store.set_progress_view(view);
     }
 
     /// End the conversation when the window closes.

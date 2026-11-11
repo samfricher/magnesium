@@ -1,0 +1,158 @@
+// A timed paper. The screen holds a countdown and nothing to read: the work
+// happens on paper, away from the screen. The tutor and the key are both out
+// of reach until the learner hands in.
+
+import { useState } from "react";
+
+import { Icon } from "../ui/icons";
+import { Ring, TopBar, clockText, useNow } from "../ui/bits";
+import type { Home, Paper as PaperInfo } from "../types";
+import { displayName } from "./Library";
+
+export function Paper(props: {
+  home: Home;
+  /** The paper chosen on the course page, if one was. */
+  chosen: PaperInfo | null;
+  error: string | null;
+  onStart: (paper: PaperInfo, minutes: number) => void;
+  onHandIn: () => void;
+  onEnd: () => void;
+  onBack: () => void;
+}) {
+  const { home } = props;
+  const now = useNow(1000);
+  const sitting = home.sitting;
+  const [picked, setPicked] = useState<PaperInfo | null>(props.chosen ?? home.papers.find((p) => !p.sat) ?? home.papers[0] ?? null);
+  const [minutes, setMinutes] = useState<string>(String(picked?.minutes ?? home.block_minutes));
+  const [confirmEnd, setConfirmEnd] = useState(false);
+
+  if (sitting) {
+    const total = sitting.minutes * 60;
+    const leftSeconds = Math.round((sitting.started_ms + total * 1000 - now) / 1000);
+    const over = leftSeconds < 0;
+    return (
+      <section className="screen paper running" data-screen="paper">
+        <TopBar center={<span className="bar-title">{sitting.name}</span>} />
+        <div className="center">
+          <div className="paper-col">
+            <Ring share={over ? 1 : leftSeconds / total} size={248} stroke={6} tone={over ? "amber" : "ink"} label="Time left">
+              <span className={over ? "count over" : "count"} data-role="countdown">
+                {clockText(leftSeconds)}
+              </span>
+              <small>
+                {over ? "over" : "left"} of {sitting.minutes} min
+              </small>
+            </Ring>
+            <p className="paper-rule">
+              {over ? (
+                "Time is up. Hand in what you have."
+              ) : (
+                <>
+                  Write on paper. Put <b>?</b> where you are stuck. After each answer write <b>S</b> for sure, <b>U</b> for unsure or <b>G</b> for a guess.
+                </>
+              )}
+            </p>
+            <div className="row center">
+              <button className="btn primary" autoFocus onClick={props.onHandIn}>
+                <Icon name="camera" size={16} /> Hand in a photo or PDF
+              </button>
+            </div>
+            <div className="row center">
+              {confirmEnd ? (
+                <>
+                  <span className="aside">Nothing is marked.</span>
+                  <button className="btn small danger" onClick={props.onEnd}>
+                    End the sitting
+                  </button>
+                  <button className="btn ghost small" onClick={() => setConfirmEnd(false)}>
+                    Keep going
+                  </button>
+                </>
+              ) : (
+                <button className="btn ghost small" onClick={() => setConfirmEnd(true)}>
+                  End without handing in
+                </button>
+              )}
+            </div>
+            <p className="aside">
+              <Icon name="lock" size={13} /> The tutor is off and the key is locked until you hand in.
+            </p>
+            {props.error && <div className="banner bad selectable">{props.error}</div>}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const length = Math.round(Number(minutes));
+  const valid = picked !== null && Number.isFinite(length) && length >= 1 && length <= 600;
+  return (
+    <section className="screen paper" data-screen="paper">
+      <TopBar
+        left={
+          <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+            <Icon name="back" size={16} />
+            {displayName(home.name)}
+          </button>
+        }
+      />
+      <div className="center">
+        <div className="paper-col">
+          {home.papers.length === 0 ? (
+            <>
+              <span className="done-mark quiet" aria-hidden="true">
+                <Icon name="paper" size={28} />
+              </span>
+              <h1>No paper to sit yet</h1>
+              <p className="paper-rule">The tutor builds papers for an exam. Start a lesson and name the exam, and its papers appear here.</p>
+              <div className="row center">
+                <button className="btn primary" autoFocus onClick={props.onBack}>
+                  Back <kbd>&#8629;</kbd>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1>Sit a paper</h1>
+              <div className="paper-list" role="radiogroup" aria-label="Papers">
+                {home.papers.map((paper) => (
+                  <button
+                    key={paper.path}
+                    role="radio"
+                    aria-checked={picked?.path === paper.path}
+                    className={picked?.path === paper.path ? "on" : undefined}
+                    onClick={() => {
+                      setPicked(paper);
+                      setMinutes(String(paper.minutes ?? home.block_minutes));
+                    }}
+                  >
+                    <i />
+                    <span>{paper.name}</span>
+                    <small>{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} min` : ""}</small>
+                  </button>
+                ))}
+              </div>
+              <label className="minutes">
+                <input
+                  className="field"
+                  inputMode="numeric"
+                  aria-label="Minutes"
+                  value={minutes}
+                  onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ""))}
+                />
+                minutes
+              </label>
+              <div className="row center">
+                <button className="btn primary" disabled={!valid} onClick={() => picked && props.onStart(picked, length)}>
+                  <Icon name="play" size={14} fill /> Start the clock
+                </button>
+              </div>
+              <p className="aside">The paper opens to print. The tutor stays off until you hand in.</p>
+            </>
+          )}
+          {props.error && <div className="banner bad selectable">{props.error}</div>}
+        </div>
+      </div>
+    </section>
+  );
+}

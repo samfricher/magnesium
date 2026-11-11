@@ -1,0 +1,233 @@
+/* The tutor's words. They are set like a page of a book: a reading serif, a
+   narrow measure, generous leading. Mathematics sits in the line at the same
+   size as the words round it. */
+
+.prose {
+  font-family: var(--serif);
+  font-size: 18.5px;
+  line-height: 1.62;
+  letter-spacing: 0.002em;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p {
+  margin: 0 0 0.95em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 1.5em 0 0.5em;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+.prose h1 {
+  font-size: 1.32em;
+}
+
+.prose h2 {
+  font-size: 1.18em;
+}
+
+.prose h3,
+.prose h4 {
+  font-size: 1.05em;
+}
+
+.prose strong {
+  font-weight: 680;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 0.95em;
+  padding-left: 1.5em;
+}
+
+.prose li {
+  padding-left: 0.15em;
+}
+
+.prose li + li {
+  margin-top: 0.4em;
+}
+
+.prose li::marker {
+  color: var(--faint);
+  font-family: var(--round);
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+.prose li > p {
+  margin-bottom: 0.4em;
+}
+
+.prose pre {
+  margin: 0 0 1em;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.prose pre code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+.prose :not(pre) > code {
+  padding: 0.12em 0.38em;
+  border-radius: 6px;
+  background: var(--hover);
+  font-size: 0.8em;
+}
+
+.prose code.path {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+
+.prose code.path:hover {
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  margin: 0 0 1em;
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--line-2);
+  color: var(--muted);
+}
+
+.prose .table {
+  margin: 0 0 1em;
+  overflow-x: auto;
+}
+
+.prose table {
+  border-collapse: collapse;
+  font-family: var(--sans);
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prose th,
+.prose td {
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.prose th {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--muted);
+  border-bottom-color: var(--line-2);
+}
+
+.prose hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.prose a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.prose img {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 1em;
+  border-radius: 12px;
+}
+
+.prose .missing {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--faint);
+}
+
+/* Mathematics. In the line it keeps the size of the words. On its own line it
+   gets room, and a long formula scrolls inside its own box. */
+.prose .katex {
+  font-size: 1.04em;
+}
+
+.prose .katex-display {
+  margin: 1.1em 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.prose .katex-display > .katex {
+  font-size: 1.16em;
+}
+
+.prose .diagram {
+  margin: 0 0 1em;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.prose .diagram svg {
+  max-width: none;
+  height: auto;
+}
+
+/* The thing to do next. A paragraph the tutor opened with a bold "Task." is
+   set apart, so the question is never lost in the explanation above it. */
+.prose div.task,
+.prose :not(div.task) > p.task {
+  margin: 1.2em 0 0;
+  padding: 14px 18px 15px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.prose div.task > :last-child {
+  margin-bottom: 0;
+}
+
+.prose div.task .katex-display {
+  margin: 0.7em 0;
+}
+
+.prose p.task > strong:first-child {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}

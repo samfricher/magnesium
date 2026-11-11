@@ -1,8 +1,8 @@
 //! What the window itself remembers, kept on this computer and nowhere else:
-//! which folders were opened, which conversation each one was in, the line the
-//! learner stopped at, the turns the window showed, how the learner chose to
-//! pay for lessons, and an installed `magnesium` they chose to keep. Never a
-//! credential.
+//! which folders are in the library, which conversation each one was in, the
+//! line the learner stopped at, the turns the window showed, the days the
+//! learner studied in it, how the learner chose to pay for lessons, and an
+//! installed `magnesium` they chose to keep. Never a credential.
 //!
 //! None of it is learning state. The learner record belongs to the runtime.
 
@@ -13,10 +13,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
+use crate::activity::{self, Activity};
 use crate::agent::Payment;
 use crate::paths;
+
+/// How many folders the library keeps.
+const LIBRARY_SIZE: usize = 24;
 
 /// Set this to keep the window's files somewhere else. For tests.
 pub const HOME_ENV: &str = "MAGNESIUM_APP_HOME";
@@ -51,8 +56,12 @@ struct Data {
     folders: BTreeMap<String, FolderState>,
     #[serde(default)]
     block_minutes: Option<u32>,
+    /// Messages the learner sent on each day, by "2026-11-10".
     #[serde(default)]
-    progress_view: Option<String>,
+    days: BTreeMap<String, u32>,
+    /// Whether `days` was filled once from the turns kept before it existed.
+    #[serde(default)]
+    days_filled: bool,
     #[serde(default)]
     payment: Option<Payment>,
     /// What `--version` printed for an installed `magnesium` the learner chose
@@ -168,7 +177,36 @@ impl Store {
         let mut data = self.lock();
         data.recent.retain(|other| other != &key);
         data.recent.insert(0, key);
-        data.recent.truncate(12);
+        data.recent.truncate(LIBRARY_SIZE);
+        self.save(&data);
+    }
+
+    /// Put folders in the library without opening them, after the ones
+    /// already there. Returns how many were new.
+    pub fn add_folders(&self, folders: &[PathBuf]) -> usize {
+        let mut data = self.lock();
+        let mut added = 0;
+        for folder in folders {
+            let key = key(folder);
+            if data.recent.len() < LIBRARY_SIZE && !data.recent.contains(&key) {
+                data.recent.push(key);
+                added += 1;
+            }
+        }
+        if added > 0 {
+            self.save(&data);
+        }
+        added
+    }
+
+    /// Take a folder out of the library. The folder itself is not touched,
+    /// and what the window remembers of it stays, so a lesson continues if
+    /// the folder is opened again.
+    pub fn forget(&self, folder: &Path) {
+        let key = key(folder);
+        let plain = folder.to_string_lossy();
+        let mut data = self.lock();
+        data.recent.retain(|other| other != &key && *other != plain);
         self.save(&data);
     }
 
@@ -196,18 +234,48 @@ impl Store {
         self.save(&data);
     }
 
-    pub fn progress_view(&self) -> String {
-        self.lock()
-            .progress_view
-            .clone()
-            .unwrap_or_else(|| "A".into())
+    /// Count one message the learner sent on `day`.
+    pub fn count_turn(&self, day: NaiveDate) {
+        let mut data = self.lock();
+        self.fill_days(&mut data);
+        *data.days.entry(activity::key(day)).or_default() += 1;
+        self.save(&data);
     }
 
-    pub fn set_progress_view(&self, view: &str) {
-        if matches!(view, "A" | "B" | "C") {
-            let mut data = self.lock();
-            data.progress_view = Some(view.to_owned());
+    /// The days the learner studied in the window, and the run they make.
+    pub fn activity(&self, today: NaiveDate) -> Activity {
+        let mut data = self.lock();
+        if !data.days_filled {
+            self.fill_days(&mut data);
             self.save(&data);
+        }
+        activity::summarize(&data.days, today)
+    }
+
+    /// Once, count the days from the turns the window kept before it counted
+    /// days, so a learner's first run is not lost.
+    fn fill_days(&self, data: &mut Data) {
+        if data.days_filled {
+            return;
+        }
+        data.days_filled = true;
+        let Ok(files) = fs::read_dir(self.root.join("transcripts")) else {
+            return;
+        };
+        for file in files.filter_map(Result::ok) {
+            let Ok(text) = fs::read_to_string(file.path()) else {
+                continue;
+            };
+            for turn in text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
+                .filter(|turn| !turn.learner.trim().is_empty())
+            {
+                if let Some(time) = chrono::DateTime::from_timestamp_millis(turn.ms) {
+                    let day = time.with_timezone(&Local).date_naive();
+                    *data.days.entry(activity::key(day)).or_default() += 1;
+                }
+            }
         }
     }
 
@@ -317,6 +385,74 @@ mod tests {
     fn the_window_keeps_its_files_apart_from_the_runtimes() {
         let root = default_root().to_string_lossy().to_ascii_lowercase();
         assert!(!root.ends_with("/magnesium"), "{root}");
+    }
+
+    #[test]
+    fn a_folder_can_be_added_and_forgotten_without_losing_its_lesson() {
+        let home = tempfile::tempdir().unwrap();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        store.opened(first.path());
+        store.update(first.path(), |state| state.session_id = Some("abc".into()));
+
+        // A found folder goes after the opened one, and only once.
+        let found = [second.path().to_path_buf(), first.path().to_path_buf()];
+        assert_eq!(store.add_folders(&found), 1);
+        assert_eq!(store.add_folders(&found), 0);
+        assert_eq!(store.recent(), vec![key(first.path()), key(second.path())]);
+
+        store.forget(first.path());
+        assert_eq!(store.recent(), vec![key(second.path())]);
+        assert!(first.path().is_dir());
+        // Opened again, the lesson is still there.
+        store.opened(first.path());
+        assert_eq!(
+            store.folder(first.path()).session_id.as_deref(),
+            Some("abc")
+        );
+    }
+
+    #[test]
+    fn studied_days_are_counted_and_earlier_turns_are_counted_once() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let day = |text: &str| NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap();
+        let at_noon = |text: &str| {
+            day(text)
+                .and_hms_opt(12, 0, 0)
+                .unwrap()
+                .and_local_timezone(Local)
+                .unwrap()
+                .timestamp_millis()
+        };
+        let turn = |ms: i64, learner: &str| Turn {
+            session: "abc".into(),
+            ms,
+            learner: learner.into(),
+            tutor: "…".into(),
+            interrupted: false,
+        };
+        // Turns kept by a window that did not count days yet.
+        let before = Store::at(home.path().to_path_buf());
+        before.append_turn(folder.path(), &turn(at_noon("2026-11-08"), "an answer"));
+        before.append_turn(folder.path(), &turn(at_noon("2026-11-09"), "another"));
+        // The tutor's own opening line, with no words from the learner.
+        before.append_turn(folder.path(), &turn(at_noon("2026-11-05"), " "));
+
+        let store = Store::at(home.path().to_path_buf());
+        store.count_turn(day("2026-11-10"));
+        let activity = store.activity(day("2026-11-10"));
+        assert_eq!(activity.run, 3);
+        assert!(activity.studied_today);
+        assert_eq!(activity.days.len(), 3);
+
+        // Reopened, the earlier turns are not counted a second time.
+        let again = Store::at(home.path().to_path_buf());
+        again.count_turn(day("2026-11-10"));
+        let activity = again.activity(day("2026-11-10"));
+        assert_eq!(activity.days.last().unwrap().turns, 2);
+        assert_eq!(activity.days.first().unwrap().turns, 1);
     }
 
     #[test]

@@ -3,7 +3,25 @@
 // Nothing here ships a real course, a real grade or a real learner's words.
 
 import type { Actions } from "./App";
-import type { Account, AgentEvent, Core, Home, Opened, Paper, PaperSitting, Payment, Progress, Rail, Row, RuntimeSetup, Setup, Turn } from "./types";
+import type {
+  Account,
+  Activity,
+  AgentEvent,
+  Card,
+  Core,
+  Home,
+  Opened,
+  Paper,
+  PaperSitting,
+  Payment,
+  Progress,
+  Proofs,
+  Rail,
+  Row,
+  RuntimeSetup,
+  Setup,
+  Turn,
+} from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
 
@@ -13,7 +31,13 @@ const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midte
 let variant = "ready";
 let sitting: PaperSitting | null = null;
 let blockMinutes = 50;
-let progressView = "A";
+// What the library shows: "" for four courses, "empty" for none yet.
+let shelf = "";
+let forgotten: string[] = [];
+let found = false;
+let studiedToday = true;
+// A sitting earns a proof when a check or a redo it opened with was passed.
+let sittingsDone = 0;
 let stoppedAt: string | null = "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.";
 
 function home(): Home {
@@ -63,6 +87,7 @@ function home(): Home {
 
 // What the setup screen shows, chosen by the address: #welcome:replace,
 // #welcome:signed-out, #welcome:no-claude, #welcome:key or #welcome:first.
+// #setup shows it as opened from the library, with everything ready.
 let setupVariant = "";
 let payment: Payment = "plan";
 let signedIn = true;
@@ -127,9 +152,105 @@ const rail: Rail = {
   next_action: "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.",
 };
 
-const row = (dots: [number, number, number], name: string, what: string, note: string): Row => ({ dots, name, what, note });
+const isoDay = (ahead: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + ahead);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const row = (dots: [number, number, number], name: string, what: string, note: string, ahead: number | null = null): Row => ({
+  dots,
+  name,
+  what,
+  note,
+  due: note.startsWith("due"),
+  next_day: note.startsWith("due") ? isoDay(0) : ahead === null ? null : isoDay(ahead),
+});
+
+const proofs = (earned: number, proven: number, skills: number): Proofs => {
+  const total = skills * 3;
+  const level = total === 0 ? 1 : 1 + Math.floor((earned * 9) / total);
+  return { earned, total, proven, skills, level, to_next: total === 0 || level >= 10 ? 0 : Math.ceil((level * total) / 9) - earned };
+};
+
+const card = (name: string, more: Partial<Card>): Card => ({
+  folder: `/Users/you/Study/${name}`,
+  name,
+  state: "ready",
+  exam: null,
+  goal: null,
+  days_ago: null,
+  proofs: proofs(0, 0, 0),
+  due: 0,
+  sitting: null,
+  ...more,
+});
+
+function library(): Card[] {
+  if (shelf === "empty") return [];
+  const now = home();
+  const cards = [
+    card("Demo-Course", {
+      state: now.state,
+      exam: now.exam,
+      goal: now.last?.goal ?? null,
+      days_ago: now.last?.days_ago ?? null,
+      proofs: now.state === "ready" ? proofs(15, 3, 11) : proofs(0, 0, 0),
+      due: now.redos_due + (now.checks_due ?? 0),
+      sitting: now.sitting,
+    }),
+    card("Linear-Algebra", {
+      exam: { target: "final", title: "Final", date: "2026-12-04", day: "Fri 4 Dec", days_left: 23 },
+      goal: "Diagonalising a matrix: when $A = PDP^{-1}$ exists",
+      days_ago: 1,
+      proofs: proofs(31, 8, 18),
+      due: 1,
+    }),
+    card("Probability", {
+      exam: { target: "test-2", title: "Test 2", date: "2026-12-12", day: "Sat 12 Dec", days_left: 31 },
+      goal: "The cdf method for $U = \\sqrt{Y}$",
+      days_ago: 6,
+      proofs: proofs(6, 1, 14),
+    }),
+    card("Organic-Chemistry", { state: "not_set_up" }),
+  ];
+  if (found) cards.push(card("Thermodynamics", { state: "empty" }));
+  return cards.filter((each) => !forgotten.includes(each.folder));
+}
+
+function activity(): Activity {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = (back: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() - back);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+  // Studied on these days before today, and today once a sitting is done.
+  const before = [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30];
+  const days = before.map((back) => ({ date: day(back), turns: 3 + ((back * 7) % 9) }));
+  if (studiedToday) days.push({ date: day(0), turns: 5 });
+  days.sort((a, b) => a.date.localeCompare(b.date));
+  return { today: day(0), days, run: studiedToday ? 4 : 3, studied_today: studiedToday };
+}
 
 function progress(): Progress {
+  if (variant === "new" || variant === "upgrade" || variant === "broken") {
+    return {
+      targets: [],
+      exam: null,
+      in_progress: [],
+      confirmed: [],
+      untested: [],
+      scores: [],
+      helped: [],
+      helped_count: 0,
+      unreadable: 0,
+      checks_unknown: false,
+      proofs: proofs(0, 0, 0),
+      message: "Nothing is proved yet. Progress fills in after your first marked paper or quick check.",
+    };
+  }
   return {
     targets: [
       { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
@@ -137,11 +258,14 @@ function progress(): Progress {
     ],
     exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
     in_progress: [
-      row([2, 0, 0], "intercept and Vmax", "took the intercept as Vmax", "due today"),
-      row([1, 1, 0], "slope and Km", "read the slope as Km · found before the exam, restarted Sun 8 Nov", "due today"),
-      row([2, 2, 0], "units of a rate", "gave Vmax in µM", "next Sat 14 Nov"),
-      row([2, 0, 0], "competitive inhibition", "moved Vmax, not Km", "next Thu 12 Nov"),
-      row([0, 0, 0], "Hill coefficient", "read n from the wrong axis", "repair first"),
+      // After a sitting in the demo, the first skill has earned its second proof.
+      sittingsDone > 0
+        ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
+        : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
+      row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$ · found before the exam, restarted 3 days ago", "due today"),
+      row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
+      row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
+      row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
     ],
     confirmed: [
       row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),
@@ -162,7 +286,7 @@ function progress(): Progress {
     helped_count: 3,
     unreadable: 0,
     checks_unknown: false,
-    view: progressView,
+    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
     message: null,
   };
 }
@@ -262,12 +386,34 @@ export function demoCore(): Core {
   };
 
   return {
-    initialFolder: async () => (location.hash.startsWith("#welcome") ? null : "/Users/you/Study/Demo-Course"),
-    recent: async () => ["/Users/you/Study/Demo-Course", "/Users/you/Study/Another-Course"],
+    // The window opens on the library. Every other address opens the demo course first.
+    initialFolder: async () => (/^#?(library|welcome|setup)?(:|$)/.test(location.hash) ? null : "/Users/you/Study/Demo-Course"),
+    recent: async () => library().map((each) => each.folder),
+    library: async () => {
+      await wait(120);
+      return library();
+    },
+    forgetFolder: async (path) => {
+      forgotten = [...forgotten, path];
+    },
+    findFolders: async () => {
+      await wait(900);
+      const added = found ? 0 : 1;
+      found = true;
+      return added;
+    },
+    activity: async () => activity(),
     pickFolder: async () => "/Users/you/Study/Demo-Course",
     pickFiles: async () => ["/Users/you/Desktop/IMG_0412.heic"],
     pickNewFolder: async () => "/Users/you/Study/New-Course",
-    openFolder: async () => home(),
+    openFolder: async (path) => {
+      const name = path.split("/").filter(Boolean).pop() ?? "Demo-Course";
+      if (name === "Demo-Course") return home();
+      const picked = library().find((each) => each.folder === path);
+      if (picked?.state === "not_set_up" || picked?.state === "empty") variant = "new";
+      else variant = "quiet";
+      return { ...home(), folder: path, name, exam: picked?.exam ?? null, papers: [] };
+    },
     newFolder: async () => {
       variant = "new";
       return { ...home(), folder: "/Users/you/Study/New-Course", name: "New-Course" };
@@ -315,12 +461,11 @@ export function demoCore(): Core {
     answer: async (_id, answers) => waiting?.(answers[0]?.chosen.join(", ") ?? ""),
     stop: async (line) => {
       stoppedAt = line;
+      studiedToday = true;
+      sittingsDone += 1;
     },
     rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
     progress: async () => progress(),
-    setProgressView: async (view) => {
-      progressView = view;
-    },
     setBlockMinutes: async (minutes) => {
       blockMinutes = minutes;
     },
@@ -354,6 +499,9 @@ export function demoCore(): Core {
 export function chooseVariant(): void {
   const [screen, state] = location.hash.slice(1).split(":");
   if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
+  if (screen === "library" && state === "empty") shelf = "empty";
+  // The end of a sitting shows today's day being earned.
+  if (screen === "summary") studiedToday = false;
   if (screen === "welcome" && state) {
     setupVariant = state;
     signedIn = state !== "signed-out";
@@ -366,12 +514,15 @@ chooseVariant();
 
 /**
  * Put the page in the state its address names, such as #session:lost or
- * #progress:B. Used to photograph each screen.
+ * #progress. Used to photograph each screen.
  */
 export async function startFromAddress(actions: Actions): Promise<void> {
-  const [screen, state] = (location.hash.slice(1) || "entrance").split(":");
+  const [screen, state] = (location.hash.slice(1) || "library").split(":");
+  const quiet = async () => {
+    for (let n = 0; n < 200 && document.querySelector(".app")?.getAttribute("data-busy") === "yes"; n++) await wait(50);
+  };
   await wait(50);
-  if (screen === "session") {
+  if (screen === "session" || screen === "summary") {
     if (state === "fresh") {
       await actions.newLesson("teach me enzyme kinetics");
       return;
@@ -379,7 +530,14 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     await actions.continueLesson(false);
     // Wait for the opening reply to finish before saying anything more.
     await wait(300);
-    for (let n = 0; n < 100 && document.querySelector(".win")?.getAttribute("data-busy") === "yes"; n++) await wait(50);
+    await quiet();
+    if (screen === "summary") {
+      await actions.say("Vmax is 4 µM/s");
+      await wait(300);
+      await quiet();
+      await actions.stop("PS3 Q3, step 4: what the slope gives.");
+      return;
+    }
     const words: Record<string, string> = {
       lost: "I'm lost",
       idk: "I don't know",
@@ -389,18 +547,30 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       slow: "build my plan (slow)",
       limit: "one more (limit)",
       answer: "Vmax is 4 µM/s",
+      math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
     };
     if (state && words[state]) await actions.say(words[state]);
-    if (state === "stop") document.querySelector<HTMLButtonElement>(".clock .btn")?.click();
-    if (state === "earlier") document.querySelector<HTMLButtonElement>(".fold")?.click();
+    if (state === "stop") document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click();
+    if (state === "earlier") document.querySelector<HTMLButtonElement>('[data-role="earlier"]')?.click();
+    if (state === "plan") document.querySelector<HTMLButtonElement>('[data-role="track"]')?.click();
+    if (state === "typing") {
+      // What the answer box looks like with mathematics typed in it.
+      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
+      if (box) {
+        const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+        set?.call(box, "The intercept is $\\frac{1}{V_{max}}$, so $V_{max} = 4$");
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
   } else if (screen === "progress") {
     await actions.openProgress(null);
-    if (state === "B" || state === "C") actions.setProgressView(state);
   } else if (screen === "paper") {
     actions.openPaper(null);
-  } else if (screen === "entrance" && state === "ask") {
+  } else if (screen === "course" && state === "ask") {
     actions.setAsking(true);
   } else if (screen === "palette") {
     actions.setPalette(true);
+  } else if (screen === "setup" || (screen === "welcome" && !state)) {
+    actions.openSetup();
   }
 }

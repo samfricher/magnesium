@@ -270,6 +270,12 @@ pub fn install(source: &Path, target: &Path, expected: &str) -> Result<(), Strin
         }
         let mut file = options.open(&part)?;
         file.write_all(&bytes)?;
+        // The lint at the root of the repository sends every flush through
+        // a helper of the runtime's, so that the runtime's tests can skip
+        // it. The window links none of the runtime's code, and this flush is
+        // the point: the program must be whole on disk before it takes the
+        // place of the one installed.
+        #[allow(clippy::disallowed_methods)]
         file.sync_all()
     })();
     if let Err(error) = written {

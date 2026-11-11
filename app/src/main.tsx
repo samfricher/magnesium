@@ -1,7 +1,9 @@
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
-import "./styles.css";
+import "./styles/base.css";
+import "./styles/prose.css";
+import "./styles/screens.css";
 
 // Anything that goes wrong on the page is kept, so the self-check can report it.
 declare global {

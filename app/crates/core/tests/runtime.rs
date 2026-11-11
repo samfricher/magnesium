@@ -351,7 +351,7 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     // The progress page against the Gaps table the runtime wrote.
     let written = written_rows(&scratch.read(GAP_LOG));
     assert_eq!(written.len(), 3, "{written:?}");
-    let progress = study::progress(&scratch.folder, None, &store);
+    let progress = study::progress(&scratch.folder, None);
     assert_eq!(progress.message, None, "{progress:#?}");
     let exam = progress.exam.as_ref().expect("the plan's exam");
     assert_eq!(
@@ -419,7 +419,25 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_eq!(progress.helped_count, 1, "{progress:#?}");
     assert_eq!(progress.helped, vec!["units of a rate".to_owned()]);
 
-    // The entrance.
+    // The proofs: three for each skill, earned by the passes that count.
+    let earned: usize = written.iter().map(|(_, status)| passes_of(status)).sum();
+    assert_eq!(progress.proofs.earned as usize, earned, "{progress:#?}");
+    assert_eq!(progress.proofs.skills as usize, written.len() + 1);
+    assert_eq!(progress.proofs.proven as usize, closed.len());
+    assert_eq!(progress.proofs.total, progress.proofs.skills * 3);
+    // A row whose next proof is due today is marked, and a closed one never is.
+    assert!(progress.confirmed.iter().all(|row| !row.due));
+
+    // The library's card says the same without opening the folder.
+    let card = study::card(&scratch.folder, &store);
+    assert_eq!(card.proofs, progress.proofs, "{card:#?}");
+    assert_eq!(card.due, 1);
+    assert_eq!(
+        card.exam.as_ref().map(|exam| exam.target.as_str()),
+        Some("midterm-1")
+    );
+
+    // The course page.
     let home = study::home(&scratch.folder, &store);
     assert_eq!(
         home.checks_due, None,
@@ -466,7 +484,7 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     let edited = vmax.replace(&format!("| {} | 1 of 3 |", d(-1)), "|  | closed |");
     assert_ne!(edited, vmax, "the row was edited");
     scratch.write(GAP_LOG, &text.replace(&vmax, &edited));
-    let progress = study::progress(&scratch.folder, None, &store);
+    let progress = study::progress(&scratch.folder, None);
     assert!(
         progress.confirmed.is_empty(),
         "a hand-closed row was shown as confirmed: {progress:#?}"
@@ -485,7 +503,7 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         reloaded["gap_logs"]["edited"][0]["file"], GAP_LOG,
         "{reloaded}"
     );
-    let progress = study::progress(&scratch.folder, None, &store);
+    let progress = study::progress(&scratch.folder, None);
     assert_eq!(progress.message, None);
     assert_eq!(names(&progress.confirmed), closed);
 }

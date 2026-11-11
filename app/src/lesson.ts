@@ -174,3 +174,29 @@ export function reduce(state: SessionState, action: Action): SessionState {
 export function busy(state: SessionState): boolean {
   return state.live !== null && state.live.status !== "idle";
 }
+
+/**
+ * The words the window sends for the learner when a sitting opens. They are
+ * plain words, as a learner would type them in a terminal. The runtime opens
+ * the sitting with what is due, so the window does not ask for it. Only the
+ * learner's own saved line is quoted back: the tutor's note of what comes
+ * next is already in its record.
+ */
+export function openingWords(last: { stoppedAt: string | null; studiedBefore: boolean; title: string }, skipChecks: boolean): string {
+  if (skipChecks) return "No checks right now. Let's continue where I stopped.";
+  if (last.stoppedAt) return `I'm back. Let's continue. I stopped at: ${last.stoppedAt}`;
+  if (last.studiedBefore) return "I'm back. Let's continue.";
+  return `Let's work on ${last.title}.`;
+}
+
+const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Let's work on [\s\S]+\.)$/;
+
+/**
+ * Whether a line is one of those opening lines, and the stop line it quotes.
+ * The learner did not type it, so the lesson shows it as one quiet line and
+ * not as something they said.
+ */
+export function opening(text: string): { stoppedAt: string | null } | null {
+  const found = OPENING.exec(text.trim());
+  return found ? { stoppedAt: found[1]?.trim() || null } : null;
+}
