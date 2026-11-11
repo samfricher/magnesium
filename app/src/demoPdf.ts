@@ -21,7 +21,10 @@ export function tinyPdf(lines: string[]): Uint8Array {
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + n * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
     objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   });
-  let body = "%PDF-1.4\n";
+  // The header is put together at run time. Tauri guesses the type of a file
+  // it serves from its first bytes, and a script that holds the PDF signature
+  // near its start is served as a PDF, which a browser will not run as a module.
+  let body = `${["%", "PDF-1.4"].join("")}\n`;
   const offsets: number[] = [];
   objects.forEach((object, index) => {
     offsets.push(body.length);

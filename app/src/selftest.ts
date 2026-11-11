@@ -24,6 +24,11 @@ async function until(what: string, test: () => boolean, limitMs = 30_000): Promi
   }
 }
 
+/** A step that never finishes is a failure with a name, not a window that says nothing. */
+function within<T>(what: string, work: Promise<T>, limitMs = 20_000): Promise<T> {
+  return Promise.race([work, new Promise<T>((_, no) => window.setTimeout(() => no(new Error(`${what} did not finish in ${limitMs / 1000} s`)), limitMs))]);
+}
+
 export async function run(api: Core, actions: Actions, session: () => SessionState): Promise<void> {
   const steps: Record<string, unknown> = {};
   let failure: string | null = null;
@@ -118,9 +123,9 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (!hasTask("A line.\n\n**Task.** Say why.") || hasTask("Just a line.")) throw new Error("a task was not told from a reply with none");
 
     // The PDF reader and its worker load in this window, from its own files and under its content policy.
-    const pdf = await openPdf(tinyPdf(["one", "two", "three"]));
+    const pdf = await within("opening a PDF", openPdf(tinyPdf(["one", "two", "three"])));
     const canvas = document.createElement("canvas");
-    await drawPage(pdf, 2, canvas, 300);
+    await within("drawing a PDF page", drawPage(pdf, 2, canvas, 300));
     const pixels = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data ?? new Uint8ClampedArray();
     let ink = 0;
     for (let i = 0; i < pixels.length; i += 4) if (pixels[i] < 128) ink += 1;
@@ -130,14 +135,14 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     // Course material through the shell: pasted text is saved as a text file in
     // the study folder; the core reads it back for the panel, and refuses what
     // lies outside the folder. Nothing here needs a file on this Mac.
-    const pasted = await api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood.");
+    const pasted = await within("saving pasted text", api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood."));
     const savedAs = pasted.saved[0];
     steps.material = { saved: pasted.saved.length, lines: pasted.lines };
     if (!savedAs?.startsWith("Study/materials/Pasted text ") || !savedAs.endsWith(".txt")) throw new Error(`pasted text was not saved as a text file: ${JSON.stringify(pasted)}`);
-    const readBack = await api.source(savedAs);
+    const readBack = await within("reading a saved text file", api.source(savedAs));
     if (readBack.kind !== "text" || !readBack.text?.includes("posterior")) throw new Error("a saved text file did not open as text");
     for (const outside of ["../outside.pdf", "/etc/hosts", "Study/midterm-1/papers/PaperB-key.pdf"]) {
-      const refused = await api.source(outside).then(() => null, (problem) => String(problem));
+      const refused = await within(`opening ${outside}`, api.source(outside)).then(() => null, (problem) => String(problem));
       if (refused === null) throw new Error(`a source outside the study folder, or an answer key, opened: ${outside}`);
     }
 

@@ -251,7 +251,14 @@ export function App() {
       setAbout(built);
       await takeSetup(api, fresh);
       if (isDemo) (await import("./demo")).startFromAddress(actions);
-      else if (await api.selftest()) void (await import("./selftest")).run(api, actions, () => now.current.session);
+      else if (await api.selftest()) {
+        // A check that cannot even start says why, instead of saying nothing.
+        try {
+          await (await import("./selftest")).run(api, actions, () => now.current.session);
+        } catch (problem) {
+          await api.selftestReport({ ok: false, failure: `the check could not start: ${String(problem)}`, errors: [...window.__mgErrors], steps: {} });
+        }
+      }
     })();
     return () => {
       alive = false;
