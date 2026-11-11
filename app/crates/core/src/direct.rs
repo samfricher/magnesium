@@ -473,6 +473,11 @@ struct State {
     last_message: Option<Instant>,
     /// The runtime was asked for this sitting's checks.
     checks_asked: bool,
+    /// The learner's memories the tutor has been shown, by the short id it
+    /// names them with: ("m1", the runtime's memory id).
+    memories: Vec<(String, String)>,
+    /// Lines on memories made since the tutor was last told.
+    memories_new: Vec<String>,
     turn: u64,
 }
 
@@ -1164,7 +1169,7 @@ fn prepare(
                 json!({"schema": "learner-model/v2", "action": "prepare", "goal": goal}),
             ) {
                 adopt(&mut state.lesson, &mut facts, &prepared);
-                facts.known = known(&prepared);
+                facts.known = known(&mut state, &prepared);
                 if found_checks.is_none() {
                     found_checks = checks_of(&prepared);
                 }
@@ -1182,6 +1187,19 @@ fn prepare(
         }
         state.checks_asked = true;
     }
+    // A conversation's first state shows the learner's memories for the
+    // goal, each with a short id the tutor names to revise one.
+    if facts.full && state.memories.is_empty() {
+        if let Some(goal) = state.lesson.goal.clone() {
+            if let Ok(prepared) = host.call(
+                "context",
+                json!({"schema": "learner-model/v2", "action": "prepare", "goal": goal}),
+            ) {
+                facts.known = known(&mut state, &prepared);
+            }
+        }
+    }
+    facts.known.extend(std::mem::take(&mut state.memories_new));
     // A new sitting's quick checks come once, with the first record call
     // after its first message. When the calls above made none, one is made.
     if found_checks.is_none()
@@ -1217,19 +1235,36 @@ fn prepare(
     (event, text)
 }
 
+/// Give a memory a short id the tutor can name, once.
+fn short_id(state: &mut State, memory_id: &str) -> String {
+    if let Some((short, _)) = state.memories.iter().find(|(_, id)| id == memory_id) {
+        return short.clone();
+    }
+    let short = format!("m{}", state.memories.len() + 1);
+    state.memories.push((short.clone(), memory_id.to_owned()));
+    short
+}
+
 /// What the record knows of the learner, one line per memory, as a prepare
-/// lists them.
-fn known(prepared: &Value) -> Vec<String> {
+/// lists them, each with its short id.
+fn known(state: &mut State, prepared: &Value) -> Vec<String> {
     prepared["memories"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|memory| {
-            let title = memory["title"].as_str()?;
-            let summary = memory["summary"].as_str().unwrap_or_default();
-            Some(record::clip(&format!("{title}: {summary}"), 300))
+        .filter(|memory| {
+            memory["lifecycle"]
+                .as_str()
+                .is_none_or(|life| life == "active")
         })
         .take(8)
+        .filter_map(|memory| {
+            let id = memory["memory_id"].as_str()?;
+            let title = memory["title"].as_str()?;
+            let summary = memory["summary"].as_str().unwrap_or_default();
+            let short = short_id(state, id);
+            Some(record::clip(&format!("{short}: {title}: {summary}"), 300))
+        })
         .collect()
 }
 
@@ -1490,21 +1525,41 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, d
     let mut request = write.request;
     // A misunderstanding found or cleared revises the learner's memory of
     // that skill, in the same request as the observation it rests on.
+    // The tutor names the memory it revises by the short id the state
+    // gave it; without one, a new memory is made. Code never guesses.
     if let (Some(note), true) = (&record.memory, request.get("observations").is_some()) {
-        let found = shared
-            .host
-            .call_by(
-                "memory",
-                json!({"schema": "learner-model/v2", "action": "search", "goal": note.skill, "original_query": note.skill}),
-                deadline,
-            )
-            .ok();
-        let memory = found
-            .as_ref()
-            .and_then(|found| record::memory_for(found, &note.skill));
+        let memory_id = note.id.as_deref().and_then(|short| {
+            let found = state.memories.iter().find(|(id, _)| id == short).map(|(_, id)| id.clone());
+            if found.is_none() {
+                shared.note(&format!("the tutor named memory {short}, which it was never shown: a new memory is made"));
+            }
+            found
+        });
+        // The memory as it is now, read whole, with its revision.
+        let current = memory_id.and_then(|id| {
+            shared
+                .host
+                .call_by(
+                    "memory",
+                    json!({"schema": "learner-model/v2", "action": "read", "refs": [{"kind": "current_memory", "id": id}]}),
+                    deadline,
+                )
+                .ok()
+                .and_then(|read| read["records"].get(0).cloned())
+        });
         let goal = state.lesson.goal.clone().unwrap_or_default();
-        let day = Local::now().format("%Y-%m-%d").to_string();
-        request["memory_edits"] = json!([record::memory_edit(note, memory, &goal, &day)]);
+        match (note.id.is_some(), &current) {
+            // Named, and could not be read: no edit rather than a new copy.
+            (true, None) if state.memories.iter().any(|(id, _)| Some(id) == note.id.as_ref()) => {
+                shared.note("the named memory could not be read: no memory edit");
+            }
+            _ => match record::memory_edit(note, current.as_ref(), &goal) {
+                Some(edit) => request["memory_edits"] = json!([edit]),
+                None => shared.note(
+                    "the memory's description is at the runtime's limit: no memory edit, and the memory is as it was",
+                ),
+            },
+        }
     }
     let worth = request.get("observations").is_some()
         || request.get("checkpoint").is_some()
@@ -1570,6 +1625,13 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, d
             }
             if let Some(checks) = checks_of(&result) {
                 state.lesson.checks = checks;
+            }
+            if let (Some(id), Some(note)) =
+                (result["references"]["memory"].as_str(), &record.memory)
+            {
+                let short = short_id(&mut state, id);
+                let line = format!("{short}: {}: new, as you noted", note.skill);
+                state.memories_new.push(line);
             }
         }
         Err(why) if already_saved(&why) => {

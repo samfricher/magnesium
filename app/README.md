@@ -178,7 +178,8 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 
 **What the direct engine does not do yet:**
 
-- It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit.
+- It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit. That edit keeps one line of its own in the memory's description, rewritten in place, and never changes another line, such as an anchor the plugin engine's tutor wrote. When the description is at the runtime's limit (16 KiB), it makes no edit. The tutor names the memory it revises by the short id the lesson state lists; it sees the memories a `prepare` for the goal returns, at most eight.
+- It stores no next question and answer key for a quick check (`next` in an attempt), which the plugin engine's tutor stores with a miss; the check's opener then asks the tutor to make a new question.
 - It builds and marks no papers, and does no paper redos.
 - It makes no files: no figures, pages or plans. It asks no permission and no multiple-choice question.
 - A paused or stopped lesson goes on only when the learner opens it again from the window (Continue or a new lesson), not from words typed in the same conversation.
