@@ -6,7 +6,12 @@
 //! sessions and answers given with help are never counted, so nothing here
 //! reads them into a total. The days the learner studied are kept apart, in
 //! `activity`, and no proof depends on them.
+//!
+//! The runtime decides every proof and the level (`magnesium progress`). The
+//! window draws them. With an earlier runtime that has no such command, the
+//! window reads the gap log as before and shows no level.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -256,12 +261,35 @@ fn gap_log(root: &Path, target: &str) -> GapLog {
 }
 
 pub fn home(folder: &Path, store: &Store) -> Home {
+    read_folder(folder, store).home
+}
+
+/// A folder as the runtime describes it: the course page, and what its two
+/// read-only commands printed, so that no page asks for them twice.
+struct Folder {
+    home: Home,
+    digest: Option<Value>,
+    /// What `magnesium progress` printed. None with an earlier runtime.
+    record: Option<Value>,
+}
+
+fn read_folder(folder: &Path, store: &Store) -> Folder {
+    let mut read = Folder {
+        home: blank_home(folder, store),
+        digest: None,
+        record: None,
+    };
+    fill_home(&mut read, folder, store);
+    read
+}
+
+fn blank_home(folder: &Path, store: &Store) -> Home {
     let name = folder
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| folder.to_string_lossy().into_owned());
     let remembered = store.folder(folder);
-    let mut home = Home {
+    Home {
         folder: folder.to_string_lossy().into_owned(),
         name,
         state: HomeState::Ready,
@@ -275,26 +303,31 @@ pub fn home(folder: &Path, store: &Store) -> Home {
         can_resume: remembered.session_id.is_some(),
         sitting: remembered.paper.clone(),
         block_minutes: store.block_minutes(),
-    };
+    }
+}
+
+fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
+    let remembered = store.folder(folder);
+    let home = &mut read.home;
     if runtime::program().is_none() {
         home.state = HomeState::NoRuntime;
         home.message = Some(
             "The magnesium program is not installed, or the window cannot find it. Install Magnesium, then open the window again."
                 .into(),
         );
-        return home;
+        return;
     }
     let digest = match runtime::digest(folder) {
         Ok(digest) => digest,
         Err(error) => {
             home.state = HomeState::Unreadable;
             home.message = Some(format!("Magnesium could not read this folder: {error}."));
-            return home;
+            return;
         }
     };
     if digest["active"].as_bool() != Some(true) {
         home.state = HomeState::NotSetUp;
-        return home;
+        return;
     }
     if upgrade_needed(&digest) {
         home.state = HomeState::NeedsUpgrade;
@@ -302,9 +335,10 @@ pub fn home(folder: &Path, store: &Store) -> Home {
             "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it."
                 .into(),
         );
-        return home;
+        return;
     }
     let root = root_of(&digest, folder);
+    let record = runtime::progress(folder);
     let plans = digest["plans"].as_array().cloned().unwrap_or_default();
     let sessions = digest["record"]["sessions"]
         .as_array()
@@ -328,7 +362,12 @@ pub fn home(folder: &Path, store: &Store) -> Home {
                 .collect();
             (!parts.is_empty()).then(|| parts.join(" "))
         });
-    home.checks_due = peek::checks_due(&root, today());
+    // The runtime counts what is due. An earlier runtime leaves the window
+    // to look for the quick checks itself, and it cannot always tell.
+    home.checks_due = match &record {
+        Some(record) => Some(record["due"]["checks"].as_u64().unwrap_or(0) as u32),
+        None => peek::checks_due(&root, today()),
+    };
 
     // The most recently changed lesson is where the learner stopped.
     home.last = sessions.first().and_then(|session| {
@@ -360,16 +399,19 @@ pub fn home(folder: &Path, store: &Store) -> Home {
     if sessions.is_empty() && plans.is_empty() {
         home.state = HomeState::Empty;
     }
-    home
+    read.digest = Some(digest);
+    read.record = record;
 }
 
 /// How far the proof has come in one course. One proof is one answer the
-/// learner reproduced alone on a separate day, and three prove a skill.
+/// learner gave right, alone and cold, on its own day, and three prove a
+/// skill. The runtime works every number here out, the level too. All are 0
+/// when the runtime cannot say.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Proofs {
     /// Proofs that count now.
     pub earned: u32,
-    /// Three for each skill the course lists.
+    /// Three for each skill of the course.
     pub total: u32,
     /// Skills with all three proofs.
     pub proven: u32,
@@ -380,37 +422,18 @@ pub struct Proofs {
     pub to_next: u32,
 }
 
-/// The highest level, reached when every skill is proven.
-const TOP_LEVEL: u32 = 10;
-
 impl Proofs {
-    pub fn new(earned: u32, proven: u32, skills: u32) -> Self {
-        let total = skills * 3;
-        let earned = earned.min(total);
-        let steps = TOP_LEVEL - 1;
-        // A course that lists no skill yet stays at the first level.
-        let level = 1 + (earned * steps).checked_div(total).unwrap_or(0);
-        let to_next = if total == 0 || level >= TOP_LEVEL {
-            0
-        } else {
-            // The fewest proofs that reach the next level.
-            (level * total).div_ceil(steps) - earned
-        };
-        Self {
-            earned,
-            total,
-            proven,
-            skills,
-            level,
-            to_next,
-        }
-    }
-
-    fn of(confirmed: &[Row], in_progress: &[Row], untested: &[Row]) -> Self {
-        let counted = |row: &Row| row.dots.iter().filter(|dot| **dot == 2).count() as u32;
-        let earned = confirmed.len() as u32 * 3 + in_progress.iter().map(counted).sum::<u32>();
-        let skills = (confirmed.len() + in_progress.len() + untested.len()) as u32;
-        Self::new(earned, confirmed.len() as u32, skills)
+    /// The numbers under `progress` in what `magnesium progress` printed.
+    fn from_record(progress: &Value) -> Option<Self> {
+        let number = |name: &str| progress[name].as_u64().map(|n| n as u32);
+        Some(Self {
+            earned: number("passes")?,
+            total: number("of")?,
+            proven: number("proven")?,
+            skills: number("skills")?,
+            level: number("level")?,
+            to_next: number("to_next")?,
+        })
     }
 }
 
@@ -431,10 +454,12 @@ pub struct Card {
     pub sitting: Option<PaperSitting>,
 }
 
-/// What the library shows for one folder. It runs the digest once and reads
-/// the plan files. It never starts an agent and never changes the folder.
+/// What the library shows for one folder. It runs the runtime's two
+/// read-only commands once each and reads the plan files. It never starts an
+/// agent and never changes the folder.
 pub fn card(folder: &Path, store: &Store) -> Card {
-    let home = home(folder, store);
+    let read = read_folder(folder, store);
+    let home = &read.home;
     let mut card = Card {
         folder: home.folder.clone(),
         name: home.name.clone(),
@@ -446,16 +471,40 @@ pub fn card(folder: &Path, store: &Store) -> Card {
         due: home.redos_due + home.checks_due.unwrap_or(0),
         sitting: home.sitting.clone(),
     };
-    if home.state == HomeState::Ready {
-        if let Ok(digest) = runtime::digest(folder) {
-            let root = root_of(&digest, folder);
-            let plans = digest["plans"].as_array().cloned().unwrap_or_default();
-            if let Ok(board) = board(&root, nearest_plan(&plans), today()) {
-                card.proofs = Proofs::of(&board.confirmed, &board.in_progress, &board.untested);
-            }
+    if let (HomeState::Ready, Some(digest)) = (home.state, &read.digest) {
+        let root = root_of(digest, folder);
+        let plans = digest["plans"].as_array().cloned().unwrap_or_default();
+        if let Ok(board) = board(&root, nearest_plan(&plans), read.record.as_ref(), today()) {
+            card.proofs = board.proofs.unwrap_or_default();
         }
     }
     card
+}
+
+/// The days on which the tutor marked an answer, in any of these folders, as
+/// each folder's record says. None when no folder's runtime can say.
+pub fn answered_days(folders: &[String]) -> Option<BTreeSet<NaiveDate>> {
+    let records: Vec<Option<Value>> = std::thread::scope(|scope| {
+        let readers: Vec<_> = folders
+            .iter()
+            .map(|folder| scope.spawn(move || runtime::progress(Path::new(folder))))
+            .collect();
+        readers
+            .into_iter()
+            .map(|reader| reader.join().ok().flatten())
+            .collect()
+    });
+    if records.iter().all(Option::is_none) {
+        return None;
+    }
+    Some(
+        records
+            .iter()
+            .flatten()
+            .flat_map(|record| record["days"].as_array().into_iter().flatten())
+            .filter_map(|day| day.as_str().and_then(crate::activity::parse))
+            .collect(),
+    )
 }
 
 /// Where a card goes in the library: a running paper first, then the nearest
@@ -521,6 +570,10 @@ pub struct Progress {
     /// passes (see `peek`).
     pub checks_unknown: bool,
     pub proofs: Proofs,
+    /// The runtime could not say how far the course is proved, so no level
+    /// is shown: it is an earlier version, or it has not read this plan's
+    /// gap log into the record yet.
+    pub level_unknown: bool,
     pub message: Option<String>,
 }
 
@@ -607,7 +660,8 @@ fn check_row(check: &Check, today: NaiveDate) -> Row {
     }
 }
 
-/// The rows of proof for one plan, and the quick checks of its folder.
+/// The rows of proof for one plan, and the skills of its folder that are in
+/// no plan.
 #[derive(Default)]
 struct Board {
     confirmed: Vec<Row>,
@@ -616,14 +670,169 @@ struct Board {
     scores: Vec<gaplog::Score>,
     unreadable: usize,
     checks_unknown: bool,
+    /// The runtime's numbers. None when it could not give them.
+    proofs: Option<Proofs>,
 }
 
-/// Read the rows of proof. An error is the sentence to show in their place:
-/// the gap log on disk does not say what the learner record says.
-fn board(root: &Path, plan: Option<&Value>, today: NaiveDate) -> Result<Board, String> {
+impl Board {
+    fn place(&mut self, rows: Vec<(Place, Row)>) {
+        for (place, row) in rows {
+            match place {
+                Place::Confirmed => self.confirmed.push(row),
+                Place::InProgress => self.in_progress.push(row),
+                Place::Untested => self.untested.push(row),
+            }
+        }
+        self.in_progress
+            .sort_by_key(|row| (!row.due, row.order.is_none(), row.order));
+    }
+}
+
+/// Which list a row goes in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Place {
+    Confirmed,
+    InProgress,
+    Untested,
+}
+
+fn day_of(value: &Value) -> Option<NaiveDate> {
+    value.as_str().and_then(crate::activity::parse)
+}
+
+/// One skill as `magnesium progress` printed it, as a row. `covers` is what
+/// the course's graph says the skill covers, shown for a skill with nothing
+/// else to say.
+fn skill_row(skill: &Value, covers: Option<&str>, today: NaiveDate) -> (Place, Row) {
+    let passes = skill["passes"].as_u64().unwrap_or(0).min(3) as u8;
+    let earlier = skill["earlier_passes"].as_u64().unwrap_or(0).min(3) as u8;
+    let proven = skill["proven"].as_bool() == Some(true);
+    let next = day_of(&skill["next_on"]).filter(|_| !proven);
+    let wrong = text(&skill["what_went_wrong"]);
+    let restarted = day_of(&skill["restarted_on"])
+        .filter(|_| !proven)
+        .map(|day| format!("found before the exam, restarted {}", day_label(day)));
+    let what = match (wrong, restarted) {
+        (Some(wrong), Some(restarted)) => format!("{wrong} · {restarted}"),
+        (Some(wrong), None) => wrong,
+        (None, Some(restarted)) => restarted,
+        // A skill that was never got wrong says where it was answered, or
+        // what it covers.
+        (None, None) => text(&skill["why"])
+            .or_else(|| covers.map(str::to_owned))
+            .unwrap_or_default(),
+    };
+    let note = if proven {
+        day_of(&skill["last_pass_on"]).map_or_else(
+            || "confirmed".to_owned(),
+            |day| format!("confirmed {}", day_label(day)),
+        )
+    } else {
+        let waits = skill["needs_repair"].as_bool() == Some(true);
+        due_note(next, today, if waits { "fix it first" } else { "–" })
+    };
+    let place = if proven {
+        Place::Confirmed
+    } else if skill["reading"].as_str() == Some("untested") {
+        Place::Untested
+    } else {
+        Place::InProgress
+    };
+    let row = Row {
+        dots: dots(passes, earlier),
+        name: text(&skill["skill"]).unwrap_or_default(),
+        what,
+        note,
+        due: skill["due"].as_bool() == Some(true),
+        next_day: next.map(|day| day.format("%Y-%m-%d").to_string()),
+        order: next,
+    };
+    (place, row)
+}
+
+fn skill_rows(
+    skills: &Value,
+    covers: &BTreeMap<String, String>,
+    today: NaiveDate,
+) -> Vec<(Place, Row)> {
+    let plain = |t: &str| t.trim().to_ascii_lowercase();
+    skills
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|skill| {
+            let name = skill["skill"].as_str().unwrap_or_default();
+            skill_row(skill, covers.get(&plain(name)).map(String::as_str), today)
+        })
+        .collect()
+}
+
+/// The rows as the runtime's record gives them: the plan's skills, then the
+/// skills in no plan. None when the record cannot speak for this plan,
+/// because its gap log is still a file the runtime has not read in.
+fn record_board(
+    record: &Value,
+    root: &Path,
+    exam: Option<&Exam>,
+    today: NaiveDate,
+) -> Option<Board> {
     let mut board = Board::default();
-    let mut rows: Vec<(bool, Row)> = Vec::new();
-    if let (Some(exam), Some(plan)) = (plan.and_then(exam_of), plan) {
+    let mut covers = BTreeMap::new();
+    let progress = match exam {
+        Some(exam) => {
+            let plan = record["plans"]
+                .as_array()?
+                .iter()
+                .find(|plan| plan["plan"].as_str() == Some(exam.target.as_str()))?;
+            if plan["from"].as_str() != Some("record") {
+                return None;
+            }
+            let graph =
+                fs::read_to_string(root.join("Study").join(&exam.target).join("graph.yaml"))
+                    .unwrap_or_default();
+            covers = gaplog::read_tags(&graph)
+                .into_iter()
+                .map(|(tag, covers)| (tag.trim().to_ascii_lowercase(), covers))
+                .filter(|(_, covers)| !covers.is_empty())
+                .collect();
+            // The papers' scores are the tutor's own table in the gap log.
+            board.scores = gap_log(root, &exam.target).scores;
+            board.place(skill_rows(&plan["skills"], &covers, today));
+            &plan["progress"]
+        }
+        None => &record["other"]["progress"],
+    };
+    board.place(skill_rows(&record["other"]["skills"], &covers, today));
+    board.proofs = Proofs::from_record(progress);
+    Some(board)
+}
+
+/// Read the rows of proof. The runtime's record gives them when it can. With
+/// an earlier runtime, or a plan whose gap log the runtime has not read in,
+/// they come from the gap log on disk, and no level is given. An error is the
+/// sentence to show in place of the rows: the gap log on disk does not say
+/// what the learner record says.
+fn board(
+    root: &Path,
+    plan: Option<&Value>,
+    record: Option<&Value>,
+    today: NaiveDate,
+) -> Result<Board, String> {
+    let exam = plan.and_then(exam_of);
+    if let Some(board) = record.and_then(|record| record_board(record, root, exam.as_ref(), today))
+    {
+        return Ok(board);
+    }
+    let mut board = Board::default();
+    let mut rows: Vec<(Place, Row)> = Vec::new();
+    let place = |closed: bool| {
+        if closed {
+            Place::Confirmed
+        } else {
+            Place::InProgress
+        }
+    };
+    if let (Some(exam), Some(plan)) = (&exam, plan) {
         let log = gap_log(root, &exam.target);
         if !matches_record(plan, &log, today) {
             return Err(format!(
@@ -633,43 +842,51 @@ fn board(root: &Path, plan: Option<&Value>, today: NaiveDate) -> Result<Board, S
         }
         board.unreadable = log.unreadable;
         board.scores = log.scores.clone();
-        rows.extend(log.gaps.iter().map(|gap| (gap.closed, gap_row(gap, today))));
+        rows.extend(
+            log.gaps
+                .iter()
+                .map(|gap| (place(gap.closed), gap_row(gap, today))),
+        );
         let graph = fs::read_to_string(root.join("Study").join(&exam.target).join("graph.yaml"))
             .unwrap_or_default();
         let plain = |t: &str| t.trim().to_ascii_lowercase();
-        board.untested = gaplog::read_tags(&graph)
-            .into_iter()
-            .filter(|(tag, _)| log.gaps.iter().all(|gap| plain(&gap.tag) != plain(tag)))
-            .map(|(tag, covers)| Row {
-                dots: [0; 3],
-                name: tag,
-                what: covers,
-                note: "–".into(),
-                due: false,
-                next_day: None,
-                order: None,
-            })
-            .collect();
+        rows.extend(
+            gaplog::read_tags(&graph)
+                .into_iter()
+                .filter(|(tag, _)| log.gaps.iter().all(|gap| plain(&gap.tag) != plain(tag)))
+                .map(|(tag, covers)| {
+                    let row = Row {
+                        dots: [0; 3],
+                        name: tag,
+                        what: covers,
+                        note: "–".into(),
+                        due: false,
+                        next_day: None,
+                        order: None,
+                    };
+                    (Place::Untested, row)
+                }),
+        );
     }
-    // Quick checks from chat belong to the folder, not to one exam.
-    match peek::checks(root) {
-        Some(checks) => rows.extend(
-            checks
-                .iter()
-                .map(|check| (check.closed, check_row(check, today))),
-        ),
-        None => board.checks_unknown = true,
+    // Skills in no plan belong to the folder, not to one exam. The record
+    // gives them when there is one. An earlier runtime leaves the window to
+    // look for the quick checks itself.
+    match record {
+        Some(record) => rows.extend(skill_rows(
+            &record["other"]["skills"],
+            &BTreeMap::new(),
+            today,
+        )),
+        None => match peek::checks(root) {
+            Some(checks) => rows.extend(
+                checks
+                    .iter()
+                    .map(|check| (place(check.closed), check_row(check, today))),
+            ),
+            None => board.checks_unknown = true,
+        },
     }
-    for (closed, row) in rows {
-        if closed {
-            board.confirmed.push(row);
-        } else {
-            board.in_progress.push(row);
-        }
-    }
-    board
-        .in_progress
-        .sort_by_key(|row| (row.order.is_none(), row.order));
+    board.place(rows);
     Ok(board)
 }
 
@@ -698,9 +915,11 @@ pub fn progress(folder: &Path, target: Option<&str>) -> Progress {
         .or_else(|| nearest_plan(&plans));
     progress.exam = plan.and_then(exam_of);
 
-    match board(&root, plan, today()) {
+    let record = runtime::progress(folder);
+    match board(&root, plan, record.as_ref(), today()) {
         Ok(board) => {
-            progress.proofs = Proofs::of(&board.confirmed, &board.in_progress, &board.untested);
+            progress.proofs = board.proofs.unwrap_or_default();
+            progress.level_unknown = board.proofs.is_none();
             progress.confirmed = board.confirmed;
             progress.in_progress = board.in_progress;
             progress.untested = board.untested;
@@ -794,46 +1013,150 @@ mod tests {
         assert_eq!(dots(3, 2), [2, 2, 2]);
     }
 
-    #[test]
-    fn a_level_moves_only_when_a_proof_is_earned() {
-        // 12 skills, 36 proofs: a level every 4 proofs, the tenth when all are earned.
-        let none = Proofs::new(0, 0, 12);
-        assert_eq!((none.level, none.to_next, none.total), (1, 4, 36));
-        let three = Proofs::new(3, 1, 12);
-        assert_eq!((three.level, three.to_next), (1, 1));
-        let four = Proofs::new(4, 1, 12);
-        assert_eq!((four.level, four.to_next), (2, 4));
-        let almost = Proofs::new(35, 11, 12);
-        assert_eq!((almost.level, almost.to_next), (9, 1));
-        let all = Proofs::new(36, 12, 12);
-        assert_eq!((all.level, all.to_next), (10, 0));
-        // A course that lists no skill yet has nothing to earn.
-        let empty = Proofs::new(0, 0, 0);
-        assert_eq!((empty.level, empty.to_next, empty.total), (1, 0, 0));
-        // One skill: each proof is far more than a level.
-        let one = Proofs::new(1, 0, 1);
-        assert_eq!((one.level, one.to_next), (4, 1));
+    /// What `magnesium progress` prints for a course with one plan: four
+    /// skills in it, and a quick check from chat that is in no plan.
+    fn record() -> Value {
+        json!({
+            "active": true,
+            "today": "2026-11-10",
+            "plans": [
+                {"plan": "midterm-1", "from": "record",
+                 "progress": {"passes": 6, "of": 15, "proven": 1, "skills": 5, "level": 4, "to_next": 1},
+                 "skills": [
+                    {"skill": "km", "passes": 3, "earlier_passes": 0, "proven": true, "reading": "sound",
+                     "why": "midterm-1#1 closed", "due": false, "next_on": null, "last_pass_on": "2026-11-06",
+                     "restarted_on": null, "needs_repair": false, "what_went_wrong": "read Km as the intercept",
+                     "rows": ["midterm-1#1"], "quick_check": false},
+                    {"skill": "slope", "passes": 0, "earlier_passes": 2, "proven": false, "reading": "open",
+                     "why": "midterm-1#3 open", "due": true, "next_on": "2026-11-10", "last_pass_on": "2026-11-05",
+                     "restarted_on": "2026-11-08", "needs_repair": false, "what_went_wrong": "lost the sign of the slope",
+                     "rows": ["midterm-1#3"], "quick_check": false},
+                    {"skill": "hill", "passes": 0, "earlier_passes": 0, "proven": false, "reading": "open",
+                     "why": "midterm-1#4 open, waiting for its repair", "due": false, "next_on": null, "last_pass_on": null,
+                     "restarted_on": null, "needs_repair": true, "what_went_wrong": "read n from the wrong axis",
+                     "rows": ["midterm-1#4"], "quick_check": false},
+                    // Never got wrong: answered right, alone and cold, on two days.
+                    {"skill": "units", "passes": 2, "earlier_passes": 0, "proven": false, "reading": "sound",
+                     "why": "cold in Paper A Q2", "due": false, "next_on": null, "last_pass_on": "2026-11-09",
+                     "restarted_on": null, "needs_repair": false, "what_went_wrong": "", "rows": [], "quick_check": false},
+                    {"skill": "ph", "passes": 0, "earlier_passes": 0, "proven": false, "reading": "untested",
+                     "why": "", "due": false, "next_on": null, "last_pass_on": null, "restarted_on": null,
+                     "needs_repair": false, "what_went_wrong": "", "rows": [], "quick_check": false},
+                 ]},
+                {"plan": "final", "from": "file"},
+            ],
+            "other": {
+                "progress": {"passes": 1, "of": 3, "proven": 0, "skills": 1, "level": 4, "to_next": 1},
+                "skills": [
+                    {"skill": "sign of b", "passes": 1, "earlier_passes": 0, "proven": false, "reading": null,
+                     "why": "", "due": false, "next_on": "2026-11-13", "last_pass_on": "2026-11-10",
+                     "restarted_on": null, "needs_repair": false, "what_went_wrong": "dropped the minus",
+                     "rows": [], "quick_check": true},
+                ],
+            },
+            "due": {"redos": 1, "checks": 0},
+            "days": ["2026-11-09", "2026-11-10"],
+        })
+    }
+
+    fn exam(target: &str) -> Exam {
+        Exam {
+            target: target.into(),
+            title: target.into(),
+            date: None,
+            day: None,
+            days_left: None,
+        }
     }
 
     #[test]
-    fn proofs_count_passes_that_count_and_not_the_ones_before_a_failure() {
-        let row = |dots: [u8; 3]| Row {
-            dots,
-            name: "a skill".into(),
-            what: String::new(),
-            note: String::new(),
-            due: false,
-            next_day: None,
-            order: None,
-        };
-        let confirmed = [row([2, 2, 2])];
-        let in_progress = [row([2, 0, 0]), row([1, 1, 0]), row([2, 1, 0])];
-        let untested = [row([0, 0, 0]), row([0, 0, 0])];
-        let proofs = Proofs::of(&confirmed, &in_progress, &untested);
-        assert_eq!(proofs.earned, 5);
-        assert_eq!(proofs.proven, 1);
-        assert_eq!(proofs.skills, 6);
-        assert_eq!(proofs.total, 18);
+    fn the_rows_and_the_level_are_the_runtimes_and_every_skill_has_a_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+        let board = record_board(&record(), dir.path(), Some(&exam("midterm-1")), today).unwrap();
+        let names = |rows: &[Row]| rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>();
+
+        // The level is the runtime's, over every skill of the plan.
+        let proofs = board.proofs.unwrap();
+        assert_eq!((proofs.level, proofs.earned, proofs.total), (4, 6, 15));
+        assert_eq!((proofs.proven, proofs.skills, proofs.to_next), (1, 5, 1));
+
+        assert_eq!(names(&board.confirmed), ["km"]);
+        assert_eq!(board.confirmed[0].note, "confirmed Fri 6 Nov");
+        // What is due comes first. A skill never got wrong is in progress
+        // once it has a proof, and a quick check from chat is here too.
+        assert_eq!(
+            names(&board.in_progress),
+            ["slope", "sign of b", "hill", "units"]
+        );
+        assert_eq!(names(&board.untested), ["ph"]);
+        assert!(!board.checks_unknown);
+
+        let slope = &board.in_progress[0];
+        assert!(slope.due);
+        assert_eq!(
+            slope.dots,
+            [1, 1, 0],
+            "the passes before the miss are history"
+        );
+        assert_eq!(slope.note, "due today");
+        assert_eq!(
+            slope.what,
+            "lost the sign of the slope · found before the exam, restarted Sun 8 Nov"
+        );
+        let check = &board.in_progress[1];
+        assert_eq!(
+            (check.dots, check.note.as_str()),
+            ([2, 0, 0], "next Fri 13 Nov")
+        );
+        assert_eq!(check.next_day.as_deref(), Some("2026-11-13"));
+        assert_eq!(board.in_progress[2].note, "fix it first");
+        let units = &board.in_progress[3];
+        assert_eq!(
+            (units.dots, units.what.as_str()),
+            ([2, 2, 0], "cold in Paper A Q2")
+        );
+    }
+
+    #[test]
+    fn a_course_with_no_plan_shows_the_skills_in_no_plan_and_their_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+        let board = record_board(&record(), dir.path(), None, today).unwrap();
+        assert_eq!(board.in_progress.len(), 1);
+        assert_eq!(board.in_progress[0].name, "sign of b");
+        assert_eq!(board.proofs.unwrap().level, 4);
+    }
+
+    #[test]
+    fn a_plan_the_runtime_has_not_read_in_is_read_from_its_file_with_no_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+        let record = record();
+        // The record cannot speak for this plan, or for one it does not list.
+        assert!(record_board(&record, dir.path(), Some(&exam("final")), today).is_none());
+        assert!(record_board(&record, dir.path(), Some(&exam("other")), today).is_none());
+
+        // The gap log on disk is read instead. No level is given, and the
+        // skills in no plan still come from the record.
+        let study = dir.path().join("Study/final");
+        fs::create_dir_all(&study).unwrap();
+        fs::write(
+            study.join("gap-log.md"),
+            "## Gaps\n\n| # | Tag | What went wrong | Passes | Next redo | Status |\n|---|---|---|---|---|---|\n\
+             | 1 | limits | divided by zero | 2026-11-08 pass | 2026-11-11 | 1 of 3 |\n",
+        )
+        .unwrap();
+        let plan = json!({"target": "final", "title": "Final"});
+        let board = board(dir.path(), Some(&plan), Some(&record), today).unwrap();
+        assert!(board.proofs.is_none());
+        let names: Vec<&str> = board
+            .in_progress
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(names, ["limits", "sign of b"]);
+        assert!(!board.checks_unknown);
     }
 
     #[test]

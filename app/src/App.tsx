@@ -411,7 +411,8 @@ export function App() {
       { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
       skipChecks,
     );
-    return begin(true, words, (api) => api.send(words));
+    // The window wrote these words, so they are not sent as an answer.
+    return begin(true, words, (api) => api.sendShown(words, words));
   };
 
   const newLesson = async (goal: string) => {

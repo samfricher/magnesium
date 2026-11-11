@@ -1,14 +1,16 @@
-//! The days the learner studied in the window, and the run they make.
+//! The days the learner studied, and the run they make.
 //!
-//! A day counts when the learner sent the tutor at least one message that
-//! day. It is the window's own record: work done in a terminal is not seen
-//! here. Nothing in it is learning state, and no proof depends on it.
+//! A day counts when the learner answered a question that the tutor marked,
+//! in any course in the library, in this window or in a terminal. The runtime
+//! says which days those are (`magnesium progress`). With an earlier runtime
+//! that cannot, the window falls back on its own count of the days an answer
+//! was sent from it. No proof depends on the run.
 //!
 //! The run is forgiving on purpose. A run that one missed day can end turns
 //! a bad day into a reason to stop altogether. So one missed day in a week is
 //! a rest day, and the run goes on through it.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use chrono::{Days, NaiveDate};
 use serde::Serialize;
@@ -16,20 +18,12 @@ use serde::Serialize;
 /// How many days the page draws: five weeks.
 pub const SHOWN_DAYS: u64 = 35;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct Day {
-    /// The day as "2026-11-10".
-    pub date: String,
-    /// Messages the learner sent that day.
-    pub turns: u32,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Activity {
     /// Today as "2026-11-10", so the page and the core agree on the day.
     pub today: String,
-    /// The studied days among the last 35, oldest first.
-    pub days: Vec<Day>,
+    /// The studied days among the last 35, each as "2026-11-10", oldest first.
+    pub days: Vec<String>,
     /// Days studied in the run that reaches today. Today does not end a run
     /// before it is over, and one missed day in a week is a rest day that
     /// does not end it either. Rest days are not counted.
@@ -42,7 +36,7 @@ pub fn key(day: NaiveDate) -> String {
     day.format("%Y-%m-%d").to_string()
 }
 
-fn parse(key: &str) -> Option<NaiveDate> {
+pub fn parse(key: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(key, "%Y-%m-%d").ok()
 }
 
@@ -84,14 +78,10 @@ fn run_at(studied: &[NaiveDate], today: NaiveDate) -> u32 {
     run
 }
 
-/// What the page shows, from the count of messages kept for each day.
-pub fn summarize(counts: &BTreeMap<String, u32>, today: NaiveDate) -> Activity {
-    let studied: Vec<NaiveDate> = counts
-        .iter()
-        .filter(|(_, turns)| **turns > 0)
-        .filter_map(|(day, _)| parse(day))
-        .filter(|day| *day <= today)
-        .collect();
+/// What the page shows, from the days studied. A day after today, as a
+/// clock set back can leave, is not counted.
+pub fn summarize(days: &BTreeSet<NaiveDate>, today: NaiveDate) -> Activity {
+    let studied: Vec<NaiveDate> = days.iter().copied().filter(|day| *day <= today).collect();
     let first_shown = today
         .checked_sub_days(Days::new(SHOWN_DAYS - 1))
         .unwrap_or(today);
@@ -100,10 +90,7 @@ pub fn summarize(counts: &BTreeMap<String, u32>, today: NaiveDate) -> Activity {
         days: studied
             .iter()
             .filter(|day| **day >= first_shown)
-            .map(|day| Day {
-                date: key(*day),
-                turns: counts.get(&key(*day)).copied().unwrap_or(0),
-            })
+            .map(|day| key(*day))
             .collect(),
         run: run_at(&studied, today),
         studied_today: studied.binary_search(&today).is_ok(),
@@ -118,8 +105,8 @@ mod tests {
         parse(text).unwrap()
     }
 
-    fn counts(days: &[&str]) -> BTreeMap<String, u32> {
-        days.iter().map(|d| ((*d).to_owned(), 2)).collect()
+    fn counts(days: &[&str]) -> BTreeSet<NaiveDate> {
+        days.iter().map(|d| day(d)).collect()
     }
 
     #[test]
@@ -190,22 +177,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_last_five_weeks_are_listed_and_days_with_nothing_are_not() {
-        let mut studied = counts(&["2026-09-01", "2026-10-07", "2026-11-10"]);
-        studied.insert("2026-11-09".into(), 0);
-        studied.insert("not a day".into(), 4);
+    fn only_the_last_five_weeks_are_listed_and_a_day_after_today_is_not_counted() {
         // A clock set back must not put a later day into the run.
-        studied.insert("2026-11-12".into(), 1);
+        let studied = counts(&["2026-09-01", "2026-10-07", "2026-11-10", "2026-11-12"]);
         let activity = summarize(&studied, day("2026-11-10"));
-        let listed: Vec<&str> = activity.days.iter().map(|d| d.date.as_str()).collect();
-        assert_eq!(listed, ["2026-10-07", "2026-11-10"]);
-        assert_eq!(activity.days[1].turns, 2);
+        assert_eq!(activity.days, ["2026-10-07", "2026-11-10"]);
         assert_eq!(activity.run, 1);
     }
 
     #[test]
     fn nothing_studied_gives_no_run() {
-        let activity = summarize(&BTreeMap::new(), day("2026-11-10"));
+        let activity = summarize(&BTreeSet::new(), day("2026-11-10"));
         assert_eq!(activity.run, 0);
         assert!(activity.days.is_empty());
         assert_eq!(activity.today, "2026-11-10");

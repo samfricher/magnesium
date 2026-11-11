@@ -1,14 +1,14 @@
 //! The window's readers against the runtime built from this same checkout.
 //!
-//! The window reads what the runtime writes: `magnesium digest`, `magnesium
-//! attempts --json`, the gap log the runtime writes from the learner record,
-//! and two facts straight from its stores (see `peek`). This test builds the
+//! The window reads what the runtime prints: `magnesium digest`, `magnesium
+//! progress --json` and `magnesium attempts --json`, and one fact straight
+//! from its store (the goal's steps, see `peek`). This test builds the
 //! runtime at the root of the repository, lets it make a scratch study folder
 //! from made-up data, and feeds its real output to those readers. A runtime
 //! change that the readers do not follow fails here.
 //!
-//! The failure it guards against most is a progress page that shows a topic
-//! as confirmed when the gap log says it is not.
+//! The failure it guards against most is a progress page that shows a skill
+//! as confirmed when the learner record says it is not.
 //!
 //! It never touches the learner's own home or study folders: the runtime runs
 //! with a scratch home and a scratch study folder.
@@ -348,7 +348,8 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     let plan = &digest["plans"][0];
     assert_eq!(plan["gap_log_from"], "record", "{plan}");
 
-    // The progress page against the Gaps table the runtime wrote.
+    // The progress page against the Gaps table the runtime wrote. The window
+    // takes its rows from `magnesium progress`, and the two must agree.
     let written = written_rows(&scratch.read(GAP_LOG));
     assert_eq!(written.len(), 3, "{written:?}");
     let progress = study::progress(&scratch.folder, None);
@@ -379,10 +380,17 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         closed,
         "confirmed must be exactly the closed rows"
     );
+    // Every row not closed is in progress. So are the two skills from the
+    // chat lesson: the quick check the wrong answer made, and the skill
+    // answered with a hint, which has no proof.
+    let chat = BTreeSet::from([
+        "reciprocal of the intercept".to_owned(),
+        "units of a rate".to_owned(),
+    ]);
     assert_eq!(
         names(&progress.in_progress),
-        open,
-        "every row not closed is in progress, and nothing else"
+        open.union(&chat).cloned().collect::<BTreeSet<_>>(),
+        "{progress:#?}"
     );
     assert_eq!(
         Some(open.len() as u64),
@@ -390,7 +398,11 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         "the record agrees: {plan}"
     );
     for row in progress.confirmed.iter().chain(&progress.in_progress) {
-        let status = &written.iter().find(|(tag, _)| *tag == row.name).unwrap().1;
+        let Some((_, status)) = written.iter().find(|(tag, _)| *tag == row.name) else {
+            assert!(chat.contains(&row.name), "a row from nowhere: {row:?}");
+            assert_eq!(counted(&row.dots), 0, "{row:?}");
+            continue;
+        };
         assert_eq!(
             counted(&row.dots),
             passes_of(status),
@@ -409,22 +421,40 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         ("17/30", Some(4), Some(6))
     );
 
-    // Quick checks: this runtime works out their passes and keeps no row
-    // that says them, so the window says it cannot tell. It never shows one
-    // as confirmed or counts it as nothing due.
-    assert!(progress.checks_unknown);
-    assert!(!names(&progress.in_progress).contains("reciprocal of the intercept"));
+    // Quick checks: the runtime works out their passes, and its command says
+    // them, so the window shows the check the wrong answer made.
+    assert!(!progress.checks_unknown);
+    let check = progress
+        .in_progress
+        .iter()
+        .find(|row| row.name == "reciprocal of the intercept")
+        .expect("the quick check");
+    assert!(!check.due, "a check made today is due tomorrow: {check:?}");
+    assert_eq!(check.next_day, Some(d(1)));
 
     // Answers given with help are listed apart.
     assert_eq!(progress.helped_count, 1, "{progress:#?}");
     assert_eq!(progress.helped, vec!["units of a rate".to_owned()]);
 
-    // The proofs: three for each skill, earned by the passes that count.
+    // The proofs and the level are the runtime's: three proofs for each
+    // skill, the untested one and the two from chat included, earned by the
+    // passes that count. 4 of 18 is level 1 + 4·9/18 = 3.
     let earned: usize = written.iter().map(|(_, status)| passes_of(status)).sum();
+    assert!(!progress.level_unknown);
     assert_eq!(progress.proofs.earned as usize, earned, "{progress:#?}");
-    assert_eq!(progress.proofs.skills as usize, written.len() + 1);
+    assert_eq!(
+        progress.proofs.skills as usize,
+        written.len() + 1 + chat.len()
+    );
     assert_eq!(progress.proofs.proven as usize, closed.len());
     assert_eq!(progress.proofs.total, progress.proofs.skills * 3);
+    assert_eq!(progress.proofs.level, 3);
+
+    // The study days are the days with a marked answer, as the record has them.
+    assert_eq!(
+        study::answered_days(&[scratch.folder.to_string_lossy().into_owned()]),
+        Some(BTreeSet::from([today]))
+    );
     // A row whose next proof is due today is marked, and a closed one never is.
     assert!(progress.confirmed.iter().all(|row| !row.due));
 
@@ -440,8 +470,9 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     // The course page.
     let home = study::home(&scratch.folder, &store);
     assert_eq!(
-        home.checks_due, None,
-        "the window cannot count these checks"
+        home.checks_due,
+        Some(0),
+        "the runtime counts the checks, and the one made today is due tomorrow"
     );
     assert_eq!(home.redos_due, 1);
     assert_eq!(home.first_redo.as_deref(), Some("Diagnostic 2"));
@@ -472,9 +503,8 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         ]
     );
 
-    // A hand edit that closes a row the record has not closed. The runtime
-    // keeps it until it next writes the table, so the window must not show
-    // the file.
+    // A hand edit that closes a row the record has not closed. The window
+    // takes its rows from the record, so the edit changes nothing on screen.
     let text = scratch.read(GAP_LOG);
     let vmax = text
         .lines()
@@ -485,14 +515,12 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_ne!(edited, vmax, "the row was edited");
     scratch.write(GAP_LOG, &text.replace(&vmax, &edited));
     let progress = study::progress(&scratch.folder, None);
-    assert!(
-        progress.confirmed.is_empty(),
+    assert_eq!(
+        names(&progress.confirmed),
+        closed,
         "a hand-closed row was shown as confirmed: {progress:#?}"
     );
-    assert!(progress
-        .message
-        .as_deref()
-        .is_some_and(|m| m.contains("does not match your record")));
+    assert_eq!(progress.message, None);
 
     // The runtime writes the table again, and the page comes back.
     let reloaded = scratch.tool(

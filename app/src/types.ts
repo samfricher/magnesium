@@ -56,10 +56,11 @@ export type Card = {
   sitting: PaperSitting | null;
 };
 
-export type Day = { date: string; turns: number };
-
-/** The days the learner studied in the window, and the run they make. */
-export type Activity = { today: string; days: Day[]; run: number; studied_today: boolean };
+/**
+ * The days the learner studied, and the run they make. A day is one with a
+ * marked answer, in any course in the library, each as "2026-11-10".
+ */
+export type Activity = { today: string; days: string[]; run: number; studied_today: boolean };
 
 export type Turn = { session: string; ms: number; learner: string; tutor: string; interrupted: boolean };
 
@@ -104,6 +105,8 @@ export type Progress = {
   /** The quick checks are left out, because the window cannot tell their passes. */
   checks_unknown: boolean;
   proofs: Proofs;
+  /** The runtime could not say how far the course is proved, so no level is shown. */
+  level_unknown: boolean;
   message: string | null;
 };
 

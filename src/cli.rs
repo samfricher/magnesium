@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 9] = [
+const PUBLIC_COMMANDS: [(&str, &str); 10] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -16,6 +16,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 9] = [
     (
         "attempts",
         "List every answer the tutor marked, with its question, mark, date, help and confidence",
+    ),
+    (
+        "progress",
+        "Show each skill's passes, the level, what is due, and the days with a marked answer",
     ),
     ("export", "Export a readable scope-safe learner-data copy"),
     ("memory", "Maintain workspace learner-memory search"),
@@ -86,14 +90,14 @@ pub(crate) fn command() -> ClapCommand {
                             .help("Switch a workspace set up by an earlier Magnesium version to this version's teaching instructions; unedited earlier instructions are kept on disk")
                             .action(ArgAction::SetTrue),
                     )
-            } else if name == "info" || name == "attempts" {
+            } else if name == "info" || name == "attempts" || name == "progress" {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")
-                        .help(if name == "info" {
-                            "Print the status as JSON on one line instead of pretty-printed"
-                        } else {
-                            "Print the answers as JSON instead of text"
+                        .help(match name {
+                            "info" => "Print the status as JSON on one line instead of pretty-printed",
+                            "attempts" => "Print the answers as JSON instead of text",
+                            _ => "Print the skills, the level and the days as JSON instead of text",
                         })
                         .action(ArgAction::SetTrue),
                 )

@@ -6,7 +6,7 @@
 //!
 //! None of it is learning state. The learner record belongs to the runtime.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
-use crate::activity::{self, Activity};
+use crate::activity;
 use crate::agent::Payment;
 use crate::paths;
 
@@ -56,7 +56,9 @@ struct Data {
     folders: BTreeMap<String, FolderState>,
     #[serde(default)]
     block_minutes: Option<u32>,
-    /// Messages the learner sent on each day, by "2026-11-10".
+    /// Answers the learner sent from the window on each day, by "2026-11-10".
+    /// Used for the run only when the runtime cannot say which days had a
+    /// marked answer.
     #[serde(default)]
     days: BTreeMap<String, u32>,
     /// Whether `days` was filled once from the turns kept before it existed.
@@ -234,7 +236,7 @@ impl Store {
         self.save(&data);
     }
 
-    /// Count one message the learner sent on `day`.
+    /// Count one answer the learner sent on `day`.
     pub fn count_turn(&self, day: NaiveDate) {
         let mut data = self.lock();
         self.fill_days(&mut data);
@@ -242,14 +244,18 @@ impl Store {
         self.save(&data);
     }
 
-    /// The days the learner studied in the window, and the run they make.
-    pub fn activity(&self, today: NaiveDate) -> Activity {
+    /// The days on which the learner sent an answer from the window.
+    pub fn days(&self) -> BTreeSet<NaiveDate> {
         let mut data = self.lock();
         if !data.days_filled {
             self.fill_days(&mut data);
             self.save(&data);
         }
-        activity::summarize(&data.days, today)
+        data.days
+            .iter()
+            .filter(|(_, answers)| **answers > 0)
+            .filter_map(|(day, _)| activity::parse(day))
+            .collect()
     }
 
     /// Once, count the days from the turns the window kept before it counted
@@ -442,17 +448,20 @@ mod tests {
 
         let store = Store::at(home.path().to_path_buf());
         store.count_turn(day("2026-11-10"));
-        let activity = store.activity(day("2026-11-10"));
+        let days = store.days();
+        assert_eq!(
+            days.into_iter().collect::<Vec<_>>(),
+            [day("2026-11-08"), day("2026-11-09"), day("2026-11-10")]
+        );
+        let activity = activity::summarize(&store.days(), day("2026-11-10"));
         assert_eq!(activity.run, 3);
         assert!(activity.studied_today);
-        assert_eq!(activity.days.len(), 3);
 
         // Reopened, the earlier turns are not counted a second time.
         let again = Store::at(home.path().to_path_buf());
         again.count_turn(day("2026-11-10"));
-        let activity = again.activity(day("2026-11-10"));
-        assert_eq!(activity.days.last().unwrap().turns, 2);
-        assert_eq!(activity.days.first().unwrap().turns, 1);
+        assert_eq!(again.lock().days["2026-11-08"], 1);
+        assert_eq!(again.lock().days["2026-11-10"], 2);
     }
 
     #[test]

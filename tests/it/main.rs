@@ -32,6 +32,7 @@ mod pending_chronology;
 mod pending_task_recovery;
 mod plugin_install;
 mod practice;
+mod progress;
 mod readings;
 mod review_queue;
 mod security;

@@ -155,7 +155,7 @@ function addDays(day: string, by: number): string {
 export function Week({ activity, celebrate }: { activity: Activity; celebrate?: boolean }) {
   const today = new Date(`${activity.today}T12:00:00`);
   const sinceMonday = (today.getDay() + 6) % 7;
-  const studied = new Set(activity.days.map((day) => day.date));
+  const studied = new Set(activity.days);
   return (
     <span className="week" role="img" aria-label={`${activity.run} days running`} title={RUN_HINT}>
       {WEEKDAYS.map((letter, index) => {
@@ -177,23 +177,23 @@ export function Week({ activity, celebrate }: { activity: Activity; celebrate?: 
 export const PROOF_HINT = "A proof is one answer you gave alone, on its own day. Three proofs prove a skill.";
 
 /** What the run is, in one line, for a tooltip. */
-export const RUN_HINT = "Days you studied here, in a row. One missed day a week is a rest day and does not end the run.";
+export const RUN_HINT = "Days on which you answered a question, in a row. One missed day a week is a rest day and does not end the run.";
 
 /** Five weeks of study days, oldest first, as small squares. */
 export function Weeks({ activity }: { activity: Activity }) {
   const today = new Date(`${activity.today}T12:00:00`);
   const sinceMonday = (today.getDay() + 6) % 7;
-  const turns = new Map(activity.days.map((day) => [day.date, day.turns]));
-  const cells: { date: string; turns: number; ahead: boolean }[] = [];
+  const studied = new Set(activity.days);
+  const cells: { date: string; done: boolean; ahead: boolean }[] = [];
   for (let index = -28; index < 7; index++) {
     const offset = index - sinceMonday;
     const date = addDays(activity.today, offset);
-    cells.push({ date, turns: turns.get(date) ?? 0, ahead: offset > 0 });
+    cells.push({ date, done: studied.has(date), ahead: offset > 0 });
   }
   return (
     <span className="weeks" role="img" aria-label="Study days in the last five weeks">
       {cells.map((cell) => (
-        <i key={cell.date} className={cell.ahead ? "ahead" : cell.turns > 0 ? "done" : undefined} title={cell.ahead ? undefined : cell.date} />
+        <i key={cell.date} className={cell.ahead ? "ahead" : cell.done ? "done" : undefined} title={cell.ahead ? undefined : cell.date} />
       ))}
     </span>
   );

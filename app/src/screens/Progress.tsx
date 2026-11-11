@@ -102,10 +102,12 @@ export function Progress(props: {
       <div className="scroll">
         <div className="board">
           <header className="board-head">
-            <Ring share={proofShare(proofs)} size={104} stroke={8} label={`Level ${proofs.level}`}>
-              <b>{proofs.level}</b>
-              <small>level</small>
-            </Ring>
+            {!data.level_unknown && (
+              <Ring share={proofShare(proofs)} size={104} stroke={8} label={`Level ${proofs.level}`}>
+                <b>{proofs.level}</b>
+                <small>level</small>
+              </Ring>
+            )}
             <div className="board-title">
               <h1>{displayName(props.folderName)}</h1>
               {data.targets.length > 1 ? (
@@ -178,7 +180,7 @@ export function Progress(props: {
               <Group title="Proven" rows={data.confirmed} fold={6} tone="proven" />
               <Group title="Not tested yet" rows={data.untested} fold={6} tone="untested" />
 
-              {(data.scores.length > 0 || data.helped_count > 0 || data.checks_unknown || data.unreadable > 0) && (
+              {(data.scores.length > 0 || data.helped_count > 0 || data.checks_unknown || data.level_unknown || data.unreadable > 0) && (
                 <footer className="board-foot selectable">
                   {data.scores.length > 0 && (
                     <div className="papers">
@@ -215,6 +217,12 @@ export function Progress(props: {
                       <p>
                         <b>With help, not counted</b> {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
                         {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
+                      </p>
+                    )}
+                    {data.level_unknown && (
+                      <p>
+                        <b>No level</b> is shown. This version of Magnesium cannot tell the window how far each skill is proved, or it has
+                        not read this plan&apos;s gap log into your record yet. Update Magnesium, or mark one more answer with the tutor.
                       </p>
                     )}
                     {data.checks_unknown && (

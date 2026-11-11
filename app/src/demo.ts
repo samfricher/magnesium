@@ -228,9 +228,9 @@ function activity(): Activity {
   };
   // Studied on these days before today, and today once a sitting is done.
   const before = [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30];
-  const days = before.map((back) => ({ date: day(back), turns: 3 + ((back * 7) % 9) }));
-  if (studiedToday) days.push({ date: day(0), turns: 5 });
-  days.sort((a, b) => a.date.localeCompare(b.date));
+  const days = before.map((back) => day(back));
+  if (studiedToday) days.push(day(0));
+  days.sort();
   return { today: day(0), days, run: studiedToday ? 4 : 3, studied_today: studiedToday };
 }
 
@@ -248,6 +248,7 @@ function progress(): Progress {
       unreadable: 0,
       checks_unknown: false,
       proofs: proofs(0, 0, 0),
+      level_unknown: false,
       message: "Nothing is proved yet. Progress fills in after your first marked paper or quick check.",
     };
   }
@@ -266,6 +267,8 @@ function progress(): Progress {
       row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
       row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
       row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
+      // Never got wrong: answered right, alone and cold, on two papers.
+      row([2, 2, 0], "substrate concentration", "cold in Paper A Q2", "–"),
     ],
     confirmed: [
       row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),
@@ -273,7 +276,6 @@ function progress(): Progress {
       row([2, 2, 2], "enzyme units", "mixed up mol and µmol", "confirmed Wed 4 Nov"),
     ],
     untested: [
-      row([0, 0, 0], "allosteric enzymes", "sigmoid rate curves", "–"),
       row([0, 0, 0], "non-competitive inhibition", "lower Vmax, same Km", "–"),
       row([0, 0, 0], "pH and activity", "the optimum and its causes", "–"),
     ],
@@ -287,6 +289,7 @@ function progress(): Progress {
     unreadable: 0,
     checks_unknown: false,
     proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
+    level_unknown: false,
     message: null,
   };
 }

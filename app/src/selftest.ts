@@ -138,15 +138,20 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     await wait(300);
     steps.progressScreen = document.querySelector('[data-screen="progress"]') !== null;
 
-    // Ending the sitting from the page: the lesson is kept, the end screen
-    // shows, and today counts as a study day.
+    // Ending the sitting from the page: the lesson is kept and the end
+    // screen shows. A study day is a day with a marked answer, and the
+    // stand-in tutor marks none. So with a runtime that says which days had
+    // one, today is not a study day, however many messages were sent. With
+    // an earlier runtime the window counts the answers sent from it.
     await actions.stop("self-check stop line");
     await until("the end of the sitting", () => document.querySelector('[data-screen="summary"]') !== null, 10_000);
     const after = await api.home();
     const studied = await api.activity();
-    steps.afterStop = { can_resume: after.can_resume, studied_today: studied.studied_today, run: studied.run };
+    const fromRecord = !progress.level_unknown;
+    steps.afterStop = { can_resume: after.can_resume, studied_today: studied.studied_today, run: studied.run, days_from_record: fromRecord };
     if (!after.can_resume) throw new Error("the lesson was not kept for the next sitting");
-    if (!studied.studied_today || studied.run !== 1) throw new Error("today was not counted as a study day");
+    if (fromRecord && (studied.studied_today || studied.run !== 0)) throw new Error("a day with no marked answer was counted as a study day");
+    if (!fromRecord && (!studied.studied_today || studied.run !== 1)) throw new Error("today's answers were not counted as a study day");
   } catch (problem) {
     failure = String(problem);
   }

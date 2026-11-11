@@ -12,7 +12,7 @@ use std::time::Duration;
 use chrono::Local;
 use serde::Serialize;
 
-use crate::activity::Activity;
+use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
@@ -37,6 +37,9 @@ struct Buffer {
     ready: bool,
     /// Whether this process has ended.
     ended: bool,
+    /// Whether the words in `learner` are an answer the learner typed. The
+    /// line the window sends to open a sitting is not one.
+    typed: bool,
 }
 
 struct Inner {
@@ -151,9 +154,14 @@ impl Manager {
         self.store.add_folders(&found)
     }
 
-    /// The days the learner studied in the window, and the run they make.
+    /// The days the learner studied, and the run they make. The days come
+    /// from the record of every course in the library: a day counts when the
+    /// tutor marked an answer on it, in this window or in a terminal. With a
+    /// runtime that cannot say, they are the days an answer was sent from
+    /// the window.
     pub fn activity(&self) -> Activity {
-        self.store.activity(study::today())
+        let days = study::answered_days(&self.store.recent()).unwrap_or_else(|| self.store.days());
+        activity::summarize(&days, study::today())
     }
 
     /// Open a study folder. Any conversation in the previous folder is ended;
@@ -301,7 +309,7 @@ impl Manager {
                     let tutor = buffer.tutor.join("\n\n");
                     let learner = std::mem::take(&mut buffer.learner);
                     buffer.tutor.clear();
-                    if !learner.trim().is_empty() {
+                    if std::mem::take(&mut buffer.typed) && !learner.trim().is_empty() {
                         store.count_turn(study::today());
                     }
                     if let Some(session) = buffer.session.clone() {
@@ -401,9 +409,13 @@ impl Manager {
         act(conversation.as_mut())
     }
 
-    fn send_as(&self, shown: &str, sent: &str) -> AgentResult<()> {
+    fn send_as(&self, shown: &str, sent: &str, typed: bool) -> AgentResult<()> {
         let buffer = Arc::clone(&lock(&self.inner).buffer);
-        lock(&buffer).learner = shown.to_owned();
+        {
+            let mut buffer = lock(&buffer);
+            buffer.learner = shown.to_owned();
+            buffer.typed = typed;
+        }
         self.with_conversation(|conversation| conversation.send(sent))
     }
 
@@ -413,7 +425,7 @@ impl Manager {
         if text.is_empty() {
             return Ok(());
         }
-        self.send_as(text, text)
+        self.send_as(text, text, true)
     }
 
     /// Start a new lesson on what the learner named.
@@ -422,7 +434,7 @@ impl Manager {
         if goal.is_empty() {
             return Ok(());
         }
-        self.send_as(goal, &self.harness.new_lesson(goal))
+        self.send_as(goal, &self.harness.new_lesson(goal), false)
     }
 
     pub fn interrupt(&self) -> AgentResult<()> {
@@ -523,9 +535,11 @@ impl Manager {
         Ok(Some((words.clone(), self.harness.papers(&words))))
     }
 
-    /// Send words that are shown one way and worded another for the agent.
+    /// Send words the window wrote for the learner: the line that opens a
+    /// sitting, or the request to mark a paper. They can be shown one way and
+    /// worded another for the agent, and they are not counted as an answer.
     pub fn send_shown(&self, shown: &str, sent: &str) -> AgentResult<()> {
-        self.send_as(shown, sent)
+        self.send_as(shown, sent, false)
     }
 
     pub fn set_block_minutes(&self, minutes: u32) {
