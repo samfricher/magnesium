@@ -508,3 +508,116 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
     }
     println!("\nLook in: {}", folder.display());
 }
+
+/// The session's checkpoint revision and the memories' revisions, to see a
+/// save land.
+fn saved_state(folder: &Path) -> (i64, i64) {
+    let conn = rusqlite::Connection::open(folder.join(".magnesium/state.sqlite")).unwrap();
+    let session: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(revision),0) FROM learning_sessions",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let memories: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(revision),0) FROM learner_memories",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    (session, memories)
+}
+
+/// MAGNESIUM_LIVE_FOLDER names a study folder that has a record: a copy of
+/// it is used, so the folder itself is not changed.
+#[test]
+#[ignore = "starts Claude Code on your own subscription; run it yourself"]
+fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() {
+    let source =
+        PathBuf::from(std::env::var_os("MAGNESIUM_LIVE_FOLDER").expect("a folder with a record"));
+    let scratch =
+        std::env::temp_dir().join(format!("magnesium-window-live-48b-{}", std::process::id()));
+    let folder = scratch.join("Course");
+    let home = scratch.join("window");
+    std::fs::create_dir_all(&home).unwrap();
+    assert!(std::process::Command::new("cp")
+        .arg("-R")
+        .arg(&source)
+        .arg(&folder)
+        .status()
+        .unwrap()
+        .success());
+    println!("study folder: {}", folder.display());
+    // An earlier build set the copy up: upgrade it, as the window's button does.
+    assert!(std::process::Command::new("magnesium")
+        .args(["init", "--upgrade-instructions"])
+        .current_dir(&folder)
+        .status()
+        .unwrap()
+        .success());
+    let minutes = |n: u64| Duration::from_secs(60 * n);
+    let live = Live::new(&folder, &home);
+    live.manager
+        .open_session(false)
+        .expect("Claude Code starts");
+    // The lesson's opening, then answers that drop the sign of b, until a
+    // turn saves its notes after its reply. The lesson is closed during that
+    // save, which must still land. The record at the start is read from the
+    // trace (MAGNESIUM_APP_TRACE): the start's result carries `context`.
+    for n in 0..5 {
+        if n == 0 {
+            live.manager
+                .send_new_lesson("solving quadratics with the formula")
+                .unwrap();
+        } else {
+            live.manager
+                .send("I moved everything to one side and read a, b and c off it, but I took b without its minus sign, as I usually do. Is that where I go wrong?")
+                .unwrap();
+        }
+        let started = Instant::now();
+        let mut replied = false;
+        let mut text = String::new();
+        let before = saved_state(&folder);
+        loop {
+            match live
+                .events
+                .recv_timeout(minutes(10))
+                .expect("the turn goes on")
+            {
+                AgentEvent::TextDone { text: done } => {
+                    replied = true;
+                    text = done;
+                }
+                AgentEvent::Working { doing: Some(doing) }
+                    if replied && doing.contains("saving") =>
+                {
+                    println!("\n== {} . notes being saved after the reply, at {} ms; closing the lesson ==", n + 2, started.elapsed().as_millis());
+                    println!("reply: {}", text.chars().take(300).collect::<String>());
+                    live.manager.stop(None).unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(45);
+                    while Instant::now() < deadline && saved_state(&folder) == before {
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    let after = saved_state(&folder);
+                    println!("session and memory revisions before {before:?}, 45 s after the close {after:?}");
+                    assert_ne!(
+                        after, before,
+                        "the save in flight was lost when the lesson closed"
+                    );
+                    println!("\nLook in: {}", folder.display());
+                    return;
+                }
+                AgentEvent::TurnEnded { ok, .. } => {
+                    println!("\n== {} . a turn that ended with no save after its reply (ok: {ok}), at {} ms ==", n + 2, started.elapsed().as_millis());
+                    println!("reply: {}", text.chars().take(300).collect::<String>());
+                    break;
+                }
+                AgentEvent::Exited { detail, .. } => panic!("the agent ended: {detail:?}"),
+                _ => {}
+            }
+        }
+    }
+    panic!("no turn saved its notes after its reply in five turns");
+}
