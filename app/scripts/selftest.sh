@@ -36,12 +36,15 @@ exec python3 '$ROOT/crates/core/tests/stand_in_agent.py' "\$@"
 EOF
 chmod +x "$WORK/claude"
 
-# The real runtime, with a scratch home: the one installed, else the one built
-# at the root of this checkout. Setting a folder up writes user settings, and
-# those must land in the scratch home.
-RUNTIME=$(command -v magnesium || true)
-if [ -z "$RUNTIME" ] && [ -x "$ROOT/../target/release/magnesium" ]; then
+# The real runtime, with a scratch home: the one built at the root of this
+# checkout, which is the one this window's readers are written for, else the
+# one installed. Setting a folder up writes user settings, and those must land
+# in the scratch home.
+RUNTIME=""
+if [ -x "$ROOT/../target/release/magnesium" ]; then
   RUNTIME="$ROOT/../target/release/magnesium"
+else
+  RUNTIME=$(command -v magnesium || true)
 fi
 if [ -n "$RUNTIME" ]; then
   cat > "$WORK/magnesium" <<EOF

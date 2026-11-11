@@ -1,5 +1,6 @@
-//! Print what the entrance, the rail and the progress page would show for a
-//! study folder, as JSON. It starts no agent and changes nothing.
+//! Print what the library, the course page, the lesson's steps and the
+//! progress page would show for a study folder, as JSON. It starts no agent
+//! and changes nothing.
 //!
 //!   cargo run -p mg-core --example look -- ~/path/to/study-folder
 
@@ -21,9 +22,10 @@ fn main() {
             "magnesium": mg_core::runtime::program().map(|p| p.display().to_string()),
             "path_for_the_agent": mg_core::paths::child_path().to_string_lossy(),
         },
+        "card": study::card(&folder, &store),
         "home": study::home(&folder, &store),
         "rail": study::rail(&folder),
-        "progress": study::progress(&folder, None, &store),
+        "progress": study::progress(&folder, None),
     });
     println!(
         "{}",

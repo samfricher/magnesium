@@ -45,6 +45,20 @@ pub fn attempts(folder: &Path) -> Option<Vec<Value>> {
     value["attempts"].as_array().cloned()
 }
 
+/// `magnesium progress --json`: each skill's passes, the level, what is due
+/// and the days with a marked answer, worked out by the runtime from the
+/// learner record. None when this version of the runtime has no such
+/// command, when the folder is not set up, or when an earlier version set it
+/// up: like the digest, the command never upgrades a folder.
+pub fn progress(folder: &Path) -> Option<Value> {
+    let out = run(folder, &["progress", "--json"], Duration::from_secs(10)).ok()?;
+    let value: Value = serde_json::from_str(&out).ok()?;
+    (value["active"].as_bool() == Some(true)
+        && value["upgrade_needed"].as_bool() != Some(true)
+        && value["days"].is_array())
+    .then_some(value)
+}
+
 /// `magnesium init`: set a folder up for study.
 pub fn init(folder: &Path) -> Result<(), String> {
     run(folder, &["init", "--json"], Duration::from_secs(30)).map(|_| ())

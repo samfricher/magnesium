@@ -1,8 +1,13 @@
+// Text the tutor or the learner wrote, drawn with its mathematics.
+//
+// `Rich` draws a whole reply: Markdown, formulas, diagrams, local images.
+// `Line` draws one line anywhere else on the page, with the same formulas.
+
 import { memo, useEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
-import { core } from "./bridge";
-import { renderMarkdown } from "./render";
+import { core } from "../bridge";
+import { renderInline, renderMarkdown, withoutOpenMath } from "../render";
 
 let diagrams = 0;
 
@@ -18,7 +23,34 @@ async function drawDiagrams(root: HTMLElement) {
   // The diagram library is large, so it is fetched only when a diagram appears.
   const mermaid = (await import("mermaid")).default;
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral" });
+  // The window's own colours, so a diagram reads as part of the page. The
+  // diagram library works colours out from these, so they are plain hex.
+  const ink = dark
+    ? { box: "#1e2025", text: "#edebe6", edge: "#55585f", line: "#a3a4aa", second: "#25282e", third: "#17181c" }
+    : { box: "#ffffff", text: "#1d1c19", edge: "#c4c0b5", line: "#65625b", second: "#ece9e1", third: "#fdfcf8" };
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    // A diagram keeps its own size, so its labels stay readable. A wide one
+    // scrolls inside its box.
+    flowchart: { useMaxWidth: false },
+    sequence: { useMaxWidth: false },
+    themeVariables: {
+      darkMode: dark,
+      background: "transparent",
+      fontSize: "15px",
+      primaryColor: ink.box,
+      primaryTextColor: ink.text,
+      primaryBorderColor: ink.edge,
+      lineColor: ink.line,
+      secondaryColor: ink.second,
+      tertiaryColor: ink.third,
+      textColor: ink.text,
+      edgeLabelBackground: ink.third,
+    },
+  });
   for (const block of blocks) {
     const pre = block.parentElement;
     if (!pre || !pre.isConnected) continue;
@@ -94,8 +126,8 @@ type Props = {
   onNote?: (note: string) => void;
 };
 
-export const Markdown = memo(function Markdown({ text, final, onNote }: Props) {
-  const html = useMemo(() => renderMarkdown(text), [text]);
+export const Rich = memo(function Rich({ text, final, onNote }: Props) {
+  const html = useMemo(() => renderMarkdown(final ? text : withoutOpenMath(text)), [text, final]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,5 +165,11 @@ export const Markdown = memo(function Markdown({ text, final, onNote }: Props) {
     }
   };
 
-  return <div className="md" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div className="prose" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
+/** One line of text with its mathematics. Used for goals, steps, names and the learner's own words. */
+export const Line = memo(function Line({ text, className }: { text: string; className?: string }) {
+  const html = useMemo(() => renderInline(text), [text]);
+  return <span className={className ? `line ${className}` : "line"} dangerouslySetInnerHTML={{ __html: html }} />;
 });

@@ -1,0 +1,973 @@
+/* One window, made for studying.
+
+   Three rules decide what is here.
+   1. One accent colour, and it means two things only: what you have proved,
+      and what moves you on (the task in hand, and the one button). Amber
+      means due. Red means a fault. Everything else is ink: a study day, a
+      step done, a clock, a chosen option, the focus ring.
+   2. Two voices. What is read is set in a serif: a title, and the tutor's
+      words, like a page of a book. What is pressed or glanced at is set
+      small, in the system's own face.
+   3. Motion only marks a change of place or of state. Nothing moves to be
+      looked at, and nothing moves at all when the system asks for less.
+      Nothing fades in from nothing either: macOS pauses a page's animations
+      while its window is covered, and a screen that starts invisible would
+      then stay blank in a capture of the window. Things arrive by moving. */
+
+:root {
+  color-scheme: dark;
+  --bg: #0f1012;
+  --surface: #17181c;
+  --raised: #1e2025;
+  --hover: #25282e;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --text: #edebe6;
+  --muted: #a3a4aa;
+  --faint: #6e7078;
+  --accent: #7fe0b4;
+  --accent-ink: #08261b;
+  --accent-soft: rgba(127, 224, 180, 0.11);
+  --accent-mid: rgba(127, 224, 180, 0.4);
+  --amber: #f0b95a;
+  --amber-soft: rgba(240, 185, 90, 0.12);
+  --red: #f18d7d;
+  --red-soft: rgba(241, 141, 125, 0.12);
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --veil: rgba(8, 9, 10, 0.55);
+  /* A soft light behind the thing in hand. It has no colour. */
+  --glow: rgba(255, 255, 255, 0.045);
+
+  --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+  --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f5f3ed;
+    --surface: #fdfcf8;
+    --raised: #ffffff;
+    --hover: #ece9e1;
+    --line: rgba(40, 32, 16, 0.09);
+    --line-2: rgba(40, 32, 16, 0.17);
+    --text: #1d1c19;
+    --muted: #65625b;
+    --faint: #98948b;
+    --accent: #197553;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(25, 117, 83, 0.09);
+    --accent-mid: rgba(25, 117, 83, 0.38);
+    --amber: #9c6007;
+    --amber-soft: rgba(156, 96, 7, 0.1);
+    --red: #b5463a;
+    --red-soft: rgba(181, 70, 58, 0.09);
+    --shadow: 0 20px 60px rgba(70, 58, 30, 0.16), 0 2px 8px rgba(70, 58, 30, 0.08);
+    --veil: rgba(245, 243, 237, 0.6);
+    --glow: rgba(255, 255, 255, 0.85);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+code,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+::selection {
+  background: var(--line-2);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--muted);
+  outline-offset: 2px;
+}
+
+.selectable,
+.prose,
+.you,
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+.grow {
+  flex: 1;
+}
+
+.dim {
+  color: var(--faint);
+}
+
+.num {
+  font-family: var(--round);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One line of text with mathematics in it. */
+.line .katex {
+  font-size: 1.04em;
+}
+
+/* ---- the window ---- */
+
+.app {
+  height: 100%;
+  position: relative;
+}
+
+.view {
+  height: 100%;
+}
+
+.screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: enter 0.3s var(--ease) both;
+}
+
+@keyframes enter {
+  from {
+    transform: translateY(8px);
+  }
+}
+
+/* What scrolls under the top strip fades out as it reaches it. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+}
+
+.center {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 8px 32px 56px;
+}
+
+/* The top strip is also how the window is dragged. The traffic lights sit
+   over its left end, so its content starts after them. */
+.bar {
+  flex: none;
+  height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+}
+
+/* The two sides are the same width, so the middle is the window's middle.
+   The left side starts after the traffic lights. */
+.bar-side:first-child {
+  padding-left: 76px;
+}
+
+.bar-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+}
+
+.bar-side.end {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.bar-center {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+}
+
+.bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- controls ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 11px;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 550;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s,
+    filter 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+  font-weight: 650;
+  padding: 0 18px;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  padding: 0 12px;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.btn.danger {
+  color: var(--red);
+  border-color: var(--red-soft);
+  background: var(--red-soft);
+}
+
+.btn.small {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 13px;
+  border-radius: 9px;
+  gap: 6px;
+}
+
+.btn.as-label {
+  pointer-events: none;
+}
+
+.btn kbd {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.6;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.icon-btn:hover:not(:disabled),
+.icon-btn.on {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
+.key {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.key:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 550;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.crumb:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.crumb:disabled {
+  opacity: 0.4;
+}
+
+.field {
+  display: block;
+  width: 100%;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.field.big {
+  height: 50px;
+  font-size: 16.5px;
+  padding: 0 16px;
+  border-radius: 14px;
+}
+
+.field::placeholder,
+textarea::placeholder {
+  color: var(--faint);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--muted);
+  box-shadow: 0 0 0 4px var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.row.center {
+  justify-content: center;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.eyebrow i {
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.eyebrow i::before {
+  content: "·";
+  margin: 0 7px 0 1px;
+}
+
+.eyebrow.now {
+  color: var(--amber);
+}
+
+.eyebrow.bad {
+  color: var(--red);
+}
+
+.aside {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+p.aside {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-wrap: balance;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.banner b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.banner.warn {
+  background: var(--amber-soft);
+  border-color: transparent;
+  color: var(--amber);
+}
+
+.banner.warn b {
+  color: var(--amber);
+}
+
+.banner.bad {
+  background: var(--red-soft);
+  border-color: transparent;
+  color: var(--red);
+}
+
+.banner .icon-btn {
+  width: 24px;
+  height: 24px;
+  margin: -2px -6px -2px auto;
+  color: inherit;
+}
+
+button.banner:hover {
+  filter: brightness(1.1);
+}
+
+/* A due thing: an amber point and a few words. */
+.due {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--amber);
+}
+
+.due i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px var(--amber-soft);
+}
+
+.due em {
+  font-style: normal;
+  font-weight: 450;
+  opacity: 0.85;
+}
+
+/* A small label on a card. Its colour says how near the exam is. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.chip .line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip b {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.chip.soon,
+.chip.now {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.chip.soon b,
+.chip.now b {
+  color: var(--amber);
+}
+
+.chip.bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* ---- the proof ring ---- */
+
+.ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.ring svg {
+  display: block;
+}
+
+.ring-track {
+  fill: none;
+  stroke: var(--line-2);
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s var(--ease);
+}
+
+.ring.amber .ring-fill {
+  stroke: var(--amber);
+}
+
+/* A clock is not a proof, so its ring is ink. */
+.ring.ink .ring-fill {
+  stroke: var(--muted);
+}
+
+.ring-mid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--round);
+  line-height: 1;
+}
+
+.ring-mid b {
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.ring-mid small {
+  margin-top: 3px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* ---- three proof dots ---- */
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+.dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+}
+
+.dots i.full {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* Earned before a later miss: kept as history, and no longer counted. */
+.dots i.past {
+  border-color: transparent;
+  background: var(--faint);
+  opacity: 0.5;
+}
+
+/* The mark: three dots, one proved, one on its way, one still to prove. */
+.mark {
+  display: inline-flex;
+  gap: 7px;
+}
+
+.mark i {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+}
+
+.mark i:nth-child(1) {
+  background: var(--accent);
+}
+
+.mark i:nth-child(2) {
+  background: var(--accent-mid);
+  border-color: transparent;
+}
+
+.mark i:nth-child(3) {
+  border-color: var(--line-2);
+}
+
+.mark.breathing i {
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+.mark.breathing i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.mark.breathing i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---- the run and the week ---- */
+
+.run-line {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.run-line b {
+  font-family: var(--round);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.week {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.week-day i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  color: var(--bg);
+}
+
+.week-day b {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--faint);
+}
+
+.week-day.done i {
+  border-color: var(--text);
+  background: var(--text);
+}
+
+.week-day.ahead i {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.week-day.today b {
+  color: var(--text);
+}
+
+.week-day.today:not(.done) i {
+  border-color: var(--muted);
+}
+
+.week-day.pop i {
+  animation: pop 0.7s var(--ease) 0.25s both;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.5);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.weeks {
+  display: grid;
+  grid-template-columns: repeat(7, 11px);
+  gap: 4px;
+}
+
+.weeks i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3.5px;
+  background: var(--line);
+}
+
+.weeks i.done {
+  background: var(--muted);
+}
+
+.weeks i.ahead {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ---- commands, behind ⌘K ---- */
+
+.palette-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 13vh;
+  background: var(--veil);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.palette {
+  width: min(580px, calc(100vw - 48px));
+  max-height: 66vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--raised);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: rise 0.2s var(--ease) both;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.palette-in {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+}
+
+.palette-in input {
+  flex: 1;
+  height: 52px;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+}
+
+.palette-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.palette-list button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14.5px;
+  text-align: left;
+}
+
+.palette-list button span {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.palette-list button small {
+  margin-left: auto;
+  padding-left: 16px;
+  font-size: 12.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-list button.on {
+  background: var(--hover);
+}
+
+.palette-list button.on .icon {
+  color: var(--text);
+}
+
+.palette-none {
+  padding: 18px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 14px;
+}
+
+.palette-foot {
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
+}

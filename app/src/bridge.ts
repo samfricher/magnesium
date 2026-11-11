@@ -15,6 +15,10 @@ async function tauriCore(): Promise<Core> {
   return {
     initialFolder: () => invoke("initial_folder"),
     recent: () => invoke("recent"),
+    library: () => invoke("library"),
+    forgetFolder: (path) => invoke("forget_folder", { path }),
+    findFolders: () => invoke("find_folders"),
+    activity: () => invoke("activity"),
     pickFolder: async () => list(await dialog.open({ directory: true, title: "Open a study folder" }))[0] ?? null,
     pickFiles: async () =>
       list(
@@ -49,7 +53,6 @@ async function tauriCore(): Promise<Core> {
     stop: (stoppedAt) => invoke("stop", { stoppedAt }),
     rail: () => invoke("rail"),
     progress: (target) => invoke("progress", { target }),
-    setProgressView: (view) => invoke("set_progress_view", { view }),
     setBlockMinutes: (minutes) => invoke("set_block_minutes", { minutes }),
     attach: (path, group) => invoke("attach", { path, group }),
     openFile: (path) => invoke("open_file", { path }),

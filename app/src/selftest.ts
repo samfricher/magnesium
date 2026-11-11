@@ -8,7 +8,7 @@
 
 import type { Actions } from "./App";
 import { tutorText, type SessionState } from "./lesson";
-import { renderMarkdown } from "./render";
+import { renderInline, renderMarkdown, renderPlain, withoutOpenMath } from "./render";
 import type { Core } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
@@ -57,6 +57,50 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (page.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in the text did not draw");
     if (page.querySelectorAll("map, area").length !== 0) throw new Error("an image map was not removed");
 
+    // One line of text anywhere on the page draws its mathematics, and the
+    // learner's own words keep every character that is not mathematics.
+    const line = document.createElement("div");
+    line.innerHTML = renderInline("the cdf of $U = \\sqrt{Y}$ <b onclick=x>now</b>");
+    const said = document.createElement("div");
+    said.innerHTML = renderPlain("2*x*3 < 7 and $x^2$\nnext line <i>");
+    steps.lineMath = { line: line.querySelectorAll(".katex").length, handlers: line.querySelectorAll("[onclick]").length, said: said.textContent };
+    if (line.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in a line of text did not draw");
+    if (line.querySelectorAll("[onclick]").length !== 0) throw new Error("a line of text kept a handler");
+    if (said.querySelectorAll(".katex").length !== 1 || said.querySelectorAll("i").length !== 0 || !said.textContent?.includes("2*x*3 < 7")) {
+      throw new Error(`the learner's words were not kept as typed: ${said.innerHTML}`);
+    }
+
+    // A reply that is still being written never shows the source of a
+    // formula it is in the middle of. A price is not taken for a formula.
+    const price = `It costs $5 and that is all. ${"More words follow. ".repeat(12)}`;
+    const cut = {
+      inline: withoutOpenMath("So $x = \\frac{1}{2"),
+      display: withoutOpenMath("So $x = 1$ and\n\n$$y = \\begin{pmatrix} 1"),
+      whole: withoutOpenMath("So $x = 1$ and $$y = 2$$ done"),
+      price: withoutOpenMath(price) === price,
+    };
+    steps.openMath = cut;
+    if (cut.inline !== "So" || cut.display !== "So $x = 1$ and" || cut.whole !== "So $x = 1$ and $$y = 2$$ done" || !cut.price) {
+      throw new Error(`a half-written formula was not held back: ${JSON.stringify(cut)}`);
+    }
+
+    // A task that runs over several blocks is one box, to the end of the reply.
+    const task = document.createElement("div");
+    task.innerHTML = renderMarkdown("An explanation.\n\n**Task.** Find the eigenvalues of\n\n$$A$$\n\nOne line.");
+    const box = task.querySelector("div.task");
+    steps.task = { boxes: task.querySelectorAll("div.task").length, blocks: box?.children.length ?? 0, before: task.firstElementChild?.tagName };
+    if (!box || box.children.length !== 3 || task.firstElementChild?.tagName !== "P" || box.querySelectorAll(".katex-display").length !== 1) {
+      throw new Error(`the task was not set apart as one box: ${task.innerHTML.slice(0, 200)}`);
+    }
+
+    // The library and the study days, through the shell. The folder that is
+    // open is in the library, and nothing was studied before this check.
+    const cards = await api.library();
+    const days = await api.activity();
+    steps.library = { cards: cards.length, first: cards[0]?.name, run: days.run, today: days.today };
+    if (!cards.some((card) => card.folder === home.folder)) throw new Error("the open folder is not in the library");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(days.today)) throw new Error("the core did not say what day it is");
+
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
     await actions.continueLesson(false);
     await until("the first reply", idle);
@@ -66,7 +110,7 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.reply = reply.slice(0, 120);
     if (!reply.includes("Self-check")) throw new Error(`the reply was not the stand-in's echo: ${reply.slice(0, 80)}`);
 
-    await until("the page to draw the reply", () => document.querySelector(".tutor .md") !== null, 5000);
+    await until("the page to draw the reply", () => document.querySelector(".tutor .prose") !== null, 5000);
     await wait(1500);
     steps.math = document.querySelectorAll(".tutor .katex").length;
     steps.diagram = document.querySelectorAll(".tutor .diagram svg").length;
@@ -75,9 +119,15 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
 
     await actions.say("PERMISSION");
     await until("the permission card", () => session().cards.length > 0);
-    steps.card = document.querySelector(".ask .tq")?.textContent ?? null;
+    steps.card = document.querySelector(".ask h3")?.textContent ?? null;
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
+
+    // The learner's own line on screen draws its mathematics too.
+    await actions.say("my answer is $x^2$");
+    await until("the reply to the answer", () => idle() && session().live?.learner.includes("my answer") === true);
+    steps.saidMath = document.querySelectorAll(".exchange.now .you .katex").length;
+    if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
 
     const rail = await api.rail();
     steps.rail = { goal: rail.goal, steps: rail.steps.length };
@@ -86,12 +136,22 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
 
     await actions.openProgress(null);
     await wait(300);
-    steps.progressScreen = document.querySelector(".progress") !== null;
+    steps.progressScreen = document.querySelector('[data-screen="progress"]') !== null;
 
-    await api.stop("self-check stop line");
+    // Ending the sitting from the page: the lesson is kept and the end
+    // screen shows. A study day is a day with a marked answer, and the
+    // stand-in tutor marks none. So with a runtime that says which days had
+    // one, today is not a study day, however many messages were sent. With
+    // an earlier runtime the window counts the answers sent from it.
+    await actions.stop("self-check stop line");
+    await until("the end of the sitting", () => document.querySelector('[data-screen="summary"]') !== null, 10_000);
     const after = await api.home();
-    steps.afterStop = { can_resume: after.can_resume };
+    const studied = await api.activity();
+    const fromRecord = !progress.level_unknown;
+    steps.afterStop = { can_resume: after.can_resume, studied_today: studied.studied_today, run: studied.run, days_from_record: fromRecord };
     if (!after.can_resume) throw new Error("the lesson was not kept for the next sitting");
+    if (fromRecord && (studied.studied_today || studied.run !== 0)) throw new Error("a day with no marked answer was counted as a study day");
+    if (!fromRecord && (!studied.studied_today || studied.run !== 1)) throw new Error("today's answers were not counted as a study day");
   } catch (problem) {
     failure = String(problem);
   }

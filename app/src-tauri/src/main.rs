@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use mg_core::activity::Activity;
 use mg_core::agent::{Account, AgentEvent, Answer, Decision, Payment};
 use mg_core::claude::ClaudeCode;
 use mg_core::install::RuntimeSetup;
 use mg_core::manager::{Opened, Setup};
 use mg_core::store::PaperSitting;
-use mg_core::study::{Home, Paper, Progress, Rail};
+use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
 use serde::Serialize;
 use tauri::{Emitter, Manager as _, State, WindowEvent};
@@ -33,20 +34,42 @@ fn plain<T, E: std::fmt::Display>(result: Result<T, E>) -> Reply<T> {
     result.map_err(|error| error.to_string())
 }
 
-/// The folder to open first: one named on the command line or in the
-/// environment, else the opened folder whose exam is nearest.
+/// A folder named on the command line or in the environment, to open at
+/// once. With none named, the window opens on the library.
 #[tauri::command(async)]
-fn initial_folder(shell: State<'_, Shell>) -> Option<String> {
+fn initial_folder() -> Option<String> {
     std::env::args()
         .skip(1)
         .chain(std::env::var(FOLDER_ENV).ok())
         .find(|arg| !arg.starts_with('-') && Path::new(arg).is_dir())
-        .or_else(|| shell.manager.folder_to_open())
 }
 
 #[tauri::command(async)]
 fn recent(shell: State<'_, Shell>) -> Vec<String> {
     shell.manager.recent()
+}
+
+/// Every folder in the library, read without opening any of them.
+#[tauri::command(async)]
+fn library(shell: State<'_, Shell>) -> Vec<Card> {
+    shell.manager.library()
+}
+
+#[tauri::command(async)]
+fn forget_folder(shell: State<'_, Shell>, path: String) -> Reply<()> {
+    plain(shell.manager.forget_folder(Path::new(&path)))
+}
+
+/// Look for study folders set up in a terminal. Only on the learner's click:
+/// macOS may ask whether the app may read Documents or Desktop.
+#[tauri::command(async)]
+fn find_folders(shell: State<'_, Shell>) -> usize {
+    shell.manager.find_folders()
+}
+
+#[tauri::command(async)]
+fn activity(shell: State<'_, Shell>) -> Activity {
+    shell.manager.activity()
 }
 
 #[tauri::command(async)]
@@ -176,11 +199,6 @@ fn progress(shell: State<'_, Shell>, target: Option<String>) -> Reply<Progress> 
 }
 
 #[tauri::command(async)]
-fn set_progress_view(shell: State<'_, Shell>, view: String) {
-    shell.manager.set_progress_view(&view);
-}
-
-#[tauri::command(async)]
 fn set_block_minutes(shell: State<'_, Shell>, minutes: u32) {
     shell.manager.set_block_minutes(minutes);
 }
@@ -293,6 +311,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             initial_folder,
             recent,
+            library,
+            forget_folder,
+            find_folders,
+            activity,
             open_folder,
             home,
             set_up,
@@ -315,7 +337,6 @@ fn main() {
             stop,
             rail,
             progress,
-            set_progress_view,
             set_block_minutes,
             attach,
             open_file,

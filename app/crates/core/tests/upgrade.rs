@@ -105,14 +105,17 @@ fn a_folder_an_earlier_version_set_up_is_upgraded_only_after_a_yes() {
         Arc::new(ClaudeCode::with_program(root.join("no-agent-needed"))),
         Arc::new(|_| {}),
     );
-    // Opening it, and the start screen of every folder opened before, asks.
+    // Opening it asks, and so does every page that reads it.
     let home = manager.open_folder(&folder).unwrap();
     assert_eq!(home.state, HomeState::NeedsUpgrade, "{home:?}");
     assert!(home.message.unwrap().contains("keeps a copy"));
     assert!(manager.progress(None).unwrap().message.is_some());
     let refused = manager.open_session(false).unwrap_err().to_string();
     assert!(refused.contains("Upgrade it"), "{refused}");
-    let _ = manager.folder_to_open();
+    // The library reads every folder in it, and must not upgrade one either.
+    let cards = manager.library();
+    assert_eq!(cards.len(), 1, "{cards:?}");
+    assert_eq!(cards[0].state, HomeState::NeedsUpgrade);
     assert_eq!(
         fs::read(&store_path).unwrap(),
         before,

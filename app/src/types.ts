@@ -39,6 +39,29 @@ export type Home = {
   block_minutes: number;
 };
 
+/** One proof is one answer reproduced alone on a separate day. Three prove a skill. */
+export type Proofs = { earned: number; total: number; proven: number; skills: number; level: number; to_next: number };
+
+/** One study folder in the library, read without opening it. */
+export type Card = {
+  folder: string;
+  name: string;
+  state: HomeState;
+  exam: Exam | null;
+  goal: string | null;
+  days_ago: number | null;
+  proofs: Proofs;
+  /** Paper redos and quick checks due today or earlier. */
+  due: number;
+  sitting: PaperSitting | null;
+};
+
+/**
+ * The days the learner studied, and the run they make. A day is one with a
+ * marked answer, in any course in the library, each as "2026-11-10".
+ */
+export type Activity = { today: string; days: string[]; run: number; studied_today: boolean };
+
 export type Turn = { session: string; ms: number; learner: string; tutor: string; interrupted: boolean };
 
 export type Opened = { resumed: boolean; turns: Turn[] };
@@ -50,7 +73,16 @@ export type Rail = { goal: string | null; steps: Step[]; next_action: string | n
 /** 2 is a pass that counts, 1 a pass made before a later failure, 0 a pass still to make. */
 export type Dots = [number, number, number];
 
-export type Row = { dots: Dots; name: string; what: string; note: string };
+export type Row = {
+  dots: Dots;
+  name: string;
+  what: string;
+  note: string;
+  /** Whether the next proof can be earned today. */
+  due: boolean;
+  /** The day the next proof can be earned, as "2026-11-12". */
+  next_day: string | null;
+};
 
 export type Score = {
   paper: string;
@@ -72,7 +104,9 @@ export type Progress = {
   unreadable: number;
   /** The quick checks are left out, because the window cannot tell their passes. */
   checks_unknown: boolean;
-  view: string;
+  proofs: Proofs;
+  /** The runtime could not say how far the course is proved, so no level is shown. */
+  level_unknown: boolean;
   message: string | null;
 };
 
@@ -138,6 +172,11 @@ export type About = { version: string; commit: string | null };
 export interface Core {
   initialFolder(): Promise<string | null>;
   recent(): Promise<string[]>;
+  library(): Promise<Card[]>;
+  forgetFolder(path: string): Promise<void>;
+  /** Look for study folders set up in a terminal. Resolves to how many were new. */
+  findFolders(): Promise<number>;
+  activity(): Promise<Activity>;
   pickFolder(): Promise<string | null>;
   pickFiles(): Promise<string[]>;
   /** A path for a new study folder, from a save dialog, or null. */
@@ -164,7 +203,6 @@ export interface Core {
   stop(stoppedAt: string | null): Promise<void>;
   rail(): Promise<Rail>;
   progress(target: string | null): Promise<Progress>;
-  setProgressView(view: string): Promise<void>;
   setBlockMinutes(minutes: number): Promise<void>;
   attach(path: string, group: string): Promise<string>;
   openFile(path: string): Promise<void>;

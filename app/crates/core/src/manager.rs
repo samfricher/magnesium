@@ -7,18 +7,24 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use std::time::Duration;
+
 use chrono::Local;
 use serde::Serialize;
+
+use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
     Harness, Payment, StartOptions,
 };
 use crate::files;
+use crate::find;
 use crate::install::{self, RuntimeSetup};
+use crate::paths;
 use crate::runtime;
 use crate::store::{PaperSitting, Store, Turn};
-use crate::study::{self, Home, Paper, Progress, Rail};
+use crate::study::{self, Card, Home, Paper, Progress, Rail};
 
 #[derive(Default)]
 struct Buffer {
@@ -31,6 +37,9 @@ struct Buffer {
     ready: bool,
     /// Whether this process has ended.
     ended: bool,
+    /// Whether the words in `learner` are an answer the learner typed. The
+    /// line the window sends to open a sitting is not one.
+    typed: bool,
 }
 
 struct Inner {
@@ -118,9 +127,41 @@ impl Manager {
         self.store.recent()
     }
 
-    /// The folder to show when the window opens with none named.
-    pub fn folder_to_open(&self) -> Option<String> {
-        study::folder_to_open(&self.store.recent())
+    /// Every folder in the library, most urgent first. It opens none of
+    /// them, so a lesson in the open folder goes on.
+    pub fn library(&self) -> Vec<Card> {
+        study::library(&self.store.recent(), &self.store)
+    }
+
+    /// Take a folder out of the library. The folder is not touched. The open
+    /// folder cannot be taken out while its conversation runs.
+    pub fn forget_folder(&self, path: &Path) -> AgentResult<()> {
+        let folder = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let mut inner = lock(&self.inner);
+        if inner.folder.as_deref() == Some(folder.as_path()) {
+            self.close_conversation(&mut inner);
+            inner.folder = None;
+        }
+        drop(inner);
+        self.store.forget(&folder);
+        Ok(())
+    }
+
+    /// Look under the home folder for study folders set up in a terminal,
+    /// and put them in the library. Returns how many were new.
+    pub fn find_folders(&self) -> usize {
+        let found = find::study_folders(&paths::home(), Duration::from_secs(6));
+        self.store.add_folders(&found)
+    }
+
+    /// The days the learner studied, and the run they make. The days come
+    /// from the record of every course in the library: a day counts when the
+    /// tutor marked an answer on it, in this window or in a terminal. With a
+    /// runtime that cannot say, they are the days an answer was sent from
+    /// the window.
+    pub fn activity(&self) -> Activity {
+        let days = study::answered_days(&self.store.recent()).unwrap_or_else(|| self.store.days());
+        activity::summarize(&days, study::today())
     }
 
     /// Open a study folder. Any conversation in the previous folder is ended;
@@ -145,7 +186,7 @@ impl Manager {
     }
 
     pub fn progress(&self, target: Option<&str>) -> AgentResult<Progress> {
-        Ok(study::progress(&self.need_folder()?, target, &self.store))
+        Ok(study::progress(&self.need_folder()?, target))
     }
 
     pub fn rail(&self) -> AgentResult<Rail> {
@@ -268,6 +309,9 @@ impl Manager {
                     let tutor = buffer.tutor.join("\n\n");
                     let learner = std::mem::take(&mut buffer.learner);
                     buffer.tutor.clear();
+                    if std::mem::take(&mut buffer.typed) && !learner.trim().is_empty() {
+                        store.count_turn(study::today());
+                    }
                     if let Some(session) = buffer.session.clone() {
                         if !tutor.trim().is_empty() || !learner.trim().is_empty() {
                             store.append_turn(
@@ -365,9 +409,13 @@ impl Manager {
         act(conversation.as_mut())
     }
 
-    fn send_as(&self, shown: &str, sent: &str) -> AgentResult<()> {
+    fn send_as(&self, shown: &str, sent: &str, typed: bool) -> AgentResult<()> {
         let buffer = Arc::clone(&lock(&self.inner).buffer);
-        lock(&buffer).learner = shown.to_owned();
+        {
+            let mut buffer = lock(&buffer);
+            buffer.learner = shown.to_owned();
+            buffer.typed = typed;
+        }
         self.with_conversation(|conversation| conversation.send(sent))
     }
 
@@ -377,7 +425,7 @@ impl Manager {
         if text.is_empty() {
             return Ok(());
         }
-        self.send_as(text, text)
+        self.send_as(text, text, true)
     }
 
     /// Start a new lesson on what the learner named.
@@ -386,7 +434,7 @@ impl Manager {
         if goal.is_empty() {
             return Ok(());
         }
-        self.send_as(goal, &self.harness.new_lesson(goal))
+        self.send_as(goal, &self.harness.new_lesson(goal), false)
     }
 
     pub fn interrupt(&self) -> AgentResult<()> {
@@ -487,17 +535,15 @@ impl Manager {
         Ok(Some((words.clone(), self.harness.papers(&words))))
     }
 
-    /// Send words that are shown one way and worded another for the agent.
+    /// Send words the window wrote for the learner: the line that opens a
+    /// sitting, or the request to mark a paper. They can be shown one way and
+    /// worded another for the agent, and they are not counted as an answer.
     pub fn send_shown(&self, shown: &str, sent: &str) -> AgentResult<()> {
-        self.send_as(shown, sent)
+        self.send_as(shown, sent, false)
     }
 
     pub fn set_block_minutes(&self, minutes: u32) {
         self.store.set_block_minutes(minutes);
-    }
-
-    pub fn set_progress_view(&self, view: &str) {
-        self.store.set_progress_view(view);
     }
 
     /// End the conversation when the window closes.
