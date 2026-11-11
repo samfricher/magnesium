@@ -44,6 +44,10 @@ pub struct FolderState {
     /// window started, which was the plugin engine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<Engine>,
+    /// The learner turned recording off in a direct lesson in this study
+    /// folder, and has not turned it on again. Kept by study root.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recording_off: bool,
     #[serde(default)]
     pub stopped_at: Option<String>,
     #[serde(default)]

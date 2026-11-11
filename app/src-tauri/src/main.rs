@@ -323,14 +323,15 @@ fn main() {
         .setup(|app| {
             mg_core::paths::warm_up();
             let handle = app.handle().clone();
+            let store = Arc::new(Store::open());
             let manager = Manager::new(
-                Arc::new(Store::open()),
+                Arc::clone(&store),
                 Arc::new(ClaudeCode::new()),
                 Arc::new(move |event: AgentEvent| {
                     let _ = handle.emit("agent", event);
                 }),
             )
-            .with_direct(Arc::new(DirectTutor::new()));
+            .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
                 // A check that never reports must still end.

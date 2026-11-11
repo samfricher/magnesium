@@ -179,10 +179,13 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 **What the direct engine does not do yet:**
 
 - It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit.
-- It cannot pause or stop a lesson, or turn recording off, from what the learner says.
 - It builds and marks no papers, and does no paper redos.
 - It makes no files: no figures, pages or plans. It asks no permission and no multiple-choice question.
-- It counts a quick check's answer as cold only when it was a due check answered with no help.
+- A paused or stopped lesson goes on only when the learner opens it again from the window (Continue or a new lesson), not from words typed in the same conversation.
+
+**Pause, stop and recording off.** The record block can carry a control the learner asked for in their own words: `pause`, `stop`, `recording_off` or `recording_on`. The engine makes the same `learning_step` control call the plugin engine's tutor makes. After a pause or stop it sends nothing more to the record in that conversation, and the tutor is told to set no task unless the learner asks to go on; opening the lesson again from the window resumes it. After recording off it sends nothing at all, hooks included, in that conversation or any later one in the study folder (the window keeps the choice by study root), and an answer with no mark raises no notice, until the learner asks for recording on. A write the runtime refuses because recording is off or the lesson is inactive stops the engine the same way.
+
+**Cold answers.** An answer is sent cold when it is a due quick check answered with no help, or when the tutor's block says it came from a blank page and the runtime would take it: no help, not a decline, and no answer on that skill earlier the same day as far as the engine knows. If the runtime still refuses it, the answer is sent again as not cold, so the mark is kept.
 
 `crates/core/tests/direct.rs` drives it with a stand-in model and the real runtime. `crates/core/tests/live_direct.rs` runs it against the real Claude Code (ignored by default; it starts a model on your subscription).
 

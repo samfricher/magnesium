@@ -42,6 +42,9 @@ pub const AGAIN_LINE: &str =
 pub const HINT_WORDS: &str = "Can I have a hint?";
 /// The words the window's "I don't know" button sends.
 pub const DONT_KNOW_WORDS: &str = "I don't know";
+/// The words the window's "I'm lost" button sends. Only the prompt acts on
+/// them; they are kept here so a test can hold them to the page's.
+pub const LOST_WORDS: &str = "I'm lost";
 
 /// Passes the reply through as it streams and stops at the record block.
 ///
@@ -184,6 +187,28 @@ pub struct Step {
     pub status: String,
 }
 
+/// A control the learner asked for in their own words, as the runtime's
+/// `learning_step` `action:"control"` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Control {
+    Pause,
+    Stop,
+    RecordingOff,
+    RecordingOn,
+}
+
+impl Control {
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Pause => "pause",
+            Self::Stop => "stop",
+            Self::RecordingOff => "recording_off",
+            Self::RecordingOn => "recording_on",
+        }
+    }
+}
+
 /// A misunderstanding the reply found or saw cleared, for the learner's
 /// memory of that skill.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,6 +232,10 @@ pub struct Record {
     pub guess: bool,
     pub steps: Option<Vec<Step>>,
     pub memory: Option<MemoryNote>,
+    /// The tutor's judgment that the answer came from a blank page: it has
+    /// not taught, shown, hinted at or corrected this skill in this sitting.
+    pub cold: bool,
+    pub control: Option<Control>,
 }
 
 /// Read a record block. The error says, in a few words, what is wrong, for
@@ -316,6 +345,18 @@ pub fn parse(block: &str) -> Result<Record, String> {
         }
         Some(_) => return Err("memory is not an object".into()),
     };
+    let control = match text_of("control")?.as_deref() {
+        None => None,
+        Some("pause") => Some(Control::Pause),
+        Some("stop") => Some(Control::Stop),
+        Some("recording_off") => Some(Control::RecordingOff),
+        Some("recording_on") => Some(Control::RecordingOn),
+        Some(other) => {
+            return Err(format!(
+                "control {other:?} is not pause, stop, recording_off, recording_on or null"
+            ))
+        }
+    };
     Ok(Record {
         answer,
         help,
@@ -327,6 +368,8 @@ pub fn parse(block: &str) -> Result<Record, String> {
         guess: flag("guess")?,
         steps,
         memory,
+        cold: flag("cold")?,
+        control,
     })
 }
 
@@ -396,6 +439,33 @@ pub struct Lesson {
     /// Each turn's request gets a new id: the runtime refuses an id used
     /// before anywhere in the study folder.
     pub turns: u64,
+    /// Today, as "2026-11-12", and the skills answered on it, by their
+    /// label in lower case: the runtime refuses a cold answer on a label
+    /// already answered earlier that day.
+    pub today: String,
+    pub answered_today: Vec<String>,
+}
+
+impl Lesson {
+    /// Start a new day's list of answered skills when the day has changed.
+    pub fn set_today(&mut self, day: &str) {
+        if self.today != day {
+            self.today = day.to_owned();
+            self.answered_today.clear();
+        }
+    }
+
+    /// Note a skill answered today.
+    pub fn answered(&mut self, label: &str) {
+        let key = label.trim().to_lowercase();
+        if !self.answered_today.contains(&key) {
+            self.answered_today.push(key);
+        }
+    }
+
+    fn answered_earlier_today(&self, label: &str) -> bool {
+        self.answered_today.contains(&label.trim().to_lowercase())
+    }
 }
 
 /// One message from the learner, as the engine sees it.
@@ -587,15 +657,23 @@ impl Lesson {
         let mut marked = false;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
-            let label = task.check.clone().unwrap_or_else(|| record.skill.clone());
+            let label = clip(
+                &task.check.clone().unwrap_or_else(|| record.skill.clone()),
+                MAX_NAME,
+            );
+            // Cold: from a blank page, with no help. A due check is asked
+            // cold. Any other answer is cold when the tutor judges it so and
+            // the runtime would take it: no help, not a decline, and no
+            // earlier answer on its label today.
+            let unaided = task.help == Help::None && mark != Mark::Declined;
+            let cold = unaided
+                && (task.check.is_some() || (record.cold && !self.answered_earlier_today(&label)));
             let mut attempt = json!({
-                "label": clip(&label, MAX_NAME),
+                "label": label,
                 "question": clip(&task.text, MAX_QUESTION),
                 "first_try": mark.word(),
                 "help": task.help.word(),
-                // Cold: a due check, answered with no help. A decline is
-                // never cold.
-                "cold": task.check.is_some() && task.help == Help::None && mark != Mark::Declined,
+                "cold": cold,
             });
             if let Some(kind) = &record.kind {
                 attempt["kind"] = json!(kind);
@@ -606,6 +684,7 @@ impl Lesson {
             if let Some(confidence) = message.confidence() {
                 attempt["confidence"] = json!(confidence);
             }
+            self.answered(&label);
             observations.push(json!({
                 "client_ref": "answer",
                 "kind": "learner_work",
@@ -969,6 +1048,81 @@ mod tests {
         assert!(second.request["observations"][0]["attempt"]
             .get("no_start")
             .is_none());
+    }
+
+    #[test]
+    fn an_answer_is_cold_when_the_tutor_says_so_and_the_runtime_would_take_it() {
+        let open = |lesson: &mut Lesson, text: &str| {
+            lesson.task = Some(OpenTask {
+                text: text.into(),
+                help: Help::None,
+                guess: false,
+                check: None,
+                again: false,
+                stuck: false,
+            });
+        };
+        let mut lesson = lesson();
+        lesson.set_today("2026-11-12");
+        open(
+            &mut lesson,
+            "A fair coin pays 6 or 2: the average per play?",
+        );
+        let cold = r#"{"answer": "right", "skill": "expected value", "cold": true}"#;
+        let first = lesson.apply(&record(cold), &message("4"), "Right.", "r-1");
+        assert_eq!(first.request["observations"][0]["attempt"]["cold"], true);
+        // A second answer on the same label today is never sent cold.
+        open(&mut lesson, "A die pays its face: the average per roll?");
+        let second = lesson.apply(&record(cold), &message("3.5"), "Right.", "r-2");
+        assert_eq!(second.request["observations"][0]["attempt"]["cold"], false);
+        // A new day starts a new list.
+        lesson.set_today("2026-11-13");
+        open(&mut lesson, "A spinner pays 1 or 11, 80/20: the average?");
+        let next_day = lesson.apply(&record(cold), &message("3"), "Right.", "r-3");
+        assert_eq!(next_day.request["observations"][0]["attempt"]["cold"], true);
+        // Not cold when the tutor does not say so, after a hint, or as a decline.
+        open(&mut lesson, "Another?");
+        let not = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "variance"}"#),
+            &message("2"),
+            "Right.",
+            "r-4",
+        );
+        assert_eq!(not.request["observations"][0]["attempt"]["cold"], false);
+        open(&mut lesson, "One more?");
+        lesson.apply(
+            &record(r#"{"answer": null, "help": "hint"}"#),
+            &message(HINT_WORDS),
+            "Hint.",
+            "r-5",
+        );
+        let hinted = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "median", "cold": true}"#),
+            &message("5"),
+            "Right.",
+            "r-6",
+        );
+        assert_eq!(hinted.request["observations"][0]["attempt"]["cold"], false);
+        open(&mut lesson, "Last?");
+        let declined = lesson.apply(
+            &record(r#"{"answer": "declined", "skill": "mode", "cold": true}"#),
+            &message(DONT_KNOW_WORDS),
+            "Fine.",
+            "r-7",
+        );
+        assert_eq!(
+            declined.request["observations"][0]["attempt"]["cold"],
+            false
+        );
+    }
+
+    #[test]
+    fn a_control_is_read_from_the_block() {
+        let record = parse(r#"{"answer": null, "control": "recording_off"}"#).unwrap();
+        assert_eq!(record.control, Some(Control::RecordingOff));
+        assert!(parse(r#"{"answer": null, "control": "forget me"}"#)
+            .unwrap_err()
+            .contains("control"));
     }
 
     #[test]

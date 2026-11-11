@@ -14,6 +14,8 @@ use crate::record::{clip, DueCheck, Lesson};
 pub struct Facts {
     /// The local time, as "Thu 12 Nov 2026, 09:10".
     pub now: String,
+    /// A line on a stop, pause or recording off the learner asked for.
+    pub halt: Option<String>,
     /// Send the whole state, as at the start of a conversation.
     pub full: bool,
     /// Where the lesson stopped last time: the checkpoint's next action.
@@ -67,6 +69,9 @@ fn check_line(check: &DueCheck) -> String {
 /// saying beyond the time.
 pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     let mut lines = vec![format!("Now: {}", facts.now)];
+    if let Some(halt) = &facts.halt {
+        lines.push(halt.clone());
+    }
     if facts.full {
         lines.push(format!(
             "Goal: {}",

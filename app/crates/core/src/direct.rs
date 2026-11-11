@@ -38,7 +38,8 @@ use crate::claude::{self, ClaudeCode};
 use crate::host_client::{self, HostClient};
 use crate::lesson_state::{self, Facts};
 use crate::paths;
-use crate::record::{self, Cutter, DueCheck, Lesson, Message, Record};
+use crate::record::{self, Control, Cutter, DueCheck, Lesson, Message, Record};
+use crate::store::Store;
 
 /// Set this to a file to use its text as the tutor's prompt in place of the
 /// one built in. A conversation keeps the prompt it started with: Claude
@@ -207,6 +208,9 @@ pub fn prompt() -> String {
 pub struct DirectTutor {
     claude: ClaudeCode,
     runtime: Option<PathBuf>,
+    /// The window's store, where a recording-off the learner asked for is
+    /// kept across conversations.
+    store: Option<Arc<Store>>,
 }
 
 impl Default for DirectTutor {
@@ -220,7 +224,15 @@ impl DirectTutor {
         Self {
             claude: ClaudeCode::new(),
             runtime: None,
+            store: None,
         }
+    }
+
+    /// Keep the learner's recording-off in the window's store, so it holds
+    /// in every later conversation in the folder until they turn it on.
+    pub fn with_store(mut self, store: Arc<Store>) -> Self {
+        self.store = Some(store);
+        self
     }
 
     /// Use these programs for Claude Code and the runtime. For tests.
@@ -228,6 +240,7 @@ impl DirectTutor {
         Self {
             claude: ClaudeCode::with_program(claude),
             runtime: Some(runtime),
+            store: None,
         }
     }
 
@@ -291,7 +304,13 @@ impl Harness for DirectTutor {
         let stderr = child.stderr.take();
         let (events_in, events) = channel();
         let host = HostClient::new(runtime.clone(), folder.clone(), session.clone(), version);
+        let recording_off = self
+            .store
+            .as_ref()
+            .is_some_and(|store| store.folder(&root).recording_off);
         let shared = Arc::new(Shared {
+            store: self.store.clone(),
+            root,
             sink,
             stdin: Mutex::new(stdin),
             child: Mutex::new(Some(child)),
@@ -311,7 +330,10 @@ impl Harness for DirectTutor {
             interrupts: AtomicU64::new(0),
             counter: AtomicU64::new(0),
             stderr_tail: Mutex::new(String::new()),
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State {
+                halt: recording_off.then_some(Halt::RecordingOff),
+                ..State::default()
+            }),
             trace: env::var_os(claude::TRACE_ENV)
                 .filter(|path| !path.is_empty())
                 .and_then(|path| {
@@ -353,8 +375,11 @@ impl Harness for DirectTutor {
         }
         // The runtime learns of the conversation as it would from Claude
         // Code. A hook fails open, so a failure here never stops the lesson.
+        // With recording off, nothing of this conversation reaches it.
         let source = if shared.resumed { "resume" } else { "startup" };
-        if let Err(why) =
+        if recording_off {
+            shared.note("recording is off in this study folder: no hooks, no record");
+        } else if let Err(why) =
             shared
                 .host
                 .hook("session-start", "SessionStart", json!({"source": source}))
@@ -403,10 +428,35 @@ enum Item {
     Ended,
 }
 
+/// A stop the learner asked for, in their own words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Halt {
+    /// Nothing more reaches the record, in this conversation or a later one
+    /// in the folder, until the learner turns recording on.
+    RecordingOff,
+    /// The lesson is paused, or stopped, in this conversation: the record
+    /// keeps what came before. Opening a lesson from the window goes on.
+    Paused,
+    Stopped,
+}
+
+impl Halt {
+    /// What the tutor is told while it lasts.
+    fn line(self) -> &'static str {
+        match self {
+            Self::RecordingOff => "Recording is off, as the learner asked: nothing from here on is kept in their record, and their answers get no mark. Teach only what they ask for, and set no quiz they did not ask for. Recording comes back on only when they ask for it.",
+            Self::Paused => "The learner paused the lesson: their record keeps what came before, and nothing from here on. Set no task and ask no question unless they ask to go on. To go on with their record, they open the lesson again from the course page (Continue).",
+            Self::Stopped => "The learner stopped the lesson: their record keeps what came before, and nothing from here on. Set no task and ask no question unless they ask to go on. To go on with their record, they open the lesson again from the course page (Continue).",
+        }
+    }
+}
+
 /// What the engine carries from turn to turn, besides the lesson.
 #[derive(Default)]
 struct State {
     lesson: Lesson,
+    /// A stop, pause or recording off in force.
+    halt: Option<Halt>,
     /// Whether the lesson's whole state has gone to the model.
     told: bool,
     /// Help lines from the last save, to tell the model next turn.
@@ -422,6 +472,9 @@ struct State {
 }
 
 struct Shared {
+    store: Option<Arc<Store>>,
+    /// The study root, by which a recording-off is kept.
+    root: PathBuf,
     sink: EventSink,
     stdin: Mutex<Option<ChildStdin>>,
     child: Mutex<Option<Child>>,
@@ -910,6 +963,21 @@ fn prepare(
     };
     let opened = from_window.then(|| opening(words)).flatten();
     facts.skip_checks = opened.as_ref().is_some_and(|(skip, _)| *skip);
+    state
+        .lesson
+        .set_today(&Local::now().format("%Y-%m-%d").to_string());
+    // Opening a lesson from the window starts or resumes it explicitly, so
+    // a pause or stop ends there. A recording-off does not: only the
+    // learner's own request turns recording on.
+    if from_window && matches!(state.halt, Some(Halt::Paused | Halt::Stopped)) {
+        state.halt = None;
+    }
+    if let Some(halt) = state.halt {
+        // Nothing goes to the runtime: not the words, not the hooks.
+        facts.halt = Some(halt.line().to_owned());
+        state.told = true;
+        return (None, lesson_state::text(&state.lesson, &facts));
+    }
     let notice = match host.hook(
         "user-prompt-submit",
         "UserPromptSubmit",
@@ -922,6 +990,14 @@ fn prepare(
         }
     };
     shared.trace("@", &format!("user-prompt-submit: {notice}"));
+    // Recording is off for this conversation in the runtime, as a control
+    // from another process can leave it: keep nothing.
+    if notice.contains("recording false") {
+        state.halt = Some(Halt::RecordingOff);
+        facts.halt = Some(Halt::RecordingOff.line().to_owned());
+        state.told = true;
+        return (None, lesson_state::text(&state.lesson, &facts));
+    }
     let mut event = host_client::current_event(&notice);
     let mut found_checks: Option<Vec<DueCheck>> = None;
     if let Some(ticket) = host_client::ticket(&notice) {
@@ -995,6 +1071,12 @@ fn prepare(
                 }
                 if let Some(answers) = result["earlier_answers"].as_array() {
                     facts.earlier_answers = answers.clone();
+                    let today = state.lesson.today.clone();
+                    for answer in answers.iter().filter(|a| a["day"].as_str() == Some(&today)) {
+                        if let Some(label) = answer["label"].as_str() {
+                            state.lesson.answered(label);
+                        }
+                    }
                 }
                 if found_checks.is_none() {
                     found_checks = checks_of(&result);
@@ -1206,6 +1288,30 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             record
         }
     };
+    let halted = lock(&shared.state).halt.is_some();
+    // A control the learner asked for is made as the plugin engine makes it,
+    // and the turn that asked for it records nothing more.
+    if let Some(control) = record.as_ref().and_then(|record| record.control) {
+        apply_control(shared, control, &words, event.as_deref());
+        shared.emit(AgentEvent::TurnEnded {
+            ok: true,
+            interrupted: false,
+            error: None,
+        });
+        return ended;
+    }
+    if halted {
+        // Nothing of this turn reaches the record, and an answer with no
+        // mark is what the learner asked for.
+        shared
+            .note("recording is off, or the lesson is paused or stopped: no record for this turn");
+        shared.emit(AgentEvent::TurnEnded {
+            ok: true,
+            interrupted: false,
+            error: None,
+        });
+        return ended;
+    }
     let message = Message {
         words: words.clone(),
         event_id: event,
@@ -1301,6 +1407,15 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
         if let Some(edits) = retry.as_object_mut() {
             edits.remove("memory_edits");
         }
+        // A cold answer the runtime will not take is sent as not cold,
+        // so the mark is kept.
+        if why.contains("cold") {
+            for observation in retry["observations"].as_array_mut().into_iter().flatten() {
+                if observation.get("attempt").is_some() {
+                    observation["attempt"]["cold"] = json!(false);
+                }
+            }
+        }
         if why.contains("revision") {
             if let Ok(status) = shared.host.call(
                 "context",
@@ -1337,6 +1452,16 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
         }
         Err(why) => {
             shared.note(&format!("the record was not saved: {why}"));
+            // Recording off, or a lesson paused or stopped elsewhere: the
+            // runtime keeps nothing, as the learner asked.
+            if why.contains("recording_disabled") {
+                state.halt = Some(Halt::RecordingOff);
+                return;
+            }
+            if why.contains("learning_inactive") {
+                state.halt = Some(Halt::Stopped);
+                return;
+            }
             if write.marked {
                 shared.emit(AgentEvent::Notice {
                     kind: NoticeKind::Other,
@@ -1345,6 +1470,61 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
                 });
             }
         }
+    }
+}
+
+/// Make a control the learner asked for, as the plugin engine makes it: a
+/// `learning_step` `action:"control"` on the message that asked for it.
+fn apply_control(shared: &Arc<Shared>, control: Control, words: &str, event: Option<&str>) {
+    let mut request = json!({
+        "schema": "learner-model/v2",
+        "action": "control",
+        "request_id": format!("{}-control-{}", shared.session, shared.next_id()),
+        "control": control.word(),
+    });
+    match event {
+        Some(event) => request["turn_ref"] = json!(event),
+        None => {
+            request["reported_event"] = json!({
+                "external_event_key": format!("{}-said-{}", shared.session, shared.next_id()),
+                "speaker": "learner",
+                "kind": "message",
+                "text": words,
+            })
+        }
+    }
+    let outcome = shared.host.call("learning_step", request);
+    if let Err(why) = &outcome {
+        shared.note(&format!("control {} refused: {why}", control.word()));
+    }
+    let remember = |off: bool| {
+        if let Some(store) = &shared.store {
+            store.update(&shared.root, |state| state.recording_off = off);
+        }
+    };
+    let mut state = lock(&shared.state);
+    match control {
+        // The engine stops sending whatever the runtime answered: a stop the
+        // learner asked for holds in the window even if the record's failed.
+        Control::RecordingOff => {
+            state.halt = Some(Halt::RecordingOff);
+            remember(true);
+        }
+        Control::Pause => state.halt = Some(Halt::Paused),
+        Control::Stop => state.halt = Some(Halt::Stopped),
+        // If the record still has recording off for this conversation, the
+        // next prompt hook says so, and the engine stops again.
+        Control::RecordingOn => {
+            state.halt = None;
+            remember(false);
+        }
+    }
+    drop(state);
+    if outcome.is_err() && control != Control::RecordingOn {
+        shared.emit(AgentEvent::Notice {
+            kind: NoticeKind::Other,
+            text: "Your record could not confirm this. The window sends nothing more to it from this lesson.".into(),
+        });
     }
 }
 

@@ -162,17 +162,17 @@ impl Bench {
     fn manager(&self) -> (Manager, Events) {
         let (sender, receiver) = channel();
         let sender = Mutex::new(sender);
+        let store = Arc::new(Store::at(self.window.clone()));
         let manager = Manager::new(
-            Arc::new(Store::at(self.window.clone())),
+            Arc::clone(&store),
             Arc::new(ClaudeCode::with_program(self.plugin.clone())),
             Arc::new(move |event| {
                 let _ = sender.lock().unwrap().send(event);
             }),
         )
-        .with_direct(Arc::new(DirectTutor::with_programs(
-            self.model.clone(),
-            self.runtime.clone(),
-        )));
+        .with_direct(Arc::new(
+            DirectTutor::with_programs(self.model.clone(), self.runtime.clone()).with_store(store),
+        ));
         manager.set_engine(Engine::Direct);
         manager.open_folder(&self.folder).unwrap();
         (
@@ -642,5 +642,146 @@ fn handing_in_a_paper_opens_a_plugin_conversation_whatever_was_picked() {
     // The next lesson goes back to the engine the learner picked.
     let opened = manager.open_session(true).unwrap();
     assert_eq!(opened.engine, Engine::Direct);
+    manager.shut_down();
+}
+
+/// Every event the runtime holds, learner and tutor, and every answer.
+fn record_size(bench: &Bench) -> (i64, usize) {
+    let events: i64 = bench
+        .store()
+        .query_row("SELECT count(*) FROM learning_events", [], |r| r.get(0))
+        .unwrap();
+    (events, bench.attempts().len())
+}
+
+#[test]
+fn a_cold_answer_is_kept_cold_and_one_the_runtime_refuses_keeps_its_mark() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["cold"], true, "{attempts:#?}");
+
+    // A new process does not know the skill was answered today, so it asks
+    // for cold again; the runtime refuses, and the mark is kept without it.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 2, "{attempts:#?}");
+    let second = attempts
+        .iter()
+        .find(|a| a["question"] == "Solve x² − 5x + 6 = 0 with the formula.")
+        .unwrap();
+    assert_eq!(second["mark"], "right");
+    assert_eq!(second["cold"], false);
+    manager.shut_down();
+}
+
+#[test]
+fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conversation() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    manager.send("b = 5").unwrap();
+    events.turn_end();
+    // The message that asks is captured, as in a plugin lesson; its reply
+    // and everything after it are not.
+    manager.send("RECORDING OFF please").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let off = record_size(&bench);
+    let binding: bool = bench
+        .store()
+        .query_row(
+            "SELECT min(recording_enabled) FROM host_bindings",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!binding, "the runtime turned recording off");
+    events.seen.clear();
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert!(
+        !events
+            .seen
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Notice { .. })),
+        "no 'no mark' notice while recording is off: {:#?}",
+        events.seen
+    );
+    assert_eq!(record_size(&bench), off, "no words, answer or reply kept");
+    let state = bench.logged("message").pop().unwrap()["state"].clone();
+    assert!(
+        state.as_str().unwrap().contains("Recording is off"),
+        "{state}"
+    );
+
+    // A new conversation, even one the window opens, keeps it off.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager
+        .send_new_lesson("I'm back. Let's continue.")
+        .unwrap();
+    assert!(ended_well(&events.turn_end()));
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert_eq!(
+        record_size(&bench),
+        off,
+        "nothing kept in a new conversation"
+    );
+
+    // Until the learner turns it on.
+    manager.send("RECORDING ON please").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let (events_now, attempts_now) = record_size(&bench);
+    assert!(events_now > off.0, "the words are kept again");
+    let _ = attempts_now;
+    manager.shut_down();
+}
+
+#[test]
+fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    manager.send("PAUSE for now").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let paused = record_size(&bench);
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert_eq!(record_size(&bench), paused);
+    let state = bench.logged("message").pop().unwrap()["state"].clone();
+    assert!(
+        state.as_str().unwrap().contains("paused the lesson"),
+        "{state}"
+    );
+    // Continue from the course page resumes the lesson in the record.
+    manager.open_session(true).unwrap();
+    manager
+        .send_new_lesson("I'm back. Let's continue.")
+        .unwrap();
+    assert!(ended_well(&events.turn_end()));
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert!(record_size(&bench).0 > paused.0);
+    assert_eq!(bench.sessions(), 1);
     manager.shut_down();
 }

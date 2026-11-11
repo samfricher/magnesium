@@ -15,6 +15,8 @@ What a turn does is chosen by words in the learner's message (inside
   NEVERBLOCK   reply with no record block, and none when asked again
   SLOW         write slowly, so the reply can be interrupted
   BACK         ("I'm back") pose quick check 1 when the state lists one
+  COLD         with "b = -5": mark the answer cold
+  RECORDING OFF / RECORDING ON / PAUSE   ask for that control
 
 The hidden request (it says the block "could not be read") is answered with
 the block alone, after STAND_IN_REPAIR_DELAY seconds.
@@ -125,6 +127,12 @@ def reply_for(learner, state):
             return "I cannot.", False
         return "<record>\n" + json.dumps({"answer": None, "help": "none", "task": None}) + "\n</record>", False
     last_learner[0] = learner
+    if "RECORDING OFF" in learner:
+        return "Recording is off now." + block(control="recording_off"), False
+    if "RECORDING ON" in learner:
+        return "Recording is on again." + block(control="recording_on"), False
+    if "PAUSE" in learner:
+        return "Paused." + block(control="pause"), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
     if "SLOW" in learner:
@@ -140,7 +148,8 @@ def reply_for(learner, state):
         return "Look at the sign in front of the 5." + block(help="hint"), False
     if "b = -5" in learner or "b = −5" in learner:
         return f"Right: the sign goes with the number. {THIRD}" + block(
-            answer="right", skill="sign of b", note="Kept the sign.", task=THIRD, steps=DONE), False
+            answer="right", skill="sign of b", note="Kept the sign.", task=THIRD, steps=DONE,
+            cold="COLD" in learner), False
     if "b = 5" in learner:
         return f"Not quite: b keeps its minus sign, so b = −5. Try this one: {SECOND}" + block(
             answer="wrong", skill="sign of b", kind="reading coefficients", note="Dropped the sign of b.",
