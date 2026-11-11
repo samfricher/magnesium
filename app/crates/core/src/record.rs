@@ -447,6 +447,94 @@ fn plan_text(task: &OpenTask) -> String {
     lines.join("\n")
 }
 
+/// The longest description a memory keeps here; older lines go first.
+const MAX_MEMORY_TEXT: usize = 1500;
+
+/// The memory edit for a misunderstanding found or cleared, made the way a
+/// lesson run by the plugin makes one: a description of the skill, revised
+/// in place, resting on this turn's observation (`client_ref` "answer").
+/// `found` is the memory of that skill the runtime already holds, from a
+/// memory search, if any. `day` is today, as "2026-11-12".
+pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str, day: &str) -> Value {
+    let line = format!(
+        "{day}: {}{}",
+        if note.cleared { "cleared: " } else { "" },
+        note.text
+    );
+    let summary = if note.cleared {
+        format!("Cleared: {}", note.text)
+    } else {
+        note.text.clone()
+    };
+    let new = json!({"new_observation": "answer"});
+    match found {
+        Some(memory) => {
+            // Keep the description whole while it fits, dropping its oldest
+            // lines first; the runtime keeps every revision.
+            let mut lines: Vec<String> = memory["state_text"]
+                .as_str()
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            lines.push(line);
+            while lines.len() > 1
+                && lines.iter().map(|l| l.len() + 1).sum::<usize>() > MAX_MEMORY_TEXT
+            {
+                lines.remove(0);
+            }
+            let mut basis: Vec<Value> = memory["current_basis"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            basis.push(new.clone());
+            let keep = basis.len().saturating_sub(8);
+            let basis: Vec<Value> = basis.into_iter().skip(keep).collect();
+            json!({
+                "operation": "revise",
+                "memory_id": memory["memory_id"],
+                "expected_revision": memory["revision"],
+                "record": {
+                    "title": memory["title"],
+                    "scope": memory["scope"],
+                    "summary": clip(&summary, MAX_NOTE),
+                    "state_text": clip(&lines.join("\n"), MAX_MEMORY_TEXT),
+                    "current_basis": basis,
+                },
+                "change_kind": "new_observation",
+                "reason": if note.cleared { "The misunderstanding was cleared." } else { "A misunderstanding was found." },
+                "change_basis": [new],
+            })
+        }
+        None => json!({
+            "operation": "create",
+            "client_ref": "memory",
+            "record": {
+                "title": note.skill,
+                "scope": clip(if goal.is_empty() { note.skill.as_str() } else { goal }, MAX_NAME),
+                "summary": clip(&summary, MAX_NOTE),
+                "state_text": line,
+                "current_basis": [new],
+            },
+            "reason": if note.cleared { "The misunderstanding was cleared." } else { "A misunderstanding was found." },
+            "change_basis": [new],
+        }),
+    }
+}
+
+/// The memory a search found for this skill: the one whose title is the
+/// skill's name.
+pub fn memory_for<'a>(search: &'a Value, skill: &str) -> Option<&'a Value> {
+    search["memories"].as_array()?.iter().find(|memory| {
+        memory["title"]
+            .as_str()
+            .is_some_and(|title| title.trim().eq_ignore_ascii_case(skill.trim()))
+            && memory["lifecycle"]
+                .as_str()
+                .is_none_or(|life| life == "active")
+    })
+}
+
 /// The quick check a reply poses, by the words "Quick check N", the way the
 /// runtime spots it in a stored reply.
 pub fn posed_check(reply: &str, checks: &[DueCheck]) -> Option<DueCheck> {
@@ -870,6 +958,53 @@ mod tests {
         };
         assert!(posed_check("Quick check 12: hi", std::slice::from_ref(&twelve)).is_none());
         assert!(posed_check("QUICK CHECK 1: hi", &[twelve]).is_some());
+    }
+
+    #[test]
+    fn a_misunderstanding_makes_a_memory_or_revises_the_one_there() {
+        let note = MemoryNote {
+            skill: "sign of b".into(),
+            text: "Drops the minus sign of b.".into(),
+            cleared: false,
+        };
+        let create = memory_edit(&note, None, "Quadratics", "2026-11-12");
+        assert_eq!(create["operation"], "create");
+        assert_eq!(create["record"]["title"], "sign of b");
+        assert_eq!(create["record"]["scope"], "Quadratics");
+        assert_eq!(
+            create["record"]["state_text"],
+            "2026-11-12: Drops the minus sign of b."
+        );
+        let search = json!({"memories": [
+            {"title": "Sign of B", "memory_id": "m-1", "revision": 2, "scope": "Quadratics",
+             "state_text": "2026-11-11: Drops the minus sign of b.\nanchor: reads a from a bare x²",
+             "current_basis": [{"observation_id": "o-1"}], "lifecycle": "active"}
+        ]});
+        let found = memory_for(&search, "sign of b").unwrap();
+        let cleared = MemoryNote {
+            cleared: true,
+            text: "Keeps the sign now.".into(),
+            ..note
+        };
+        let revise = memory_edit(&cleared, Some(found), "Quadratics", "2026-11-12");
+        assert_eq!(revise["operation"], "revise");
+        assert_eq!(revise["memory_id"], "m-1");
+        assert_eq!(revise["expected_revision"], 2);
+        let text = revise["record"]["state_text"].as_str().unwrap();
+        assert!(text.starts_with("2026-11-11: Drops"), "{text}");
+        assert!(
+            text.contains("anchor: reads a from a bare x²"),
+            "an anchor is kept: {text}"
+        );
+        assert!(
+            text.ends_with("2026-11-12: cleared: Keeps the sign now."),
+            "{text}"
+        );
+        assert_eq!(
+            revise["record"]["current_basis"].as_array().unwrap().len(),
+            2
+        );
+        assert!(memory_for(&search, "sign of c").is_none());
     }
 
     #[test]

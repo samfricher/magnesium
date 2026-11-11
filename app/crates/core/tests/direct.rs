@@ -394,6 +394,13 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
             .contains("\"reading coefficients\""),
         "{messages:#?}"
     );
+    // The misunderstanding the block named was written to the learner's
+    // memory of that skill.
+    let memory: String = bench
+        .store()
+        .query_row("SELECT title FROM learner_memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(memory, "sign of b");
     manager.shut_down();
 }
 

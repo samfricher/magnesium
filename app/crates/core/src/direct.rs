@@ -934,7 +934,7 @@ fn prepare(
             "native_capture": {"ticket": ticket, "text": words},
         });
         let new_goal = from_window && opened.is_none();
-        let mut resume: Option<(String, i64)> = None;
+        let mut resume: Option<(String, i64, String)> = None;
         if !new_goal {
             match host.call(
                 "context",
@@ -959,7 +959,8 @@ fn prepare(
                         if let (Some(id), Some(revision)) =
                             (choice["session_id"].as_str(), choice["revision"].as_i64())
                         {
-                            resume = Some((id.to_owned(), revision));
+                            let goal = choice["goal"].as_str().unwrap_or_default().to_owned();
+                            resume = Some((id.to_owned(), revision, goal));
                         }
                     }
                 }
@@ -967,7 +968,7 @@ fn prepare(
             }
         }
         match &resume {
-            Some((id, revision)) => {
+            Some((id, revision, _)) => {
                 request["session"] =
                     json!({"operation": "resume", "session_id": id, "expected_revision": revision});
             }
@@ -984,7 +985,7 @@ fn prepare(
             Ok(result) => {
                 event = result["captured_event_ids"][0].as_str().map(str::to_owned);
                 let session = match &resume {
-                    Some((id, _)) => Some(id.clone()),
+                    Some((id, _, _)) => Some(id.clone()),
                     None => result["references"]["lesson"].as_str().map(str::to_owned),
                 };
                 if let Some(session) = session {
@@ -1000,15 +1001,17 @@ fn prepare(
             }
             Err(why) => shared.note(&format!("the lesson could not start in the record: {why}")),
         }
-        if resume.is_some() {
-            // The resumed lesson's goal, steps and open task.
-            if let Ok(status) = host.call(
+        if let Some((_, _, goal)) = &resume {
+            // The resumed lesson's goal, steps and open task, and what the
+            // record knows of the learner, as a prepare for its goal gives.
+            if let Ok(prepared) = host.call(
                 "context",
-                json!({"schema": "learner-model/v2", "action": "status"}),
+                json!({"schema": "learner-model/v2", "action": "prepare", "goal": goal}),
             ) {
-                adopt(&mut state.lesson, &mut facts, &status);
+                adopt(&mut state.lesson, &mut facts, &prepared);
+                facts.known = known(&prepared);
                 if found_checks.is_none() {
-                    found_checks = checks_of(&status);
+                    found_checks = checks_of(&prepared);
                 }
             }
         }
@@ -1057,6 +1060,22 @@ fn prepare(
     state.told = true;
     let text = lesson_state::text(&state.lesson, &facts);
     (event, text)
+}
+
+/// What the record knows of the learner, one line per memory, as a prepare
+/// lists them.
+fn known(prepared: &Value) -> Vec<String> {
+    prepared["memories"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|memory| {
+            let title = memory["title"].as_str()?;
+            let summary = memory["summary"].as_str().unwrap_or_default();
+            Some(record::clip(&format!("{title}: {summary}"), 300))
+        })
+        .take(8)
+        .collect()
 }
 
 /// Take the goal, steps and open task of a lesson the record already holds.
@@ -1247,7 +1266,24 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
     let mut state = lock(&shared.state);
     let request_id = format!("{}-turn-{}", shared.session, shared.next_id());
     let write = state.lesson.apply(record, message, reply, &request_id);
-    let request = write.request;
+    let mut request = write.request;
+    // A misunderstanding found or cleared revises the learner's memory of
+    // that skill, in the same request as the observation it rests on.
+    if let (Some(note), true) = (&record.memory, request.get("observations").is_some()) {
+        let found = shared
+            .host
+            .call(
+                "memory",
+                json!({"schema": "learner-model/v2", "action": "search", "goal": note.skill, "original_query": note.skill}),
+            )
+            .ok();
+        let memory = found
+            .as_ref()
+            .and_then(|found| record::memory_for(found, &note.skill));
+        let goal = state.lesson.goal.clone().unwrap_or_default();
+        let day = Local::now().format("%Y-%m-%d").to_string();
+        request["memory_edits"] = json!([record::memory_edit(note, memory, &goal, &day)]);
+    }
     let worth = request.get("observations").is_some()
         || request.get("checkpoint").is_some()
         || request.get("event_dispositions").is_some();
@@ -1256,20 +1292,26 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
     }
     let mut outcome = shared.host.call("learning_step", request.clone());
     if let Err(why) = &outcome {
-        // A revision another conversation moved on is read again, once.
+        shared.note(&format!("learning_step refused: {why}"));
+        // Asked once more: with the session's revision read again, if
+        // another conversation moved it on, and without the memory edit,
+        // so that a memory the runtime refuses never costs the mark.
+        let mut retry = request.clone();
+        if let Some(edits) = retry.as_object_mut() {
+            edits.remove("memory_edits");
+        }
         if why.contains("revision") {
             if let Ok(status) = shared.host.call(
                 "context",
                 json!({"schema": "learner-model/v2", "action": "status"}),
             ) {
-                let mut retry = request.clone();
                 if let Some(revision) = status["session"]["revision"].as_i64() {
                     retry["session"]["expected_revision"] = json!(revision);
                 }
-                retry["request_id"] = json!(format!("{request_id}-again"));
-                outcome = shared.host.call("learning_step", retry);
             }
         }
+        retry["request_id"] = json!(format!("{request_id}-again"));
+        outcome = shared.host.call("learning_step", retry);
     }
     match outcome {
         Ok(result) => {
