@@ -55,7 +55,7 @@ End every reply with exactly one record block:
  "task": "the task this reply asks for" | null,
  "guess": false,
  "steps": [{"step": "...", "status": "todo" | "doing" | "done"}] | null,
- "memory": {"skill": "...", "text": "...", "cleared": false} | null,
+ "memory": {"id": "m1" | null, "skill": "...", "text": "...", "cleared": false} | null,
  "cold": false,
  "control": "pause" | "stop" | "recording_off" | "recording_on" | null}
 </record>
@@ -65,6 +65,6 @@ End every reply with exactly one record block:
 - `skill` names what the answer tests, such as "sign of b in the quadratic formula", never the problem. Reuse a name the state lists for the same misunderstanding. `kind` names problems that share one method, such as "discrete expected value"; `no_start` is true when the learner had no starting move on a new one.
 - `task` is the task you posed, written out every time a reply asks for it, in the same words when it is the same task; null when the reply asks for nothing. `guess` is true when it asks for a prediction before teaching.
 - `steps` is the whole route, a few steps of a few words with exactly one doing, when it changed in this reply; otherwise null.
-- `memory` records a misunderstanding found or cleared in this message: its skill, one plain sentence on what the learner does, and whether it is cleared. Otherwise null.
+- `memory` records a misunderstanding found or cleared in this message: its skill, one plain sentence on what the learner does now (it replaces what you wrote before; no dates, no list), and whether it is cleared. `id` names the memory the state lists for the same operation, whatever its title; null makes a new one. Otherwise null.
 - `cold` is true when the answer came from a blank page: in this sitting you have not taught, shown, hinted at or corrected this skill. A right first answer on something the learner already knew is cold.
 - `control` is set when the learner asks, in their own words, to pause or stop the lesson, or to turn recording off or back on. Say in a line what it means: a pause or stop keeps their record up to here; recording off keeps nothing from here on, answers included, until they ask for it back.

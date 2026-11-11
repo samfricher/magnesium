@@ -168,7 +168,7 @@ Each direct turn, the window captures the learner's words with the runtime's pro
 
 **Practice papers stay on the plugin engine.** Handing in a paper from the paper screen always opens a plugin conversation to mark it, whatever the learner picked; the lesson after that is on the learner's pick again. Sitting a paper uses no tutor. In a direct lesson the tutor says, in one line, that papers are built and marked, and paper redos done, with the Claude Code tutor, and goes on. With Magnesium picked and paper redos due, the course page says in one quiet line that paper redos run on Claude Code.
 
-**The tutor's prompt** is `crates/core/prompts/tutor.md`, built into the window. To try other wording without a rebuild, name a file in `MAGNESIUM_TUTOR_PROMPT`. Claude Code records a conversation's prompt once, when the conversation starts, and keeps it on resume, so a changed file reaches new conversations only.
+**The tutor's prompt** is `crates/core/prompts/tutor.md`, built into the window. The direct engine teaches from this text, not from the teaching files in `src/workspace/learning/`. It is much shorter than those files and leaves some of their rules out, such as anchors and the course graph. Until one engine is retired, a change to a teaching rule must be made in both places. To try other wording without a rebuild, name a file in `MAGNESIUM_TUTOR_PROMPT`. Claude Code records a conversation's prompt once, when the conversation starts, and keeps it on resume, so a changed file reaches new conversations only.
 
 The page reaches the choice through two commands, `engine` and `set_engine`, and `open_session` says which engine it opened:
 
@@ -182,7 +182,8 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 
 **What the direct engine does not do yet:**
 
-- It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit.
+- It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit. That edit keeps one line of its own in the memory's description, rewritten in place, and never changes another line, such as an anchor the plugin engine's tutor wrote. When the description is at the runtime's limit (16 KiB), it makes no edit. The tutor names the memory it revises by the short id the lesson state lists; it sees the memories a `prepare` for the goal returns, at most eight.
+- It stores no next question and answer key for a quick check (`next` in an attempt), which the plugin engine's tutor stores with a miss; the check's opener then asks the tutor to make a new question.
 - It builds and marks no papers, and does no paper redos.
 - It makes no files: no figures, pages or plans. It asks no permission and no multiple-choice question.
 - A paused or stopped lesson goes on only when the learner opens it again from the window (Continue or a new lesson), not from words typed in the same conversation.

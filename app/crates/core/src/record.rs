@@ -213,6 +213,10 @@ impl Control {
 /// memory of that skill.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryNote {
+    /// The short id, such as "m2", of a memory the lesson state listed,
+    /// when the tutor revises that one. None makes a new memory.
+    #[serde(default)]
+    pub id: Option<String>,
     pub skill: String,
     pub text: String,
     #[serde(default)]
@@ -335,6 +339,12 @@ pub fn parse(block: &str) -> Result<Record, String> {
                 return Err("memory needs a skill and a text".into());
             }
             Some(MemoryNote {
+                id: note
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned),
                 skill: clip(&skill, MAX_NAME),
                 text: clip(&text, MAX_NOTE),
                 cleared: note
@@ -528,92 +538,113 @@ fn plan_text(task: &OpenTask) -> String {
     lines.join("\n")
 }
 
-/// The longest description a memory keeps here; older lines go first.
-const MAX_MEMORY_TEXT: usize = 1500;
+/// The runtime's limits on a memory's description and summary, in bytes
+/// (`STATE_BYTES` and `SUMMARY_BYTES` in `src/learner/limits.rs`). Past
+/// them the runtime cuts the text's end, which could cut a line the engine
+/// did not write, so the engine stays within them itself.
+pub const STATE_LIMIT: usize = 16 * 1024;
+const SUMMARY_LIMIT: usize = 1024;
 
-/// The memory edit for a misunderstanding found or cleared, made the way a
-/// lesson run by the plugin makes one: a description of the skill, revised
-/// in place, resting on this turn's observation (`client_ref` "answer").
-/// `found` is the memory of that skill the runtime already holds, from a
-/// memory search, if any. `day` is today, as "2026-11-12".
-pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str, day: &str) -> Value {
-    let line = format!(
-        "{day}: {}{}",
-        if note.cleared { "cleared: " } else { "" },
-        note.text
-    );
-    let summary = if note.cleared {
-        format!("Cleared: {}", note.text)
-    } else {
-        note.text.clone()
-    };
+/// How each line the engine writes in a memory begins. A line that begins
+/// any other way is someone else's, such as an `anchor:` line the plugin
+/// engine's tutor wrote, and the engine never removes or changes it.
+const FOUND: &str = "Misunderstanding found in a lesson: ";
+const CLEARED: &str = "Misunderstanding cleared in a lesson: ";
+/// The least of its own text worth writing.
+const LEAST_TEXT: usize = 24;
+
+fn is_own(line: &str) -> bool {
+    line.starts_with(FOUND) || line.starts_with(CLEARED)
+}
+
+/// The memory edit for a misunderstanding found or cleared, made with the
+/// same `learning_step` memory edit a lesson run by the plugin makes, and
+/// resting on this turn's observation (`client_ref` "answer").
+///
+/// The engine keeps one line of its own in the memory's description: one
+/// current statement of what the learner does, and whether it is cleared,
+/// rewritten in place, never dated, never a list. Every other line stays
+/// byte for byte. `found` is the memory being revised, as `memory` `read`
+/// returns it. None when the description would not fit even with the
+/// engine's own line cut short: then no edit is made.
+pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str) -> Option<Value> {
+    let prefix = if note.cleared { CLEARED } else { FOUND };
     let new = json!({"new_observation": "answer"});
-    match found {
-        Some(memory) => {
-            // Keep the description whole while it fits, dropping its oldest
-            // lines first; the runtime keeps every revision.
-            let mut lines: Vec<String> = memory["state_text"]
-                .as_str()
-                .unwrap_or_default()
-                .lines()
-                .map(str::to_owned)
-                .collect();
-            lines.push(line);
-            while lines.len() > 1
-                && lines.iter().map(|l| l.len() + 1).sum::<usize>() > MAX_MEMORY_TEXT
-            {
-                lines.remove(0);
-            }
-            let mut basis: Vec<Value> = memory["current_basis"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            basis.push(new.clone());
-            let keep = basis.len().saturating_sub(8);
-            let basis: Vec<Value> = basis.into_iter().skip(keep).collect();
-            json!({
-                "operation": "revise",
-                "memory_id": memory["memory_id"],
-                "expected_revision": memory["revision"],
-                "record": {
-                    "title": memory["title"],
-                    "scope": memory["scope"],
-                    "summary": clip(&summary, MAX_NOTE),
-                    "state_text": clip(&lines.join("\n"), MAX_MEMORY_TEXT),
-                    "current_basis": basis,
-                },
-                "change_kind": "new_observation",
-                "reason": if note.cleared { "The misunderstanding was cleared." } else { "A misunderstanding was found." },
-                "change_basis": [new],
-            })
-        }
-        None => json!({
+    let reason = if note.cleared {
+        "The misunderstanding was cleared."
+    } else {
+        "A misunderstanding was found."
+    };
+    let Some(memory) = found else {
+        let line = clip(&format!("{prefix}{}", note.text), SUMMARY_LIMIT);
+        return Some(json!({
             "operation": "create",
             "client_ref": "memory",
             "record": {
                 "title": note.skill,
                 "scope": clip(if goal.is_empty() { note.skill.as_str() } else { goal }, MAX_NAME),
-                "summary": clip(&summary, MAX_NOTE),
+                "summary": line,
                 "state_text": line,
                 "current_basis": [new],
             },
-            "reason": if note.cleared { "The misunderstanding was cleared." } else { "A misunderstanding was found." },
+            "reason": reason,
             "change_basis": [new],
-        }),
+        }));
+    };
+    let state = memory["state_text"].as_str().unwrap_or_default();
+    let mut lines: Vec<&str> = if state.is_empty() {
+        Vec::new()
+    } else {
+        state.split('\n').collect()
+    };
+    let own = lines.iter().position(|line| is_own(line));
+    // The room the other lines leave, with the newline that joins ours.
+    let others: usize = lines
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| Some(*at) != own)
+        .map(|(_, line)| line.len() + 1)
+        .sum();
+    let room = STATE_LIMIT.saturating_sub(others);
+    if room < prefix.len() + LEAST_TEXT {
+        return None;
     }
-}
-
-/// The memory a search found for this skill: the one whose title is the
-/// skill's name.
-pub fn memory_for<'a>(search: &'a Value, skill: &str) -> Option<&'a Value> {
-    search["memories"].as_array()?.iter().find(|memory| {
-        memory["title"]
-            .as_str()
-            .is_some_and(|title| title.trim().eq_ignore_ascii_case(skill.trim()))
-            && memory["lifecycle"]
-                .as_str()
-                .is_none_or(|life| life == "active")
-    })
+    let line = clip(&format!("{prefix}{}", note.text), room);
+    match own {
+        Some(at) => lines[at] = &line,
+        None => lines.push(&line),
+    }
+    let state_text = lines.join("\n");
+    debug_assert!(state_text.len() <= STATE_LIMIT);
+    // The summary is the engine's to rewrite only if it wrote it.
+    let summary = memory["summary"].as_str().unwrap_or_default();
+    let summary = if summary.is_empty() || is_own(summary) {
+        clip(&line, SUMMARY_LIMIT)
+    } else {
+        summary.to_owned()
+    };
+    let mut basis: Vec<Value> = memory["current_basis"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    basis.push(new.clone());
+    let keep = basis.len().saturating_sub(8);
+    let basis: Vec<Value> = basis.into_iter().skip(keep).collect();
+    Some(json!({
+        "operation": "revise",
+        "memory_id": memory["memory_id"],
+        "expected_revision": memory["revision"],
+        "record": {
+            "title": memory["title"],
+            "scope": memory["scope"],
+            "summary": summary,
+            "state_text": state_text,
+            "current_basis": basis,
+        },
+        "change_kind": "new_observation",
+        "reason": reason,
+        "change_basis": [new],
+    }))
 }
 
 /// The quick check a reply poses, by the words "Quick check N", the way the
@@ -1241,50 +1272,63 @@ mod tests {
     }
 
     #[test]
-    fn a_misunderstanding_makes_a_memory_or_revises_the_one_there() {
-        let note = MemoryNote {
+    fn a_memory_edit_rewrites_its_own_line_and_never_touches_another() {
+        let note = |text: &str, cleared: bool| MemoryNote {
+            id: Some("m1".into()),
             skill: "sign of b".into(),
-            text: "Drops the minus sign of b.".into(),
-            cleared: false,
+            text: text.into(),
+            cleared,
         };
-        let create = memory_edit(&note, None, "Quadratics", "2026-11-12");
+        let create = memory_edit(
+            &note("Drops the minus sign of b.", false),
+            None,
+            "Quadratics",
+        )
+        .unwrap();
         assert_eq!(create["operation"], "create");
-        assert_eq!(create["record"]["title"], "sign of b");
         assert_eq!(create["record"]["scope"], "Quadratics");
         assert_eq!(
             create["record"]["state_text"],
-            "2026-11-12: Drops the minus sign of b."
+            "Misunderstanding found in a lesson: Drops the minus sign of b."
         );
-        let search = json!({"memories": [
-            {"title": "Sign of B", "memory_id": "m-1", "revision": 2, "scope": "Quadratics",
-             "state_text": "2026-11-11: Drops the minus sign of b.\nanchor: reads a from a bare x²",
-             "current_basis": [{"observation_id": "o-1"}], "lifecycle": "active"}
-        ]});
-        let found = memory_for(&search, "sign of b").unwrap();
-        let cleared = MemoryNote {
-            cleared: true,
-            text: "Keeps the sign now.".into(),
-            ..note
+        // A memory the plugin wrote, with an anchor, then the engine's line.
+        let theirs = "Reads coefficients well.\nanchor: reads a from a bare x² (check question)\n";
+        let memory = |state: &str| {
+            json!({"memory_id": "m-1", "revision": 2, "title": "Sign of B", "scope": "Quadratics",
+                   "summary": "Their summary.", "state_text": state,
+                   "current_basis": [{"observation_id": "o-1"}]})
         };
-        let revise = memory_edit(&cleared, Some(found), "Quadratics", "2026-11-12");
-        assert_eq!(revise["operation"], "revise");
-        assert_eq!(revise["memory_id"], "m-1");
-        assert_eq!(revise["expected_revision"], 2);
-        let text = revise["record"]["state_text"].as_str().unwrap();
-        assert!(text.starts_with("2026-11-11: Drops"), "{text}");
+        let first = memory_edit(
+            &note("Drops the minus sign of b.", false),
+            Some(&memory(theirs)),
+            "",
+        )
+        .unwrap();
+        let text = first["record"]["state_text"].as_str().unwrap().to_owned();
         assert!(
-            text.contains("anchor: reads a from a bare x²"),
-            "an anchor is kept: {text}"
+            text.starts_with(theirs),
+            "theirs is kept byte for byte: {text:?}"
         );
+        assert_eq!(first["record"]["summary"], "Their summary.");
+        // A second edit rewrites the engine's line in place: no date, no list.
+        let second =
+            memory_edit(&note("Keeps the sign now.", true), Some(&memory(&text)), "").unwrap();
+        let text = second["record"]["state_text"].as_str().unwrap();
+        assert!(text.starts_with(theirs));
+        assert_eq!(text.matches("in a lesson:").count(), 1, "{text}");
+        assert!(text.ends_with("Misunderstanding cleared in a lesson: Keeps the sign now."));
+        // Near the runtime's limit, only the engine's own text is cut.
+        let long = format!("anchor: kept\n{}", "x".repeat(STATE_LIMIT - 100));
+        let cut = memory_edit(&note(&"y".repeat(500), false), Some(&memory(&long)), "").unwrap();
+        let text = cut["record"]["state_text"].as_str().unwrap();
         assert!(
-            text.ends_with("2026-11-12: cleared: Keeps the sign now."),
-            "{text}"
+            text.starts_with(&long) && text.len() <= STATE_LIMIT,
+            "{}",
+            text.len()
         );
-        assert_eq!(
-            revise["record"]["current_basis"].as_array().unwrap().len(),
-            2
-        );
-        assert!(memory_for(&search, "sign of c").is_none());
+        // With no room left for it, no edit at all.
+        let full = format!("anchor: kept\n{}", "x".repeat(STATE_LIMIT - 20));
+        assert!(memory_edit(&note("Drops the sign.", false), Some(&memory(&full)), "").is_none());
     }
 
     #[test]

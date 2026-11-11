@@ -116,10 +116,13 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
                 ));
             }
         }
-        if !facts.known.is_empty() {
-            lines.push("What the record knows about the learner here:".to_owned());
-            lines.extend(facts.known.iter().map(|line| format!("- {line}")));
-        }
+    }
+    if !facts.known.is_empty() {
+        lines.push(
+            "The learner's memories here: to revise one, give its id in the record's memory field."
+                .to_owned(),
+        );
+        lines.extend(facts.known.iter().map(|line| format!("- {line}")));
     }
     if facts.skip_checks {
         lines.push(
