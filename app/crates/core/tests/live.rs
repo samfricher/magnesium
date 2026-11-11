@@ -267,6 +267,11 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         "primes: the proof that there are infinitely many",
     );
     show("3c. Stop pressed during a reply", &stopped);
+    // The agent sends text in bursts, so pieces that reached the page before
+    // Stop can still wait in this test's queue. Once stop() returns, the
+    // window passes nothing more on, so all that waits arrived before Stop.
+    let before_stop = live.events.try_iter().count();
+    println!("events that reached the page before Stop, still queued: {before_stop}");
     let after_stop = live.events.recv_timeout(Duration::from_secs(15));
     assert!(
         after_stop.is_err(),

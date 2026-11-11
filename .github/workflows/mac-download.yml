@@ -4,6 +4,11 @@ name: Mac download
 # magnesium program inside it, and uploads it to a draft pre-release. Started
 # by hand from main only: it never runs on a push or a pull request. The owner
 # publishes the draft; this workflow never does.
+#
+# Two jobs. The build runs install and build scripts from third-party npm and
+# Cargo packages, so it gets a token that can only read, and the checkout does
+# not keep even that one. The upload runs no third-party code, and only it can
+# write to the repository.
 
 on:
   workflow_dispatch:
@@ -14,14 +19,14 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mac-download
   cancel-in-progress: false
 
 jobs:
-  download:
+  build:
     name: "Disk image (macOS, Apple Silicon)"
     runs-on: macos-15
     steps:
@@ -40,6 +45,8 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check the version, and that the tag and release are new
         env:
@@ -57,6 +64,7 @@ jobs:
             echo "::error::The tag $TAG already exists."
             exit 1
           fi
+          # This token sees published releases only. The upload job checks drafts.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::A release named $TAG already exists."
             exit 1
@@ -93,12 +101,39 @@ jobs:
           npm ci
           scripts/package.sh "${TAG#v}"
 
+      - name: Hand the disk image to the upload job
+        uses: actions/upload-artifact@v4
+        with:
+          name: disk-image
+          path: app/target/download/Magnesium-*-arm64.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  upload:
+    name: "Draft pre-release"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: disk-image
+          path: download
+
       - name: Upload it to a draft pre-release
         env:
           TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           version=${TAG#v}
+          # This token also sees drafts, which the build job's could not.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A release named $TAG already exists, perhaps as a draft."
+            exit 1
+          fi
           notes=$(mktemp)
           cat > "$notes" <<EOF
           A release candidate of Magnesium's window for Apple Silicon Macs, with the magnesium program inside it. Built from $GITHUB_SHA.
@@ -112,6 +147,6 @@ jobs:
 
           You need Claude Code, and a paid Claude plan or an Anthropic Console account. The app checks both and installs the magnesium program for you.
           EOF
-          gh release create "$TAG" "app/target/download/Magnesium-$version-arm64.dmg" \
+          gh release create "$TAG" "download/Magnesium-$version-arm64.dmg" \
             --draft --prerelease --target "$GITHUB_SHA" \
             --title "Magnesium $version for Mac" --notes-file "$notes"
