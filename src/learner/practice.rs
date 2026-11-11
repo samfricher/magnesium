@@ -671,6 +671,22 @@ fn set_next(
     Ok(())
 }
 
+/// At most this many open checks made by a right first answer. A sitting
+/// takes three checks, and a lesson can start several skills, so checks
+/// for skills the learner already got right would otherwise pile up
+/// faster than sittings take them.
+pub(crate) const MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS: usize = 3;
+
+/// The open quick checks that a right first answer made, dropped ones left
+/// out.
+fn open_checks_from_right_answers(tx: &Connection) -> Result<usize> {
+    Ok(load_items(tx)?
+        .iter()
+        .filter(|item| item.dropped.is_none() && item.made_by_a_right_answer())
+        .filter(|item| !derive(item, None).closed())
+        .count())
+}
+
 /// A stored attempt and where it came from, for [`record_attempt`].
 pub(crate) struct NewAttempt<'a> {
     pub(crate) attempt_id: &'a str,
@@ -776,10 +792,13 @@ pub(crate) fn record_attempt(
             && attempt.first_try == FirstTry::Right
             || attempt.first_try == FirstTry::Right
                 && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
-        // The first answer on a skill, right and alone, makes a check for
-        // the next day too, so the skill is asked again and can earn its
-        // passes. Only when the skill has no item, open or closed, and no
-        // earlier answer, whose passes would be lost to the new check.
+        // The first answer on a skill, right and alone, makes a check too,
+        // so the skill is asked again and can earn its passes. Only when the
+        // skill has no item, open or closed, and no earlier answer, whose
+        // passes would be lost to the new check. And only while fewer than
+        // MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS such checks are open, so that
+        // checks a sitting cannot take never pile up. Without one, the skill
+        // counts its clean answers as passes, as a skill never got wrong does.
         let first_right = existing.is_none()
             && attempt.first_try == FirstTry::Right
             && attempt.help == AttemptHelp::None
@@ -788,7 +807,8 @@ pub(crate) fn record_attempt(
                      OR EXISTS(SELECT 1 FROM attempts WHERE label_key=?1 AND attempt_id<>?2)",
                 params![label_key(&label), attempt_id],
                 |r| r.get::<_, bool>(0),
-            )?;
+            )?
+            && open_checks_from_right_answers(tx)? < MAX_OPEN_CHECKS_FROM_RIGHT_ANSWERS;
         let makes = makes || first_right;
         match existing {
             Some(item) => {

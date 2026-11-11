@@ -470,6 +470,59 @@ fn a_clean_first_answer_keeps_its_pass_and_its_check_comes_back_on_the_spacing_d
 }
 
 #[test]
+fn a_right_first_answer_makes_a_check_only_while_fewer_than_three_such_checks_are_open() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    let right = |label: &str, id: &str| {
+        json!({"label":label,"question":format!("A task, {id}"),
+            "first_try":"right","help":"none","cold":true})
+    };
+    // Three skills answered right alone make three checks.
+    for (n, label) in ["first skill", "second skill", "third skill"]
+        .iter()
+        .enumerate()
+    {
+        answer(
+            &e,
+            &format!("a-{n}"),
+            "my answer",
+            right(label, &format!("a-{n}")),
+        );
+        assert_eq!(checks_on(&e, label), 1, "{label}");
+    }
+    // A miss still makes its check.
+    answer(
+        &e,
+        "a-miss",
+        "wrong",
+        json!({"label":"missed skill","question":"A task","first_try":"wrong","help":"none","cold":false}),
+    );
+    assert_eq!(checks_on(&e, "missed skill"), 1);
+    // The fourth makes none. Its clean answer still counts as a pass, as a
+    // skill with no check counts its answers.
+    answer(&e, "a-4", "my answer", right("fourth skill", "a-4"));
+    assert_eq!(checks_on(&e, "fourth skill"), 0);
+    let value = progress(&e);
+    let fourth = skill(&value, "fourth skill");
+    assert_eq!(
+        (fourth["passes"].as_i64(), fourth["quick_check"].as_bool()),
+        (Some(1), Some(false)),
+        "{fourth}"
+    );
+
+    // The first check closes on its third pass: 3 and then 7 days on.
+    days_pass(&e, 3);
+    answer(&e, "b-1", "again", right("first skill", "b-1"));
+    days_pass(&e, 7);
+    answer(&e, "c-1", "again", right("first skill", "c-1"));
+    assert_eq!(skill(&progress(&e), "first skill")["proven"], true);
+    // With two such checks open, a new skill answered right gets one again.
+    answer(&e, "c-2", "my answer", right("fifth skill", "c-2"));
+    assert_eq!(checks_on(&e, "fifth skill"), 1);
+}
+
+#[test]
 fn progress_counts_what_the_learner_did_today() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
