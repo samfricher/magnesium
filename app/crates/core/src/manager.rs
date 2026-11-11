@@ -24,7 +24,7 @@ use crate::install::{self, RuntimeSetup};
 use crate::material::{self, Added};
 use crate::paths;
 use crate::runtime;
-use crate::store::{PaperSitting, Store, Turn};
+use crate::store::{Engine, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
 
 #[derive(Default)]
@@ -47,11 +47,18 @@ struct Inner {
     folder: Option<PathBuf>,
     conversation: Option<Box<dyn Conversation>>,
     buffer: Arc<Mutex<Buffer>>,
+    /// The engine of the conversation above.
+    engine: Engine,
+    /// Handing in a paper opens the next conversation on the plugin engine,
+    /// which marks papers.
+    papers_next: bool,
 }
 
 pub struct Manager {
     store: Arc<Store>,
     harness: Arc<dyn Harness>,
+    /// The direct engine, when the window offers it.
+    direct: Option<Arc<dyn Harness>>,
     sink: EventSink,
     inner: Mutex<Inner>,
     /// Counts conversations. A conversation that was closed or replaced
@@ -73,6 +80,16 @@ pub struct Setup {
 pub struct Opened {
     pub resumed: bool,
     pub turns: Vec<Turn>,
+    /// The engine running this conversation.
+    pub engine: Engine,
+}
+
+/// The engine the learner picked for new conversations, and the engine of
+/// the open folder's conversation, running or remembered, if it has one.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct EngineChoice {
+    pub chosen: Engine,
+    pub conversation: Option<Engine>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -88,14 +105,64 @@ impl Manager {
         Self {
             store,
             harness,
+            direct: None,
             sink,
             inner: Mutex::new(Inner {
                 folder: None,
                 conversation: None,
                 buffer: Arc::new(Mutex::new(Buffer::default())),
+                engine: Engine::Plugin,
+                papers_next: false,
             }),
             current: Arc::new(Mutex::new(0)),
         }
+    }
+
+    /// Offer the direct engine beside the plugin engine.
+    pub fn with_direct(mut self, direct: Arc<dyn Harness>) -> Self {
+        self.direct = Some(direct);
+        self
+    }
+
+    fn harness_for(&self, engine: Engine) -> &Arc<dyn Harness> {
+        match (engine, &self.direct) {
+            (Engine::Direct, Some(direct)) => direct,
+            _ => &self.harness,
+        }
+    }
+
+    /// The engine new conversations start on. Without the direct engine on
+    /// offer it is always the plugin engine.
+    fn chosen(&self) -> Engine {
+        match self.direct {
+            Some(_) => self.store.engine(),
+            None => Engine::Plugin,
+        }
+    }
+
+    /// The engine picked, and the open folder's conversation's.
+    pub fn engine(&self) -> EngineChoice {
+        let inner = lock(&self.inner);
+        let running = inner.conversation.is_some() && !lock(&inner.buffer).ended;
+        let conversation = if running {
+            Some(inner.engine)
+        } else {
+            inner.folder.as_ref().and_then(|folder| {
+                let state = self.store.folder(folder);
+                state.session_id.map(|_| state.engine.unwrap_or_default())
+            })
+        };
+        EngineChoice {
+            chosen: self.chosen(),
+            conversation,
+        }
+    }
+
+    /// Pick the engine for new conversations. A running conversation goes
+    /// on with its own; the next one the learner opens uses this one.
+    pub fn set_engine(&self, engine: Engine) -> EngineChoice {
+        self.store.set_engine(engine);
+        self.engine()
     }
 
     /// Close the conversation, if there is one. From here on nothing it says
@@ -266,7 +333,13 @@ impl Manager {
     /// turn and remembers the conversation's id, then passes the event on.
     /// Once the conversation is closed or replaced, it only keeps the copy of
     /// its own turns, which is stored under its own id.
-    fn sink_for(&self, folder: PathBuf, buffer: Arc<Mutex<Buffer>>, generation: u64) -> EventSink {
+    fn sink_for(
+        &self,
+        folder: PathBuf,
+        buffer: Arc<Mutex<Buffer>>,
+        generation: u64,
+        engine: Engine,
+    ) -> EventSink {
         let store = Arc::clone(&self.store);
         let out = Arc::clone(&self.sink);
         let current = Arc::clone(&self.current);
@@ -282,7 +355,10 @@ impl Manager {
                     buffer.ready = true;
                     let id = session_id.clone();
                     if live {
-                        store.update(&folder, |state| state.session_id = Some(id));
+                        store.update(&folder, |state| {
+                            state.session_id = Some(id);
+                            state.engine = Some(engine);
+                        });
                     }
                 }
                 // An agent that ends before it reports anything was most
@@ -350,7 +426,15 @@ impl Manager {
             ));
         }
         let mut inner = lock(&self.inner);
-        let running = inner.conversation.is_some() && !lock(&inner.buffer).ended;
+        // A conversation resumes only on its own engine. Paper marking is
+        // the plugin engine's, whatever the learner picked.
+        let engine = if std::mem::take(&mut inner.papers_next) {
+            Engine::Plugin
+        } else {
+            self.chosen()
+        };
+        let running =
+            inner.conversation.is_some() && !lock(&inner.buffer).ended && inner.engine == engine;
         if running && resume {
             let session = lock(&inner.buffer).session.clone();
             let turns = session
@@ -359,10 +443,14 @@ impl Manager {
             return Ok(Opened {
                 resumed: true,
                 turns,
+                engine,
             });
         }
         let generation = self.close_conversation(&mut inner);
-        let remembered = self.store.folder(&folder).session_id.filter(|_| resume);
+        let saved = self.store.folder(&folder);
+        let remembered = saved
+            .session_id
+            .filter(|_| resume && saved.engine.unwrap_or_default() == engine);
         if !resume {
             self.store.update(&folder, |state| {
                 state.session_id = None;
@@ -374,16 +462,17 @@ impl Manager {
             session: remembered.clone(),
             ..Buffer::default()
         }));
-        let conversation = self.harness.start(
+        let conversation = self.harness_for(engine).start(
             StartOptions {
                 folder: folder.clone(),
                 resume: remembered.clone(),
                 payment: self.store.payment(),
             },
-            self.sink_for(folder.clone(), Arc::clone(&buffer), generation),
+            self.sink_for(folder.clone(), Arc::clone(&buffer), generation, engine),
         )?;
         inner.conversation = Some(conversation);
         inner.buffer = buffer;
+        inner.engine = engine;
         let turns = remembered
             .as_deref()
             .map(|id| self.store.turns(&folder, id))
@@ -391,6 +480,7 @@ impl Manager {
         Ok(Opened {
             resumed: remembered.is_some(),
             turns,
+            engine,
         })
     }
 
@@ -435,7 +525,8 @@ impl Manager {
         if goal.is_empty() {
             return Ok(());
         }
-        self.send_as(goal, &self.harness.new_lesson(goal), false)
+        let engine = lock(&self.inner).engine;
+        self.send_as(goal, &self.harness_for(engine).new_lesson(goal), false)
     }
 
     pub fn interrupt(&self) -> AgentResult<()> {
@@ -579,6 +670,9 @@ impl Manager {
             sitting.minutes,
             copied.join(", ")
         );
+        // The plugin engine marks papers: the conversation that sends these
+        // words is opened on it.
+        lock(&self.inner).papers_next = true;
         Ok(Some((words.clone(), self.harness.papers(&words))))
     }
 

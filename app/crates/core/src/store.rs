@@ -40,6 +40,10 @@ pub struct FolderState {
     /// The agent's id of the conversation this folder was last in.
     #[serde(default)]
     pub session_id: Option<String>,
+    /// The engine that started that conversation. None for one an earlier
+    /// window started, which was the plugin engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<Engine>,
     #[serde(default)]
     pub stopped_at: Option<String>,
     #[serde(default)]
@@ -66,6 +70,9 @@ struct Data {
     days_filled: bool,
     #[serde(default)]
     payment: Option<Payment>,
+    /// The engine the learner picked for new conversations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    engine: Option<Engine>,
     /// What `--version` printed for an installed `magnesium` the learner chose
     /// to keep over the one inside the app. Asked again for any other.
     #[serde(default)]
@@ -80,6 +87,17 @@ pub struct Turn {
     pub tutor: String,
     #[serde(default)]
     pub interrupted: bool,
+}
+
+/// Which engine runs a lesson.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Engine {
+    /// Claude Code runs the lesson through Magnesium's plugin.
+    #[default]
+    Plugin,
+    /// The window runs the lesson, and Claude Code only reaches the model.
+    Direct,
 }
 
 pub struct Store {
@@ -292,6 +310,16 @@ impl Store {
     pub fn set_payment(&self, payment: Payment) {
         let mut data = self.lock();
         data.payment = Some(payment);
+        self.save(&data);
+    }
+
+    pub fn engine(&self) -> Engine {
+        self.lock().engine.unwrap_or_default()
+    }
+
+    pub fn set_engine(&self, engine: Engine) {
+        let mut data = self.lock();
+        data.engine = Some(engine);
         self.save(&data);
     }
 
