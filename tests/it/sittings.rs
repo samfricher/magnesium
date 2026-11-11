@@ -62,6 +62,39 @@ fn attempt(
     )
 }
 
+/// A context call from a caller that asks for the quick checks as data, as
+/// the study window's direct engine does.
+fn tool_with_checks(e: &TestEnvironment, request: Value) -> Value {
+    use std::io::Write;
+    let mut child = e
+        .command()
+        .env("CLAUDE_CODE_SESSION_ID", "conv")
+        .env("MAGNESIUM_SITTING_CHECKS", "1")
+        .args([
+            "adapter",
+            "call",
+            "context",
+            "--protocol-version",
+            "2",
+            "--json-input",
+            "-",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&request).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 fn sittings(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/sittings.sqlite")).unwrap()
 }
@@ -179,12 +212,8 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     ] {
         assert!(opener.contains(text), "{text}\n{opener}");
     }
-    // The same checks as data, for a program that runs the lesson itself.
-    let checks = status["sitting_checks"].as_array().unwrap();
-    assert_eq!(checks.len(), 1, "{status}");
-    assert_eq!(checks[0]["number"], 1);
-    assert_eq!(checks[0]["label"], LABEL);
-    assert_eq!(checks[0]["misses"], json!([MISS]));
+    // A tutor's result is as it was: the opener's text, and no checks as data.
+    assert!(status.get("sitting_checks").is_none(), "{status}");
     let again = v2::tool(
         &e,
         "claude",
@@ -300,18 +329,21 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
         .query_row("SELECT count(*) FROM sittings", [], |r| r.get(0))
         .unwrap();
     assert_eq!(sittings_count, 2);
-    // The first tool result of the sitting carries its opener, once.
-    let load = v2::tool(
+    // The first tool result of the sitting carries its opener, once. A
+    // caller that runs the lesson itself asks for the checks as data too.
+    let load = tool_with_checks(
         &e,
-        "claude",
-        "conv",
-        "context",
         json!({"action":"instructions","host":"claude","stage":"teach_and_practice"}),
     );
     assert!(
         load["sitting_opener"].as_str().unwrap().contains(LABEL),
         "{load}"
     );
+    let checks = load["sitting_checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 1, "{load}");
+    assert_eq!(checks[0]["number"], 1);
+    assert_eq!(checks[0]["label"], LABEL);
+    assert_eq!(checks[0]["misses"], json!([MISS]));
     // The learner answers anyway; a right unaided answer is recorded and passes it.
     let notice = claude_prompt(&e, "p-4", "x is 2 or 5");
     let passed = step(

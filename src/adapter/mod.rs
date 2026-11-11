@@ -454,7 +454,9 @@ fn open_sitting(
             let mut synced = crate::practice::GapLogReport::default();
             if let Ok(Some(opener)) = sittings.take_opener(&workspace, now, &mut synced) {
                 result["sitting_opener"] = opener.text.into();
-                result["sitting_checks"] = opener.checks;
+                if crate::sittings::checks_wanted() {
+                    result["sitting_checks"] = opener.checks;
+                }
             }
             report.merge(synced);
         }
@@ -559,7 +561,9 @@ fn due_checks_first(
     });
     if let Some(opener) = opener {
         refusal["sitting_opener"] = opener.text.into();
-        refusal["sitting_checks"] = opener.checks;
+        if crate::sittings::checks_wanted() {
+            refusal["sitting_checks"] = opener.checks;
+        }
     }
     if let Some(gap_logs) = synced.to_json() {
         refusal["gap_logs"] = gap_logs;

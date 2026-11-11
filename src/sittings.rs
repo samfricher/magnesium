@@ -91,9 +91,19 @@ pub(crate) struct Counts {
     pub(crate) posed: i64,
 }
 
+/// Set to "1" on a tool server whose caller runs the lesson itself, such as
+/// the study window's direct engine: its results then carry the opener's
+/// quick checks as data, `sitting_checks`. A tutor's results stay as they
+/// were, with the opener's text alone.
+pub(crate) const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
+
+pub(crate) fn checks_wanted() -> bool {
+    std::env::var(CHECKS_ENV).is_ok_and(|value| value == "1")
+}
+
 /// What a sitting opens with: the opener's text for a tutor, and the same
-/// quick checks as data, `sitting_checks`, for a program that runs the lesson
-/// itself, such as the study window's direct engine.
+/// quick checks as data, `sitting_checks`, for a caller that asks for them
+/// with [`CHECKS_ENV`].
 #[derive(Clone, Debug)]
 pub(crate) struct Opener {
     pub(crate) text: String,
