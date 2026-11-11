@@ -6,6 +6,9 @@ learning_step that records an answer is held back for HANG_SECONDS. The
 request itself goes through at once, so the record commits and only its
 answer is late: an outcome the engine cannot know. The flag is removed, so
 the server that replaces this one answers at once.
+
+With DELAY_EACH set, every tool call's answer is held back that many
+seconds instead, as on a machine under load.
 """
 
 import json
@@ -15,10 +18,12 @@ import sys
 import threading
 import time
 
-FLAG = os.environ["HANG_FLAG"]
+FLAG = os.environ.get("HANG_FLAG", "")
+DELAY_EACH = float(os.environ.get("DELAY_EACH", "0"))
 SECONDS = float(os.environ.get("HANG_SECONDS", "4"))
 child = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
 held = set()
+calls = set()
 
 
 def up():
@@ -29,6 +34,8 @@ def up():
             value = {}
         if value.get("id") in held:
             time.sleep(SECONDS)
+        elif DELAY_EACH and value.get("id") in calls:
+            time.sleep(DELAY_EACH)
         sys.stdout.write(line)
         sys.stdout.flush()
 
@@ -38,9 +45,11 @@ for line in sys.stdin:
     try:
         value = json.loads(line)
         params = value.get("params") or {}
+        if value.get("method") == "tools/call":
+            calls.add(value.get("id"))
         arguments = params.get("arguments") or {}
         if (value.get("method") == "tools/call" and params.get("name") == "learning_step"
-                and arguments.get("observations") and os.path.exists(FLAG)):
+                and arguments.get("observations") and FLAG and os.path.exists(FLAG)):
             os.remove(FLAG)
             held.add(value.get("id"))
     except Exception:

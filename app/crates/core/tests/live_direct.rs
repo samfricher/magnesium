@@ -72,12 +72,19 @@ impl Scratch {
             fs::create_dir_all(path).unwrap();
         }
         let runtime = base.join("magnesium");
+        // MAGNESIUM_LIVE_SLOW, in seconds, holds back every answer of the
+        // runtime's tool servers, as on a machine under load.
+        let slow = std::env::var("MAGNESIUM_LIVE_SLOW").unwrap_or_default();
+        let proxy = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hang_proxy.py");
         fs::write(
             &runtime,
             format!(
-                "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\nexec '{}' \"$@\"\n",
-                runtime_binary().display(),
-                home = home.display()
+                "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\n\
+                 if [ -n '{slow}' ] && [ \"$1 $2\" = \"_internal mcp-server\" ]; then DELAY_EACH='{slow}' exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
+                 exec '{bin}' \"$@\"\n",
+                bin = runtime_binary().display(),
+                home = home.display(),
+                proxy = proxy.display(),
             ),
         )
         .unwrap();
@@ -142,29 +149,14 @@ impl Scratch {
         serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
     }
 
-    /// The answers on record, once the last turn's record is kept: a turn
-    /// ends for the learner when its reply is whole, and is saved just after.
     fn attempts(&self) -> Vec<Value> {
-        let read = || {
-            self.cli(&["attempts", "--json"])["attempts"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        };
-        let mut last = read();
-        for _ in 0..20 {
-            std::thread::sleep(Duration::from_millis(300));
-            let now = read();
-            if now == last {
-                return now;
-            }
-            last = now;
-        }
-        last
+        self.cli(&["attempts", "--json"])["attempts"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn deliveries(&self) -> Vec<String> {
-        let _ = self.attempts();
         let conn = Connection::open_with_flags(
             self.folder.join(".magnesium/state.sqlite"),
             OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -191,7 +183,10 @@ struct Turn {
     ok: bool,
 }
 
-fn turn(events: &Receiver<AgentEvent>) -> Turn {
+/// One turn, and its record: the turn ends when the reply is whole, and the
+/// engine says when the record is kept. Notices that come after the end of
+/// the turn, as for an answer that could not be kept, are collected too.
+fn turn(manager: &Manager, events: &Receiver<AgentEvent>) -> Turn {
     let started = Instant::now();
     let mut turn = Turn::default();
     loop {
@@ -214,6 +209,15 @@ fn turn(events: &Receiver<AgentEvent>) -> Turn {
                 assert!(error.is_none(), "{error:?}");
                 turn.ok = ok;
                 turn.total_ms = started.elapsed().as_millis();
+                assert!(
+                    manager.wait_saved(Duration::from_secs(60)),
+                    "the record was not kept within a minute"
+                );
+                while let Ok(event) = events.try_recv() {
+                    if let AgentEvent::Notice { text, .. } = event {
+                        turn.notices.push(text);
+                    }
+                }
                 return turn;
             }
             AgentEvent::Exited { detail, .. } => panic!("Claude Code ended: {detail:?}"),
@@ -235,14 +239,14 @@ fn a_direct_lesson_streams_keeps_its_record_and_resumes() {
             "Quiz me on reading a, b and c from a quadratic equation such as x² − 5x + 6 = 0",
         )
         .unwrap();
-    let first = turn(&events);
+    let first = turn(&manager, &events);
     println!("turn 1: {first:#?}");
     assert!(first.pieces > 1, "the reply streamed in pieces");
     shown.push(first.reply.clone());
 
     // "I don't know" on the open task is a decline, whatever the task is.
     manager.send("I don't know").unwrap();
-    let second = turn(&events);
+    let second = turn(&manager, &events);
     println!("turn 2: {second:#?}");
     shown.push(second.reply.clone());
     let attempts = scratch.attempts();
@@ -258,7 +262,7 @@ fn a_direct_lesson_streams_keeps_its_record_and_resumes() {
     assert!(opened.resumed);
     // An answer to whatever the tutor asked; its mark is the tutor's.
     manager.send("a = 1, b = 5, c = 6").unwrap();
-    let third = turn(&events);
+    let third = turn(&manager, &events);
     println!("turn 3 (resumed): {third:#?}");
     shown.push(third.reply.clone());
     assert!(third.ok && !third.reply.is_empty());
@@ -306,7 +310,7 @@ fn a_lesson_you_play() {
             Some(goal) => manager.send_new_lesson(goal.trim()).unwrap(),
             None => manager.send(text).unwrap(),
         }
-        let done = turn(&events);
+        let done = turn(&manager, &events);
         let report = json!({
             "sent": text,
             "first_word_ms": done.first_word_ms,
@@ -354,7 +358,7 @@ fn a_direct_lesson_reads_inside_the_study_root_only() {
             scratch.folder.join("notes.txt").display()
         ))
         .unwrap();
-    let done = turn(&events);
+    let done = turn(&manager, &events);
     println!("reply: {}", done.reply);
     assert!(
         done.reply.contains("HERON"),

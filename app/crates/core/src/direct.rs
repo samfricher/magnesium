@@ -333,6 +333,7 @@ impl Harness for DirectTutor {
             interrupting: AtomicBool::new(false),
             interrupt_sent: AtomicBool::new(false),
             turn_seq: AtomicU64::new(0),
+            working: AtomicBool::new(false),
             closing: AtomicBool::new(false),
             ready_sent: AtomicBool::new(false),
             interrupts: AtomicU64::new(0),
@@ -500,6 +501,9 @@ struct Shared {
     interrupt_sent: AtomicBool,
     /// Counts turns, so an interrupt's watchdog acts only on its own.
     turn_seq: AtomicU64,
+    /// A message is being handled, its record included. Changed under the
+    /// queue's lock, and `wake` tells who waits.
+    working: AtomicBool,
     closing: AtomicBool,
     ready_sent: AtomicBool,
     interrupts: AtomicU64,
@@ -585,6 +589,34 @@ impl Shared {
 
     fn busy(&self) -> bool {
         self.phase.load(Ordering::SeqCst) != IDLE || !lock(&self.queue).is_empty()
+    }
+
+    /// The message in hand is done, its record kept.
+    fn done(&self) {
+        let _queue = lock(&self.queue);
+        self.working.store(false, Ordering::SeqCst);
+        self.wake.notify_all();
+    }
+
+    /// Wait, at most `limit`, until no message is in hand or waiting.
+    fn wait_idle(&self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        let mut queue = lock(&self.queue);
+        loop {
+            let waiting = queue.iter().any(|item| matches!(item, Item::Words(_)));
+            if !self.working.load(Ordering::SeqCst) && !waiting {
+                return true;
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            queue = self
+                .wake
+                .wait_timeout(queue, left)
+                .map(|(guard, _)| guard)
+                .unwrap_or_else(|p| p.into_inner().0);
+        }
     }
 
     fn push(&self, item: Item) {
@@ -727,6 +759,7 @@ fn work_loop(shared: &Arc<Shared>) {
             let mut queue = lock(&shared.queue);
             loop {
                 if let Some(item) = queue.pop_front() {
+                    shared.working.store(true, Ordering::SeqCst);
                     break item;
                 }
                 queue = shared.wake.wait(queue).unwrap_or_else(|p| p.into_inner());
@@ -742,12 +775,14 @@ fn work_loop(shared: &Arc<Shared>) {
                 }
                 let ended = turn(shared, &words);
                 shared.phase.store(IDLE, Ordering::SeqCst);
+                shared.done();
                 if ended {
                     exited(shared);
                     return;
                 }
             }
             Item::Ended => {
+                shared.done();
                 exited(shared);
                 return;
             }
@@ -955,6 +990,7 @@ fn task_from_checkpoint(checkpoint: &Value) -> Option<record::OpenTask> {
         check,
         again: plan.lines().any(|line| line == record::AGAIN_LINE),
         stuck: false,
+        skill: String::new(),
     })
 }
 
@@ -1686,6 +1722,10 @@ impl Conversation for DirectConversation {
         Err(AgentError("That question is no longer waiting.".into()))
     }
 
+    fn wait_saved(&self, limit: Duration) -> bool {
+        self.shared.wait_idle(limit)
+    }
+
     fn close(&mut self) {
         if self.shared.closing.swap(true, Ordering::SeqCst) {
             return;
@@ -1694,6 +1734,14 @@ impl Conversation for DirectConversation {
             let _ = self.interrupt();
         }
         lock(&self.shared.queue).retain(|item| matches!(item, Item::Ended));
+        // A reply already whole keeps its record before the lesson ends,
+        // within the save's budget: the end screen reads the record next.
+        if self.shared.phase.load(Ordering::SeqCst) == SAVING
+            && !self.shared.wait_idle(SAVE_BUDGET + Duration::from_secs(2))
+        {
+            self.shared
+                .note("the lesson ended before its last record was kept");
+        }
         *lock(&self.shared.stdin) = None;
         let shared = Arc::clone(&self.shared);
         thread::spawn(move || {
@@ -1860,6 +1908,7 @@ mod tests {
             check: Some("sign of b".into()),
             again: false,
             stuck: false,
+            skill: String::new(),
         });
         let write = lesson.apply(
             &record::parse(r#"{"answer": null}"#).unwrap(),

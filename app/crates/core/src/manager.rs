@@ -537,6 +537,16 @@ impl Manager {
         self.send_as(goal, &self.harness_for(engine).new_lesson(goal), false)
     }
 
+    /// Wait, at most `limit`, until the last reply's record is kept: the
+    /// direct engine ends a turn when the reply is whole and keeps its
+    /// record just after. For the tests.
+    pub fn wait_saved(&self, limit: Duration) -> bool {
+        lock(&self.inner)
+            .conversation
+            .as_ref()
+            .is_none_or(|conversation| conversation.wait_saved(limit))
+    }
+
     pub fn interrupt(&self) -> AgentResult<()> {
         self.with_conversation(|conversation| conversation.interrupt())
     }

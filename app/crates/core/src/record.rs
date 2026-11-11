@@ -424,6 +424,10 @@ pub struct OpenTask {
     /// the same problem does not move its kind's help on a second time.
     #[serde(default)]
     pub stuck: bool,
+    /// The skill the reply that posed it named, for an answer whose own
+    /// record names none, as "I don't know" can leave it.
+    #[serde(default)]
+    pub skill: String,
 }
 
 /// What the engine knows of the lesson between turns.
@@ -661,8 +665,17 @@ impl Lesson {
         let mut lost = None;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
+            // The runtime refuses an empty label, so a decline the engine
+            // marks itself always has one: the check's, the answer's, the
+            // task's, or the goal's.
             let label = clip(
-                &task.check.clone().unwrap_or_else(|| record.skill.clone()),
+                &task
+                    .check
+                    .clone()
+                    .or_else(|| Some(record.skill.clone()).filter(|s| !s.trim().is_empty()))
+                    .or_else(|| Some(task.skill.clone()).filter(|s| !s.trim().is_empty()))
+                    .or_else(|| self.goal.clone().filter(|s| !s.trim().is_empty()))
+                    .unwrap_or_else(|| "the task in hand".to_owned()),
                 MAX_NAME,
             );
             // Cold: from a blank page, with no help. A due check is asked
@@ -752,6 +765,7 @@ impl Lesson {
                         check: posed.as_ref().map(|check| check.label.clone()),
                         again,
                         stuck: same && was_stuck,
+                        skill: record.skill.clone(),
                     });
                 }
             },
@@ -974,6 +988,7 @@ mod tests {
             check: None,
             again: false,
             stuck: false,
+            skill: String::new(),
         });
         let guess = lesson.apply(
             &record(r#"{"answer": "wrong", "skill": "expected value", "task": "Find E for the weighted die"}"#),
@@ -1004,6 +1019,7 @@ mod tests {
             check: None,
             again: false,
             stuck: false,
+            skill: String::new(),
         });
         let wrong = lesson.apply(
             &record(
@@ -1078,6 +1094,7 @@ mod tests {
                 check: None,
                 again: false,
                 stuck: false,
+                skill: String::new(),
             });
         };
         let mut lesson = lesson();
@@ -1141,6 +1158,48 @@ mod tests {
         assert!(parse(r#"{"answer": null, "control": "forget me"}"#)
             .unwrap_err()
             .contains("control"));
+    }
+
+    #[test]
+    fn i_dont_know_with_no_skill_named_takes_the_tasks_skill() {
+        let mut lesson = lesson();
+        lesson.apply(
+            &record(r#"{"answer": null, "skill": "sign of b", "task": "What is b in x² − 5x?"}"#),
+            &message("Teach me"),
+            "What is b in x² − 5x?",
+            "r-1",
+        );
+        // The model calls "I don't know" no answer and names no skill; the
+        // engine marks it declined, and the runtime needs a label.
+        let declined = lesson.apply(
+            &record(r#"{"answer": null}"#),
+            &message(DONT_KNOW_WORDS),
+            "Fine.",
+            "r-2",
+        );
+        let attempt = &declined.request["observations"][0]["attempt"];
+        assert_eq!(attempt["first_try"], "declined");
+        assert_eq!(attempt["label"], "sign of b");
+        // With no skill anywhere, the goal names it.
+        lesson.task = Some(OpenTask {
+            text: "Another?".into(),
+            help: Help::None,
+            guess: false,
+            check: None,
+            again: false,
+            stuck: false,
+            skill: String::new(),
+        });
+        let bare = lesson.apply(
+            &record(r#"{"answer": null}"#),
+            &message(DONT_KNOW_WORDS),
+            "Fine.",
+            "r-3",
+        );
+        assert_eq!(
+            bare.request["observations"][0]["attempt"]["label"],
+            "Quadratics"
+        );
     }
 
     #[test]

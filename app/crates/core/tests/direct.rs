@@ -111,6 +111,7 @@ impl Bench {
                 "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\n\
                  if [ \"$1 $2 $3\" = \"_internal hook user-prompt-submit\" ] && [ -e '{flags}/fail-prompt-hook' ]; then cat >/dev/null; exit 0; fi\n\
                  if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/hang' ]; then HANG_FLAG='{flags}/hang' exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
+                 if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/slow' ]; then DELAY_EACH=\"$(cat '{flags}/slow')\" exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
                  exec '{bin}' \"$@\"\n",
                 bin = runtime_binary().display(),
                 home = home.display(),
@@ -221,7 +222,6 @@ impl Bench {
 
     /// The answers on record, once the last turn's record is kept.
     fn attempts(&self) -> Vec<Value> {
-        self.settle();
         self.attempts_now()
     }
 
@@ -242,7 +242,6 @@ impl Bench {
 
     /// The tutor's replies the runtime kept, oldest first.
     fn deliveries(&self) -> Vec<String> {
-        self.settle();
         let conn = self.store();
         let mut statement = conn
             .prepare("SELECT text FROM learning_events WHERE speaker='tutor' AND kind='delivery' ORDER BY event_no")
@@ -254,21 +253,6 @@ impl Bench {
             .collect()
     }
 
-    /// Wait until the record stops changing: a turn ends for the learner
-    /// when its reply is whole, and its record is kept just after.
-    fn settle(&self) {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let mut last = self.size();
-        loop {
-            std::thread::sleep(Duration::from_millis(300));
-            let now = self.size();
-            if now == last || Instant::now() > deadline {
-                return;
-            }
-            last = now;
-        }
-    }
-
     fn size(&self) -> (i64, usize) {
         let events: i64 = self
             .store()
@@ -278,7 +262,6 @@ impl Bench {
     }
 
     fn sessions(&self) -> i64 {
-        self.settle();
         self.store()
             .query_row("SELECT count(*) FROM learning_sessions", [], |r| r.get(0))
             .unwrap()
@@ -335,6 +318,18 @@ impl Events {
     }
 }
 
+/// Wait for the end of a turn, then for its record: the direct engine
+/// ends a turn when the reply is whole and keeps its record just after,
+/// and says when it has.
+fn done(manager: &Manager, events: &mut Events) -> AgentEvent {
+    let end = events.turn_end();
+    assert!(
+        manager.wait_saved(Duration::from_secs(30)),
+        "the record was not kept within 30 s"
+    );
+    end
+}
+
 fn ended_well(event: &AgentEvent) -> bool {
     matches!(
         event,
@@ -353,7 +348,7 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     let opened = manager.open_session(false).unwrap();
     assert_eq!(opened.engine, Engine::Direct);
     manager.send_new_lesson("TEACH me quadratics").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     // Ready, and the id remembered, once Claude Code showed it has the
     // conversation: with the first message.
     assert!(events
@@ -391,15 +386,15 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
 
     // A wrong answer is marked, with its question.
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     events.take();
     // The Hint button, then a right answer: code keeps the hint, though the
     // block of the answer says none.
     manager.send("Can I have a hint?").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     events.take();
     manager.send("b = -5\n\nConfidence: sure").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
     assert!(
         reply.starts_with("Right: the sign goes with the number."),
@@ -459,13 +454,13 @@ fn a_missing_block_is_asked_for_again_and_a_message_meanwhile_waits() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("NOBLOCK b = 5").unwrap();
     // The reply is shown at once; its record is asked for in the background.
     events.until("the reply", |e| matches!(e, AgentEvent::TextDone { .. }));
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(ended_well(&done(&manager, &mut events)));
     let messages = bench.logged("message");
     let order: Vec<String> = messages
         .iter()
@@ -496,9 +491,9 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("NEVERBLOCK b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     // The notice comes with the record, just after the turn's end.
     let notice = match events.until("a notice", |e| {
         matches!(
@@ -525,13 +520,13 @@ fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("SLOW b = 5").unwrap();
     events.until("the first words", |e| {
         matches!(e, AgentEvent::TextDelta { .. })
     });
     manager.interrupt().unwrap();
-    let end = events.turn_end();
+    let end = done(&manager, &mut events);
     assert!(
         matches!(
             end,
@@ -545,7 +540,7 @@ fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
     assert!(bench.attempts().is_empty());
     // The open task is still the first one: the next answer is marked on it.
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0]["question"], "What is b in x² − 5x + 6 = 0?");
@@ -558,9 +553,9 @@ fn a_lesson_in_a_folder_below_the_study_root_reads_the_root_and_keeps_its_record
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let start = &bench.logged("start")[0];
     let args: Vec<String> = serde_json::from_value(start["args"].clone()).unwrap();
     let at = args
@@ -579,7 +574,7 @@ fn a_closed_lesson_resumes_its_conversation_and_its_open_task() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     let session = match events
         .seen
         .iter()
@@ -597,7 +592,7 @@ fn a_closed_lesson_resumes_its_conversation_and_its_open_task() {
     assert_eq!(opened.engine, Engine::Direct);
     assert_eq!(opened.turns.len(), 1);
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let starts = bench.logged("start");
     assert!(
         starts[1]["args"]
@@ -621,7 +616,7 @@ fn a_switch_of_engine_starts_a_new_conversation_on_the_same_lesson() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     assert_eq!(
         manager.engine(),
         mg_core::manager::EngineChoice {
@@ -638,7 +633,7 @@ fn a_switch_of_engine_starts_a_new_conversation_on_the_same_lesson() {
     assert!(!opened.resumed);
     assert_eq!(opened.engine, Engine::Plugin);
     manager.send("hello").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     assert_eq!(manager.engine().conversation, Some(Engine::Plugin));
 
     // And back: the plugin conversation is not resumed by the direct engine.
@@ -650,7 +645,7 @@ fn a_switch_of_engine_starts_a_new_conversation_on_the_same_lesson() {
     manager
         .send_new_lesson("I'm back. Let's continue.")
         .unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(bench.sessions(), 1);
     let last = bench.logged("message").pop().unwrap();
     let state = last["state"].as_str().unwrap();
@@ -698,7 +693,6 @@ fn handing_in_a_paper_opens_a_plugin_conversation_whatever_was_picked() {
 
 /// Every event the runtime holds, learner and tutor, and every answer.
 fn record_size(bench: &Bench) -> (i64, usize) {
-    bench.settle();
     bench.size()
 }
 
@@ -708,9 +702,9 @@ fn a_cold_answer_is_kept_cold_and_one_the_runtime_refuses_keeps_its_mark() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("b = -5 COLD").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0]["cold"], true, "{attempts:#?}");
@@ -722,7 +716,7 @@ fn a_cold_answer_is_kept_cold_and_one_the_runtime_refuses_keeps_its_mark() {
     let (manager, mut events) = bench.manager();
     assert!(manager.open_session(true).unwrap().resumed);
     manager.send("b = -5 COLD").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 2, "{attempts:#?}");
     let second = attempts
@@ -740,13 +734,13 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("b = 5").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     // The message that asks is captured, as in a plugin lesson; its reply
     // and everything after it are not.
     manager.send("RECORDING OFF please").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let off = record_size(&bench);
     let binding: bool = bench
         .store()
@@ -759,7 +753,7 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
     assert!(!binding, "the runtime turned recording off");
     events.seen.clear();
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert!(
         !events
             .seen
@@ -783,9 +777,9 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
     manager
         .send_new_lesson("I'm back. Let's continue.")
         .unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(
         record_size(&bench),
         off,
@@ -794,9 +788,9 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
 
     // Until the learner turns it on.
     manager.send("RECORDING ON please").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let (events_now, attempts_now) = record_size(&bench);
     assert!(events_now > off.0, "the words are kept again");
     let _ = attempts_now;
@@ -809,12 +803,12 @@ fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("PAUSE for now").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let paused = record_size(&bench);
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(record_size(&bench), paused);
     let state = bench.logged("message").pop().unwrap()["state"].clone();
     assert!(
@@ -826,9 +820,9 @@ fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
     manager
         .send_new_lesson("I'm back. Let's continue.")
         .unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert!(record_size(&bench).0 > paused.0);
     assert_eq!(bench.sessions(), 1);
     manager.shut_down();
@@ -851,13 +845,13 @@ fn an_interrupt_s_watchdog_never_stops_the_next_reply() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     manager.send("SLOW b = 5").unwrap();
     events.until("the first words", |e| {
         matches!(e, AgentEvent::TextDelta { .. })
     });
     manager.interrupt().unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     // At once, a reply that takes longer than the watchdog's eight seconds.
     events.seen.clear();
     manager.send("VERYSLOW b = 5").unwrap();
@@ -879,11 +873,11 @@ fn an_answer_whose_words_were_not_captured_says_it_was_not_marked() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     fs::write(bench.flags.join("fail-prompt-hook"), "").unwrap();
     events.seen.clear();
     manager.send("b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert!(bench.attempts().is_empty());
     // The notice comes with the record, just after the turn's end.
     let notice = events.until("a notice", |e| matches!(e, AgentEvent::Notice { .. }));
@@ -897,14 +891,13 @@ fn an_answer_after_an_unreadable_record_is_never_marked_on_the_old_task() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     // This reply may have posed a new task; its record cannot be read.
     manager.send("NEVERBLOCK b = 5").unwrap();
-    events.turn_end();
-    bench.settle();
+    done(&manager, &mut events);
     events.seen.clear();
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
     let notice = events.until("a notice", |e| matches!(e, AgentEvent::Notice { .. }));
     assert!(format!("{notice:?}").contains("not marked"), "{notice:?}");
@@ -920,7 +913,7 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     events.seen.clear();
     let sent = Instant::now();
     manager.send("b = 5").unwrap();
@@ -931,6 +924,7 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
         "{:?}",
         sent.elapsed()
     );
+    assert!(manager.wait_saved(Duration::from_secs(30)));
     // The save timed out, its server was replaced, and the same request,
     // sent again, was answered with its first result: one answer, no notice.
     let attempts = bench.attempts();
@@ -939,7 +933,7 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
     assert!(notices(&events).is_empty(), "{:#?}", events.seen);
     // The next turn goes on as usual.
     manager.send("b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(bench.attempts().len(), 2);
     manager.shut_down();
 }
@@ -950,11 +944,11 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    events.turn_end();
+    done(&manager, &mut events);
     events.take();
     // The message starts twice in one turn.
     manager.send("RESTART b = 5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
     assert_eq!(
         reply,
@@ -962,7 +956,7 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     );
     // The stream stops short; the finished message has the rest and the block.
     manager.send("CUTSHORT b = -5").unwrap();
-    assert!(ended_well(&events.turn_end()));
+    assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
     assert!(
         reply.starts_with("Right: the sign goes with the number."),
@@ -973,5 +967,75 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     assert_eq!(attempts.len(), 2, "both blocks were found: {attempts:#?}");
     let kept = bench.deliveries();
     assert_eq!(kept.last().unwrap(), &reply);
+    manager.shut_down();
+}
+
+/// On a machine under load each tool call is slow. A message sent while the
+/// last reply's record is being kept waits for it, and so reads the task
+/// that record left open; ending the lesson waits for it too.
+#[test]
+fn a_slow_record_holds_the_next_message_and_the_end_of_the_lesson() {
+    let bench = Bench::new(None, &[]);
+    fs::write(bench.flags.join("slow"), "1.0").unwrap();
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    // A wrong answer, and at once, before its record is kept, the next one.
+    manager.send("b = 5").unwrap();
+    events.turn_end();
+    manager.send("b = -5").unwrap();
+    done(&manager, &mut events);
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 2, "{attempts:#?}");
+    let wrong = attempts.iter().find(|a| a["mark"] == "wrong").unwrap();
+    let right = attempts.iter().find(|a| a["mark"] == "right").unwrap();
+    assert_eq!(wrong["question"], "What is b in x² − 5x + 6 = 0?");
+    // The task the first record opened.
+    assert_eq!(right["question"], "What is b in x² + 3x − 4 = 0?");
+    assert_ne!(wrong["response_event_id"], right["response_event_id"]);
+    // "I don't know", and the learner ends the lesson as the reply ends.
+    manager.send("I don't know").unwrap();
+    events.turn_end();
+    manager.stop(None).unwrap();
+    let attempts = bench.attempts();
+    assert_eq!(
+        attempts.len(),
+        3,
+        "the last answer kept before the end: {attempts:#?}"
+    );
+    assert!(attempts.iter().any(|a| a["mark"] == "declined"));
+    manager.shut_down();
+}
+
+/// A notice that comes after the turn's end still reaches the page.
+#[test]
+fn a_notice_after_the_turns_end_reaches_the_page() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    events.seen.clear();
+    manager.send("NEVERBLOCK b = 5").unwrap();
+    let end = events.turn_end();
+    assert!(ended_well(&end));
+    assert!(manager.wait_saved(Duration::from_secs(30)));
+    // Everything the page was sent, after the end of the turn included.
+    while let Ok(event) = events.receiver.try_recv() {
+        events.seen.push(event);
+    }
+    let after_end: Vec<&AgentEvent> = events
+        .seen
+        .iter()
+        .skip_while(|e| !matches!(e, AgentEvent::TurnEnded { .. }))
+        .collect();
+    assert!(
+        after_end
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Notice { text, .. } if text.contains("not marked"))),
+        "{:#?}",
+        events.seen
+    );
     manager.shut_down();
 }

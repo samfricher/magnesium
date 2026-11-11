@@ -193,4 +193,10 @@ pub trait Conversation: Send {
     fn answer(&mut self, id: &str, answers: &[Answer]) -> AgentResult<()>;
     /// End the process. The conversation can be continued later by its id.
     fn close(&mut self);
+    /// Wait, at most `limit`, until what the agent keeps after a reply has
+    /// been kept. True when it has. An agent that keeps nothing after the
+    /// reply ends has nothing to wait for.
+    fn wait_saved(&self, _limit: std::time::Duration) -> bool {
+        true
+    }
 }
