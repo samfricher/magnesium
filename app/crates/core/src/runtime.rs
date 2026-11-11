@@ -77,6 +77,29 @@ pub fn upgrade(root: &Path) -> Result<(), String> {
     .map(|_| ())
 }
 
+/// The lowest `window_features` this window works with. A runtime that says
+/// less, or nothing, is refused: its version number cannot tell, because a
+/// build from an older commit can carry the same one. 1 is the first runtime
+/// whose `progress --json` counts what the learner did today.
+pub const WINDOW_FEATURES_NEEDED: u64 = 1;
+
+/// The `window_features` number that `magnesium digest` prints: which of the
+/// window's needs this program meets. It is asked at the root of the disk, in
+/// no study folder, so no record is read and nothing changes. None when the
+/// program says no number, as every runtime from before it does.
+pub fn window_features(program: &Path) -> Option<u64> {
+    let mut command = paths::light_command(program);
+    command.current_dir("/").arg("digest");
+    let out = paths::run(command, Duration::from_secs(10)).ok()?;
+    let value: Value = serde_json::from_str(&out).ok()?;
+    value["window_features"].as_u64()
+}
+
+/// Whether a program is new enough for this window.
+pub fn fits_window(program: &Path) -> bool {
+    window_features(program).is_some_and(|number| number >= WINDOW_FEATURES_NEEDED)
+}
+
 pub fn version() -> Option<String> {
     let program = program()?;
     let mut command = paths::light_command(&program);
