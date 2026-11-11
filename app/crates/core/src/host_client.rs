@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -28,8 +28,30 @@ const HOST_KIND: &str = "claude";
 /// Claude Code's own session variable: the tool server's only way to know
 /// the conversation.
 const SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
-const HOOK_LIMIT: Duration = Duration::from_secs(10);
-const CALL_LIMIT: Duration = Duration::from_secs(60);
+const HOOK_LIMIT: Duration = Duration::from_secs(5);
+/// How long one tool call may take. A call is a few milliseconds; one that
+/// takes this long is taken for a hung server, which is replaced.
+const CALL_LIMIT: Duration = Duration::from_secs(8);
+/// Set to milliseconds to use another limit per tool call. For tests.
+pub const CALL_LIMIT_ENV: &str = "MAGNESIUM_APP_RUNTIME_CALL_MS";
+/// Asks the tool server for a sitting's quick checks as data.
+const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
+/// The start of an error whose outcome is unknown: the call may or may not
+/// have been carried out.
+const UNKNOWN: &str = "unknown outcome: ";
+
+/// Whether an error leaves the call's outcome unknown.
+pub fn unknown(error: &str) -> bool {
+    error.starts_with(UNKNOWN)
+}
+
+fn call_limit() -> Duration {
+    std::env::var(CALL_LIMIT_ENV)
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(CALL_LIMIT)
+}
 
 /// The runtime, for one conversation in one study folder.
 pub struct HostClient {
@@ -108,8 +130,14 @@ impl HostClient {
         let mut child = command
             .spawn()
             .map_err(|e| format!("the hook did not start: {e}"))?;
+        // Written on its own thread: a large payload to a hook slow to read
+        // it must not hold the turn past the hook's limit, when the hook is
+        // stopped and the write ends.
         if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(payload.to_string().as_bytes());
+            let payload = payload.to_string();
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(payload.as_bytes());
+            });
         }
         let mut stdout = child.stdout.take().ok_or("the hook gave no output pipe")?;
         let reader = std::thread::spawn(move || {
@@ -147,6 +175,7 @@ impl HostClient {
         command
             .current_dir(&self.folder)
             .env(SESSION_ENV, &self.session)
+            .env(CHECKS_ENV, "1")
             .args(["_internal", "mcp-server"])
             .args(self.flags())
             .stdin(Stdio::piped())
@@ -178,59 +207,70 @@ impl HostClient {
             lines,
             next: 0,
         };
-        server.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "magnesium-window", "version": env!("CARGO_PKG_VERSION")},
-            }),
-        )?;
+        server
+            .request(
+                "initialize",
+                json!({
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "magnesium-window", "version": env!("CARGO_PKG_VERSION")},
+                }),
+                call_limit(),
+            )
+            .map_err(Failure::text)?;
         server.notify("notifications/initialized")?;
         Ok(server)
     }
 
     /// Call one of the runtime's tools and return its JSON result. A result
-    /// the tool marks as an error comes back as `Err` with its text.
+    /// the tool marks as an error, or that holds only an error, comes back
+    /// as `Err` with its text.
     pub fn call(&self, tool: &str, arguments: Value) -> Result<Value, String> {
+        self.call_by(tool, arguments, Instant::now() + call_limit() * 2)
+    }
+
+    /// The same, finished by `deadline`. A server that dies or hangs is
+    /// replaced, and a call whose outcome that leaves unknown is sent once
+    /// more exactly as it was: the runtime answers a replayed request with
+    /// its first result. An error that starts as [`unknown`] says the
+    /// outcome is still unknown.
+    pub fn call_by(
+        &self,
+        tool: &str,
+        arguments: Value,
+        deadline: Instant,
+    ) -> Result<Value, String> {
         let mut guard = self.server.lock().unwrap_or_else(|p| p.into_inner());
-        // A server that died is started again, once.
-        for attempt in 0..2 {
+        let mut last: Option<String> = None;
+        for _ in 0..2 {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left < Duration::from_millis(100) {
+                break;
+            }
             if guard.is_none() {
                 *guard = Some(self.start_server()?);
             }
             let server = guard.as_mut().expect("started above");
-            match server.request("tools/call", json!({"name": tool, "arguments": arguments})) {
-                Ok(result) => {
-                    let text: String = result["content"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|block| block["text"].as_str())
-                        .collect();
-                    if result["isError"].as_bool() == Some(true) {
-                        return Err(text);
-                    }
-                    let value: Value = serde_json::from_str(&text)
-                        .map_err(|e| format!("the {tool} result is not JSON: {e}"))?;
-                    // A refused write comes back as a result that holds only
-                    // an error, such as recording_disabled.
-                    if let Some(error) = value.get("error").filter(|e| e.is_object()) {
-                        return Err(format!(
-                            "{}: {}",
-                            error["code"].as_str().unwrap_or("error"),
-                            error["message"].as_str().unwrap_or_default()
-                        ));
-                    }
-                    return Ok(value);
-                }
-                Err(error) if attempt == 0 && error.starts_with("closed") => {
+            match server.request(
+                "tools/call",
+                json!({"name": tool, "arguments": arguments}),
+                left.min(call_limit()),
+            ) {
+                Ok(result) => return answer(tool, &result),
+                Err(Failure::Refused(error)) => return Err(error),
+                // Not carried out: start the server again and send it.
+                Err(Failure::NotSent(error)) => {
                     *guard = None;
+                    last = Some(error);
                 }
-                Err(error) => return Err(error),
+                // Dropping the server stops its process.
+                Err(Failure::Unknown(error)) => {
+                    *guard = None;
+                    last = Some(format!("{UNKNOWN}{error}"));
+                }
             }
         }
-        Err("the tool server stopped".into())
+        Err(last.unwrap_or_else(|| "no time was left for the call".to_owned()))
     }
 
     /// End the tool server.
@@ -244,6 +284,49 @@ impl HostClient {
     }
 }
 
+/// How a request to the tool server failed.
+enum Failure {
+    /// The server answered with an error: it was refused.
+    Refused(String),
+    /// It never reached the server, so it was not carried out.
+    NotSent(String),
+    /// It reached the server and no answer came: it may have been.
+    Unknown(String),
+}
+
+impl Failure {
+    fn text(self) -> String {
+        match self {
+            Self::Refused(text) | Self::NotSent(text) | Self::Unknown(text) => text,
+        }
+    }
+}
+
+/// A tool call's result as JSON, or the error it holds.
+fn answer(tool: &str, result: &Value) -> Result<Value, String> {
+    let text: String = result["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+    if result["isError"].as_bool() == Some(true) {
+        return Err(text);
+    }
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("the {tool} result is not JSON: {e}"))?;
+    // A refused write comes back as a result that holds only an error, such
+    // as recording_disabled.
+    if let Some(error) = value.get("error").filter(|e| e.is_object()) {
+        return Err(format!(
+            "{}: {}",
+            error["code"].as_str().unwrap_or("error"),
+            error["message"].as_str().unwrap_or_default()
+        ));
+    }
+    Ok(value)
+}
+
 impl Server {
     fn send(&mut self, value: &Value) -> Result<(), String> {
         let mut line = value.to_string();
@@ -251,25 +334,30 @@ impl Server {
         self.stdin
             .write_all(line.as_bytes())
             .and_then(|()| self.stdin.flush())
-            .map_err(|e| format!("closed: {e}"))
+            .map_err(|e| format!("the tool server is not listening: {e}"))
     }
 
     fn notify(&mut self, method: &str) -> Result<(), String> {
         self.send(&json!({"jsonrpc": "2.0", "method": method}))
     }
 
-    fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn request(&mut self, method: &str, params: Value, limit: Duration) -> Result<Value, Failure> {
         self.next += 1;
         let id = self.next;
-        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
+        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
+            .map_err(Failure::NotSent)?;
+        let deadline = Instant::now() + limit;
         loop {
-            let line = self.lines.recv_timeout(CALL_LIMIT).map_err(|e| match e {
-                std::sync::mpsc::RecvTimeoutError::Timeout => {
-                    "the tool server took too long".to_owned()
-                }
-                std::sync::mpsc::RecvTimeoutError::Disconnected => {
-                    "closed: the tool server ended".to_owned()
-                }
+            let left = deadline.saturating_duration_since(Instant::now());
+            let line = self.lines.recv_timeout(left).map_err(|e| {
+                Failure::Unknown(match e {
+                    std::sync::mpsc::RecvTimeoutError::Timeout => {
+                        "the tool server took too long".to_owned()
+                    }
+                    std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                        "the tool server ended".to_owned()
+                    }
+                })
             })?;
             let Ok(value) = serde_json::from_str::<Value>(&line) else {
                 continue;
@@ -278,7 +366,9 @@ impl Server {
                 continue;
             }
             if let Some(error) = value.get("error") {
-                return Err(error["message"].as_str().unwrap_or("error").to_owned());
+                return Err(Failure::Refused(
+                    error["message"].as_str().unwrap_or("error").to_owned(),
+                ));
             }
             return Ok(value["result"].clone());
         }
