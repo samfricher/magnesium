@@ -90,9 +90,8 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(empty["days"], json!([]), "{empty}");
 
-    // Day one. A right, cold, unaided first answer on a skill earns its
-    // first pass and makes a check for 3 days on. A miss makes a check for
-    // the next day.
+    // Day one. A right, cold, unaided answer on a skill that is never got
+    // wrong, a miss that makes a quick check, and a declined question.
     answer(
         &e,
         "a-1",
@@ -109,7 +108,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     let units = skill(&first_day, "units of a rate");
     assert_eq!(
         (units["passes"].as_i64(), units["quick_check"].as_bool()),
-        (Some(1), Some(true)),
+        (Some(1), Some(false)),
         "{units}"
     );
     let sign = skill(&first_day, "sign of b");
@@ -128,9 +127,8 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "{first_day}"
     );
 
-    // Day two. The miss's check is due, and passing it cold earns its first
-    // pass. The other skill is answered right again before its check is
-    // due, which counts neither way.
+    // Day two. The check is due, and passing it cold earns its first pass.
+    // The other skill is answered right again, on its second day.
     days_pass(&e, 1);
     let due = progress(&e);
     assert_eq!(due["due"]["checks"], 1, "{due}");
@@ -170,7 +168,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "the second pass is at least three days after the first: {sign}"
     );
     assert_eq!(sign["last_pass_on"], json!(today.to_string()), "{sign}");
-    assert_eq!(skill(&value, "units of a rate")["passes"], 1, "{value}");
+    assert_eq!(skill(&value, "units of a rate")["passes"], 2, "{value}");
     // Right only after a hint: no pass, and a check due the next day.
     let hinted = skill(&value, "competitive inhibition");
     assert_eq!(
@@ -211,7 +209,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         text.contains("In no plan: 0 proven, 3 in progress"),
         "{text}"
     );
-    assert!(text.contains("●○○  units of a rate"), "{text}");
+    assert!(text.contains("●●○  units of a rate"), "{text}");
     assert!(
         text.contains("Days with a marked answer: 2 in all."),
         "{text}"
@@ -343,132 +341,6 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
     );
 }
 
-fn checks_on(e: &TestEnvironment, label: &str) -> i64 {
-    store(e)
-        .query_row(
-            "SELECT COUNT(*) FROM practice_items WHERE label_key=?1",
-            [label],
-            |r| r.get(0),
-        )
-        .unwrap()
-}
-
-#[test]
-fn a_right_first_answer_that_is_not_cold_makes_a_check_for_the_next_day_with_no_pass() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    v2::start(&e, "claude", THREAD);
-    let units = |id: &str, cold: bool| {
-        json!({"label":"units of a rate","question":format!("Units, {id}?"),
-            "first_try":"right","help":"none","cold":cold})
-    };
-    // The first answer on a skill, right and alone, makes a check for tomorrow.
-    answer(&e, "a-1", "µM per second", units("a-1", false));
-    let today = Local::now().date_naive();
-    let tomorrow = today.checked_add_days(Days::new(1)).unwrap();
-    let first = progress(&e);
-    let skill_now = skill(&first, "units of a rate");
-    assert_eq!(
-        (
-            skill_now["passes"].as_i64(),
-            skill_now["quick_check"].as_bool(),
-            skill_now["due"].as_bool()
-        ),
-        (Some(0), Some(true), Some(false)),
-        "{skill_now}"
-    );
-    assert_eq!(skill_now["next_on"], json!(tomorrow.to_string()));
-    // A second right answer on it makes nothing new.
-    answer(&e, "a-2", "µM/s", units("a-2", false));
-    assert_eq!(checks_on(&e, "units of a rate"), 1);
-
-    // Tomorrow the check is due, and a cold pass moves it on by 3 days,
-    // as every check does.
-    days_pass(&e, 1);
-    assert_eq!(progress(&e)["due"]["checks"], 1);
-    answer(&e, "b-1", "µM per second", units("b-1", true));
-    let passed = progress(&e);
-    let skill_now = skill(&passed, "units of a rate");
-    assert_eq!(skill_now["passes"], 1, "{skill_now}");
-    assert_eq!(
-        skill_now["next_on"],
-        json!(today.checked_add_days(Days::new(3)).unwrap().to_string()),
-        "{skill_now}"
-    );
-    assert_eq!(checks_on(&e, "units of a rate"), 1);
-
-    // A skill answered before, on a paper, gets no check from a right
-    // chat answer: its passes are still counted from its answers.
-    answer(
-        &e,
-        "b-2",
-        "4",
-        json!({"label":"mean","question":"Mean of 2, 4, 6?","first_try":"right","help":"none","cold":true,
-            "paper":{"name":"MockA","question":"1","marks":2,"out_of":2}}),
-    );
-    assert_eq!(checks_on(&e, "mean"), 0);
-    answer(
-        &e,
-        "b-3",
-        "5",
-        json!({"label":"mean","question":"Mean of 4 and 6?","first_try":"right","help":"none","cold":false}),
-    );
-    assert_eq!(checks_on(&e, "mean"), 0);
-    assert_eq!(skill(&progress(&e), "mean")["passes"], 1);
-}
-
-#[test]
-fn a_clean_first_answer_keeps_its_pass_and_its_check_comes_back_on_the_spacing_date() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    v2::start(&e, "claude", THREAD);
-    let units = |id: &str| {
-        json!({"label":"units of a rate","question":format!("Units, {id}?"),
-            "first_try":"right","help":"none","cold":true})
-    };
-    answer(&e, "a-1", "µM per second", units("a-1"));
-    let today = Local::now().date_naive();
-    let first = progress(&e);
-    let held = skill(&first, "units of a rate");
-    // One pass at once, held by a check that comes back 3 days on.
-    assert_eq!(
-        (
-            held["passes"].as_i64(),
-            held["best_passes"].as_i64(),
-            held["quick_check"].as_bool(),
-            held["due"].as_bool()
-        ),
-        (Some(1), Some(1), Some(true), Some(false)),
-        "{held}"
-    );
-    assert_eq!(
-        held["next_on"],
-        json!(today.checked_add_days(Days::new(3)).unwrap().to_string()),
-        "{held}"
-    );
-    assert_eq!(held["last_pass_on"], json!(today.to_string()), "{held}");
-    assert_eq!(
-        first["today_counts"],
-        json!({"answered": 1, "started": 1, "passes": 1, "due_tomorrow": 0}),
-        "{first}"
-    );
-    assert_eq!(checks_on(&e, "units of a rate"), 1);
-
-    // On that date the check is due, and a clean answer is the second pass.
-    days_pass(&e, 3);
-    assert_eq!(progress(&e)["due"]["checks"], 1);
-    answer(&e, "b-1", "µM/s", units("b-1"));
-    let second = progress(&e);
-    let held = skill(&second, "units of a rate");
-    assert_eq!(held["passes"], 2, "{held}");
-    assert_eq!(
-        held["next_on"],
-        json!(today.checked_add_days(Days::new(7)).unwrap().to_string()),
-        "{held}"
-    );
-    assert_eq!(second["today_counts"]["passes"], 1, "{second}");
-}
-
 #[test]
 fn progress_counts_what_the_learner_did_today() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -486,9 +358,10 @@ fn progress_counts_what_the_learner_did_today() {
         json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
     );
     days_pass(&e, 1);
-    // Today: the check is passed, a new skill is answered right (its check
-    // is due tomorrow), a paper answer on a third skill earns a pass, and a
-    // question is declined, which is no answer.
+    // Today: the check is passed, a new skill is answered right, cold and
+    // alone (a pass, with no check), a paper answer on a third skill earns a
+    // pass, and a question is declined, which is no answer and makes a check
+    // due tomorrow.
     answer(
         &e,
         "b-1",
@@ -499,7 +372,7 @@ fn progress_counts_what_the_learner_did_today() {
         &e,
         "b-2",
         "µM per second",
-        json!({"label":"units of a rate","question":"Units of Vmax?","first_try":"right","help":"none","cold":false}),
+        json!({"label":"units of a rate","question":"Units of Vmax?","first_try":"right","help":"none","cold":true}),
     );
     answer(
         &e,
@@ -517,7 +390,7 @@ fn progress_counts_what_the_learner_did_today() {
     let value = progress(&e);
     assert_eq!(
         value["today_counts"],
-        json!({"answered": 3, "started": 2, "passes": 2, "due_tomorrow": 2}),
+        json!({"answered": 3, "started": 2, "passes": 3, "due_tomorrow": 1}),
         "{value}"
     );
     // The date stays where it was.
