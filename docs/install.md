@@ -84,7 +84,6 @@ magnesium init
 - One `extraKnownMarketplaces` entry in Claude Code's `~/.claude/settings.json` (or in `$CLAUDE_CONFIG_DIR/settings.json`). That entry names the plugin folder and enables nothing.
 - `.claude/settings.local.json` in the study folder. It turns the plugin on for this folder only. It also allows Magnesium's tools, reads of the plugin folder, the three Magnesium skills and `magnesium digest`.
 - In a Git repository, entries for `.magnesium/` and `.claude/settings.local.json` in `.git/info/exclude`.
-- With `--adapter agents-md` only, a bounded Magnesium block in the folder's `AGENTS.md`.
 
 `magnesium init` prints a result line for the Claude Code plugin. Tell the user what it wrote.
 

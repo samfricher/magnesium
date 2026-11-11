@@ -118,7 +118,7 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
         "magnesium digest changed the folder"
     );
     assert_eq!(value["active"], true);
-    // Hidden entries and setup's AGENTS.md are skipped; the plan files are a level too deep.
+    // Hidden entries and AGENTS.md are skipped; the plan files are a level too deep.
     assert_eq!(
         value["files"],
         json!({"count":3,"listed":["Study/","Study/midterm-1/","lesson.md"],"truncated":false})
