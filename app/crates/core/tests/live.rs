@@ -83,12 +83,10 @@ impl Live {
                         self.manager.interrupt().expect("the interrupt is sent");
                     }
                 }
-                AgentEvent::Working { doing } => {
-                    if let Some(doing) = doing {
-                        if report.doing.last() != Some(&doing) {
-                            report.doing.push(doing);
-                        }
-                    }
+                AgentEvent::Working { doing: Some(doing) }
+                    if report.doing.last() != Some(&doing) =>
+                {
+                    report.doing.push(doing);
                 }
                 AgentEvent::TextDone { text } => {
                     report

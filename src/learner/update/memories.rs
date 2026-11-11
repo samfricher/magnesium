@@ -7,15 +7,20 @@ fn observation_basis(
     id: &str,
     new: bool,
 ) -> Result<String> {
+    let earlier;
     let id = if new {
-        refs.get(id).ok_or_else(|| {
-            // Most often a client_ref from an earlier request. Saying so
-            // lets one retry fix it.
-            LearnerError::new(
-                "unknown_reference",
-                format!("{id}: new_observation names an observation of this same request. For an observation from an earlier request, send {{\"observation_id\":\"o-…\"}} with the id that request's references gave"),
-            )
-        })?
+        match refs.get(id) {
+            Some(found) => found.as_str(),
+            None => {
+                earlier = earlier_observation(conn, id)?.ok_or_else(|| {
+                    LearnerError::new(
+                        "unknown_reference",
+                        format!("{id}: new_observation names an observation of this same request. For an observation from an earlier request, send {{\"observation_id\":\"o-…\"}} with the id that request's references gave"),
+                    )
+                })?;
+                earlier.as_str()
+            }
+        }
     } else {
         id
     };
@@ -28,6 +33,24 @@ fn observation_basis(
         return Err(unknown(id));
     }
     Ok(id.to_owned())
+}
+/// A tutor often cites, as a new observation, one it made by that name in
+/// its previous request: in the live runs of 2026-11-11 this refusal and its
+/// retry cost about nine seconds of a learner's wait. The name is read from
+/// the latest committed request, in the last two hours, whose references
+/// gave it to an observation. A name no recent request gave is still refused.
+fn earlier_observation(conn: &Connection, name: &str) -> Result<Option<String>> {
+    let since = crate::learner::store::now_ms() - 2 * 60 * 60 * 1000;
+    Ok(conn
+        .query_row(
+            "SELECT r.value FROM operation_receipts o, json_each(o.result_json, '$.references') r
+             WHERE r.key=?1 AND o.created_at_ms>=?2 AND r.value LIKE 'o-%'
+               AND EXISTS(SELECT 1 FROM observations WHERE observation_id=r.value)
+             ORDER BY o.created_at_ms DESC, o.rowid DESC LIMIT 1",
+            params![name, since],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?)
 }
 fn current_basis(
     conn: &Connection,
