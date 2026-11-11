@@ -35,6 +35,7 @@ mod practice;
 mod progress;
 mod readings;
 mod review_queue;
+mod searchable;
 mod security;
 mod sittings;
 mod smoke;

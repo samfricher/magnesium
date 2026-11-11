@@ -53,6 +53,13 @@ pub fn run() -> ExitCode {
         Some(("digest", _)) => digest::print_digest(),
         Some(("attempts", matches)) => attempts::print_attempts(matches.get_flag("json")),
         Some(("progress", matches)) => progress::print_progress(matches.get_flag("json")),
+        Some(("searchable", matches)) => {
+            let paths: Vec<PathBuf> = matches
+                .get_many::<PathBuf>("paths")
+                .map(|paths| paths.cloned().collect())
+                .unwrap_or_default();
+            retrieval::run_searchable(&paths, matches.get_flag("json"))
+        }
         Some(("core-rules", matches)) => {
             let on = matches.get_one::<String>("state").map(String::as_str) == Some("on");
             adapter::set_core_rules(on)
