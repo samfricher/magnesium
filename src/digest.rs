@@ -26,6 +26,23 @@ const MAX_QUOTED_CHARS: usize = 40;
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
 const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 
+/// Which of the window's needs this runtime meets, as one number. The window
+/// refuses a runtime that reports a lower number, or none. A version number
+/// cannot tell: a build from an older commit can carry the same one. Raise it
+/// when the window comes to need something new of the runtime.
+///
+/// 1: `progress --json` with `today_counts`.
+pub(crate) const WINDOW_FEATURES: u64 = 1;
+
+/// Every digest says the number, in a study folder or outside one, so the
+/// window can ask without a folder.
+fn with_window_features(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert("window_features".into(), json!(WINDOW_FEATURES));
+    }
+    value
+}
+
 pub(crate) fn print_digest() -> ExitCode {
     let result = (|| {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
@@ -38,7 +55,7 @@ pub(crate) fn print_digest() -> ExitCode {
         Ok(value) => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&value).unwrap_or_default()
+                serde_json::to_string_pretty(&with_window_features(value)).unwrap_or_default()
             );
             ExitCode::SUCCESS
         }
