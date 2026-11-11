@@ -912,7 +912,7 @@ fn served_orientation_opens_a_new_topic_with_three_graded_questions() {
         "Explain nothing between them. Record each answer as an attempt, as any first try.",
         "Stop at the first miss, and start teaching there: say in one line what the learner got right, build on it, and do not teach it again.",
         "After three right answers, aim higher",
-        "Skip the set when the record already holds answers on the topic, for a plain factual question, or when the learner says where to start.",
+        "Skip the set when the record already holds answers on the topic, as the session start's earlier_answers or a memory shows, for a plain factual question, or when the learner says where to start.",
         "Then ask at most one discriminating question at a time",
     ] {
         assert!(text.contains(rule), "{host}/orient_and_probe: {rule}");

@@ -323,3 +323,40 @@ fn progress_outside_a_study_folder_says_so() {
     let output = e.command().arg("progress").output().unwrap();
     assert!(!output.status.success(), "{output:?}");
 }
+
+#[test]
+fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    answer(
+        &e,
+        "a-1",
+        "3/5",
+        json!({"label":"adding fractions with the same denominator","question":"1/5 + 2/5 of a pizza","first_try":"right","help":"none","cold":false}),
+    );
+    answer(
+        &e,
+        "a-2",
+        "µM per second",
+        json!({"label":"units of a rate","question":"What are the units of Vmax?","first_try":"right","help":"none","cold":true}),
+    );
+    let started = v2::tool(
+        &e,
+        "claude",
+        "another-conversation",
+        "learning_step",
+        json!({"schema":"learner-model/v2","action":"update","request_id":"again",
+            "session":{"operation":"start","client_ref":"s","goal":"Adding fractions with different denominators"}}),
+    );
+    assert_eq!(started["update_status"], "committed", "{started}");
+    let earlier = started["earlier_answers"]
+        .as_array()
+        .expect("earlier answers");
+    assert_eq!(earlier.len(), 1, "{started}");
+    assert_eq!(
+        earlier[0]["label"],
+        "adding fractions with the same denominator"
+    );
+    assert_eq!(earlier[0]["mark"], "right");
+}
