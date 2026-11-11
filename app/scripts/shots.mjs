@@ -11,6 +11,12 @@ import { createServer } from "vite";
 const only = process.argv[2];
 const shots = [
   ["welcome", "welcome", 600],
+  ["welcome-first-open", "welcome:first", 600],
+  ["welcome-replace", "welcome:replace", 600],
+  ["welcome-signed-out", "welcome:signed-out", 600],
+  ["welcome-no-claude", "welcome:no-claude", 600],
+  ["welcome-key-in-use", "welcome:key", 600],
+  ["entrance-upgrade", "entrance:upgrade", 600],
   ["entrance", "entrance", 600],
   ["entrance-quiet", "entrance:quiet", 600],
   ["entrance-new-folder", "entrance:new", 600],

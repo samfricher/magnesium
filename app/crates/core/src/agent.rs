@@ -102,6 +102,37 @@ pub struct Answer {
     pub chosen: Vec<String>,
 }
 
+/// How lessons are paid for. The learner chooses, and the window starts the
+/// agent so that the choice holds. The window never reads or stores a
+/// credential: it shows what the agent itself reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Payment {
+    /// The learner's plan with the agent's maker, such as a Claude plan.
+    #[default]
+    Plan,
+    /// An API key, paid per use.
+    ApiKey,
+}
+
+/// The agent on this computer: whether it is there and signed in, and how a
+/// lesson started now would be paid for, as the agent reports it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Account {
+    /// The agent's name, such as "Claude Code".
+    pub name: String,
+    pub installed: bool,
+    pub signed_in: bool,
+    /// How a lesson started now is paid for. None when no lesson can start.
+    pub paid_with: Option<Payment>,
+    /// The same in plain words, such as "your Claude Max plan".
+    pub detail: Option<String>,
+    /// What stands in the way of the learner's choice, in one or two lines.
+    pub problem: Option<String>,
+    /// The maker's install page, when the agent is missing.
+    pub install_page: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct StartOptions {
     /// The study folder. The agent runs here, so it loads this folder's
@@ -109,6 +140,8 @@ pub struct StartOptions {
     pub folder: PathBuf,
     /// The agent's own id of a conversation to continue.
     pub resume: Option<String>,
+    /// How the learner chose to pay for lessons.
+    pub payment: Payment,
 }
 
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
@@ -137,6 +170,13 @@ pub trait Harness: Send + Sync {
     fn new_lesson(&self, goal: &str) -> String;
     /// The learner's words for practice-paper work, such as "mark my Paper B".
     fn papers(&self, request: &str) -> String;
+    /// Whether the agent is installed and signed in, and how a lesson started
+    /// now with this choice would be paid for. It reads no credential.
+    fn account(&self, payment: Payment) -> Account;
+    /// Start the agent's own sign-in for this way of paying. It opens the
+    /// maker's page in the browser, and the window sees nothing typed there.
+    /// It returns while the sign-in waits; `account` then shows the result.
+    fn sign_in(&self, payment: Payment) -> AgentResult<()>;
 }
 
 /// One running conversation with the tutor.

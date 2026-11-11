@@ -7,7 +7,7 @@ import { composing } from "./Session";
 
 export type Command = { label: string; hint?: string; run: () => void };
 
-export function Palette(props: { commands: Command[]; onClose: () => void }) {
+export function Palette(props: { commands: Command[]; footer?: string | null; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -76,6 +76,7 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
           ))}
           {shown.length === 0 && <div className="none">Nothing matches.</div>}
         </div>
+        {props.footer && <div className="palfoot selectable">{props.footer}</div>}
       </div>
     </div>
   );

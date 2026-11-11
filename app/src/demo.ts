@@ -3,7 +3,7 @@
 // Nothing here ships a real course, a real grade or a real learner's words.
 
 import type { Actions } from "./App";
-import type { AgentEvent, Core, Home, Opened, Paper, PaperSitting, Progress, Rail, Row, Turn } from "./types";
+import type { Account, AgentEvent, Core, Home, Opened, Paper, PaperSitting, Payment, Progress, Rail, Row, RuntimeSetup, Setup, Turn } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
 
@@ -41,11 +41,79 @@ function home(): Home {
     return { ...base, state: "not_set_up", exam: null, last: null, checks_due: 0, redos_due: 0, first_redo: null, papers: [], can_resume: false };
   }
   if (variant === "quiet") return { ...base, checks_due: 0, redos_due: 0, first_redo: null };
+  if (variant === "upgrade") {
+    return {
+      ...base,
+      state: "needs_upgrade",
+      message:
+        "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
+      exam: null,
+      last: null,
+      checks_due: 0,
+      redos_due: 0,
+      first_redo: null,
+      papers: [],
+    };
+  }
   if (variant === "broken") {
     return { ...base, state: "no_runtime", message: "The magnesium program is not installed, or the window cannot find it. Install Magnesium, then open the window again." };
   }
   return base;
 }
+
+// What the setup screen shows, chosen by the address: #welcome:replace,
+// #welcome:signed-out, #welcome:no-claude, #welcome:key or #welcome:first.
+let setupVariant = "";
+let payment: Payment = "plan";
+let signedIn = true;
+const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
+
+function runtimeSetup(): RuntimeSetup {
+  const bundled = program("0.3.0+4f1c2ad9e0b7");
+  if (setupVariant === "replace") {
+    return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  }
+  return { state: "ready", installed: bundled, bundled, installed_now: setupVariant === "first", message: null };
+}
+
+function account(): Account {
+  const base: Account = {
+    name: "Claude Code",
+    installed: true,
+    signed_in: true,
+    paid_with: "plan",
+    detail: "your Claude Max plan",
+    problem: null,
+    install_page: null,
+  };
+  if (setupVariant === "no-claude") {
+    return {
+      ...base,
+      installed: false,
+      signed_in: false,
+      paid_with: null,
+      detail: null,
+      problem: "Claude Code is not on this Mac, or the window cannot find it. Install it, then check again.",
+      install_page: "https://code.claude.com/docs/en/setup",
+    };
+  }
+  if (!signedIn) {
+    return { ...base, signed_in: false, paid_with: null, detail: null, problem: "Claude Code is not signed in. Sign in with your Claude account." };
+  }
+  if (setupVariant === "key" && payment === "plan") {
+    return {
+      ...base,
+      paid_with: "api_key",
+      detail: "an API key set in ANTHROPIC_API_KEY, per use",
+      problem:
+        "Claude Code would pay with an API key set in ANTHROPIC_API_KEY, per use, not your Claude plan. Sign in with your Claude account to use the plan.",
+    };
+  }
+  if (payment === "api_key") return { ...base, paid_with: "api_key", detail: "your Anthropic Console sign-in, per use" };
+  return base;
+}
+
+const demoSetup = (): Setup => ({ runtime: runtimeSetup(), account: account(), payment });
 
 const rail: Rail = {
   goal: "PS3 Q3 · reading Vmax and Km from a Lineweaver-Burk plot",
@@ -198,12 +266,44 @@ export function demoCore(): Core {
     recent: async () => ["/Users/you/Study/Demo-Course", "/Users/you/Study/Another-Course"],
     pickFolder: async () => "/Users/you/Study/Demo-Course",
     pickFiles: async () => ["/Users/you/Desktop/IMG_0412.heic"],
+    pickNewFolder: async () => "/Users/you/Study/New-Course",
     openFolder: async () => home(),
+    newFolder: async () => {
+      variant = "new";
+      return { ...home(), folder: "/Users/you/Study/New-Course", name: "New-Course" };
+    },
     home: async () => home(),
     setUp: async () => {
       variant = "quiet";
       return { ...home(), state: "empty", last: null, exam: null, papers: [] };
     },
+    upgradeFolder: async () => {
+      await wait(600);
+      variant = "ready";
+      return home();
+    },
+    setup: async () => demoSetup(),
+    replaceRuntime: async () => {
+      setupVariant = "";
+      return { ...runtimeSetup(), installed_now: true };
+    },
+    keepRuntime: async () => ({
+      state: "kept",
+      installed: program("0.2.0"),
+      bundled: program("0.3.0+4f1c2ad9e0b7"),
+      installed_now: false,
+      message:
+        "Lessons use the Magnesium already on this Mac, version 0.2.0. They teach with that version's rules, and it cannot open a folder that a newer Magnesium has upgraded.",
+    }),
+    account: async () => account(),
+    setPayment: async (chosen) => {
+      payment = chosen;
+      return account();
+    },
+    signIn: async () => {
+      window.setTimeout(() => (signedIn = true), 3000);
+    },
+    about: async () => ({ version: "0.3.0-rc.1", commit: "4f1c2ad9e0b7" }),
     openSession: async (resume): Promise<Opened> => ({ resumed: resume, turns: resume && variant !== "new" ? earlier : [] }),
     send: async (text) => void reply(text),
     sendNewLesson: async (goal) => void reply(goal),
@@ -252,8 +352,12 @@ export function demoCore(): Core {
 
 /** Choose the demo's data before the page first asks for it. */
 export function chooseVariant(): void {
-  const [, state] = location.hash.slice(1).split(":");
-  if (["new", "quiet", "broken"].includes(state)) variant = state;
+  const [screen, state] = location.hash.slice(1).split(":");
+  if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
+  if (screen === "welcome" && state) {
+    setupVariant = state;
+    signedIn = state !== "signed-out";
+  }
   if (location.hash.startsWith("#paper:running")) {
     sitting = { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - (12 * 60 + 48) * 1000 };
   }

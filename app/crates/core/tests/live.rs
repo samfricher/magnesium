@@ -126,6 +126,36 @@ impl Live {
     }
 }
 
+impl Live {
+    /// Press Stop once that many pieces of the reply have arrived, as the
+    /// Stop button does while the tutor writes. Returns what arrived before.
+    fn stop_during_reply(&self, limit: Duration, after: usize, line: &str) -> TurnReport {
+        let deadline = Instant::now() + limit;
+        let mut report = TurnReport::default();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.events.recv_timeout(left) {
+                Ok(AgentEvent::TextDelta { .. }) => {
+                    report.deltas += 1;
+                    if report.deltas == after {
+                        self.manager
+                            .stop(Some(line))
+                            .expect("Stop closes the lesson");
+                        return report;
+                    }
+                }
+                Ok(AgentEvent::TurnEnded { ok, .. }) => {
+                    panic!(
+                        "the reply ended (ok: {ok}) before Stop was pressed; so far: {report:#?}"
+                    )
+                }
+                Ok(_) => {}
+                Err(_) => panic!("no reply within {limit:?}; so far: {report:#?}"),
+            }
+        }
+    }
+}
+
 fn show(title: &str, report: &TurnReport) {
     println!("\n== {title} ==");
     println!(
@@ -226,11 +256,28 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         "an interrupt sent before the first word did not end the turn"
     );
 
+    // Stop pressed while the tutor writes. The reply is interrupted first,
+    // then the conversation closes, and nothing more reaches the page.
     live.manager
-        .stop(Some("primes: the proof that there are infinitely many"))
+        .send("In about 400 words, explain how the sieve of Eratosthenes finds primes.")
         .unwrap();
+    let stopped = live.stop_during_reply(
+        minutes(10),
+        3,
+        "primes: the proof that there are infinitely many",
+    );
+    show("3c. Stop pressed during a reply", &stopped);
+    // The agent sends text in bursts, so pieces that reached the page before
+    // Stop can still wait in this test's queue. Once stop() returns, the
+    // window passes nothing more on, so all that waits arrived before Stop.
+    let before_stop = live.events.try_iter().count();
+    println!("events that reached the page before Stop, still queued: {before_stop}");
+    let after_stop = live.events.recv_timeout(Duration::from_secs(15));
+    assert!(
+        after_stop.is_err(),
+        "the stopped conversation still reached the page: {after_stop:?}"
+    );
     drop(live);
-    std::thread::sleep(Duration::from_secs(2));
 
     // The window, opened again.
     let again = Live::new(&folder, &home);
@@ -275,5 +322,5 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         !sessions.is_empty(),
         "no lesson was recorded, so Magnesium's hooks or tool server did not run as they do in a terminal"
     );
-    println!("\nAll four parts passed. Look in: {}", folder.display());
+    println!("\nAll five parts passed. Look in: {}", folder.display());
 }

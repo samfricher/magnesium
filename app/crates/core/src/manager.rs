@@ -11,10 +11,11 @@ use chrono::Local;
 use serde::Serialize;
 
 use crate::agent::{
-    AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink, Harness,
-    StartOptions,
+    Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
+    Harness, Payment, StartOptions,
 };
 use crate::files;
+use crate::install::{self, RuntimeSetup};
 use crate::runtime;
 use crate::store::{PaperSitting, Store, Turn};
 use crate::study::{self, Home, Paper, Progress, Rail};
@@ -46,6 +47,15 @@ pub struct Manager {
     /// Counts conversations. A conversation that was closed or replaced
     /// still runs for a while, and its events must not reach the page.
     current: Arc<Mutex<u64>>,
+}
+
+/// What this Mac has for lessons: the `magnesium` program, the agent and how
+/// lessons are paid for. The start screen shows it before the first folder.
+#[derive(Clone, Debug, Serialize)]
+pub struct Setup {
+    pub runtime: RuntimeSetup,
+    pub account: Account,
+    pub payment: Payment,
 }
 
 /// What the session screen needs when it opens.
@@ -150,6 +160,66 @@ impl Manager {
         Ok(study::home(&folder, &self.store))
     }
 
+    /// Upgrade a folder an earlier Magnesium set up, after the learner
+    /// agreed. The runtime keeps a copy of the record before it changes it.
+    pub fn upgrade_folder(&self) -> AgentResult<Home> {
+        let folder = self.need_folder()?;
+        runtime::upgrade(&study::root(&folder))
+            .map_err(|e| AgentError(format!("Magnesium could not upgrade this folder: {e}.")))?;
+        Ok(study::home(&folder, &self.store))
+    }
+
+    /// Make a new, empty study folder and open it. Its first lesson sets it
+    /// up, as in any folder Magnesium has not been set up in.
+    pub fn new_folder(&self, path: &Path) -> AgentResult<Home> {
+        if path.exists() {
+            return Err(AgentError(
+                "A file or folder with that name is already there.".into(),
+            ));
+        }
+        std::fs::create_dir_all(path)
+            .map_err(|e| AgentError(format!("The folder could not be made: {e}.")))?;
+        self.open_folder(path)
+    }
+
+    /// The program, the agent and the way of paying, after installing the
+    /// app's own program if none is installed.
+    pub fn setup(&self) -> Setup {
+        let payment = self.store.payment();
+        Setup {
+            runtime: install::check(&self.store),
+            account: self.harness.account(payment),
+            payment,
+        }
+    }
+
+    /// Replace another installed `magnesium` with the app's own. The learner
+    /// agreed to this.
+    pub fn replace_runtime(&self) -> RuntimeSetup {
+        install::replace(&self.store)
+    }
+
+    /// Keep another installed `magnesium` and stop asking about it.
+    pub fn keep_runtime(&self) -> RuntimeSetup {
+        install::keep(&self.store)
+    }
+
+    pub fn account(&self) -> Account {
+        self.harness.account(self.store.payment())
+    }
+
+    /// Choose how lessons are paid for. The next conversation is started
+    /// that way, and the account shows how it would be paid for.
+    pub fn set_payment(&self, payment: Payment) -> Account {
+        self.store.set_payment(payment);
+        self.harness.account(payment)
+    }
+
+    /// Start the agent's own sign-in for the chosen way of paying.
+    pub fn sign_in(&self) -> AgentResult<()> {
+        self.harness.sign_in(self.store.payment())
+    }
+
     /// The sink the agent writes to. It keeps the window's own copy of each
     /// turn and remembers the conversation's id, then passes the event on.
     /// Once the conversation is closed or replaced, it only keeps the copy of
@@ -226,6 +296,14 @@ impl Manager {
     /// starts a new conversation.
     pub fn open_session(&self, resume: bool) -> AgentResult<Opened> {
         let folder = self.need_folder()?;
+        // The agent's hooks would open the record, and an earlier version's
+        // record would be upgraded without the learner's yes.
+        if study::needs_upgrade(&folder) {
+            return Err(AgentError(
+                "An earlier Magnesium set this folder up. Upgrade it from the start screen first."
+                    .into(),
+            ));
+        }
         let mut inner = lock(&self.inner);
         let running = inner.conversation.is_some() && !lock(&inner.buffer).ended;
         if running && resume {
@@ -255,6 +333,7 @@ impl Manager {
             StartOptions {
                 folder: folder.clone(),
                 resume: remembered.clone(),
+                payment: self.store.payment(),
             },
             self.sink_for(folder.clone(), Arc::clone(&buffer), generation),
         )?;

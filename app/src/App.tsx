@@ -3,17 +3,34 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { Entrance, Welcome } from "./Entrance";
+import { Entrance } from "./Entrance";
 import { Palette, type Command } from "./Palette";
 import { Paper } from "./Paper";
 import { Progress } from "./Progress";
 import { Session } from "./Session";
+import { Welcome, aboutText, setupReady } from "./Setup";
 import { busy, emptySession, reduce } from "./lesson";
-import type { AgentEvent, Answer, Core, Decision, Home, Paper as PaperInfo, Progress as ProgressData, Rail } from "./types";
+import type {
+  About,
+  AgentEvent,
+  Answer,
+  Core,
+  Decision,
+  Home,
+  Paper as PaperInfo,
+  Payment,
+  Progress as ProgressData,
+  Rail,
+  RuntimeSetup,
+  Setup,
+} from "./types";
 
 type View = "loading" | "welcome" | "entrance" | "session" | "progress" | "paper";
 
 const BLOCKS = [25, 50, 90];
+/** How often the setup screen asks Claude Code whether a sign-in finished, and for how long. */
+const SIGN_IN_POLL_MS = 2000;
+const SIGN_IN_LIMIT_MS = 15 * 60_000;
 
 export function App() {
   const [api, setApi] = useState<Core | null>(null);
@@ -27,10 +44,19 @@ export function App() {
   const [asking, setAsking] = useState(false);
   const [chosenPaper, setChosenPaper] = useState<PaperInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [setup, setSetup] = useState<Setup | null>(null);
+  const [about, setAbout] = useState<About | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  // What Claude Code said before the sign-in, to see when its answer changes.
+  const accountBefore = useRef("");
+  const [upgrading, setUpgrading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Until the first folder opens, a finished setup opens it.
+  const waitingForSetup = useRef(true);
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, home, session, palette });
-  now.current = { api, view, home, session, palette };
+  const now = useRef({ api, view, home, session, palette, setup });
+  now.current = { api, view, home, session, palette, setup };
 
   const refreshRail = useCallback(async () => {
     const { api } = now.current;
@@ -55,10 +81,12 @@ export function App() {
     }
   }, []);
 
-  const openFolder = useCallback(async (api: Core, path: string) => {
+  const showFolder = useCallback(async (api: Core, open: () => Promise<Home>) => {
     setError(null);
+    setNotice(null);
     try {
-      const opened = await api.openFolder(path);
+      const opened = await open();
+      waitingForSetup.current = false;
       setHome(opened);
       dispatch({ type: "reset" });
       setRail(null);
@@ -71,6 +99,25 @@ export function App() {
       setView("welcome");
     }
   }, []);
+
+  const openFolder = useCallback((api: Core, path: string) => showFolder(api, () => api.openFolder(path)), [showFolder]);
+
+  /** Take in what the setup check found. The first time it is ready, open the folder to study in. */
+  const takeSetup = useCallback(
+    async (api: Core, fresh: Setup) => {
+      setSetup(fresh);
+      if (!setupReady(fresh)) {
+        if (now.current.view === "loading") setView("welcome");
+        return;
+      }
+      if (!waitingForSetup.current) return;
+      waitingForSetup.current = false;
+      const first = await api.initialFolder();
+      if (first) await openFolder(api, first);
+      else setView("welcome");
+    },
+    [openFolder],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -92,9 +139,11 @@ export function App() {
       setApi(api);
       now.current.api = api;
       setRecent(await api.recent());
-      const first = await api.initialFolder();
-      if (first) await openFolder(api, first);
-      else setView("welcome");
+      // The program is installed, or a question about it answered, before
+      // any folder is read: a newer program upgrades a folder's record.
+      const [fresh, built] = await Promise.all([api.setup(), api.about()]);
+      setAbout(built);
+      await takeSetup(api, fresh);
       if (isDemo) (await import("./demo")).startFromAddress(actions);
       else if (await api.selftest()) void (await import("./selftest")).run(api, actions, () => now.current.session);
     })();
@@ -105,6 +154,94 @@ export function App() {
     // Runs once: every handler it uses reads the newest values through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // While Claude Code's sign-in waits for the browser, look every few
+  // seconds whether it finished.
+  useEffect(() => {
+    if (!signingIn) return;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      const { api, setup } = now.current;
+      if (!api || !setup) return;
+      if (Date.now() - started > SIGN_IN_LIMIT_MS) {
+        setSigningIn(false);
+        return;
+      }
+      void api.account().then((account) => {
+        // Done when it is signed in as chosen, or says anything new, such as
+        // a sign-in to another kind of account.
+        if (account.signed_in && (!account.problem || JSON.stringify(account) !== accountBefore.current)) setSigningIn(false);
+        void takeSetup(api, { ...(now.current.setup ?? setup), account });
+      });
+    }, SIGN_IN_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [signingIn, takeSetup]);
+
+  const checkAgain = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setError(null);
+    await takeSetup(api, await api.setup());
+  };
+
+  const answerRuntime = async (work: (api: Core) => Promise<RuntimeSetup>) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setError(null);
+    const runtime = await work(api);
+    await takeSetup(api, { ...setup, runtime });
+  };
+
+  const signIn = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setError(null);
+    try {
+      accountBefore.current = JSON.stringify(now.current.setup?.account ?? null);
+      await api.signIn();
+      setSigningIn(true);
+    } catch (problem) {
+      setError(String(problem));
+    }
+  };
+
+  const choosePayment = async (payment: Payment) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setSetup({ ...setup, payment });
+    const account = await api.setPayment(payment);
+    await takeSetup(api, { ...setup, payment, account });
+  };
+
+  const openLink = (url: string) => void now.current.api?.openUrl(url).catch((problem) => setError(String(problem)));
+
+  const upgrade = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setError(null);
+    setUpgrading(true);
+    try {
+      setHome(await api.upgradeFolder());
+      setNotice("This folder is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
+    } catch (problem) {
+      setError(String(problem));
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const newFolder = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    const path = await api.pickNewFolder();
+    if (path) await showFolder(api, () => api.newFolder(path));
+  };
+
+  /** Open the setup screen from ⌘K, with a fresh look at this Mac. */
+  const openSetup = () => {
+    setView("welcome");
+    void checkAgain();
+  };
 
   /** Open the lesson screen and send the first words of the sitting. */
   const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>) => {
@@ -292,6 +429,7 @@ export function App() {
     startPaper,
     setPalette,
     setAsking,
+    openSetup,
     setView: (next: string) => setView(next as View),
   };
 
@@ -349,8 +487,25 @@ export function App() {
     BLOCKS.filter((minutes) => minutes !== home.block_minutes).forEach((minutes) =>
       list.push({ label: `Block length: ${minutes} min`, hint: `now ${home.block_minutes}`, run: () => void setBlock(minutes) }),
     );
+    const account = setup?.account;
+    if (account && (!account.signed_in || account.problem)) {
+      list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", run: () => openSetup() });
+    }
+    if (!inLesson && setup) {
+      const other: Payment = setup.payment === "plan" ? "api_key" : "plan";
+      list.push({
+        label: other === "plan" ? "Pay for lessons with your Claude plan" : "Pay for lessons with an API key",
+        hint: `now ${account?.detail ?? (setup.payment === "plan" ? "your Claude plan" : "an API key")}`,
+        run: () => {
+          setView("welcome");
+          void choosePayment(other);
+        },
+      });
+      list.push({ label: "Magnesium and Claude Code on this Mac", hint: aboutText(about) ?? undefined, run: () => openSetup() });
+    }
     if (!inLesson) {
       list.push({ label: "Open another folder…", run: () => void pickFolder() });
+      list.push({ label: "New study folder…", run: () => void newFolder() });
       recent
         .filter((path) => path !== home.folder)
         .slice(0, 4)
@@ -366,14 +521,38 @@ export function App() {
   };
 
   let screen: JSX.Element | null = null;
-  if (view === "welcome" || (view !== "loading" && !home)) {
-    screen = <Welcome recent={recent} error={error} onPick={() => void pickFolder()} onOpen={(path) => api && void openFolder(api, path)} />;
+  if (view === "loading" && !setup) {
+    screen = null;
+  } else if (view === "welcome" || (view !== "loading" && !home)) {
+    screen = (
+      <Welcome
+        setup={setup}
+        about={about}
+        recent={recent}
+        error={error}
+        signingIn={signingIn}
+        canGoBack={home !== null}
+        onPick={() => void pickFolder()}
+        onNew={() => void newFolder()}
+        onOpen={(path) => api && void openFolder(api, path)}
+        onBack={back}
+        onReplace={() => void answerRuntime((api) => api.replaceRuntime())}
+        onKeep={() => void answerRuntime((api) => api.keepRuntime())}
+        onCheck={() => void checkAgain()}
+        onSignIn={() => void signIn()}
+        onPayment={(payment) => void choosePayment(payment)}
+        onLink={openLink}
+      />
+    );
   } else if (home && view === "entrance") {
     screen = (
       <Entrance
         home={home}
         asking={asking}
         error={error}
+        notice={notice}
+        upgrading={upgrading}
+        onUpgrade={() => void upgrade()}
         onContinue={(skip) => void continueLesson(skip)}
         onNewLesson={(goal) => void newLesson(goal)}
         onAsk={setAsking}
@@ -431,7 +610,7 @@ export function App() {
   return (
     <div className="win" data-busy={busy(session) ? "yes" : "no"}>
       {screen}
-      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+      {palette && <Palette commands={commands()} footer={aboutText(about)} onClose={() => setPalette(false)} />}
     </div>
   );
 }
@@ -446,5 +625,6 @@ export type Actions = {
   startPaper: (paper: PaperInfo, minutes: number) => Promise<void>;
   setPalette: (open: boolean) => void;
   setAsking: (asking: boolean) => void;
+  openSetup: () => void;
   setView: (view: string) => void;
 };

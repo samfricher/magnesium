@@ -112,6 +112,24 @@ impl LearnerStore {
         Ok(self.conn.query_row("SELECT session_id,learning_active,recording_enabled FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.unwrap_or((None,false,true)))
     }
 }
+/// Whether `open` would upgrade this store from an earlier schema. Read-only:
+/// it changes nothing and makes no copy, so a caller can ask first.
+pub fn needs_upgrade(path: &Path) -> Result<bool> {
+    reject_symlinks(path)?;
+    // A missing or empty store is not an earlier version's. `open` reports
+    // or repairs it.
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.len() > 0 => {}
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(LearnerError::new("storage_error", error.to_string())),
+    }
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(Duration::from_secs(2))?;
+    let version = read_meta(&conn)?.2;
+    Ok(version != SCHEMA_VERSION && UPGRADEABLE_SCHEMA_VERSIONS.contains(&version))
+}
+
 fn create_schema(conn: &Connection, workspace_id: &str) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
     let empty: bool = tx.query_row("SELECT count(*) = 0 FROM sqlite_master", [], |r| r.get(0))?;
@@ -468,6 +486,23 @@ mod upgrade_tests {
             Ok(entries) => entries.map(|e| e.unwrap().path()).collect(),
             Err(_) => Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_earlier_store_is_seen_without_a_change_and_a_current_one_is_not() {
+        let dir = folder();
+        let path = schema_2_store(&dir);
+        let before = std::fs::read(&path).unwrap();
+        assert!(needs_upgrade(&path).unwrap());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "looking changes nothing"
+        );
+        assert!(backups(&dir).is_empty(), "looking makes no copy");
+        drop(LearnerStore::open(&path, WORKSPACE).unwrap());
+        assert!(!needs_upgrade(&path).unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

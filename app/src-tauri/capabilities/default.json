@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the one window may ask of the system: its own events, dragging by the top strip, and a file dialog.",
+  "description": "What the one window may ask of the system: its own events, dragging by the top strip, and file dialogs to open a folder or name a new one.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }

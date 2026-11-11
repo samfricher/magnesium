@@ -60,6 +60,9 @@ pub enum HomeState {
     NotSetUp,
     /// The `magnesium` program is missing.
     NoRuntime,
+    /// An earlier Magnesium set this folder up. The window asks once before
+    /// it upgrades the folder.
+    NeedsUpgrade,
     /// The runtime could not read the folder.
     Unreadable,
 }
@@ -130,6 +133,17 @@ fn root_of(digest: &Value, folder: &Path) -> PathBuf {
         .map(PathBuf::from)
         .filter(|root| root.is_dir())
         .unwrap_or_else(|| folder.to_path_buf())
+}
+
+/// Whether the runtime says an earlier version set the folder up. Reading the
+/// record then would upgrade it, so the digest holds no record.
+fn upgrade_needed(digest: &Value) -> bool {
+    digest["upgrade_needed"].as_bool() == Some(true)
+}
+
+/// Whether the folder needs an upgrade before a lesson can start in it.
+pub fn needs_upgrade(folder: &Path) -> bool {
+    runtime::digest(folder).is_ok_and(|digest| upgrade_needed(&digest))
 }
 
 /// The study root for a folder: the folder itself, or the parent the runtime
@@ -278,6 +292,14 @@ pub fn home(folder: &Path, store: &Store) -> Home {
     };
     if digest["active"].as_bool() != Some(true) {
         home.state = HomeState::NotSetUp;
+        return home;
+    }
+    if upgrade_needed(&digest) {
+        home.state = HomeState::NeedsUpgrade;
+        home.message = Some(
+            "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it."
+                .into(),
+        );
         return home;
     }
     let root = root_of(&digest, folder);
@@ -472,6 +494,10 @@ pub fn progress(folder: &Path, target: Option<&str>, store: &Store) -> Progress 
         ..Progress::default()
     };
     let digest = match runtime::digest(folder) {
+        Ok(digest) if upgrade_needed(&digest) => {
+            progress.message = Some("An earlier version of Magnesium set this folder up. Upgrade it from the start screen to see your progress.".into());
+            return progress;
+        }
         Ok(digest) if digest["active"].as_bool() == Some(true) => digest,
         Ok(_) => {
             progress.message = Some("Nothing is proved yet. Progress fills in after your first marked paper or quick check.".into());

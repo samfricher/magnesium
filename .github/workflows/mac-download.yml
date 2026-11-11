@@ -1,0 +1,152 @@
+name: Mac download
+
+# Builds Magnesium's window as a disk image for Apple Silicon Macs, with the
+# magnesium program inside it, and uploads it to a draft pre-release. Started
+# by hand from main only: it never runs on a push or a pull request. The owner
+# publishes the draft; this workflow never does.
+#
+# Two jobs. The build runs install and build scripts from third-party npm and
+# Cargo packages, so it gets a token that can only read, and the checkout does
+# not keep even that one. The upload runs no third-party code, and only it can
+# write to the repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release-candidate tag, such as v0.3.0-rc.1. Its version must match Cargo.toml on main."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-download
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: "Disk image (macOS, Apple Silicon)"
+    runs-on: macos-15
+    steps:
+      - name: Check where it runs and the tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Start this workflow from main, not $GITHUB_REF."
+            exit 1
+          fi
+          # A tag with a suffix is not a release: the install guide skips it.
+          if ! printf '%s\n' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
+            echo "::error::The tag must be a release candidate, such as v0.3.0-rc.1."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the version, and that the tag and release are new
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          wanted=${TAG#v}
+          wanted=${wanted%%-*}
+          if [ "$version" != "$wanted" ]; then
+            echo "::error::Cargo.toml says $version and the tag says $wanted. Raise the version on main first, or use a tag for $version."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::The tag $TAG already exists."
+            exit 1
+          fi
+          # This token sees published releases only. The upload job checks drafts.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A release named $TAG already exists."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Activate pinned Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustc -vV
+
+      - name: Restore Cargo downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-download-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'app/Cargo.lock') }}
+          restore-keys: |
+            cargo-download-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build, sign and check the disk image
+        env:
+          TAG: ${{ inputs.tag }}
+          MAGNESIUM_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          cd app
+          npm ci
+          scripts/package.sh "${TAG#v}"
+
+      - name: Hand the disk image to the upload job
+        uses: actions/upload-artifact@v4
+        with:
+          name: disk-image
+          path: app/target/download/Magnesium-*-arm64.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  upload:
+    name: "Draft pre-release"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: disk-image
+          path: download
+
+      - name: Upload it to a draft pre-release
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=${TAG#v}
+          # This token also sees drafts, which the build job's could not.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A release named $TAG already exists, perhaps as a draft."
+            exit 1
+          fi
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          A release candidate of Magnesium's window for Apple Silicon Macs, with the magnesium program inside it. Built from $GITHUB_SHA.
+
+          1. Download Magnesium-$version-arm64.dmg and open it.
+          2. Drag Magnesium to Applications, then open it from Applications.
+          3. macOS says it cannot check the app. Choose Done.
+          4. Open System Settings, then Privacy & Security. Under Security, choose Open Anyway next to Magnesium, and confirm.
+
+          Each new version needs step 4 once: the app is signed ad hoc, not by Apple.
+
+          You need Claude Code, and a paid Claude plan or an Anthropic Console account. The app checks both and installs the magnesium program for you.
+          EOF
+          gh release create "$TAG" "download/Magnesium-$version-arm64.dmg" \
+            --draft --prerelease --target "$GITHUB_SHA" \
+            --title "Magnesium $version for Mac" --notes-file "$notes"

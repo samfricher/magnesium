@@ -76,7 +76,7 @@ async function loadImages(root: HTMLElement, final: boolean) {
   }
 }
 
-const FILE = /^(?:\.{0,2}\/)?[\w .()+-]+(?:\/[\w .()+-]+)*\.(?:pdf|png|jpe?g|gif|webp|md|tex|txt|csv)$/i;
+const FILE = /^(?:\.{0,2}\/)?[\w .()+-]+(?:\/[\w .()+-]+)*.(?:pdf|png|jpe?g|gif|webp|md|tex|txt|csv|html)$/i;
 
 /** Mark inline code that names a file, so a click opens it. */
 function markPaths(root: HTMLElement) {

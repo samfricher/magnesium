@@ -29,10 +29,33 @@ const PUBLIC_COMMANDS: [(&str, &str); 9] = [
     ),
 ];
 
+/// The version `magnesium --version` prints. A build given a commit in
+/// `MAGNESIUM_BUILD_COMMIT`, as the Mac download's is, adds it as semver
+/// build metadata: `0.3.0+<commit>`. Magnesium's window compares it with its
+/// own commit to tell its copy of the program from another, even between
+/// releases. An ordinary build prints the version alone.
+fn version_text(commit: Option<&str>) -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    match commit.map(str::trim) {
+        Some(commit)
+            if !commit.is_empty()
+                && commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') =>
+        {
+            format!("{version}+{commit}")
+        }
+        _ => version.to_owned(),
+    }
+}
+
 pub(crate) fn command() -> ClapCommand {
+    // Leaked once: clap keeps the version as a static string.
+    let version: &'static str =
+        Box::leak(version_text(option_env!("MAGNESIUM_BUILD_COMMIT")).into_boxed_str());
     let public = PUBLIC_COMMANDS.into_iter().fold(
         ClapCommand::new("magnesium")
-            .version(env!("CARGO_PKG_VERSION"))
+            .version(version)
             .about("Local workspace-attached learning support for the individual human learner")
             .disable_help_subcommand(true)
             .arg_required_else_help(true),
@@ -194,6 +217,20 @@ pub(crate) fn command() -> ClapCommand {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_build_commit_is_build_metadata_and_anything_else_is_left_out() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(super::version_text(None), version);
+        assert_eq!(super::version_text(Some("")), version);
+        assert_eq!(
+            super::version_text(Some("0123abc\n")),
+            format!("{version}+0123abc")
+        );
+        // Not a semver identifier, so it is not printed as one.
+        assert_eq!(super::version_text(Some("abc def")), version);
+        assert_eq!(super::version_text(Some("abc+def")), version);
+    }
+
     #[test]
     fn a_bare_invocation_shows_the_help() {
         let error = super::command()

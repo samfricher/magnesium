@@ -17,10 +17,15 @@ fn native_binary_reports_version_without_touching_personal_state() {
         .expect("run magnesium binary");
 
     assert!(output.status.success());
-    assert_eq!(
-        output.stdout,
-        format!("magnesium {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
-    );
+    // A build given a commit, as the Mac download's is, prints it as build
+    // metadata after the version.
+    let expected = match option_env!("MAGNESIUM_BUILD_COMMIT").map(str::trim) {
+        Some(commit) if !commit.is_empty() => {
+            format!("magnesium {}+{commit}\n", env!("CARGO_PKG_VERSION"))
+        }
+        _ => format!("magnesium {}\n", env!("CARGO_PKG_VERSION")),
+    };
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
     assert!(output.stderr.is_empty());
     assert!(environment.workspace.join("lesson.md").is_file());
     assert!(directory_is_empty(&environment.global_data));
