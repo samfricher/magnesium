@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
 import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, urgency, useNow } from "../ui/bits";
@@ -55,16 +56,30 @@ export function Course(props: {
   onRetry: () => void;
   onLibrary: () => void;
   onPalette: () => void;
+  /** What adding course material said, until it is dismissed. */
+  material: string[] | null;
+  adding: boolean;
+  onDismissMaterial: () => void;
+  onAddFiles: () => void;
+  onPasteText: () => void;
 }) {
   const { home, progress } = props;
   const [goal, setGoal] = useState("");
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
-  useEffect(() => setDeclined(false), [home.folder]);
+  // "Skip" on the first step of a new folder, for this folder while it stays open.
+  const [skipped, setSkipped] = useState(false);
+  useEffect(() => {
+    setDeclined(false);
+    setSkipped(false);
+  }, [home.folder]);
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
-  const asking = fresh || props.asking;
+  // A folder with nothing in it starts with its material: slides, notes, papers.
+  // Once something is added, or the step is skipped, it asks what to learn.
+  const gathering = fresh && !skipped && props.material === null && !props.asking;
+  const asking = !gathering && (fresh || props.asking);
 
   useEffect(() => {
     if (asking) input.current?.focus();
@@ -141,6 +156,28 @@ export function Course(props: {
         <div className="row">
           <button className="btn primary" autoFocus onClick={() => props.onPaper(null)}>
             Back to the paper <kbd>&#8629;</kbd>
+          </button>
+        </div>
+      </>
+    );
+  } else if (gathering) {
+    card = (
+      <>
+        <span className="eyebrow">First step</span>
+        <h2>Add your course material</h2>
+        <p>
+          Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
+        </p>
+        <div className="row">
+          <button className="btn primary" autoFocus disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+            {props.adding ? "Adding…" : "Choose files"} {!props.adding && <kbd>&#8629;</kbd>}
+          </button>
+          <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+            Paste text
+          </button>
+          <span className="grow" />
+          <button className="btn ghost" disabled={props.adding} onClick={() => setSkipped(true)} data-role="skip-material">
+            Skip for now
           </button>
         </div>
       </>
@@ -268,6 +305,7 @@ export function Course(props: {
           </div>
           {props.notice && <div className="banner selectable">{props.notice}</div>}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
 
           {usable && !sitting && (
             <div className="tiles">
@@ -312,6 +350,22 @@ export function Course(props: {
                   </span>
                 </button>
               )}
+            </div>
+          )}
+          {usable && !sitting && !gathering && (
+            <div className="material-strip" data-role="material-strip">
+              <Icon name="clip" size={16} />
+              <span>
+                <b>Course material</b>
+                <small>Drop files here, or</small>
+              </span>
+              <span className="grow" />
+              <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+                {props.adding ? "Adding…" : "Choose files"}
+              </button>
+              <button className="btn small" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+                Paste text
+              </button>
             </div>
           )}
         </div>

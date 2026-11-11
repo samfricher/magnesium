@@ -135,6 +135,23 @@ export type AgentEvent =
 
 export type Words = { shown: string; sent: string };
 
+/**
+ * What adding course material did. `lines` is what the window says, one
+ * plain line each: what was added, what search cannot read, and any file that
+ * could not be added. A file that looks like an answer key is counted and
+ * never named.
+ */
+export type Added = { saved: string[]; keys: number; lines: string[] };
+
+/** A source a reply cited, ready for the panel beside the lesson. */
+export type Source = {
+  name: string;
+  kind: "pdf" | "text" | "image";
+  text: string | null;
+  truncated: boolean;
+  image: string | null;
+};
+
 /** How lessons are paid for: the learner's Claude plan, or an API key paid per use. */
 export type Payment = "plan" | "api_key";
 
@@ -179,6 +196,8 @@ export interface Core {
   activity(): Promise<Activity>;
   pickFolder(): Promise<string | null>;
   pickFiles(): Promise<string[]>;
+  /** Files of any kind to add as course material, from a file dialog. */
+  pickMaterial(): Promise<string[]>;
   /** A path for a new study folder, from a save dialog, or null. */
   pickNewFolder(): Promise<string | null>;
   openFolder(path: string): Promise<Home>;
@@ -205,6 +224,19 @@ export interface Core {
   progress(target: string | null): Promise<Progress>;
   setBlockMinutes(minutes: number): Promise<void>;
   attach(path: string, group: string): Promise<string>;
+  /** Copy files or folders into the study folder, and say what search can read of them. */
+  addMaterial(paths: string[]): Promise<Added>;
+  /** Save pasted text as a text file in the same place. */
+  addPastedText(text: string): Promise<Added>;
+  /**
+   * Called with the paths of files dropped on the window, and with whether
+   * files are being dragged over it. Resolves to a function that stops it.
+   */
+  onDrop(handler: (paths: string[]) => void, hover: (over: boolean) => void): Promise<() => void>;
+  /** A source a reply cited. Refused outside the study folder and for an answer key. */
+  source(path: string): Promise<Source>;
+  /** The bytes of a cited PDF. */
+  sourcePdf(path: string): Promise<ArrayBuffer>;
   openFile(path: string): Promise<void>;
   openUrl(url: string): Promise<void>;
   image(path: string): Promise<string>;

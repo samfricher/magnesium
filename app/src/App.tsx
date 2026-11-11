@@ -16,6 +16,7 @@ import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { Setup, aboutText, setupReady } from "./screens/Setup";
 import { Summary, type Sitting } from "./screens/Summary";
+import { DropVeil, PasteSheet } from "./ui/Material";
 import type {
   About,
   Activity,
@@ -86,6 +87,12 @@ export function App() {
   const accountBefore = useRef("");
   const [upgrading, setUpgrading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Adding course material: what it said, whether it is under way, whether
+  // files are being dragged over the window, and the text being pasted.
+  const [material, setMaterial] = useState<string[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [pasting, setPasting] = useState<string | null>(null);
   // Until the first screen is up, a finished setup opens it.
   const waitingForSetup = useRef(true);
   // What this sitting has counted so far, for the screen that ends it.
@@ -98,6 +105,9 @@ export function App() {
   // The newest values, for handlers that outlive a render.
   const now = useRef({ api, view, from, home, session, palette, setup, rail, activity });
   now.current = { api, view, from, home, session, palette, setup, rail, activity };
+  // The newest copies of two handlers, for the listeners that outlive a render.
+  const addMaterialRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
+  const canAddRef = useRef<() => boolean>(() => false);
 
   const refreshRail = useCallback(async () => {
     const { api } = now.current;
@@ -159,6 +169,7 @@ export function App() {
   const showLibrary = useCallback(() => {
     setError(null);
     setNotice(null);
+    setMaterial(null);
     setAsking(false);
     setView("library");
     void loadLibrary();
@@ -170,6 +181,7 @@ export function App() {
       opening.current = true;
       setError(null);
       setNotice(null);
+      setMaterial(null);
       try {
         const opened = await open();
         waitingForSetup.current = false;
@@ -271,6 +283,41 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [signingIn, takeSetup]);
 
+  // Files dropped on the window are added to the open course, on its page and
+  // in a lesson. Anywhere else a drop does nothing.
+  useEffect(() => {
+    if (!api) return;
+    let off = () => {};
+    let alive = true;
+    void api
+      .onDrop(
+        (paths) => void addMaterialRef.current(paths),
+        (over) => setDragging(over && canAddRef.current()),
+      )
+      .then((stop) => (alive ? (off = stop) : stop()));
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [api]);
+
+  // Text pasted on the course page, with nothing selected to type in, is
+  // offered as course material. Pasting in the answer box is an answer.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable]")) return;
+      if (now.current.view !== "course" || !canAddRef.current()) return;
+      if ((event.clipboardData?.files.length ?? 0) > 0) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (text.trim() === "") return;
+      event.preventDefault();
+      setPasting(text);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   const checkAgain = async () => {
     const { api } = now.current;
     if (!api) return;
@@ -305,6 +352,55 @@ export function App() {
     setSetup({ ...setup, payment });
     const account = await api.setPayment(payment);
     await takeSetup(api, { ...setup, payment, account });
+  };
+
+  /** Whether course material can be added now: a course is open, on its page or in a lesson. */
+  const canAdd = () => {
+    const { home, view } = now.current;
+    return Boolean(home) && (view === "course" || view === "session") && ["ready", "empty", "not_set_up"].includes(home?.state ?? "") && !home?.sitting;
+  };
+
+  const addMaterial = async (paths: string[]) => {
+    const { api } = now.current;
+    if (!api || paths.length === 0 || adding || !canAdd()) return;
+    setAdding(true);
+    setMaterial(null);
+    try {
+      setMaterial((await api.addMaterial(paths)).lines);
+    } catch (problem) {
+      setMaterial([String(problem)]);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  addMaterialRef.current = addMaterial;
+  canAddRef.current = canAdd;
+
+  const chooseMaterial = async () => {
+    const { api } = now.current;
+    if (!api || !canAdd()) return;
+    try {
+      await addMaterial(await api.pickMaterial());
+    } catch (problem) {
+      setMaterial([String(problem)]);
+    }
+  };
+
+  const savePasted = async (text: string) => {
+    const { api } = now.current;
+    if (!api || adding) return;
+    setAdding(true);
+    setMaterial(null);
+    try {
+      setMaterial((await api.addPastedText(text)).lines);
+      setPasting(null);
+    } catch (problem) {
+      setPasting(null);
+      setMaterial([String(problem)]);
+    } finally {
+      setAdding(false);
+    }
   };
 
   const openLink = (url: string) => void now.current.api?.openUrl(url).catch((problem) => setError(String(problem)));
@@ -599,6 +695,9 @@ export function App() {
     openSetup,
     showLibrary,
     setView: (next: string) => setView(next as View),
+    addMaterial,
+    setDragging,
+    pasteText: (text: string) => setPasting(text),
   };
 
   useEffect(() => {
@@ -643,6 +742,10 @@ export function App() {
       (progress?.targets ?? [])
         .filter((exam) => exam.target !== (progress?.exam?.target ?? home.exam?.target))
         .forEach((exam) => list.push({ label: `Proofs: ${exam.title}`, hint: exam.day ?? undefined, icon: "chart", run: () => void openProgress(exam.target) }));
+      if (["ready", "empty", "not_set_up"].includes(home.state) && !home.sitting && (view === "course" || view === "session")) {
+        list.push({ label: "Add course material…", hint: "or drop files on the window", icon: "clip", run: () => void chooseMaterial() });
+        list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
+      }
       if (!inLesson && (home.checks_due ?? 0) > 0 && home.state === "ready") {
         list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
       }
@@ -777,6 +880,11 @@ export function App() {
         }}
         onLibrary={showLibrary}
         onPalette={() => setPalette(true)}
+        material={material}
+        adding={adding}
+        onDismissMaterial={() => setMaterial(null)}
+        onAddFiles={() => void chooseMaterial()}
+        onPasteText={() => setPasting("")}
       />
     );
   } else if (view === "session") {
@@ -804,6 +912,10 @@ export function App() {
         onNote={onNote}
         onDismiss={(text) => dispatch({ type: "dismiss", text })}
         onPalette={() => setPalette(true)}
+        material={material}
+        onDismissMaterial={() => setMaterial(null)}
+        onAddFiles={() => void chooseMaterial()}
+        onPasteText={() => setPasting("")}
       />
     );
   } else if (view === "summary" && summary) {
@@ -851,6 +963,8 @@ export function App() {
       <div className="view" key={view}>
         {screen}
       </div>
+      {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
+      {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
       {palette && <Palette commands={commands()} footer={aboutText(about)} onClose={() => setPalette(false)} />}
     </div>
   );
@@ -869,4 +983,7 @@ export type Actions = {
   openSetup: () => void;
   showLibrary: () => void;
   setView: (view: string) => void;
+  addMaterial: (paths: string[]) => Promise<void>;
+  setDragging: (over: boolean) => void;
+  pasteText: (text: string) => void;
 };
