@@ -29,8 +29,6 @@ retention.
 
 - `cases.json`: paired scenarios and private evaluator criteria
 - `sources.md`: authored sources for those scenarios
-- `chapter7_sources.md` and `chapter7_sparse.json`: sample-mean, discrete-count, and sparse-history regressions
-- `proof_contracts.json`: exact/approximate numerical oracles and contract boundaries
 - `source-pages.pdf`: four physical pages covering sum geometry, a visual-only integral bound, Normal parameter conventions, and a proof-first CLT outline
 
 Regenerate the PDF with Python and ReportLab installed:
@@ -48,13 +46,12 @@ The JSON and Markdown fixtures are authored inputs. Keep evaluator-only
 information separate when changing a case; regenerate the PDF rather than
 editing its bytes.
 
-## Run deterministic regressions
+## Run the source test
 
 ```sh
-cargo test --locked --test chapter7_teaching_regression --test proof_contracts
-cargo test --locked --test sources_view synthetic_math_pdf_inspection_keeps_physical_page_scope
+cargo test --test it synthetic_math_pdf_inspection_keeps_physical_page_scope
 ```
 
-The first command checks fixture and scoring contracts; the source-view test
-checks actual source bounds. Assess installed-host behavior against the private
-criteria using its saved messages and tool results.
+It checks the bounds of what the runtime returns from `source-pages.pdf`.
+Assess installed-host behavior against the private criteria using its saved
+messages and tool results.

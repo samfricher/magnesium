@@ -717,7 +717,6 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2 0.11.0",
- "support",
  "tokio",
  "toml_edit",
  "tree-sitter",
@@ -1178,15 +1177,6 @@ dependencies = [
  "unicode-bidi",
  "unicode-normalization",
  "unicode-properties",
-]
-
-[[package]]
-name = "support"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]

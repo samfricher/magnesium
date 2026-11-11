@@ -198,6 +198,6 @@ fn ensure_entry_flushed(control: &Path, directory: &Path) -> Result<(), String> 
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
     fs::File::open(path)
-        .and_then(|directory| directory.sync_all())
+        .and_then(|directory| crate::workspace::sync_to_disk(&directory))
         .map_err(failure)
 }

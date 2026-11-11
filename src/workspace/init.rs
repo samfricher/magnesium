@@ -453,6 +453,9 @@ fn resolve_git_exclusion(
         path: root.to_path_buf(),
         source,
     })?;
+    if !may_be_in_git_repository(&root) {
+        return Ok(None);
+    }
     let Some(repository) = git_path_output(&root, &["rev-parse", "--show-toplevel"])? else {
         return Ok(None);
     };
@@ -479,6 +482,17 @@ fn resolve_git_exclusion(
         },
         pattern,
     )))
+}
+
+/// Whether Git could find a repository for `root`. Git looks for a `.git`
+/// entry in the folder and in each folder above it, unless `GIT_DIR` names a
+/// repository. Asking the file system first means a folder outside every
+/// repository never starts `git`, which is the slowest step of `init`.
+fn may_be_in_git_repository(root: &Path) -> bool {
+    non_empty_env("GIT_DIR").is_some()
+        || root
+            .ancestors()
+            .any(|folder| fs::symlink_metadata(folder.join(".git")).is_ok())
 }
 
 fn add_git_exclusion_for_relative(
@@ -562,7 +576,7 @@ fn add_git_exclusion_for_relative(
         path: exclude.clone(),
         source,
     })?;
-    file.sync_all().map_err(|source| InitError::Io {
+    crate::workspace::sync_to_disk(&file).map_err(|source| InitError::Io {
         action: "persist Git private exclusion",
         path: exclude.clone(),
         source,

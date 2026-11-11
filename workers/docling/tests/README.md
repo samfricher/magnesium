@@ -21,10 +21,8 @@ processes: initialization rejection, malformed/partial/oversized JSON lines,
 wrong response IDs, notification/stderr floods, request/write timeout, and EOF.
 The owned child must be reaped in every case.
 
-`python3 ci/check.py core` builds the native release executable and runs
-`ci/check_native_sources.py` against authored standard-library readable/blank
-PDFs and source exclusion, with a private environment and no provider discovery.
-It writes machine-readable results under `target/validation/` on failure too.
+The Rust integration tests under `tests/it/` cover native readable and blank
+PDFs and source exclusion (`sources_view`, `export`, `security`).
 
 Update worker stubs when its Docling API usage changes; use the
 [conversion gate](../README.md#run-tests) for the separately installed optional

@@ -24,6 +24,41 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 
 const MAX_WORKSPACE_ID_BYTES: usize = 128;
 
+/// Set to `1` to skip every flush to the disk. The test helpers set it for
+/// each `magnesium` they start, because a flush on a Mac waits for the drive
+/// and the tests make thousands of them. Never set it to study: a crash or a
+/// power cut can then lose or damage what was written last.
+pub(crate) const NO_SYNC_ENV: &str = "MAGNESIUM_UNSAFE_NO_SYNC";
+
+/// Whether a write waits for the disk. Unit tests never wait.
+pub(crate) fn syncs_to_disk() -> bool {
+    static SYNCS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SYNCS.get_or_init(|| {
+        !cfg!(test) && std::env::var_os(NO_SYNC_ENV).is_none_or(|value| value != "1")
+    })
+}
+
+/// Flush a file or a directory to the disk, unless [`NO_SYNC_ENV`] is set.
+/// `clippy.toml` refuses a direct `sync_all` anywhere else.
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn sync_to_disk(file: &fs::File) -> io::Result<()> {
+    if syncs_to_disk() {
+        file.sync_all()
+    } else {
+        Ok(())
+    }
+}
+
+/// Apply [`NO_SYNC_ENV`] to a SQLite connection. The setting lasts as long as
+/// the connection and changes nothing in the database file.
+pub(crate) fn apply_sync_policy(connection: &rusqlite::Connection) -> rusqlite::Result<()> {
+    if syncs_to_disk() {
+        Ok(())
+    } else {
+        connection.pragma_update(None, "synchronous", "OFF")
+    }
+}
+
 /// The per-workspace control directory. Every control path derives from it.
 pub(crate) const CONTROL_DIR: &str = ".magnesium";
 
@@ -217,7 +252,7 @@ impl AtomicWrites {
                     .mode(mode)
                     .open(&temporary)?;
                 write(&mut file)?;
-                file.sync_all()?;
+                sync_to_disk(&file)?;
                 drop(file);
                 fs::rename(&temporary, path)
             })();
@@ -250,7 +285,7 @@ impl AtomicWrites {
         {
             let mut writes = self;
             for directory in std::mem::take(&mut writes.directories) {
-                fs::File::open(&directory)?.sync_all()?;
+                sync_to_disk(&fs::File::open(&directory)?)?;
             }
         }
         Ok(())
@@ -261,7 +296,7 @@ impl Drop for AtomicWrites {
     fn drop(&mut self) {
         #[cfg(unix)]
         for directory in &self.directories {
-            let _ = fs::File::open(directory).and_then(|directory| directory.sync_all());
+            let _ = fs::File::open(directory).and_then(|directory| sync_to_disk(&directory));
         }
     }
 }

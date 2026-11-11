@@ -17,6 +17,16 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def policy_digest():
+    """One hash over the tutor's instruction files, in the order their manifest lists them."""
+    bundle = ROOT / 'src/workspace/learning'
+    manifest = (bundle / 'manifest.json').read_bytes()
+    hasher = hashlib.sha256(manifest)
+    for entry in json.loads(manifest)['files']:
+        hasher.update((bundle / entry['path']).read_bytes())
+    return hasher.hexdigest()
+
+
 def prepare(pack):
     fixture = json.loads((pack / 'cases.json').read_text())
     if fixture.get('synthetic') is not True or fixture.get('fixture_version') != 'statistics/v1':
@@ -54,7 +64,7 @@ def prepare(pack):
     return {
         'fixture_version': fixture['fixture_version'],
         'fixture_sha256': digest(pack / 'cases.json'),
-        'policy_sha256': digest(ROOT / 'src/workspace/learning/manifest.json'),
+        'policy_sha256': policy_digest(),
         'source_sha256': sources,
         'cases': cases,
         'claim_limit': 'Input preflight only. Native behavior, live agent behavior and human learning require separate results.',

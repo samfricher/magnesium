@@ -189,6 +189,7 @@ pub(crate) fn reconcile_batch_with_policy(
             ..empty_report(state.generation)
         },
         hashed,
+        missing: std::collections::HashMap::new(),
         after_open: &mut after_open,
     };
     for entry in &discovery.entries {
@@ -601,9 +602,12 @@ pub(crate) fn reconcile_entry(
                 && record.source_kind == source_kind
                 && record.content_sha256.as_deref() == Some(&content_sha256)
                 && match progress.moves {
-                    MovePolicy::MissingOnly => {
-                        manifest_path_is_missing(&discovery.workspace_root, old_key)
-                    }
+                    MovePolicy::MissingOnly => *progress
+                        .missing
+                        .entry((*old_key).clone())
+                        .or_insert_with(|| {
+                            manifest_path_is_missing(&discovery.workspace_root, old_key)
+                        }),
                     MovePolicy::Isolated => false,
                 }
         })
