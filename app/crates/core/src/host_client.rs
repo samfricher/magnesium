@@ -211,8 +211,18 @@ impl HostClient {
                     if result["isError"].as_bool() == Some(true) {
                         return Err(text);
                     }
-                    return serde_json::from_str(&text)
-                        .map_err(|e| format!("the {tool} result is not JSON: {e}"));
+                    let value: Value = serde_json::from_str(&text)
+                        .map_err(|e| format!("the {tool} result is not JSON: {e}"))?;
+                    // A refused write comes back as a result that holds only
+                    // an error, such as recording_disabled.
+                    if let Some(error) = value.get("error").filter(|e| e.is_object()) {
+                        return Err(format!(
+                            "{}: {}",
+                            error["code"].as_str().unwrap_or("error"),
+                            error["message"].as_str().unwrap_or_default()
+                        ));
+                    }
+                    return Ok(value);
                 }
                 Err(error) if attempt == 0 && error.starts_with("closed") => {
                     *guard = None;
