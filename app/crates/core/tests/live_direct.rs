@@ -110,6 +110,10 @@ impl Scratch {
     }
 
     fn manager(&self) -> (Manager, Receiver<AgentEvent>) {
+        self.manager_in(&self.folder)
+    }
+
+    fn manager_in(&self, folder: &Path) -> (Manager, Receiver<AgentEvent>) {
         let (sender, events) = channel();
         let sender = Mutex::new(sender);
         let claude = mg_core::paths::find_program("claude").expect("claude is installed");
@@ -125,7 +129,7 @@ impl Scratch {
             self.runtime.clone(),
         )));
         manager.set_engine(Engine::Direct);
-        manager.open_folder(&self.folder).unwrap();
+        manager.open_folder(folder).unwrap();
         (manager, events)
     }
 
@@ -138,14 +142,29 @@ impl Scratch {
         serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
     }
 
+    /// The answers on record, once the last turn's record is kept: a turn
+    /// ends for the learner when its reply is whole, and is saved just after.
     fn attempts(&self) -> Vec<Value> {
-        self.cli(&["attempts", "--json"])["attempts"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
+        let read = || {
+            self.cli(&["attempts", "--json"])["attempts"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        };
+        let mut last = read();
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(300));
+            let now = read();
+            if now == last {
+                return now;
+            }
+            last = now;
+        }
+        last
     }
 
     fn deliveries(&self) -> Vec<String> {
+        let _ = self.attempts();
         let conn = Connection::open_with_flags(
             self.folder.join(".magnesium/state.sqlite"),
             OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -308,4 +327,44 @@ fn a_lesson_you_play() {
     }
     manager.shut_down();
     std::mem::forget(scratch);
+}
+
+/// The model may read inside the study root, a root above the open folder
+/// included, and nothing outside it.
+#[test]
+#[ignore = "starts a model on your own subscription"]
+fn a_direct_lesson_reads_inside_the_study_root_only() {
+    let scratch = Scratch::new();
+    let week = scratch.folder.join("week1");
+    fs::create_dir_all(&week).unwrap();
+    fs::write(
+        scratch.folder.join("notes.txt"),
+        "The marker word is HERON.\n",
+    )
+    .unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().canonicalize().unwrap().join("secret.txt");
+    fs::write(&secret, "The marker word is OSPREY.\n").unwrap();
+    let (manager, events) = scratch.manager_in(&week);
+    manager.open_session(false).unwrap();
+    manager
+        .send(&format!(
+            "Before we start: use the Read tool on {} and on {}, and tell me each file's marker word, or say which read was refused.",
+            secret.display(),
+            scratch.folder.join("notes.txt").display()
+        ))
+        .unwrap();
+    let done = turn(&events);
+    println!("reply: {}", done.reply);
+    assert!(
+        done.reply.contains("HERON"),
+        "the study root is readable: {}",
+        done.reply
+    );
+    assert!(
+        !done.reply.contains("OSPREY"),
+        "a file outside was read: {}",
+        done.reply
+    );
+    manager.shut_down();
 }

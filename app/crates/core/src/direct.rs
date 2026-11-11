@@ -65,12 +65,9 @@ const RECORD_TOOLS: [&str; 3] = [
     "mcp__magnesium__learning_step",
     "mcp__magnesium__memory",
 ];
-/// The tools the model may use, all of them to look something up.
-const LOOKUP_TOOLS: [&str; 3] = [
-    "Read",
-    "mcp__magnesium__search_sources",
-    "mcp__magnesium__sources",
-];
+/// Magnesium's tools the model may use, both to look something up. Read is
+/// allowed only inside the study root: see [`direct_args`].
+const LOOKUP_TOOLS: [&str; 2] = ["mcp__magnesium__search_sources", "mcp__magnesium__sources"];
 /// How long without a message ends a sitting, as the runtime counts it.
 const SITTING_GAP: Duration = Duration::from_secs(3 * 60 * 60);
 
@@ -139,8 +136,16 @@ pub fn direct_args(
     args.push(server.to_string());
     args.push("--disallowedTools".into());
     args.push(RECORD_TOOLS.join(","));
+    // A bare Read would approve every path on the disk: a live check on
+    // 2026-11-11 read a file outside the study folder with it. Scoped to the
+    // study root, a read outside it is refused.
     args.push("--allowedTools".into());
-    args.push(LOOKUP_TOOLS.join(","));
+    args.push(
+        std::iter::once(format!("Read(/{}/**)", root.display()))
+            .chain(LOOKUP_TOOLS.iter().map(|tool| (*tool).to_owned()))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     args.push("--permission-prompts".into());
     args.push("none".into());
     if root != folder {
@@ -324,7 +329,10 @@ impl Harness for DirectTutor {
             wake: Condvar::new(),
             events: Mutex::new(events),
             phase: AtomicU8::new(IDLE),
+            gate: Mutex::new(()),
             interrupting: AtomicBool::new(false),
+            interrupt_sent: AtomicBool::new(false),
+            turn_seq: AtomicU64::new(0),
             closing: AtomicBool::new(false),
             ready_sent: AtomicBool::new(false),
             interrupts: AtomicU64::new(0),
@@ -386,12 +394,8 @@ impl Harness for DirectTutor {
         {
             shared.note(&format!("session-start hook failed: {why}"));
         }
-        // A new conversation's id is the engine's own, so it is ready now.
-        // A resumed one is ready once Claude Code shows it has it: Claude
-        // Code reports only after the first message.
-        if !shared.resumed {
-            shared.ready();
-        }
+        // Ready, and so remembered, only once Claude Code shows it has the
+        // conversation: it reports after the first message.
         Ok(Box::new(DirectConversation { shared }))
     }
 
@@ -488,7 +492,14 @@ struct Shared {
     wake: Condvar,
     events: Mutex<Receiver<Option<Value>>>,
     phase: AtomicU8,
+    /// Held while the phase changes and while an interrupt decides what to
+    /// do, so an interrupt never falls between two phases.
+    gate: Mutex<()>,
     interrupting: AtomicBool,
+    /// The interrupt was sent to Claude Code during this reply.
+    interrupt_sent: AtomicBool,
+    /// Counts turns, so an interrupt's watchdog acts only on its own.
+    turn_seq: AtomicU64,
     closing: AtomicBool,
     ready_sent: AtomicBool,
     interrupts: AtomicU64,
@@ -723,7 +734,12 @@ fn work_loop(shared: &Arc<Shared>) {
         };
         match item {
             Item::Words(words) => {
-                shared.phase.store(PREPARING, Ordering::SeqCst);
+                {
+                    let _gate = lock(&shared.gate);
+                    shared.turn_seq.fetch_add(1, Ordering::SeqCst);
+                    shared.interrupt_sent.store(false, Ordering::SeqCst);
+                    shared.phase.store(PREPARING, Ordering::SeqCst);
+                }
                 let ended = turn(shared, &words);
                 shared.phase.store(IDLE, Ordering::SeqCst);
                 if ended {
@@ -797,6 +813,7 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
     };
     let mut started = false;
     let mut whole: Vec<String> = Vec::new();
+    let mut whole_seen: Vec<(String, String)> = Vec::new();
     loop {
         let Ok(Some(value)) = events.recv() else {
             said.ended = true;
@@ -844,10 +861,20 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
                 }
             }
             Some("assistant") if main => {
+                let id = value["message"]["id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
                 for block in value["message"]["content"].as_array().into_iter().flatten() {
                     match block["type"].as_str() {
+                        // Claude Code may send a message once per block or
+                        // once whole: each block counts once.
                         Some("text") => {
-                            whole.push(block["text"].as_str().unwrap_or_default().to_owned())
+                            let text = block["text"].as_str().unwrap_or_default().to_owned();
+                            if !whole_seen.contains(&(id.clone(), text.clone())) {
+                                whole_seen.push((id.clone(), text.clone()));
+                                whole.push(text);
+                            }
                         }
                         Some("tool_use") if show => shared.emit(AgentEvent::Working {
                             doing: block["name"].as_str().and_then(|tool| {
@@ -865,11 +892,20 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
             _ => {}
         }
     }
-    // A Claude Code that sent no pieces still sent the finished text.
-    if said.cutter.is_empty() && !whole.is_empty() {
-        let fresh = said.cutter.push(&whole.join("\n\n"));
-        if show && !fresh.is_empty() {
-            shared.emit(AgentEvent::TextDelta { text: fresh });
+    // The finished text is the reply: a message streamed twice, or cut
+    // short, or never streamed in pieces at all, still ends as Claude Code
+    // finished it. The window's TextDone replaces the pieces shown.
+    if !whole.is_empty() {
+        let mut finished = Cutter::new();
+        let fresh = finished.push(&whole.join("\n\n"));
+        if finished.reply() != said.cutter.reply() || finished.block() != said.cutter.block() {
+            if said.cutter.is_empty() && show && !fresh.is_empty() {
+                shared.emit(AgentEvent::TextDelta { text: fresh });
+            }
+            shared.note(
+                "the finished text differs from the pieces streamed: the finished text is kept",
+            );
+            said.cutter = finished;
         }
     }
     said
@@ -1199,22 +1235,30 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // from one again, and the runtime keeps one capture per turn id.
     let prompt_id = format!("{}-{turn_no}-{}", shared.session, shared.next_id());
     let (event, state_text) = prepare(shared, &words, from_window, &prompt_id);
-    if shared.interrupting.swap(false, Ordering::SeqCst) {
-        shared.emit(AgentEvent::TurnEnded {
-            ok: true,
-            interrupted: true,
-            error: None,
-        });
-        return false;
-    }
-    shared.phase.store(WRITING, Ordering::SeqCst);
-    if let Err(error) = shared.send_user(&lesson_state::message(&state_text, &words)) {
-        shared.emit(AgentEvent::TurnEnded {
-            ok: false,
-            interrupted: false,
-            error: Some(error.0),
-        });
-        return false;
+    {
+        // An interrupt either lands before the message goes, and the turn
+        // ends here, or after, and is sent to Claude Code.
+        let _gate = lock(&shared.gate);
+        if shared.interrupting.swap(false, Ordering::SeqCst) {
+            drop(_gate);
+            shared.note("interrupted before the message was sent: no record for this turn");
+            shared.emit(AgentEvent::TurnEnded {
+                ok: true,
+                interrupted: true,
+                error: None,
+            });
+            return false;
+        }
+        shared.phase.store(WRITING, Ordering::SeqCst);
+        if let Err(error) = shared.send_user(&lesson_state::message(&state_text, &words)) {
+            drop(_gate);
+            shared.emit(AgentEvent::TurnEnded {
+                ok: false,
+                interrupted: false,
+                error: Some(error.0),
+            });
+            return false;
+        }
     }
     let said = listen(shared, true);
     let reply = said.cutter.reply();
@@ -1223,8 +1267,20 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             text: reply.clone(),
         });
     }
+    // The reply ended. It was interrupted only if the interrupt reached
+    // Claude Code and the reply did not finish anyway.
+    let sent = {
+        let _gate = lock(&shared.gate);
+        shared.phase.store(SAVING, Ordering::SeqCst);
+        shared.interrupting.store(false, Ordering::SeqCst);
+        shared.interrupt_sent.swap(false, Ordering::SeqCst)
+    };
+    let finished = said
+        .result
+        .as_ref()
+        .is_some_and(|result| result["subtype"].as_str() == Some("success"));
     if said.ended {
-        let interrupted = shared.interrupting.swap(false, Ordering::SeqCst);
+        let interrupted = sent;
         let expected = shared.closing.load(Ordering::SeqCst);
         shared.emit(AgentEvent::TurnEnded {
             ok: expected || interrupted,
@@ -1234,10 +1290,10 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         });
         return true;
     }
-    shared.phase.store(SAVING, Ordering::SeqCst);
     // An interrupted reply gets no second request and no mark: the open
-    // task stays open.
-    if shared.interrupting.swap(false, Ordering::SeqCst) {
+    // task stays open. Claude Code runs no Stop hook after an interrupt, so
+    // a plugin lesson keeps no reply for it either.
+    if sent && !finished {
         shared.note("interrupted: no record for this turn");
         shared.emit(AgentEvent::TurnEnded {
             ok: true,
@@ -1278,6 +1334,15 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         });
         return false;
     }
+    // The reply is whole, so the turn ends for the learner now; its record
+    // is kept behind it, within one bounded budget. A message sent
+    // meanwhile waits for it, the hidden second request included.
+    shared.emit(AgentEvent::TurnEnded {
+        ok: true,
+        interrupted: false,
+        error: None,
+    });
+    let deadline = Instant::now() + SAVE_BUDGET;
     let mut ended = false;
     let record = match record::parse(said.cutter.block().unwrap_or_default()) {
         Ok(record) => Some(record),
@@ -1293,11 +1358,6 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // and the turn that asked for it records nothing more.
     if let Some(control) = record.as_ref().and_then(|record| record.control) {
         apply_control(shared, control, &words, event.as_deref());
-        shared.emit(AgentEvent::TurnEnded {
-            ok: true,
-            interrupted: false,
-            error: None,
-        });
         return ended;
     }
     if halted {
@@ -1305,11 +1365,6 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         // mark is what the learner asked for.
         shared
             .note("recording is off, or the lesson is paused or stopped: no record for this turn");
-        shared.emit(AgentEvent::TurnEnded {
-            ok: true,
-            interrupted: false,
-            error: None,
-        });
         return ended;
     }
     let message = Message {
@@ -1317,14 +1372,17 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         event_id: event,
     };
     match &record {
-        Some(record) => save(shared, record, &message, &reply),
+        Some(record) => save(shared, record, &message, &reply, deadline),
         None => {
-            let open = lock(&shared.state).lesson.task.is_some();
-            shared.note("no valid record after asking again: this turn has no mark");
+            // The reply may have posed a new task, which the engine cannot
+            // know: the task in hand is forgotten, so the next answer is
+            // never saved against the wrong question.
+            let open = lock(&shared.state).lesson.task.take().is_some();
+            shared.note("no valid record after asking again: this turn has no mark, and the open task is forgotten");
             if open {
                 shared.emit(AgentEvent::Notice {
                     kind: NoticeKind::Other,
-                    text: "Your last answer was not marked: the tutor's notes on it could not be read. The lesson goes on.".into(),
+                    text: NOT_MARKED.into(),
                 });
             }
         }
@@ -1337,13 +1395,16 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     ) {
         shared.note(&format!("stop hook failed: {why}"));
     }
-    shared.emit(AgentEvent::TurnEnded {
-        ok: true,
-        interrupted: false,
-        error: None,
-    });
     ended
 }
+
+/// The notice for an answer the record could not keep.
+const NOT_MARKED: &str =
+    "Your last answer was not marked: it could not be saved to your record. The lesson goes on.";
+
+/// The most time a turn's record may take after its reply, all calls
+/// together: the next message waits for it.
+const SAVE_BUDGET: Duration = Duration::from_secs(20);
 
 /// The hidden second request, for a reply whose record block was missing
 /// or could not be read. The learner sees nothing of it.
@@ -1368,20 +1429,38 @@ fn ask_again(shared: &Arc<Shared>, why: &str) -> (Option<Record>, bool) {
     }
 }
 
-/// Keep the turn's record in the runtime.
-fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
+/// Whether a refusal says the turn is already in the record: a request
+/// whose outcome was unknown had committed after all.
+fn already_saved(why: &str) -> bool {
+    why.contains("events_already_processed") || why.contains("already processed")
+}
+
+/// Keep the turn's record in the runtime, by `deadline`.
+fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, deadline: Instant) {
     let mut state = lock(&shared.state);
     let request_id = format!("{}-turn-{}", shared.session, shared.next_id());
     let write = state.lesson.apply(record, message, reply, &request_id);
+    // An answer the record cannot keep is never lost in silence.
+    let lost = |why: &str| {
+        shared.note(&format!("an answer was not marked: {why}"));
+        shared.emit(AgentEvent::Notice {
+            kind: NoticeKind::Other,
+            text: NOT_MARKED.into(),
+        });
+    };
+    if let Some(why) = write.lost {
+        lost(why);
+    }
     let mut request = write.request;
     // A misunderstanding found or cleared revises the learner's memory of
     // that skill, in the same request as the observation it rests on.
     if let (Some(note), true) = (&record.memory, request.get("observations").is_some()) {
         let found = shared
             .host
-            .call(
+            .call_by(
                 "memory",
                 json!({"schema": "learner-model/v2", "action": "search", "goal": note.skill, "original_query": note.skill}),
+                deadline,
             )
             .ok();
         let memory = found
@@ -1397,37 +1476,44 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
     if !worth {
         return;
     }
-    let mut outcome = shared.host.call("learning_step", request.clone());
-    if let Err(why) = &outcome {
+    // A call whose outcome is unknown is replayed as it was by the host
+    // client. A refusal is answered once, changed.
+    let mut outcome = shared
+        .host
+        .call_by("learning_step", request.clone(), deadline);
+    if let Err(why) = outcome.as_ref().map(|_| ()) {
+        let why = why.clone();
         shared.note(&format!("learning_step refused: {why}"));
-        // Asked once more: with the session's revision read again, if
-        // another conversation moved it on, and without the memory edit,
-        // so that a memory the runtime refuses never costs the mark.
-        let mut retry = request.clone();
-        if let Some(edits) = retry.as_object_mut() {
-            edits.remove("memory_edits");
-        }
-        // A cold answer the runtime will not take is sent as not cold,
-        // so the mark is kept.
-        if why.contains("cold") {
-            for observation in retry["observations"].as_array_mut().into_iter().flatten() {
-                if observation.get("attempt").is_some() {
-                    observation["attempt"]["cold"] = json!(false);
+        if !already_saved(&why) && !host_client::unknown(&why) {
+            // Without the memory edit, so that a memory the runtime refuses
+            // never costs the mark; not cold, if the runtime refused cold;
+            // and with the session's revision read again, if another
+            // conversation moved it on.
+            let mut retry = request.clone();
+            if let Some(edits) = retry.as_object_mut() {
+                edits.remove("memory_edits");
+            }
+            if why.contains("cold") {
+                for observation in retry["observations"].as_array_mut().into_iter().flatten() {
+                    if observation.get("attempt").is_some() {
+                        observation["attempt"]["cold"] = json!(false);
+                    }
                 }
             }
-        }
-        if why.contains("revision") {
-            if let Ok(status) = shared.host.call(
-                "context",
-                json!({"schema": "learner-model/v2", "action": "status"}),
-            ) {
-                if let Some(revision) = status["session"]["revision"].as_i64() {
-                    retry["session"]["expected_revision"] = json!(revision);
+            if why.contains("revision") {
+                if let Ok(status) = shared.host.call_by(
+                    "context",
+                    json!({"schema": "learner-model/v2", "action": "status"}),
+                    deadline,
+                ) {
+                    if let Some(revision) = status["session"]["revision"].as_i64() {
+                        retry["session"]["expected_revision"] = json!(revision);
+                    }
                 }
             }
+            retry["request_id"] = json!(format!("{request_id}-again"));
+            outcome = shared.host.call_by("learning_step", retry, deadline);
         }
-        retry["request_id"] = json!(format!("{request_id}-again"));
-        outcome = shared.host.call("learning_step", retry);
     }
     match outcome {
         Ok(result) => {
@@ -1450,6 +1536,11 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
                 state.lesson.checks = checks;
             }
         }
+        Err(why) if already_saved(&why) => {
+            // It committed: only the session's revision is not known. The
+            // next write reads it again if it is refused for it.
+            shared.note("the turn was already in the record");
+        }
         Err(why) => {
             shared.note(&format!("the record was not saved: {why}"));
             // Recording off, or a lesson paused or stopped elsewhere: the
@@ -1463,11 +1554,7 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str) {
                 return;
             }
             if write.marked {
-                shared.emit(AgentEvent::Notice {
-                    kind: NoticeKind::Other,
-                    text: "Your last answer could not be saved to your record. The lesson goes on."
-                        .into(),
-                });
+                lost(&why);
             }
         }
     }
@@ -1549,27 +1636,36 @@ impl Conversation for DirectConversation {
         // Words waiting their turn are dropped, as Claude Code drops a
         // queued message on an interrupt.
         lock(&self.shared.queue).retain(|item| matches!(item, Item::Ended));
+        // Decided under the gate, so the turn cannot change phase meanwhile.
+        let _gate = lock(&self.shared.gate);
         match self.shared.phase.load(Ordering::SeqCst) {
             PREPARING => {
                 self.shared.interrupting.store(true, Ordering::SeqCst);
                 Ok(())
             }
             WRITING => {
-                self.shared.interrupting.store(true, Ordering::SeqCst);
                 let id = self.shared.next_id();
                 self.shared.write(&json!({
                     "type": "control_request",
                     "request_id": id,
                     "request": {"subtype": "interrupt", "cancel_queued": true},
                 }))?;
+                self.shared.interrupt_sent.store(true, Ordering::SeqCst);
                 let mine = self.shared.interrupts.fetch_add(1, Ordering::SeqCst) + 1;
+                // The watchdog belongs to this turn: it never signals a later
+                // one, however soon the learner writes again.
+                let turn = self.shared.turn_seq.load(Ordering::SeqCst);
                 let shared = Arc::clone(&self.shared);
                 thread::spawn(move || {
                     for signal in ["INT", "TERM"] {
                         thread::sleep(Duration::from_secs(8));
-                        if shared.interrupts.load(Ordering::SeqCst) != mine
-                            || shared.phase.load(Ordering::SeqCst) != WRITING
-                        {
+                        let still = {
+                            let _gate = lock(&shared.gate);
+                            shared.interrupts.load(Ordering::SeqCst) == mine
+                                && shared.turn_seq.load(Ordering::SeqCst) == turn
+                                && shared.phase.load(Ordering::SeqCst) == WRITING
+                        };
+                        if !still {
                             return;
                         }
                         shared.signal(signal);
@@ -1651,7 +1747,8 @@ mod tests {
         );
         assert_eq!(
             after("--allowedTools"),
-            "Read,mcp__magnesium__search_sources,mcp__magnesium__sources"
+            "Read(//study/**),mcp__magnesium__search_sources,mcp__magnesium__sources",
+            "Read reaches the study root and nothing else"
         );
         assert!(args.contains(&"--strict-mcp-config".to_owned()));
         assert!(args.contains(&"--disable-slash-commands".to_owned()));

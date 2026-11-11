@@ -17,6 +17,11 @@ What a turn does is chosen by words in the learner's message (inside
   BACK         ("I'm back") pose quick check 1 when the state lists one
   COLD         with "b = -5": mark the answer cold
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
+  VERYSLOW     write for about ten seconds
+  RESTART      stream part of the reply, start the same message again, then
+               stream it whole
+  CUTSHORT     stream only the start of the reply; the finished message has
+               all of it, block included
 
 The hidden request (it says the block "could not be read") is answered with
 the block alone, after STAND_IN_REPAIR_DELAY seconds.
@@ -83,17 +88,29 @@ def stream(event):
     emit({"type": "stream_event", "event": event, "parent_tool_use_id": None, "session_id": session})
 
 
-def say(text, slow=False):
+def say(text, slow=False, mode=None):
     """Stream text in pieces of five characters, then the finished message."""
     message_id = "msg_" + uuid.uuid4().hex[:12]
     stream({"type": "message_start", "message": {"id": message_id}})
+    if mode == "RESTART":
+        stream({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+        for at in range(0, 20, 5):
+            stream({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text[at:at + 5]}})
+        stream({"type": "message_start", "message": {"id": message_id}})
+    if mode == "CUTSHORT":
+        stream({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+        stream({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text[:12]}})
+        stream({"type": "content_block_stop", "index": 0})
+        emit({"type": "assistant", "message": {"id": message_id, "content": [{"type": "text", "text": text}]},
+              "parent_tool_use_id": None, "session_id": session})
+        return True
     stream({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
     for at in range(0, len(text), 5):
         if interrupted.is_set():
             return False
         stream({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text[at:at + 5]}})
         if slow:
-            time.sleep(0.05)
+            time.sleep(0.05 if slow is True else slow)
     stream({"type": "content_block_stop", "index": 0})
     emit({"type": "assistant", "message": {"id": message_id, "content": [{"type": "text", "text": text}]},
           "parent_tool_use_id": None, "session_id": session})
@@ -135,6 +152,8 @@ def reply_for(learner, state):
         return "Paused." + block(control="pause"), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
+    if "VERYSLOW" in learner:
+        return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:
         return "Let me think about that slowly, one small word after another, for a while." + block(), True
     if "TEACH" in learner:
@@ -169,7 +188,8 @@ def turn(content):
     log("message", {"learner": learner, "state": state})
     init()
     reply, slow = reply_for(learner, state)
-    if not say(reply, slow):
+    mode = next((m for m in ("RESTART", "CUTSHORT") if m in learner), None)
+    if not say(reply, slow, mode):
         emit({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}})
         result(None, "error_during_execution")
         return

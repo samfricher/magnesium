@@ -62,7 +62,12 @@ fn runtime_binary() -> PathBuf {
 /// value.
 fn point_readers_at_the_runtime() {
     static SET: OnceLock<()> = OnceLock::new();
-    SET.get_or_init(|| std::env::set_var(mg_core::runtime::PROGRAM_ENV, runtime_binary()));
+    SET.get_or_init(|| {
+        std::env::set_var(mg_core::runtime::PROGRAM_ENV, runtime_binary());
+        // A tool call takes milliseconds; a short limit lets a test of a hung
+        // server finish soon.
+        std::env::set_var(mg_core::host_client::CALL_LIMIT_ENV, "2000");
+    });
 }
 
 fn script(path: &Path, text: &str) {
@@ -76,6 +81,8 @@ struct Bench {
     folder: PathBuf,
     window: PathBuf,
     runtime: PathBuf,
+    /// Files whose presence makes the runtime misbehave, for a test.
+    flags: PathBuf,
     model: PathBuf,
     plugin: PathBuf,
     log: PathBuf,
@@ -95,12 +102,20 @@ impl Bench {
             fs::create_dir_all(path).unwrap();
         }
         let runtime = base.join("magnesium");
+        let flags = base.join("flags");
+        fs::create_dir_all(&flags).unwrap();
+        let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
         script(
             &runtime,
             &format!(
-                "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\nexec '{}' \"$@\"\n",
-                runtime_binary().display(),
-                home = home.display()
+                "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\n\
+                 if [ \"$1 $2 $3\" = \"_internal hook user-prompt-submit\" ] && [ -e '{flags}/fail-prompt-hook' ]; then cat >/dev/null; exit 0; fi\n\
+                 if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/hang' ]; then HANG_FLAG='{flags}/hang' exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
+                 exec '{bin}' \"$@\"\n",
+                bin = runtime_binary().display(),
+                home = home.display(),
+                flags = flags.display(),
+                proxy = tests.join("hang_proxy.py").display(),
             ),
         );
         let init = Command::new(&runtime)
@@ -122,7 +137,6 @@ impl Bench {
             None => root.clone(),
         };
         let log = base.join("model.log");
-        let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
         let mut exports = format!("export STAND_IN_LOG='{}'\n", log.display());
         for (name, value) in extra_env {
             exports.push_str(&format!("export {name}='{value}'\n"));
@@ -153,6 +167,7 @@ impl Bench {
             folder,
             window,
             runtime,
+            flags,
             model,
             plugin,
             log,
@@ -204,7 +219,13 @@ impl Bench {
             .unwrap_or_else(|_| panic!("{args:?}: {}", String::from_utf8_lossy(&out.stdout)))
     }
 
+    /// The answers on record, once the last turn's record is kept.
     fn attempts(&self) -> Vec<Value> {
+        self.settle();
+        self.attempts_now()
+    }
+
+    fn attempts_now(&self) -> Vec<Value> {
         self.cli(&["attempts", "--json"])["attempts"]
             .as_array()
             .cloned()
@@ -221,6 +242,7 @@ impl Bench {
 
     /// The tutor's replies the runtime kept, oldest first.
     fn deliveries(&self) -> Vec<String> {
+        self.settle();
         let conn = self.store();
         let mut statement = conn
             .prepare("SELECT text FROM learning_events WHERE speaker='tutor' AND kind='delivery' ORDER BY event_no")
@@ -232,7 +254,31 @@ impl Bench {
             .collect()
     }
 
+    /// Wait until the record stops changing: a turn ends for the learner
+    /// when its reply is whole, and its record is kept just after.
+    fn settle(&self) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut last = self.size();
+        loop {
+            std::thread::sleep(Duration::from_millis(300));
+            let now = self.size();
+            if now == last || Instant::now() > deadline {
+                return;
+            }
+            last = now;
+        }
+    }
+
+    fn size(&self) -> (i64, usize) {
+        let events: i64 = self
+            .store()
+            .query_row("SELECT count(*) FROM learning_events", [], |r| r.get(0))
+            .unwrap();
+        (events, self.attempts_now().len())
+    }
+
     fn sessions(&self) -> i64 {
+        self.settle();
         self.store()
             .query_row("SELECT count(*) FROM learning_sessions", [], |r| r.get(0))
             .unwrap()
@@ -306,11 +352,14 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     let (manager, mut events) = bench.manager();
     let opened = manager.open_session(false).unwrap();
     assert_eq!(opened.engine, Engine::Direct);
-    // A new conversation's id is the engine's own, so it is ready at once.
-    events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }));
-
     manager.send_new_lesson("TEACH me quadratics").unwrap();
     assert!(ended_well(&events.turn_end()));
+    // Ready, and the id remembered, once Claude Code showed it has the
+    // conversation: with the first message.
+    assert!(events
+        .seen
+        .iter()
+        .any(|e| matches!(e, AgentEvent::Ready { .. })));
     let (reply, pieces) = events.take();
     assert_eq!(reply, "Let's start. What is b in x² − 5x + 6 = 0?");
     assert_eq!(
@@ -450,17 +499,19 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
     events.turn_end();
     manager.send("NEVERBLOCK b = 5").unwrap();
     assert!(ended_well(&events.turn_end()));
-    let notice = events
-        .seen
-        .iter()
-        .find_map(|e| match e {
+    // The notice comes with the record, just after the turn's end.
+    let notice = match events.until("a notice", |e| {
+        matches!(
+            e,
             AgentEvent::Notice {
                 kind: NoticeKind::Other,
-                text,
-            } => Some(text.clone()),
-            _ => None,
-        })
-        .expect("a notice");
+                ..
+            }
+        )
+    }) {
+        AgentEvent::Notice { text, .. } => text,
+        _ => unreachable!(),
+    };
     assert!(notice.contains("not marked"), "{notice}");
     assert!(bench.attempts().is_empty());
     // The reply was still shown and kept.
@@ -647,11 +698,8 @@ fn handing_in_a_paper_opens_a_plugin_conversation_whatever_was_picked() {
 
 /// Every event the runtime holds, learner and tutor, and every answer.
 fn record_size(bench: &Bench) -> (i64, usize) {
-    let events: i64 = bench
-        .store()
-        .query_row("SELECT count(*) FROM learning_events", [], |r| r.get(0))
-        .unwrap();
-    (events, bench.attempts().len())
+    bench.settle();
+    bench.size()
 }
 
 #[test]
@@ -783,5 +831,147 @@ fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
     assert!(ended_well(&events.turn_end()));
     assert!(record_size(&bench).0 > paused.0);
     assert_eq!(bench.sessions(), 1);
+    manager.shut_down();
+}
+
+fn notices(events: &Events) -> Vec<String> {
+    events
+        .seen
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::Notice { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn an_interrupt_s_watchdog_never_stops_the_next_reply() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    manager.send("SLOW b = 5").unwrap();
+    events.until("the first words", |e| {
+        matches!(e, AgentEvent::TextDelta { .. })
+    });
+    manager.interrupt().unwrap();
+    events.turn_end();
+    // At once, a reply that takes longer than the watchdog's eight seconds.
+    events.seen.clear();
+    manager.send("VERYSLOW b = 5").unwrap();
+    let end = events.until("the slow reply's end", |e| {
+        matches!(e, AgentEvent::TurnEnded { .. } | AgentEvent::Exited { .. })
+    });
+    assert!(ended_well(&end), "{end:?}");
+    let (reply, _) = events.take();
+    assert!(
+        reply.ends_with("so that it takes a while to finish."),
+        "{reply}"
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn an_answer_whose_words_were_not_captured_says_it_was_not_marked() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    fs::write(bench.flags.join("fail-prompt-hook"), "").unwrap();
+    events.seen.clear();
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert!(bench.attempts().is_empty());
+    // The notice comes with the record, just after the turn's end.
+    let notice = events.until("a notice", |e| matches!(e, AgentEvent::Notice { .. }));
+    assert!(format!("{notice:?}").contains("not marked"), "{notice:?}");
+    manager.shut_down();
+}
+
+#[test]
+fn an_answer_after_an_unreadable_record_is_never_marked_on_the_old_task() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    // This reply may have posed a new task; its record cannot be read.
+    manager.send("NEVERBLOCK b = 5").unwrap();
+    events.turn_end();
+    bench.settle();
+    events.seen.clear();
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    let notice = events.until("a notice", |e| matches!(e, AgentEvent::Notice { .. }));
+    assert!(format!("{notice:?}").contains("not marked"), "{notice:?}");
+    manager.shut_down();
+}
+
+#[test]
+fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_once() {
+    let bench = Bench::new(None, &[]);
+    // The engine's tool server starts behind the proxy, which holds back
+    // the answer to the first save of an answer.
+    fs::write(bench.flags.join("hang"), "").unwrap();
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    events.seen.clear();
+    let sent = Instant::now();
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    // The reply is not held back by the save.
+    assert!(
+        sent.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        sent.elapsed()
+    );
+    // The save timed out, its server was replaced, and the same request,
+    // sent again, was answered with its first result: one answer, no notice.
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert!(!bench.flags.join("hang").exists(), "the hang happened");
+    assert!(notices(&events).is_empty(), "{:#?}", events.seen);
+    // The next turn goes on as usual.
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert_eq!(bench.attempts().len(), 2);
+    manager.shut_down();
+}
+
+#[test]
+fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    events.turn_end();
+    events.take();
+    // The message starts twice in one turn.
+    manager.send("RESTART b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let (reply, _) = events.take();
+    assert_eq!(
+        reply,
+        "Not quite: b keeps its minus sign, so b = −5. Try this one: What is b in x² + 3x − 4 = 0?"
+    );
+    // The stream stops short; the finished message has the rest and the block.
+    manager.send("CUTSHORT b = -5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    let (reply, _) = events.take();
+    assert!(
+        reply.starts_with("Right: the sign goes with the number."),
+        "{reply}"
+    );
+    assert!(!reply.contains("<record"));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 2, "both blocks were found: {attempts:#?}");
+    let kept = bench.deliveries();
+    assert_eq!(kept.last().unwrap(), &reply);
     manager.shut_down();
 }

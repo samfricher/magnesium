@@ -50,8 +50,9 @@ struct Inner {
     /// The engine of the conversation above.
     engine: Engine,
     /// Handing in a paper opens the next conversation on the plugin engine,
-    /// which marks papers.
-    papers_next: bool,
+    /// which marks papers: when the page opens it at once, as it does after
+    /// a hand-in. A hand-in the page never followed up does not linger.
+    papers_next: Option<std::time::Instant>,
 }
 
 pub struct Manager {
@@ -92,6 +93,9 @@ pub struct EngineChoice {
     pub conversation: Option<Engine>,
 }
 
+/// How soon after a hand-in the page opens the conversation that marks it.
+const PAPERS_OPEN_WITHIN: Duration = Duration::from_secs(60);
+
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -112,7 +116,7 @@ impl Manager {
                 conversation: None,
                 buffer: Arc::new(Mutex::new(Buffer::default())),
                 engine: Engine::Plugin,
-                papers_next: false,
+                papers_next: None,
             }),
             current: Arc::new(Mutex::new(0)),
         }
@@ -428,7 +432,11 @@ impl Manager {
         let mut inner = lock(&self.inner);
         // A conversation resumes only on its own engine. Paper marking is
         // the plugin engine's, whatever the learner picked.
-        let engine = if std::mem::take(&mut inner.papers_next) {
+        let engine = if inner
+            .papers_next
+            .take()
+            .is_some_and(|handed_in| handed_in.elapsed() < PAPERS_OPEN_WITHIN)
+        {
             Engine::Plugin
         } else {
             self.chosen()
@@ -672,7 +680,7 @@ impl Manager {
         );
         // The plugin engine marks papers: the conversation that sends these
         // words is opened on it.
-        lock(&self.inner).papers_next = true;
+        lock(&self.inner).papers_next = Some(std::time::Instant::now());
         Ok(Some((words.clone(), self.harness.papers(&words))))
     }
 

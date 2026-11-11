@@ -501,6 +501,9 @@ impl Message {
 pub struct Write {
     pub request: Value,
     pub marked: bool,
+    /// Why the tutor marked the message as an answer and no attempt could
+    /// be written: no task known to be open, or the message not captured.
+    pub lost: Option<&'static str>,
 }
 
 /// The open task in the checkpoint's plan_text.
@@ -655,6 +658,7 @@ impl Lesson {
         }
         let mut observations = Vec::new();
         let mut marked = false;
+        let mut lost = None;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
             let label = clip(
@@ -693,6 +697,16 @@ impl Lesson {
                 "attempt": attempt,
             }));
             marked = true;
+        }
+        if let (Some(_), false) = (answer, marked) {
+            lost = match (&open, &message.event_id) {
+                // A guess, or a task asked again after its mark, is not
+                // marked by rule: nothing is lost.
+                (Some(task), _) if task.guess || task.again => None,
+                (None, _) => Some("no task was known to be open"),
+                (Some(_), None) => Some("the learner's message was not captured"),
+                _ => None,
+            };
         }
         // A misunderstanding found or cleared needs an observation of this
         // message to rest on, even when it was not an answer.
@@ -797,7 +811,11 @@ impl Lesson {
             }
             request["checkpoint"] = checkpoint;
         }
-        Write { request, marked }
+        Write {
+            request,
+            marked,
+            lost,
+        }
     }
 }
 
