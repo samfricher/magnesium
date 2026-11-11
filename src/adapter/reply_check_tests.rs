@@ -367,3 +367,22 @@ fn a_learning_step_after_the_reply_is_known_as_the_turns_last_write() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn a_refused_save_after_the_reply_gets_one_retry() {
+    let (root, store, host) = claude_lesson();
+    claude_prompt(&root, &host, "one");
+    host_reply(&root, &host_context(&host), "Right. Now: what is c?").unwrap();
+    assert!(
+        !refused_save_after_reply(&root, &host).unwrap(),
+        "the first refusal: retry"
+    );
+    assert!(
+        refused_save_after_reply(&root, &host).unwrap(),
+        "the retry refused too: the turn ends"
+    );
+    // A new turn starts with its own retry.
+    claude_prompt(&root, &host, "two");
+    assert!(!refused_save_after_reply(&root, &host).unwrap());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

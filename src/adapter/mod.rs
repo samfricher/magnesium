@@ -289,7 +289,7 @@ pub(crate) fn dispatch_with_host(
             request.get("stage").and_then(serde_json::Value::as_str),
             Some("papers" | "papers_loop")
         );
-    let mut result = dispatch_inner(cwd, operation, request, native_host)?;
+    let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
     open_sitting(
         cwd,
         update.as_ref(),
@@ -297,7 +297,73 @@ pub(crate) fn dispatch_with_host(
         caller.as_ref(),
         &mut result,
     );
+    if let Some(update) = &update {
+        add_goal_context(cwd, update, native_host, &mut result);
+    }
     Ok(result)
+}
+/// A committed session start or resume carries what `context.prepare`
+/// returns for its goal, as `context`. In the live runs of 2026-11-11 the
+/// tutor read the learner's record at 3 of 3 lesson starts on `main` and at
+/// 2 of 6 on this build, and a lesson that skips the read starts from nothing
+/// in a folder with a history. With the read in the start's result it cannot
+/// be skipped, in a window or a terminal, and the lesson saves a call. Its
+/// budget is the one `context.prepare` has by default. Reading only: a read
+/// that fails leaves the start's result as it was.
+fn add_goal_context(
+    cwd: &Path,
+    update: &serde_json::Value,
+    native_host: Option<crate::learner::HostContext>,
+    result: &mut serde_json::Value,
+) {
+    if result["update_status"] != "committed"
+        || !matches!(
+            update["session"]["operation"].as_str(),
+            Some("start" | "resume")
+        )
+    {
+        return;
+    }
+    let Ok(Some(workspace)) = Workspace::discover(cwd) else {
+        return;
+    };
+    let Ok(store) = open_store(&workspace) else {
+        return;
+    };
+    let goal = update["session"]["goal"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| {
+            let id = update["session"]["session_id"].as_str()?;
+            store
+                .conn
+                .query_row(
+                    "SELECT goal FROM learning_sessions WHERE session_id=?1",
+                    [id],
+                    |r| r.get::<_, String>(0),
+                )
+                .ok()
+        });
+    let Some(goal) = goal.filter(|goal| !goal.trim().is_empty()) else {
+        return;
+    };
+    let host = native_host.unwrap_or_else(tool_host);
+    // No retrieval trace is kept for this read, so a replayed start returns
+    // what it returned the first time. The tutor's own context.prepare
+    // calls keep theirs.
+    let read = crate::learner::read::prepare_snapshot_for_tool(
+        &store.conn,
+        &host.host_kind,
+        &host.host_thread_id,
+        serde_json::json!({"schema": crate::learner::SCHEMA, "action": "prepare", "goal": goal}),
+        crate::learner::read::Tool::Context,
+    )
+    .and_then(|prepared| crate::learner::read::finish_trace(&store.conn, prepared, false));
+    if let Ok(context) = read
+        && context.get("error").is_none()
+    {
+        result["context"] = context;
+    }
 }
 /// The study folder's sittings, when this call runs in one it is bound to.
 /// The store is created only for a write, so a read changes no file.
@@ -1002,6 +1068,32 @@ pub(crate) fn replied_this_turn(cwd: &Path, host: &HostIdentity) -> Result<bool,
         Some(key) => Ok(!tool_replies(&store, &context, &key)?.is_empty()),
         None => Ok(false),
     }
+}
+/// A save after the reply that the runtime refused gets one retry before the
+/// turn ends. Returns true when this conversation's latest learner message
+/// has already had its refusal, so the turn now ends either way; otherwise
+/// it notes this one and returns false. The note is a file of the learner
+/// message's key, one per conversation, in Magnesium's private cache.
+pub(crate) fn refused_save_after_reply(cwd: &Path, host: &HostIdentity) -> Result<bool, String> {
+    let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
+        return Ok(true);
+    };
+    check_workspace_binding(&workspace)?;
+    let store = open_store(&workspace)?;
+    let context = host_context(host);
+    let Some(key) = latest_learner_key(&store, &context)? else {
+        return Ok(true);
+    };
+    let dir = workspace
+        .private_dir(Path::new("cache/refused-saves"))
+        .map_err(|e| e.to_string())?;
+    let path = dir.join(sha256_hex(context.host_thread_id.as_bytes()));
+    if std::fs::read_to_string(&path).is_ok_and(|noted| noted == key) {
+        let _ = std::fs::remove_file(&path);
+        return Ok(true);
+    }
+    crate::workspace::write_private_atomic(&path, key.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(false)
 }
 /// Replies already recorded from the `reply` tool for one learner message.
 fn tool_replies(

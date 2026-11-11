@@ -71,6 +71,7 @@ struct HookInput {
     last_assistant_message: Option<String>,
     tool_name: Option<String>,
     tool_input: Option<Value>,
+    tool_response: Option<Value>,
 }
 
 /// The host comes from the installed `--host-kind` hook flag, because Claude
@@ -295,8 +296,14 @@ fn handle(
         let ends = match tool_kind(tool) {
             Some(MagnesiumTool::Reply) => !save_after(input.tool_input.as_ref()),
             // The notes the tutor sends after its reply are the turn's last
-            // write. In a terminal no reply tool exists, so this never fires.
-            Some(MagnesiumTool::LearningStep) => adapter::replied_this_turn(&input.cwd, host)?,
+            // write, once they are saved. A refused save gets one retry, and
+            // the turn ends after it either way. In a terminal no reply tool
+            // exists, so this never fires.
+            Some(MagnesiumTool::LearningStep) => {
+                adapter::replied_this_turn(&input.cwd, host)?
+                    && (committed(input.tool_response.as_ref())
+                        || adapter::refused_save_after_reply(&input.cwd, host)?)
+            }
             None => false,
         };
         return Ok(ends.then(end_turn));
@@ -384,6 +391,28 @@ fn tool_kind(tool: Option<&str>) -> Option<MagnesiumTool> {
     }
 }
 
+/// Whether a learning_step's result says the update committed. Claude Code
+/// hands an MCP tool's result to the hook as its content, whose text holds
+/// the runtime's JSON, so every string is read as JSON too.
+fn committed(response: Option<&Value>) -> bool {
+    fn walk(value: &Value, depth: u8) -> bool {
+        if depth > 6 {
+            return false;
+        }
+        match value {
+            Value::Object(fields) => {
+                fields.get("update_status").and_then(Value::as_str) == Some("committed")
+                    || fields.values().any(|field| walk(field, depth + 1))
+            }
+            Value::Array(items) => items.iter().any(|item| walk(item, depth + 1)),
+            Value::String(text) => serde_json::from_str::<Value>(text)
+                .is_ok_and(|parsed| !parsed.is_string() && walk(&parsed, depth + 1)),
+            _ => false,
+        }
+    }
+    response.is_some_and(|response| walk(response, 0))
+}
+
 fn save_after(input: Option<&Value>) -> bool {
     input.and_then(|input| input["save_after"].as_bool()) == Some(true)
 }
@@ -412,9 +441,28 @@ mod tests {
     use std::io::Cursor;
 
     use super::{
-        MAX_HOOK_INPUT_BYTES, MagnesiumTool, end_turn, read_bounded_input, save_after, tool_kind,
-        validate_turn_identifier,
+        MAX_HOOK_INPUT_BYTES, MagnesiumTool, committed, end_turn, read_bounded_input, save_after,
+        tool_kind, validate_turn_identifier,
     };
+
+    #[test]
+    fn only_a_committed_update_counts_as_saved() {
+        let text = |value: serde_json::Value| serde_json::json!([{"type": "text", "text": value.to_string()}]);
+        assert!(committed(Some(&text(
+            serde_json::json!({"update_status": "committed", "references": {}})
+        ))));
+        assert!(committed(Some(
+            &serde_json::json!({"content": text(serde_json::json!({"update_status": "committed"}))})
+        )));
+        let refused = text(
+            serde_json::json!({"error": {"code": "unknown_reference", "message": "obs-1"}, "schema": "learner-model/v2"}),
+        );
+        assert!(!committed(Some(&refused)));
+        assert!(!committed(Some(&serde_json::json!(
+            "Magnesium could not invoke learning_step: invalid_variant"
+        ))));
+        assert!(!committed(None));
+    }
 
     #[test]
     fn only_magnesiums_reply_and_learning_step_can_end_the_turn() {

@@ -1599,9 +1599,13 @@ impl Conversation for ClaudeConversation {
 
     fn close(&mut self) {
         self.shared.closing.store(true, Ordering::SeqCst);
+        // Once the reply is on screen, what is left of the turn is the save
+        // of its notes, the memory edit and the checkpoint. It is let finish:
+        // the agent ends the turn on its own once the input is closed.
+        let saving_notes = self.shared.turn_active() && !lock(&self.shared.replies).is_empty();
         // Closing the input does not stop a reply under way, so the reply is
         // interrupted first.
-        if self.shared.turn_active() {
+        if self.shared.turn_active() && !saving_notes {
             self.shared.interrupting.store(true, Ordering::SeqCst);
             let id = self.shared.next_id();
             let _ = self.shared.write(&json!({
@@ -1616,8 +1620,9 @@ impl Conversation for ClaudeConversation {
         // time before it is stopped.
         *lock(&self.shared.stdin) = None;
         let shared = Arc::clone(&self.shared);
+        let grace = Duration::from_secs(if saving_notes { 30 } else { 6 });
         thread::spawn(move || {
-            thread::sleep(Duration::from_secs(6));
+            thread::sleep(grace);
             shared.signal("TERM");
             thread::sleep(Duration::from_secs(5));
             if let Some(child) = lock(&shared.child).as_mut() {

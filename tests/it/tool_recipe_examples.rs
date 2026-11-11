@@ -237,3 +237,61 @@ fn a_memory_edit_may_cite_the_observation_its_previous_request_named() {
     );
     assert!(said.contains("unknown_reference"), "{said}");
 }
+
+/// A lesson start carries what context.prepare returns for its goal, so a
+/// new conversation has the learner's record without a call of its own.
+#[test]
+fn a_session_start_carries_the_memory_on_its_goal() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let text = v2::tool(
+        &e,
+        "claude",
+        "monday",
+        "context",
+        json!({"action":"instructions","host":"claude","stage":"interpret_and_repair","operation":"tool_recipes"}),
+    )["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let call =
+        |thread: &str, request: Value| v2::tool(&e, "claude", thread, "learning_step", request);
+    let first = call("monday", recipe(&text, "start_capture"));
+    assert!(
+        first["context"].is_object(),
+        "an empty record still has its context: {first}"
+    );
+    let session = first["references"]["monday_session"].clone();
+    let mut answer = recipe(&text, "observe_answer");
+    substitute(
+        &mut answer,
+        "$MONDAY_EVENT_ID",
+        &first["captured_event_ids"][0],
+    );
+    substitute(&mut answer, "$MONDAY_SESSION_ID", &session);
+    answer["session"]["expected_revision"] = first["revisions"][session.as_str().unwrap()].clone();
+    let answered = call("monday", answer);
+    let mut describe = recipe(&text, "describe_and_checkpoint");
+    substitute(
+        &mut describe,
+        "$MONDAY_OBSERVATION_ID",
+        &answered["references"]["monday_work"],
+    );
+    substitute(&mut describe, "$MONDAY_SESSION_ID", &session);
+    describe["session"]["expected_revision"] =
+        answered["revisions"][session.as_str().unwrap()].clone();
+    let described = call("monday", describe);
+    let memory = described["references"]["quadratic_memory"].clone();
+
+    // Another conversation starts a lesson on the same goal.
+    let started = call(
+        "tuesday",
+        json!({"schema":"learner-model/v2","action":"update","request_id":"tuesday-start",
+            "session":{"operation":"start","client_ref":"s","goal":"Coefficients"}}),
+    );
+    assert_eq!(started["update_status"], "committed", "{started}");
+    let memories = started["context"]["memories"].to_string();
+    assert!(memories.contains(memory.as_str().unwrap()), "{started}");
+    // An update that starts no session carries no context.
+    assert!(described.get("context").is_none(), "{described}");
+}
