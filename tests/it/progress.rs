@@ -424,6 +424,65 @@ fn a_right_unaided_first_answer_puts_the_skill_on_the_schedule_once() {
 }
 
 #[test]
+fn progress_counts_what_the_learner_did_today() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    assert_eq!(
+        progress(&e)["today_counts"],
+        json!({"answered": 0, "started": 0, "passes": 0, "due_tomorrow": 0})
+    );
+    // Yesterday: a miss on one skill makes a check, due today.
+    answer(
+        &e,
+        "a-1",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
+    );
+    days_pass(&e, 1);
+    // Today: the check is passed, a new skill is answered right (its check
+    // is due tomorrow), a paper answer on a third skill earns a pass, and a
+    // question is declined, which is no answer.
+    answer(
+        &e,
+        "b-1",
+        "b is -7",
+        json!({"label":"sign of b","question":"In 3x² − 5x − 2 = 0, what is b?","first_try":"right","help":"none","cold":true}),
+    );
+    answer(
+        &e,
+        "b-2",
+        "µM per second",
+        json!({"label":"units of a rate","question":"Units of Vmax?","first_try":"right","help":"none","cold":false}),
+    );
+    answer(
+        &e,
+        "b-3",
+        "4",
+        json!({"label":"mean","question":"Mean of 2, 4, 6?","first_try":"right","help":"none","cold":true,
+            "paper":{"name":"MockA","question":"1","marks":2,"out_of":2}}),
+    );
+    answer(
+        &e,
+        "b-4",
+        "I don't know",
+        json!({"label":"median","question":"Median of 1, 9, 3?","first_try":"declined","help":"none","cold":false}),
+    );
+    let value = progress(&e);
+    assert_eq!(
+        value["today_counts"],
+        json!({"answered": 3, "started": 2, "passes": 2, "due_tomorrow": 2}),
+        "{value}"
+    );
+    // The date stays where it was.
+    assert_eq!(
+        value["today"],
+        json!(Local::now().date_naive().to_string()),
+        "{value}"
+    );
+}
+
+#[test]
 fn progress_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_changes_nothing() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

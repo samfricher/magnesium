@@ -466,6 +466,79 @@ fn answered_days(answers: &[Answer]) -> Vec<String> {
         .collect()
 }
 
+/// The days on which a skill with no item earned its passes: each new day
+/// with a clean answer, since its last miss, up to three.
+fn answer_pass_days(answers: &[&Answer]) -> Vec<NaiveDate> {
+    let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
+    let mut earned = Vec::new();
+    for answer in answers {
+        if answer.miss {
+            days.clear();
+        } else if answer.clean && days.insert(answer.day) && days.len() <= PASSES_TO_CLOSE as usize
+        {
+            earned.push(answer.day);
+        }
+    }
+    earned
+}
+
+/// What the learner did today, over the whole study folder: answers given
+/// (a declined question is not one), skills first answered, passes earned,
+/// and checks and redos that first fall due tomorrow.
+fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
+    let given: Vec<&Answer> = answers.iter().filter(|answer| !answer.declined).collect();
+    let answered = given.iter().filter(|answer| answer.day == today).count();
+    let mut first_day: BTreeMap<&str, NaiveDate> = BTreeMap::new();
+    for answer in &given {
+        first_day.entry(answer.key.as_str()).or_insert(answer.day);
+    }
+    let started = first_day.values().filter(|day| **day == today).count();
+    let on_items: BTreeSet<String> = items
+        .iter()
+        .map(|item| label_key(&item.facts.label))
+        .collect();
+    let item_passes: usize = items
+        .iter()
+        .map(|item| {
+            item.state
+                .effects
+                .iter()
+                .filter(|(_, effect)| matches!(effect, Effect::Passed | Effect::Closed))
+                .filter(|(event_no, _)| {
+                    item.facts
+                        .events
+                        .iter()
+                        .any(|event| event.event_no == *event_no && event.day == today)
+                })
+                .count()
+        })
+        .sum();
+    let answer_passes: usize = first_day
+        .keys()
+        .filter(|key| !on_items.contains(**key))
+        .map(|key| {
+            let own: Vec<&Answer> = answers.iter().filter(|a| a.key == *key).collect();
+            answer_pass_days(&own)
+                .into_iter()
+                .filter(|day| *day == today)
+                .count()
+        })
+        .sum();
+    let tomorrow = today.succ_opt();
+    let due_tomorrow = items
+        .iter()
+        .filter(|item| {
+            !item.state.closed() && item.state.next_on.is_some() && item.state.next_on == tomorrow
+        })
+        .count();
+    json!({
+        "answered": answered,
+        "started": started,
+        "passes": item_passes + answer_passes,
+        "due_tomorrow": due_tomorrow,
+    })
+}
+
 fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let today = local_day(now_ms);
     let id = workspace.id().map_err(|e| e.to_string())?;
@@ -545,6 +618,7 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
         },
         "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
         "days": answered_days(&answers),
+        "today_counts": today_counts(&items, &answers, today),
     }))
 }
 
@@ -903,6 +977,30 @@ mod tests {
             (whole["passes"].as_u64(), whole["level"].as_u64()),
             (Some(0), Some(7)),
             "{whole}"
+        );
+    }
+
+    #[test]
+    fn a_skill_with_no_item_earns_a_pass_on_each_new_clean_day_up_to_three() {
+        let answers = [
+            answer("2026-11-02", "clean"),
+            answer("2026-11-02", "clean"),
+            answer("2026-11-03", "wrong"),
+            answer("2026-11-04", "clean"),
+            answer("2026-11-05", "helped"),
+            answer("2026-11-06", "clean"),
+            answer("2026-11-07", "clean"),
+            answer("2026-11-08", "clean"),
+        ];
+        let days = answer_pass_days(&answers.iter().collect::<Vec<_>>());
+        assert_eq!(
+            days,
+            [
+                day("2026-11-02"),
+                day("2026-11-04"),
+                day("2026-11-06"),
+                day("2026-11-07")
+            ]
         );
     }
 

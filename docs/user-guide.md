@@ -114,7 +114,7 @@ In no plan: 0 proven, 1 in progress
 Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 ```
 
-Add `--json` for the same facts as data. The study window reads them from there. The command changes nothing in the folder.
+Add `--json` for the same facts as data. The study window reads them from there. The data also counts what you did today: the answers you gave, the skills you answered for the first time, the passes you earned and the checks due tomorrow. The command changes nothing in the folder.
 
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
