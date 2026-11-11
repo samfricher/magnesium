@@ -18,6 +18,7 @@
 pub mod activity;
 pub mod agent;
 pub mod claude;
+pub mod direct;
 pub mod files;
 pub mod find;
 pub mod gaplog;
