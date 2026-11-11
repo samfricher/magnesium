@@ -3,9 +3,10 @@
 //! The window starts `claude` as Anthropic publishes it, in the study folder,
 //! and talks to it over its own standard input and output. It never reads a
 //! credential and never changes how Claude Code signs in. The session loads
-//! the folder's hooks, skills and tool server exactly as a terminal session
-//! does, so `--bare` is never passed and the first report is checked for the
-//! Magnesium plugin.
+//! Magnesium's plugin, with its hooks, skills and tool server, as a terminal
+//! session does, so `--bare` is never passed and the first report is checked
+//! for the Magnesium plugin. Of the learner's own setup it loads nothing else:
+//! see [`lesson_args`].
 //!
 //! The wire format is the one the open-source Agent SDKs use: one JSON object
 //! per line each way, with `control_request` and `control_response` objects for
@@ -51,11 +52,19 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 /// whose input the window draws as the tutor's words while they are written.
 pub const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
 const SURFACE: &str = "window";
+/// Claude Code's switch for the tool servers of the learner's Claude account.
+pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
 
 /// The model a lesson runs on: the one Claude Code chose by default on
 /// 2026-11-11. It is named, so a later change of that default cannot change
 /// the tutor unseen.
 pub const MODEL: &str = "claude-fable-5-2";
+
+/// The effort a lesson's model thinks with. Low was tried against the
+/// default on 2026-11-11: the same twenty answers of known marks were marked
+/// as often (16 of 20 each), and the first words came in a median of 8.9 s
+/// against 14.8 s. The thinking, not the tools, is most of the wait.
+pub const EFFORT: &str = "low";
 
 /// Claude Code's own tools a lesson may use. Everything else Claude Code
 /// offers is left out, and so is the learner's own setup: no other tool
@@ -93,7 +102,7 @@ fn plugin_dir() -> Option<PathBuf> {
 /// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
 ///   `.magnesium/`. Permission cards are unchanged: a sandboxed command still
 ///   asks.
-/// - The model is named.
+/// - The model and its effort are named.
 ///
 /// Without the plugin on this Mac, the folder's settings still name it, and
 /// the first report then says the plugin did not load.
@@ -105,6 +114,8 @@ pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
         TOOLS.join(","),
         "--model".into(),
         MODEL.into(),
+        "--effort".into(),
+        EFFORT.into(),
     ];
     if let Some(plugin) = plugin {
         args.push("--plugin-dir".into());
@@ -274,6 +285,11 @@ impl Harness for ClaudeCode {
             .current_dir(&options.folder)
             .env("PWD", &options.folder)
             .env(SURFACE_ENV, SURFACE)
+            // The learner's account connectors (mail, calendar, drive) come
+            // from their Claude account, not their settings, so the setting
+            // sources alone leave them in: a live check on 2026-11-11 found
+            // 62 of their tools in a window lesson without this.
+            .env(CONNECTORS_ENV, "false")
             .args([
                 "-p",
                 "--input-format",
@@ -1931,6 +1947,7 @@ mod tests {
             "Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash"
         );
         assert_eq!(after("--model"), MODEL);
+        assert_eq!(after("--effort"), "low");
         assert_eq!(after("--plugin-dir"), plugin.display().to_string());
         let settings: Value = serde_json::from_str(&after("--settings")).unwrap();
         assert_eq!(settings["sandbox"]["enabled"], true);

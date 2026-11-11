@@ -8,7 +8,14 @@ fn observation_basis(
     new: bool,
 ) -> Result<String> {
     let id = if new {
-        refs.get(id).ok_or_else(|| unknown(id))?
+        refs.get(id).ok_or_else(|| {
+            // Most often a client_ref from an earlier request. Saying so
+            // lets one retry fix it.
+            LearnerError::new(
+                "unknown_reference",
+                format!("{id}: new_observation names an observation of this same request. For an observation from an earlier request, send {{\"observation_id\":\"o-…\"}} with the id that request's references gave"),
+            )
+        })?
     } else {
         id
     };

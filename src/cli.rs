@@ -212,6 +212,7 @@ pub(crate) fn command() -> ClapCommand {
                             "user-prompt-submit",
                             "stop",
                             "session-end",
+                            "post-tool-use",
                             crate::hooks::RETIRED_EVENTS[0],
                             crate::hooks::RETIRED_EVENTS[1],
                         ])),

@@ -68,13 +68,21 @@ fn claude_plugin_is_exact_and_native() {
     events.sort_unstable();
     assert_eq!(
         events,
-        ["SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"]
+        [
+            "PostToolUse",
+            "SessionEnd",
+            "SessionStart",
+            "Stop",
+            "UserPromptSubmit"
+        ]
     );
     for (event, groups) in hooks["hooks"].as_object().expect("hook events") {
         // SessionEnd also ends a conversation on /clear and in-process /resume.
         let expected = match event.as_str() {
             "SessionStart" => Some(json!("startup|resume|clear|compact")),
             "SessionEnd" => Some(json!("other|clear|resume")),
+            // Only the window's reply tool ends a turn.
+            "PostToolUse" => Some(json!("mcp__plugin_magnesium_magnesium__reply")),
             _ => None,
         };
         assert_eq!(

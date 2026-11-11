@@ -550,7 +550,10 @@ fn dispatch_inner(
             .map_err(|e| format!("{e}. reply takes {{\"text\":\"<your whole reply>\"}}"))?;
         let host = native_host.unwrap_or_else(tool_host);
         host_reply(cwd, &host, &request.text)?;
-        return Ok(json!({"shown": true}));
+        // Without this, a tutor often writes the same reply again as text.
+        return Ok(
+            json!({"shown": true, "next": "End the turn now, with no text: the learner already has your reply."}),
+        );
     }
     if !matches!(operation, "context" | "memory" | "learning_step") {
         return Err(format!("unknown tool: {operation}"));

@@ -25,6 +25,8 @@ enum HookEvent {
     UserPromptSubmit,
     Stop,
     SessionEnd,
+    /// After Magnesium's `reply` tool, in a session the study window starts.
+    PostToolUse,
 }
 
 impl HookEvent {
@@ -34,6 +36,7 @@ impl HookEvent {
             "user-prompt-submit" => Some(Self::UserPromptSubmit),
             "stop" => Some(Self::Stop),
             "session-end" => Some(Self::SessionEnd),
+            "post-tool-use" => Some(Self::PostToolUse),
             _ => None,
         }
     }
@@ -44,6 +47,7 @@ impl HookEvent {
             Self::UserPromptSubmit => "UserPromptSubmit",
             Self::Stop => "Stop",
             Self::SessionEnd => "SessionEnd",
+            Self::PostToolUse => "PostToolUse",
         }
     }
 }
@@ -65,6 +69,7 @@ struct HookInput {
     reason: Option<String>,
     stop_hook_active: Option<bool>,
     last_assistant_message: Option<String>,
+    tool_name: Option<String>,
 }
 
 /// The host comes from the installed `--host-kind` hook flag, because Claude
@@ -223,6 +228,11 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
             input.reason.as_deref(),
             &["other", "clear", "resume"],
         ),
+        HookEvent::PostToolUse => input
+            .tool_name
+            .as_deref()
+            .map(|_| ())
+            .ok_or_else(|| "PostToolUse is missing tool_name".to_owned()),
     }
 }
 
@@ -276,6 +286,9 @@ fn handle(
     // simultaneous windows, or a bound-root violation) rejects learning
     // writes here; ordinary host work continues because hooks always exit
     // successfully with degraded status instead of blocking.
+    if let HookEvent::PostToolUse = event {
+        return Ok(end_turn_after_reply(input.tool_name.as_deref()));
+    }
     adapter::check_workspace_binding(workspace)?;
     let host = &HostIdentity::new(kind, &input.session_id)
         .map_err(|detail| format!("unavailable_capture: {detail}"))?;
@@ -328,7 +341,20 @@ fn handle(
             }
             Ok(None)
         }
+        HookEvent::PostToolUse => Ok(None),
     }
+}
+
+/// Once the reply tool has delivered the tutor's reply, the turn ends there.
+/// A tutor asked to write nothing after it still wrote a closing line in most
+/// turns of the live runs of 2026-11-11 ("Your question is above"), which the
+/// window would show as a second message, and which cost seconds. Any other
+/// tool, and so every terminal session, is left alone.
+fn end_turn_after_reply(tool: Option<&str>) -> Option<Value> {
+    let tool = tool?;
+    let reply = format!("__{}", crate::mcp::catalog::REPLY_TOOL);
+    (tool.starts_with("mcp__") && tool.contains("magnesium") && tool.ends_with(&reply))
+        .then(|| json!({"continue": false, "suppressOutput": true}))
 }
 
 fn additional_context(event: HookEvent, context: String) -> Value {
@@ -354,7 +380,24 @@ fn record_if_active(workspace: Option<&Workspace>, event: HookEvent, failure: Ho
 mod tests {
     use std::io::Cursor;
 
-    use super::{MAX_HOOK_INPUT_BYTES, read_bounded_input, validate_turn_identifier};
+    use super::{
+        MAX_HOOK_INPUT_BYTES, end_turn_after_reply, read_bounded_input, validate_turn_identifier,
+    };
+
+    #[test]
+    fn only_the_reply_tool_ends_the_turn() {
+        let ended = end_turn_after_reply(Some("mcp__plugin_magnesium_magnesium__reply")).unwrap();
+        assert_eq!(ended["continue"], false);
+        for other in [
+            "mcp__plugin_magnesium_magnesium__learning_step",
+            "mcp__other__reply",
+            "Write",
+            "reply",
+        ] {
+            assert_eq!(end_turn_after_reply(Some(other)), None, "{other}");
+        }
+        assert_eq!(end_turn_after_reply(None), None);
+    }
 
     #[test]
     fn hook_input_accepts_exact_limit_and_rejects_one_byte_over() {

@@ -39,7 +39,9 @@ Give the tutor your attempts, questions and constraints. It can use authorized l
 
 If a new kind of problem leaves you without a way to start, the tutor works through a similar problem, then gives you a changed version to solve yourself. If that kind of problem stops you again, the tutor leaves some steps for you to fill in. After that, you get the problem alone. If you can't finish the practice problem yourself, or forget the method later, the tutor goes back a step and gives you more help next time. Magnesium keeps count of this for each kind of problem from your marked answers, so the help fades even when you come back days later in a new conversation. If you say you are confused, or ask a question because you are lost, it first asks one question, a small concrete case of the idea in plain words, without code or symbols, that takes under a minute, and uses your answer to choose what to explain. A plain factual question about something already covered, such as what a name stands for, gets a one-line answer and no question back.
 
-When the tutor needs to find out where you stand, it asks one question aimed near the top of what your goal needs, not at the basics. It is a concrete case you can answer in under a minute, not a definition to recite. For Bayesian updating, that is "1 in 100 people have a disease, and the test flags 90 of 100 who have it and 10 of 100 who don't. You test positive: about how likely is it you have it?" rather than "state Bayes' rule". Names and symbols come after you have done a step. After a confident correct answer, any next question is much harder. A basic question comes only after a miss.
+When you start a topic you have not answered anything on before, the tutor asks up to three short opening questions, one at a time: an easy one, one from the middle of the way to your goal, and the hardest step the goal needs. Each is a concrete case you can answer in about a minute, not a definition to recite. It explains nothing between them. At the first one you miss, it stops and starts teaching there. It says in one line what you got right and builds on it, without teaching it again. If you get all three right, it aims higher. It skips the opening questions when you have answered questions on the topic before, when you ask a plain factual question, and when you say where to start. Names and symbols come after you have done a step. Every answer you give to a question the tutor set is marked, including "I don't know".
+
+If you ask for a hint, the tutor gives the smallest help that lets you take the next step: a question or a pointer, not the step itself. A skill you get right only with a hint comes back the next day as a quick check, to answer alone. On a quick check or a redo that is due, the tutor tells you before it gives a hint that an answer after a hint does not count as a pass.
 
 Before it explains a step you have not seen, the tutor asks what you think comes next and why. A rough guess is fine, and a wrong guess is never recorded against you. The explanation then starts from what your guess got right and wrong, and ends with a check question. It skips the guess when you asked for an explanation or a full solution, when you say you are confused, when it shows you a worked example because you had no way to start, when it is repairing a missed check, and right after it asked you another question. A check question doesn't count: after you pass a check, the tutor still asks for your guess on the next step.
 
@@ -100,13 +102,15 @@ Add `--json` for the rows as data. They are also in an export.
 
 ## See how far each skill is proved
 
-`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of all passes you have earned, and the days on which an answer of yours was marked. For example:
+`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new; it falls only when you miss a skill you had passes on. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. For example:
 
 ```text
 midterm-1: level 5 of 10 · 4 of 9 passes · 1 of 3 skills proven
   ●○○  slope and Km · due
   ●●●  rate equation · proven
   ○○○  Hill coefficient · waits for its repair
+In no plan: 0 proven, 1 in progress
+  ●○○  units of a rate
 Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 ```
 

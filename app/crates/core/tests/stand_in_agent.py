@@ -63,6 +63,8 @@ log(
         "cwd": os.getcwd(),
         "path": os.environ.get("PATH", ""),
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "surface": os.environ.get("MAGNESIUM_SURFACE"),
+        "connectors": os.environ.get("ENABLE_CLAUDEAI_MCP_SERVERS"),
     },
 )
 
