@@ -1689,6 +1689,52 @@ mod tests {
         assert_ne!(id, new_session_id());
     }
 
+    /// Every double-quoted string in a page source file.
+    fn quoted(source: &str) -> Vec<String> {
+        source
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The page owns the words its buttons and opening lines send. The
+    /// engine's copies must be the same, or a change of wording on the page
+    /// would quietly turn a hint into an answer.
+    #[test]
+    fn the_engine_knows_the_words_the_page_sends() {
+        let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
+        let read = |name: &str| std::fs::read_to_string(pages.join(name)).unwrap();
+        let session = read("screens/Session.tsx");
+        let lesson = read("lesson.ts");
+        let strings: Vec<String> = quoted(&session)
+            .into_iter()
+            .chain(quoted(&lesson))
+            .collect();
+        for words in [
+            record::HINT_WORDS,
+            record::DONT_KNOW_WORDS,
+            record::LOST_WORDS,
+        ] {
+            assert!(
+                strings.iter().any(|s| s == words),
+                "the page no longer sends {words:?}: change record.rs and the tutor prompt with it"
+            );
+            assert!(
+                PROMPT.contains(words),
+                "the tutor prompt does not name {words:?}"
+            );
+        }
+        // The opening lines, from openingWords in lesson.ts.
+        for words in [BACK, NO_CHECKS, WORK_ON] {
+            assert!(
+                lesson.contains(words),
+                "lesson.ts no longer opens a sitting with {words:?}: change direct.rs with it"
+            );
+        }
+    }
+
     #[test]
     fn the_windows_opening_lines_are_known() {
         assert_eq!(opening(NO_CHECKS), Some((true, None)));
