@@ -21,6 +21,7 @@ use crate::agent::{
 use crate::files;
 use crate::find;
 use crate::install::{self, RuntimeSetup};
+use crate::material::{self, Added};
 use crate::paths;
 use crate::runtime;
 use crate::store::{PaperSitting, Store, Turn};
@@ -468,6 +469,52 @@ impl Manager {
     pub fn attach(&self, source: &Path, group: &str) -> AgentResult<String> {
         let folder = self.need_folder()?;
         files::hand_in(&folder, group, source).map_err(AgentError)
+    }
+
+    /// Add course material to the study folder: copy what the learner dropped
+    /// or picked, then ask the runtime what the tutor's search can read of it.
+    pub fn add_material(&self, sources: &[PathBuf]) -> AgentResult<Added> {
+        let root = study::root(&self.need_folder()?);
+        let (saved, problems) = material::copy_in(&root, sources);
+        Ok(self.said(&root, saved, problems, false))
+    }
+
+    /// Save pasted text as a text file in the same place.
+    pub fn add_pasted_text(&self, text: &str) -> AgentResult<Added> {
+        let root = study::root(&self.need_folder()?);
+        let saved = material::save_text(&root, text).map_err(AgentError)?;
+        Ok(self.said(&root, vec![saved], Vec::new(), true))
+    }
+
+    fn said(
+        &self,
+        root: &Path,
+        saved: Vec<material::Saved>,
+        problems: Vec<String>,
+        pasted: bool,
+    ) -> Added {
+        // An answer key is added and never looked at again by the window.
+        let named: Vec<String> = saved
+            .iter()
+            .filter(|file| !file.key)
+            .map(|file| file.relative.clone())
+            .collect();
+        let search = if named.is_empty() {
+            None
+        } else {
+            runtime::searchable(root, &named)
+        };
+        material::report(&saved, problems, search.as_deref(), pasted)
+    }
+
+    /// A source a reply cited, for the panel beside the lesson. The path is
+    /// from the study root, which can be a parent of the open folder.
+    pub fn source(&self, path: &str) -> AgentResult<files::Source> {
+        files::source(&study::root(&self.need_folder()?), path).map_err(AgentError)
+    }
+
+    pub fn source_pdf(&self, path: &str) -> AgentResult<Vec<u8>> {
+        files::source_pdf(&study::root(&self.need_folder()?), path).map_err(AgentError)
     }
 
     pub fn open_file(&self, path: &str) -> AgentResult<()> {

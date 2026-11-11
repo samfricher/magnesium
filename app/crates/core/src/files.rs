@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use chrono::Local;
+use serde::Serialize;
 
 use crate::paths;
 use crate::study::looks_like_a_key;
@@ -199,6 +200,118 @@ pub fn launch(resolved: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The kinds of text file the source panel shows as text. An HTML page is
+/// shown as its text, never drawn, so nothing in it runs.
+const TEXT_SOURCES: [&str; 8] = ["txt", "md", "tex", "csv", "html", "htm", "json", "rst"];
+const MAX_TEXT_BYTES: u64 = 1024 * 1024;
+const MAX_PDF_BYTES: u64 = 64 * 1024 * 1024;
+
+/// What the page shows of a source a reply cited.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct Source {
+    /// The file's name.
+    pub name: String,
+    /// "pdf", "text" or "image".
+    pub kind: &'static str,
+    /// The text of a text file, cut at one megabyte.
+    pub text: Option<String>,
+    pub truncated: bool,
+    /// An image as a data address.
+    pub image: Option<String>,
+}
+
+/// The file a cited source names, if the window may show it. The path is
+/// from the study root and stays inside it. A file that looks like an answer
+/// key is refused by its name, by the name of what a link in the folder
+/// leads to, and by the folders it sits in, whatever the link says.
+fn source_file(root: &Path, path: &str) -> Result<(PathBuf, String), String> {
+    let given = path.trim();
+    // An absolute path carries the folders above the study folder, which are
+    // not the study folder's business, so only a path from the root is read
+    // by its folders here. The resolved path is read below either way.
+    if !Path::new(given).is_absolute() && looks_like_a_key(Path::new(given)) {
+        return Err("That looks like an answer key, so the window leaves it closed.".into());
+    }
+    let resolved = inside(root, given)?;
+    let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
+    let relative = resolved.strip_prefix(&canonical_root).unwrap_or(&resolved);
+    if looks_like_a_key(relative) {
+        return Err("That looks like an answer key, so the window leaves it closed.".into());
+    }
+    if !resolved.is_file() {
+        return Err("That is not a file.".into());
+    }
+    Ok((resolved.clone(), extension(&resolved)))
+}
+
+/// Open a cited source for the panel beside the lesson. A PDF's bytes come
+/// from [`source_pdf`], so they are not sent twice.
+pub fn source(root: &Path, path: &str) -> Result<Source, String> {
+    let (file, ext) = source_file(root, path)?;
+    let name = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let head = |kind| Source {
+        name: name.clone(),
+        kind,
+        text: None,
+        truncated: false,
+        image: None,
+    };
+    if ext == "pdf" {
+        let size = fs::metadata(&file).map_err(|e| e.to_string())?.len();
+        if size > MAX_PDF_BYTES {
+            return Err("That PDF is larger than 64 MB.".into());
+        }
+        return Ok(head("pdf"));
+    }
+    if TEXT_SOURCES.contains(&ext.as_str()) {
+        let size = fs::metadata(&file).map_err(|e| e.to_string())?.len();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut std::io::Read::take(
+                fs::File::open(&file).map_err(|e| e.to_string())?,
+                MAX_TEXT_BYTES,
+            ),
+            &mut bytes,
+        )
+        .map_err(|e| e.to_string())?;
+        return Ok(Source {
+            text: Some(String::from_utf8_lossy(&bytes).into_owned()),
+            truncated: size > MAX_TEXT_BYTES,
+            ..head("text")
+        });
+    }
+    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+        let shown = file
+            .strip_prefix(root.canonicalize().map_err(|e| e.to_string())?)
+            .unwrap_or(&file);
+        return Ok(Source {
+            image: Some(image(root, &shown.to_string_lossy())?),
+            ..head("image")
+        });
+    }
+    Err("The window shows PDFs, text and images beside a lesson. Other files stay closed.".into())
+}
+
+/// The bytes of a cited PDF. The same checks as [`source`], and the file
+/// must be a PDF.
+pub fn source_pdf(root: &Path, path: &str) -> Result<Vec<u8>, String> {
+    let (file, ext) = source_file(root, path)?;
+    if ext != "pdf" {
+        return Err("That is not a PDF.".into());
+    }
+    if fs::metadata(&file).map_err(|e| e.to_string())?.len() > MAX_PDF_BYTES {
+        return Err("That PDF is larger than 64 MB.".into());
+    }
+    let bytes = fs::read(&file).map_err(|_| "That file could not be read.".to_owned())?;
+    if !bytes.starts_with(b"%PDF") {
+        return Err("That file is not a PDF.".into());
+    }
+    Ok(bytes)
+}
+
 /// An image inside the study folder as a data address the page can show.
 pub fn image(root: &Path, path: &str) -> Result<String, String> {
     let resolved = inside(root, path)?;
@@ -368,5 +481,109 @@ mod tests {
             let refused = openable(root.path(), &path).unwrap_err();
             assert!(refused.contains("only opens"), "{name}: {refused}");
         }
+    }
+
+    #[test]
+    fn a_cited_source_opens_inside_the_study_folder_and_never_a_key() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let dir = root.path().join("Study/stats");
+        fs::create_dir_all(dir.join("keys")).unwrap();
+        fs::write(dir.join("week4-slides.pdf"), b"%PDF-1.4 slides").unwrap();
+        fs::write(dir.join("notes.md"), "# Bayes\nprior").unwrap();
+        fs::write(dir.join("Midterm solutions.pdf"), b"%PDF-1.4").unwrap();
+        fs::write(dir.join("answer-key.txt"), b"x").unwrap();
+        fs::write(dir.join("keys/week4.pdf"), b"%PDF-1.4").unwrap();
+        fs::write(dir.join("not-really.pdf"), b"plain text").unwrap();
+        fs::write(outside.path().join("secret.pdf"), b"%PDF-1.4").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret.pdf"), dir.join("link.pdf"))
+            .unwrap();
+        std::os::unix::fs::symlink(dir.join("Midterm solutions.pdf"), dir.join("innocent.pdf"))
+            .unwrap();
+        std::os::unix::fs::symlink(dir.join("notes.md"), dir.join("the-key.md")).unwrap();
+
+        let slides = source(root.path(), "Study/stats/week4-slides.pdf").unwrap();
+        assert_eq!(
+            (slides.kind, slides.name.as_str()),
+            ("pdf", "week4-slides.pdf")
+        );
+        assert_eq!(
+            source_pdf(root.path(), "Study/stats/week4-slides.pdf").unwrap(),
+            b"%PDF-1.4 slides"
+        );
+        let notes = source(root.path(), "Study/stats/notes.md").unwrap();
+        assert_eq!(
+            (notes.kind, notes.text.as_deref()),
+            ("text", Some("# Bayes\nprior"))
+        );
+        assert!(source_pdf(root.path(), "Study/stats/notes.md").is_err());
+        assert!(source_pdf(root.path(), "Study/stats/not-really.pdf").is_err());
+
+        // An answer key stays closed, whatever the link says: by its name, by
+        // its folder, and by what a link inside the folder leads to.
+        for key in [
+            "Study/stats/Midterm solutions.pdf",
+            "Study/stats/answer-key.txt",
+            "Study/stats/keys/week4.pdf",
+            "Study/stats/innocent.pdf",
+            "Study/stats/the-key.md",
+            "study/stats/ANSWER-KEY.txt",
+        ] {
+            let refused = source(root.path(), key).unwrap_err();
+            let refused_pdf = source_pdf(root.path(), key).unwrap_err();
+            assert!(
+                refused.contains("answer key") || refused.contains("does not exist"),
+                "{key}: {refused}"
+            );
+            assert!(
+                refused_pdf.contains("answer key")
+                    || refused_pdf.contains("does not exist")
+                    || refused_pdf.contains("not a PDF"),
+                "{key}: {refused_pdf}"
+            );
+        }
+        assert!(source(root.path(), "Study/stats/innocent.pdf")
+            .unwrap_err()
+            .contains("answer key"));
+
+        // Nothing outside the study folder opens: not by climbing out, not by
+        // an absolute path, and not through a link.
+        assert!(source(root.path(), "../secret.pdf").is_err());
+        assert!(source(
+            root.path(),
+            &outside.path().join("secret.pdf").to_string_lossy()
+        )
+        .is_err());
+        assert!(source(root.path(), "Study/stats/link.pdf")
+            .unwrap_err()
+            .contains("outside"));
+        assert!(source_pdf(root.path(), "Study/stats/link.pdf").is_err());
+        assert!(source(root.path(), "Study/stats/missing.pdf").is_err());
+        assert!(source(root.path(), "Study/stats").is_err());
+    }
+
+    #[test]
+    fn a_source_that_is_not_a_pdf_text_or_image_stays_closed() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("run.sh"), b"echo").unwrap();
+        fs::write(root.path().join("deck.pptx"), b"x").unwrap();
+        for name in ["run.sh", "deck.pptx"] {
+            assert!(source(root.path(), name)
+                .unwrap_err()
+                .contains("Other files stay closed"));
+        }
+    }
+
+    #[test]
+    fn a_long_text_source_is_cut_at_one_megabyte() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("big.txt"),
+            vec![b'a'; (MAX_TEXT_BYTES + 10) as usize],
+        )
+        .unwrap();
+        let big = source(root.path(), "big.txt").unwrap();
+        assert!(big.truncated);
+        assert_eq!(big.text.unwrap().len() as u64, MAX_TEXT_BYTES);
     }
 }

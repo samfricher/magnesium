@@ -11,8 +11,10 @@ use std::time::Duration;
 use mg_core::activity::Activity;
 use mg_core::agent::{Account, AgentEvent, Answer, Decision, Payment};
 use mg_core::claude::ClaudeCode;
+use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
 use mg_core::manager::{Opened, Setup};
+use mg_core::material::Added;
 use mg_core::store::PaperSitting;
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
@@ -208,6 +210,32 @@ fn attach(shell: State<'_, Shell>, path: String, group: String) -> Reply<String>
     plain(shell.manager.attach(Path::new(&path), &group))
 }
 
+/// Copy what the learner dropped or picked into the study folder, and say
+/// what the tutor's search can read of it.
+#[tauri::command(async)]
+fn add_material(shell: State<'_, Shell>, paths: Vec<String>) -> Reply<Added> {
+    let sources: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    plain(shell.manager.add_material(&sources))
+}
+
+#[tauri::command(async)]
+fn add_pasted_text(shell: State<'_, Shell>, text: String) -> Reply<Added> {
+    plain(shell.manager.add_pasted_text(&text))
+}
+
+/// A source a reply cited, for the panel beside the lesson. Kept inside the
+/// study folder, and never an answer key.
+#[tauri::command(async)]
+fn source(shell: State<'_, Shell>, path: String) -> Reply<Source> {
+    plain(shell.manager.source(&path))
+}
+
+/// The bytes of a cited PDF, sent as they are and not as text.
+#[tauri::command(async)]
+fn source_pdf(shell: State<'_, Shell>, path: String) -> Result<tauri::ipc::Response, String> {
+    plain(shell.manager.source_pdf(&path)).map(tauri::ipc::Response::new)
+}
+
 #[tauri::command(async)]
 fn open_file(shell: State<'_, Shell>, path: String) -> Reply<()> {
     plain(shell.manager.open_file(&path))
@@ -339,6 +367,10 @@ fn main() {
             progress,
             set_block_minutes,
             attach,
+            add_material,
+            add_pasted_text,
+            source,
+            source_pdf,
             open_file,
             image,
             open_url,
