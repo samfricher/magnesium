@@ -30,7 +30,7 @@ confidence values are derived data, never facts about a learner and
 never proof of mathematical correctness.
 
 Docling API surface targets docling-slim 2.126.0 /
-docling-core 2.96.0 (see README.md and requirements.txt in
+docling-core 2.96.0 (see requirements.txt in
 this directory).
 Executed conversion is NOT_RUN where Docling is not installed; the
 framing, validation, and mapping paths are covered by
