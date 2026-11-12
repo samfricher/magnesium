@@ -171,6 +171,10 @@ pub struct StartOptions {
 
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 
+/// Waits, at most the given time, until what the agent keeps after a reply
+/// has been kept. True when it has.
+pub type SavedWaiter = Arc<dyn Fn(std::time::Duration) -> bool + Send + Sync>;
+
 #[derive(Debug)]
 pub struct AgentError(pub String);
 
@@ -227,5 +231,11 @@ pub trait Conversation: Send {
     /// reply ends has nothing to wait for.
     fn wait_saved(&self, _limit: std::time::Duration) -> bool {
         true
+    }
+    /// The same wait, as a handle that outlives a borrow of the
+    /// conversation, so another thread can wait without holding it. None
+    /// for an agent that keeps nothing after the reply ends.
+    fn saved_waiter(&self) -> Option<SavedWaiter> {
+        None
     }
 }
