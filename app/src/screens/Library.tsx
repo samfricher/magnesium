@@ -156,7 +156,6 @@ function CourseCard(props: {
         {props.hero && (
           <span className="btn primary as-label">
             {props.starting ? "Starting…" : sitting ? "Back to the paper" : props.onCourse ? (card.goal ? "Continue" : "Start") : "Open"}
-            {!props.starting && <kbd>&#8629;</kbd>}
           </span>
         )}
         {props.onCourse && (
@@ -226,10 +225,9 @@ export function Library(props: {
 
   const add = (
     <div className="shelf-add">
-      <button className="btn" onClick={props.onPick}>
+      <button className="btn" title="Open a folder (Command-O)" onClick={props.onPick}>
         <Icon name="folder" size={16} />
         Open a folder
-        <kbd>&#8984;O</kbd>
       </button>
       <button className="btn ghost" onClick={props.onNew}>
         <Icon name="plus" size={16} />

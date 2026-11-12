@@ -1,74 +1,119 @@
-/* One window, made for studying.
+/* One window, made for studying: ink on paper.
 
-   Three rules decide what is here.
-   1. One accent colour, and it means two things only: what you have proved,
-      and what moves you on (the task in hand, and the one button). Amber
-      means due. Red means a fault. Everything else is ink: a study day, a
-      step done, a clock, a chosen option, the focus ring.
-   2. Two voices. What is read is set in a serif: a title, and the tutor's
-      words, like a page of a book. What is pressed or glanced at is set
-      small, in the system's own face.
-   3. Motion only marks a change of place or of state. Nothing moves to be
-      looked at, and nothing moves at all when the system asks for less.
-      Nothing fades in from nothing either: macOS pauses a page's animations
-      while its window is covered, and a screen that starts invisible would
-      then stay blank in a capture of the window. Things arrive by moving. */
+   Five rules decide what is here.
+   1. Colour is spent only on what you have proved and on the one thing that
+      moves you on. Green means a proof, the one primary button on a screen,
+      and the task in hand. Amber means due, and nothing else. Red means a
+      fault: every problem that blocks you. Everything else is ink: a link, a
+      chip, a study day, a clock, a chosen option, the focus ring. No
+      gradients, no glows, no washes.
+   2. Two voices. What is read is set in Literata, a face made for reading on
+      a screen: a title, the tutor's words, a skill's name, anything with
+      mathematics in it. What is pressed or glanced at is set in Atkinson
+      Hyperlegible Next, which keeps I, l and 1 apart. Labels are sentence
+      case at normal tracking: no capitals, no spaced-out eyebrows. Nothing is
+      set below 12px, and only weights 400 and 600 are used.
+   3. Flat. A surface is told from the page by its tone and a hairline. Only a
+      layer that floats over the window (the command palette, a menu, a sheet,
+      a popover) has a shadow. A card you can press changes its border and its
+      fill on hover; it does not lift.
+   4. One scale. Space comes from --s1 to --s8, shape from three radii (a
+      control, a card, a pill; a dot is a circle), type from seven sizes.
+      A value that is not on the scale is a mistake.
+   5. Motion only marks a change of place or of state: 120ms for a hover or a
+      press, 200ms for a thing that arrives. Nothing moves to be looked at, and
+      nothing moves at all when the system asks for less. Nothing fades in
+      from nothing either: macOS pauses a page's animations while its window
+      is covered, and a screen that starts invisible would then stay blank in
+      a capture of the window. Things arrive by moving. */
 
 :root {
   color-scheme: dark;
-  --bg: #0f1012;
-  --surface: #17181c;
-  --raised: #1e2025;
-  --hover: #25282e;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-2: rgba(255, 255, 255, 0.13);
-  --text: #edebe6;
-  --muted: #a3a4aa;
-  --faint: #6e7078;
-  --accent: #7fe0b4;
-  --accent-ink: #08261b;
-  --accent-soft: rgba(127, 224, 180, 0.11);
-  --accent-mid: rgba(127, 224, 180, 0.4);
-  --amber: #f0b95a;
-  --amber-soft: rgba(240, 185, 90, 0.12);
-  --red: #f18d7d;
-  --red-soft: rgba(241, 141, 125, 0.12);
-  --shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --veil: rgba(8, 9, 10, 0.55);
-  /* A soft light behind the thing in hand. It has no colour. */
-  --glow: rgba(255, 255, 255, 0.045);
 
-  --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
-  --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Ink: a blue-black page with paper-white text. */
+  --bg: #191e26;
+  --surface: #1f252f;
+  --raised: #262d39;
+  --hover: #2c3441;
+  --line: rgba(233, 235, 238, 0.08);
+  --line-2: rgba(233, 235, 238, 0.16);
+  --text: #e9ebee;
+  --muted: #b3bac5;
+  --faint: #949caa;
+  --accent: #7cc3a2;
+  --accent-ink: #0e2a1e;
+  --accent-hover: #93d0b4;
+  --accent-press: #67ab89;
+  --accent-soft: rgba(124, 195, 162, 0.1);
+  --accent-mid: rgba(124, 195, 162, 0.42);
+  --amber: #e2b260;
+  --amber-soft: rgba(226, 178, 96, 0.12);
+  --red: #ee8f82;
+  --red-soft: rgba(238, 143, 130, 0.12);
+  /* The one shadow, for what floats. */
+  --shadow: 0 16px 48px rgba(5, 8, 12, 0.5), 0 2px 8px rgba(5, 8, 12, 0.3);
+  --veil: rgba(14, 18, 24, 0.55);
+
+  --serif: "Literata Variable", Literata, ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 
+  /* Space, in pixels: 4 8 12 16 24 32 48 64. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+
+  /* Shape: three radii. A dot is a circle (50%). */
+  --r-control: 8px;
+  --r-card: 14px;
+  --r-pill: 999px;
+
+  /* Type, in pixels: 12 13.5 15 18 22 30 42. */
+  --fs-caption: 12px;
+  --fs-small: 13.5px;
+  --fs-ui: 15px;
+  --fs-read: 18px;
+  --fs-card: 22px;
+  --fs-title: 30px;
+  --fs-display: 42px;
+
+  /* Motion. */
+  --t-fast: 120ms;
+  --t-move: 200ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #f5f3ed;
-    --surface: #fdfcf8;
+
+    /* Paper: a cool grey-green sheet, like exam booklet paper. */
+    --bg: #f1f2ee;
+    --surface: #fafaf7;
     --raised: #ffffff;
-    --hover: #ece9e1;
-    --line: rgba(40, 32, 16, 0.09);
-    --line-2: rgba(40, 32, 16, 0.17);
-    --text: #1d1c19;
-    --muted: #65625b;
-    --faint: #98948b;
-    --accent: #197553;
+    --hover: #e6e8e2;
+    --line: rgba(27, 33, 43, 0.1);
+    --line-2: rgba(27, 33, 43, 0.18);
+    --text: #1b212b;
+    --muted: #475060;
+    --faint: #5f6877;
+    --accent: #1d6a4a;
     --accent-ink: #ffffff;
-    --accent-soft: rgba(25, 117, 83, 0.09);
-    --accent-mid: rgba(25, 117, 83, 0.38);
-    --amber: #9c6007;
-    --amber-soft: rgba(156, 96, 7, 0.1);
-    --red: #b5463a;
-    --red-soft: rgba(181, 70, 58, 0.09);
-    --shadow: 0 20px 60px rgba(70, 58, 30, 0.16), 0 2px 8px rgba(70, 58, 30, 0.08);
-    --veil: rgba(245, 243, 237, 0.6);
-    --glow: rgba(255, 255, 255, 0.85);
+    --accent-hover: #175939;
+    --accent-press: #124a30;
+    --accent-soft: rgba(29, 106, 74, 0.08);
+    --accent-mid: rgba(29, 106, 74, 0.4);
+    --amber: #8a5600;
+    --amber-soft: rgba(138, 86, 0, 0.09);
+    --red: #ae3b2f;
+    --red-soft: rgba(174, 59, 47, 0.08);
+    --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
+    --veil: rgba(241, 242, 238, 0.6);
   }
 }
 
@@ -87,7 +132,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-ui);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -119,8 +164,7 @@ p {
   margin: 0;
 }
 
-code,
-kbd {
+code {
   font-family: var(--mono);
   font-size: 0.9em;
 }
@@ -129,13 +173,20 @@ kbd {
   background: var(--line-2);
 }
 
+/* A ring shows for the keyboard and never after a click or a focus the page
+   made by itself (main.tsx sets data-input). The same ring on every control
+   and every pressable card. */
 :focus {
   outline: none;
 }
 
 :focus-visible {
-  outline: 2px solid var(--muted);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
+}
+
+html:not([data-input="key"]) :focus-visible {
+  outline: none;
 }
 
 .selectable,
@@ -161,14 +212,14 @@ textarea {
   color: var(--faint);
 }
 
+/* Counts and clocks: lining figures of one width, so they do not jump. */
 .num {
-  font-family: var(--round);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 /* One line of text with mathematics in it. */
 .line .katex {
-  font-size: 1.04em;
+  font-size: 1.05em;
 }
 
 /* ---- the window ---- */
@@ -186,7 +237,7 @@ textarea {
   height: 100%;
   display: flex;
   flex-direction: column;
-  animation: enter 0.3s var(--ease) both;
+  animation: enter var(--t-move) var(--ease) both;
 }
 
 @keyframes enter {
@@ -211,7 +262,7 @@ textarea {
   overflow-y: auto;
   display: grid;
   place-items: center;
-  padding: 8px 32px 56px;
+  padding: var(--s2) var(--s6) var(--s8);
 }
 
 /* The top strip is also how the window is dragged. The traffic lights sit
@@ -222,8 +273,8 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
+  gap: var(--s3);
+  padding: 0 var(--s4);
 }
 
 /* The two sides are the same width, so the middle is the window's middle.
@@ -235,14 +286,14 @@ textarea {
 .bar-side {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s2);
   min-width: 0;
   height: 100%;
 }
 
 .bar-side.end {
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--s3);
 }
 
 .bar-center {
@@ -254,32 +305,32 @@ textarea {
 }
 
 .bar-title {
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--muted);
 }
 
 /* ---- controls ---- */
 
+/* The secondary button: 36px, a hairline, ink. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 11px;
+  gap: var(--s2);
+  height: 36px;
+  padding: 0 var(--s4);
   border: 1px solid var(--line-2);
-  background: var(--raised);
+  border-radius: var(--r-control);
+  background: transparent;
   color: var(--text);
-  font-size: 14px;
-  font-weight: 550;
+  font-size: var(--fs-ui);
+  font-weight: 600;
   white-space: nowrap;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    transform 0.1s,
-    filter 0.15s;
+    background var(--t-fast) ease-out,
+    border-color var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .btn:hover:not(:disabled) {
@@ -287,36 +338,53 @@ textarea {
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  border-color: var(--line);
+  color: var(--faint);
 }
 
+/* The primary button: 40px, green, label only. One to a screen. Its shortcut
+   is in its title and in the command palette, never in the label. */
 .btn.primary {
-  background: var(--accent);
+  height: 40px;
+  padding: 0 var(--s5);
   border-color: transparent;
+  background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 650;
-  padding: 0 18px;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.08);
+  background: var(--accent-hover);
 }
 
+.btn.primary:active:not(:disabled) {
+  background: var(--accent-press);
+}
+
+.btn.primary:disabled {
+  background: var(--hover);
+  color: var(--faint);
+}
+
+/* The quiet button: text only, until it is pointed at. */
 .btn.ghost {
-  background: transparent;
   border-color: transparent;
+  background: transparent;
   color: var(--muted);
-  padding: 0 12px;
+  padding: 0 var(--s3);
 }
 
 .btn.ghost:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
+}
+
+.btn.ghost:disabled {
+  border-color: transparent;
 }
 
 .btn.danger {
@@ -326,22 +394,20 @@ textarea {
 }
 
 .btn.small {
-  height: 30px;
-  padding: 0 11px;
-  font-size: 13px;
-  border-radius: 9px;
-  gap: 6px;
+  height: 32px;
+  padding: 0 var(--s3);
+  font-size: var(--fs-small);
+  gap: var(--s2);
 }
 
+/* A button that is only the look of one, inside a card that is the button. */
 .btn.as-label {
   pointer-events: none;
 }
 
-.btn kbd {
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 500;
-  opacity: 0.6;
+/* The same look, when the card around it is pointed at. */
+.course-card:hover .btn.primary.as-label {
+  background: var(--accent-hover);
 }
 
 .icon-btn {
@@ -351,12 +417,12 @@ textarea {
   height: 32px;
   flex: none;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .icon-btn:hover:not(:disabled),
@@ -366,26 +432,32 @@ textarea {
 }
 
 .icon-btn:disabled {
-  opacity: 0.4;
+  color: var(--faint);
 }
 
-.key {
-  height: 26px;
-  padding: 0 8px;
+/* A key hint: a keycap on a button, or a key named in a line of text. */
+.key,
+kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--s2);
   border: 1px solid var(--line-2);
-  border-radius: 7px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
   font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 550;
-  letter-spacing: 0.02em;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  font-size: var(--fs-caption);
+  font-weight: 600;
 }
 
-.key:hover {
+button.key {
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
+}
+
+button.key:hover {
   background: var(--hover);
   color: var(--text);
 }
@@ -393,18 +465,18 @@ textarea {
 .crumb {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 10px 0 6px;
+  gap: var(--s1);
+  height: 32px;
+  padding: 0 var(--s3) 0 var(--s2);
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
-  font-size: 13.5px;
-  font-weight: 550;
+  font-size: var(--fs-small);
+  font-weight: 600;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .crumb:hover:not(:disabled) {
@@ -413,29 +485,26 @@ textarea {
 }
 
 .crumb:disabled {
-  opacity: 0.4;
+  color: var(--faint);
 }
 
 .field {
   display: block;
   width: 100%;
-  height: 42px;
-  padding: 0 14px;
+  height: 44px;
+  padding: 0 var(--s4);
   border: 1px solid var(--line-2);
-  border-radius: 12px;
-  background: var(--bg);
+  border-radius: var(--r-control);
+  background: var(--raised);
   color: var(--text);
-  font-size: 15px;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+  font-size: var(--fs-ui);
+  transition: border-color var(--t-fast) ease-out;
 }
 
 .field.big {
-  height: 50px;
-  font-size: 16.5px;
-  padding: 0 16px;
-  border-radius: 14px;
+  height: 52px;
+  padding: 0 var(--s4);
+  border-radius: var(--r-card);
 }
 
 .field::placeholder,
@@ -443,17 +512,19 @@ textarea::placeholder {
   color: var(--faint);
 }
 
+.field:hover {
+  border-color: var(--faint);
+}
+
 .field:focus {
-  outline: none;
   border-color: var(--muted);
-  box-shadow: 0 0 0 4px var(--line);
 }
 
 .row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--s3);
 }
 
 .row.center {
@@ -463,30 +534,22 @@ textarea::placeholder {
 .eyebrow {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  font-weight: 600;
   color: var(--muted);
 }
 
 .eyebrow i {
   font-style: normal;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: none;
+  font-weight: 400;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .eyebrow i::before {
   content: "·";
-  margin: 0 7px 0 1px;
-}
-
-.eyebrow.now {
-  color: var(--amber);
+  margin: 0 var(--s2) 0 0;
 }
 
 .eyebrow.bad {
@@ -494,7 +557,7 @@ textarea::placeholder {
 }
 
 .aside {
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.5;
   color: var(--faint);
 }
@@ -503,22 +566,22 @@ p.aside {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--s2);
   text-wrap: balance;
 }
 
 .banner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s3);
   width: 100%;
-  margin-top: 14px;
-  padding: 10px 14px;
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-control);
   background: var(--surface);
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   text-align: left;
 }
@@ -528,70 +591,67 @@ p.aside {
   font-weight: 600;
 }
 
-.banner.warn {
-  background: var(--amber-soft);
-  border-color: transparent;
-  color: var(--amber);
-}
-
-.banner.warn b {
-  color: var(--amber);
-}
-
+/* Every fault that blocks you is red. "warn" is the same fault, said by a
+   button that opens the fix. */
+.banner.warn,
 .banner.bad {
   background: var(--red-soft);
   border-color: transparent;
   color: var(--red);
 }
 
+.banner.warn b,
+.banner.bad b {
+  color: var(--red);
+}
+
 .banner .icon-btn {
   width: 24px;
   height: 24px;
-  margin: -2px -6px -2px auto;
+  margin: -4px -8px -4px auto;
   color: inherit;
 }
 
 button.banner:hover {
-  filter: brightness(1.1);
+  border-color: var(--red);
 }
 
 /* A due thing: an amber point and a few words. */
 .due {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 550;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  font-weight: 600;
   color: var(--amber);
 }
 
 .due i {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--amber);
-  box-shadow: 0 0 0 3px var(--amber-soft);
 }
 
 .due em {
   font-style: normal;
-  font-weight: 450;
+  font-weight: 400;
   opacity: 0.85;
 }
 
-/* A small label on a card. Its colour says how near the exam is. */
+/* A small label: neutral ink on a quiet fill. */
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--s2);
   max-width: 100%;
   height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-pill);
   background: var(--hover);
   color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: var(--fs-caption);
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -601,19 +661,8 @@ button.banner:hover {
 }
 
 .chip b {
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text);
-}
-
-.chip.soon,
-.chip.now {
-  background: var(--amber-soft);
-  color: var(--amber);
-}
-
-.chip.soon b,
-.chip.now b {
-  color: var(--amber);
 }
 
 .chip.bad {
@@ -646,11 +695,8 @@ button.banner:hover {
   transition: stroke-dashoffset 0.9s var(--ease);
 }
 
-.ring.amber .ring-fill {
-  stroke: var(--amber);
-}
-
-/* A clock is not a proof, so its ring is ink. */
+/* A clock is not a proof, and being over time is not being due, so its ring is ink. */
+.ring.amber .ring-fill,
 .ring.ink .ring-fill {
   stroke: var(--muted);
 }
@@ -662,22 +708,19 @@ button.banner:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: var(--round);
   line-height: 1;
 }
 
 .ring-mid b {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 1.05em;
 }
 
 .ring-mid small {
-  margin-top: 3px;
+  margin-top: var(--s1);
   font-family: var(--sans);
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--faint);
 }
 
@@ -685,7 +728,7 @@ button.banner:hover {
 
 .dots {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--s1);
   flex: none;
 }
 
@@ -711,7 +754,7 @@ button.banner:hover {
 /* The mark: three dots, one proved, one on its way, one still to prove. */
 .mark {
   display: inline-flex;
-  gap: 7px;
+  gap: var(--s2);
 }
 
 .mark i {
@@ -759,28 +802,27 @@ button.banner:hover {
 /* ---- the run and the week ---- */
 
 .run-line {
-  font-size: 13px;
+  font-size: var(--fs-small);
   color: var(--muted);
   white-space: nowrap;
 }
 
 .run-line b {
-  font-family: var(--round);
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
 .week {
   display: inline-flex;
-  gap: 8px;
+  gap: var(--s2);
 }
 
 .week-day {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: var(--s1);
 }
 
 .week-day i {
@@ -794,7 +836,7 @@ button.banner:hover {
 }
 
 .week-day b {
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   color: var(--faint);
 }
@@ -818,7 +860,7 @@ button.banner:hover {
 }
 
 .week-day.pop i {
-  animation: pop 0.7s var(--ease) 0.25s both;
+  animation: pop 0.7s var(--ease) var(--t-move) both;
 }
 
 @keyframes pop {
@@ -836,13 +878,13 @@ button.banner:hover {
 .weeks {
   display: grid;
   grid-template-columns: repeat(7, 11px);
-  gap: 4px;
+  gap: var(--s1);
 }
 
 .weeks i {
   width: 11px;
   height: 11px;
-  border-radius: 3.5px;
+  border-radius: 50%;
   background: var(--line);
 }
 
@@ -876,11 +918,11 @@ button.banner:hover {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line-2);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   background: var(--raised);
   box-shadow: var(--shadow);
   overflow: hidden;
-  animation: rise 0.2s var(--ease) both;
+  animation: rise var(--t-move) var(--ease) both;
 }
 
 @keyframes rise {
@@ -892,8 +934,8 @@ button.banner:hover {
 .palette-in {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
+  gap: var(--s3);
+  padding: 0 var(--s4);
   border-bottom: 1px solid var(--line);
   color: var(--faint);
 }
@@ -903,25 +945,25 @@ button.banner:hover {
   height: 52px;
   border: 0;
   background: transparent;
-  font-size: 16px;
+  font-size: var(--fs-ui);
 }
 
 .palette-list {
   overflow-y: auto;
-  padding: 6px;
+  padding: var(--s2);
 }
 
 .palette-list button {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--s3);
   width: 100%;
-  padding: 9px 10px;
+  padding: var(--s2) var(--s3);
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
-  font-size: 14.5px;
+  font-size: var(--fs-ui);
   text-align: left;
 }
 
@@ -932,12 +974,16 @@ button.banner:hover {
 
 .palette-list button small {
   margin-left: auto;
-  padding-left: 16px;
-  font-size: 12.5px;
+  padding-left: var(--s4);
+  font-size: var(--fs-caption);
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.palette-list button:focus-visible {
+  outline-offset: -2px;
 }
 
 .palette-list button.on {
@@ -949,16 +995,16 @@ button.banner:hover {
 }
 
 .palette-none {
-  padding: 18px;
+  padding: var(--s4);
   text-align: center;
   color: var(--faint);
-  font-size: 14px;
+  font-size: var(--fs-small);
 }
 
 .palette-foot {
-  padding: 9px 16px;
+  padding: var(--s2) var(--s4);
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--faint);
 }
 

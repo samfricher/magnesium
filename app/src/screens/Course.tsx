@@ -110,8 +110,8 @@ export function Course(props: {
         <h2>{home.state === "no_runtime" ? "Magnesium is not installed" : "This folder could not be read"}</h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
-          <button className="btn primary" autoFocus onClick={props.onRetry}>
-            Try again <kbd>&#8629;</kbd>
+          <button className="btn primary" autoFocus title="Try again (Return)" onClick={props.onRetry}>
+            Try again
           </button>
         </div>
       </>
@@ -134,8 +134,8 @@ export function Course(props: {
         <h2>Upgrade this folder?</h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.upgrading} onClick={props.onUpgrade}>
-            {props.upgrading ? "Upgrading…" : "Upgrade"} {!props.upgrading && <kbd>&#8629;</kbd>}
+          <button className="btn primary" autoFocus disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
+            {props.upgrading ? "Upgrading…" : "Upgrade"}
           </button>
           {!props.upgrading && (
             <button className="btn ghost" onClick={() => setDeclined(true)}>
@@ -155,8 +155,8 @@ export function Course(props: {
         </h2>
         <p>The tutor is off until you hand in.</p>
         <div className="row">
-          <button className="btn primary" autoFocus onClick={() => props.onPaper(null)}>
-            Back to the paper <kbd>&#8629;</kbd>
+          <button className="btn primary" autoFocus title="Back to the paper (Return)" onClick={() => props.onPaper(null)}>
+            Back to the paper
           </button>
         </div>
       </>
@@ -170,8 +170,8 @@ export function Course(props: {
           Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
         </p>
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
-            {props.adding ? "Adding…" : "Choose files"} {!props.adding && <kbd>&#8629;</kbd>}
+          <button className="btn primary" autoFocus disabled={props.adding} title="Choose files (Return)" onClick={props.onAddFiles} data-role="add-files">
+            {props.adding ? "Adding…" : "Choose files"}
           </button>
           <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
             Paste text
@@ -207,8 +207,8 @@ export function Course(props: {
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={goal.trim() === "" || props.starting} onClick={start}>
-            {props.starting ? "Starting…" : "Start"} {!props.starting && <kbd>&#8629;</kbd>}
+          <button className="btn primary" disabled={goal.trim() === "" || props.starting} title="Start (Return)" onClick={start}>
+            {props.starting ? "Starting…" : "Start"}
           </button>
           {!fresh && (
             <button className="btn ghost" onClick={() => props.onAsk(false)}>
@@ -240,8 +240,8 @@ export function Course(props: {
           </p>
         ) : null}
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.starting} onClick={() => props.onContinue(false)}>
-            {props.starting ? "Starting…" : last ? "Continue" : "Start"} {!props.starting && <kbd>&#8629;</kbd>}
+          <button className="btn primary" autoFocus disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
+            {props.starting ? "Starting…" : last ? "Continue" : "Start"}
           </button>
           {due > 0 && (
             <span className="dues">
@@ -355,13 +355,13 @@ export function Course(props: {
                 )}
               </button>
               {!fresh && (
-                <button className="tile" onClick={() => props.onAsk(true)}>
+                <button className="tile" title="Another topic (Command-N)" onClick={() => props.onAsk(true)}>
                   <span className="tile-head">
                     <Icon name="plus" size={16} />
                     New lesson
                   </span>
                   <span className="tile-foot">
-                    Another topic <kbd>&#8984;N</kbd>
+                    Another topic
                   </span>
                 </button>
               )}

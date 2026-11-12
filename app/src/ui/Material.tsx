@@ -54,8 +54,8 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={!ready} onClick={() => props.onSave(text)}>
-            {props.saving ? "Saving…" : "Save as a text file"} {!props.saving && <kbd>&#8984;&#8629;</kbd>}
+          <button className="btn primary" disabled={!ready} title="Save as a text file (Command-Return)" onClick={() => props.onSave(text)}>
+            {props.saving ? "Saving…" : "Save as a text file"}
           </button>
           <button className="btn ghost" onClick={props.onCancel}>
             Cancel

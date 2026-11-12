@@ -64,8 +64,8 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
           it first.
         </p>
         <div className="row">
-          <button className="btn primary" autoFocus onClick={props.onReplace}>
-            Replace <kbd>&#8629;</kbd>
+          <button className="btn primary" autoFocus title="Replace (Return)" onClick={props.onReplace}>
+            Replace
           </button>
           <button className="btn ghost" onClick={props.onKeep}>
             Keep {installed.version ? versionNumber(installed.version) : "it"}
@@ -82,8 +82,8 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
         <p className="selectable">{runtime.message}</p>
         <div className="row">
           {bundled ? (
-            <button className="btn primary" autoFocus onClick={props.onReplace}>
-              Replace with {versionNumber(bundled.version)} <kbd>&#8629;</kbd>
+            <button className="btn primary" autoFocus title="Replace (Return)" onClick={props.onReplace}>
+              Replace with {versionNumber(bundled.version)}
             </button>
           ) : (
             <button className="btn small" onClick={props.onCheck}>
@@ -277,8 +277,8 @@ export function Setup(props: {
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
           <div className="row center">
-            <button className="btn primary" autoFocus={ready && !choosing} disabled={!ready} onClick={props.onBack} data-role="setup-done">
-              {props.canGoBack ? "Done" : "Go to your library"} <kbd>&#8629;</kbd>
+            <button className="btn primary" autoFocus={ready && !choosing} disabled={!ready} title="Done (Return)" onClick={props.onBack} data-role="setup-done">
+              {props.canGoBack ? "Done" : "Go to your library"}
             </button>
             {setup && !ready && <span className="aside">Finish the steps above first.</span>}
           </div>

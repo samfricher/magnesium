@@ -130,8 +130,8 @@ export function Summary(props: { sitting: Sitting; activity: Activity | null; co
           )}
 
           <div className="row center">
-            <button className="btn primary" autoFocus onClick={props.onDone} data-role="summary-done">
-              Done <kbd>&#8629;</kbd>
+            <button className="btn primary" autoFocus title="Done (Return)" onClick={props.onDone} data-role="summary-done">
+              Done
             </button>
             <button className="btn ghost" onClick={props.onProgress}>
               See your proofs

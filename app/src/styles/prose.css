@@ -1,12 +1,11 @@
-/* The tutor's words. They are set like a page of a book: a reading serif, a
-   narrow measure, generous leading. Mathematics sits in the line at the same
-   size as the words round it. */
+/* The tutor's words. They are set like a page of a book: Literata, a narrow
+   measure (the column is 34em of this size, about 66 characters), generous
+   leading. Mathematics sits on the line at the height of the letters round it. */
 
 .prose {
   font-family: var(--serif);
-  font-size: 18.5px;
-  line-height: 1.62;
-  letter-spacing: 0.002em;
+  font-size: var(--fs-read);
+  line-height: 1.65;
   color: var(--text);
   overflow-wrap: break-word;
 }
@@ -28,9 +27,8 @@
 .prose h3,
 .prose h4 {
   margin: 1.5em 0 0.5em;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.3;
-  letter-spacing: -0.005em;
 }
 
 .prose h1 {
@@ -43,11 +41,11 @@
 
 .prose h3,
 .prose h4 {
-  font-size: 1.05em;
+  font-size: 1em;
 }
 
 .prose strong {
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .prose ul,
@@ -66,7 +64,6 @@
 
 .prose li::marker {
   color: var(--faint);
-  font-family: var(--round);
   font-size: 0.86em;
   font-weight: 600;
 }
@@ -77,12 +74,12 @@
 
 .prose pre {
   margin: 0 0 1em;
-  padding: 14px 16px;
+  padding: var(--s3) var(--s4);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-control);
   background: var(--surface);
   overflow-x: auto;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   line-height: 1.55;
 }
 
@@ -94,7 +91,7 @@
 
 .prose :not(pre) > code {
   padding: 0.12em 0.38em;
-  border-radius: 6px;
+  border-radius: var(--r-control);
   background: var(--hover);
   font-size: 0.8em;
 }
@@ -112,7 +109,7 @@
 
 .prose blockquote {
   margin: 0 0 1em;
-  padding: 2px 0 2px 16px;
+  padding: var(--s1) 0 var(--s1) var(--s4);
   border-left: 3px solid var(--line-2);
   color: var(--muted);
 }
@@ -125,20 +122,20 @@
 .prose table {
   border-collapse: collapse;
   font-family: var(--sans);
-  font-size: 14.5px;
+  font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
 }
 
 .prose th,
 .prose td {
-  padding: 7px 16px;
+  padding: var(--s2) var(--s4);
   border-bottom: 1px solid var(--line);
   text-align: left;
 }
 
 .prose th {
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: var(--fs-caption);
+  font-weight: 600;
   color: var(--muted);
   border-bottom-color: var(--line-2);
 }
@@ -149,49 +146,59 @@
   border-top: 1px solid var(--line);
 }
 
+/* A link is ink with an underline. It is not green: green is for proofs. */
 .prose a {
   color: inherit;
   text-decoration: underline;
   text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   cursor: pointer;
+  transition: text-decoration-color var(--t-fast) ease-out;
+}
+
+.prose a:hover {
+  text-decoration-color: var(--text);
 }
 
 .prose img {
   display: block;
   max-width: 100%;
   margin: 0 0 1em;
-  border-radius: 12px;
+  border-radius: var(--r-control);
 }
 
 .prose .missing {
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   color: var(--faint);
 }
 
-/* Mathematics. In the line it keeps the size of the words. On its own line it
-   gets room, and a long formula scrolls inside its own box. */
+/* Mathematics. KaTeX's own letters are a little small beside Literata, so in
+   the line it is set at 1.05em to sit on the same x-height, and an inline
+   formula never breaks across lines. On its own line it gets room, and a long
+   formula scrolls inside its own box. */
 .prose .katex {
-  font-size: 1.04em;
+  font-size: 1.05em;
+  white-space: nowrap;
 }
 
 .prose .katex-display {
   margin: 1.1em 0;
-  padding: 4px 0;
+  padding: var(--s1) 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
 .prose .katex-display > .katex {
-  font-size: 1.16em;
+  font-size: 1.15em;
 }
 
 .prose .diagram {
   margin: 0 0 1em;
-  padding: 16px;
+  padding: var(--s4);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: var(--surface);
   overflow-x: auto;
   text-align: center;
@@ -207,8 +214,8 @@
 .prose div.task,
 .prose :not(div.task) > p.task {
   margin: 1.2em 0 0;
-  padding: 14px 18px 15px;
-  border-radius: 14px;
+  padding: var(--s4) var(--s5);
+  border-radius: var(--r-card);
   background: var(--accent-soft);
   box-shadow: inset 3px 0 0 var(--accent);
 }
@@ -221,13 +228,12 @@
   margin: 0.7em 0;
 }
 
+/* The label of a task ("Task", "Check 1 of 2"): Literata italic, quiet. */
 .prose p.task > strong:first-child {
   display: block;
-  margin-bottom: 3px;
-  font-family: var(--sans);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--accent);
+  margin-bottom: var(--s1);
+  font-size: var(--fs-ui);
+  font-style: italic;
+  font-weight: 400;
+  color: var(--muted);
 }

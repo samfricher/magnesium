@@ -27,13 +27,13 @@ async function drawDiagrams(root: HTMLElement) {
   // The window's own colours, so a diagram reads as part of the page. The
   // diagram library works colours out from these, so they are plain hex.
   const ink = dark
-    ? { box: "#1e2025", text: "#edebe6", edge: "#55585f", line: "#a3a4aa", second: "#25282e", third: "#17181c" }
-    : { box: "#ffffff", text: "#1d1c19", edge: "#c4c0b5", line: "#65625b", second: "#ece9e1", third: "#fdfcf8" };
+    ? { box: "#262d39", text: "#e9ebee", edge: "#4b5565", line: "#b3bac5", second: "#2c3441", third: "#1f252f" }
+    : { box: "#ffffff", text: "#1b212b", edge: "#c4c8bf", line: "#475060", second: "#e6e8e2", third: "#fafaf7" };
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
     theme: "base",
-    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: '"Atkinson Hyperlegible Next Variable", -apple-system, BlinkMacSystemFont, sans-serif',
     // A diagram keeps its own size, so its labels stay readable. A wide one
     // scrolls inside its box.
     flowchart: { useMaxWidth: false },

@@ -241,8 +241,8 @@ function QuestionCard(props: {
       ))}
       {(!single || (own[0] ?? "").trim() !== "") && (
         <div className="row">
-          <button className="btn primary" disabled={!complete} onClick={() => props.onAnswer(card.id, answersNow())}>
-            Answer <kbd>&#8629;</kbd>
+          <button className="btn primary" disabled={!complete} title="Answer (Return)" onClick={() => props.onAnswer(card.id, answersNow())}>
+            Answer
           </button>
         </div>
       )}
@@ -618,8 +618,8 @@ export function Session(props: {
                     }}
                   />
                   <div className="row">
-                    <button className="btn primary" onClick={() => props.onStop(line)}>
-                      Save and end <kbd>&#8629;</kbd>
+                    <button className="btn primary" title="Save and end (Return)" onClick={() => props.onStop(line)}>
+                      Save and end
                     </button>
                     <button className="btn ghost" onClick={() => setStopping(false)}>
                       Keep going

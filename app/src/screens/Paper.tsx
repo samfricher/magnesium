@@ -106,8 +106,8 @@ export function Paper(props: {
               <h1>No paper to sit yet</h1>
               <p className="paper-rule">The tutor builds papers for an exam. Start a lesson and name the exam, and its papers appear here.</p>
               <div className="row center">
-                <button className="btn primary" autoFocus onClick={props.onBack}>
-                  Back <kbd>&#8629;</kbd>
+                <button className="btn primary" autoFocus title="Back (Return)" onClick={props.onBack}>
+                  Back
                 </button>
               </div>
             </>
