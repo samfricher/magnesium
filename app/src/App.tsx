@@ -917,7 +917,8 @@ export function App() {
     const live = session.live;
     if (!el || !live) return;
     const said = el.querySelector<HTMLElement>(`[data-ms="${live.since}"]`);
-    const write = el.querySelector<HTMLElement>(".today .row.write, .today .row.stopping");
+    const lines = el.querySelectorAll<HTMLElement>(".today .row.write, .today .row.stopping");
+    const write = lines[lines.length - 1] ?? null;
     const top = said ? said.offsetTop - 96 : el.scrollTop;
     if (followed.current !== live.since) {
       followed.current = live.since;
