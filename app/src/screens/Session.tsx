@@ -35,6 +35,26 @@ const CONFIDENCE: [string, string][] = [
 const EDGE = 16;
 const GAP = 32;
 
+/**
+ * What the learner typed, with its mathematics drawn, inside the answer box: at
+ * most three lines at the UI size, scrolling inside itself, with a fade at the
+ * foot while there is more below.
+ */
+function Preview({ text }: { text: string }) {
+  const el = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = () => {
+    const node = el.current;
+    if (node) setMore(node.scrollHeight - node.clientHeight - node.scrollTop > 2);
+  };
+  useLayoutEffect(measure, [text]);
+  return (
+    <div className="preview" ref={el} data-more={more ? "yes" : undefined} onScroll={measure} aria-label="Your formula, drawn">
+      {hasMath(text) ? <Said text={text} className="preview-body" /> : <span className="preview-empty">Your formula is drawn here</span>}
+    </div>
+  );
+}
+
 /** The learner's words as typed, with their mathematics drawn. */
 function Said({ text, className }: { text: string; className: string }) {
   const html = useMemo(() => renderPlain(text), [text]);
@@ -89,8 +109,10 @@ function useNarrow(): boolean {
 }
 
 /** The goal's steps as a row of marks, and the step in hand in words. A click shows them all. */
-function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boolean) => void }) {
+function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boolean) => void; startedMs: number | null; blockMinutes: number }) {
   const { rail, open } = props;
+  const left = useMinutesLeft(props.startedMs, props.blockMinutes);
+  const time = `Lesson length ${props.blockMinutes} min, ${left < 0 ? `${-left} min over` : `${left} min left`}`;
   const holder = useRef<HTMLDivElement>(null);
   const steps = rail?.steps ?? [];
   // The step in hand: the one the tutor marked, else the first not done.
@@ -125,7 +147,7 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
       <button
         className={open ? "track on" : "track"}
         onClick={() => props.onOpen(!open)}
-        title={where ? `${where}. Show the goal and its steps.` : "Show the goal"}
+        title={`${where ? `${where}. ` : ""}${time}. ${steps.length > 0 ? "Show the goal and its steps." : "Show the goal."}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         data-role="track"
@@ -158,8 +180,9 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
             <ol>
               {steps.map((step, index) => (
                 <li key={index} className={step.status === "done" ? "done" : index === current ? "cur" : undefined}>
-                  <i>{step.status === "done" && <Icon name="check" size={11} />}</i>
+                  <i aria-hidden="true" />
                   <Line text={step.step} />
+                  <span className="sr">{step.status === "done" ? ", done" : index === current ? ", in hand" : ""}</span>
                 </li>
               ))}
             </ol>
@@ -167,23 +190,37 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
             rail?.next_action && (
               <ol>
                 <li className="cur">
-                  <i />
+                  <i aria-hidden="true" />
                   <Line text={rail.next_action} />
                 </li>
               </ol>
             )
           )}
+          <p className="plan-time">{time}</p>
         </div>
       )}
     </div>
   );
 }
 
-/** The block's clock as plain text: the minutes left, or the minutes over. */
-function Clock({ startedMs, blockMinutes }: { startedMs: number | null; blockMinutes: number }) {
+/** Minutes left of the lesson's length; below zero once it is over. */
+function useMinutesLeft(startedMs: number | null, blockMinutes: number): number {
   const now = useNow(15_000);
   const used = startedMs === null ? 0 : Math.max(0, Math.floor((now - startedMs) / 60_000));
-  const left = blockMinutes - used;
+  return blockMinutes - used;
+}
+
+/** The last stretch of the lesson, in minutes: only then does the strip count the time. */
+const CLOCK_SHOWN = 10;
+
+/**
+ * The block's clock as plain text. A clock all lesson long is pressure, so the
+ * strip is silent about time until the last ten minutes; before then the time
+ * is in the step button's popover and its tooltip.
+ */
+function Clock({ startedMs, blockMinutes }: { startedMs: number | null; blockMinutes: number }) {
+  const left = useMinutesLeft(startedMs, blockMinutes);
+  if (left > CLOCK_SHOWN) return null;
   const over = left < 0;
   return (
     <span className={over ? "clock over" : "clock"} title={`Lesson length: ${blockMinutes} min. Change it in the menu (⌘K).`} data-role="clock">
@@ -263,6 +300,12 @@ function QuestionCard(props: {
     });
   };
 
+  /** The learner's own words for a question. Typing takes back an option chosen, so the words are the answer. */
+  const typeInto = (index: number, value: string) => {
+    setOwn((old) => ({ ...old, [index]: value }));
+    if (value !== "") setChosen((old) => (old[index]?.length ? { ...old, [index]: [] } : old));
+  };
+
   /** A click on an option is a plain choice: for a single question it is also the answer. */
   const click = (index: number, q: Question, label: string) => {
     if (single) props.onAnswer(card.id, answersNow({ index, label }));
@@ -308,16 +351,12 @@ function QuestionCard(props: {
     }
 
     if (target.tagName === "INPUT") {
-      // From the field, up goes to the options: the one chosen, else the first.
-      if (event.key === "ArrowUp" && list.length > 0) {
+      // From the field, up goes to the options (and so does down, with nothing typed): the one chosen, else the first.
+      if ((event.key === "ArrowUp" || (event.key === "ArrowDown" && (own[index] ?? "") === "")) && list.length > 0) {
         event.preventDefault();
         (list.find((el) => el.getAttribute("aria-checked") === "true") ?? list[0]).focus();
-      } else if (digit >= 0 && digit < q.options.length && (own[index] ?? "") === "") {
-        // The field is empty, so a digit is a choice and not a character.
-        event.preventDefault();
-        choose(index, q, q.options[digit].label);
-        list[digit]?.focus();
       }
+      // Anything else typed in the field is text: a digit too, since an answer often starts with one.
       return;
     }
 
@@ -360,7 +399,7 @@ function QuestionCard(props: {
     if (event.key.length === 1) {
       event.preventDefault();
       const box = field(index);
-      setOwn((old) => ({ ...old, [index]: `${old[index] ?? ""}${event.key}` }));
+      typeInto(index, `${own[index] ?? ""}${event.key}`);
       box?.focus();
       window.requestAnimationFrame(() => box?.setSelectionRange(box.value.length, box.value.length));
     }
@@ -414,7 +453,7 @@ function QuestionCard(props: {
               placeholder="Or say it in your own words"
               aria-label="Or say it in your own words"
               value={own[index] ?? ""}
-              onChange={(e) => setOwn((old) => ({ ...old, [index]: e.target.value }))}
+              onChange={(e) => typeInto(index, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !composing(e) && complete()) props.onAnswer(card.id, answersNow());
               }}
@@ -424,10 +463,10 @@ function QuestionCard(props: {
       })}
       <div className="row">
         <button className="btn primary" disabled={!complete()} title="Send the answer (Return)" onClick={() => props.onAnswer(card.id, answersNow())}>
-          Answer
+          Send
         </button>
         <span className="aside">
-          Choose with {Array.from({ length: most }, (_, n) => n + 1).join(" ")} or ↑ ↓ and Return, or write your own.
+          ↑ to choose an option, then {Array.from({ length: most }, (_, n) => n + 1).join(" ")} or ↑ ↓ and Return; or write your own.
         </span>
       </div>
     </div>
@@ -470,6 +509,9 @@ const SYMBOLS: { show: string; name: string; insert: string; tex?: boolean }[] =
   { show: "≈", name: "approximately equal to", insert: "≈" },
   { show: "\\frac{a}{b}", name: "fraction", insert: "\\frac{|}{}", tex: true },
 ];
+
+/** What the fraction button does, said where it is pointed at: it types LaTeX, which the preview draws. */
+const FRACTION_HINT = "Fraction: types \\frac{top}{bottom}; the preview shows it drawn";
 
 /** Whether the caret, after `before`, is inside a formula already begun with a dollar sign. */
 function inMath(before: string): boolean {
@@ -716,7 +758,8 @@ function Composer(props: {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    // The page's CSS holds the whole box (text and preview) to a share of the window; the text scrolls inside it.
+    el.style.height = `${el.scrollHeight}px`;
     if (caretAt.current !== null) {
       el.focus();
       el.setSelectionRange(caretAt.current, caretAt.current);
@@ -859,8 +902,8 @@ function Composer(props: {
               key={symbol.name}
               type="button"
               className="symbol"
-              title={symbol.name}
-              aria-label={symbol.name}
+              title={symbol.tex ? FRACTION_HINT : symbol.name}
+              aria-label={symbol.tex ? FRACTION_HINT : symbol.name}
               // The caret stays in the answer box: a click on a symbol never takes it.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => insert(symbol)}
@@ -895,9 +938,7 @@ function Composer(props: {
         {text.includes("$") && (
           // Once a formula is begun, its room is kept, so the box does not
           // change height as the formula is drawn.
-          <div className="preview" aria-label="Your formula, drawn">
-            {hasMath(preview) ? <Said text={preview} className="preview-body" /> : <span className="preview-empty">Your formula is drawn here</span>}
-          </div>
+          <Preview text={preview} />
         )}
         {files.length > 0 && (
           <div className="files">
@@ -1432,7 +1473,7 @@ export function Session(props: {
             End lesson
           </button>
         }
-        center={<Track rail={props.rail} open={planOpen} onOpen={setPlanOpen} />}
+        center={<Track rail={props.rail} open={planOpen} onOpen={setPlanOpen} startedMs={state.startedMs} blockMinutes={props.blockMinutes} />}
         right={
           <>
             <Clock startedMs={state.startedMs} blockMinutes={props.blockMinutes} />
@@ -1444,10 +1485,12 @@ export function Session(props: {
         <div className="session-main" ref={main} data-scrolled="no" {...(sheet ? ({ inert: "" } as object) : {})}>
           {pin && (
             <div className="task-pin-holder">
-              <button className="task-pin" onClick={showTask} title="Show the whole task" data-role="task-pin">
-                <span className="task-pin-label">{pin.label}</span>
-                <span className="task-pin-text" dangerouslySetInnerHTML={{ __html: pin.html }} />
-              </button>
+              <div className="column">
+                <button className="task-pin" onClick={showTask} title="Show the whole task" data-role="task-pin">
+                  <span className="task-pin-label">{pin.label}</span>
+                  <span className="task-pin-text" dangerouslySetInnerHTML={{ __html: pin.html }} />
+                </button>
+              </div>
             </div>
           )}
           <div
