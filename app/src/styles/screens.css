@@ -1,9 +1,5 @@
 /* ---- the library: the next lesson, then a ruled index of the courses ---- */
 
-.screen.library {
-  --col: 864px;
-}
-
 .shelf {
   padding: var(--s5) var(--edge-r) var(--s8) var(--edge-l);
 }
@@ -74,13 +70,15 @@
   color: var(--muted);
 }
 
-/* The problem a goal came from follows it, in the quiet ink. */
+/* The problem a goal came from has its own quiet line under the goal: never joined to the end of the title, never above it. */
 .goal-ref {
+  display: block;
+  margin-top: var(--s1);
   font-family: var(--sans);
   font-size: var(--fs-small);
   font-weight: 400;
+  line-height: var(--lh-ui);
   color: var(--muted);
-  white-space: nowrap;
 }
 
 .cc-title .katex {
@@ -147,11 +145,11 @@
 .ledger-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 184px 116px 32px;
+  grid-template-columns: minmax(0, 1fr) 152px 124px 32px;
   align-items: center;
-  column-gap: var(--s4);
+  column-gap: var(--s3);
   min-height: 88px;
-  margin: 0 calc(var(--s3) * -1);
+  margin: 0;
   padding: var(--s4) var(--s3);
   border-radius: var(--r-control);
   transition: background var(--t-fast) ease-out;
@@ -187,9 +185,19 @@
   transition-duration: 80ms;
 }
 
-.ledger-row:has(.cc-open:focus-visible) {
+/* A full-width row or tile is ringed inside its own edge, rounded as it is, and its hairlines give way to the ring. */
+.ledger-row:has(.cc-open:focus-visible),
+.index-row:focus-visible,
+.paper-list button:focus-visible {
   outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline-offset: -2px;
+}
+
+.ledger-row:has(.cc-open:focus-visible)::before,
+.ledger-row:has(.cc-open:focus-visible):last-child::after,
+.index-row:focus-visible::before,
+.index-row:focus-visible:last-child::after {
+  opacity: 0;
 }
 
 html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
@@ -475,7 +483,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   display: flex;
   flex-direction: column;
   padding: var(--s6);
-  border: 1px solid var(--line);
+  border: 1px solid var(--card-edge);
   border-radius: var(--r-card);
   background: var(--surface);
 }
@@ -492,6 +500,13 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   line-height: var(--lh-read);
   color: var(--muted);
   max-width: 62ch;
+}
+
+/* What a blocking state says (a fault, an upgrade, a paper running): the interface face in the quiet ink, as on the setup screen. */
+.next-card p.say {
+  font-family: var(--sans);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
 }
 
 .next-card p.next-meta {
@@ -537,17 +552,17 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   margin-top: var(--s5);
 }
 
-/* A row of the index is built as a course row of the library is: its words on
-   the column's edge, its hover fill reaching 12px past it, its hairlines
-   between. */
+/* A row of the index is built as a course row of the library is: the whole
+   row is the button, its hover fill stays within the column, its hairlines
+   between, and its chevron stands right after its name. */
 .index-row {
   position: relative;
   display: grid;
-  grid-template-columns: 8.5rem minmax(0, 1fr) 16px;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
   align-items: start;
   gap: var(--s4);
-  width: calc(100% + var(--s5));
-  margin: 0 calc(var(--s3) * -1);
+  width: 100%;
+  margin: 0;
   padding: var(--s4) var(--s3);
   border: 0;
   border-radius: var(--r-control);
@@ -579,18 +594,23 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   background: var(--hover);
 }
 
-.index-row .icon {
-  align-self: center;
-  color: var(--muted);
-}
-
-/* The name of an item in a list: the reading face, a step below a section's heading. */
+/* The name of a row you press, and of a step: a label of the window, so the interface face. */
 .index-name,
 .step-name {
-  font-family: var(--serif);
-  font-size: var(--fs-read);
+  font-family: var(--sans);
+  font-size: var(--fs-ui);
   font-weight: 600;
-  line-height: var(--lh-tight);
+  line-height: var(--lh-ui);
+}
+
+.index-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.index-name .icon {
+  color: var(--muted);
 }
 
 .index-body {
@@ -604,6 +624,15 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   font-size: var(--fs-ui);
   line-height: var(--lh-ui);
   color: var(--muted);
+}
+
+/* The skills in play beside what is still to do: the list of skills, and the short list of counts, side by side while there is room. */
+.index-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4) var(--s5);
 }
 
 /* The skills in play: each a row, its three dots and its name in the reading face. */
@@ -624,6 +653,31 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .index-skill-name {
   font-family: var(--serif);
   font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* What the skills are doing, as a short list: the words, then the number, in two columns. */
+.counts {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: var(--s4);
+  row-gap: var(--s1);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--muted);
+}
+
+.counts-row {
+  display: contents;
+}
+
+.index-detail .counts {
+  margin-top: var(--s1);
+}
+
+.counts-row > :last-child {
+  text-align: right;
   color: var(--text);
 }
 
@@ -2059,11 +2113,19 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: var(--muted);
 }
 
-.skill-note {
+/* A skill's status ("due today", "next tomorrow", "fix it first"): one case, one size, one weight. */
+.skill-note,
+.skill .due {
   font-size: var(--fs-small);
+  font-weight: 400;
+  line-height: var(--lh-ui);
+}
+
+.skill-note {
   color: var(--muted);
   white-space: nowrap;
 }
+
 
 /* A miss that waits for its repair says what to do, in two short lines. */
 .skill-note.fix {
@@ -2078,7 +2140,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .skill-note.fix b,
 .legend-word {
-  font-weight: 600;
+  font-weight: 400;
   color: var(--text);
 }
 
@@ -2221,21 +2283,18 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .weeks-row {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 112px max-content;
   align-items: start;
+  column-gap: var(--s4);
   padding: var(--s2) 0;
   border-top: 1px solid var(--line);
 }
 
-/* The days spread across the row, so the grid ends on the column's right edge as the rows above do. */
-.weeks .week {
-  width: 100%;
-  justify-content: space-between;
-}
-
+/* The same compact strip as the library's and Lesson done's, one to a row, with the row's name on its left. The name's line is as tall as a day's square, so the two stand level. */
 .weeks-name {
   font-size: var(--fs-small);
-  line-height: var(--lh-ui);
+  line-height: 12px;
+  padding-top: 1px;
   color: var(--muted);
 }
 
@@ -2351,7 +2410,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   position: absolute;
   top: var(--s2);
   bottom: var(--s2);
-  left: 0;
+  left: var(--s1);
   width: 3px;
   border-radius: 1.5px;
   background: var(--text);
@@ -2386,13 +2445,13 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 /* ---- this Mac ---- */
 
 .setup-col {
-  max-width: 540px;
+  max-width: none;
 }
 
 .steps {
   width: 100%;
   margin-top: var(--s6);
-  border: 1px solid var(--line);
+  border: 1px solid var(--card-edge);
   border-radius: var(--r-card);
   background: var(--surface);
   text-align: left;
@@ -2453,8 +2512,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 .step-body p {
+  max-width: 62ch;
   margin-top: var(--s2);
-  font-size: var(--fs-small);
+  font-size: var(--fs-ui);
   line-height: var(--lh-ui);
   color: var(--muted);
 }
@@ -2901,9 +2961,11 @@ button.file-name:focus-visible {
 .paste-box {
   display: block;
   width: 100%;
-  min-height: 150px;
+  height: 200px;
   margin-top: var(--s3);
-  resize: vertical;
+  padding-top: var(--s3);
+  padding-bottom: var(--s3);
+  resize: none;
   font-size: var(--fs-ui);
   line-height: 1.5;
 }

@@ -77,7 +77,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; lead: boolean; onReplace: (
           <button className="btn primary" title="Replace (Return)" onClick={props.onReplace}>
             Replace
           </button>
-          <button className="btn ghost" onClick={props.onKeep}>
+          <button className="btn" onClick={props.onKeep}>
             Keep {installed.version ? versionNumber(installed.version) : "it"}
           </button>
         </div>
@@ -96,7 +96,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; lead: boolean; onReplace: (
               Replace with {versionNumber(bundled.version)}
             </button>
           )}
-          <button className={bundled || !props.lead ? "btn small" : "btn primary"} onClick={props.onCheck}>
+          <button className={bundled ? "btn" : !props.lead ? "btn small" : "btn primary"} onClick={props.onCheck}>
             Check again
           </button>
         </div>
@@ -147,7 +147,7 @@ function AccountStep(props: { account: Account; lead: boolean; signingIn: boolea
               Anthropic&apos;s install page <Icon name="external" size={14} />
             </button>
           )}
-          <button className={props.lead && !account.install_page ? "btn primary" : "btn small"} onClick={props.onCheck}>
+          <button className={props.lead && !account.install_page ? "btn primary" : props.lead ? "btn" : "btn small"} onClick={props.onCheck}>
             Check again
           </button>
         </div>
@@ -159,7 +159,7 @@ function AccountStep(props: { account: Account; lead: boolean; signingIn: boolea
       <button className={props.lead ? "btn primary" : "btn small"} disabled={props.signingIn} onClick={props.onSignIn}>
         {props.signingIn ? "Waiting for the browser…" : "Sign in"}
       </button>
-      <button className="btn small" onClick={props.onCheck}>
+      <button className={props.lead ? "btn" : "btn small"} onClick={props.onCheck}>
         Check again
       </button>
     </div>
@@ -210,7 +210,7 @@ export function Setup(props: {
   engine: ReactNode;
 }) {
   const { setup } = props;
-  useReturnForPrimary();
+  useReturnForPrimary(setup !== null);
   const ready = setupReady(setup);
   const version = aboutText(props.about);
   // The one green button is the action that unblocks setup: the program's if that is what is wrong, else Claude Code's. Once setup is ready it is Done.
@@ -234,7 +234,7 @@ export function Setup(props: {
       <TopBar
         left={
           props.canGoBack ? (
-            <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+            <button className="crumb" onClick={props.onBack} title="Library (Esc)">
               <Icon name="back" size={16} />
               Library
             </button>

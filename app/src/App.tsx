@@ -53,13 +53,16 @@ const SHORTCUTS: Command = {
   shortcuts: [
     ["⌘K", "Open this menu"],
     ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
-    ["⌘O", "Add a course (in the library and on a course page)"],
+    ["⌘O", "Open a course folder (in the library and on a course page)"],
     ["⌘⇧H", "Hint (in a lesson)"],
     ["⌘⇧D", "I don't know (in a lesson)"],
     ["⌘⇧L", "I'm lost (in a lesson)"],
     ["⌘.", "Stop the reply being written"],
     ["Return", "Send your answer, or do the screen's green button"],
-    ["Shift+Return", "Start a new line in your answer"],
+    ["⇧Return", "Start a new line in your answer"],
+    ["⌥1 ⌥2 ⌥3", "How sure? in a lesson: Sure, Unsure, Guess"],
+    ["PageUp PageDown", "Scroll the lesson from the answer box"],
+    ["⌥↑ ⌥↓", "Scroll the lesson from the answer box, a little at a time"],
     ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
     ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
     ["Esc", "Go back, or close what is open"],
@@ -883,7 +886,7 @@ export function App() {
         void pickFolder();
       } else if (event.key === "Escape" && !event.defaultPrevented && !now.current.palette) {
         if (view === "progress" || view === "course") back();
-        else if (view === "paper" && !home?.sitting) setView("course");
+        else if (view === "paper") setView("course");
         else if (view === "summary") setView("course");
         else if (view === "setup" && setupReady(setup)) back();
       }
@@ -988,12 +991,12 @@ export function App() {
     }
     const account = setup?.account;
     if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", icon: "warn", run: () => openSetup() });
+      list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", icon: "bang", run: () => openSetup() });
     }
     if (!inLesson) {
-      list.push({ label: "Add a course…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
-      list.push({ label: "New course…", icon: "plus", run: () => void newFolder() });
-      list.push({ label: "Find courses on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
+      list.push({ label: "Open a course folder…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
+      list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
+      list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
       if (home) {
         const folder = home.folder;
         list.push({

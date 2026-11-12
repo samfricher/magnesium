@@ -134,6 +134,14 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
             }}
             onKeyDown={(e) => {
               if (composing(e)) return;
+              // The list of keys is longer than a short window: the arrow and page keys scroll it.
+              if (keys && ["ArrowDown", "ArrowUp", "PageDown", "PageUp"].includes(e.key)) {
+                e.preventDefault();
+                const box = dialog.current?.querySelector<HTMLElement>(".palette-keys");
+                const page = box ? box.clientHeight * 0.9 : 0;
+                box?.scrollBy({ top: e.key === "ArrowDown" ? 48 : e.key === "ArrowUp" ? -48 : e.key === "PageDown" ? page : -page });
+                return;
+              }
               // Tab never leaves the menu: it moves through the items, as the arrow keys do.
               if (e.key === "Tab") {
                 e.preventDefault();

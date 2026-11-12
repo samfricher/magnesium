@@ -23,16 +23,19 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * Today's counts as one sentence, the parts that are not zero: "6 answers
  * marked today, 2 new skills, 3 due tomorrow." Null when there is nothing to say.
  */
-export function todaySentence(today: Today | null, options: { proofs?: boolean; tomorrow?: boolean } = {}): string | null {
+export function todaySentence(today: Today | null, options: { proofs?: boolean; tomorrow?: boolean; split?: boolean } = {}): string | null {
   if (!today) return null;
-  const { proofs = true, tomorrow = true } = options;
-  const parts = [
+  const { proofs = true, tomorrow = true, split = false } = options;
+  const done = [
     today.answered > 0 ? `${plural(today.answered, "answer", "answers")} marked today` : null,
     today.started > 0 ? plural(today.started, "new skill", "new skills") : null,
     proofs && today.proofs > 0 ? plural(today.proofs, "proof", "proofs") : null,
-    tomorrow && today.due_tomorrow > 0 ? `${plural(today.due_tomorrow, "question", "questions")} due tomorrow` : null,
   ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? `${parts.join(", ")}.` : null;
+  const next = tomorrow && today.due_tomorrow > 0 ? `${plural(today.due_tomorrow, "question", "questions")} due tomorrow` : null;
+  // Joined, one sentence; split, what was done and what comes are two short sentences.
+  const parts = split ? [done.join(", "), next ?? ""] : [[...done, ...(next ? [next] : [])].join(", ")];
+  const said = parts.filter((part) => part !== "").map((part) => `${part.replace(/^./, (c) => c.toUpperCase())}.`);
+  return said.length > 0 ? said.join(" ") : null;
 }
 
 const NUMBER_WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
@@ -114,14 +117,17 @@ export function Summary(props: {
   // Answers were marked, and not every one is a proof: say why, once.
   const fewer = !unmarked && Math.max(sitting.marked ?? 0, sitting.today?.answered ?? 0) > proofs;
   const marked = !sitting.today && sitting.marked !== null && sitting.marked > 0 ? `${plural(sitting.marked, "answer", "answers")} marked.` : null;
-  const steps = sitting.stepsTotal > 0 ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
+  // The count of steps done and the line to pick up from must agree: when the saved line names a step other than the one after the last done, only the line is said.
+  const named = sitting.stoppedAt ? /\bstep (\d+)\b/i.exec(sitting.stoppedAt) : null;
+  const agrees = !named || Number(named[1]) === sitting.stepsDone + 1;
+  const steps = sitting.stepsTotal > 0 && agrees ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
   const tomorrow = sitting.today ? 0 : sitting.tomorrow;
   const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0;
   return (
     <section className="screen summary" data-screen="summary">
       <TopBar
         left={
-          <button className="crumb" onClick={props.onDone} title="Back to the course (Return)">
+          <button className="crumb" onClick={props.onDone} title={`${props.courseName} (Esc)`}>
             <Icon name="back" size={16} />
             {props.courseName}
           </button>
@@ -197,7 +203,7 @@ export function Summary(props: {
             <button className="btn primary" title="Done (Return)" onClick={props.onDone} data-role="summary-done">
               Done
             </button>
-            <button className="btn ghost" onClick={props.onProgress}>
+            <button className="btn" onClick={props.onProgress}>
               See your proofs
             </button>
           </div>

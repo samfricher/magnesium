@@ -43,7 +43,7 @@ export function Paper(props: {
       <section className="screen paper running" data-screen="paper">
         <TopBar
           left={
-            <button className="crumb" onClick={props.onBack} title="The course page; the paper keeps running">
+            <button className="crumb" onClick={props.onBack} title={`${displayName(home.name)} (Esc). The paper keeps running.`}>
               <Icon name="back" size={16} />
               {displayName(home.name)}
             </button>
@@ -87,6 +87,7 @@ export function Paper(props: {
                 <div className="row center paper-actions">
                   <button
                     className="btn primary"
+                    title="Hand in (Return)"
                     onClick={() => {
                       setConfirmIn(false);
                       props.onHandIn();
@@ -102,7 +103,7 @@ export function Paper(props: {
               </div>
             ) : (
               <div className="row center paper-actions">
-                <button className="btn primary" onClick={() => setConfirmIn(true)} data-role="paper-submit">
+                <button className="btn primary" title="Hand in a photo or PDF (Return)" onClick={() => setConfirmIn(true)} data-role="paper-submit">
                   Hand in a photo or PDF
                 </button>
                 {confirmEnd ? (
@@ -110,12 +111,12 @@ export function Paper(props: {
                     <button className="btn danger" onClick={props.onEnd}>
                       End the paper
                     </button>
-                    <button className="btn ghost" onClick={() => setConfirmEnd(false)}>
+                    <button className="btn" onClick={() => setConfirmEnd(false)}>
                       Keep going
                     </button>
                   </>
                 ) : (
-                  <button className="btn ghost" data-role="paper-end" onClick={() => setConfirmEnd(true)}>
+                  <button className="btn" data-role="paper-end" onClick={() => setConfirmEnd(true)}>
                     End without handing in
                   </button>
                 )}
@@ -138,7 +139,7 @@ export function Paper(props: {
     <section className="screen paper" data-screen="paper">
       <TopBar
         left={
-          <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+          <button className="crumb" onClick={props.onBack} title={`${displayName(home.name)} (Esc)`}>
             <Icon name="back" size={16} />
             {displayName(home.name)}
           </button>
@@ -152,7 +153,7 @@ export function Paper(props: {
               <h1 className="h-title">No paper to sit yet</h1>
               <p className="paper-rule">The tutor builds papers for an exam. Start a lesson and name the exam, and its papers appear here.</p>
               <div className="row center">
-                <button className="btn primary" title="Back (Return)" onClick={props.onBack}>
+                <button className="btn primary" title={`${displayName(home.name)} (Return)`} onClick={props.onBack}>
                   Back
                 </button>
               </div>
@@ -165,6 +166,12 @@ export function Paper(props: {
                 role="radiogroup"
                 aria-label="Papers"
                 onKeyDown={(event) => {
+                  // Return on a row starts the clock, as the green button does.
+                  if (event.key === "Enter" && valid && picked && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    props.onStart(picked, length);
+                    return;
+                  }
                   const at = Math.max(0, home.papers.findIndex((paper) => paper.path === picked?.path));
                   radioKey(event, at, home.papers.length, (to) => {
                     const paper = home.papers[to];
@@ -201,11 +208,17 @@ export function Paper(props: {
                   aria-label="Minutes"
                   value={minutes}
                   onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ""))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && valid && picked && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      props.onStart(picked, length);
+                    }
+                  }}
                 />
                 minutes
               </label>
               <div className="row center">
-                <button className="btn primary" disabled={!valid} onClick={() => picked && props.onStart(picked, length)}>
+                <button className="btn primary" disabled={!valid} title="Start the clock (Return)" onClick={() => picked && props.onStart(picked, length)}>
                   Start the clock
                 </button>
                 {!valid && <span className="aside">Enter a length from 1 to 600 minutes.</span>}

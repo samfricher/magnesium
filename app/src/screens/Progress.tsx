@@ -20,14 +20,14 @@ function RowView({ row, tone }: { row: Row; tone: string }) {
       <ProofDots earned={proofsOf(row.dots)} />
       <span className="skill-text">
         <Line text={row.name} className="skill-name" />
-        {row.what && <Line text={plain(row.what)} className="skill-what" />}
+        {row.what && <Line text={`Last slip: ${plain(row.what)}`} className="skill-what" />}
       </span>
       {row.due ? (
         <Due />
       ) : row.note === FIX_FIRST ? (
         <span className="skill-note fix">
-          <b>Fix it first</b>
-          <span>Repair it in a lesson, then a redo is set.</span>
+          <b>needs a fix first</b>
+          <span>You&apos;ll go over it with help in a lesson, then answer it again on another day.</span>
         </span>
       ) : (
         row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>
@@ -100,11 +100,11 @@ export function Progress(props: {
 }) {
   const { data, activity } = props;
   // Return does Continue, the one green button, when nothing has focus; the arrow, Space and Page keys scroll the page.
-  useReturnForPrimary();
+  useReturnForPrimary(data !== null);
   const bar = (
     <TopBar
       left={
-        <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+        <button className="crumb" onClick={props.onBack} title={`${props.backLabel} (Esc)`}>
           <Icon name="back" size={16} />
           {props.backLabel}
         </button>
@@ -164,7 +164,7 @@ export function Progress(props: {
                 </p>
               )}
             </div>
-            {levelShown && <Level proofs={proofs} size="md" title={`${proofs.earned} of ${proofs.total} proofs`} />}
+            {levelShown && <Level proofs={proofs} size="md" text="why" title={`${proofs.earned} of ${proofs.total} proofs`} />}
           </header>
 
           {data.message ? (
@@ -175,7 +175,7 @@ export function Progress(props: {
                   <p>Answer a task in a lesson without a hint. When the tutor marks it right, that is your first proof.</p>
                   {props.onStart && (
                     <div className="row">
-                      <button className="btn primary" onClick={props.onStart}>
+                      <button className="btn primary" title="Start a lesson (Return)" onClick={props.onStart}>
                         Start a lesson
                       </button>
                     </div>
@@ -195,7 +195,7 @@ export function Progress(props: {
                 tone="open"
                 action={
                   props.onStart ? (
-                    <button className="btn primary" onClick={props.onStart}>
+                    <button className="btn primary" title="Continue (Return)" onClick={props.onStart}>
                       Continue
                     </button>
                   ) : null
@@ -225,8 +225,8 @@ export function Progress(props: {
                     </li>
                     {waiting && (
                       <li>
-                        <b className="legend-word">Fix it first</b>
-                        <span>A miss the tutor has not repaired with you yet. Repair it in a lesson and a redo is set, which can earn its next proof.</span>
+                        <b className="legend-word">needs a fix first</b>
+                        <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
                       </li>
                     )}
                     {levelShown && (
@@ -302,7 +302,7 @@ export function Progress(props: {
                         </div>
                       ))}
                     </div>
-                    <p className="foot-key">A filled square is a day with an answer marked. The ringed square is today.</p>
+                    <p className="foot-key">A dark square is a day with an answer marked, a grey one a day without. The rule under a square is today.</p>
                   </section>
                 )}
                 {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (

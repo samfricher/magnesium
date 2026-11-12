@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, ExamSentence, GoalText, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, bucketsSentence, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import { Due, ExamSentence, GoalText, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Materials, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
@@ -48,7 +48,7 @@ export function Course(props: {
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
   useEffect(() => setDeclined(false), [home.folder]);
-  useReturnForPrimary();
+  useReturnForPrimary(home.state);
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
@@ -86,10 +86,10 @@ export function Course(props: {
     card = (
       <>
         <h2 className="h-section fault">
-          <Icon name="warn" size={20} />
+          <Icon name="bang" size={20} />
           {home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}
         </h2>
-        <p className="selectable">{home.message}</p>
+        <p className="say selectable">{home.message}</p>
         <div className="row">
           <button className="btn primary" title="Try again (Return)" onClick={props.onRetry}>
             Try again
@@ -101,7 +101,7 @@ export function Course(props: {
     card = declined ? (
       <>
         <h2 className="h-section">This course stays as it was</h2>
-        <p>A lesson cannot start here until the course is upgraded. Nothing in it was changed.</p>
+        <p className="say">A lesson cannot start here until the course is upgraded. Nothing in it was changed.</p>
         <div className="row">
           <button className="btn" disabled={props.upgrading} onClick={props.onUpgrade}>
             Upgrade
@@ -111,13 +111,13 @@ export function Course(props: {
     ) : (
       <>
         <h2 className="h-section">Upgrade this course?</h2>
-        <p className="selectable">{home.message}</p>
+        <p className="say selectable">{home.message}</p>
         <div className="row">
           <button className="btn primary" disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
             {props.upgrading ? "Upgrading…" : "Upgrade"}
           </button>
           {!props.upgrading && (
-            <button className="btn ghost" onClick={() => setDeclined(true)}>
+            <button className="btn" onClick={() => setDeclined(true)}>
               Not now
             </button>
           )}
@@ -131,7 +131,7 @@ export function Course(props: {
         <h2 className="h-section">
           {sitting.name}, <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
         </h2>
-        <p>A paper is running. The tutor is off until you hand in.</p>
+        <p className="say">A paper is running. The tutor is off until you hand in.</p>
         <div className="row">
           <button className="btn primary" title="Back to the paper (Return)" onClick={() => props.onPaper(null)}>
             Back to the paper
@@ -166,7 +166,7 @@ export function Course(props: {
             {props.starting ? "Starting…" : home.state === "not_set_up" ? "Start your first lesson" : "Start"}
           </button>
           {!fresh && (
-            <button className="btn ghost" onClick={() => props.onAsk(false)}>
+            <button className="btn" onClick={() => props.onAsk(false)}>
               Back
             </button>
           )}
@@ -203,9 +203,18 @@ export function Course(props: {
     );
   }
 
-  const today = todaySentence(progress?.today ?? null);
+  // Two short sentences: what was done today, and what comes tomorrow.
+  const today = todaySentence(progress?.today ?? null, { split: true });
   const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
-  const buckets = progress && !progress.message ? bucketsSentence(skillBuckets(progress)) : null;
+  // The skills, as one short sentence and a list of what is still to do: the words, then the number.
+  const buckets = progress && !progress.message ? skillBuckets(progress) : null;
+  const counts = buckets
+    ? ([
+        ["To prove today", buckets.today],
+        ["In progress", buckets.later],
+        ["Not tested yet", buckets.untested],
+      ] as const).filter(([, n]) => n > 0)
+    : [];
   // Up to five skills in play, in the order the Proofs page lists them: due today first, then the others.
   const inPlay =
     progress && !progress.message
@@ -220,7 +229,7 @@ export function Course(props: {
     <section className="screen course" data-screen="course">
       <TopBar
         left={
-          <button className="crumb" onClick={props.onLibrary} title="All courses (Esc)">
+          <button className="crumb" onClick={props.onLibrary} title="Library (Esc)">
             <Icon name="back" size={16} />
             Library
           </button>
@@ -243,7 +252,7 @@ export function Course(props: {
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Level proofs={proofs} size="md" />
+                <Level proofs={proofs} size="md" text="why" />
               </button>
             )}
           </header>
@@ -263,47 +272,69 @@ export function Course(props: {
           {usable && !sitting && (
             <div className="index">
               <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="index-name">Proofs</span>
+                <span className="index-name">
+                  Proofs
+                  <Icon name="right" size={14} />
+                </span>
                 <span className="index-body">
                   {progress && proofs && proofs.total > 0 ? (
-                    <span className="index-what num">{buckets ?? skillsProven(proofs)}</span>
+                    <>
+                      <span className="index-what num">{skillsProven(proofs) ? `${skillsProven(proofs)}.` : ""}</span>
+                    </>
                   ) : (
                     <span className="index-what">{PROOF_DEFINITION}</span>
                   )}
-                  {inPlay.length > 0 && (
-                    <span className="index-skills">
-                      {inPlay.slice(0, 5).map((row, at) => (
-                        <span className="index-skill" key={`${row.name}${at}`}>
-                          <ProofDots earned={row.earned} />
-                          <Line text={row.name} className="index-skill-name" />
+                  {(inPlay.length > 0 || counts.length > 0) && (
+                    <span className="index-detail">
+                      {inPlay.length > 0 && (
+                        <span className="index-skills">
+                          {inPlay.slice(0, 5).map((row, at) => (
+                            <span className="index-skill" key={`${row.name}${at}`}>
+                              <ProofDots earned={row.earned} />
+                              <Line text={row.name} className="index-skill-name" />
+                            </span>
+                          ))}
                         </span>
-                      ))}
+                      )}
+                      {counts.length > 0 && progress && proofs && proofs.total > 0 && (
+                        <span className="counts num">
+                          {counts.map(([label, n]) => (
+                            <span key={label} className="counts-row">
+                              <span>{label}</span>
+                              <span>{n}</span>
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </span>
                   )}
                   {allSkills > 0 && <span className="index-all num">{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</span>}
                 </span>
-                <Icon name="right" size={16} />
               </button>
               <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
-                <span className="index-name">Timed paper</span>
+                <span className="index-name">
+                  Timed paper
+                  <Icon name="right" size={14} />
+                </span>
                 <span className="index-body">
                   <span className="index-what">
                     {nextPaper
                       ? `${nextPaper.name}${nextPaper.minutes ? `, ${nextPaper.minutes} minutes` : ""}. A practice exam from your past papers.`
                       : home.papers.length > 0
-                        ? "All papers sat. A timed practice exam from your past papers."
-                        : "None yet: the tutor writes one when you ask."}
+                        ? "All papers sat. Choose one to sit again, timed."
+                        : "None yet. Ask the tutor for one in a lesson: name the exam and say you want a paper."}
                   </span>
                 </span>
-                <Icon name="right" size={16} />
               </button>
               {!fresh && (
                 <button className="index-row" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
-                  <span className="index-name">New lesson</span>
+                  <span className="index-name">
+                    New lesson
+                    <Icon name="right" size={14} />
+                  </span>
                   <span className="index-body">
                     <span className="index-what">Another topic: pick what to learn next.</span>
                   </span>
-                  <Icon name="right" size={16} />
                 </button>
               )}
             </div>

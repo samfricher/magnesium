@@ -61,7 +61,10 @@
   --red-soft: rgba(242, 149, 135, 0.12);
   /* The one shadow, for what floats. */
   --shadow: 0 16px 48px rgba(8, 12, 10, 0.55), 0 2px 8px rgba(8, 12, 10, 0.35);
-  --veil: rgba(20, 26, 22, 0.55);
+  /* What sits behind a sheet or a drop: the window set aside, dark enough that the page behind no longer competes. */
+  --veil: rgba(8, 12, 10, 0.78);
+  /* The edge of a card on the page. In the slate the tone alone is enough. */
+  --card-edge: var(--line);
   /* The magnesium flare: near-white, for an instant. */
   --flare: #f4fffa;
 
@@ -134,7 +137,9 @@
     --red: #a53527;
     --red-soft: rgba(165, 53, 39, 0.08);
     --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
-    --veil: rgba(241, 242, 238, 0.6);
+    --veil: rgba(27, 33, 43, 0.5);
+    /* Paper on paper: the card's tone is a shade from the page, so its edge is the stronger rule. */
+    --card-edge: var(--line-2);
   }
 }
 
@@ -264,6 +269,11 @@ code {
 }
 
 html:not([data-input="key"]) :focus-visible {
+  outline: none;
+}
+
+/* A title the window focused so the keyboard starts there is not a control: it takes no ring. */
+h1:focus-visible {
   outline: none;
 }
 
@@ -561,6 +571,8 @@ button.chip:active,
 .passage:active,
 .index-row:active,
 .more:active,
+button.key:active,
+.menu-key:active,
 .add-menu .menu button:active,
 .level:active {
   background: var(--press);
@@ -774,8 +786,8 @@ p.aside {
   width: 100%;
   margin-top: var(--s4);
   padding: var(--s3) var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-control);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-card);
   background: var(--surface);
   color: var(--muted);
   font-size: var(--fs-small);
@@ -974,10 +986,16 @@ button.banner:hover {
 }
 
 .lvl-text b {
+  white-space: nowrap;
   font-size: var(--fs-ui);
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: lining-nums tabular-nums;
+}
+
+.lvl-why {
+  max-width: 24ch;
+  text-wrap: balance;
 }
 
 .lvl.sm .lvl-text b {
@@ -1099,10 +1117,12 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-/* Seven days, Monday to Sunday. A study day is a small square, so it is never
-   taken for a proof, which is the only filled circle in the window: a day
-   studied is a filled 10px square in ink, today a ring round its square, any
-   other day an outlined square in --faint. */
+/* Seven days, Monday to Sunday. A day is a small solid square, never an
+   outlined box (that would be taken for something to tick) and never a circle
+   (the proof's). A day studied is ink; any other day is a quieter grey, with no
+   outline; today has a short ink rule under its square. The grey is the
+   field-edge grey, so a day that was not studied is still 3:1 on the page.
+   Every day keeps the room for the rule, so nothing moves when it is today. */
 .week {
   display: inline-flex;
   align-items: flex-start;
@@ -1118,11 +1138,12 @@ button.banner:hover {
 }
 
 .week-day i {
+  position: relative;
   width: 10px;
   height: 10px;
-  margin-top: 1px;
-  border: 1.5px solid var(--faint);
+  margin: 1px 0 5px;
   border-radius: 2px;
+  background: var(--line-input);
 }
 
 .week-day b {
@@ -1133,22 +1154,17 @@ button.banner:hover {
 }
 
 .week-day.done i {
-  border-color: var(--text);
   background: var(--text);
 }
 
-.week-day.today i {
-  border-color: var(--text);
-}
-
-.week-day.today.done i {
-  outline: 1.5px solid var(--text);
-  outline-offset: 1.5px;
-}
-
-.week-day.today:not(.done) i {
-  outline: 1.5px solid var(--text);
-  outline-offset: 1.5px;
+.week-day.today i::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  background: var(--text);
 }
 
 .week-day.today b {

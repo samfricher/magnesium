@@ -2,7 +2,7 @@
 // what was added, the sheet for pasted text, the veil while files are dragged
 // over the window, and the menu in the answer box.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "./icons";
 
@@ -28,6 +28,14 @@ export function MaterialNote({ lines, onDismiss }: { lines: string[]; onDismiss:
 export function PasteSheet(props: { initial: string; saving: boolean; onSave: (text: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(props.initial);
   const ready = text.trim() !== "" && !props.saving;
+  // When the sheet closes, focus goes back to the control that opened it.
+  const opener = useRef<Element | null>(document.activeElement);
+  useEffect(() => {
+    const before = opener.current;
+    return () => {
+      if (before instanceof HTMLElement && document.contains(before)) before.focus();
+    };
+  }, []);
   return (
     <div
       className="palette-veil"
@@ -70,10 +78,10 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={!ready} title="Save as a text file (Command-Return)" onClick={() => props.onSave(text)}>
+          <button className="btn primary" disabled={!ready} title="Save as a text file (⌘Return)" onClick={() => props.onSave(text)}>
             {props.saving ? "Saving…" : "Save as a text file"}
           </button>
-          <button className="btn ghost" onClick={props.onCancel}>
+          <button className="btn" onClick={props.onCancel}>
             Cancel
           </button>
           <span className="aside">Kept in your course material, where the tutor can search it.</span>

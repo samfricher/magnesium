@@ -175,19 +175,19 @@ function CourseCard(props: {
             <p className="cc-metas">
               {card.days_ago !== null && <span className="cc-meta">Last studied {agoText(card.days_ago)}</span>}
               <ProofSummary card={card} />
+              {card.due > 0 && <Due n={card.due} />}
             </p>
           </div>
         </div>
         <div className="cc-foot">
-          <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper" : "Continue the lesson"} onClick={props.onOpen}>
+          <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
             {label}
           </button>
           {props.onCourse && (
-            <button className="btn ghost cc-side" data-role="course-page" title="This course's page: proofs, papers, a new lesson" onClick={props.onCourse}>
+            <button className="btn cc-side" data-role="course-page" title="This course's page: proofs, papers, a new lesson" onClick={props.onCourse}>
               Course page
             </button>
           )}
-          {card.due > 0 && <Due n={card.due} />}
           {hasProofs && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
           {removeButton}
         </div>
@@ -251,7 +251,7 @@ export function Library(props: {
   // The window moves no focus by itself: a card is focused only once an arrow key has moved to it.
   const [moved, setMoved] = useState(false);
   const count = cards?.length ?? 0;
-  useReturnForPrimary();
+  useReturnForPrimary(cards !== null);
 
   useEffect(() => {
     if (focus >= count && count > 0) setFocus(count - 1);
@@ -259,17 +259,17 @@ export function Library(props: {
 
   const add = (
     <div className="shelf-add">
-      <button className="btn" title="Add a course (⌘O)" onClick={props.onPick}>
+      <button className={props.cards !== null && props.cards.length === 0 ? "btn primary" : "btn"} title="Open a course folder (⌘O)" onClick={props.onPick}>
         <Icon name="folder" size={16} />
-        Add a course…
+        Open a course folder…
       </button>
       <button className="btn ghost" onClick={props.onNew}>
         <Icon name="plus" size={16} />
-        New course…
+        Make a new course…
       </button>
       <button className="btn ghost" disabled={props.finding} onClick={props.onFind} title="Looks through your home folder for courses that Magnesium was set up in from a terminal">
         <Icon name="search" size={16} />
-        {props.finding ? "Looking…" : "Find courses on this Mac"}
+        {props.finding ? "Looking…" : "Find course folders on this Mac"}
       </button>
     </div>
   );
@@ -371,7 +371,7 @@ export function Library(props: {
           </header>
           {!props.ready && (
             <button className="banner warn" onClick={props.onSetup}>
-              <Icon name="warn" size={16} />
+              <Icon name="bang" size={16} />
               Something on this Mac needs fixing before a lesson can start.
               <span className="grow" />
               <b>Fix it</b>

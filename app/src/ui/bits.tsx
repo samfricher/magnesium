@@ -77,14 +77,17 @@ export function splitGoal(goal: string): { ref: string | null; title: string } {
   return { ref, title };
 }
 
-/** A goal as its title, and after it the problem it came from in the quiet ink: "Reading Vmax from a plot, PS3 Q3". */
+/**
+ * A goal as its title, and under it, on its own quiet line, the problem it
+ * came from: "Reading Vmax from a plot" and below it "PS3 Q3". The reference
+ * is never joined to the title's last word, and never above it.
+ */
 export function GoalText({ goal }: { goal: string }) {
   const { ref, title } = splitGoal(goal);
   return (
     <>
       <Line text={title} />
-      {/* The word joiner keeps ", PS3 Q3" on the line of the title's last word; it is never left alone on a line. */}
-      {ref && <span className="goal-ref">{"\u2060"}, {ref}</span>}
+      {ref && <span className="goal-ref">{ref}</span>}
     </>
   );
 }
@@ -170,17 +173,6 @@ export function skillBuckets(progress: Progress): SkillBuckets {
     later: progress.in_progress.length - today,
     untested: progress.untested.length,
   };
-}
-
-/** "3 proven, 2 to prove today, 4 in progress, 2 not tested yet." Null when there is nothing to count. */
-export function bucketsSentence(buckets: SkillBuckets): string | null {
-  const parts = [
-    buckets.proven > 0 ? `${buckets.proven} proven` : null,
-    buckets.today > 0 ? `${buckets.today} to prove today` : null,
-    buckets.later > 0 ? `${buckets.later} in progress` : null,
-    buckets.untested > 0 ? `${buckets.untested} not tested yet` : null,
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? `${parts.join(", ")}.` : null;
 }
 
 /**
@@ -330,8 +322,8 @@ export function Level({
   gain?: number;
   /** Draw today's part at rest. Only the first sight of Lesson done grows it. */
   still?: boolean;
-  /** "next": the level and the next-level line; "level": the level only; "none": the tally alone. */
-  text?: "next" | "level" | "none";
+  /** "next": the level and the next-level line; "why": the level and a line that says what moves it; "level": the level only; "none": the tally alone. */
+  text?: "next" | "why" | "level" | "none";
   title?: string;
 }) {
   const next = nextLevelSentence(proofs);
@@ -343,6 +335,11 @@ export function Level({
         <span className="lvl-text">
           <b>Level {proofs.level}</b>
           {text === "next" && next && <span>{next}</span>}
+          {text === "why" && next && (
+            <span className="lvl-why">
+              Each proof moves your level. {plural(proofs.to_next, "more proof reaches", "more proofs reach")} level {proofs.level + 1}.
+            </span>
+          )}
         </span>
       )}
     </span>
@@ -420,6 +417,33 @@ export function Choice<T extends string>(props: {
   );
 }
 
+/** The element the window itself put focus on when a screen opened. */
+let placed: Element | null = null;
+
+/**
+ * When a screen opens, focus goes to its one green button, or to its title
+ * when it has none, so a keyboard starts somewhere sensible. In pointer mode
+ * no ring shows (main.tsx sets data-input). It takes nothing from a control
+ * the screen or the learner already focused, and it moves on from its own
+ * placing when `ready` changes (a button that arrives once data has been read).
+ */
+function useScreenFocus(ready: unknown): void {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== placed) return;
+      if (document.querySelector(".palette-veil")) return;
+      const screen = document.querySelector(".screen");
+      const target = screen?.querySelector<HTMLElement>(".btn.primary:not(:disabled)") ?? screen?.querySelector<HTMLElement>("h1") ?? null;
+      if (!target) return;
+      if (target.tagName === "H1") target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+      placed = target;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
+}
+
 /**
  * The keys a screen takes when nothing has focus. The window moves no focus by
  * itself on load, so a ring is never hidden and the first Tab lands on the
@@ -428,13 +452,17 @@ export function Choice<T extends string>(props: {
  * scroll the screen's own scroll area, which is not the document and so would
  * not take them by itself.
  */
-export function useReturnForPrimary(): void {
+export function useReturnForPrimary(ready: unknown = true): void {
+  useScreenFocus(ready);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const focused = document.activeElement;
-      if (focused && focused !== document.body) return;
+      const own = focused !== null && focused === placed;
+      if (focused && focused !== document.body && !own) return;
       if (document.querySelector(".palette-veil")) return;
+      // The control the window placed focus on does its own Return and Space; the keys that scroll still scroll.
+      if (own && (event.key === "Enter" || event.key === " ")) return;
       if (event.key === "Enter") {
         if (event.shiftKey) return;
         const button = document.querySelector<HTMLButtonElement>(".screen .btn.primary:not(:disabled)");

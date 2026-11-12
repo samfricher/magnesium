@@ -764,7 +764,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await actions.say("Vmax is 4 µM/s");
       await wait(300);
       await quiet();
-      await actions.stop("PS3 Q3, step 4: what the slope gives.");
+      // The lesson is on step 3 of 5, so that is where the next one picks up.
+      await actions.stop("PS3 Q3, step 3: what the y-intercept gives.");
       return;
     }
     const words: Record<string, string> = {
