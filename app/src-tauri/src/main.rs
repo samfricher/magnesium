@@ -383,6 +383,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            harness::keep_in_view(app);
             mg_core::paths::warm_up();
             let handle = app.handle().clone();
             let store = Arc::new(Store::open());
