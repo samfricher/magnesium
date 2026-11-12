@@ -17,8 +17,8 @@ export const FACES: { id: Face; name: string }[] = [
 export const SIZES = [15, 17, 19, 21];
 export const DEFAULTS: Prefs = { face: "charter", size: 17, scheme: "system", width: "narrow" };
 
-const PREFS = "mg.prefs";
-const LEFT = "mg.left";
+const PREFS = "logbook.prefs";
+const LEFT = "logbook.left";
 
 function read<T>(key: string): Partial<T> | null {
   try {

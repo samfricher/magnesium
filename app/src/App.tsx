@@ -60,7 +60,7 @@ export function setupReady(setup: Setup | null): boolean {
 /** What the window keeps of today's exchanges beyond their words, so the page reopens as it was. */
 type Kept = { folder: string; ms: number; learner: string; intent: Intent | null; task: string | null; posed: string | null; plan: string[] | null };
 type Stop = { folder: string; ms: number; text: string };
-const TODAY_KEY = "mg.today";
+const TODAY_KEY = "logbook.today";
 
 function loadKept(day: string): { items: Kept[]; stops: Stop[] } {
   try {
@@ -248,6 +248,12 @@ export function App() {
       if (!api) return null;
       try {
         const opened = await open(api);
+        // What was left belongs to the folder it was left in: another folder starts clean.
+        if (left.current.folder !== opened.folder) {
+          left.current = { ...left.current, folder: opened.folder, draft: "", answer: "", scroll: 0, moved: {}, examWas: null };
+          setMoved({});
+          setExamWas(null);
+        }
         setHome(opened);
         now.current.home = opened;
         dispatch({ type: "reset" });
@@ -1015,7 +1021,8 @@ export function App() {
   const lastItem = items[items.length - 1] ?? null;
   const lastSetsTask = lastItem !== null && lastItem.final && (lastItem.meta.posed !== null || taskText(lastItem.tutor) !== null);
   const dock = openTask !== null && lesson && !(lastSetsTask && lastItem?.final) ? openTask : null;
-  const stopsToday = kept.stops.filter((s) => dayOf(s.ms) === day);
+  // Only this library's stops: the page's storage is shared by every window home on this Mac.
+  const stopsToday = useMemo(() => kept.stops.filter((s) => dayOf(s.ms) === day && folders.includes(s.folder)), [kept.stops, day, folders]);
 
   // The one line to pick up, when no lesson is running in this window.
   const suggestion = useMemo(() => {
@@ -1028,7 +1035,7 @@ export function App() {
     if (home.last) {
       const lastDay = daysBefore(day, home.last.days_ago ?? 0);
       const line = home.last.goal || home.last.next_action || home.last.stopped_at;
-      const stoppedAt = home.last.stopped_at ?? (home.last.goal ? home.last.next_action : null);
+      const stoppedAt = home.last.goal ? home.last.stopped_at : null;
       return { kind: "pick" as const, course, when: whenSaid(lastDay, day), line, at: stoppedAt };
     }
     return { kind: "begin" as const, course, line: null, exam: home.exam?.title ?? null };
@@ -1087,14 +1094,7 @@ export function App() {
               <SetupRows setup={setup} signingIn={signingIn} onSignIn={signIn} onCheck={checkAgain} onRuntime={runtimeAnswer} onPayment={choosePayment} onLink={(url) => void api?.openUrl(url)} />
             ) : null}
 
-            <Entries items={items} openTask={openTask} onSource={(ref) => setSource(ref)} onNote={note} />
-
-            {stopsToday.map((stop) => (
-              <div className="row said opening" key={`stop-${stop.ms}`}>
-                <div className="gut">{clock(stop.ms)}</div>
-                <div className="txt">Stopped at {stop.text}</div>
-              </div>
-            ))}
+            <Entries items={items} stops={stopsToday} openTask={openTask} onSource={(ref) => setSource(ref)} onNote={note} />
 
             {session.cards.map((card) => (
               <div className="row card" key={card.id}>

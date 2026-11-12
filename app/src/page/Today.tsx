@@ -225,6 +225,8 @@ const Exchange = memo(function Exchange({ item, absorbed, answer, open, onSource
  */
 export const Entries = memo(function Entries(props: {
   items: Item[];
+  /** The lines that ended today's sittings, put in among the entries by their time. */
+  stops: { ms: number; text: string }[];
   openTask: string | null;
   onSource?: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
@@ -232,7 +234,15 @@ export const Entries = memo(function Entries(props: {
   const { items } = props;
   const out: React.ReactNode[] = [];
   let absorbed = false;
+  const stops = [...props.stops].sort((a, b) => a.ms - b.ms);
+  const stopRow = (stop: { ms: number; text: string }) => (
+    <div className="row said opening" key={`stop-${stop.ms}`}>
+      <div className="gut">{clock(stop.ms)}</div>
+      <div className="txt">Stopped at {stop.text}</div>
+    </div>
+  );
   items.forEach((item, i) => {
+    while (stops.length > 0 && stops[0].ms < item.ms) out.push(stopRow(stops.shift()!));
     const next = items[i + 1];
     const boxed = item.final && item.tutor !== "" && hasTask(item.tutor);
     // An answer is drawn inside the exercise only when its reply came at once.
@@ -252,5 +262,6 @@ export const Entries = memo(function Entries(props: {
     );
     absorbed = answer !== null;
   });
+  stops.forEach((stop) => out.push(stopRow(stop)));
   return <>{out}</>;
 });
