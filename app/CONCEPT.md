@@ -214,3 +214,17 @@ Fresh judges read round 1 as a new concept, and named what kept each feeling fro
 - **A mark that is not there says why.** An answer the record kept no mark for gets one line in the record's terms: only a first try at a task is marked. "Not right yet." says nothing more. Help asked for is a quiet line, not an answer.
 - **Craft.** Every grey is mixed from the text and the ground, 5:1 or more; the answer's line is 3:1. 66 characters a line. The writing caret sits after the last word. A paragraph that opens with "(" no longer hangs. The permission card's choices are the window's one kind of choice. A long layer list fades at its foot.
 - **Faster first paint.** Nothing waits for a face, the first core calls go together, and the next thing is drawn before the plan and the saved conversation are read.
+
+## Round 3
+
+Round 2 raised craft and clarity, not the feelings. This round changes what held mine, flexible and easy to start:
+
+- **One line, not two.** The foot holds one field. Under a live task it is that task's answer line, on the task's rule; Esc (or its quiet end, "esc talk instead") steps it out to talk, marked by its `›`, and ↑ steps it back. Its words stay as it moves. There is no second field and no line of key hints under it: the one key worth knowing sits in the field's own quiet end, and "Lines that name keys: Hidden" takes even that away. For a harness, the field is the one `data-drive="composer"`, and its other role is always one focusable element away: its quiet end is `"talk"` while it answers, and the open task above it is `"answer"` while it talks. (The harness times typing in the first of "composer", "talk", "answer" it finds, so the field itself keeps the one name.)
+- **The record's latest fact stays in view.** The foot is one band that stays on screen whatever the scroll: the open task (whole, two lines at most) when you have stepped out of it, the line, and under it the record's latest fact: a mark, what moved in the plan, or "no mark". It goes when you next send. So a long reply never hides the record's confirmation behind the tutor's own words.
+- **Reopen keeps the task a task.** The open task is kept with where you were. Reopened, restarted, or stopped and carried on, the open task is the live task again with the caret in its line.
+- **The material at the door, not the queue.** After a week away with something due, the line names it from the record: "First: reading V_max from the y-intercept, from Thu 5 Nov." The runtime gives the window no due question's words (the direct engine's `sitting_checks` reach only the tutor), so it names the skill and the day it was last answered, never a count.
+- **Less referee.** A retry shows nothing. A first answer the record kept no mark for shows a quiet "no mark", its reason on hover.
+- **The one action is not the faintest thing.** At rest the line has an edge, and its end says "↩ carry on" in the text's colour. Quiet grey is two tiers: the material's secondary text, and a quieter one (still 4.5:1) for the window's own words.
+- **Where am I.** A fixed top edge fades the lesson out before the traffic lights and, once the heading has scrolled away, names the lesson and its current step in the window's quiet voice.
+- **⌘K reaches values.** "mono", "dark", "iowan", "size 19": each is one Return away.
+- **The plan layer gives each block its day**, so a change that only re-spaces the days shows there and in the line under the reply.
