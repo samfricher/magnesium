@@ -1,12 +1,11 @@
 //! The runtime works out what is due, and writes the gap log itself (#30).
 //! The tutor reports marks, repairs and next questions, never a date, pass
 //! or status.
-use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
+use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
 const THREAD: &str = "conv";
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const GAP_LOG: &str = "Study/midterm-1/gap-log.md";
 
 fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
@@ -48,24 +47,14 @@ fn store(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
 }
 
-/// Move every recorded time `days` back, as if that many days had passed.
-fn days_pass(e: &TestEnvironment, days: i64) {
-    let conn = store(e);
-    for sql in [
-        "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
-        "UPDATE practice_events SET at_ms=at_ms-?1",
-    ] {
-        conn.execute(sql, [days * DAY_MS]).unwrap();
-    }
+/// Move every recorded time `days` local days back, as if that many days
+/// had passed.
+fn days_pass(e: &TestEnvironment, days: u64) {
+    clock::days_pass(&e.workspace, days);
     let sittings = e.workspace.join(".magnesium/sittings.sqlite");
     if sittings.exists() {
-        Connection::open(sittings)
-            .unwrap()
-            .execute(
-                "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
-                [days * DAY_MS],
-            )
-            .unwrap();
+        let conn = Connection::open(sittings).unwrap();
+        clock::move_column(&conn, "meta", "last_learner_ms", days);
     }
 }
 

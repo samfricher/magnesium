@@ -1,14 +1,13 @@
 //! `magnesium progress` prints each skill's passes, the level they add up
 //! to, what is due and the days with a marked answer. A study window reads
 //! it, so that what it shows is what the record holds.
-use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
+use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use chrono::{Days, Local};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::fs;
 
 const THREAD: &str = "conv";
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
 fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
     let input = json!({"session_id":THREAD,"cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":prompt_id,"prompt":text});
@@ -48,14 +47,8 @@ fn store(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
 }
 
-fn days_pass(e: &TestEnvironment, days: i64) {
-    let conn = store(e);
-    for sql in [
-        "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
-        "UPDATE practice_events SET at_ms=at_ms-?1",
-    ] {
-        conn.execute(sql, [days * DAY_MS]).unwrap();
-    }
+fn days_pass(e: &TestEnvironment, days: u64) {
+    clock::days_pass(&e.workspace, days);
 }
 
 fn progress(e: &TestEnvironment) -> Value {

@@ -2,12 +2,11 @@
 //! topic's reading, and the tool results state both (#31). The tutor judges
 //! the kind and whether the learner could start; it writes neither fact into
 //! a memory.
-use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
+use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
 const THREAD: &str = "conv";
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const KIND: &str = "discrete expected value";
 
 fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
@@ -49,14 +48,8 @@ fn store(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
 }
 
-fn days_pass(e: &TestEnvironment, days: i64) {
-    let conn = store(e);
-    for sql in [
-        "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
-        "UPDATE practice_events SET at_ms=at_ms-?1",
-    ] {
-        conn.execute(sql, [days * DAY_MS]).unwrap();
-    }
+fn days_pass(e: &TestEnvironment, days: u64) {
+    clock::days_pass(&e.workspace, days);
 }
 
 /// The help level a result states for the kind.

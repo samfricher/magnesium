@@ -1,6 +1,6 @@
 //! Each answer the tutor marks is stored as its own row, in chat and on a
 //! paper, and `magnesium attempts` lists them.
-use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
+use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -302,12 +302,7 @@ fn a_later_answer_on_a_label_the_same_day_is_never_cold() {
         &e,
         update("day-0", chat(&first, "b in x² − 7x + 10?", false)),
     );
-    store(&e)
-        .execute(
-            "UPDATE attempts SET answered_at_ms=answered_at_ms-2*86400000",
-            [],
-        )
-        .unwrap();
+    clock::move_column(&store(&e), "attempts", "answered_at_ms", 2);
     let check = prompt(&e, "p-2", "b is -5, so x = 4 or 1");
     step(
         &e,
