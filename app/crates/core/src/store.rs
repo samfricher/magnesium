@@ -54,6 +54,11 @@ pub struct FolderState {
     pub stopped_ms: Option<i64>,
     #[serde(default)]
     pub paper: Option<PaperSitting>,
+    /// What a direct lesson keeps between window starts about its sitting:
+    /// when the learner last wrote, what the sitting taught, and the
+    /// repairs and checks it listed. Kept by the direct engine, opaque here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

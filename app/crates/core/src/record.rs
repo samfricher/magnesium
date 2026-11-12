@@ -47,8 +47,9 @@ pub const HINT_WORDS: &str = "Can I have a hint?";
 pub const DONT_KNOW_WORDS: &str = "I don't know";
 /// The words the window's "I'm lost" button sends. The teaching files answer
 /// a lost learner with a question that finds the cause, then teach from
-/// their answer: help on the task in hand, so code records at least a hint
-/// on it, as for the Hint button.
+/// their answer: help on an ordinary task in hand, so code records at least
+/// a hint on it, as for the Hint button. On a due quick check or paper redo
+/// the tutor warns first, and only help a reply gives counts.
 pub const LOST_WORDS: &str = "I'm lost";
 
 /// Passes the reply through as it streams and stops at the record block.
@@ -250,6 +251,20 @@ pub struct Record {
     /// The next problem for the due quick check or paper redo the message
     /// answered, with its key.
     pub next: Option<Next>,
+    /// A repair this reply finished, by the number the state gave it.
+    pub repair: Option<RepairNote>,
+    /// The block named a repair that could not be read: nothing is
+    /// recorded for it, and the learner is told.
+    pub repair_unreadable: bool,
+}
+
+/// A repair the tutor finished: which one, by the number the state gave it,
+/// what it was in one line, and the next question for its rows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepairNote {
+    pub number: i64,
+    pub done: String,
+    pub next: Option<Next>,
 }
 
 /// The next question the runtime stores for an item, and its key, which the
@@ -387,23 +402,32 @@ pub fn parse(block: &str) -> Result<Record, String> {
     };
     // An optional field never costs the block: a next question with no
     // question or no key is left out.
-    let next = object
-        .get("next")
-        .and_then(Value::as_object)
-        .and_then(|next| {
-            let text = |keys: &[&str]| {
-                keys.iter()
-                    .find_map(|key| next.get(*key).and_then(Value::as_str))
-                    .map(str::trim)
-                    .filter(|text| !text.is_empty())
-                    .map(|text| clip(text, MAX_QUESTION))
-            };
-            Some(Next {
-                question: text(&["question"])?,
-                // The runtime's own name for the key is taken too.
-                key: text(&["key", "answer_key"])?,
-            })
-        });
+    let next = object.get("next").and_then(next_of);
+    // A repair never costs the block, and with it the mark: one that cannot
+    // be read is recorded for nothing, and the learner is told.
+    let (repair, repair_unreadable) = match object.get("repair") {
+        None | Some(Value::Null) => (None, false),
+        Some(Value::Object(note)) => {
+            let number = note.get("number").and_then(Value::as_i64);
+            let done = note
+                .get("done")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|done| !done.is_empty());
+            match (number, done) {
+                (Some(number), Some(done)) => (
+                    Some(RepairNote {
+                        number,
+                        done: clip(done, MAX_NOTE),
+                        next: note.get("next").and_then(next_of),
+                    }),
+                    false,
+                ),
+                _ => (None, true),
+            }
+        }
+        Some(_) => (None, true),
+    };
     Ok(Record {
         answer,
         help,
@@ -419,6 +443,25 @@ pub fn parse(block: &str) -> Result<Record, String> {
         control,
         slow: flag("slow")?,
         next,
+        repair,
+        repair_unreadable,
+    })
+}
+
+/// A next question and its key, or none when either is missing.
+fn next_of(value: &Value) -> Option<Next> {
+    let next = value.as_object()?;
+    let text = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| next.get(*key).and_then(Value::as_str))
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(|text| clip(text, MAX_QUESTION))
+    };
+    Some(Next {
+        question: text(&["question"])?,
+        // The runtime's own name for the key is taken too.
+        key: text(&["key", "answer_key"])?,
     })
 }
 
@@ -663,7 +706,44 @@ pub struct Lesson {
     /// was never marked can go back on the list.
     #[serde(default)]
     pub posed_checks: Vec<DueCheck>,
+    /// The paper questions waiting for a repair, as the record listed them
+    /// at the start of the sitting or after a redo failed in it.
+    #[serde(default)]
+    pub repairs: Vec<WaitingRepair>,
+    /// The last number a repair was given. Numbers are never reused in a
+    /// conversation, so a tutor that remembers an old one names nothing.
+    #[serde(default)]
+    pub repair_numbers: i64,
+    /// What this sitting taught before the window last started is not
+    /// known, as after a restart with nothing kept: no answer is sent cold
+    /// until a new sitting begins.
+    #[serde(default)]
+    pub sitting_unknown: bool,
 }
+
+/// A repair waiting to be done: the gap-log rows of one tag in one plan
+/// that the record holds as waiting for one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitingRepair {
+    pub number: i64,
+    /// The rows, as a practice change names them.
+    pub rows: Vec<String>,
+    pub tag: String,
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// The paper question each row came from, such as "Diagnostic Q3".
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// What went wrong on each row.
+    #[serde(default)]
+    pub misses: Vec<String>,
+    /// Its redo failed in this sitting, rather than before it.
+    #[serde(default)]
+    pub failed_here: bool,
+}
+
+/// The most rows one repair covers.
+const MAX_REPAIR_ROWS: usize = 12;
 
 impl Lesson {
     /// A new sitting starts from what is due now: the checks and redos the
@@ -673,6 +753,72 @@ impl Lesson {
         self.redos.clear();
         self.sitting_labels.clear();
         self.posed_checks.clear();
+        self.repairs.clear();
+    }
+
+    /// Take in rows the record holds as waiting for a repair, as
+    /// `repairs_waiting` lists them, or as a failed redo's rows: the rows of
+    /// one tag in one plan make one repair, and a row already listed is not
+    /// listed twice. Returns the repairs made new.
+    pub fn take_waiting(&mut self, rows: &Value, failed_here: bool) -> Vec<WaitingRepair> {
+        let mut made: Vec<i64> = Vec::new();
+        for row in rows.as_array().into_iter().flatten() {
+            let Ok(row) = serde_json::from_value::<DueRow>(row.clone()) else {
+                continue;
+            };
+            let (item, tag) = (row.item.trim(), row.tag.trim());
+            if item.is_empty()
+                || tag.is_empty()
+                || self
+                    .repairs
+                    .iter()
+                    .any(|repair| repair.rows.iter().any(|r| r == item))
+            {
+                continue;
+            }
+            let at = match self.repairs.iter().position(|repair| {
+                repair.tag.eq_ignore_ascii_case(tag)
+                    && repair.plan == row.plan
+                    && repair.rows.len() < MAX_REPAIR_ROWS
+                    && made.contains(&repair.number)
+            }) {
+                Some(at) => at,
+                None => {
+                    self.repair_numbers += 1;
+                    made.push(self.repair_numbers);
+                    self.repairs.push(WaitingRepair {
+                        number: self.repair_numbers,
+                        rows: Vec::new(),
+                        tag: tag.to_owned(),
+                        plan: row.plan.clone(),
+                        from: Vec::new(),
+                        misses: Vec::new(),
+                        failed_here,
+                    });
+                    self.repairs.len() - 1
+                }
+            };
+            let repair = &mut self.repairs[at];
+            repair.rows.push(item.to_owned());
+            let from = [row.paper, row.paper_question]
+                .into_iter()
+                .flatten()
+                .filter(|part| !part.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" Q");
+            if !from.is_empty() && !repair.from.contains(&from) {
+                repair.from.push(from);
+            }
+            let miss = row.what_went_wrong.trim().to_owned();
+            if !miss.is_empty() && !repair.misses.contains(&miss) {
+                repair.misses.push(miss);
+            }
+        }
+        self.repairs
+            .iter()
+            .filter(|repair| made.contains(&repair.number))
+            .cloned()
+            .collect()
     }
 
     /// Note that this sitting answered, helped on or corrected `label`.
@@ -806,6 +952,11 @@ pub struct Write {
 /// runtime's verdict back, and to send the answer again if it is refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RedoAnswer {
+    /// The redo's tag, for the repair its failed rows then wait for.
+    pub tag: String,
+    /// Its rows, as `counts_for` named them, which is how the runtime lists
+    /// them as waiting for a repair.
+    pub rows: Vec<String>,
     /// The tutor marked it right.
     pub right: bool,
     /// The label to send when the runtime refuses the rows' tag as one: a
@@ -1034,10 +1185,16 @@ impl Lesson {
         let mut open = self.task.clone();
         // The Hint button asks for help on the task in hand, and so does
         // "I'm lost": the teaching files answer it with a question that
-        // finds the cause, then teach from the answer. Code records at
-        // least a hint whatever the block says; the block may say more.
+        // finds the cause, then teach from the answer. On an ordinary task
+        // code records at least a hint whatever the block says. On a due
+        // quick check or paper redo the tutor first warns that help means
+        // no pass and gives nothing: there the press alone is no help, and
+        // help counts only when a reply's block gives it.
         if message.is(HINT_WORDS) || message.is(LOST_WORDS) {
-            if let Some(task) = open.as_mut() {
+            if let Some(task) = open
+                .as_mut()
+                .filter(|task| task.check.is_none() && task.redo.is_none())
+            {
                 task.help = task.help.max(Help::Hint);
             }
         }
@@ -1094,7 +1251,8 @@ impl Lesson {
             // pass whatever time it took.
             let unaided = task.help == Help::None && mark != Mark::Declined;
             let clocked = !(message.no_clock && task.redo.as_ref().is_some_and(|redo| redo.timed));
-            let seen = self.answered_earlier_today(&label) || self.touched(&label);
+            let seen =
+                self.sitting_unknown || self.answered_earlier_today(&label) || self.touched(&label);
             let cold = unaided && clocked && record.cold && !seen;
             let mut attempt = json!({
                 "label": label,
@@ -1138,8 +1296,10 @@ impl Lesson {
                     None => {}
                 }
             }
-            if task.redo.is_some() {
+            if let Some(redo) = &task.redo {
                 redo_answer = Some(RedoAnswer {
+                    tag: redo.tag.clone(),
+                    rows: redo.rows.clone(),
                     right: mark == Mark::Right,
                     other_label: skill.clone(),
                 });
@@ -1202,6 +1362,18 @@ impl Lesson {
             .map(|redo| redo.number);
         if answered {
             open = None;
+        }
+        // A posed check that another task replaces before its answer is
+        // still due: it goes back on the list, and may be posed again.
+        if let (Some(task), Some(text)) = (open.as_ref(), &record.task) {
+            if let Some(label) = task.check.as_ref().filter(|_| !same_task(&task.text, text)) {
+                if let Some(due) = self.posed_checks.iter().find(|due| &due.label == label) {
+                    if !self.checks.iter().any(|listed| listed.number == due.number) {
+                        self.checks.push(due.clone());
+                        self.checks.sort_by_key(|listed| listed.number);
+                    }
+                }
+            }
         }
         // The task a reply sets is named by the last of these in it: a
         // listed quick check's words, or the words that pose a paper redo.
@@ -1992,6 +2164,8 @@ mod tests {
         assert_eq!(
             answer.redo,
             Some(RedoAnswer {
+                tag: "km".into(),
+                rows: vec!["midterm-1#1".into(), "midterm-1#4".into()],
                 right: true,
                 other_label: "reading a plot".into()
             })
@@ -2394,5 +2568,134 @@ mod tests {
             "Thinks b is x."
         );
         assert!(write.request["observations"][0].get("attempt").is_none());
+    }
+    #[test]
+    fn a_repair_is_read_from_the_block_and_one_that_cannot_be_read_costs_nothing_else() {
+        let done = parse(
+            r#"{"answer": null, "repair": {"number": 2, "done": " taught the intercept ",
+                "next": {"question": "Find Km.", "key": "4"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            done.repair,
+            Some(RepairNote {
+                number: 2,
+                done: "taught the intercept".into(),
+                next: Some(Next {
+                    question: "Find Km.".into(),
+                    key: "4".into()
+                })
+            })
+        );
+        assert!(!done.repair_unreadable);
+        for bad in [
+            r#"{"done": "taught it"}"#,
+            r#"{"number": 1, "done": " "}"#,
+            r#""repair 1""#,
+        ] {
+            let record = parse(&format!(
+                r#"{{"answer": "right", "skill": "km", "repair": {bad}}}"#
+            ))
+            .unwrap();
+            assert_eq!(record.repair, None, "{bad}");
+            assert!(record.repair_unreadable, "{bad}");
+            assert_eq!(record.answer, Some(Mark::Right), "the block is kept");
+        }
+        assert!(
+            !parse(r#"{"answer": null, "repair": null}"#)
+                .unwrap()
+                .repair_unreadable
+        );
+    }
+
+    #[test]
+    fn rows_waiting_for_a_repair_make_one_repair_per_tag_and_plan_and_are_listed_once() {
+        let mut lesson = lesson();
+        let row = |item: &str, plan: &str, tag: &str| {
+            json!({"item": item, "plan": plan, "tag": tag, "what_went_wrong": format!("miss on {item}"),
+                "paper": "Diagnostic", "paper_question": item.rsplit('#').next()})
+        };
+        let made = lesson.take_waiting(
+            &json!([
+                row("m#1", "m", "km"),
+                row("m#2", "m", "Km"),
+                row("f#1", "f", "km"),
+                row("m#3", "m", "rate law")
+            ]),
+            false,
+        );
+        assert_eq!(
+            made.iter()
+                .map(|r| (r.number, r.rows.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (1, vec!["m#1".to_owned(), "m#2".to_owned()]),
+                (2, vec!["f#1".to_owned()]),
+                (3, vec!["m#3".to_owned()])
+            ]
+        );
+        assert_eq!(made[0].from, ["Diagnostic Q1", "Diagnostic Q2"]);
+        // A row already listed is not listed again; a new one gets a new
+        // number, and a new sitting never reuses one.
+        let again =
+            lesson.take_waiting(&json!([row("m#1", "m", "km"), row("m#4", "m", "km")]), true);
+        assert_eq!(again.len(), 1);
+        assert_eq!((again[0].number, again[0].failed_here), (4, true));
+        lesson.begin_sitting();
+        assert!(lesson.repairs.is_empty());
+        let next = lesson.take_waiting(&json!([row("m#1", "m", "km")]), false);
+        assert_eq!(next[0].number, 5);
+    }
+    #[test]
+    fn a_button_press_on_due_work_is_no_help_until_a_reply_gives_some() {
+        let press = |redo: bool, words: &str, block: &str| {
+            let mut lesson = with_redos();
+            lesson.checks = vec![DueCheck {
+                number: 1,
+                label: "sign of b".into(),
+                misses: vec![],
+                question: None,
+                key: None,
+            }];
+            let reply = if redo {
+                "Paper redo 2: Write the rate law."
+            } else {
+                "Quick check 1: What is b in x² − 5x?"
+            };
+            pose(&mut lesson, reply, "The task.");
+            lesson.apply(&record(block), &message(words), "A line.", "r-1");
+            lesson.task.unwrap().help
+        };
+        let warning = r#"{"answer": null, "help": "none"}"#;
+        let hint = r#"{"answer": null, "help": "hint"}"#;
+        for redo in [true, false] {
+            for words in [HINT_WORDS, LOST_WORDS] {
+                assert_eq!(press(redo, words, warning), Help::None, "{redo} {words}");
+                assert_eq!(press(redo, words, hint), Help::Hint, "{redo} {words}");
+            }
+        }
+        // On an ordinary task the press is help.
+        let mut lesson = lesson();
+        pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
+        lesson.apply(&record(warning), &message(HINT_WORDS), "A line.", "r-1");
+        assert_eq!(lesson.task.unwrap().help, Help::Hint);
+    }
+
+    #[test]
+    fn the_next_save_writes_a_checkpoint_without_a_forgotten_task() {
+        let mut lesson = lesson();
+        pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
+        assert!(lesson.task.is_some());
+        lesson.forget_task();
+        // Whatever the next turn's record says, its request carries the whole
+        // checkpoint, and no task in it unless that reply sets one.
+        let write = lesson.apply(
+            &record(r#"{"answer": null}"#),
+            &message("ok"),
+            "Go on.",
+            "r-2",
+        );
+        assert_eq!(write.request["checkpoint"]["plan_text"], Value::Null);
+        assert!(write.request["session"]["operation"] == "use");
     }
 }

@@ -810,3 +810,396 @@ fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
     );
     std::mem::forget(scratch);
 }
+
+/// A made-up plan whose gap log has two paper questions, both repaired and
+/// due, each with a stored question, in a scratch folder.
+fn two_paper_questions_to_redo(scratch: &Scratch) {
+    let dir = scratch.folder.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
+         | 1 | 2026-10-20 | Diagnostic | 3 | quadratic formula | took b as 5 in x² − 5x + 6 = 0, dropping its sign | K | taught the sign of b; two checks | | open |\n\
+         | 2 | 2026-10-20 | Diagnostic | 6 | completing the square | halved the wrong coefficient | K | taught halving b; two checks | | open |\n",
+    )
+    .unwrap();
+    let version = Command::new(&scratch.runtime)
+        .arg("--version")
+        .output()
+        .unwrap();
+    let version = String::from_utf8_lossy(&version.stdout)
+        .split_whitespace()
+        .last()
+        .unwrap()
+        .to_owned();
+    let host = HostClient::new(
+        scratch.runtime.clone(),
+        scratch.folder.clone(),
+        "0b0e7c3a-1111-4222-8333-444455556666".into(),
+        version,
+    );
+    let words = "Mark my Diagnostic";
+    let notice = host
+        .hook(
+            "user-prompt-submit",
+            "UserPromptSubmit",
+            json!({"prompt_id": "seed-1", "prompt": words}),
+        )
+        .unwrap()
+        .unwrap_or_default();
+    let ticket = host_client::ticket(&notice).expect("a capture ticket");
+    host.call(
+        "learning_step",
+        json!({"schema": "learner-model/v2", "action": "update", "request_id": "seed-start",
+            "native_capture": {"ticket": ticket, "text": words},
+            "session": {"operation": "start", "client_ref": "lesson", "goal": "Midterm 1"}}),
+    )
+    .unwrap();
+    let stored = host
+        .call(
+            "learning_step",
+            json!({"schema": "learner-model/v2", "action": "update", "request_id": "seed-next",
+                "practice": [
+                    {"item": "midterm-1#1", "next": {"question": "Solve 2x² − 7x + 3 = 0.", "answer_key": "x = 3 or x = 1/2"}},
+                    {"item": "midterm-1#2", "next": {"question": "Find the least value of x² + 6x + 2.", "answer_key": "−7, at x = −3"}}]}),
+        )
+        .unwrap();
+    assert_eq!(stored["update_status"], "committed", "{stored}");
+    host.close();
+    Connection::open(scratch.folder.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
+            [4 * 60 * 60 * 1000_i64],
+        )
+        .unwrap();
+}
+
+/// Each gap-log row as the runtime wrote it: (passes, next redo, status).
+fn gap_rows(scratch: &Scratch) -> Vec<(String, String, String)> {
+    let log = fs::read_to_string(scratch.folder.join("Study/midterm-1/gap-log.md")).unwrap();
+    let cells = |line: &str| -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_owned())
+            .collect()
+    };
+    let header = cells(log.lines().find(|line| line.starts_with("| # |")).unwrap());
+    let column = |name: &str| header.iter().position(|cell| cell == name).unwrap();
+    let (passes, next, status) = (column("Passes"), column("Next redo"), column("Status"));
+    log.lines()
+        .filter(|line| line.starts_with("| ") && line.as_bytes()[2].is_ascii_digit())
+        .map(|line| {
+            let row = cells(line);
+            (row[passes].clone(), row[next].clone(), row[status].clone())
+        })
+        .collect()
+}
+
+/// The repairs on record: each row's number and the local day it was made.
+fn repairs(scratch: &Scratch) -> Vec<(i64, String)> {
+    let store = Connection::open_with_flags(
+        scratch.folder.join(".magnesium/state.sqlite"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let mut statement = store
+        .prepare(
+            "SELECT i.row_no, e.at_ms FROM practice_events e JOIN practice_items i ON i.item_id=e.item_id
+             WHERE e.kind='repair' AND e.note NOT IN ('taught the sign of b; two checks', 'taught halving b; two checks')
+             ORDER BY e.event_no",
+        )
+        .unwrap();
+    statement
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .map(|(row, ms)| {
+            use chrono::TimeZone;
+            let day = chrono::Local
+                .timestamp_millis_opt(ms)
+                .single()
+                .unwrap()
+                .date_naive();
+            (row, day.format("%Y-%m-%d").to_string())
+        })
+        .collect()
+}
+
+/// The coefficients of x², x and 1 in a sum such as "2x²-7x+3".
+fn polynomial(expr: &str) -> Option<(f64, f64, f64)> {
+    let (mut a, mut b, mut c) = (0.0, 0.0, 0.0);
+    let mut terms = Vec::new();
+    let mut term = String::new();
+    for ch in expr.chars() {
+        if (ch == '+' || ch == '-') && !term.is_empty() {
+            terms.push(std::mem::take(&mut term));
+        }
+        term.push(ch);
+    }
+    terms.push(term);
+    let number = |s: &str| -> Option<f64> {
+        match s {
+            "" | "+" => Some(1.0),
+            "-" => Some(-1.0),
+            s => s.trim_start_matches('+').parse().ok(),
+        }
+    };
+    for term in terms.iter().filter(|term| !term.is_empty()) {
+        if let Some(coef) = term.strip_suffix("x²") {
+            a += number(coef)?;
+        } else if let Some(coef) = term.strip_suffix('x') {
+            b += number(coef)?;
+        } else {
+            c += number(term)?;
+        }
+    }
+    Some((a, b, c))
+}
+
+/// The last quadratic equation in `text` and its roots, as a learner who
+/// can solve one would write them.
+fn solve_last_quadratic(text: &str) -> Option<String> {
+    let text = text
+        .replace(['−', '–'], "-")
+        .replace("^{2}", "²")
+        .replace("^2", "²")
+        .replace("\\,", "")
+        .replace(['$', ' ', '*', '\\'], "");
+    let chars: Vec<char> = text.chars().collect();
+    let allowed = |c: char| c.is_ascii_digit() || "x²+-.".contains(c);
+    for at in (0..chars.len()).rev() {
+        if chars[at] != '=' {
+            continue;
+        }
+        let mut start = at;
+        while start > 0 && allowed(chars[start - 1]) {
+            start -= 1;
+        }
+        let mut end = at + 1;
+        while end < chars.len() && allowed(chars[end]) {
+            end += 1;
+        }
+        let left: String = chars[start..at].iter().collect();
+        let right: String = chars[at + 1..end].iter().collect();
+        let right = right.trim_end_matches('.');
+        if !left.contains("x²") && !right.contains("x²") {
+            continue;
+        }
+        let ((la, lb, lc), (ra, rb, rc)) = (polynomial(&left)?, polynomial(right)?);
+        let (a, b, c) = (la - ra, lb - rb, lc - rc);
+        if a == 0.0 {
+            return None;
+        }
+        let disc = b * b - 4.0 * a * c;
+        if disc < 0.0 {
+            return Some("It has no real roots.".to_owned());
+        }
+        let show = |x: f64| -> String {
+            for d in 1..=12 {
+                let n = x * f64::from(d);
+                if (n - n.round()).abs() < 1e-9 {
+                    let n = n.round() as i64;
+                    return if d == 1 {
+                        n.to_string()
+                    } else {
+                        format!("{n}/{d}")
+                    };
+                }
+            }
+            format!("{x:.3}")
+        };
+        let (x1, x2) = (
+            (-b + disc.sqrt()) / (2.0 * a),
+            (-b - disc.sqrt()) / (2.0 * a),
+        );
+        return Some(if disc == 0.0 {
+            format!("x = {}", show(x1))
+        } else {
+            format!("x = {} or x = {}", show(x1), show(x2))
+        });
+    }
+    None
+}
+
+#[test]
+fn the_learner_can_solve_the_last_quadratic_in_a_reply() {
+    assert_eq!(
+        solve_last_quadratic("Check 1: solve $2x^2 - 7x + 3 = 0$.").as_deref(),
+        Some("x = 3 or x = 1/2")
+    );
+    assert_eq!(
+        solve_last_quadratic("Then x² − 5x + 6 = 0; now **solve x² + 2x − 15 = 0.**").as_deref(),
+        Some("x = 3 or x = -5")
+    );
+    assert_eq!(
+        solve_last_quadratic("Now one that looks different: solve $3 - 5x = 2x^2$.").as_deref(),
+        Some("x = -3 or x = 1/2")
+    );
+    assert_eq!(solve_last_quadratic("No equation here."), None);
+}
+
+/// One scripted lesson: a due redo answered wrong, its repair, then the
+/// second due redo answered right after the learner pressed Hint. What the
+/// record holds is the record's; the tutor's words only steer the script.
+#[test]
+#[ignore = "starts a model on your own subscription"]
+fn a_direct_lesson_repairs_a_failed_redo_and_a_hinted_redo_earns_no_pass() {
+    let scratch = Scratch::new();
+    two_paper_questions_to_redo(&scratch);
+    let trace = scratch.folder.parent().unwrap().join("trace.log");
+    std::env::set_var(mg_core::claude::TRACE_ENV, &trace);
+    let (manager, events) = scratch.manager();
+    manager.open_session(false).unwrap();
+    let mut replies: Vec<String> = Vec::new();
+    let mut n = 0;
+    let mut say = |words: &str, opening: bool| -> Turn {
+        n += 1;
+        if opening {
+            manager.send_new_lesson(words).unwrap();
+        } else {
+            manager.send(words).unwrap();
+        }
+        let turn = turn(&manager, &events);
+        println!(
+            "turn {n}: sent {words:?}\n  first word after {:?} ms, whole after {} ms\n  reply: {}\n  notices: {:?}\n  record: rows {:?}; attempts {}; repairs {:?}",
+            turn.first_word_ms,
+            turn.total_ms,
+            turn.reply,
+            turn.notices,
+            gap_rows(&scratch),
+            scratch.attempts().len(),
+            repairs(&scratch)
+        );
+        assert!(turn.ok && !turn.reply.is_empty(), "{turn:#?}");
+        turn
+    };
+
+    // The sitting opens with the first redo.
+    let posed = say("I'm back. Let's continue.", true);
+    replies.push(posed.reply.clone());
+    assert!(
+        posed
+            .reply
+            .trim_start_matches(['*', ' '])
+            .starts_with("Paper redo 1"),
+        "{}",
+        posed.reply
+    );
+    // Answered wrong: the row fails, keeps no pass, and waits for a repair.
+    let wrong = say("x = -3 or x = -1/2", false);
+    replies.push(wrong.reply.clone());
+    let rows = gap_rows(&scratch);
+    assert!(
+        rows[0].0.contains("fail") && !rows[0].0.contains("pass"),
+        "{rows:?}"
+    );
+    assert_eq!(
+        (rows[0].1.as_str(), rows[0].2.as_str()),
+        ("", "open"),
+        "{rows:?}"
+    );
+    // The repair: the learner asks for short equations to solve, and solves
+    // each the tutor sets until the record holds the repair.
+    let mut last = say(
+        "I see: I dropped the sign of b. Let's repair it now, with short equations to solve, one at a time.",
+        false,
+    );
+    replies.push(last.reply.clone());
+    let mut tries = 0;
+    while repairs(&scratch).is_empty() {
+        tries += 1;
+        assert!(tries <= 5, "no repair recorded after five checks");
+        let answer = solve_last_quadratic(&last.reply)
+            .unwrap_or_else(|| panic!("no equation to solve in: {}", last.reply));
+        last = say(&answer, false);
+        replies.push(last.reply.clone());
+    }
+    // The repair is recorded for row 1 alone, and its first redo falls due
+    // the day after the repair, never on it.
+    let made = repairs(&scratch);
+    assert_eq!(made.len(), 1, "{made:?}");
+    assert_eq!(made[0].0, 1, "{made:?}");
+    let day_after = (chrono::NaiveDate::parse_from_str(&made[0].1, "%Y-%m-%d").unwrap()
+        + chrono::Days::new(1))
+    .format("%Y-%m-%d")
+    .to_string();
+    let rows = gap_rows(&scratch);
+    assert_eq!(rows[0].1, day_after, "{rows:?}");
+    assert_eq!(rows[0].2, "open", "a repair is no pass: {rows:?}");
+    // Before the read-back, no reply said when the row comes back, and
+    // none said a row passed.
+    let weekday = chrono::NaiveDate::parse_from_str(&day_after, "%Y-%m-%d")
+        .unwrap()
+        .format("%A")
+        .to_string();
+    for reply in &replies {
+        let lower = reply.to_lowercase();
+        for word in [
+            "tomorrow",
+            "passed",
+            "comes back on",
+            &day_after,
+            &weekday.to_lowercase(),
+        ] {
+            assert!(
+                !lower.contains(word),
+                "{word:?} before the read-back: {reply}"
+            );
+        }
+    }
+    // On to the second redo: posed, then Hint, then a right answer.
+    let mut next = last;
+    if !next.reply.contains("Paper redo 2") {
+        next = say("Thanks. Let's do the next paper question.", false);
+    }
+    assert!(next.reply.contains("Paper redo 2"), "{}", next.reply);
+    let _hint = say("Can I have a hint?", false);
+    let right = say("The least value is -7, at x = -3.", false);
+    let rows = gap_rows(&scratch);
+    assert!(
+        !rows[1].0.contains("pass"),
+        "a hinted answer earns no pass: {rows:?}"
+    );
+    let attempts = scratch.attempts();
+    let second = attempts
+        .iter()
+        .find(|a| a["label"] == "completing the square")
+        .unwrap_or_else(|| panic!("{attempts:#?}"));
+    assert_eq!(
+        (second["mark"].as_str(), second["help"].as_str()),
+        (Some("right"), Some("hint")),
+        "{second:#?}"
+    );
+    assert!(
+        right
+            .notices
+            .iter()
+            .any(|notice| notice.contains("does not pass")),
+        "{:?}",
+        right.notices
+    );
+    // Every reply had a block the engine could read the first time.
+    let traced = fs::read_to_string(&trace).unwrap_or_default();
+    assert!(
+        !traced.contains("record block invalid"),
+        "a block had to be asked for again"
+    );
+    assert!(
+        traced.contains("Repair 1. Tag \\\"quadratic formula\\\""),
+        "the tutor was told what waits"
+    );
+    manager.shut_down();
+    println!(
+        "study folder: {}\ntrace: {}",
+        scratch.folder.display(),
+        trace.display()
+    );
+    std::mem::forget(scratch);
+}

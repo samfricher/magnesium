@@ -17,7 +17,10 @@ What a turn does is chosen by words in the learner's message (inside
   BACK         (or the window's "I'm back") pose quick check 1 when the
                state lists one or says it is still due, or else the first
                paper redo it lists
-  I'm lost     ask a question that finds the cause, and leave the task open
+  I'm lost     ask a question that finds the cause, and leave the task open;
+               on a due quick check or paper redo, warn first (see HINT)
+  HINT         on a due quick check or paper redo, the first request gets a
+               one-line warning with help none, and the next the hint
   Km = 2       a right answer to a paper redo: mark it cold, give its next
                question, and pose the next paper redo the state listed
   Km = 0.5     a wrong answer to a paper redo
@@ -26,6 +29,12 @@ What a turn does is chosen by words in the learner's message (inside
   REWORD       pose the open paper redo again in other words
   MENTION      speak of paper redo 2 and pose an ordinary task
   COLD         with "b = -5": mark the answer cold
+  REPAIRED     finish the first repair the state listed (or REPAIR <n>:
+               repair n), with its next question
+  BADREPAIR    name a repair with no number
+  CONTROLREPAIR  ask for a pause and finish the first listed repair in one block
+  CHECK AGAIN  pose quick check 1 again
+  RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
   RESTART      stream part of the reply, start the same message again, then
@@ -155,12 +164,17 @@ def redo_question(number):
 NEXT_REDO = {"question": "A second plot crosses at −0.25: what is Km?", "key": "4"}
 # The numbers of the paper redos the state listed and this model has not posed.
 redos_listed = []
+# The numbers of the repairs the state listed, first listed first.
+repairs_listed = []
 
 
 def reply_for(learner, state):
     listed = re.findall(r'^(\d+)\. Tag "', state, re.M)
     if listed:
         redos_listed[:] = [int(number) for number in listed]
+    for number in re.findall(r'^Repair (\d+)\. Tag "', state, re.M):
+        if int(number) not in repairs_listed:
+            repairs_listed.append(int(number))
     if "could not be read" in state:
         delay = float(os.environ.get("STAND_IN_REPAIR_DELAY", "0"))
         time.sleep(delay)
@@ -181,10 +195,37 @@ def reply_for(learner, state):
         return "Recording is on again." + block(control="recording_on"), False
     if "PAUSE" in learner:
         return "Paused." + block(control="pause"), False
+    asks_help = learner == "I'm lost" or "hint" in learner.lower()
+    if asks_help and due_open[0] and not warned[0]:
+        warned[0] = True
+        last_kind[0] = "warn"
+        return "A hint on this question means it earns no pass today. Ask again if you want one." + block(
+            note="Warned before a hint."), False
     if learner == "I'm lost":
+        last_kind[0] = "help"
         return "What do you see in front of the 5?" + block(note="Lost: asked what they see."), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
+    if "CONTROLREPAIR" in learner:
+        number = repairs_listed[0] if repairs_listed else 1
+        return "Paused, and that finishes the repair." + block(control="pause", repair={
+            "number": number, "done": "taught the step", "next": None}), False
+    if "CHECK AGAIN" in learner:
+        return "Quick check 1: What is b in 2x² − 7x − 4 = 0?" + block(task="What is b in 2x² − 7x − 4 = 0?"), False
+    if "RIGHTCHECK" in learner:
+        return f"Right. {THIRD}" + block(answer="right", skill="reading coefficients", cold=True,
+                                         note="Read b with its sign.", task=THIRD), False
+    if "BADREPAIR" in learner:
+        return "That finishes the repair." + block(repair={"done": "taught the step"}), False
+    if "REPAIRED" in learner or re.search(r"REPAIR \d+", learner):
+        named = re.search(r"REPAIR (\d+)", learner)
+        number = int(named.group(1)) if named else (repairs_listed[0] if repairs_listed else 1)
+        if number in repairs_listed:
+            repairs_listed.remove(number)
+        return "Right: that is the step that was missing. That finishes the repair." + block(
+            note="The last check of the repair.",
+            repair={"number": number, "done": "taught reading Km off the x intercept; three checks",
+                    "next": {"question": "A plot crosses the x axis at −0.2: what is Km?", "key": "5"}}), False
     if "VERYSLOW" in learner:
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:
@@ -216,6 +257,7 @@ def reply_for(learner, state):
         return "Not quite: Km is minus one over the intercept. This one comes back after a repair." + block(
             answer="wrong", skill="reading Km from a plot", note="Took the intercept itself as Km."), False
     if "hint" in learner.lower():
+        last_kind[0] = "help"
         return "Look at the sign in front of the 5." + block(help="hint"), False
     if "b = -5" in learner or "b = −5" in learner:
         return f"Right: the sign goes with the number. {THIRD}" + block(
@@ -229,6 +271,11 @@ def reply_for(learner, state):
 
 
 last_learner = [""]
+# A due quick check or paper redo is the task on screen; the learner was
+# warned once that help on it means no pass; what the last reply was.
+due_open = [False]
+warned = [False]
+last_kind = [None]
 memory_ids = []
 
 
@@ -240,7 +287,11 @@ def turn(content):
     state = state.group(1) if state else ""
     log("message", {"learner": learner, "state": state})
     init()
+    last_kind[0] = None
     reply, slow = reply_for(learner, state)
+    if last_kind[0] is None and "could not be read" not in state:
+        due_open[0] = bool(re.search(r"(Quick check|Paper redo) \d+:", reply))
+        warned[0] = False
     mode = next((m for m in ("RESTART", "CUTSHORT") if m in learner), None)
     if not say(reply, slow, mode):
         emit({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}})

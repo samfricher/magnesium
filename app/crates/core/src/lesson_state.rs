@@ -7,7 +7,7 @@
 
 use serde_json::Value;
 
-use crate::record::{clip, DueCheck, DueRedo, Lesson};
+use crate::record::{clip, DueCheck, DueRedo, Lesson, WaitingRepair};
 
 /// The facts a turn's state is made from, beyond the lesson itself.
 #[derive(Debug, Default)]
@@ -38,6 +38,10 @@ pub struct Facts {
     /// Why no task is open, after a reply the learner stopped or one whose
     /// record could not be read.
     pub no_task: Option<String>,
+    /// The repairs newly waiting, to list in this turn.
+    pub new_repairs: Vec<WaitingRepair>,
+    /// What the record made of the last repair.
+    pub repair_outcome: Option<String>,
     /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
     /// What the record knows about the learner on this goal: one line each.
@@ -111,6 +115,27 @@ fn redo_line(redo: &DueRedo) -> String {
             line.push_str(&format!(" Stored question: {}", clip(question, 400)))
         }
         _ => line.push_str(" No stored question: make a new one."),
+    }
+    line
+}
+
+/// One repair, as the tutor needs it: the rows are the program's to record.
+fn repair_line(repair: &WaitingRepair) -> String {
+    let mut line = format!("Repair {}. Tag \"{}\"", repair.number, repair.tag);
+    if !repair.from.is_empty() {
+        line.push_str(&format!(", from {}", repair.from.join(" and ")));
+    }
+    line.push('.');
+    if !repair.misses.is_empty() {
+        line.push_str(&format!(
+            " What went wrong: {}.",
+            repair
+                .misses
+                .iter()
+                .map(|miss| clip(miss, 240))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
     }
     line
 }
@@ -214,6 +239,27 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
             );
             lines.extend(facts.new_redos.iter().map(redo_line));
         }
+    }
+    let (here, before): (Vec<&WaitingRepair>, Vec<&WaitingRepair>) = facts
+        .new_repairs
+        .iter()
+        .partition(|repair| repair.failed_here);
+    if !here.is_empty() {
+        lines.push(
+            "A paper redo failed in this lesson, and its question waits for a repair. Repair it now, unless the learner declines:"
+                .to_owned(),
+        );
+        lines.extend(here.into_iter().map(repair_line));
+    }
+    if !before.is_empty() && !facts.skip_checks {
+        lines.push(
+            "Paper questions that already waited for a repair when this sitting began. After the quick checks and paper redos, name them in one line and take the first, unless the learner wants their goal first:"
+                .to_owned(),
+        );
+        lines.extend(before.into_iter().map(repair_line));
+    }
+    if let Some(outcome) = &facts.repair_outcome {
+        lines.push(outcome.clone());
     }
     if let Some(no_task) = &facts.no_task {
         lines.push(no_task.clone());
