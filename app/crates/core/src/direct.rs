@@ -32,9 +32,10 @@ use serde_json::{json, Value};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
-    Harness, NoticeKind, Payment, StartOptions,
+    Harness, Intent, NoticeKind, Payment, StartOptions,
 };
 use crate::claude::{self, ClaudeCode};
+use crate::gaplog;
 use crate::host_client::{self, HostClient};
 use crate::lesson_state::{self, Facts};
 use crate::paths;
@@ -53,6 +54,10 @@ pub const PROMPT: &str = include_str!("../prompts/tutor.md");
 /// the engine can tell them from words the learner typed. It never reaches
 /// the model or the record.
 const LESSON_MARK: &str = "\u{1}lesson\u{1}";
+/// Put before words the window sends as talk, not an answer: the turn can
+/// mark nothing and keeps the open task open. It never reaches the model or
+/// the record.
+const TALK_MARK: &str = "\u{1}talk\u{1}";
 
 /// The lines the window opens a returning sitting with (`app/src/lesson.ts`).
 const BACK: &str = "I'm back. Let's continue.";
@@ -87,10 +92,13 @@ pub fn study_root(folder: &Path) -> PathBuf {
 /// - `--setting-sources ""` loads no settings file, so no plugin, hook,
 ///   skill or tool server of the learner's or the folder's comes in;
 ///   `--settings` turns hooks off for good measure.
-/// - `--tools Read` keeps one of Claude Code's tools. Magnesium's tool
-///   server is the only one (`--strict-mcp-config`), and its three record
-///   tools are disallowed, which takes their definitions out of the
-///   model's context.
+/// - `--tools Read,Edit,Write` keeps three of Claude Code's tools. Read is
+///   allowed inside the study root, and Edit and Write on its plan files
+///   only (`Study/<plan>/plan.md` and `graph.yaml`), so the tutor can change
+///   the plan as the plugin engine's tutor does; `.magnesium/` is denied
+///   outright. Magnesium's tool server is the only one
+///   (`--strict-mcp-config`), and its three record tools are disallowed,
+///   which takes their definitions out of the model's context.
 /// - Nothing ever asks the learner for permission (`--permission-prompts
 ///   none`): the allowed tools run, and anything else is refused.
 /// - `--add-dir` lets Read reach a study root above the open folder.
@@ -126,7 +134,7 @@ pub fn direct_args(
         r#"{"disableAllHooks":true}"#,
         "--disable-slash-commands",
         "--tools",
-        "Read",
+        "Read,Edit,Write",
         "--strict-mcp-config",
         "--mcp-config",
     ]
@@ -135,13 +143,25 @@ pub fn direct_args(
     .collect();
     args.push(server.to_string());
     args.push("--disallowedTools".into());
-    args.push(RECORD_TOOLS.join(","));
+    args.push(
+        RECORD_TOOLS
+            .iter()
+            .map(|tool| (*tool).to_owned())
+            .chain(
+                ["Edit", "Write"]
+                    .iter()
+                    .map(|tool| format!("{tool}(/{}/.magnesium/**)", root.display())),
+            )
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     // A bare Read would approve every path on the disk: a live check on
     // 2026-11-11 read a file outside the study folder with it. Scoped to the
     // study root, a read outside it is refused.
     args.push("--allowedTools".into());
     args.push(
         std::iter::once(format!("Read(/{}/**)", root.display()))
+            .chain(plan_rules(root))
             .chain(LOOKUP_TOOLS.iter().map(|tool| (*tool).to_owned()))
             .collect::<Vec<_>>()
             .join(","),
@@ -159,6 +179,21 @@ pub fn direct_args(
         format!("--session-id={session}")
     });
     args
+}
+
+/// The files of a study plan a tutor may change, in Claude Code's rule
+/// syntax: Edit and Write on `Study/<plan>/plan.md` and
+/// `Study/<plan>/graph.yaml` in the study root, and nothing else. `*` takes
+/// one folder name, never a `/`, so nothing deeper and nothing outside
+/// `Study/` matches. Claude Code's Edit rules cover every tool that edits.
+pub fn plan_rules(root: &Path) -> Vec<String> {
+    let mut rules = Vec::new();
+    for file in ["plan.md", "graph.yaml"] {
+        for tool in ["Edit", "Write"] {
+            rules.push(format!("{tool}(/{}/Study/*/{file})", root.display()));
+        }
+    }
+    rules
 }
 
 /// The environment Claude Code gets, besides the window's own.
@@ -1219,6 +1254,56 @@ fn course_graphs(root: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The study plans in the study root, one line each for the state: the
+/// file the tutor may edit, the exam it is for, and its date as the plan's
+/// When cell gives it. Only a plan file that is a regular file inside the
+/// root is named, as for the course graphs.
+fn plan_lines(root: &Path) -> Vec<String> {
+    let Ok(inside) = root.canonicalize() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(root.join("Study")) else {
+        return Vec::new();
+    };
+    let today = Local::now().date_naive();
+    let mut plans: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|plan| !plan.starts_with('.') && !plan.chars().any(char::is_control))
+        .filter(|plan| {
+            root.join("Study")
+                .join(plan)
+                .join("plan.md")
+                .canonicalize()
+                .is_ok_and(|file| file.starts_with(&inside) && file.is_file())
+        })
+        .collect();
+    plans.sort();
+    plans
+        .into_iter()
+        .take(MAX_GRAPHS)
+        .map(|plan| {
+            let path = format!("Study/{plan}/plan.md");
+            let text = std::fs::read_to_string(root.join(&path)).unwrap_or_default();
+            let facts = gaplog::table(gaplog::section(&text, "Facts"));
+            let fact = |name: &str| {
+                facts
+                    .rows
+                    .iter()
+                    .find(|row| facts.cell(row, &["Item"]).eq_ignore_ascii_case(name))
+                    .map(|row| facts.cell(row, &["Value"]).to_owned())
+                    .filter(|value| !value.is_empty())
+            };
+            let title = fact("Target").unwrap_or_else(|| plan.clone());
+            let when = match fact("When").as_deref().and_then(gaplog::first_date) {
+                Some(date) => format!("on {date}, {} days from today", (date - today).num_days()),
+                None => "with no date".to_owned(),
+            };
+            record::clip(&format!("{path}: {title}, {when}"), 300)
+        })
+        .collect()
+}
+
 /// What a turn knows before the model writes.
 struct Prepared {
     /// The event the runtime captured the learner's words as.
@@ -1242,7 +1327,13 @@ impl Prepared {
 
 /// Before the model: capture the learner's words, start or resume the
 /// runtime's lesson when none is active here, and gather the state to send.
-fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str) -> Prepared {
+fn prepare(
+    shared: &Arc<Shared>,
+    words: &str,
+    from_window: bool,
+    talk: bool,
+    prompt_id: &str,
+) -> Prepared {
     let host = &shared.host;
     let mut state = lock(&shared.state);
     let first = state.last_message.is_none();
@@ -1261,6 +1352,7 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
     let mut facts = Facts {
         now: local_now(),
         full: !state.told && !shared.resumed,
+        talk,
         ..Facts::default()
     };
     let opened = from_window.then(|| opening(words)).flatten();
@@ -1519,6 +1611,7 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
     facts.repair_outcome = state.repair_outcome.take();
     if facts.full {
         facts.graphs = course_graphs(&shared.root);
+        facts.plans = plan_lines(&shared.root);
     }
     facts.help = std::mem::take(&mut state.help);
     if state.labels != state.labels_told {
@@ -1592,6 +1685,10 @@ fn adopt(lesson: &mut Lesson, facts: &mut Facts, status: &Value) {
 
 /// One turn. Returns true when Claude Code ended under it.
 fn turn(shared: &Arc<Shared>, text: &str) -> bool {
+    let (text, talk) = match text.strip_prefix(TALK_MARK) {
+        Some(words) => (words, true),
+        None => (text, false),
+    };
     let (words, from_window) = match text.strip_prefix(LESSON_MARK) {
         Some(words) => (words.trim().to_owned(), true),
         None => (text.trim().to_owned(), false),
@@ -1608,7 +1705,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         event,
         state: state_text,
         no_clock,
-    } = prepare(shared, &words, from_window, &prompt_id);
+    } = prepare(shared, &words, from_window, talk, &prompt_id);
     {
         // An interrupt either lands before the message goes, and the turn
         // ends here, or after, and is sent to Claude Code.
@@ -1795,6 +1892,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         words: words.clone(),
         event_id: event,
         no_clock,
+        talk,
     };
     match &record {
         Some(record) => {
@@ -2649,6 +2747,14 @@ struct DirectConversation {
 }
 
 impl Conversation for DirectConversation {
+    fn send_with(&mut self, text: &str, intent: Option<Intent>) -> AgentResult<()> {
+        match intent {
+            Some(Intent::Talk) => self.send(&format!("{TALK_MARK}{text}")),
+            // An answer is marked as any answer is.
+            Some(Intent::Answer) | None => self.send(text),
+        }
+    }
+
     fn send(&mut self, text: &str) -> AgentResult<()> {
         if lock(&self.shared.stdin).is_none() {
             return Err(AgentError("The tutor is not running.".into()));
@@ -2808,7 +2914,7 @@ mod tests {
     }
 
     #[test]
-    fn a_direct_lesson_loads_the_model_and_the_two_search_tools_only() {
+    fn a_direct_lesson_loads_the_model_the_two_search_tools_and_the_plan_files_only() {
         let folder = Path::new("/study/stats");
         let args = direct_args(
             folder,
@@ -2828,17 +2934,21 @@ mod tests {
         assert_eq!(after("--model"), claude::MODEL);
         assert_eq!(after("--system-prompt"), "You are the tutor.");
         assert_eq!(after("--setting-sources"), "");
-        assert_eq!(after("--tools"), "Read");
+        assert_eq!(after("--tools"), "Read,Edit,Write");
         assert_eq!(after("--permission-prompts"), "none");
         assert_eq!(after("--add-dir"), "/study");
         assert_eq!(
             after("--disallowedTools"),
-            "mcp__magnesium__context,mcp__magnesium__learning_step,mcp__magnesium__memory"
+            "mcp__magnesium__context,mcp__magnesium__learning_step,mcp__magnesium__memory,\
+             Edit(//study/.magnesium/**),Write(//study/.magnesium/**)"
         );
         assert_eq!(
             after("--allowedTools"),
-            "Read(//study/**),mcp__magnesium__search_sources,mcp__magnesium__sources",
-            "Read reaches the study root and nothing else"
+            "Read(//study/**),\
+             Edit(//study/Study/*/plan.md),Write(//study/Study/*/plan.md),\
+             Edit(//study/Study/*/graph.yaml),Write(//study/Study/*/graph.yaml),\
+             mcp__magnesium__search_sources,mcp__magnesium__sources",
+            "Read reaches the study root, Edit and Write its plan files, and nothing else"
         );
         assert!(args.contains(&"--strict-mcp-config".to_owned()));
         assert!(args.contains(&"--disable-slash-commands".to_owned()));
@@ -2945,7 +3055,7 @@ mod tests {
             &Message {
                 words: "x = 2 or -2".into(),
                 event_id: Some("e-1".into()),
-                no_clock: false,
+                ..Message::default()
             },
             "Right.",
             "r-1",

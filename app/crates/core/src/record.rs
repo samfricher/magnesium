@@ -29,6 +29,8 @@ const MAX_NAME: usize = 120;
 const MAX_QUESTION: usize = 1000;
 const MAX_NOTE: usize = 500;
 const MAX_STEPS: usize = 12;
+/// The longest goal sent, as a lesson's start sends it.
+const MAX_GOAL: usize = 500;
 
 /// The lines of the checkpoint's plan_text that carry the open task to a
 /// later conversation, which reads them back.
@@ -256,6 +258,9 @@ pub struct Record {
     /// The block named a repair that could not be read: nothing is
     /// recorded for it, and the learner is told.
     pub repair_unreadable: bool,
+    /// A new goal for the lesson, when the learner asked to work on
+    /// something else. Kept through the runtime's own `session.use` goal.
+    pub goal: Option<String>,
 }
 
 /// A repair the tutor finished: which one, by the number the state gave it,
@@ -445,6 +450,7 @@ pub fn parse(block: &str) -> Result<Record, String> {
         next,
         repair,
         repair_unreadable,
+        goal: text_of("goal")?.map(|goal| clip(&goal, MAX_GOAL)),
     })
 }
 
@@ -909,6 +915,9 @@ pub struct Message {
     /// engine did not see it posed, as after a resume. Its answer cannot
     /// earn a pass.
     pub no_clock: bool,
+    /// The window sent it as talk, not as an answer: it is never marked,
+    /// and the task that was open stays open.
+    pub talk: bool,
 }
 
 impl Message {
@@ -1209,6 +1218,11 @@ impl Lesson {
         {
             answer = Some(Mark::Declined);
         }
+        // Talk is never an answer, whatever the block says: nothing is
+        // marked, and the task that was open stays open.
+        if message.talk {
+            answer = None;
+        }
         let mut observations = Vec::new();
         let mut practice: Vec<Value> = Vec::new();
         let mut marked = false;
@@ -1365,7 +1379,7 @@ impl Lesson {
         }
         // A posed check that another task replaces before its answer is
         // still due: it goes back on the list, and may be posed again.
-        if let (Some(task), Some(text)) = (open.as_ref(), &record.task) {
+        if let (Some(task), Some(text), false) = (open.as_ref(), &record.task, message.talk) {
             if let Some(label) = task.check.as_ref().filter(|_| !same_task(&task.text, text)) {
                 if let Some(due) = self.posed_checks.iter().find(|due| &due.label == label) {
                     if !self.checks.iter().any(|listed| listed.number == due.number) {
@@ -1378,8 +1392,9 @@ impl Lesson {
         // The task a reply sets is named by the last of these in it: a
         // listed quick check's words, or the words that pose a paper redo.
         // A check or redo only spoken of on the way binds nothing.
-        let posed = posed_check(reply, &self.checks);
-        let mark = redo_marks(reply).last().copied();
+        // Talk sets no task: a check or redo it speaks of is not posed.
+        let posed = posed_check(reply, &self.checks).filter(|_| !message.talk);
+        let mark = redo_marks(reply).last().copied().filter(|_| !message.talk);
         let (check, redo_number) = match (
             posed
                 .as_ref()
@@ -1394,7 +1409,8 @@ impl Lesson {
         let waiting = open
             .as_ref()
             .and_then(|task| task.redo.clone().map(|redo| (redo, task.help)));
-        match &record.task {
+        let task = record.task.as_ref().filter(|_| !message.talk);
+        match task {
             Some(text) => match open.as_mut() {
                 Some(task) if same_task(&task.text, text) => {
                     task.help = task.help.max(record.help);
@@ -1483,6 +1499,14 @@ impl Lesson {
         if let Some(steps) = &record.steps {
             self.steps = steps.clone();
         }
+        // A new goal, when the learner asked to work on something else.
+        let new_goal = record
+            .goal
+            .clone()
+            .filter(|goal| self.goal.as_deref() != Some(goal.as_str()));
+        if let Some(goal) = &new_goal {
+            self.goal = Some(goal.clone());
+        }
 
         let doing = self
             .steps
@@ -1510,6 +1534,9 @@ impl Lesson {
         if let (Some(session), Some(revision)) = (&self.session_id, self.revision) {
             request["session"] =
                 json!({"operation": "use", "session_id": session, "expected_revision": revision});
+            if let Some(goal) = &new_goal {
+                request["session"]["goal"] = json!(goal);
+            }
             let mut checkpoint = json!({
                 "current_problem": clip(doing.as_deref().unwrap_or(&goal), MAX_QUESTION),
                 "working_diagnosis": record.note,
@@ -1625,7 +1652,7 @@ mod tests {
         Message {
             words: words.into(),
             event_id: Some("e-1".into()),
-            no_clock: false,
+            ..Message::default()
         }
     }
 

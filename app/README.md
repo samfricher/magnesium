@@ -112,7 +112,7 @@ The window counts one thing as progress: a **proof**, which is one answer you ga
 - **A mark is the record's.** The lesson says a mark only for an answer whose row appears in `magnesium attempts` after it was sent. It never reads a mark from the tutor's words, and it never invents a number.
 - **The window is a layer.** Every teaching rule stays in the Magnesium runtime and its plugin. A button sends plain learner words, such as "I'm lost" or "Can I have a hint?". A lesson on Claude Code started here continues in a terminal with `claude --continue`. A lesson on Magnesium runs in the window, through the same runtime and record (see [Two engines](#two-engines)). The one difference is how a reply reaches the screen: in the window the tutor sends it through Magnesium's `reply` tool, whose words stream as they are written, where text after a tool call would arrive in one piece.
 - **Your own agent and subscription.** The window starts the `claude` program you installed, as published, in your study folder. Signing in is Claude Code's own (`claude auth login`), in your browser. The window reads no credential, and never passes `--bare`, which would skip Magnesium's hooks.
-- **A lesson loads what it needs and nothing else.** The window starts Claude Code with Magnesium's plugin, from where `magnesium init` put it, and nine of Claude Code's own tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, WebSearch, WebFetch, and Bash inside Claude Code's sandbox. Write and Edit never touch `.magnesium/`. Settings come from the study folder only, so your other plugins, hooks, skills and tool servers stay out, and so do your account's connectors, such as mail and calendar. The model is named (`claude-fable-5-2`, Claude Code's default on 2026-11-11), so a later change of that default cannot change the tutor unseen. It thinks at Claude Code's default effort, as in a terminal. A lesson in a terminal is unchanged.
+- **A lesson loads what it needs and nothing else.** The window starts Claude Code with Magnesium's plugin, from where `magnesium init` put it, and nine of Claude Code's own tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, WebSearch, WebFetch, and Bash inside Claude Code's sandbox. Write and Edit never touch `.magnesium/`. Write and Edit on the study root's plan files (`Study/<plan>/plan.md` and `graph.yaml`) need no permission card, so "change the plan" asks you nothing; every other write still asks. Settings come from the study folder only, so your other plugins, hooks, skills and tool servers stay out, and so do your account's connectors, such as mail and calendar. The model is named (`claude-fable-5-2`, Claude Code's default on 2026-11-11), so a later change of that default cannot change the tutor unseen. It thinks at Claude Code's default effort, as in a terminal. A lesson in a terminal is unchanged.
 - **Local files.** No cloud service, no account, no telemetry. Material you add is copied into the study folder and goes nowhere else. The window makes no network request of its own, and an image from the web inside a reply is not loaded. It looks for study folders only when you press **Find folders on this Mac**.
 - **The runtime stays small.** The window links none of the runtime's code. It runs `magnesium digest` and `magnesium progress`, and reads your plan files.
 
@@ -162,6 +162,24 @@ The window refuses every runtime above, and any other that does not meet its nee
 
 Upgrading the runtime upgrades the learner record in each study folder it opens, once, after keeping a copy.
 
+## Talk, the plan, and what the page hears
+
+**Talk is never marked.** The page sends each message with an intent: `send(text, "talk")` for conversation (a question, a change to the plan, something off the plan), `send(text, "answer")` for an answer to the open task, or no intent, which leaves it to the tutor as before. On Magnesium code holds to it: a talk message's record block has its `answer` set to null and the task it poses ignored, so nothing can be saved as an attempt and the open task stays open; the tutor is told in the lesson state that the message is talk. On Claude Code the window cannot stop the plugin's tutor writing an attempt, so talk goes with one plain line before it, "(This is not an answer to the task, so please don't mark it.)", which the teaching files respect: they record an attempt only for a first try at a task the tutor set. A runtime change that would make it a rule is written up for the runtime.
+
+**The tutor changes the plan.** The exam's date and the order of what to study live only in the plan file, `Study/<plan>/plan.md`: the first date in the Facts table's When row, and the rows of the Blocks table. Both engines' tutors edit that file when the learner asks, without a permission card, log one line under Changes, and say in a line what changed. The direct engine's lesson state names each plan with its exam and date, and its record block can carry a new `goal`, which goes to the runtime as `learning_step`'s `session.use` goal. The record format and what counts as a proof do not change.
+
+**What the page hears.** `plan()` reads the open folder's plan fresh: the nearest dated plan (as the course page picks its exam), its title, date, path and Markdown, its Blocks rows as `items` (each with an id that is a slug of its title, so it survives a reorder, and a Status and Day column when the plan has them), and the goal and steps of the record's last lesson. After each turn the manager waits for the turn's record to be kept, reads the plan again and sends `plan_changed` with what differs (`exam_date`, `items`, `goal`, `steps`, `text`), then reads the record's marks and sends `marked` with each row that was not there before the message. No screen needs to poll `marks()` or re-read the plan after a turn.
+
+## The evidence harness
+
+A dev-only hook lets the real window be driven, photographed and timed. It is inert unless the window starts with `MAGNESIUM_APP_DRIVE=<dir>` or `MAGNESIUM_APP_PERF=<file>`, and it reads and writes nothing outside those two paths.
+
+- **Startup and typing.** Each screen set calls `ready()` from `src/harness.ts` once the first screen has its real content. With perf on, the window writes to the perf file the time from the top of `main` to the paint after `ready()`, then, once a `data-drive="composer"` field is enabled, the median and 95th percentile of 60 keystrokes typed into it, each timed to the next paint; the field is put back after.
+- **Driving.** With drive on, the page reads instructions from `<dir>/in/<n>.json` and answers each in `<dir>/out/<n>.json`. `node scripts/drive.mjs <dir> '<op json>'` sends one and prints the answer. The ops are listed at the top of `src/harness.ts`: type, key, click and focus (by a `data-drive` name, else visible text), wait_idle, wait_reply, wait, text, perf, scheme (sets `<html data-scheme>`, which every screen honours), plan, transcript, ready and quit. The primary action on the first screen carries `data-drive="start"` and the main text field `data-drive="composer"`.
+- **Photographs.** `scripts/capture.sh <pid> <out.png>` captures that process's window with `screencapture -l`, finding it with a small Swift helper compiled once into `target/winid`.
+- **A scratch course.** `scripts/scratch-course.sh <dir>` makes an introductory statistics course with three lecture notes and a plan for "Midterm 2" ten days ahead, two more folders for the library, a runtime wrapper with a scratch `HOME` and a scratch window home. `--days-ago <N>` moves every time it recorded back N local days.
+- **The scenarios.** `node scripts/scenarios.mjs <app-binary> <out-dir>` plays the five scenarios of the evidence contract in the real window, with the stand-in model on Magnesium, and photographs each step in both schemes; it writes `perf.json`, `attempts.json`, `plan-before.json`, `plan-after.json` and `transcript.md` beside the photographs. `--live` uses the real `claude` instead, on your subscription.
+
 ## How it talks to the agent
 
 `crates/core/src/agent.rs` is the one interface. Nothing outside `claude.rs` knows which agent is running.
@@ -182,7 +200,7 @@ It keeps that one process open for the sitting and writes each of your messages 
 A lesson runs on one of two engines. Both reach the model through the learner's own Claude Code, so sign-in, account and payment are Claude Code's in both.
 
 - **Plugin** (`Engine::Plugin`, the default; the learner sees it as "Claude Code"). Claude Code runs the lesson through Magnesium's plugin, as described above: it loads the teaching files, keeps the record with `learning_step`, and replies through the `reply` tool.
-- **Direct** (`Engine::Direct`; the learner sees it as "Magnesium"). The window runs the lesson (`crates/core/src/direct.rs`). Claude Code is started as the model alone: Magnesium's tutor prompt in place of Claude Code's (`--system-prompt`), no settings files (`--setting-sources ""`), so no plugin, hooks, skills or tool servers of the learner's or the folder's; no CLAUDE.md, no auto memory, no account connectors; the same named model and effort as the plugin engine. Its tools only look things up: Read, allowed only inside the study root (`Read(//<root>/**)`, with `--add-dir` for a root above the open folder; a bare `Read` would approve any path on the disk, and a live check showed it did), and Magnesium's `search_sources` and `sources`. The record tools are disallowed, which takes their definitions out of the model's context: a first turn reads about 4,000 tokens, against about 20,000 with the five tools.
+- **Direct** (`Engine::Direct`; the learner sees it as "Magnesium"). The window runs the lesson (`crates/core/src/direct.rs`). Claude Code is started as the model alone: Magnesium's tutor prompt in place of Claude Code's (`--system-prompt`), no settings files (`--setting-sources ""`), so no plugin, hooks, skills or tool servers of the learner's or the folder's; no CLAUDE.md, no auto memory, no account connectors; the same named model and effort as the plugin engine. Its tools look things up and change the plan, nothing else: Read, allowed only inside the study root (`Read(//<root>/**)`, with `--add-dir` for a root above the open folder; a bare `Read` would approve any path on the disk, and a live check showed it did); Edit and Write, allowed only on the plan files (`Edit(//<root>/Study/*/plan.md)` and the same for `graph.yaml`, with `.magnesium/**` denied); and Magnesium's `search_sources` and `sources`. The record tools are disallowed, which takes their definitions out of the model's context: a first turn reads about 4,000 tokens, against about 20,000 with the five tools.
 
 Each direct turn, the window captures the learner's words with the runtime's prompt hook, starts or resumes the runtime's lesson when none is active in the conversation, and sends the words with the lesson state: the goal, its steps, the open task, the quick checks and paper redos due (the runtime's `sitting_checks` and `sitting_redos`), earlier answers on the goal, what the learner's memories say and the course graphs, all of it at the start of a conversation, then only what changed. The reply streams as it is written. It ends with a record block of the tutor's judgment (the mark, the help it gave, the skill, a note, the task it poses, the goal's steps, a misunderstanding found or cleared, and after a due quick check or paper redo its next question), which is never shown: `crates/core/src/record.rs` cuts it from the stream, checks it and turns it into one `learning_step`, adding what code knows better than the model, such as the task that was open, the help given on it across turns, the Hint button, "I don't know", and the gap-log rows a paper redo counts for. The turn ends for the learner as soon as the reply is whole; the record is kept just after it, within a 20-second budget, and a message sent meanwhile waits for it. The stop hook then records the reply as shown. A tool call that hangs for 8 seconds replaces the runtime's tool server and is sent again exactly as it was, which the runtime answers with its first result. A missing or unreadable block is asked for once more, in a request the learner never sees; a message sent meanwhile waits for it. If the second answer is no better, the window says that one answer was not marked, the trace log (`MAGNESIUM_APP_TRACE`) gets a line, and the lesson goes on. An interrupted reply gets no mark, and its task stays open.
 
@@ -232,7 +250,7 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 - It repairs only rows the runtime lists as waiting for a repair, and marks no handed-in paper, so it logs no new gap-log row.
 - It poses a paper redo only at the start of a sitting. Asked for one later, or after the learner chose to go on without them, the tutor says that those due open the next sitting. One question never counts for rows of different tags, as the Claude Code tutor can make it with the course graph.
 - A redo set aside, by a stopped reply or an unreadable record block, is not posed again in that sitting. It stays due and opens a later one.
-- It makes no files: no figures, pages or plans. It asks no permission and no multiple-choice question.
+- It makes no files but the plan's: no figures or pages. It edits `Study/<plan>/plan.md` and `graph.yaml` when the learner asks for a change, as the plugin engine's tutor does. It asks no permission and no multiple-choice question.
 - A paused or stopped lesson goes on only when the learner opens it again from the window (Continue or a new lesson), not from words typed in the same conversation.
 
 **Pause, stop and recording off.** The record block can carry a control the learner asked for in their own words: `pause`, `stop`, `recording_off` or `recording_on`. The engine makes the same `learning_step` control call the plugin engine's tutor makes. After a pause or stop it sends nothing more to the record in that conversation, and the tutor is told to set no task unless the learner asks to go on; opening the lesson again from the window resumes it. After recording off it sends nothing at all, hooks included, in that conversation or any later one in the study folder (the window keeps the choice by study root), and an answer with no mark raises no notice, until the learner asks for recording on. A write the runtime refuses because recording is off or the lesson is inactive stops the engine the same way.
@@ -272,7 +290,10 @@ crates/core/        everything that is not drawing, with its tests
   src/find.rs       looks for study folders set up in a terminal
   src/gaplog.rs     reads plan.md, gap-log.md and graph.yaml
   src/peek.rs       two facts read straight from the runtime's files (see below)
-  src/manager.rs    one open folder and its one conversation
+  src/manager.rs    one open folder and its one conversation, and what each
+                    turn changed (plan_changed, marked)
+  src/plan.rs       the open folder's study plan, and what differs between
+                    two readings of it
   tests/            the pipe tests, the stand-in agent, the readers against
                     the runtime, paying and signing in, installing, upgrading
                     a folder, the live check
@@ -283,12 +304,18 @@ src/                the pages (React, plain CSS)
   ui/               the shared parts: text with mathematics, icons, the
                     ring, the proof dots, the week
   sources.ts        which links in a reply are sources, and their page
+  harness.ts        the evidence harness's page side: ready(), timing, and
+                    the drive ops
+  demoBase.ts       the demo's plan, talk and the two events, kept apart
+                    from demo.ts
   marks.tsx         the lesson's lines for the runtime's marks, and when the
                     record is read for them
   render.ts         Markdown and mathematics to safe HTML
   styles/           base.css (colours, type, controls), prose.css (the
                     tutor's words), screens.css
-scripts/            check, selftest, live check, screenshots, package (the
+scripts/            drive.mjs, capture.sh, scratch-course.sh and
+                    scenarios.mjs for the evidence harness (see above);
+                    check, selftest, live check, screenshots, package (the
                     download, which .github/workflows/mac-download.yml runs
                     on a GitHub-hosted Mac); make_icon.py draws
                     the app icon (three proof dots on a dark tile) as a 1024-pixel

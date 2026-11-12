@@ -23,18 +23,19 @@ const isoDay = (ahead: number) => {
 const EXAM = "2026-11-17";
 const MOVED = "2026-11-24";
 
+// An item's id is a slug of its title, as the core makes it, so it survives a reorder.
 function firstItems(): PlanItem[] {
   return [
-    { id: "1", title: "Diagnostic paper", status: "done", day: isoDay(-6), note: "50 min, marked the same evening" },
-    { id: "2", title: "Repair: reading $V_{max}$ and $K_m$", status: "doing", day: isoDay(0), note: "the y-intercept and the slope" },
-    { id: "3", title: "Paper B", status: "todo", day: isoDay(1), note: "50 min, timed, cold" },
-    { id: "4", title: "Cold redos of the gap log", status: "todo", day: isoDay(2), note: "from a blank page" },
-    { id: "5", title: "Paper C", status: "todo", day: isoDay(4), note: "at exam level" },
+    { id: "diagnostic-paper", title: "Diagnostic paper", status: "done", day: isoDay(-6), note: "50 min, marked the same evening" },
+    { id: "repair-reading-v-max-and-k-m", title: "Repair: reading $V_{max}$ and $K_m$", status: "doing", day: isoDay(0), note: "the y-intercept and the slope" },
+    { id: "paper-b", title: "Paper B", status: "todo", day: isoDay(1), note: "50 min, timed, cold" },
+    { id: "cold-redos-of-the-gap-log", title: "Cold redos of the gap log", status: "todo", day: isoDay(2), note: "from a blank page" },
+    { id: "paper-c", title: "Paper C", status: "todo", day: isoDay(4), note: "at exam level" },
   ];
 }
 
 function planText(date: string, items: PlanItem[]): string {
-  const rows = items.map((item) => `| ${item.id} | ${item.title} | ${item.note ?? ""} | ${item.day ?? ""} |`).join("\n");
+  const rows = items.map((item, at) => `| ${at + 1} | ${item.title} | ${item.note ?? ""} | ${item.status} | ${item.day ?? ""} |`).join("\n");
   return [
     "# Midterm 1: study plan",
     "",
@@ -48,8 +49,8 @@ function planText(date: string, items: PlanItem[]): string {
     "",
     "## 6. Blocks",
     "",
-    "| # | Block | Purpose | Day |",
-    "|---|---|---|---|",
+    "| # | Block | Purpose | Status | Day |",
+    "|---|---|---|---|---|",
     rows,
     "",
   ].join("\n");
