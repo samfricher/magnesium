@@ -23,7 +23,8 @@
 //   transcript.md    every message sent, with its intent, and every reply
 //   run.json         what each step did, and any problem
 // It needs only what a concept that follows the contract gives it: ready(),
-// data-drive="start" and data-drive="composer", and every action reachable
+// data-drive="start" and data-drive="composer" (or "answer" and "talk", for a
+// concept that takes them in different places), and every action reachable
 // from there. It exits 1 when a step failed, after doing every step it can.
 
 import { spawn, execFileSync } from "node:child_process";
@@ -162,9 +163,16 @@ async function shoot(window, stem) {
   save();
 }
 
-/** Type into the composer and send with Return, as the learner does. */
-async function say(window, label, words) {
-  await step(window, `${label}: focus the composer`, { op: "focus", target: "composer", by: "drive" });
+/**
+ * Type and send with Return, as the learner does. An answer goes where the
+ * concept takes answers to the open task (data-drive="answer"), and talk
+ * where it takes talk (data-drive="talk"); a concept with one field for both
+ * names it "composer".
+ */
+async function say(window, label, words, role) {
+  const placed = await window.op({ op: "focus", target: role, by: "drive" });
+  if (placed.ok) run.steps.push({ label: `${label}: focus ${role}` });
+  else await step(window, `${label}: focus the composer`, { op: "focus", target: "composer", by: "drive" });
   await step(window, `${label}: type`, { op: "type", text: words });
   await step(window, `${label}: Return`, { op: "key", key: "Enter" });
 }
@@ -220,7 +228,7 @@ try {
   await step(main, "s2: start", { op: "click", target: "start", by: "drive" });
   await step(main, "s2: the first words", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   await shoot(main, "s2-start");
-  await say(main, "s2: answer", ANSWER);
+  await say(main, "s2: answer", ANSWER, "answer");
   await step(main, "s2: marked", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(main, "s2-answer");
   const latency = await step(main, "perf: input latency", { op: "perf" });
@@ -228,7 +236,7 @@ try {
 
   // 3. Mid-lesson, change the plan, and watch it change.
   await readPlan(main, "plan-before.json");
-  await say(main, "s3: change the plan", CHANGE);
+  await say(main, "s3: change the plan", CHANGE, "talk");
   await step(main, "s3: the reply begins", { op: "wait_reply", timeout_ms: TURN_MS });
   await shoot(main, "s3-before");
   await step(main, "s3: the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
@@ -236,10 +244,10 @@ try {
   await readPlan(main, "plan-after.json");
 
   // 4. Something off the plan, then back.
-  await say(main, "s4: off the plan", OFF_PLAN);
+  await say(main, "s4: off the plan", OFF_PLAN, "talk");
   await step(main, "s4: answered", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(main, "s4-offplan");
-  await say(main, "s4: back", BACK);
+  await say(main, "s4: back", BACK, "talk");
   await step(main, "s4: the task again", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(main, "s4-return");
   await keepTranscript(main, "Scenarios 2 to 4");
