@@ -1144,7 +1144,7 @@ export function App() {
             {phase === "loading" ? null : rest ? (
               <>
                 <header className="head">
-                  {rest.course && <p className="course">{rest.course}</p>}
+                  {rest.course && rest.course !== rest.next && <p className="course">{rest.course}</p>}
                   {rest.start ? (
                     <button className="next" data-drive="start" onClick={rest.start}>
                       <Line text={rest.next} />
