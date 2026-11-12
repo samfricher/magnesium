@@ -539,9 +539,15 @@ export function Fault(props: {
   action?: ReactNode;
   framed?: boolean;
   className?: string;
+  /** A notice that can be put away gets an ink × at the right of the first line. */
+  onDismiss?: () => void;
+  role?: "alert" | "status";
 }) {
   return (
-    <div className={`fault${props.framed === false ? "" : " framed"}${props.className ? ` ${props.className}` : ""}`}>
+    <div
+      className={`fault${props.framed === false ? "" : " framed"}${props.onDismiss ? " dismissable" : ""}${props.className ? ` ${props.className}` : ""}`}
+      role={props.role}
+    >
       <span className="fault-mark" aria-hidden="true">
         <Icon name="bang" size={16} />
       </span>
@@ -553,6 +559,11 @@ export function Fault(props: {
         {props.children ? <p className="fault-what">{props.children}</p> : null}
         {props.action ? <div className="fault-act">{props.action}</div> : null}
       </div>
+      {props.onDismiss ? (
+        <button className="icon-btn fault-dismiss" aria-label="Dismiss" title="Dismiss" onClick={props.onDismiss}>
+          <Icon name="close" size={14} />
+        </button>
+      ) : null}
     </div>
   );
 }

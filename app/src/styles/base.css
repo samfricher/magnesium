@@ -851,6 +851,18 @@ button.banner:hover {
   text-align: left;
 }
 
+.fault.dismissable {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+/* The dismiss × is a control in ink, level with the title's line. */
+.fault-dismiss {
+  width: 24px;
+  height: 24px;
+  margin: calc((var(--fs-ui) * var(--lh-ui) - 24px) / 2) -4px 0 0;
+  color: var(--text);
+}
+
 .fault.framed {
   margin-top: var(--s4);
   padding: var(--s4);

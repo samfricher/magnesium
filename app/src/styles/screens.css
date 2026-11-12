@@ -1635,59 +1635,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   color: var(--muted);
 }
 
-/* A fault in the lesson (the usage limit, the tutor's program stopping) is
-   drawn as a fault is on every other screen: a red "!", the words in ink, on
-   the card's own surface with its hairline. Red is on the mark alone, and
-   there is no tinted fill. */
-.session .banner.bad,
-.session .banner.warn {
-  align-items: flex-start;
-  border-color: var(--card-edge);
-  background: var(--surface);
-  color: var(--text);
-}
-
-.session .banner.bad b,
-.session .banner.warn b {
-  color: var(--text);
-}
-
-.session .banner.bad > .icon,
-.session .banner.warn > .icon {
-  margin-top: 0.1em;
-  color: var(--red);
-}
-
-/* The dismiss x is ink on every notice in the lesson. The fault's red is on its
-   "!" alone: the x is a control, not part of the fault. */
-.session .banner .icon-btn,
-.session .banner .icon-btn .icon {
-  color: var(--text);
-}
-
-.session .banner.bad .icon-btn {
-  margin-top: -4px;
-}
-
-/* A fault's words: the title in ink 600, the explanation under it in the quiet ink. */
-.fault-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-}
-
-.fault-title {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.fault-why {
-  color: var(--muted);
-  text-wrap: pretty;
-}
-
 /* A card in the page: the question, the request for permission, the End
    sheet. One recipe: a surface, a hairline, the card radius, no shadow. Its
    heading is the reading face at the UI size; its actions are one row, the

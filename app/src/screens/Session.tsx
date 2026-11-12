@@ -23,7 +23,7 @@ import { Line, Rich } from "../ui/Rich";
 import { MaterialNote } from "../ui/Material";
 import { SourcePanel } from "../ui/SourcePanel";
 import { Icon } from "../ui/icons";
-import { PaletteKey, TopBar, composing, splitGoal, useNow } from "../ui/bits";
+import { Fault, PaletteKey, TopBar, composing, splitGoal, useNow } from "../ui/bits";
 import type { Answer, Decision, Question, Rail as RailData } from "../types";
 
 /** What "How sure?" is for, said where the short label is shown and on the control. */
@@ -139,30 +139,16 @@ function Turn({ text, since }: { text: string; since: number }) {
 
 /**
  * A fault in the lesson (the usage limit, the tutor's program stopping, an
- * error), built as a fault is on every other screen: a red "!" at the left of
- * the first line, the title in the UI face 600, the explanation in the quiet
- * ink, and the one action (here the dismiss ×, in ink) at the right. The
- * runtime's words are one run of text, so the first sentence is the title and
- * the rest the explanation; nothing is added. After the merge with the shared
- * `Fault` in bits.tsx this is one line: `<Fault title={...} onDismiss={...}>`.
+ * error) is the shared `Fault`. The runtime's words are one run of text, so
+ * the first sentence is the title and the rest the explanation; nothing is
+ * added.
  */
 function LessonFault({ text, onDismiss, alert }: { text: string; onDismiss?: () => void; alert?: boolean }) {
   const cut = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(text.trim());
-  const title = cut ? cut[1] : text.trim();
-  const rest = cut ? cut[2] : "";
   return (
-    <div className="banner bad fault selectable" role={alert ? "alert" : undefined}>
-      <Icon name="bang" size={16} />
-      <span className="fault-text">
-        <b className="fault-title">{title}</b>
-        {rest !== "" && <span className="fault-why">{rest}</span>}
-      </span>
-      {onDismiss && (
-        <button className="icon-btn" aria-label="Dismiss" onClick={onDismiss}>
-          <Icon name="close" size={14} />
-        </button>
-      )}
-    </div>
+    <Fault title={cut ? cut[1] : text.trim()} role={alert ? "alert" : undefined} onDismiss={onDismiss}>
+      {cut ? cut[2] : null}
+    </Fault>
   );
 }
 
