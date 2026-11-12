@@ -45,8 +45,10 @@ pub const AGAIN_LINE: &str =
 pub const HINT_WORDS: &str = "Can I have a hint?";
 /// The words the window's "I don't know" button sends.
 pub const DONT_KNOW_WORDS: &str = "I don't know";
-/// The words the window's "I'm lost" button sends. Only the prompt acts on
-/// them; they are kept here so a test can hold them to the page's.
+/// The words the window's "I'm lost" button sends. The teaching files answer
+/// a lost learner with a question that finds the cause, then teach from
+/// their answer: help on the task in hand, so code records at least a hint
+/// on it, as for the Hint button.
 pub const LOST_WORDS: &str = "I'm lost";
 
 /// Passes the reply through as it streams and stops at the record block.
@@ -652,9 +654,72 @@ pub struct Lesson {
     /// already answered earlier that day.
     pub today: String,
     pub answered_today: Vec<String>,
+    /// The labels and skills, in lower case, that this sitting answered,
+    /// gave help on or corrected, as far as code knows: no answer on one of
+    /// them is cold for the rest of the sitting.
+    #[serde(default)]
+    pub sitting_labels: Vec<String>,
+    /// The quick checks posed in this sitting, so that one whose answer
+    /// was never marked can go back on the list.
+    #[serde(default)]
+    pub posed_checks: Vec<DueCheck>,
 }
 
 impl Lesson {
+    /// A new sitting starts from what is due now: the checks and redos the
+    /// last one listed and did not pose are gone, and so is what it taught.
+    pub fn begin_sitting(&mut self) {
+        self.checks.clear();
+        self.redos.clear();
+        self.sitting_labels.clear();
+        self.posed_checks.clear();
+    }
+
+    /// Note that this sitting answered, helped on or corrected `label`.
+    pub fn touch(&mut self, label: &str) {
+        let key = label.trim().to_lowercase();
+        if !key.is_empty() && !self.sitting_labels.contains(&key) {
+            self.sitting_labels.push(key);
+        }
+    }
+
+    /// Whether this sitting answered, helped on or corrected `label`.
+    pub fn touched(&self, label: &str) -> bool {
+        self.sitting_labels.contains(&label.trim().to_lowercase())
+    }
+
+    /// Note every name a task goes by as touched in this sitting.
+    fn touch_task(&mut self, task: &OpenTask) {
+        for label in task_labels(task) {
+            self.touch(&label);
+        }
+    }
+
+    /// Forget the open task, because what is on screen is no longer known:
+    /// a reply was shown and has no record. What the learner may have seen
+    /// of it counts as an answer or a correction on the task's skill in this
+    /// sitting. A quick check goes back on the list: it is still due and
+    /// may be posed again. Returns the task, and the check put back.
+    pub fn forget_task(&mut self) -> (Option<OpenTask>, Option<DueCheck>) {
+        let Some(task) = self.task.take() else {
+            return (None, None);
+        };
+        self.touch_task(&task);
+        let back = task.check.as_ref().and_then(|label| {
+            let due = self
+                .posed_checks
+                .iter()
+                .find(|due| &due.label == label)
+                .cloned()?;
+            if !self.checks.iter().any(|listed| listed.number == due.number) {
+                self.checks.push(due.clone());
+                self.checks.sort_by_key(|listed| listed.number);
+            }
+            Some(due)
+        });
+        (Some(task), back)
+    }
+
     /// Start a new day's list of answered skills when the day has changed.
     pub fn set_today(&mut self, day: &str) {
         if self.today != day {
@@ -729,6 +794,9 @@ pub struct Write {
     pub lost: Option<&'static str>,
     /// The attempt answers a paper redo.
     pub redo: Option<RedoAnswer>,
+    /// The attempt answers a due quick check: whether the tutor marked it
+    /// right, so the engine can say when the record holds no pass.
+    pub check: Option<bool>,
     /// The learner is owed a word: the task this reply sets is no paper
     /// redo for the record, though it looks like one on screen.
     pub not_a_redo: Option<NotARedo>,
@@ -753,6 +821,18 @@ pub enum NotARedo {
     Unlisted,
     /// A redo that was open gave way to another task before its answer.
     SetAside,
+}
+
+/// Every name an answer to `task` may go by: the quick check's label, the
+/// paper redo's tag, and the skill the reply that posed it named.
+fn task_labels(task: &OpenTask) -> Vec<String> {
+    task.check
+        .iter()
+        .chain(task.redo.as_ref().map(|redo| &redo.tag))
+        .chain(std::iter::once(&task.skill))
+        .filter(|name| !name.trim().is_empty())
+        .cloned()
+        .collect()
 }
 
 /// The open task in the checkpoint's plan_text.
@@ -952,11 +1032,17 @@ impl Lesson {
         request_id: &str,
     ) -> Write {
         let mut open = self.task.clone();
-        // The Hint button asks for help on the task in hand.
-        if message.is(HINT_WORDS) {
+        // The Hint button asks for help on the task in hand, and so does
+        // "I'm lost": the teaching files answer it with a question that
+        // finds the cause, then teach from the answer. Code records at
+        // least a hint whatever the block says; the block may say more.
+        if message.is(HINT_WORDS) || message.is(LOST_WORDS) {
             if let Some(task) = open.as_mut() {
                 task.help = task.help.max(Help::Hint);
             }
+        }
+        if let Some(task) = open.as_ref().filter(|task| task.help > Help::None) {
+            self.touch_task(task);
         }
         let mut answer = record.answer;
         // "I don't know" on a task that is not a guess is a decline, never
@@ -971,6 +1057,7 @@ impl Lesson {
         let mut marked = false;
         let mut lost = None;
         let mut redo_answer = None;
+        let mut check_answer = None;
         let mut not_a_redo = None;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
@@ -993,19 +1080,22 @@ impl Lesson {
                     .unwrap_or_else(|| skill.clone()),
                 MAX_NAME,
             );
-            // Cold: from a blank page, with no help. A due check is asked
-            // cold. Any other answer, a paper redo's included, is cold when
-            // the tutor judges it so and the runtime would take it: no
-            // help, not a decline, and no earlier answer on its label
-            // today. A redo comes after the checks and whatever they
-            // taught, so only the tutor knows whether the page was blank.
+            // Cold: from a blank page, with no help. One rule for every
+            // answer, a due quick check's and a paper redo's included: cold
+            // only when the tutor judges it so, no help was given, it is not
+            // a decline, and code knows of no earlier answer, help or
+            // correction on its label in this sitting, nor of an answer on
+            // it earlier today, which the runtime would refuse. Names are
+            // noted broadly (an answer's label, its skill and its task's),
+            // and the label is looked up among them. A check or a redo
+            // comes after whatever the sitting taught, so only the tutor
+            // knows whether the page was blank; code can only rule it out.
             // A timed redo on which no clock ran is never cold: it could
             // pass whatever time it took.
             let unaided = task.help == Help::None && mark != Mark::Declined;
             let clocked = !(message.no_clock && task.redo.as_ref().is_some_and(|redo| redo.timed));
-            let cold = unaided
-                && clocked
-                && (task.check.is_some() || (record.cold && !self.answered_earlier_today(&label)));
+            let seen = self.answered_earlier_today(&label) || self.touched(&label);
+            let cold = unaided && clocked && record.cold && !seen;
             let mut attempt = json!({
                 "label": label,
                 "question": clip(&task.text, MAX_QUESTION),
@@ -1051,10 +1141,16 @@ impl Lesson {
             if task.redo.is_some() {
                 redo_answer = Some(RedoAnswer {
                     right: mark == Mark::Right,
-                    other_label: skill,
+                    other_label: skill.clone(),
                 });
+            } else if task.check.is_some() {
+                check_answer = Some(mark == Mark::Right);
             }
             self.answered(&label);
+            // Answered, and marked: corrected when it was not right.
+            for name in [&label, &skill, &task.skill] {
+                self.touch(name);
+            }
             observations.push(json!({
                 "client_ref": "answer",
                 "kind": "learner_work",
@@ -1073,6 +1169,10 @@ impl Lesson {
                 (Some(_), None) => Some("the learner's message was not captured"),
                 _ => None,
             };
+        }
+        // A misunderstanding found or cleared was a correction on its skill.
+        if let Some(note) = &record.memory {
+            self.touch(&note.skill);
         }
         // A misunderstanding found or cleared needs an observation of this
         // message to rest on, even when it was not an answer.
@@ -1195,6 +1295,17 @@ impl Lesson {
         }
         if let Some(check) = &posed {
             self.checks.retain(|due| due.number != check.number);
+            if !self.posed_checks.iter().any(|due| due.label == check.label) {
+                self.posed_checks.push(check.clone());
+            }
+        }
+        // Help this reply gives on the task it leaves open, on the skill it
+        // names, rules out a cold answer on them in the rest of the sitting.
+        if record.help > Help::None {
+            if let Some(task) = &open {
+                self.touch_task(task);
+            }
+            self.touch(&record.skill);
         }
         self.task = open;
         if let Some(steps) = &record.steps {
@@ -1251,6 +1362,7 @@ impl Lesson {
             marked,
             lost,
             redo: redo_answer,
+            check: check_answer,
             not_a_redo,
         }
     }
@@ -1537,8 +1649,17 @@ mod tests {
         open(&mut lesson, "A die pays its face: the average per roll?");
         let second = lesson.apply(&record(cold), &message("3.5"), "Right.", "r-2");
         assert_eq!(second.request["observations"][0]["attempt"]["cold"], false);
-        // A new day starts a new list.
+        // Past midnight in the same sitting, the sitting's answer still
+        // rules it out; a new sitting on a new day starts a new list.
         lesson.set_today("2026-11-13");
+        open(&mut lesson, "A spinner pays 1 or 11, 80/20: the average?");
+        let midnight = lesson.apply(&record(cold), &message("3"), "Right.", "r-3a");
+        assert_eq!(
+            midnight.request["observations"][0]["attempt"]["cold"],
+            false
+        );
+        lesson.begin_sitting();
+        lesson.set_today("2026-11-14");
         open(&mut lesson, "A spinner pays 1 or 11, 80/20: the average?");
         let next_day = lesson.apply(&record(cold), &message("3"), "Right.", "r-3");
         assert_eq!(next_day.request["observations"][0]["attempt"]["cold"], true);
@@ -1631,31 +1752,65 @@ mod tests {
     }
 
     #[test]
-    fn a_due_check_keeps_its_label_and_is_cold_without_help() {
-        let mut lesson = lesson();
-        lesson.checks = vec![DueCheck {
+    fn a_due_check_keeps_its_label_and_is_cold_only_when_the_tutor_says_so() {
+        let due = DueCheck {
             number: 1,
             label: "sign of b in the quadratic formula".into(),
             misses: vec![],
             question: None,
             key: None,
-        }];
-        lesson.apply(
-            &record(r#"{"answer": null, "skill": "reading b", "task": "What is b in 2x² − 7x − 4 = 0?"}"#),
-            &message("I'm back."),
-            "Quick check 1: What is b in 2x² − 7x − 4 = 0?",
-            "r-1",
-        );
-        assert!(lesson.checks.is_empty());
-        let answer = lesson.apply(
-            &record(r#"{"answer": "right", "skill": "reading coefficients", "task": null}"#),
-            &message("−7"),
-            "Right.",
-            "r-2",
-        );
-        let attempt = &answer.request["observations"][0]["attempt"];
+        };
+        let posed = |block: &str| {
+            let mut lesson = lesson();
+            lesson.checks = vec![due.clone()];
+            lesson.apply(
+                &record(r#"{"answer": null, "skill": "reading b", "task": "What is b in 2x² − 7x − 4 = 0?"}"#),
+                &message("I'm back."),
+                "Quick check 1: What is b in 2x² − 7x − 4 = 0?",
+                "r-1",
+            );
+            assert!(lesson.checks.is_empty());
+            let answer = lesson.apply(&record(block), &message("−7"), "Right.", "r-2");
+            assert_eq!(answer.check, Some(true));
+            answer.request["observations"][0]["attempt"].clone()
+        };
+        // The tutor's block says the page was not blank: not cold, though
+        // no help was given.
+        let attempt =
+            posed(r#"{"answer": "right", "skill": "reading coefficients", "task": null}"#);
         assert_eq!(attempt["label"], "sign of b in the quadratic formula");
+        assert_eq!(attempt["cold"], false);
+        let attempt = posed(
+            r#"{"answer": "right", "skill": "reading coefficients", "cold": true, "task": null}"#,
+        );
         assert_eq!(attempt["cold"], true);
+        // Code knows the sitting taught the skill: a step on it, or a
+        // misunderstanding of it found, rules cold out whatever the block.
+        for earlier in [
+            r#"{"answer": null, "help": "step", "skill": "sign of b in the quadratic formula", "task": "Try 3x² − 2x?"}"#,
+            r#"{"answer": null, "memory": {"skill": "sign of b in the quadratic formula", "text": "Drops the sign."}}"#,
+        ] {
+            let mut lesson = lesson();
+            lesson.apply(&record(earlier), &message("hm"), "Look at the sign.", "r-0");
+            lesson.task = None;
+            lesson.checks = vec![due.clone()];
+            lesson.apply(
+                &record(r#"{"answer": null, "task": "What is b in 2x² − 7x − 4 = 0?"}"#),
+                &message("go on"),
+                "Quick check 1: What is b in 2x² − 7x − 4 = 0?",
+                "r-1",
+            );
+            let answer = lesson.apply(
+                &record(r#"{"answer": "right", "skill": "b", "cold": true}"#),
+                &message("−7"),
+                "Right.",
+                "r-2",
+            );
+            assert_eq!(
+                answer.request["observations"][0]["attempt"]["cold"], false,
+                "{earlier}"
+            );
+        }
         // "Quick check 1" is not "Quick check 12".
         let twelve = DueCheck {
             number: 1,

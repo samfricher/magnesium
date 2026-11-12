@@ -32,8 +32,12 @@ pub struct Facts {
     /// The open task is a timed paper redo the window did not see posed,
     /// as after a resume: no clock ran on it.
     pub no_clock: bool,
-    /// What the record made of the last paper redo's answer.
-    pub redo_outcome: Option<String>,
+    /// What the record made of the last answer to a paper redo or a due
+    /// quick check.
+    pub outcome: Option<String>,
+    /// Why no task is open, after a reply the learner stopped or one whose
+    /// record could not be read.
+    pub no_task: Option<String>,
     /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
     /// What the record knows about the learner on this goal: one line each.
@@ -211,7 +215,10 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
             lines.extend(facts.new_redos.iter().map(redo_line));
         }
     }
-    if let Some(outcome) = &facts.redo_outcome {
+    if let Some(no_task) = &facts.no_task {
+        lines.push(no_task.clone());
+    }
+    if let Some(outcome) = &facts.outcome {
         lines.push(outcome.clone());
     }
     if let Some(took) = facts.took {
@@ -373,7 +380,7 @@ mod tests {
             &lesson,
             &Facts {
                 no_clock: true,
-                redo_outcome: Some("The record holds the last paper redo as a pass.".into()),
+                outcome: Some("The record holds the last paper redo as a pass.".into()),
                 ..Facts::default()
             },
         );
