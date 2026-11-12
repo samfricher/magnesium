@@ -25,12 +25,14 @@ use mg_core::{Manager, Store};
 use serde::Serialize;
 use tauri::{Emitter, Manager as _, State, WindowEvent};
 
+mod harness;
+
 /// When set to a file path, the window runs a short check of itself, writes
 /// what it found to that file, and quits. See `scripts/selftest.sh`.
 const SELFTEST_ENV: &str = "MAGNESIUM_APP_SELFTEST";
 const FOLDER_ENV: &str = "MAGNESIUM_APP_FOLDER";
 
-struct Shell {
+pub(crate) struct Shell {
     manager: Manager,
 }
 
@@ -350,6 +352,8 @@ fn selftest_report(app: tauri::AppHandle, report: serde_json::Value) {
 }
 
 fn main() {
+    // Startup is timed from here, for the evidence harness.
+    harness::mark_start();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -430,6 +434,12 @@ fn main() {
             paper_end,
             selftest,
             selftest_report,
+            harness::harness_config,
+            harness::harness_next,
+            harness::harness_done,
+            harness::harness_write,
+            harness::harness_idle,
+            harness::harness_quit,
         ])
         .run(tauri::generate_context!())
         .expect("the window could not start");

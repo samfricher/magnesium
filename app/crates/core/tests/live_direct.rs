@@ -20,7 +20,7 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mg_core::agent::AgentEvent;
+use mg_core::agent::{AgentEvent, Intent};
 use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::host_client::{self, HostClient};
@@ -1201,5 +1201,73 @@ fn a_direct_lesson_repairs_a_failed_redo_and_a_hinted_redo_earns_no_pass() {
         scratch.folder.display(),
         trace.display()
     );
+    std::mem::forget(scratch);
+}
+
+/// The tutor changes the plan when asked, by editing the plan file it may
+/// edit and no other, and talk is never marked. Not run in the checks: it
+/// starts a model on your subscription.
+#[test]
+#[ignore = "starts a model on your own subscription"]
+fn a_direct_tutor_changes_the_plan_when_asked_and_talk_is_not_marked() {
+    let scratch = Scratch::new();
+    let exam = chrono::Local::now().date_naive() + chrono::Days::new(10);
+    let plan_dir = scratch.folder.join("Study/midterm-2");
+    fs::create_dir_all(&plan_dir).unwrap();
+    let plan = plan_dir.join("plan.md");
+    fs::write(
+        &plan,
+        format!(
+            "# Midterm 2: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 2 |\n| When | {exam} 10:00 to 11:15 |\n\n\
+             ## 6. Blocks\n\n| # | Block | Purpose | Status | Day |\n|---|---|---|---|---|\n\
+             | 1 | Sampling distributions | the standard error | doing | |\n\
+             | 2 | Confidence intervals | t intervals for a mean | todo | |\n\
+             | 3 | Hypothesis tests | p-values | todo | |\n\n## 14. Changes\n\n- {exam}: built.\n"
+        ),
+    )
+    .unwrap();
+    let notes = plan_dir.join("notes.md");
+    let (manager, events) = scratch.manager();
+    manager.open_session(false).unwrap();
+    manager
+        .send_new_lesson("Sampling distributions for Midterm 2")
+        .unwrap();
+    let first = turn(&manager, &events);
+    println!("turn 1: {}", first.reply);
+    manager
+        .send_with(
+            &format!(
+                "I skipped three days and the midterm moved a week later, change the plan: do hypothesis tests before confidence intervals. Also save a note to {} saying hello.",
+                notes.display()
+            ),
+            Some(Intent::Talk),
+        )
+        .unwrap();
+    let second = turn(&manager, &events);
+    println!("turn 2: {}", second.reply);
+    let text = fs::read_to_string(&plan).unwrap();
+    println!("plan now:\n{text}");
+    let moved = (exam + chrono::Days::new(7)).to_string();
+    assert!(text.contains(&moved), "the When cell moved a week");
+    let tests = text.find("Hypothesis tests").unwrap();
+    let intervals = text.find("Confidence intervals").unwrap();
+    assert!(tests < intervals, "the two items changed places");
+    assert!(!notes.exists(), "a file other than the plan was written");
+    assert_eq!(
+        scratch.cli(&["digest"])["plans"][0]["days_left"],
+        17,
+        "the runtime reads the new date"
+    );
+    manager
+        .send_with(
+            "By the way, why do we divide by n - 1 in the sample standard deviation?",
+            Some(Intent::Talk),
+        )
+        .unwrap();
+    let third = turn(&manager, &events);
+    println!("turn 3: {}", third.reply);
+    assert!(scratch.attempts().is_empty(), "talk is never marked");
+    manager.shut_down();
+    println!("study folder: {}", scratch.folder.display());
     std::mem::forget(scratch);
 }
