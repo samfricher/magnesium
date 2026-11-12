@@ -155,7 +155,7 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (!/^\d{4}-\d{2}-\d{2}$/.test(days.today)) throw new Error("the core did not say what day it is");
 
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
-    await actions.continueLesson(false);
+    await actions.start();
     await until("the first reply", idle);
     await actions.say(message);
     await until("the reply to be on screen", () => session().earlier.length >= 1 && idle());
@@ -187,7 +187,7 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     const progress = await api.progress(null);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 
-    await actions.openProgress(null);
+    actions.openSheet("course");
     await wait(300);
     steps.progressScreen = document.querySelector('[data-screen="progress"]') !== null;
 

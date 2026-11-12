@@ -1,26 +1,31 @@
-// The window: which screen is up, and the few things that move between them.
+// The window: one long page of days. Today is on top, with the one line to
+// pick up; a lesson is written into it as it happens; earlier days run below.
+// Everything else opens over the page as a sheet, on a key.
 //
-// The way through it is a line: the library of courses, one course, the
-// lesson, and the end of the sitting. Progress, a timed paper and this Mac's
-// setup hang off that line, and each goes back to where it was opened from.
+// Where the learner writes decides what a message is. Inside the open task it
+// is an answer; on the page it is talk, sent so that the record can never mark
+// it. The window knows a task is open from the record (the checkpoint the
+// direct engine writes), or from a task the tutor set apart in bold.
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
-import { Course } from "./screens/Course";
-import { Library, displayName } from "./screens/Library";
-import { Palette, type Command } from "./screens/Palette";
-import { Paper } from "./screens/Paper";
-import { Progress } from "./screens/Progress";
-import { Session } from "./screens/Session";
-import { Setup, setupReady } from "./screens/Setup";
-import { Summary, reviewIn, type Sitting } from "./screens/Summary";
-import { EngineControl } from "./ui/Engine";
-import { DropVeil, PasteSheet } from "./ui/Material";
+import { clock, dayOf, daysBefore, longDay, today, whenSaid } from "./days";
+import * as harness from "./harness";
+import { busy, emptySession, isHelp, openingWords, pickedWords, reduce, tutorText, type SessionState } from "./lesson";
+import { courseName, pagesFrom } from "./log";
+import { applyPrefs, flushLeft, keepLeft, loadLeft, loadPrefs, SIZES, type Prefs } from "./prefs";
+import { taskText } from "./render";
+import type { SourceRef } from "./sources";
+import { Agenda, agendaLine, planChanges } from "./page/Agenda";
+import { Composer, type ComposerHandle, type Place } from "./page/Composer";
+import { EarlierPage } from "./page/Earlier";
+import { Commands, Course, Courses, PaperSheet, PlanSheet, Settings, type Command, type SheetName } from "./page/Sheets";
+import { blankMeta, Entries, type Item, type Meta } from "./page/Today";
+import { Line } from "./ui/Rich";
+import { SourcePanel } from "./ui/SourcePanel";
 import type {
   About,
-  Activity,
   AgentEvent,
   Answer,
   Card,
@@ -29,350 +34,258 @@ import type {
   Engine,
   EngineChoice,
   Home,
+  Intent,
+  JournalCourse,
+  Mark,
   Materials,
-  Paper as PaperInfo,
-  Payment,
-  Progress as ProgressData,
-  Rail,
-  Row,
-  RuntimeSetup,
-  Setup as SetupData,
-  Today,
+  Paper,
+  Plan,
+  Progress,
+  Question,
+  Setup,
 } from "./types";
 
-type View = "loading" | "setup" | "library" | "course" | "session" | "summary" | "progress" | "paper";
+/** How far back the log reads at first. */
+const LOG_DAYS = 120;
+/** When, after a reply, the record is read again for the task it set and its mark. */
+const LOOKS = [250, 1200, 3500, 9000];
 
-const BLOCKS = [25, 50, 90];
-
-/** The window's keys, for the entry in the menu that lists them. */
-const SHORTCUTS: Command = {
-  label: "Keyboard shortcuts",
-  icon: "keys",
-  keywords: "help keys shortcuts",
-  shortcuts: [
-    ["⌘K", "Open this menu"],
-    ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
-    ["⌘O", "Open a course folder (in the library and on a course page)"],
-    ["⌘⇧H", "Hint (in a lesson)"],
-    ["⌘⇧D", "I don't know (in a lesson)"],
-    ["⌘⇧L", "I'm lost (in a lesson)"],
-    ["⌘.", "Stop the reply being written"],
-    ["Return", "Send your answer, or do the screen's green button"],
-    ["⇧Return", "Start a new line in your answer"],
-    ["⌥1 ⌥2 ⌥3", "How sure? in a lesson: Sure, Unsure, Guess"],
-    ["PageUp PageDown", "Scroll the lesson from the answer box"],
-    ["⌥↑ ⌥↓", "Scroll the lesson from the answer box, a little at a time"],
-    ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
-    ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
-    ["Esc", "Go back, or close what is open"],
-  ],
-  run: () => {},
-};
-/** How often the setup screen asks Claude Code whether a sign-in finished, and for how long. */
-const SIGN_IN_POLL_MS = 2000;
-const SIGN_IN_LIMIT_MS = 15 * 60_000;
-
-const stepsDone = (rail: Rail | null) => rail?.steps.filter((step) => step.status === "done").length ?? 0;
-
-const proofsOf = (row: Row) => row.dots.filter((dot) => dot === 2).length;
-
-/** How many proofs each skill holds, by the skill's name. */
-function tally(progress: ProgressData): Map<string, number> {
-  const counts = new Map<string, number>();
-  [...progress.confirmed, ...progress.in_progress].forEach((row) => counts.set(row.name, proofsOf(row)));
-  return counts;
+/** Whether this Mac can run a lesson: the program, and Claude Code signed in. */
+export function setupReady(setup: Setup | null): boolean {
+  if (!setup) return false;
+  const runtime = setup.runtime.state === "ready" || setup.runtime.state === "kept";
+  return runtime && setup.account.installed && setup.account.signed_in;
 }
 
-/** Whether a folder's lesson can continue at once: it is set up, current, and no paper is running. */
-const canContinue = (home: Home) => home.state === "ready" && !home.sitting;
+/** What the window keeps of today's exchanges beyond their words, so the page reopens as it was. */
+type Kept = { folder: string; ms: number; learner: string; intent: Intent | null; task: string | null; posed: string | null; plan: string[] | null };
+type Stop = { folder: string; ms: number; text: string };
+const TODAY_KEY = "mg.today";
 
-/**
- * How many answers the tutor marked in a sitting, from today's counts before
- * and after it, or null when that cannot be told. A sitting that crosses
- * midnight counts the answers marked after midnight, which may be fewer than
- * all, and says nothing when there are none.
- */
-export function markedIn(before: Today | null, after: Today | null): number | null {
-  if (!before || !after) return null;
-  if (before.day === after.day) return Math.max(0, after.answered - before.answered);
-  return after.answered > 0 ? after.answered : null;
-}
-
-/**
- * The skills answered wrong in this lesson, and the day the record brings each
- * back: the marks the lesson recorded (wrong, in a lesson, since it began),
- * each joined to the skill of that name in the record, which holds its next
- * day. A mark with no skill of that name, or a skill with no next day, is
- * left out: the window says no more than the record does.
- */
-export async function slippedIn(api: Core, rows: ProgressData["in_progress"], startedMs: number | null): Promise<{ name: string; next_day: string }[]> {
-  if (startedMs === null) return [];
-  let marks: Awaited<ReturnType<Core["marks"]>> = null;
+function loadKept(day: string): { items: Kept[]; stops: Stop[] } {
   try {
-    marks = await api.marks();
+    const saved = JSON.parse(window.localStorage.getItem(TODAY_KEY) ?? "null") as { day: string; items: Kept[]; stops: Stop[] } | null;
+    if (saved && saved.day === day) return { items: saved.items ?? [], stops: saved.stops ?? [] };
   } catch {
-    return [];
+    // Started as new.
   }
-  if (!marks) return [];
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const began = new Date(startedMs);
-  // The record's times are local, "2026-11-12 09:41", to the minute.
-  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
-  const key = (text: string) => text.trim().toLowerCase();
-  const out = new Map<string, { name: string; next_day: string }>();
-  for (const mark of marks) {
-    if (mark.paper !== null || mark.mark !== "wrong" || mark.at < since) continue;
-    const row = rows.find((each) => key(each.name) === key(mark.label));
-    if (row && row.next_day) out.set(key(row.name), { name: row.name, next_day: row.next_day });
-  }
-  return [...out.values()];
+  return { items: [], stops: [] };
 }
 
-/** The day after a day written as "2026-11-10". */
-function dayAfter(day: string): string {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function saveKept(day: string, items: Kept[], stops: Stop[]) {
+  try {
+    window.localStorage.setItem(TODAY_KEY, JSON.stringify({ day, items: items.slice(-200), stops }));
+  } catch {
+    // Kept for this run only.
+  }
 }
+
+const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+const holds = (reply: string, task: string) => {
+  const flat = (s: string) => s.replace(/[\s$*_`]+/g, " ").trim().toLowerCase();
+  const needle = flat(task).slice(0, 28);
+  return needle.length >= 12 && flat(reply).includes(needle);
+};
+
+export type Actions = {
+  start: () => Promise<void>;
+  say: (text: string, place?: Place) => Promise<void>;
+  setPlace: (place: Place) => void;
+  newLesson: (goal: string) => Promise<void>;
+  stop: (line: string) => Promise<void>;
+  openSheet: (sheet: SheetName | null) => void;
+  openSource: (source: SourceRef | null) => void;
+  openCourse: (folder: string) => Promise<void>;
+  setPrefs: (prefs: Prefs) => void;
+  beginStop: () => void;
+};
 
 export function App() {
+  const day = useMemo(today, []);
   const [api, setApi] = useState<Core | null>(null);
-  const [view, setView] = useState<View>("loading");
-  // Where Progress and Setup go back to.
-  const [from, setFrom] = useState<View>("library");
+  const [phase, setPhase] = useState<"loading" | "ready">("loading");
+  const [setup, setSetup] = useState<Setup | null>(null);
+  const [about, setAbout] = useState<About | null>(null);
+  const [engine, setEngine] = useState<EngineChoice | null>(null);
+  const [home, setHome] = useState<Home | null>(null);
   const [folders, setFolders] = useState<string[]>([]);
   const [cards, setCards] = useState<Card[] | null>(null);
-  const [activity, setActivity] = useState<Activity | null>(null);
-  const [home, setHome] = useState<Home | null>(null);
+  const [journal, setJournal] = useState<JournalCourse[] | null>(null);
   const [session, dispatch] = useReducer(reduce, emptySession);
-  const [rail, setRail] = useState<Rail | null>(null);
-  const [progress, setProgress] = useState<ProgressData | null>(null);
-  const [summary, setSummary] = useState<Sitting | null>(null);
-  const [palette, setPalette] = useState(false);
-  const [asking, setAsking] = useState(false);
+  const [meta, setMeta] = useState<Record<number, Meta>>({});
+  const [sitting, setSitting] = useState<{ folder: string; course: string; start: number } | null>(null);
+  const [convEngine, setConvEngine] = useState<Engine | null>(null);
+  const [openTask, setOpenTask] = useState<string | null>(null);
+  const [place, setPlaceState] = useState<Place>(() => loadLeft(day).place);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [moved, setMoved] = useState<Record<string, string>>(() => loadLeft(day).moved);
+  const [examWas, setExamWas] = useState<string | null>(() => loadLeft(day).examWas);
+  const [sheet, setSheet] = useState<SheetName | null>(null);
+  const [source, setSource] = useState<SourceRef | null>(null);
+  const [prefs, setPrefsState] = useState<Prefs>(loadPrefs);
+  const [notes, setNotes] = useState<string[]>([]);
   const [starting, setStarting] = useState(false);
-  const [finding, setFinding] = useState(false);
-  const [chosenPaper, setChosenPaper] = useState<PaperInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<SetupData | null>(null);
-  const [about, setAbout] = useState<About | null>(null);
-  // Which engine runs lessons. null when the core cannot say.
-  const [engine, setEngine] = useState<EngineChoice | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
-  // What Claude Code said before the sign-in, to see when its answer changes.
-  const accountBefore = useRef("");
-  const [upgrading, setUpgrading] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  // Adding course material: what it said, whether it is under way, whether
-  // files are being dragged over the window, and the text being pasted.
-  const [material, setMaterial] = useState<string[] | null>(null);
-  // What the course's material folder already holds. null until it has been read, or when it cannot be.
+  const [fresh, setFresh] = useState(false);
+  const [stopping, setStopping] = useState<string | null>(null);
+  const [kept, setKept] = useState(() => loadKept(day));
   const [materials, setMaterials] = useState<Materials | null>(null);
+  const [materialLines, setMaterialLines] = useState<string[] | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
   const [adding, setAdding] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const [coursesNote, setCoursesNote] = useState<string | null>(null);
+  const [paper, setPaper] = useState<Paper | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [pasting, setPasting] = useState<string | null>(null);
-  // Until the first screen is up, a finished setup opens it.
-  const waitingForSetup = useRef(true);
-  // What this sitting has counted so far, for the screen that ends it:
-  // the messages the learner sent, and today's counts when it began.
-  const sitting = useRef<{ answers: number; alreadyStudied: boolean; todayBefore: Today | null }>({
-    answers: 0,
-    alreadyStudied: false,
-    todayBefore: null,
-  });
-  // The proofs each skill held when the sitting began, or null when they
-  // could not be read. The end of the sitting shows what was earned since.
-  const proofsBefore = useRef<Map<string, number> | null>(null);
-  const opening = useRef(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 860);
 
-  // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, from, home, session, palette, setup, rail, activity, engine });
-  now.current = { api, view, from, home, session, palette, setup, rail, activity, engine };
-  // The newest copies of two handlers, for the listeners that outlive a render.
-  const addMaterialRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
-  const canAddRef = useRef<() => boolean>(() => false);
+  const composer = useRef<ComposerHandle>(null);
+  const scroller = useRef<HTMLElement>(null);
+  const left = useRef(loadLeft(day));
+  // The learner moved the cursor, or began writing, since the last reply: the window no longer moves it.
+  const touched = useRef(false);
+  // The record's mark ids the window has accounted for, and the reading taken before the last answer.
+  const known = useRef<Set<string> | null>(null);
+  const shownMarks = useRef(new Set<string>());
 
-  const refreshRail = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setRail(await api.rail());
-    } catch {
-      // The steps are a convenience. A lesson goes on without them.
-    }
+  const now = useRef({ api, home, session, setup, openTask, place, plan, convEngine, sheet, source, stopping, sitting, meta, engine, kept });
+  now.current = { api, home, session, setup, openTask, place, plan, convEngine, sheet, source, stopping, sitting, meta, engine, kept };
+
+  const note = useCallback((text: string) => setNotes((old) => [...old.filter((t) => t !== text), text].slice(-3)), []);
+
+  const setPlace = useCallback((next: Place) => {
+    touched.current = true;
+    setPlaceState(next);
+    left.current = { ...left.current, place: next };
+    keepLeft(left.current);
+    window.requestAnimationFrame(() => composer.current?.focus());
   }, []);
 
-  const refreshHome = useCallback(async (): Promise<Home | null> => {
+  const patchMeta = useCallback((since: number, change: (old: Meta) => Meta) => {
+    setMeta((all) => ({ ...all, [since]: change(all[since] ?? blankMeta()) }));
+  }, []);
+
+  // ------------------------------------------------------------ prefs
+
+  const setPrefs = useCallback((next: Prefs) => {
+    setPrefsState(next);
+    applyPrefs(next);
+  }, []);
+  useLayoutEffect(() => applyPrefs(prefs, false), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < 860);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // ----------------------------------------------------------- reading
+
+  const readPlan = useCallback(async (): Promise<Plan | null> => {
     const { api } = now.current;
     if (!api) return null;
     try {
-      const fresh = await api.home();
-      setHome(fresh);
+      const fresh = await api.plan();
+      setPlan(fresh);
       return fresh;
-    } catch (problem) {
-      setError(String(problem));
+    } catch {
+      setPlan(null);
       return null;
     }
   }, []);
 
-  const refreshActivity = useCallback(async () => {
-    try {
-      const fresh = await now.current.api?.activity();
-      if (fresh) setActivity(fresh);
-    } catch {
-      // The run is a convenience too.
-    }
-  }, []);
-
-  /** Read the proofs for the open course. Quiet on the course page, which only draws a summary of them. */
-  const loadProgress = useCallback(async (target: string | null, loud: boolean) => {
+  const readJournal = useCallback(async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      setProgress(await api.progress(target));
+      setJournal(await api.journal(Date.now() - LOG_DAYS * 86_400_000));
+    } catch {
+      setJournal([]);
+    }
+  }, []);
+
+  const readLibrary = useCallback(async () => {
+    const { api } = now.current;
+    if (!api) return;
+    try {
+      const [list, all] = await Promise.all([api.recent(), api.library()]);
+      setFolders(list);
+      setCards(all);
     } catch (problem) {
-      if (loud) setError(String(problem));
+      setCards((old) => old ?? []);
+      note(String(problem));
     }
-  }, []);
+  }, [note]);
 
-  /** Read what the open course's material folder holds. A core that cannot say shows nothing: the course page reads as it did. */
-  const loadMaterials = useCallback(async () => {
+  const readEngine = useCallback(async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      setMaterials(await api.materialList());
+      setEngine(await api.engine());
     } catch {
-      setMaterials(null);
-    }
-  }, []);
-
-  /** Which engine runs lessons, and the one the open folder's conversation began on. */
-  const loadEngine = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      const fresh = await api.engine();
-      now.current.engine = fresh;
-      setEngine(fresh);
-    } catch {
-      // A core that cannot say shows no choice. Lessons run as before.
       setEngine(null);
     }
   }, []);
 
-  const loadLibrary = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      const [list, fresh] = await Promise.all([api.recent(), api.library()]);
-      setFolders(list);
-      setCards(fresh);
-    } catch (problem) {
-      setError(String(problem));
-      setCards((old) => old ?? []);
-    }
-    void refreshActivity();
-  }, [refreshActivity]);
-
-  const showLibrary = useCallback(() => {
-    setError(null);
-    setNotice(null);
-    setMaterial(null);
-    setAsking(false);
-    setView("library");
-    void loadLibrary();
-  }, [loadLibrary]);
-
-  /**
-   * Open a folder and show its page. With `stay`, the screen stays where it
-   * is when the folder can continue at once, for the caller to start the
-   * lesson. Resolves to the folder, or null when it could not be opened.
-   */
-  const showFolder = useCallback(
-    async (api: Core, open: () => Promise<Home>, stay = false): Promise<Home | null> => {
-      if (opening.current) return null;
-      opening.current = true;
-      setError(null);
-      setNotice(null);
-      setMaterial(null);
+  /** Open a folder as the course the page works in. A lesson open in another folder is ended; it stays on disk. */
+  const enterFolder = useCallback(
+    async (open: (api: Core) => Promise<Home>): Promise<Home | null> => {
+      const { api } = now.current;
+      if (!api) return null;
       try {
-        const opened = await open();
-        waitingForSetup.current = false;
-        now.current.home = opened;
+        const opened = await open(api);
         setHome(opened);
+        now.current.home = opened;
         dispatch({ type: "reset" });
-        setRail(null);
+        setSitting(null);
+        setOpenTask(null);
+        setPlaceState("task");
         setProgress(null);
         setMaterials(null);
-        setSummary(null);
-        setAsking(false);
-        if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
-        void loadProgress(null, false);
-        void refreshActivity();
-        void loadEngine();
-        setFolders(await api.recent());
+        setMaterialLines(null);
+        left.current = { ...left.current, folder: opened.folder };
+        keepLeft(left.current);
+        void readPlan();
+        void readEngine();
         return opened;
       } catch (problem) {
-        setError(String(problem));
-        setView("library");
-        void loadLibrary();
+        note(String(problem));
         return null;
-      } finally {
-        opening.current = false;
       }
     },
-    [loadEngine, loadLibrary, loadProgress, refreshActivity],
+    [note, readEngine, readPlan],
   );
 
-  const openFolder = useCallback((api: Core, path: string) => showFolder(api, () => api.openFolder(path)), [showFolder]);
+  // ------------------------------------------------------------- start
 
-  /** Take in what the setup check found. The first time it is ready, go to the first screen. */
-  const takeSetup = useCallback(
-    async (api: Core, fresh: SetupData) => {
-      setSetup(fresh);
-      if (!setupReady(fresh)) {
-        if (now.current.view === "loading") setView("setup");
-        return;
-      }
-      if (!waitingForSetup.current) return;
-      waitingForSetup.current = false;
-      const first = await api.initialFolder();
-      if (first) await openFolder(api, first);
-      else showLibrary();
-    },
-    [openFolder, showLibrary],
-  );
+  const takeSetup = useCallback(async (api: Core, fresh: Setup) => {
+    setSetup(fresh);
+    if (!setupReady(fresh)) return;
+    if (now.current.home) return;
+    const named = await api.initialFolder();
+    const list = await api.recent();
+    setFolders(list);
+    const first = named ?? (left.current.folder && list.includes(left.current.folder) ? left.current.folder : null) ?? list[0] ?? null;
+    if (first) await enterFolder((api) => api.openFolder(first));
+  }, [enterFolder]);
 
   useEffect(() => {
     let alive = true;
-    let unlisten = () => {};
+    let off = () => {};
     void (async () => {
       const api = await core();
-      const off = await api.onEvent((event: AgentEvent) => {
-        dispatch({ type: "event", event });
-        if (event.type === "turn_ended") void refreshRail();
-        // Without the plugin this would be a plain chat with no teaching
-        // rules, so the reply is stopped and the notice says what to run.
-        if (event.type === "ready" && event.plugin_missing) void api.interrupt().catch(() => {});
-      });
-      if (!alive) {
-        off();
-        return;
-      }
-      unlisten = off;
-      setApi(api);
+      const unlisten = await api.onEvent((event) => onEvent.current(event));
+      if (!alive) return unlisten();
+      off = unlisten;
       now.current.api = api;
-      void loadEngine();
-      setFolders(await api.recent());
-      // The program is installed, or a question about it answered, before
-      // any folder is read: a newer program upgrades a folder's record.
+      setApi(api);
       const [fresh, built] = await Promise.all([api.setup(), api.about()]);
       setAbout(built);
       await takeSetup(api, fresh);
+      setPhase("ready");
+      void readEngine();
       if (isDemo) (await import("./demo")).startFromAddress(actions);
       else if (await api.selftest()) {
-        // A check that cannot even start says why, instead of saying nothing.
         try {
           await (await import("./selftest")).run(api, actions, () => now.current.session);
         } catch (problem) {
@@ -382,546 +295,574 @@ export function App() {
     })();
     return () => {
       alive = false;
-      unlisten();
+      off();
     };
-    // Runs once: every handler it uses reads the newest values through refs.
+    // Runs once; everything it calls reads the newest values through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While Claude Code's sign-in waits for the browser, look every few
-  // seconds whether it finished.
+  // The first real page is painted: the log and the courses are read behind it.
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const frame = window.requestAnimationFrame(() => {
+      harness.ready();
+      void readJournal();
+      void readLibrary();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [phase, readJournal, readLibrary]);
+
+  // The page reopens where it was left, once the log is on it.
+  const restored = useRef(false);
+  useLayoutEffect(() => {
+    if (restored.current || journal === null) return;
+    restored.current = true;
+    if (left.current.day === day && left.current.scroll > 0 && scroller.current) scroller.current.scrollTop = left.current.scroll;
+  }, [journal, day]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onScroll = () => {
+      left.current = { ...left.current, scroll: el.scrollTop, day };
+      keepLeft(left.current);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const hide = () => flushLeft();
+    window.addEventListener("pagehide", hide);
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", hide);
+      document.removeEventListener("visibilitychange", hide);
+    };
+  }, [day]);
+
+  // While Claude Code's sign-in waits on the browser, look every few seconds whether it finished.
   useEffect(() => {
     if (!signingIn) return;
     const started = Date.now();
     const timer = window.setInterval(() => {
       const { api, setup } = now.current;
-      if (!api || !setup) return;
-      if (Date.now() - started > SIGN_IN_LIMIT_MS) {
-        setSigningIn(false);
-        return;
-      }
+      if (!api || !setup || Date.now() - started > 15 * 60_000) return setSigningIn(false);
       void api.account().then((account) => {
-        // Done when it is signed in as chosen, or says anything new, such as
-        // a sign-in to another kind of account.
-        if (account.signed_in && (!account.problem || JSON.stringify(account) !== accountBefore.current)) setSigningIn(false);
-        void takeSetup(api, { ...(now.current.setup ?? setup), account });
+        if (account.signed_in) setSigningIn(false);
+        void takeSetup(api, { ...setup, account });
       });
-    }, SIGN_IN_POLL_MS);
+    }, 2000);
     return () => window.clearInterval(timer);
   }, [signingIn, takeSetup]);
 
-  // Files dropped on the window are added to the open course, on its page and
-  // in a lesson. Anywhere else a drop does nothing.
+  // ------------------------------------------------------------- marks
+
+  const readMarks = async (): Promise<Mark[] | null> => {
+    try {
+      return (await now.current.api?.marks()) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** A mark the record holds for this exchange. Each row is shown once, beside the words it marks. */
+  const addMark = useCallback(
+    (since: number, mark: Mark) => {
+      if (shownMarks.current.has(mark.id)) return;
+      shownMarks.current.add(mark.id);
+      known.current?.add(mark.id);
+      patchMeta(since, (old) => ({ ...old, marks: [...old.marks, mark], unmarked: false }));
+    },
+    [patchMeta],
+  );
+
+  /** Read the record for the task the reply set, and where the cursor goes. */
+  const settle = useCallback(
+    async (since: number) => {
+      const { api } = now.current;
+      if (!api) return;
+      const fresh = await api.rail().catch(() => null);
+      const { session, convEngine, meta } = now.current;
+      const live = session.live;
+      if (!live || live.since !== since) return;
+      const reply = tutorText(live);
+      const m = meta[since] ?? blankMeta();
+      const boxed = taskText(reply);
+      const recorded = fresh?.task ?? null;
+      let posed: string | null = null;
+      if (recorded) {
+        if (boxed || (m.task === null || !sameText(recorded, m.task)) || holds(reply, recorded)) posed = recorded;
+      } else if (boxed) posed = boxed;
+      // The record says which task is open on Magnesium; with Claude Code the
+      // window knows only a task set apart in bold.
+      const open = recorded ?? (convEngine === "direct" ? null : boxed);
+      patchMeta(since, (old) => ({ ...old, posed: old.posed ?? posed }));
+      setOpenTask(open);
+      if (!touched.current) {
+        const unknown = convEngine !== "direct" && open === null && reply.trim() !== "";
+        setPlaceState(posed || unknown || (open && m.intent !== "talk") ? "task" : "page");
+      }
+    },
+    [patchMeta],
+  );
+
+  const afterReply = useCallback(
+    (since: number, intent: Intent | null) => {
+      touched.current = false;
+      let found = false;
+      LOOKS.forEach((wait, i) =>
+        window.setTimeout(async () => {
+          const live = now.current.session.live;
+          if (!live || live.since !== since || busy(now.current.session)) return;
+          if (i < 3) void settle(since);
+          if (found) return;
+          const rows = await readMarks();
+          if (rows === null) return;
+          const before = known.current;
+          known.current = new Set([...(before ?? []), ...rows.map((r) => r.id)]);
+          const fresh = before ? rows.filter((row) => !before.has(row.id) && !shownMarks.current.has(row.id)) : [];
+          fresh.forEach((row) => addMark(since, row));
+          if (fresh.length > 0 || (now.current.meta[since]?.marks.length ?? 0) > 0) found = true;
+          else if (i === LOOKS.length - 1 && intent === "answer") patchMeta(since, (old) => ({ ...old, unmarked: true }));
+        }, wait),
+      );
+    },
+    [addMark, patchMeta, settle],
+  );
+
+  // ------------------------------------------------------------ events
+
+  const onEvent = useRef<(event: AgentEvent) => void>(() => {});
+  onEvent.current = (event: AgentEvent) => {
+    dispatch({ type: "event", event });
+    const live = now.current.session.live;
+    if (event.type === "turn_ended" && live) {
+      if (event.ok && !event.interrupted) afterReply(live.since, now.current.meta[live.since]?.intent ?? null);
+      else {
+        touched.current = false;
+        setPlaceState(now.current.openTask ? "task" : "page");
+      }
+    } else if (event.type === "marked" && live) {
+      addMark(live.since, event.mark);
+    } else if (event.type === "plan_changed") {
+      const before = now.current.plan;
+      void readPlan().then((after) => {
+        if (!after) return;
+        const { lines, moved: shifts } = planChanges(before, after);
+        const since = now.current.session.live?.since;
+        if (since !== undefined && lines.length > 0) patchMeta(since, (old) => ({ ...old, plan: lines }));
+        if (before?.exam_date && after.exam_date !== before.exam_date) {
+          setExamWas((was) => was ?? before.exam_date);
+          left.current = { ...left.current, examWas: left.current.examWas ?? before.exam_date };
+        }
+        setMoved((old) => ({ ...old, ...shifts }));
+        left.current = { ...left.current, moved: { ...left.current.moved, ...shifts }, day };
+        keepLeft(left.current);
+      });
+      if (live) void settle(live.since);
+    } else if (event.type === "ready" && event.plugin_missing) {
+      void now.current.api?.interrupt().catch(() => {});
+    }
+  };
+
+  // Keep what today's exchanges were, so the page reopens as it was.
   useEffect(() => {
-    if (!api) return;
-    let off = () => {};
-    let alive = true;
-    void api
-      .onDrop(
-        (paths) => void addMaterialRef.current(paths),
-        (over) => setDragging(over && canAddRef.current()),
-      )
-      .then((stop) => (alive ? (off = stop) : stop()));
-    return () => {
-      alive = false;
-      off();
-    };
-  }, [api]);
+    const { sitting } = now.current;
+    if (!sitting) return;
+    const turns = [...session.earlier, ...(session.live ? [{ ms: session.live.since, learner: session.live.learner }] : [])];
+    const items: Kept[] = turns.flatMap((turn) => {
+      const m = meta[turn.ms];
+      if (!m) return [];
+      return [{ folder: sitting.folder, ms: turn.ms, learner: turn.learner, intent: m.intent, task: m.task, posed: m.posed, plan: m.plan }];
+    });
+    if (items.length === 0) return;
+    const others = kept.items.filter((k) => !items.some((i) => i.ms === k.ms && i.folder === k.folder));
+    saveKept(day, [...others, ...items], kept.stops);
+  }, [session.earlier, session.live, meta, kept, day]);
 
-  // Text pasted on the course page, with nothing selected to type in, is
-  // offered as course material. Pasting in the answer box is an answer.
-  useEffect(() => {
-    const onPaste = (event: ClipboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable]")) return;
-      if (now.current.view !== "course" || !canAddRef.current()) return;
-      if ((event.clipboardData?.files.length ?? 0) > 0) return;
-      const text = event.clipboardData?.getData("text/plain") ?? "";
-      if (text.trim() === "") return;
-      event.preventDefault();
-      setPasting(text);
-    };
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, []);
+  // ------------------------------------------------------------ lesson
 
-  const checkAgain = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    await takeSetup(api, await api.setup());
-  };
-
-  const answerRuntime = async (work: (api: Core) => Promise<RuntimeSetup>) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setError(null);
-    const runtime = await work(api);
-    await takeSetup(api, { ...setup, runtime });
-  };
-
-  const signIn = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      accountBefore.current = JSON.stringify(now.current.setup?.account ?? null);
-      await api.signIn();
-      setSigningIn(true);
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  const choosePayment = async (payment: Payment) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setSetup({ ...setup, payment });
-    const account = await api.setPayment(payment);
-    await takeSetup(api, { ...setup, payment, account });
-  };
-
-  /** Pick the engine for the next lesson. Saved at once, and refused while a lesson is open. */
-  const chooseEngine = async (chosen: Engine) => {
-    const { api, engine, session } = now.current;
-    if (!api || !engine || session.open || session.live !== null || engine.chosen === chosen) return;
-    setEngine({ ...engine, chosen });
-    try {
-      const fresh = await api.setEngine(chosen);
-      now.current.engine = fresh;
-      setEngine(fresh);
-    } catch (problem) {
-      setEngine(engine);
-      setError(String(problem));
-    }
-  };
-
-  /** Whether course material can be added now: a course is open, on its page or in a lesson. */
-  const canAdd = () => {
-    const { home, view } = now.current;
-    return Boolean(home) && (view === "course" || view === "session") && ["ready", "empty", "not_set_up"].includes(home?.state ?? "") && !home?.sitting;
-  };
-
-  const addMaterial = async (paths: string[]) => {
-    const { api } = now.current;
-    if (!api || paths.length === 0 || adding || !canAdd()) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addMaterial(paths)).lines);
-      void loadMaterials();
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  addMaterialRef.current = addMaterial;
-  canAddRef.current = canAdd;
-
-  // The course page says what the course already holds, read when it is shown.
-  const courseFolder = view === "course" ? (home?.folder ?? null) : null;
-  useEffect(() => {
-    if (courseFolder !== null) void loadMaterials();
-  }, [courseFolder, loadMaterials]);
-
-  const chooseMaterial = async () => {
-    const { api } = now.current;
-    if (!api || !canAdd()) return;
-    try {
-      await addMaterial(await api.pickMaterial());
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    }
-  };
-
-  const savePasted = async (text: string) => {
-    const { api } = now.current;
-    if (!api || adding) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addPastedText(text)).lines);
-      setPasting(null);
-      void loadMaterials();
-    } catch (problem) {
-      setPasting(null);
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const openLink = (url: string) => void now.current.api?.openUrl(url).catch((problem) => setError(String(problem)));
-
-  const upgrade = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    setUpgrading(true);
-    try {
-      setHome(await api.upgradeFolder());
-      setNotice("This course is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
-      void loadProgress(null, false);
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setUpgrading(false);
-    }
-  };
-
-  const pickFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickFolder();
-    if (path) await openFolder(api, path);
-  };
-
-  const newFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickNewFolder();
-    if (path) await showFolder(api, () => api.newFolder(path));
-  };
-
-  const findFolders = async () => {
-    const { api } = now.current;
-    if (!api || finding) return;
-    setError(null);
-    setNotice(null);
-    setFinding(true);
-    try {
-      const added = await api.findFolders();
-      setNotice(added === 0 ? "No other course was found on this Mac." : `${added} ${added === 1 ? "course" : "courses"} added.`);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setFinding(false);
-    }
-  };
-
-  const forgetFolder = async (path: string) => {
+  /** Open the conversation if it is not, and send the first words of a sitting. */
+  const begin = async (shown: string, send: (api: Core) => Promise<void>, resume: boolean) => {
     const { api, home } = now.current;
-    if (!api) return;
-    try {
-      await api.forgetFolder(path);
-      if (home?.folder === path) setHome(null);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  /** Open the setup screen, with a fresh look at this Mac. */
-  const openSetup = () => {
-    const { view } = now.current;
-    if (view !== "setup") setFrom(view === "loading" ? "library" : view);
-    setView("setup");
-    void checkAgain();
-  };
-
-  /**
-   * Open the lesson screen and send the first words of the sitting. No lesson starts while this Mac's setup
-   * needs a look, such as a magnesium program older than the window needs.
-   * Resolves to whether the lesson screen opened.
-   */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
-    const { api } = now.current;
-    if (!api) return false;
+    if (!api || !home) return;
     if (!setupReady(now.current.setup)) {
-      openSetup();
-      return false;
+      setSheet("settings");
+      return;
     }
-    setError(null);
     setStarting(true);
-    let shownLesson = false;
     try {
+      let folder = home;
+      if (home.state === "not_set_up") {
+        folder = await api.setUp();
+        setHome(folder);
+      }
       const opened = await api.openSession(resume);
-      dispatch({ type: "opened", turns: opened.turns });
-      sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
-      proofsBefore.current = null;
-      void api
-        .progress(null)
-        .then((before) => {
-          proofsBefore.current = tally(before);
-          sitting.current.todayBefore = before.today ?? null;
-        })
-        .catch(() => {});
-      setView("session");
-      shownLesson = true;
-      dispatch({ type: "sent", shown, now: Date.now() });
+      setConvEngine(opened.engine);
+      dispatch({ type: "opened", turns: [] });
+      const at = Date.now();
+      known.current = null;
+      void readMarks().then((rows) => rows && (known.current = new Set(rows.map((r) => r.id))));
+      setSitting({ folder: folder.folder, course: courseName(folder.name), start: at });
+      setMeta((all) => ({ ...all, [at]: { ...blankMeta(), intent: null } }));
+      dispatch({ type: "sent", shown, now: at });
+      touched.current = false;
+      setFresh(false);
       await send(api);
-      void refreshRail();
-      void loadEngine();
+      void readEngine();
     } catch (problem) {
-      if (shownLesson) dispatch({ type: "failed", error: String(problem) });
-      else setError(String(problem));
+      dispatch({ type: "failed", error: String(problem) });
+      note(String(problem));
     } finally {
       setStarting(false);
+      window.requestAnimationFrame(() => composer.current?.focus());
     }
-    return shownLesson;
   };
 
-  const continueLesson = (skipChecks: boolean, home: Home | null = now.current.home) => {
-    const words = openingWords(
-      { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
-      skipChecks,
-    );
-    // The window wrote these words, so they are not sent as an answer. They go
-    // through the learn skill, as a new lesson's goal does: the window's
-    // tutor has no tool to load a skill by itself.
-    return begin(true, words, (api) => api.sendNewLesson(words));
-  };
-
-  /**
-   * The library's main card: open the folder and continue its lesson at once,
-   * as Continue on the course page does. A folder that cannot continue now,
-   * because it is new, needs an upgrade or has a paper running, shows its
-   * page, which says what comes first.
-   */
-  const continueFolder = async (path: string) => {
-    const { api } = now.current;
+  /** The one thing on the cold page: pick up where they stopped. */
+  const start = async () => {
+    const { home, api, session } = now.current;
     if (!api) return;
-    if (!setupReady(now.current.setup)) {
-      openSetup();
+    if (!home) {
+      const path = await api.pickFolder();
+      if (path) await enterFolder((api) => api.openFolder(path));
       return;
     }
-    setStarting(true);
-    const opened = await showFolder(api, () => api.openFolder(path), true);
-    if (!opened || !canContinue(opened)) {
-      setStarting(false);
-      return;
-    }
-    // When the lesson could not start, the course page says why.
-    if (!(await continueLesson(false, opened))) setView("course");
+    if (home.state === "needs_upgrade") return upgrade();
+    if (home.sitting || session.live || starting) return;
+    const words = openingWords(
+      { stoppedAt: home.last?.stopped_at ?? null, studiedBefore: Boolean(home.last), title: home.exam?.title ?? "this course" },
+      false,
+    );
+    await begin(words, (api) => api.sendNewLesson(words), true);
   };
 
   const newLesson = async (goal: string) => {
-    const { api, home } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      if (home?.state === "not_set_up") setHome(await api.setUp());
-    } catch (problem) {
-      setError(String(problem));
-      return;
-    }
-    await begin(false, goal, (api) => api.sendNewLesson(goal));
-    setAsking(false);
+    if (goal.trim() === "") return;
+    await begin(goal, (api) => api.sendNewLesson(goal), true);
   };
 
-  const say = async (text: string) => {
-    const { api, session } = now.current;
+  /** Send what the learner wrote. Its place says what it is. */
+  const say = async (text: string, at: Place = now.current.place) => {
+    const { api, session, openTask, convEngine } = now.current;
     if (!api) return;
+    if (!session.open && !session.live) {
+      // Written on the cold page: their own first line starts the lesson.
+      return newLesson(text);
+    }
+    const help = isHelp(text);
+    const intent: Intent | undefined = help ? undefined : at === "page" ? "talk" : openTask ? "answer" : convEngine === "direct" ? "talk" : undefined;
+    const since = Date.now();
     try {
       if (!session.open) {
-        await api.openSession(true);
+        const opened = await api.openSession(true);
+        setConvEngine(opened.engine);
         dispatch({ type: "reopened" });
       }
-      sitting.current.answers += 1;
-      dispatch({ type: "sent", shown: text, now: Date.now() });
-      await api.send(text);
+      void readMarks().then((rows) => rows && (known.current = new Set([...(known.current ?? []), ...rows.map((r) => r.id)])));
+      setMeta((all) => ({ ...all, [since]: { ...blankMeta(), intent: intent ?? null, task: openTask } }));
+      dispatch({ type: "sent", shown: text, now: since });
+      touched.current = false;
+      if (intent === "answer" && !help) setOpenTask(null);
+      await api.send(text, intent);
     } catch (problem) {
       dispatch({ type: "failed", error: String(problem) });
     }
   };
 
-  const onNote = useCallback((text: string) => dispatch({ type: "note", notice: { kind: "other", text } }), []);
+  const help = (words: string) => void say(words, "task");
 
-  const guard = (work: (api: Core) => Promise<unknown>) => async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      await work(api);
-    } catch (problem) {
-      dispatch({ type: "note", notice: { kind: "other", text: String(problem) } });
-    }
+  const interrupt = () => {
+    const { api, session } = now.current;
+    if (api && busy(session)) void api.interrupt().catch(() => {});
   };
 
-  /** End the sitting: save the line, close the lesson, and show what was done. */
+  const beginStop = () => {
+    const { session, openTask, home } = now.current;
+    if (!session.open && !session.live) return;
+    setStopping(openTask ?? home?.last?.next_action ?? "");
+  };
+
   const stop = async (line: string) => {
-    const { api, session, rail } = now.current;
+    const { api, sitting, kept } = now.current;
     if (!api) return;
     const saved = line.trim() === "" ? null : line.trim();
-    const minutes = session.startedMs === null ? 0 : Math.max(1, Math.round((Date.now() - session.startedMs) / 60_000));
-    const done: Sitting = {
-      minutes,
-      sent: sitting.current.answers,
-      marked: null,
-      today: null,
-      stepsDone: stepsDone(rail),
-      stepsTotal: rail?.steps.length ?? 0,
-      stoppedAt: saved,
-      alreadyStudied: sitting.current.alreadyStudied,
-      earned: [],
-      tomorrow: 0,
-      slipped: [],
-      marks: [],
-    };
     try {
       await api.stop(saved);
     } catch (problem) {
-      setError(String(problem));
+      note(String(problem));
     }
+    setStopping(null);
+    if (sitting && saved) {
+      const stops = [...kept.stops, { folder: sitting.folder, ms: Date.now(), text: saved }];
+      setKept((old) => ({ ...old, stops }));
+      saveKept(day, loadKept(day).items, stops);
+    }
+    // The log now holds this sitting: read it again, and the page draws it from there.
+    setKept(loadKept(day));
+    await readJournal();
     dispatch({ type: "stopped" });
-    setRail(null);
-    await Promise.all([refreshHome(), refreshActivity()]);
+    setSitting(null);
+    setOpenTask(null);
+    setMeta({});
+    const { home: was } = now.current;
+    if (was) {
+      try {
+        setHome(await api.home());
+      } catch {
+        // The page keeps what it had.
+      }
+    }
+    window.requestAnimationFrame(() => composer.current?.focus());
+  };
+
+  const decide = (id: string, decision: Decision) => void now.current.api?.decide(id, decision).catch((p) => note(String(p)));
+  const answerCard = (id: string, answers: Answer[]) => {
+    const words = pickedWords(answers);
+    if (words) dispatch({ type: "picked", shown: words, now: Date.now() });
+    void now.current.api?.answer(id, answers).catch((p) => note(String(p)));
+  };
+
+  // ----------------------------------------------------------- courses
+
+  const openCourse = async (folder: string) => {
+    setSheet(null);
+    if (now.current.home?.folder === folder) return;
+    await enterFolder((api) => api.openFolder(folder));
+    window.requestAnimationFrame(() => composer.current?.focus());
+  };
+
+  const pickFolder = async () => {
+    const path = await now.current.api?.pickFolder();
+    if (path) await openCourse(path);
+    void readLibrary();
+  };
+
+  const newFolder = async () => {
+    const path = await now.current.api?.pickNewFolder();
+    if (!path) return;
+    setSheet(null);
+    await enterFolder((api) => api.newFolder(path));
+    setFresh(true);
+    void readLibrary();
+  };
+
+  const findFolders = async () => {
+    const { api } = now.current;
+    if (!api || finding) return;
+    setFinding(true);
+    setCoursesNote(null);
     try {
-      // What the runtime's record holds now, set beside what it held when
-      // the sitting began. The window claims no proof the record does not show.
-      const after = await api.progress(null);
-      setProgress(after);
-      done.today = after.today ?? null;
-      done.marked = markedIn(sitting.current.todayBefore, done.today);
-      const before = proofsBefore.current;
-      if (before) {
-        done.earned = [...after.confirmed, ...after.in_progress]
-          .map((row) => ({ row, proofs: proofsOf(row) - (before.get(row.name) ?? 0) }))
-          .filter((each) => each.proofs > 0);
-      }
-      const today = now.current.activity?.today;
-      if (today) {
-        const tomorrow = dayAfter(today);
-        done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
-      }
-      done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
-      done.marks = await reviewIn(api, [...after.in_progress, ...after.confirmed, ...after.untested], session.startedMs);
-    } catch {
-      // Without the record the end screen says what it can.
-    }
-    void loadEngine();
-    // A sitting with nothing sent and nothing marked has nothing to sum up.
-    if (done.sent > 0 || (done.marked ?? 0) > 0) {
-      setSummary(done);
-      setView("summary");
-    } else {
-      setView("course");
+      const added = await api.findFolders();
+      setCoursesNote(added === 0 ? "No other course was found on this Mac." : `${added === 1 ? "One course" : `${added} courses`} added.`);
+      await readLibrary();
+    } catch (problem) {
+      setCoursesNote(String(problem));
+    } finally {
+      setFinding(false);
     }
   };
 
-  const openProgress = async (target: string | null) => {
-    const { view } = now.current;
-    if (view !== "progress") setFrom(view === "summary" ? "course" : view);
-    setError(null);
-    setView("progress");
-    await loadProgress(target, true);
+  const forgetFolder = async (folder: string) => {
+    const { api, home } = now.current;
+    if (!api) return;
+    await api.forgetFolder(folder).catch((p) => note(String(p)));
+    if (home?.folder === folder) setHome(null);
+    await readLibrary();
   };
 
-  const openPaper = (paper: PaperInfo | null) => {
-    setChosenPaper(paper);
-    setError(null);
-    setView("paper");
-  };
-
-  const startPaper = async (paper: PaperInfo, minutes: number) => {
+  const upgrade = async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      await api.paperStart(paper, minutes);
-      await refreshHome();
+      setHome(await api.upgradeFolder());
+      note("This folder is upgraded. A copy of its record from before is in .magnesium/backups.");
     } catch (problem) {
-      setError(String(problem));
+      note(String(problem));
     }
+  };
+
+  const addMaterial = async (paths: string[]) => {
+    const { api, home } = now.current;
+    if (!api || !home || paths.length === 0) return;
+    setAdding(true);
+    try {
+      const added = await api.addMaterial(paths);
+      setMaterialLines(added.lines);
+      note(`Added to ${courseName(home.name)}'s material. ${added.lines.join(" ")}`.trim());
+      setMaterials(await api.materialList().catch(() => null));
+    } catch (problem) {
+      note(String(problem));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const addPasted = async (text: string) => {
+    const { api } = now.current;
+    if (!api) return;
+    setAdding(true);
+    try {
+      setMaterialLines((await api.addPastedText(text)).lines);
+      setMaterials(await api.materialList().catch(() => null));
+    } catch (problem) {
+      setMaterialLines([String(problem)]);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const openSheet = useCallback((next: SheetName | null) => {
+    const { api } = now.current;
+    setSheet(next);
+    if (next === "course" && api) {
+      void api.materialList().then(setMaterials, () => setMaterials(null));
+      void api.progress(null).then(setProgress, () => setProgress(null));
+    }
+    if (next === "courses") void readLibrary();
+    if (next === "plan") void readPlan();
+    if (next === null) window.requestAnimationFrame(() => composer.current?.focus());
+  }, [readLibrary, readPlan]);
+
+  const startPaper = async (minutes: number) => {
+    const { api } = now.current;
+    if (!api || !paper) return;
+    try {
+      await api.paperStart(paper, minutes);
+      setHome(await api.home());
+    } catch (problem) {
+      note(String(problem));
+    }
+    setPaper(null);
+    setSheet(null);
   };
 
   const handIn = async () => {
     const { api } = now.current;
     if (!api) return;
-    setError(null);
     try {
       const files = await api.pickFiles();
       if (files.length === 0) return;
       const words = await api.paperEnd(files);
-      await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
-      else setView("course");
+      setHome(await api.home());
+      if (words) await begin(words.shown, (api) => api.sendShown(words.shown, words.sent), true);
     } catch (problem) {
-      setError(String(problem));
+      note(String(problem));
     }
   };
 
   const endPaper = async () => {
     const { api } = now.current;
     if (!api) return;
+    await api.paperEnd([]).catch((p) => note(String(p)));
+    setHome(await api.home());
+  };
+
+  // Files dropped on the window are added to the open course's material.
+  useEffect(() => {
+    if (!api) return;
+    let off = () => {};
+    let alive = true;
+    void api
+      .onDrop(
+        (paths) => void addMaterial(paths),
+        (over) => setDragging(over && Boolean(now.current.home)),
+      )
+      .then((stop) => (alive ? (off = stop) : stop()));
+    return () => {
+      alive = false;
+      off();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
+
+  const chooseEngine = async (chosen: Engine) => {
+    const { api, engine, session } = now.current;
+    if (!api || !engine || session.open || session.live) return;
+    setEngine({ ...engine, chosen });
     try {
-      await api.paperEnd([]);
+      setEngine(await api.setEngine(chosen));
     } catch (problem) {
-      setError(String(problem));
-    }
-    await refreshHome();
-    setView("course");
-  };
-
-  /** Where "back" goes: the paper or the lesson if one is running, else the page this one was opened from. */
-  const back = () => {
-    const { home, session, from, view } = now.current;
-    setError(null);
-    if (home?.sitting && view !== "paper") setView("paper");
-    else if (session.open || session.live) setView("session");
-    else if (!home || from === "library" || view === "course") showLibrary();
-    else {
-      void refreshHome();
-      setView("course");
+      setEngine(engine);
+      note(String(problem));
     }
   };
 
-  const setBlock = async (minutes: number) => {
-    await now.current.api?.setBlockMinutes(minutes);
-    setHome((old) => (old ? { ...old, block_minutes: minutes } : old));
+  const choosePayment = async (payment: "plan" | "api_key") => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    const account = await api.setPayment(payment);
+    setSetup({ ...setup, payment, account });
   };
 
-  const askNewLesson = () => {
-    setView("course");
-    setAsking(true);
+  const signIn = async () => {
+    try {
+      await now.current.api?.signIn();
+      setSigningIn(true);
+    } catch (problem) {
+      note(String(problem));
+    }
   };
 
-  // What the demo and the self-check may drive.
-  const actions = {
-    continueLesson,
-    newLesson,
-    say,
-    stop,
-    openProgress,
-    openPaper,
-    startPaper,
-    setPalette,
-    setAsking,
-    openSetup,
-    showLibrary,
-    continueFolder,
-    chooseEngine,
-    setView: (next: string) => setView(next as View),
-    addMaterial,
-    setDragging,
-    pasteText: (text: string) => setPasting(text),
+  const checkAgain = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    await takeSetup(api, await api.setup());
+  };
+
+  const runtimeAnswer = async (keep: boolean) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    const runtime = keep ? await api.keepRuntime() : await api.replaceRuntime();
+    await takeSetup(api, { ...setup, runtime });
+  };
+
+  // ------------------------------------------------------------- keys
+
+  const scrollToDay = (direction: 1 | -1) => {
+    const el = scroller.current;
+    if (!el) return;
+    if (direction === -1) return el.scrollTo({ top: 0 });
+    const days = Array.from(el.querySelectorAll<HTMLElement>("section.day"));
+    const next = days.find((d) => d.offsetTop > el.scrollTop + 8);
+    if (next) el.scrollTo({ top: next.offsetTop - 12 });
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
-      const { view, session, home, api, setup } = now.current;
-      const inLesson = session.open || session.live !== null;
+      if (!command || event.altKey) {
+        if (event.key === "Escape" && !event.defaultPrevented) {
+          if (now.current.stopping !== null) setStopping(null);
+          else if (now.current.source) setSource(null);
+        }
+        return;
+      }
       const key = event.key.toLowerCase();
-      if (command && key === "k") {
+      const take = (run: () => void) => {
         event.preventDefault();
-        if (view !== "loading" && (view !== "setup" || setupReady(setup))) setPalette((open) => !open);
-      } else if (command && event.key === "." && view === "session" && busy(session)) {
-        event.preventDefault();
-        void api?.interrupt();
-      } else if (command && key === "n") {
-        // A new lesson, wherever a course is open and no paper or lesson is running. Elsewhere the key does nothing.
-        event.preventDefault();
-        if (home && !home.sitting && !inLesson && ["course", "progress", "summary", "paper"].includes(view)) askNewLesson();
-      } else if (command && key === "o" && !inLesson && (view === "library" || view === "course")) {
-        event.preventDefault();
-        void pickFolder();
-      } else if (event.key === "Escape" && !event.defaultPrevented && !now.current.palette) {
-        if (view === "progress" || view === "course") back();
-        else if (view === "paper") setView("course");
-        else if (view === "summary") setView("course");
-        else if (view === "setup" && setupReady(setup)) back();
+        run();
+      };
+      if (event.shiftKey) return;
+      if (key === "k") take(() => openSheet(now.current.sheet === "commands" ? null : "commands"));
+      else if (key === "o") take(() => openSheet("courses"));
+      else if (key === "i") take(() => now.current.home && openSheet("course"));
+      else if (key === "p") take(() => openSheet("plan"));
+      else if (key === ",") take(() => openSheet("settings"));
+      else if (key === ".") take(interrupt);
+      else if (key === "e") take(beginStop);
+      else if (key === "n")
+        take(() => {
+          setFresh(true);
+          window.requestAnimationFrame(() => composer.current?.focus());
+        });
+      else if (key === "arrowup") take(() => scrollToDay(-1));
+      else if (key === "arrowdown") take(() => scrollToDay(1));
+      else if (key === "=" || key === "+" || key === "-") {
+        take(() => {
+          const { size } = loadPrefs();
+          const at = SIZES.indexOf(size);
+          const next = SIZES[Math.max(0, Math.min(SIZES.length - 1, at + (key === "-" ? -1 : 1)))];
+          setPrefs({ ...loadPrefs(), size: next });
+        });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -929,330 +870,604 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const commands = (): Command[] => {
-    const list: Command[] = [];
-    const inLesson = session.open || session.live !== null;
-    // A course is open when its page, its lesson or one of its screens is up.
-    const course = home && !home.sitting && (view !== "library" || inLesson) ? home : null;
-    if (home?.sitting) {
-      if (view !== "paper") list.push({ label: "Back to the paper", icon: "paper", run: () => setView("paper") });
-      else
-        list.push({
-          label: "End without handing in",
-          icon: "close",
-          keywords: "quit stop finish",
-          run: () => document.querySelector<HTMLButtonElement>('[data-role="paper-end"]')?.click(),
-        });
-      list.push(SHORTCUTS);
-      return list;
+  // The page follows the lesson: the newest words come into view, but the
+  // learner's own last line is never pushed above the top while they read.
+  const followed = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const live = session.live;
+    if (!el || !live) return;
+    const said = el.querySelector<HTMLElement>(`[data-ms="${live.since}"]`);
+    const write = el.querySelector<HTMLElement>(".today .row.write, .today .row.stopping");
+    const top = said ? said.offsetTop - 96 : el.scrollTop;
+    if (followed.current !== live.since) {
+      followed.current = live.since;
+      if (said && said.offsetTop > el.scrollTop + el.clientHeight * 0.6) el.scrollTop = Math.max(0, said.offsetTop - el.clientHeight * 0.3);
     }
-    // The same core, in every context.
-    if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
-    list.push({ label: "Library", icon: "list", run: showLibrary });
-    if (course) {
-      list.push({ label: displayName(course.name), icon: "folder", run: () => setView("course") });
-      list.push({
-        label: "Proofs",
-        icon: "proof",
-        keywords: "progress stats score skills level",
-        run: () => void openProgress(null),
-      });
-      const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
-      list.push({
-        label: "Start a timed paper",
-        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : undefined,
-        icon: "paper",
-        keywords: "exam timed practice",
-        run: () => openPaper(null),
-      });
-    }
-    if (inLesson) {
-      list.push({
-        label: "End lesson",
-        icon: "close",
-        keywords: "quit stop finish end",
-        run: () => {
-          setView("session");
-          window.setTimeout(() => document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click(), 60);
-        },
-      });
-    }
-    if (course) {
-      // One item, which opens the choice: a row per length would each say "now 50 min" and read as setting 50.
-      list.push({
-        label: "Lesson length",
-        hint: `now ${course.block_minutes} min`,
-        icon: "timer",
-        keywords: "block time length minutes",
-        choices: BLOCKS.map((minutes) => ({
-          label: `${minutes} min`,
-          hint: minutes === course.block_minutes ? "now" : undefined,
-          run: () => {
-            if (minutes !== course.block_minutes) void setBlock(minutes);
-          },
-        })),
-        run: () => {},
-      });
-    }
-    list.push({
-      label: "Setup",
-      icon: "gear",
-      keywords: "settings preferences account engine lessons run on advanced version",
-      run: () => openSetup(),
-    });
-    list.push(SHORTCUTS);
+    if (!write) return;
+    const want = Math.min(write.offsetTop + write.offsetHeight + 28 - el.clientHeight, top);
+    if (want > el.scrollTop) el.scrollTop = want;
+  }, [session.live, meta]);
 
-    // Then what belongs to this context.
-    if (course) {
-      (progress?.targets ?? [])
-        .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
-        .forEach((exam) =>
-          list.push({ label: `Proofs for ${exam.title}`, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
-        );
-      if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
-        list.push({ label: "Add course material…", icon: "clip", run: () => void chooseMaterial() });
-        list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
-      }
-      if (!inLesson && (course.checks_due ?? 0) > 0 && course.state === "ready") {
-        list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
-      }
-      if (!inLesson) list.push({ label: "New lesson", key: "⌘N", icon: "plus", run: askNewLesson });
-    }
-    const account = setup?.account;
-    if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, icon: "bang", run: () => openSetup() });
-    }
-    if (!inLesson) {
-      list.push({ label: "Open a course folder…", key: "⌘O", icon: "folder", run: () => void pickFolder() });
-      list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
-      list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
-      if (home) {
-        const folder = home.folder;
-        list.push({
-          label: `Remove ${displayName(home.name)} from library`,
-          hint: "your files stay on your Mac",
-          icon: "trash",
-          run: () => void forgetFolder(folder).then(showLibrary),
-        });
-      }
-      folders
-        .filter((path) => path !== home?.folder)
-        .slice(0, 6)
-        .forEach((path) =>
-          list.push({
-            label: `Open ${displayName(path.split("/").filter(Boolean).pop() ?? path)}`,
-            hint: path,
-            icon: "folder",
-            run: () => api && void openFolder(api, path),
-          }),
-        );
-    }
-    return list;
+  // ---------------------------------------------------------- the page
+
+  const actions: Actions = {
+    start,
+    say,
+    setPlace,
+    newLesson,
+    stop,
+    openSheet,
+    openSource: setSource,
+    openCourse,
+    setPrefs,
+    beginStop,
   };
 
-  /** The engine choice, where a screen shows it. Disabled while a lesson is open. */
-  const engineControl = (bare = false) =>
-    engine ? (
-      <EngineControl
-        bare={bare}
-        choice={engine}
-        payment={setup?.payment ?? null}
-        locked={session.open || session.live !== null}
-        onChoose={(chosen) => void chooseEngine(chosen)}
-      />
-    ) : null;
+  const pages = useMemo(() => (journal ? pagesFrom(journal) : []), [journal]);
+  const todayPage = pages.find((page) => page.day === day) ?? null;
+  const earlier = useMemo(() => pages.filter((page) => page.day !== day).slice(0, 60), [pages, day]);
 
-  let screen: JSX.Element | null = null;
-  if (view === "loading") {
-    screen = (
-      <section className="screen loading">
-        <div className="bar" data-tauri-drag-region />
-        <div className="center">
-          <span className="mark breathing" aria-label="Loading">
-            <i />
-            <i />
-            <i />
-          </span>
-        </div>
-      </section>
-    );
-  } else if (view === "setup") {
-    screen = (
-      <Setup
-        setup={setup}
-        about={about}
-        error={error}
-        signingIn={signingIn}
-        canGoBack={!waitingForSetup.current}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-        onReplace={() => void answerRuntime((api) => api.replaceRuntime())}
-        onKeep={() => void answerRuntime((api) => api.keepRuntime())}
-        onCheck={() => void checkAgain()}
-        onSignIn={() => void signIn()}
-        onPayment={(payment) => void choosePayment(payment)}
-        onLink={openLink}
-        engine={engineControl(true)}
-      />
-    );
-  } else if (view === "library" || !home) {
-    screen = (
-      <Library
-        cards={cards}
-        folders={folders}
-        activity={activity}
-        error={error}
-        notice={notice}
-        finding={finding}
-        ready={setupReady(setup)}
-        starting={starting}
-        onContinue={(path) => void continueFolder(path)}
-        onOpen={(path) => api && void openFolder(api, path)}
-        onPick={() => void pickFolder()}
-        onNew={() => void newFolder()}
-        onFind={() => void findFolders()}
-        onForget={(path) => void forgetFolder(path)}
-        onSetup={openSetup}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "course") {
-    screen = (
-      <Course
-        home={home}
-        progress={progress}
-        asking={asking}
-        error={error}
-        notice={notice}
-        upgrading={upgrading}
-        starting={starting}
-        onUpgrade={() => void upgrade()}
-        onContinue={(skip) => void continueLesson(skip)}
-        onNewLesson={(goal) => void newLesson(goal)}
-        onAsk={setAsking}
-        onPaper={openPaper}
-        onProgress={() => void openProgress(null)}
-        onRetry={() => {
-          setError(null);
-          void refreshHome();
-        }}
-        onLibrary={showLibrary}
-        onPalette={() => setPalette(true)}
-        material={material}
-        adding={adding}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-        onPasteText={() => setPasting("")}
-        materials={materials}
-        dragging={dragging && canAdd()}
-      />
-    );
-  } else if (view === "session") {
-    screen = (
-      <Session
-        state={session}
-        rail={rail}
-        blockMinutes={home.block_minutes}
-        overlay={palette || pasting !== null}
-        onSend={(text) => void say(text)}
-        onInterrupt={() => void guard((api) => api.interrupt())()}
-        onDecide={(id: string, decision: Decision) =>
-          void guard(async (api) => {
-            await api.decide(id, decision);
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })()
-        }
-        onAnswer={(id: string, answers: Answer[]) => {
-          // What was picked stands in the lesson as the learner's note, as a typed answer does.
-          dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
-          void guard(async (api) => {
-            await api.answer(id, answers);
-            sitting.current.answers += 1;
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })();
-        }}
-        onStop={(line) => void stop(line)}
-        onNote={onNote}
-        onDismiss={(text) => dispatch({ type: "dismiss", text })}
-        onPalette={() => setPalette(true)}
-        material={material}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-      />
-    );
-  } else if (view === "summary" && summary) {
-    screen = (
-      <Summary
-        sitting={summary}
-        activity={activity}
-        proofs={progress?.proofs ?? null}
-        onPalette={() => setPalette(true)}
-        courseName={displayName(home.name)}
-        onDone={() => setView("course")}
-        onProgress={() => void openProgress(null)}
-      />
-    );
-  } else if (view === "progress") {
-    const inLesson = session.open || session.live !== null;
-    screen = (
-      <Progress
-        data={progress}
-        activity={activity}
-        error={error}
-        folderName={home.name}
-        backLabel={inLesson ? "Lesson" : displayName(home.name)}
-        onTarget={(target) => void loadProgress(target, true)}
-        questionsDue={home.checks_due === null ? null : home.redos_due + home.checks_due}
-        onStart={!inLesson && !home.sitting && home.state === "ready" ? () => void continueLesson(false) : undefined}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "paper") {
-    screen = (
-      <Paper
-        key={home.sitting ? "running" : "choosing"}
-        home={home}
-        chosen={chosenPaper}
-        error={error}
-        onStart={(paper, minutes) => void startPaper(paper, minutes)}
-        onHandIn={() => void handIn()}
-        onEnd={() => void endPaper()}
-        onOpenPaper={home.sitting?.path ? () => void api?.openFile(home.sitting!.path!).catch(() => {}) : undefined}
-        onBack={() => setView("course")}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  }
+  const items: Item[] = useMemo(() => {
+    const out: Item[] = [];
+    const match = (folder: string, ms: number, learner: string) =>
+      kept.items.find((k) => k.folder === folder && Math.abs(k.ms - ms) < 120_000 && sameText(k.learner, learner));
+    for (const part of todayPage?.sittings ?? []) {
+      part.entries.forEach((entry, i) => {
+        const k = match(entry.folder, entry.ms, entry.learner);
+        out.push({
+          key: `j-${entry.folder}-${entry.ms}`,
+          ms: entry.ms,
+          folder: entry.folder,
+          course: entry.course,
+          learner: entry.learner,
+          tutor: entry.tutor,
+          final: true,
+          interrupted: entry.interrupted,
+          meta: { ...blankMeta(), ...(k ? { intent: k.intent, task: k.task, posed: k.posed, plan: k.plan } : {}), marks: entry.marks },
+          sitting: i === 0,
+          status: "idle",
+          doing: null,
+          error: null,
+        });
+      });
+    }
+    if (sitting) {
+      const last = out[out.length - 1];
+      const turns: { ms: number; learner: string; tutor: string; interrupted: boolean; live: SessionState["live"] }[] = [
+        ...session.earlier.map((t) => ({ ms: t.ms, learner: t.learner, tutor: t.tutor, interrupted: t.interrupted, live: null })),
+        ...(session.live ? [{ ms: session.live.since, learner: session.live.learner, tutor: tutorText(session.live), interrupted: session.live.interrupted, live: session.live }] : []),
+      ];
+      turns.forEach((turn, i) => {
+        const live = turn.live;
+        out.push({
+          key: `l-${turn.ms}`,
+          ms: turn.ms,
+          folder: sitting.folder,
+          course: sitting.course,
+          learner: turn.learner,
+          tutor: turn.tutor,
+          final: !live || live.status === "idle",
+          interrupted: turn.interrupted,
+          meta: meta[turn.ms] ?? blankMeta(),
+          sitting: i === 0 && (!last || last.folder !== sitting.folder || sitting.start - last.ms > 3 * 3600_000),
+          status: live?.status ?? "idle",
+          doing: live?.doing ?? null,
+          error: live?.error ?? null,
+        });
+      });
+    }
+    return out;
+  }, [todayPage, kept, sitting, session.earlier, session.live, meta]);
+
+  const lesson = Boolean(session.open || session.live);
+  const writing = busy(session);
+  const lastItem = items[items.length - 1] ?? null;
+  const lastSetsTask = lastItem !== null && lastItem.final && (lastItem.meta.posed !== null || taskText(lastItem.tutor) !== null);
+  const dock = openTask !== null && lesson && !writing && !(lastSetsTask && (place === "task" || place === "page")) ? openTask : null;
+  const stopsToday = kept.stops.filter((s) => dayOf(s.ms) === day);
+
+  // The one line to pick up, when no lesson is running in this window.
+  const suggestion = useMemo(() => {
+    if (lesson || !setupReady(setup)) return null;
+    if (!home) return folders.length === 0 ? { kind: "first" as const } : null;
+    if (home.sitting) return null;
+    const course = courseName(home.name);
+    if (home.state === "needs_upgrade") return { kind: "upgrade" as const, course };
+    if (home.state === "no_runtime" || home.state === "unreadable") return { kind: "broken" as const, course, text: home.message };
+    if (home.last) {
+      const lastDay = daysBefore(day, home.last.days_ago ?? 0);
+      const line = home.last.goal || home.last.next_action || home.last.stopped_at;
+      const stoppedAt = home.last.stopped_at ?? (home.last.goal ? home.last.next_action : null);
+      return { kind: "pick" as const, course, when: whenSaid(lastDay, day), line, at: stoppedAt };
+    }
+    return { kind: "begin" as const, course, line: home.exam ? `Start on ${home.exam.title}` : null };
+  }, [lesson, setup, home, folders, day]);
+
+  const composerHint = (() => {
+    if (!lesson) return suggestion?.kind === "pick" || suggestion?.kind === "begin" ? (folders.length > 1 ? "Your other courses: ⌘O" : null) : null;
+    if (writing) return "⌘. stops the reply";
+    if (place === "task" && (openTask || lastSetsTask)) return "Esc writes on the page instead";
+    if (place === "page" && openTask) return "Esc goes back to the task";
+    return null;
+  })();
+  const composerShut = home?.sitting ? "The tutor waits while the paper runs." : !setupReady(setup) ? null : null;
+  const placeholder = !lesson
+    ? fresh || suggestion?.kind === "begin"
+      ? "What do you want to work on?"
+      : "Or write your own first line"
+    : place === "task" && (openTask || lastSetsTask)
+      ? ""
+      : "Write to the tutor";
+
+  const commands: Command[] = [
+    ...(suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") ? [{ label: "Pick up the lesson", key: "↩", run: () => void start() }] : []),
+    { label: "New lesson in this course", key: "⌘N", run: () => setFresh(true) },
+    { label: "End the sitting", key: "⌘E", run: beginStop },
+    { label: "Stop the reply", key: "⌘.", run: interrupt },
+    { label: "Courses", key: "⌘O", keywords: "library folders switch", run: () => openSheet("courses") },
+    { label: "This course: material, papers, the record", key: "⌘I", keywords: "progress proofs skills level material papers", run: () => openSheet("course") },
+    { label: "The plan", key: "⌘P", keywords: "agenda exam midterm schedule", run: () => openSheet("plan") },
+    { label: "Settings", key: "⌘,", keywords: "font face size theme scheme dark light keys engine payment", run: () => openSheet("settings") },
+    { label: "Add material", keywords: "files pdf notes slides", run: () => void now.current.api?.pickMaterial().then(addMaterial) },
+    { label: "Add a photo of my working", key: "⌘⇧A", run: () => composer.current?.focus() },
+    { label: "Open a folder", run: () => void pickFolder() },
+    { label: "New folder", run: () => void newFolder() },
+    { label: "Find folders on this Mac", run: () => void findFolders() },
+    { label: "Today", key: "⌘↑", run: () => scrollToDay(-1) },
+    ...(home?.papers ?? []).map((p) => ({ label: `Sit ${p.name}`, keywords: "paper exam timed", run: () => (setPaper(p), setSheet("paper")) })),
+  ];
+
+  const startLabel = suggestion?.kind === "pick" ? `Pick up where you stopped ${suggestion.when}` : suggestion?.kind === "begin" ? `Start ${suggestion.course}` : null;
 
   return (
-    <div className="app" data-busy={busy(session) ? "yes" : "no"} data-view={view}>
-      <div className="view" key={view}>
-        {screen}
+    <main className="window" data-narrow={narrow ? "yes" : undefined}>
+      <div className="drag" data-tauri-drag-region />
+      <div className="scroller" ref={scroller as React.RefObject<HTMLDivElement>}>
+        <div className="spread">
+          <section className="day today" aria-label={`Today, ${longDay(day)}`} data-day={day}>
+            <div className="row dateline">
+              <div className="gut" />
+              <h1 className="txt">{longDay(day)}</h1>
+            </div>
+            {narrow && plan && lesson && agendaLine(plan) && (
+              <div className="row agenda-line">
+                <div className="gut" />
+                <button className="txt text-btn" onClick={() => openSheet("plan")} title="⌘P">
+                  {agendaLine(plan)}
+                </button>
+              </div>
+            )}
+
+            {phase === "loading" ? null : !setupReady(setup) ? (
+              <SetupRows setup={setup} signingIn={signingIn} onSignIn={signIn} onCheck={checkAgain} onRuntime={runtimeAnswer} onPayment={choosePayment} onLink={(url) => void api?.openUrl(url)} />
+            ) : null}
+
+            <Entries items={items} openTask={openTask} onSource={(ref) => setSource(ref)} onNote={note} />
+
+            {stopsToday.map((stop) => (
+              <div className="row said opening" key={`stop-${stop.ms}`}>
+                <div className="gut">{clock(stop.ms)}</div>
+                <div className="txt">Stopped at {stop.text}</div>
+              </div>
+            ))}
+
+            {session.cards.map((card) => (
+              <div className="row card" key={card.id}>
+                <div className="gut" />
+                <div className="txt">
+                  {card.kind === "permission" ? (
+                    <div className="ask" role="group" aria-label={card.title}>
+                      <p>
+                        The tutor asks to {card.title.charAt(0).toLowerCase() + card.title.slice(1)}: <code>{card.detail}</code>
+                      </p>
+                      <div className="actions">
+                        <button className="btn" onClick={() => decide(card.id, "allow_once")}>
+                          Allow once
+                        </button>
+                        {card.canAlways && (
+                          <button className="text-btn" onClick={() => decide(card.id, "allow_always")}>
+                            Always allow
+                          </button>
+                        )}
+                        <button className="text-btn" onClick={() => decide(card.id, "refuse")}>
+                          Refuse
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <QuestionCard id={card.id} questions={card.questions} onAnswer={answerCard} />
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {writing && session.live?.status !== "writing" && (
+              <div className="row working" aria-live="polite">
+                <div className="gut" />
+                <div className="txt">{session.live?.doing ? `The tutor is ${session.live.doing}.` : "The tutor is thinking."}</div>
+              </div>
+            )}
+
+            {[...session.notices.map((n) => n.text), ...notes].map((text) => (
+              <div className="row note" key={text} role="status">
+                <div className="gut" />
+                <div className="txt">
+                  {text}
+                  <button className="text-btn quiet" onClick={() => (setNotes((old) => old.filter((t) => t !== text)), dispatch({ type: "dismiss", text }))}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {home?.sitting && <PaperRows home={home} onOpen={() => void api?.openFile(home.sitting?.path ?? "")} onHandIn={handIn} onEnd={endPaper} />}
+
+            {suggestion && !fresh && (
+              <div className="row suggestion">
+                <div className="gut" />
+                <div className="txt">
+                  {suggestion.kind === "first" ? (
+                    <>
+                      <button className="pick" data-drive="start" onClick={() => void start()} autoFocus>
+                        <span className="pick-title">Choose the folder your course is in</span>
+                        <span className="pick-line">Notes, slides, past papers: whatever you have. Nothing leaves this Mac.</span>
+                      </button>
+                      <div className="actions">
+                        <button className="text-btn" onClick={() => void newFolder()}>
+                          Make a new folder
+                        </button>
+                        <button className="text-btn" onClick={() => void findFolders()} disabled={finding}>
+                          {finding ? "Looking…" : "Find folders already set up on this Mac"}
+                        </button>
+                      </div>
+                      {coursesNote && <p className="quiet">{coursesNote}</p>}
+                      {setup && (
+                        <p className="quiet small first-note">
+                          Lessons run on your own Claude Code, {setup.account.detail ? `signed in (${setup.account.detail})` : "signed in"}, paid with {setup.payment === "plan" ? "your Claude plan" : "an API key"}. Change it in Settings, ⌘,
+                        </p>
+                      )}
+                    </>
+                  ) : suggestion.kind === "upgrade" ? (
+                    <button className="pick" data-drive="start" onClick={() => void upgrade()}>
+                      <span className="pick-title">{suggestion.course} was set up by an earlier Magnesium</span>
+                      <span className="pick-line">Upgrade it to start. A copy of its record is kept first.</span>
+                    </button>
+                  ) : suggestion.kind === "broken" ? (
+                    <p className="quiet">{suggestion.text}</p>
+                  ) : (
+                    <button className="pick" data-drive="start" onClick={() => void start()} disabled={starting} aria-keyshortcuts="Enter">
+                      <span className="pick-title">{startLabel}</span>
+                      {suggestion.line && (
+                        <span className="pick-line">
+                          <LineText text={suggestion.line} />
+                        </span>
+                      )}
+                      <span className="pick-course">
+                        {suggestion.course}
+                        {suggestion.kind === "pick" && suggestion.at ? `, at ${suggestion.at}` : ""}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {dock && (
+              <div className={place === "task" ? "row exercise dock open" : "row exercise dock"} data-role="open-task">
+                <div className="gut" />
+                <div className="txt">
+                  <button className="dock-btn" onClick={() => setPlace("task")} title="Esc">
+                    <LineText text={dock} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {stopping !== null ? (
+              <div className="row stopping">
+                <div className="gut" />
+                <div className="txt">
+                  <label>
+                    <span className="quiet">Where did you stop? One line for next time.</span>
+                    <input
+                      autoFocus
+                      value={stopping}
+                      onChange={(e) => setStopping(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void stop(stopping);
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setStopping(null);
+                          composer.current?.focus();
+                        }
+                      }}
+                      data-drive="stop-line"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : (
+              (home || lesson) &&
+              setupReady(setup) &&
+              suggestion?.kind !== "upgrade" && (
+                <div className={place === "task" && lesson && (openTask || lastSetsTask || convEngine !== "direct") ? "row write in-task" : "row write"} key="composer">
+                  <div className="gut" />
+                  <div className="txt">
+                    <Composer
+                      ref={composer}
+                      place={lesson ? place : "page"}
+                      canMove={lesson && (openTask !== null || lastSetsTask)}
+                      tools={lesson}
+                      onPlace={setPlace}
+                      busy={writing || starting}
+                      shut={composerShut}
+                      placeholder={placeholder}
+                      hint={composerHint}
+                      draft={left.current.draft}
+                      onDraft={(text) => {
+                        if (text !== left.current.draft) touched.current = true;
+                        left.current = { ...left.current, draft: text, day };
+                        keepLeft(left.current);
+                      }}
+                      onSend={(text, at) => void say(text, at)}
+                      onEmptyReturn={!lesson && suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") && !fresh ? () => void start() : undefined}
+                      onHelp={help}
+                      onPhoto={async () => {
+                        const api = now.current.api;
+                        if (!api) return [];
+                        const saved: string[] = [];
+                        for (const path of await api.pickFiles()) saved.push(await api.attach(path, "working"));
+                        return saved;
+                      }}
+                      onNote={note}
+                    />
+                  </div>
+                </div>
+              )
+            )}
+          </section>
+
+          {!narrow && lesson && (
+            <aside className="margin">
+              <Agenda plan={plan} moved={moved} examWas={examWas} onOpen={() => openSheet("plan")} />
+            </aside>
+          )}
+
+          {earlier.map((page) => (
+            <EarlierPage key={page.day} page={page} />
+          ))}
+          {journal !== null && earlier.length === 0 && items.length > 0 && <p className="end-of-log">Your earlier days will be here.</p>}
+        </div>
       </div>
-      {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
-      {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
-      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+
+      {dragging && (
+        <div className="veil" aria-hidden="true">
+          <p>Add to {home ? courseName(home.name) : "this course"}'s material</p>
+        </div>
+      )}
+
+      {source && <SourcePanel source={source} sheet onClose={() => (setSource(null), composer.current?.focus())} onNote={note} />}
+      {sheet === "commands" && <Commands commands={commands} onClose={() => openSheet(null)} />}
+      {sheet === "courses" && (
+        <Courses
+          cards={cards}
+          open={home?.folder ?? null}
+          finding={finding}
+          notice={coursesNote}
+          onOpen={(folder) => void openCourse(folder)}
+          onPick={() => void pickFolder()}
+          onNew={() => void newFolder()}
+          onFind={() => void findFolders()}
+          onForget={(folder) => void forgetFolder(folder)}
+          onClose={() => openSheet(null)}
+        />
+      )}
+      {sheet === "course" && home && (
+        <Course
+          home={home}
+          materials={materials}
+          materialLines={materialLines}
+          progress={progress}
+          adding={adding}
+          onAddFiles={() => void api?.pickMaterial().then(addMaterial)}
+          onPaste={(text) => void addPasted(text)}
+          onSitPaper={(p) => (setPaper(p), setSheet("paper"))}
+          onUpgrade={() => void upgrade()}
+          onClose={() => openSheet(null)}
+        />
+      )}
+      {sheet === "plan" && <PlanSheet plan={plan} onClose={() => openSheet(null)} />}
+      {sheet === "paper" && paper && <PaperSheet paper={paper} blockMinutes={home?.block_minutes ?? 50} onStart={(m) => void startPaper(m)} onClose={() => openSheet(null)} />}
+      {sheet === "settings" && (
+        <Settings
+          prefs={prefs}
+          onPrefs={setPrefs}
+          engine={engine}
+          inLesson={lesson}
+          onEngine={(e) => void chooseEngine(e)}
+          setup={setup}
+          onPayment={(p) => void choosePayment(p)}
+          onSignIn={() => void signIn()}
+          signingIn={signingIn}
+          about={about}
+          onClose={() => openSheet(null)}
+        />
+      )}
+    </main>
+  );
+}
+
+// ------------------------------------------------------------ small parts
+
+function LineText({ text }: { text: string }) {
+  return <Line text={text} />;
+}
+
+function QuestionCard(props: { id: string; questions: Question[]; onAnswer: (id: string, answers: Answer[]) => void }) {
+  const [chosen, setChosen] = useState<string[][]>(() => props.questions.map(() => []));
+  const complete = chosen.every((c) => c.length > 0);
+  return (
+    <div className="ask" role="group" aria-label="The tutor asks">
+      {props.questions.map((q, i) => (
+        <div key={q.question} className="ask-q">
+          <p>
+            <Line text={q.question} />
+          </p>
+          <div className="options">
+            {q.options.map((option) => {
+              const on = chosen[i].includes(option.label);
+              return (
+                <button
+                  key={option.label}
+                  className={on ? "option chosen" : "option"}
+                  aria-pressed={on}
+                  onClick={() =>
+                    setChosen((old) => old.map((c, j) => (j !== i ? c : q.multi ? (on ? c.filter((x) => x !== option.label) : [...c, option.label]) : [option.label])))
+                  }
+                >
+                  <Line text={option.label} />
+                  {option.description && <span className="quiet"> {option.description}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="actions">
+        <button className="btn" disabled={!complete} onClick={() => props.onAnswer(props.id, props.questions.map((q, i) => ({ question: q.question, chosen: chosen[i] })))}>
+          Answer
+        </button>
+      </div>
     </div>
   );
 }
 
-export type Actions = {
-  continueLesson: (skipChecks: boolean, home?: Home | null) => Promise<boolean>;
-  newLesson: (goal: string) => Promise<void>;
-  say: (text: string) => Promise<void>;
-  stop: (line: string) => Promise<void>;
-  openProgress: (target: string | null) => Promise<void>;
-  openPaper: (paper: PaperInfo | null) => void;
-  startPaper: (paper: PaperInfo, minutes: number) => Promise<void>;
-  setPalette: (open: boolean) => void;
-  setAsking: (asking: boolean) => void;
-  openSetup: () => void;
-  showLibrary: () => void;
-  continueFolder: (path: string) => Promise<void>;
-  chooseEngine: (engine: Engine) => Promise<void>;
-  setView: (view: string) => void;
-  addMaterial: (paths: string[]) => Promise<void>;
-  setDragging: (over: boolean) => void;
-  pasteText: (text: string) => void;
-};
+function PaperRows(props: { home: Home; onOpen: () => void; onHandIn: () => void; onEnd: () => void }) {
+  const sitting = props.home.sitting!;
+  const [nowMs, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const used = Math.max(0, Math.floor((nowMs - sitting.started_ms) / 60_000));
+  return (
+    <div className="row paper">
+      <div className="gut">{clock(sitting.started_ms)}</div>
+      <div className="txt">
+        <p className="paper-head">
+          {sitting.name}, {sitting.minutes} minutes. {used < sitting.minutes ? `${used} used.` : "The time is up."}
+        </p>
+        <p className="quiet">Write ? where you are stuck, and S, U or G after each answer for how sure you were. Hand in photos or a PDF of your work when you are done.</p>
+        <div className="actions">
+          <button className="btn" onClick={props.onHandIn}>
+            Hand in
+          </button>
+          {sitting.path && (
+            <button className="text-btn" onClick={props.onOpen}>
+              Open the paper
+            </button>
+          )}
+          <button className="text-btn" onClick={props.onEnd}>
+            End without handing in
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SetupRows(props: {
+  setup: Setup | null;
+  signingIn: boolean;
+  onSignIn: () => void;
+  onCheck: () => void;
+  onRuntime: (keep: boolean) => void;
+  onPayment: (payment: "plan" | "api_key") => void;
+  onLink: (url: string) => void;
+}) {
+  const { setup } = props;
+  if (!setup) return null;
+  const { runtime, account } = setup;
+  const rows: React.ReactNode[] = [];
+  if (runtime.state === "missing" || runtime.state === "failed") {
+    rows.push(
+      <p key="rt">
+        Magnesium needs its program, <code>magnesium</code>, on this Mac. {runtime.message}{" "}
+        <button className="text-btn" onClick={props.onCheck} data-drive="start">
+          Check again
+        </button>
+      </p>,
+    );
+  } else if (runtime.state === "different") {
+    rows.push(
+      <div key="rt">
+        <p>
+          Another version of the magnesium program is installed{runtime.installed ? `, ${runtime.installed.version.split("+")[0]}` : ""}. This window comes with {runtime.bundled ? runtime.bundled.version.split("+")[0] : "its own"}. A newer program upgrades each study folder's record when it opens it, keeping a copy first.
+        </p>
+        <div className="actions">
+          <button className="btn" onClick={() => props.onRuntime(false)} data-drive="start">
+            Use the window's copy
+          </button>
+          <button className="text-btn" onClick={() => props.onRuntime(true)}>
+            Keep the installed one
+          </button>
+        </div>
+      </div>,
+    );
+  } else if (runtime.state === "too_old") {
+    rows.push(
+      <div key="rt">
+        <p>{runtime.message ?? "The installed magnesium program is older than this window needs, so no lesson can start."}</p>
+        <div className="actions">
+          {runtime.bundled ? (
+            <button className="btn" onClick={() => props.onRuntime(false)} data-drive="start">
+              Replace it with the window's copy
+            </button>
+          ) : (
+            <button className="text-btn" onClick={() => props.onLink("https://github.com/samfricher/magnesium/blob/main/docs/install.md")}>
+              Open the install guide
+            </button>
+          )}
+          <button className="text-btn" onClick={props.onCheck}>
+            Check again
+          </button>
+        </div>
+      </div>,
+    );
+  }
+  if (!account.installed) {
+    rows.push(
+      <div key="cc">
+        <p>Lessons run on Claude Code, which is not on this Mac yet. Install it, then check again.</p>
+        <div className="actions">
+          {account.install_page && (
+            <button className="btn" onClick={() => props.onLink(account.install_page!)} data-drive={rows.length === 0 ? "start" : undefined}>
+              Open the install page
+            </button>
+          )}
+          <button className="text-btn" onClick={props.onCheck}>
+            Check again
+          </button>
+        </div>
+      </div>,
+    );
+  } else if (!account.signed_in) {
+    rows.push(
+      <div key="cc">
+        <p>Claude Code is here but signed out. Signing in happens in your browser, on Anthropic's page; this window never sees your password.</p>
+        <div className="actions">
+          <button className="btn" onClick={props.onSignIn} disabled={props.signingIn} data-drive={rows.length === 0 ? "start" : undefined}>
+            {props.signingIn ? "Waiting for the browser…" : "Sign in to Claude Code"}
+          </button>
+        </div>
+      </div>,
+    );
+  }
+  return (
+    <div className="row setup">
+      <div className="gut" />
+      <div className="txt">{rows}</div>
+    </div>
+  );
+}

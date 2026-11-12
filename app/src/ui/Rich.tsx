@@ -25,7 +25,8 @@ const pictures = new Map<string, Promise<string>>();
 const drawn = new Map<string, string>();
 const failed = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
-const keyOf = (source: string) => `${window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"}:${source}`;
+const darkNow = () => document.documentElement.dataset.scheme === "dark" || (document.documentElement.dataset.scheme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+const keyOf = (source: string) => `${darkNow() ? "dark" : "light"}:${source}`;
 
 /**
  * A diagram is as big as it was drawn, so its words keep their size. It may be
@@ -84,24 +85,24 @@ async function drawOne(source: string, room: number) {
   try {
     // The diagram library is large, so it is fetched only when a diagram appears.
     const mermaid = (await import("mermaid")).default;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = darkNow();
     // The window's own colours, read from its tokens so a diagram follows the
     // scheme. The diagram library works colours out from these, so they are
     // resolved to plain values here.
     const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "gray";
     const ink = {
-      box: token("--raised"),
+      box: token("--sheet"),
       text: token("--text"),
-      edge: token("--line-input"),
-      line: token("--muted"),
-      second: token("--hover"),
-      third: token("--surface"),
+      edge: token("--margin"),
+      line: token("--margin"),
+      second: token("--paper"),
+      third: token("--paper"),
     };
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
-      fontFamily: '"Magnesium Sans", -apple-system, BlinkMacSystemFont, sans-serif',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif',
       // A diagram fits the column; CSS scales it to the width it is given.
       flowchart: { useMaxWidth: false },
       sequence: { useMaxWidth: false },

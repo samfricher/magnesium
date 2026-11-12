@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { core } from "../bridge";
 import type { SourceRef } from "../sources";
 import type { Source } from "../types";
-import { Icon } from "./icons";
 
 type Pdf = import("pdfjs-dist/legacy/build/pdf.mjs").PDFDocumentProxy;
 
@@ -104,12 +103,12 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
   return (
     <>
       <div className="source-nav">
-        <button className="icon-btn" aria-label="Previous page" disabled={!pdf || page <= 1} onClick={() => setPage((n) => Math.max(1, n - 1))}>
-          <Icon name="back" size={16} />
+        <button className="text-btn" aria-label="Previous page" disabled={!pdf || page <= 1} onClick={() => setPage((n) => Math.max(1, n - 1))}>
+          Previous
         </button>
         <span data-role="source-page">{pdf ? `Page ${page} of ${pdf.numPages}` : "Opening…"}</span>
-        <button className="icon-btn" aria-label="Next page" disabled={!pdf || page >= pdf.numPages} onClick={() => setPage((n) => (pdf ? Math.min(pdf.numPages, n + 1) : n))}>
-          <Icon name="right" size={16} />
+        <button className="text-btn" aria-label="Next page" disabled={!pdf || page >= pdf.numPages} onClick={() => setPage((n) => (pdf ? Math.min(pdf.numPages, n + 1) : n))}>
+          Next
         </button>
       </div>
       <div className="source-body" ref={holder}>
@@ -169,18 +168,17 @@ export function SourcePanel(props: {
   const name = failure ? "Source" : (shown?.name ?? source.path.split("/").pop() ?? source.path);
   return (
     <aside
-      className={props.sheet ? "source-panel as-sheet" : "source-panel"}
+      className="sheet wide source-panel"
       data-role="source-panel"
       aria-label={`Source: ${name}`}
-      {...(props.sheet ? { role: "dialog", "aria-modal": true } : {})}
+      role="dialog"
+      aria-modal="true"
     >
-      <header>
-        <Icon name="paper" size={16} />
-        <span className="source-name selectable" title={source.path}>
+      <header className="sheet-head">
+        <h2 className="source-name selectable" title={source.path}>
           {name}
-        </span>
-        <button className="btn ghost small" ref={close} aria-label="Close the source" title="Close (Esc)" onClick={props.onClose} data-role="source-close">
-          <Icon name="close" size={14} />
+        </h2>
+        <button className="text-btn" ref={close} aria-label="Close the source" title="Close (Esc)" onClick={props.onClose} data-role="source-close">
           Close
         </button>
       </header>

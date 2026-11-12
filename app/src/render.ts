@@ -432,3 +432,13 @@ export function setSourcesApart(html: string, open: boolean): string {
   }
   return holder.innerHTML;
 }
+
+/** The words of the task a reply sets apart in bold, as plain text, or null. */
+export function taskText(src: string): string | null {
+  if (!hasTask(src)) return null;
+  const holder = document.createElement("template");
+  holder.innerHTML = renderMarkdown(src);
+  const box = holder.content.querySelector("div.task");
+  const text = box?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+  return text === "" ? null : text;
+}
