@@ -211,3 +211,13 @@ The round-4 judges named the same few things; each is fixed in behaviour, not lo
 - **The app's words left the column.** Key hints and "plan changed at" sit in the status line in the window's own type.
 - **Marks explain themselves.** "No mark, not taken as the answer" when the engine kept the task open; the help words are help wherever they are typed.
 - **Craft.** The light change colour is at AA, the tab names start at the text column, there is one date format ("Thu 12 Nov"), names are cut with one ellipsis, the lesson follows its end in two panes, and ⌘K lists every setting value so any can be set back.
+
+## Round 6
+
+- **Talk has a place.** While the caret is in talk, the end of the page shows a quiet rule. The caret stays in the task's answer line where it belongs: Tab no longer carries it out, ⌘K gives focus back where it was, and it is moved only away from a field the learner is not typing in.
+- **No mark, with its reason.** On Magnesium the record is kept before the engine says which task is open, so an answer with no row there was not taken as the answer, and the page says so in place.
+- **A plan change leaves a trace.** One quiet line in the lesson, read from the plan ("Plan: exam Tue 17 → Tue 24 Nov; 2 blocks moved; 2 blocks re-dated"), opens it; the plan's tab stays in the tab row after its pane closes.
+- **Less bookkeeping.** The fold line has no count, Return is named once, the record's skills are a past-tense log of the learner's answers, and lessons are named after their goal.
+- **The task block reads in order.** The answer place follows the latest hint; a task said again starts at its question.
+- **Settings are a real file** (`settings.conf` in the window's state folder), named in the view, wrapped, and written back from ⌘K without moving its notes.
+- **Craft.** Tab names start at the text column in every layout, titles and tabs typeset mathematics, inline formulas do not break, ⌘K rows are even and search by words.
