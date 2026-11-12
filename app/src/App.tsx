@@ -99,6 +99,36 @@ export function markedIn(before: Today | null, after: Today | null): number | nu
   return after.answered > 0 ? after.answered : null;
 }
 
+/**
+ * The skills answered wrong in this lesson, and the day the record brings each
+ * back: the marks the lesson recorded (wrong, in a lesson, since it began),
+ * each joined to the skill of that name in the record, which holds its next
+ * day. A mark with no skill of that name, or a skill with no next day, is
+ * left out: the window says no more than the record does.
+ */
+export async function slippedIn(api: Core, rows: ProgressData["in_progress"], startedMs: number | null): Promise<{ name: string; next_day: string }[]> {
+  if (startedMs === null) return [];
+  let marks: Awaited<ReturnType<Core["marks"]>> = null;
+  try {
+    marks = await api.marks();
+  } catch {
+    return [];
+  }
+  if (!marks) return [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const began = new Date(startedMs);
+  // The record's times are local, "2026-11-12 09:41", to the minute.
+  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
+  const key = (text: string) => text.trim().toLowerCase();
+  const out = new Map<string, { name: string; next_day: string }>();
+  for (const mark of marks) {
+    if (mark.paper !== null || mark.mark !== "wrong" || mark.at < since) continue;
+    const row = rows.find((each) => key(each.name) === key(mark.label));
+    if (row && row.next_day) out.set(key(row.name), { name: row.name, next_day: row.next_day });
+  }
+  return [...out.values()];
+}
+
 /** The day after a day written as "2026-11-10". */
 function dayAfter(day: string): string {
   const date = new Date(`${day}T12:00:00`);
@@ -728,6 +758,7 @@ export function App() {
       alreadyStudied: sitting.current.alreadyStudied,
       earned: [],
       tomorrow: 0,
+      slipped: [],
     };
     try {
       await api.stop(saved);
@@ -755,6 +786,7 @@ export function App() {
         const tomorrow = dayAfter(today);
         done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
       }
+      done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
     } catch {
       // Without the record the end screen says what it can.
     }

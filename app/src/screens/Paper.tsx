@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "../ui/icons";
-import { PaletteKey, TopBar, clockText, radioKey, useNow, useReturnForPrimary } from "../ui/bits";
+import { Fault, PaletteKey, TopBar, clockText, radioKey, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Paper as PaperInfo } from "../types";
 import { displayName } from "./Library";
 
@@ -28,12 +28,16 @@ export function Paper(props: {
   const [picked, setPicked] = useState<PaperInfo | null>(props.chosen ?? home.papers.find((p) => !p.sat) ?? home.papers[0] ?? null);
   const [minutes, setMinutes] = useState<string>(String(picked?.minutes ?? home.block_minutes));
   const [confirmEnd, setConfirmEnd] = useState(false);
-  // Handing in marks the paper and ends the sitting, so it asks first. Keep working has focus, so Return never hands in by itself.
+  // Handing in marks the paper and ends the sitting, so it asks first. The confirmation is the window's one pattern: the action first, then the outlined way out; Return does the action, Esc the way out, and focus starts on the action.
   const [confirmIn, setConfirmIn] = useState(false);
-  const keep = useRef<HTMLButtonElement>(null);
+  const handIn = useRef<HTMLButtonElement>(null);
+  const endNow = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (confirmIn) keep.current?.focus();
+    if (confirmIn) handIn.current?.focus();
   }, [confirmIn]);
+  useEffect(() => {
+    if (confirmEnd) endNow.current?.focus();
+  }, [confirmEnd]);
 
   if (sitting) {
     const total = sitting.minutes * 60;
@@ -87,6 +91,7 @@ export function Paper(props: {
                 <div className="row center paper-actions">
                   <button
                     className="btn primary"
+                    ref={handIn}
                     title="Hand in (Return)"
                     onClick={() => {
                       setConfirmIn(false);
@@ -96,7 +101,7 @@ export function Paper(props: {
                   >
                     Hand in
                   </button>
-                  <button className="btn" ref={keep} onClick={() => setConfirmIn(false)}>
+                  <button className="btn" onClick={() => setConfirmIn(false)}>
                     Keep working
                   </button>
                 </div>
@@ -108,7 +113,7 @@ export function Paper(props: {
                 </button>
                 {confirmEnd ? (
                   <>
-                    <button className="btn danger" onClick={props.onEnd}>
+                    <button className="btn danger" ref={endNow} onClick={props.onEnd}>
                       End the paper
                     </button>
                     <button className="btn" onClick={() => setConfirmEnd(false)}>
@@ -126,7 +131,7 @@ export function Paper(props: {
             <p className="aside">
               <Icon name="lock" size={13} /> The tutor is off and the key is locked until you hand in.
             </p>
-            {props.error && <div className="banner bad selectable">{props.error}</div>}
+            {props.error && <Fault>{props.error}</Fault>}
           </div>
         </div>
       </section>
@@ -226,7 +231,7 @@ export function Paper(props: {
               <p className="aside">The paper opens to print. The tutor stays off until you hand in.</p>
             </>
           )}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
         </div>
       </div>
     </section>

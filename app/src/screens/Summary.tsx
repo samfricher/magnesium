@@ -20,12 +20,14 @@ import type { Activity, Proofs, Row, Today } from "../types";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * Today's counts as one sentence, the parts that are not zero: "6 answers
- * marked today, 2 new skills, 3 due tomorrow." Null when there is nothing to say.
+ * Today's counts as two short sentences, the parts that are not zero: "6
+ * answers marked today, 2 new skills. 3 questions due tomorrow." Null when
+ * there is nothing to say.
  */
 export function todaySentence(today: Today | null, options: { proofs?: boolean; tomorrow?: boolean; split?: boolean } = {}): string | null {
   if (!today) return null;
-  const { proofs = true, tomorrow = true, split = false } = options;
+  // What was done, then what is due: two short sentences, the same on the course page and on Lesson done.
+  const { proofs = true, tomorrow = true, split = true } = options;
   const done = [
     today.answered > 0 ? `${plural(today.answered, "answer", "answers")} marked today` : null,
     today.started > 0 ? plural(today.started, "new skill", "new skills") : null,
@@ -43,23 +45,6 @@ const NUMBER_WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven
 /** "One proof earned", "Three proofs earned". */
 function earnedHeadline(n: number): string {
   return `${NUMBER_WORDS[n] ?? n} ${n === 1 ? "proof" : "proofs"} earned`;
-}
-
-/**
- * What the lesson did to the level, and what is left: "Level 5. 1 proof
- * today. 3 more to reach level 6." The change comes before the remainder, so
- * the sentence says both. Null when there is no level to show.
- */
-function levelSentence(proofs: Proofs | null, gained: number): string | null {
-  if (!proofs || !proofs.levelled || proofs.total === 0) return null;
-  const change = gained > 0 ? ` ${plural(gained, "proof", "proofs")} today.` : "";
-  const next =
-    proofs.to_next > 0
-      ? gained > 0
-        ? ` ${proofs.to_next} more to reach level ${proofs.level + 1}.`
-        : ` ${plural(proofs.to_next, "more proof", "more proofs")} to reach level ${proofs.level + 1}.`
-      : "";
-  return `Level ${proofs.level}.${change}${next}`;
 }
 
 export type Sitting = {
@@ -80,7 +65,31 @@ export type Sitting = {
   earned: { row: Row; proofs: number }[];
   /** How many skills can earn a proof tomorrow. Shown only without today's counts, which say what is due tomorrow. */
   tomorrow: number;
+  /** The skills answered wrong in this lesson, from the marks the lesson recorded, and the day the record brings each back. Empty when the record has none. */
+  slipped: { name: string; next_day: string }[];
 };
+
+/** "tomorrow", "in 3 days", "today", or "on Mon 16 Nov" when the day now is not known. */
+function backWhen(day: string, today: string | null): string {
+  if (today) {
+    const gap = Math.round((new Date(`${day}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) / 86_400_000);
+    if (gap <= 0) return "today";
+    if (gap === 1) return "tomorrow";
+    return `in ${gap} days`;
+  }
+  return `on ${new Date(`${day}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "")}`;
+}
+
+/** What slipped in this lesson, grouped by the day it comes back: [["tomorrow", ["slope and $K_m$"]], ...], soonest first. */
+function slippedBy(slipped: Sitting["slipped"], today: string | null): [string, string[]][] {
+  const days = [...new Set(slipped.map((each) => each.next_day))].sort();
+  return days.map((day) => [backWhen(day, today), slipped.filter((each) => each.next_day === day).map((each) => each.name)]);
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 /** The sittings whose end has been seen once. The proof flare and the tally's growth play the first time only; a return to the screen shows them at rest. */
 const seen = new WeakSet<object>();
@@ -104,11 +113,11 @@ export function Summary(props: {
   // The proofs earned in this lesson.
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
   const unmarked = sitting.sent > 0 && sitting.marked === 0;
-  const level = levelSentence(props.proofs, proofs);
+  const level = props.proofs !== null && props.proofs.levelled && props.proofs.total > 0;
   // With nothing marked, say when the next chance comes. Otherwise today's counts say it.
   const comes = unmarked
     ? sitting.tomorrow > 0
-      ? `${plural(sitting.tomorrow, "skill comes", "skills come")} back tomorrow.`
+      ? `${plural(sitting.tomorrow, "skill", "skills")} to prove tomorrow.`
       : sitting.today && sitting.today.due_tomorrow > 0
         ? `${plural(sitting.today.due_tomorrow, "question", "questions")} due tomorrow.`
         : null
@@ -122,7 +131,8 @@ export function Summary(props: {
   const agrees = !named || Number(named[1]) === sitting.stepsDone + 1;
   const steps = sitting.stepsTotal > 0 && agrees ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
   const tomorrow = sitting.today ? 0 : sitting.tomorrow;
-  const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0;
+  const slips = slippedBy(sitting.slipped, sitting.today?.day ?? activity?.today ?? null);
+  const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0 && slips.length === 0;
   return (
     <section className="screen summary" data-screen="summary">
       <TopBar
@@ -141,7 +151,7 @@ export function Summary(props: {
           </h1>
           {unmarked && (
             <p className="summary-why" data-role="why">
-              The tutor didn&apos;t mark an answer in this lesson, so there is no proof yet. A proof is an answer the tutor marks right, given without help, on its own day.
+              The tutor didn&apos;t mark an answer in this lesson, so there is no proof yet. The tutor&apos;s words aren&apos;t the mark: only answers the tutor records count towards a proof. A proof is an answer the tutor marks right, given without help, on its own day.
               {comes ? ` ${comes}` : ""}
             </p>
           )}
@@ -161,17 +171,9 @@ export function Summary(props: {
           {fewer && <p className="summary-why quiet">A proof needs a right answer without help, on a new day for that skill.</p>}
 
           {level && props.proofs && (
-            <p className="level-line" data-role="level">
-              <Level
-                proofs={props.proofs}
-                size="lg"
-                text="none"
-                gain={proofs}
-                still={!first}
-                title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
-              />
-              <span className="num">{level}</span>
-            </p>
+            <div className="level-line" data-role="level">
+              <Level proofs={props.proofs} size="lg" gain={proofs} still={!first} title={`${props.proofs.earned} of ${props.proofs.total} proofs`} />
+            </div>
           )}
 
           {!nothing && (
@@ -181,9 +183,15 @@ export function Summary(props: {
                   {today}
                 </p>
               )}
+              {slips.map(([when, names]) => (
+                <p className="selectable slipped" data-role="slipped" key={when}>
+                  Back {when}:{" "}
+                  <Line text={listed(names)} />.
+                </p>
+              ))}
               {marked && <p>{marked}</p>}
               {steps && <p>{steps}</p>}
-              {tomorrow > 0 && <p>{plural(tomorrow, "skill", "skills")} can earn a proof tomorrow.</p>}
+              {tomorrow > 0 && <p>{plural(tomorrow, "skill", "skills")} to prove tomorrow.</p>}
               {sitting.stoppedAt && (
                 <p className="selectable next-time">
                   Next time: <Line text={sentence(sitting.stoppedAt)} />

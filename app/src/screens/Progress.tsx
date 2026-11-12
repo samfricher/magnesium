@@ -7,28 +7,32 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Choice, Due, ExamSentence, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
+import { Choice, Due, ExamSentence, Fault, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
 /** The runtime's note for a miss that no lesson has repaired yet. It has no next redo until one does. */
 const FIX_FIRST = "fix it first";
 
+/** What a skill's note says of its last answer, worded as what it is: a slip is named a slip, a right answer a right answer, and a skill not tested yet has no last answer at all. */
+function lastLine(row: Row, tone: string): string | null {
+  if (!row.what || tone === "untested") return null;
+  return /^right\b/i.test(row.what.trim()) ? `Last answer: ${plain(row.what)}` : `Last slip: ${plain(row.what)}`;
+}
+
 function RowView({ row, tone }: { row: Row; tone: string }) {
+  const last = lastLine(row, tone);
   return (
     <div className={`skill ${tone}${row.due ? " is-due" : ""} selectable`}>
       <ProofDots earned={proofsOf(row.dots)} />
       <span className="skill-text">
         <Line text={row.name} className="skill-name" />
-        {row.what && <Line text={`Last slip: ${plain(row.what)}`} className="skill-what" />}
+        {last && <Line text={last} className="skill-what" />}
       </span>
       {row.due ? (
         <Due />
       ) : row.note === FIX_FIRST ? (
-        <span className="skill-note fix">
-          <b>needs a fix first</b>
-          <span>You&apos;ll go over it with help in a lesson, then answer it again on another day.</span>
-        </span>
+        <span className="skill-note">needs a fix first</span>
       ) : (
         row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>
       )}
@@ -117,7 +121,7 @@ export function Progress(props: {
       <section className="screen progress" data-screen="progress">
         {bar}
         <div className="scroll">
-          <div className="board">{props.error && <div className="banner bad selectable">{props.error}</div>}</div>
+          <div className="board">{props.error && <Fault>{props.error}</Fault>}</div>
         </div>
       </section>
     );
@@ -157,15 +161,19 @@ export function Progress(props: {
                   </p>
                 )
               )}
-              {skills && (
-                <p className="board-sum num">
-                  {skills}
-                  {proofs.levelled && proofs.total > 0 ? `, ${proofs.earned} of ${proofs.total} proofs earned.` : ". A course with no plan has no level."}
-                </p>
-              )}
             </div>
-            {levelShown && <Level proofs={proofs} size="md" text="why" title={`${proofs.earned} of ${proofs.total} proofs`} />}
           </header>
+
+          {skills && (
+            // The level and the next step lead; the counts are the detail under it, said of the one exam they are counted for, so the two reconcile.
+            <div className="board-level">
+              {levelShown && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
+              <p className="board-sum num">
+                For {exam ? <Line text={exam.title} /> : "this course"}:{" "}
+                {proofs.levelled && proofs.total > 0 ? `${proofs.earned} of ${proofs.total} proofs earned, ${skills}.` : `${skills}. A course with no plan has no level.`}
+              </p>
+            </div>
+          )}
 
           {data.message ? (
             <div className="board-empty">
@@ -221,7 +229,7 @@ export function Progress(props: {
                       <span className="due" aria-hidden="true">
                         <Icon name="clock" size={14} />
                       </span>
-                      <span>Due today: you can earn this skill&apos;s next proof today.</span>
+                      <span>To prove today: you can earn this skill&apos;s next proof today.</span>
                     </li>
                     {waiting && (
                       <li>
@@ -302,7 +310,7 @@ export function Progress(props: {
                         </div>
                       ))}
                     </div>
-                    <p className="foot-key">A dark square is a day with an answer marked, a grey one a day without. The rule under a square is today.</p>
+                    <p className="foot-key">A filled square is a day with an answer marked, a grey one a day without, an outline a day still to come. The rule under a square is today.</p>
                   </section>
                 )}
                 {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (
@@ -330,7 +338,7 @@ export function Progress(props: {
               </footer>
             </>
           )}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
         </div>
       </div>
     </section>

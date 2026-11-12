@@ -56,6 +56,8 @@ const demoMarks: Mark[] = [
   { id: "demo-2", at: "2026-11-09 18:26", label: "the slope of a Lineweaver-Burk line", mark: "wrong", help: "none", cold: true, paper: null },
 ];
 let marksAvailable = true;
+// Set once the demo lesson has recorded a wrong answer: the record brings that skill back tomorrow, not today.
+let slipRecorded = false;
 // A hint asked since the last marked answer: the next answer is given with help.
 let helpAsked = false;
 // Files in the demo course's material folder, newest first, and its answer keys.
@@ -289,6 +291,8 @@ function activity(): Activity {
 }
 
 function progress(target: string | null = null): Progress {
+  // Each exam is its own plan. The final covers the whole course, so it holds more skills than the midterm: the same proofs earned are a smaller share of it, and its level is lower.
+  const wholeCourse = target === "final";
   if (variant === "new" || variant === "upgrade" || variant === "broken") {
     return {
       targets: [],
@@ -321,7 +325,9 @@ function progress(target: string | null = null): Progress {
       sittingsDone > 0
         ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
         : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
-      row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
+      slipRecorded
+        ? row([0, 0, 0], "slope and $K_m$", "read the slope as $K_m$", "next tomorrow", 1)
+        : row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
       row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
       row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
       row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
@@ -336,6 +342,17 @@ function progress(target: string | null = null): Progress {
     untested: [
       row([0, 0, 0], "non-competitive inhibition", "lower Vmax, same Km", "–"),
       row([0, 0, 0], "pH and activity", "the optimum and its causes", "–"),
+      ...(wholeCourse
+        ? [
+            row([0, 0, 0], "Eadie–Hofstee plot", "the axes swapped", "–"),
+            row([0, 0, 0], "Hanes–Woolf plot", "the intercept on the wrong axis", "–"),
+            row([0, 0, 0], "cooperativity", "$n > 1$ read as inhibition", "–"),
+            row([0, 0, 0], "allosteric enzymes", "a sigmoid curve read as a hyperbola", "–"),
+            row([0, 0, 0], "two-substrate kinetics", "ping-pong against sequential", "–"),
+            row([0, 0, 0], "temperature and rate", "the denaturing drop", "–"),
+            row([0, 0, 0], "enzyme assays", "the blank not subtracted", "–"),
+          ]
+        : []),
     ],
     scores: [
       { paper: "Diagnostic", date: "2026-10-28", score: "15/30", sure_right: null, sure_total: null },
@@ -346,7 +363,7 @@ function progress(target: string | null = null): Progress {
     helped_count: 3,
     unreadable: 0,
     checks_unknown: false,
-    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
+    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, wholeCourse ? 18 : 11),
     level_unknown: false,
     today: { day: isoDay(0), answered: markedToday, started: markedToday > 0 ? 2 : 0, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
     message: null,
@@ -442,8 +459,10 @@ function markFor(text: string): Mark | null {
   const wrong = lower.includes("(wrong)");
   return {
     id: `demo-${demoMarks.length + 1}`,
-    at: new Date().toISOString().slice(0, 10) + " " + new Date().toTimeString().slice(0, 5),
-    label: "reading Vmax from a Lineweaver-Burk plot",
+    // The record's times are local, to the minute.
+    at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
+    // A wrong answer is on the skill the learner slipped on, which the record names; a right one is on the lesson's goal.
+    label: wrong ? "slope and $K_m$" : "reading Vmax from a Lineweaver-Burk plot",
     mark: wrong ? "wrong" : "right",
     help: helped ? "hint" : "none",
     cold: !helped,
@@ -615,7 +634,12 @@ export function demoCore(): Core {
       void reply(text);
       const row = markFor(text);
       // The record is written while the reply is: a moment after it is sent.
-      if (row) window.setTimeout(() => demoMarks.push(row), 500);
+      if (row) {
+        window.setTimeout(() => {
+          demoMarks.push(row);
+          if (row.mark === "wrong") slipRecorded = true;
+        }, 500);
+      }
     },
     sendNewLesson: async (goal) => void reply(goal),
     sendShown: async (shown) => void reply(shown),
@@ -761,8 +785,9 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     await wait(300);
     await quiet();
     if (screen === "summary") {
-      await actions.say("Vmax is 4 µM/s");
-      await wait(300);
+      // At #summary:slip the answer is wrong, and the record has the skill coming back tomorrow.
+      await actions.say(state === "slip" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
+      await wait(state === "slip" ? 900 : 300);
       await quiet();
       // The lesson is on step 3 of 5, so that is where the next one picks up.
       await actions.stop("PS3 Q3, step 3: what the y-intercept gives.");

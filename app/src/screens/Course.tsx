@@ -7,10 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, ExamSentence, GoalText, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import { Due, ExamSentence, Fault, GoalText, Level, MarginNote, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Materials, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
+
+/** What was typed under "What do you want to learn?", by course, kept while the window is open: leaving for the library and coming back does not lose it. */
+const drafts = new Map<string, string>();
 
 /** What a proof is, for a course that has none yet. */
 const PROOF_DEFINITION = "A proof is a right answer with no help, on its own day. Three prove a skill.";
@@ -44,10 +47,18 @@ export function Course(props: {
   materials: Materials | null;
 }) {
   const { home, progress } = props;
-  const [goal, setGoal] = useState("");
+  const [goal, setGoalNow] = useState(() => drafts.get(home.folder) ?? "");
+  const setGoal = (text: string) => {
+    if (text === "") drafts.delete(home.folder);
+    else drafts.set(home.folder, text);
+    setGoalNow(text);
+  };
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
-  useEffect(() => setDeclined(false), [home.folder]);
+  useEffect(() => {
+    setDeclined(false);
+    setGoalNow(drafts.get(home.folder) ?? "");
+  }, [home.folder]);
   useReturnForPrimary(home.state);
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
@@ -55,8 +66,15 @@ export function Course(props: {
   // A new course leads with what to learn. Adding material is a quiet row under it, never a step to get past.
   const asking = fresh || props.asking;
 
+  // When the question that asks what to learn closes (Esc, or Back), focus goes back to the control that opened it, else to the screen's green button: never to the page.
+  const wasAsking = useRef(false);
   useEffect(() => {
     if (asking) input.current?.focus();
+    else if (wasAsking.current) {
+      const target = document.querySelector<HTMLElement>('.index-row[data-role="new-lesson"]') ?? document.querySelector<HTMLElement>(".screen .btn.primary:not(:disabled)");
+      target?.focus({ preventScroll: true });
+    }
+    wasAsking.current = asking;
   }, [asking]);
 
   /** A file's name was pressed while the card asks what to learn: it asks for a lesson from that file. */
@@ -140,7 +158,12 @@ export function Course(props: {
       </>
     );
   } else if (asking) {
-    const start = () => goal.trim() !== "" && !props.starting && props.onNewLesson(goal.trim());
+    const start = () => {
+      if (goal.trim() === "" || props.starting) return;
+      // The topic is on its way to the lesson; it is not a draft any more.
+      drafts.delete(home.folder);
+      props.onNewLesson(goal.trim());
+    };
     card = (
       <>
         <h2 className="h-section">What do you want to learn?</h2>
@@ -252,30 +275,30 @@ export function Course(props: {
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Level proofs={proofs} size="md" text="why" />
+                <Level proofs={proofs} size="md" />
               </button>
             )}
           </header>
 
-          <div className="next-card" data-card="next">
-            {card}
-          </div>
+          <section className="sec" aria-label="Next">
+            <MarginNote>Next</MarginNote>
+            <div className="next-card" data-card="next">
+              {card}
+            </div>
+          </section>
           {usable && !sitting && today && (
             <p className="today-line" data-role="today">
               {today}
             </p>
           )}
           {props.notice && <div className="banner selectable">{props.notice}</div>}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
           {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
 
           {usable && !sitting && (
             <div className="index">
               <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="index-name">
-                  Proofs
-                  <Icon name="right" size={14} />
-                </span>
+                <span className="index-name margin-note">Proofs</span>
                 <span className="index-body">
                   {progress && proofs && proofs.total > 0 ? (
                     <>
@@ -310,12 +333,12 @@ export function Course(props: {
                   )}
                   {allSkills > 0 && <span className="index-all num">{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</span>}
                 </span>
-              </button>
-              <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
-                <span className="index-name">
-                  Timed paper
+                <span className="row-chev" aria-hidden="true">
                   <Icon name="right" size={14} />
                 </span>
+              </button>
+              <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
+                <span className="index-name margin-note">Timed paper</span>
                 <span className="index-body">
                   <span className="index-what">
                     {nextPaper
@@ -325,34 +348,40 @@ export function Course(props: {
                         : "None yet. Ask the tutor for one in a lesson: name the exam and say you want a paper."}
                   </span>
                 </span>
+                <span className="row-chev" aria-hidden="true">
+                  <Icon name="right" size={14} />
+                </span>
               </button>
               {!fresh && (
-                <button className="index-row" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
-                  <span className="index-name">
-                    New lesson
-                    <Icon name="right" size={14} />
-                  </span>
+                <button className="index-row" data-role="new-lesson" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
+                  <span className="index-name margin-note">New lesson</span>
                   <span className="index-body">
                     <span className="index-what">Another topic: pick what to learn next.</span>
+                  </span>
+                  <span className="row-chev" aria-hidden="true">
+                    <Icon name="right" size={14} />
                   </span>
                 </button>
               )}
             </div>
           )}
           {usable && !sitting && (
-            <div className="material-strip" data-role="material-strip">
-              <Icon name="clip" size={16} />
-              {props.materials && props.materials.files + props.materials.keys > 0 ? (
-                <MaterialHeld listed={props.materials} onPick={asking ? teachFrom : null} />
-              ) : (
-                <span>Add course material: drop files here, or choose them</span>
-              )}
-              <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
-                {props.adding ? "Adding…" : "Choose files"}
-              </button>
-              <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
-                Paste text
-              </button>
+            <div className="sec">
+              <MarginNote>Material</MarginNote>
+              <div className="material-strip" data-role="material-strip">
+                <Icon name="clip" size={16} />
+                {props.materials && props.materials.files + props.materials.keys > 0 ? (
+                  <MaterialHeld listed={props.materials} onPick={asking ? teachFrom : null} />
+                ) : (
+                  <span>Add course material: drop files here, or choose them</span>
+                )}
+                <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+                  {props.adding ? "Adding…" : "Choose files"}
+                </button>
+                <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+                  Paste text
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -371,7 +400,7 @@ function MaterialHeld({ listed, onPick }: { listed: Materials; onPick: ((name: s
   const more = listed.files - names.length;
   const name = (each: string) =>
     onPick ? (
-      <button key={each} className="file-name" title={`Teach me from ${each}`} onClick={() => onPick(each)} data-role="material-file">
+      <button key={each} className="file-name" title="Use this file for the lesson" onClick={() => onPick(each)} data-role="material-file">
         {each}
       </button>
     ) : (

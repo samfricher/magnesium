@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../ui/icons";
-import { Choice, PaletteKey, TopBar, useReturnForPrimary } from "../ui/bits";
+import { Choice, Fault, PaletteKey, TopBar, useReturnForPrimary } from "../ui/bits";
 import type { About, Account, Payment, RuntimeSetup, Setup as SetupData } from "../types";
 
 /** Whether a lesson can start: the program runs and Claude Code is signed in. */
@@ -144,7 +144,8 @@ function AccountStep(props: { account: Account; lead: boolean; signingIn: boolea
         <div className="row">
           {account.install_page && (
             <button className={props.lead ? "btn primary" : "btn small"} onClick={() => props.onLink(account.install_page!)}>
-              Anthropic&apos;s install page <Icon name="external" size={14} />
+              Anthropic&apos;s install page
+              {!props.lead && <Icon name="external" size={14} />}
             </button>
           )}
           <button className={props.lead && !account.install_page ? "btn primary" : props.lead ? "btn" : "btn small"} onClick={props.onCheck}>
@@ -315,7 +316,7 @@ export function Setup(props: {
               </p>
             </details>
           )}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
           {/* While a step above is open, its own action is the one green button; the way out is said in words, never as a button that cannot be pressed. */}
           {ready ? (
             <div className="row center">

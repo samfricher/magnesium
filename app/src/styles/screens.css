@@ -8,6 +8,64 @@
   margin-bottom: var(--s5);
 }
 
+/* ---- the booklet's margin, on the library and the course page ----
+   The lesson's margin notes are the product's own device, so the pages that
+   lead to a lesson carry it too: a section's name leaves the page and hangs in
+   the margin, Literata italic and quiet, right-aligned a gap left of the
+   column and level with the section's first line (baseline to baseline, as in
+   the lesson). There is no rule here: the rule belongs to the answer page. It
+   needs 120px of room left of the column, which a window 960px wide has (the
+   column is 720px, centred). Narrower, a name that nothing else says is not
+   drawn, and a row's name stands in the row as it always did. */
+.screen {
+  --note-gap: var(--s4);
+}
+
+.sec {
+  position: relative;
+  --note-top: 0px;
+}
+
+.screen .margin-note {
+  display: none;
+}
+
+/* Where each note stands: down by its section's padding, then by what puts the first line's baseline level with the note's own. */
+.sec:has(> .next-card) {
+  --note-top: 41.5px;
+}
+
+.sec.courses {
+  --note-top: 24.5px;
+}
+
+.shelf-foot.sec {
+  --note-top: -2px;
+}
+
+.sec:has(> .material-strip) {
+  --note-top: 12px;
+}
+
+@media (min-width: 960px) {
+  .screen .margin-note {
+    display: block;
+    position: absolute;
+    top: var(--note-top);
+    right: calc(100% + var(--note-gap));
+    width: max-content;
+    font-family: var(--serif);
+    font-size: var(--fs-small);
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--muted);
+    pointer-events: none;
+  }
+}
+
 .cards {
   display: flex;
   flex-direction: column;
@@ -24,14 +82,15 @@
     transform var(--t-fast) ease-out;
 }
 
-/* A card or row you can press takes one hover: the hover fill, and no change of edge. */
+/* A card you can press is pointed at by its edge, never by its fill: a fill
+   darker than the page turns a white card grey and looks switched off. */
 .library-next:hover {
-  background: var(--hover);
+  border-color: var(--line-input);
 }
 
-/* The card sinks one step; the button in it takes the shared pressed shift itself. */
+/* The card's edge darkens one step more; the button in it takes the shared pressed shift itself. */
 .library-next:has(.cc-open:active) {
-  background: var(--press);
+  border-color: var(--muted);
   transition-duration: 80ms;
 }
 
@@ -63,6 +122,7 @@
 
 /* Where the course stopped. It wraps, whole: a title is never cut off. */
 .cc-where {
+  text-wrap: pretty;
   margin-top: var(--s1);
   font-family: var(--serif);
   font-size: var(--fs-ui);
@@ -126,6 +186,22 @@
   margin-left: auto;
 }
 
+/* With room, the foot is one line: it is the level's words that wrap to fit, never the remove control that drops. */
+@media (min-width: 821px) {
+  .library-next .cc-foot {
+    flex-wrap: nowrap;
+  }
+
+  .library-next .cc-foot .lvl {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .library-next .cc-foot .btn {
+    flex: none;
+  }
+}
+
 .cc-meta {
   font-size: var(--fs-small);
   color: var(--muted);
@@ -141,18 +217,22 @@
   white-space: nowrap;
 }
 
-/* The ruled index: every other course is a row between two hairlines, with no box and no shadow. */
+/* The ruled index: every other course is a row between two hairlines, with no
+   box and no shadow. A row's words and its hairlines stand on the column's own
+   edge, as the title and the card above them do. The row's box is 12px wider
+   each side (a margin out, the padding back in), so a keyboard ring has room
+   inside it and never crosses a letter. A row has no hover fill: pointed at,
+   its words go to ink and its chevron appears. */
 .ledger-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 152px 124px 32px;
+  grid-template-columns: minmax(0, 1fr) 156px 148px 50px;
   align-items: center;
   column-gap: var(--s3);
   min-height: 88px;
-  margin: 0;
+  margin: 0 calc(var(--s3) * -1);
   padding: var(--s4) var(--s3);
   border-radius: var(--r-control);
-  transition: background var(--t-fast) ease-out;
 }
 
 .ledger-row::before {
@@ -175,17 +255,20 @@
   background: var(--line-2);
 }
 
-.ledger-row:hover {
-  background: var(--hover);
+.ledger-row:hover .cc-where {
+  color: var(--text);
+}
+
+.ledger-row .cc-where {
+  transition: color var(--t-fast) ease-out;
 }
 
 .ledger-row:has(.cc-open:active) {
-  background: var(--press);
   transform: translateY(1px);
   transition-duration: 80ms;
 }
 
-/* A full-width row or tile is ringed inside its own edge, rounded as it is, and its hairlines give way to the ring. */
+/* A full-width row is ringed inside its own box, rounded as the control is, and its hairlines give way to the ring. */
 .ledger-row:has(.cc-open:focus-visible),
 .index-row:focus-visible,
 .paper-list button:focus-visible {
@@ -222,7 +305,25 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 
 .lr-remove {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--s1);
+}
+
+/* The chevron: a row that opens something says so when it is pointed at or reached by keyboard. */
+.row-chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity var(--t-fast) ease-out;
+}
+
+.ledger-row:hover .row-chev,
+.index-row:hover .row-chev,
+html[data-input="key"] .ledger-row:has(:focus-visible) .row-chev,
+html[data-input="key"] .index-row:focus-visible .row-chev {
+  opacity: 1;
 }
 
 .cc-open::after {
@@ -267,7 +368,8 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 .library-next:hover .cc-more,
 .ledger-row:hover .cc-more,
 html[data-input="key"] .library-next:has(:focus-visible) .cc-more,
-html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
+html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
+.cc-more:focus-visible {
   opacity: 1;
 }
 
@@ -288,9 +390,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   justify-content: center;
 }
 
-.asking:hover {
-  border-color: var(--line);
-  background: var(--surface);
+.next-card.asking:hover {
+  border-color: var(--card-edge);
 }
 
 .ledger-row.asking {
@@ -301,11 +402,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   gap: var(--s2);
 }
 
-.ledger-row.asking:hover {
-  background: transparent;
+.ledger-row.asking:hover .cc-where {
+  color: inherit;
 }
 
 .cc-note {
+  text-wrap: pretty;
   font-size: var(--fs-small);
   color: var(--muted);
 }
@@ -359,6 +461,18 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   min-height: 32px;
 }
 
+/* With room in the margin the line is named there ("This week"); the words stay for a screen reader. */
+@media (min-width: 960px) {
+  .week-line .week-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 .week-line .h-label,
 .week-line .run-line {
   line-height: var(--lh-tight);
@@ -397,7 +511,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   }
 
   .ledger-row {
-    grid-template-columns: auto minmax(0, 1fr) 32px;
+    grid-template-columns: auto minmax(0, 1fr) 50px;
     row-gap: var(--s3);
   }
 
@@ -424,6 +538,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   .lr-level {
     grid-column: 2 / span 2;
     grid-row: 2;
+    align-items: center;
+  }
+
+  .lr-level .lvl {
+    flex-direction: row;
     align-items: center;
   }
 }
@@ -464,7 +583,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   gap: var(--s3);
   padding: var(--s2) var(--s3);
   border: 1px solid transparent;
-  border-radius: var(--r-card);
+  border-radius: var(--r-control);
   background: transparent;
   text-align: left;
   font-size: var(--fs-small);
@@ -494,6 +613,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .next-card p {
+  text-wrap: pretty;
   margin-top: var(--s3);
   font-family: var(--serif);
   font-size: var(--fs-ui);
@@ -553,23 +673,26 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 /* A row of the index is built as a course row of the library is: the whole
-   row is the button, its hover fill stays within the column, its hairlines
-   between, and its chevron stands right after its name. */
+   row is the button, its words and its hairlines stand on the column's edge
+   (its box is 12px wider each side, for the keyboard ring), it takes no
+   hover fill, and pointed at it darkens its name and shows its chevron. With
+   room in the margin its name hangs there as a note; without, it is the
+   first of the row's two columns. */
 .index-row {
   position: relative;
+  --note-top: 22.5px;
   display: grid;
-  grid-template-columns: 8.5rem minmax(0, 1fr);
+  grid-template-columns: 8.5rem minmax(0, 1fr) 14px;
   align-items: start;
   gap: var(--s4);
-  width: 100%;
-  margin: 0;
+  width: calc(100% + var(--s5));
+  margin: 0 calc(var(--s3) * -1);
   padding: var(--s4) var(--s3);
   border: 0;
   border-radius: var(--r-control);
   background: transparent;
   color: var(--text);
   text-align: left;
-  transition: background var(--t-fast) ease-out;
 }
 
 .index-row::before,
@@ -590,8 +713,33 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   bottom: 0;
 }
 
-.index-row:hover {
-  background: var(--hover);
+.index-row .row-chev {
+  margin-top: 5px;
+}
+
+.index-row:hover .index-name {
+  color: var(--text);
+}
+
+.index-row:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.index-row .margin-note {
+  display: inline-flex;
+}
+
+@media (min-width: 960px) {
+  .index-row {
+    grid-template-columns: minmax(0, 1fr) 14px;
+  }
+
+  /* The row's box reaches 12px past the column, so its note is 12px nearer. */
+  .index-row .margin-note {
+    right: calc(100% + var(--note-gap) - var(--s3));
+    transition: color var(--t-fast) ease-out;
+  }
 }
 
 /* The name of a row you press, and of a step: a label of the window, so the interface face. */
@@ -609,10 +757,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   gap: var(--s1);
 }
 
-.index-name .icon {
-  color: var(--muted);
-}
-
 .index-body {
   display: flex;
   flex-direction: column;
@@ -621,6 +765,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .index-what {
+  text-wrap: pretty;
   font-size: var(--fs-ui);
   line-height: var(--lh-ui);
   color: var(--muted);
@@ -2069,11 +2214,14 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .level-line {
   display: flex;
   align-items: center;
-  gap: var(--s4);
   margin-top: var(--s5);
-  font-size: var(--fs-ui);
-  line-height: var(--lh-tight);
   text-align: left;
+}
+
+/* On Lesson done the sentence has the room, so it is one line. */
+.level-line .lvl.lg .lvl-said {
+  max-width: none;
+  text-wrap: pretty;
 }
 
 /* Today's counts, the steps done and where to pick up: one quiet block. */
@@ -2092,6 +2240,10 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .summary-facts .today-line {
   margin-top: 0;
+}
+
+.summary-facts .slipped {
+  color: var(--text);
 }
 
 .summary-facts .next-time {
@@ -2181,10 +2333,26 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-top: var(--s3);
 }
 
+/* The proofs and the level, on the one scope they are said of: the tally, then the words. */
+.board-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin-bottom: var(--s5);
+}
+
+.board-level .lvl.lg .lvl-said {
+  max-width: none;
+}
+
 .board-sum {
-  margin-top: var(--s3);
-  font-size: var(--fs-ui);
+  min-width: 0;
+  max-width: 56ch;
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 .board-head .exam-line {
@@ -2292,24 +2460,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 
-/* A miss that waits for its repair says what to do, in two short lines. */
-.skill-note.fix {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  max-width: 30ch;
-  text-align: right;
-  text-wrap: balance;
-  white-space: normal;
-}
-
-.skill-note.fix b,
 .legend-word {
   font-weight: 400;
   color: var(--text);
-}
-
-.legend-word {
   white-space: nowrap;
 }
 
@@ -2645,16 +2798,11 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: var(--text);
 }
 
-/* Every problem that blocks you is red, in its mark and in its words. */
-.step:not(.ok):not(.plain):not(.choice) .step-detail {
-  color: var(--red);
-}
+/* A fault is a red "!" and its words in ink: the red is the mark, the words are not tinted. */
 
-/* A choice is not a fault: an empty ring and a dash, in ink. A ring is not a filled circle. */
+/* A choice is not a fault: a plain dash in ink, with no ring (a ring is a proof still to earn). */
 .step.choice .step-mark {
-  border-radius: 50%;
   color: var(--muted);
-  box-shadow: inset 0 0 0 1.5px var(--faint);
 }
 
 .step-body {
@@ -3101,21 +3249,21 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   overflow-wrap: anywhere;
 }
 
+/* A file you can press (to ask for a lesson from it) is a small quiet button: no underline, which would read as a link and a field's contents alike. */
 button.file-name {
-  text-decoration: underline;
-  text-decoration-color: var(--muted);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  transition: text-decoration-color var(--t-fast) ease-out;
+  padding: 2px var(--s2);
+  margin: 0 -2px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  transition: background var(--t-fast) ease-out;
 }
 
 button.file-name:hover {
-  text-decoration-color: var(--text);
+  background: var(--hover);
 }
 
-button.file-name:focus-visible {
-  border-radius: 4px;
-  outline-offset: 2px;
+button.file-name:active {
+  background: var(--press);
 }
 
 .palette.paste {

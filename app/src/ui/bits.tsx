@@ -304,44 +304,64 @@ export function Tally({ proofs, size = "md", gain = 0, still = false }: { proofs
 }
 
 /**
- * The level: a tally of ten strokes, and beside it "Level 5" and, where there
- * is room, how many proofs are left to the next. With `gain`, the part earned
- * today is drawn brighter and grows once.
+ * The level in words, one sentence wherever the level is shown: "Level 5. 4
+ * more proofs to reach level 6." On Lesson done, and only there, what was
+ * earned today comes first: "1 proof today. Level 5. 3 more proofs to reach
+ * level 6." Null when the course has no level.
+ */
+export function levelSaid(proofs: Proofs, gain = 0): { today: string | null; level: string; next: string | null } | null {
+  if (!proofs.levelled || proofs.total === 0) return null;
+  return {
+    today: gain > 0 ? `${plural(gain, "proof", "proofs")} today.` : null,
+    level: `Level ${proofs.level}.`,
+    next: nextLevelSentence(proofs),
+  };
+}
+
+/** The level sentence, as one run of words with the level itself in ink. The one component that says it. */
+export function LevelSaid({ proofs, gain = 0 }: { proofs: Proofs; gain?: number }) {
+  const said = levelSaid(proofs, gain);
+  if (!said) return null;
+  return (
+    <span className="lvl-said num">
+      {said.today && <span>{said.today} </span>}
+      <b>{said.level}</b>
+      {said.next && (
+        <>
+          {" "}
+          <span className="next">{said.next}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The level: a tally of ten strokes, and the sentence that says it. With
+ * `gain`, the part earned today is drawn brighter and grows once, and the
+ * sentence begins with it.
  */
 export function Level({
   proofs,
   size = "md",
   gain = 0,
   still = false,
-  text = "next",
   title,
 }: {
   proofs: Proofs;
   size?: "sm" | "md" | "lg";
-  /** How many proofs were earned today, to draw in the brighter tint. */
+  /** How many proofs were earned today, to draw in the brighter tint and to say first. */
   gain?: number;
   /** Draw today's part at rest. Only the first sight of Lesson done grows it. */
   still?: boolean;
-  /** "next": the level and the next-level line; "why": the level and a line that says what moves it; "level": the level only; "none": the tally alone. */
-  text?: "next" | "why" | "level" | "none";
   title?: string;
 }) {
-  const next = nextLevelSentence(proofs);
-  const name = `Level ${proofs.level} of ${TOP_LEVEL}${next ? `, ${next.replace(/\.$/, "")}` : ""}`;
+  const said = levelSaid(proofs, gain);
+  const name = said ? [said.today, said.level, said.next].filter(Boolean).join(" ") : `Level ${proofs.level}`;
   return (
     <span className={`lvl ${size}`} role="img" aria-label={name} title={title}>
       <Tally proofs={proofs} size={size} gain={gain} still={still} />
-      {text !== "none" && (
-        <span className="lvl-text">
-          <b>Level {proofs.level}</b>
-          {text === "next" && next && <span>{next}</span>}
-          {text === "why" && next && (
-            <span className="lvl-why">
-              Each proof moves your level. {plural(proofs.to_next, "more proof reaches", "more proofs reach")} level {proofs.level + 1}.
-            </span>
-          )}
-        </span>
-      )}
+      <LevelSaid proofs={proofs} gain={gain} />
     </span>
   );
 }
@@ -455,7 +475,18 @@ function useScreenFocus(ready: unknown): void {
 export function useReturnForPrimary(ready: unknown = true): void {
   useScreenFocus(ready);
   useEffect(() => {
+    // A Return that began before this screen opened (the one that ended a lesson, say) is not for this screen's green button, and neither is one that is held down: the screen would be gone before it was seen.
+    const opened = performance.now();
+    const stale = (event: KeyboardEvent) => event.key === "Enter" && (event.repeat || event.timeStamp < opened + RETURN_GRACE_MS);
+    const guard = (event: KeyboardEvent) => {
+      if (!stale(event)) return;
+      const target = event.target;
+      // A button that has focus would be pressed by that Return; a text field keeps its own.
+      if (target instanceof HTMLButtonElement || target === document.body) event.preventDefault();
+    };
+    window.addEventListener("keydown", guard, true);
     const onKey = (event: KeyboardEvent) => {
+      if (stale(event)) return;
       if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const focused = document.activeElement;
       const own = focused !== null && focused === placed;
@@ -482,16 +513,51 @@ export function useReturnForPrimary(ready: unknown = true): void {
       event.preventDefault();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", guard, true);
+    };
   }, []);
 }
 
-/** A due thing: a small amber clock and a few words (a clock, not a dot, so it is never taken for a proof). With a number, "5 questions due today, on 2 skills"; without, "due today". */
+/** How long after a screen opens its Return is not taken (see useReturnForPrimary). */
+const RETURN_GRACE_MS = 150;
+
+/**
+ * A fault, drawn one way on every screen: a red "!" and the words in ink, on
+ * the card's own surface with its hairline. Red is the mark and nothing else.
+ */
+export function Fault({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`banner bad selectable${className ? ` ${className}` : ""}`}>
+      <Icon name="bang" size={16} />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+/**
+ * The name of a section, hung in the page's margin as the booklet's marginal
+ * note: Literata italic, small, quiet, right-aligned a gap left of the column
+ * and level with the section's first line. Where the window has no room left
+ * of the column (under 960px wide) it is not drawn, or, for a row that is
+ * named by it, it stands in the row as that row's name. Its screen reader
+ * text is the section's own heading or button, so it is hidden from them.
+ */
+export function MarginNote({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span className={`margin-note${className ? ` ${className}` : ""}`} aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
+/** A due thing: a small amber clock and a few words (a clock, not a dot, so it is never taken for a proof). With a number, questions are due: "5 questions due today, on 2 skills"; without, it is a skill's own row, and skills are "to prove today". */
 export function Due({ n, skills }: { n?: number; skills?: number | null }) {
   return (
     <span className="due">
       <Icon name="clock" size={14} />
-      {n === undefined ? "due today" : questionsDue(n, skills)}
+      {n === undefined ? "to prove today" : questionsDue(n, skills)}
     </span>
   );
 }
@@ -529,7 +595,7 @@ export function Week({ days, today, back = 0, letters = true }: { days: string[]
       {WEEKDAYS.map((letter, index) => {
         const isToday = dates[index] === today;
         return (
-          <span key={index} className={`week-day${studied.has(dates[index]) ? " done" : ""}${isToday ? " today" : ""}`}>
+          <span key={index} className={`week-day${studied.has(dates[index]) ? " done" : ""}${isToday ? " today" : ""}${dates[index] > today ? " ahead" : ""}`}>
             <i />
             {letters && <b>{letter}</b>}
           </span>
@@ -548,7 +614,7 @@ export function ThisWeek({ activity }: { activity: Activity }) {
 export function WeekLine({ activity }: { activity: Activity }) {
   return (
     <p className="week-line">
-      <span className="h-label">Days you studied this week</span>
+      <span className="h-label week-label">Days you studied this week</span>
       <Week days={activity.days} today={activity.today} />
       <Run days={activity.run} />
     </p>

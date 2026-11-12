@@ -112,32 +112,40 @@
   :root {
     color-scheme: light;
 
-    /* Paper: a cool grey-green sheet, like exam booklet paper. */
-    --bg: #f1f2ee;
-    --surface: #fafaf7;
+    /* Paper: the grey-green of exam booklet paper, and blue-black ink on it.
+       The page is the sheet, a card is a clean leaf laid on it, and what is
+       pointed at is the sheet shaded one step towards the green. Every ink
+       is at least 4.5:1 on the page, a card, a sheet, a hover, a press and a
+       chosen row (the least is 4.87, the proof green on a press); a field's
+       edge and an unfilled mark are 3.6:1 or more on the page, a card and a sheet. */
+    --bg: #ecf0e8;
+    --surface: #f7f9f4;
     --raised: #ffffff;
-    --hover: #e6e8e2;
-    --line: rgba(27, 33, 43, 0.1);
-    --line-2: rgba(27, 33, 43, 0.18);
-    --line-input: #737c8a;
-    --press: #dadcd5;
-    --selected: #d1d5ce;
+    /* A hover reads 1.2:1 from the page it is on (1.31 from a card, 1.39 from a sheet); a press 1.38:1 (1.50 from a card). */
+    --hover: #d6ddd1;
+    --line: rgba(31, 42, 34, 0.12);
+    --line-2: rgba(31, 42, 34, 0.2);
+    --line-input: #677269;
+    --press: #c7d0c1;
+    --selected: #cbd4c5;
     --text: #1b212b;
     --muted: #475060;
-    --faint: #566070;
-    --accent: #1d6a4a;
+    --faint: #4a5565;
+    --accent: #185e41;
     --accent-ink: #ffffff;
-    --accent-hover: #175939;
-    --accent-press: #124a30;
-    --accent-soft: rgba(29, 106, 74, 0.08);
-    --accent-mid: rgba(29, 106, 74, 0.4);
-    --accent-bright: #4fbf8a;
-    --amber: #8f5000;
-    --amber-soft: rgba(143, 80, 0, 0.09);
-    --red: #a53527;
-    --red-soft: rgba(165, 53, 39, 0.08);
-    --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
-    --veil: rgba(27, 33, 43, 0.5);
+    --accent-hover: #124d35;
+    --accent-press: #0e3f2b;
+    --accent-soft: rgba(24, 94, 65, 0.08);
+    --accent-mid: rgba(24, 94, 65, 0.4);
+    /* Today's part of the level: clearly lighter than the proof green (2.19:1 from it) and still 3.06:1 on the page. */
+    --accent-bright: #2f9a6a;
+    --amber: #7c4400;
+    --amber-soft: rgba(124, 68, 0, 0.09);
+    --red: #962d21;
+    --red-soft: rgba(150, 45, 33, 0.08);
+    --shadow: 0 16px 48px rgba(31, 42, 34, 0.16), 0 2px 8px rgba(31, 42, 34, 0.08);
+    /* Behind a sheet or a drop: the page itself, thinned to 70%, so the window is set aside and not darkened. */
+    --veil: rgba(236, 240, 232, 0.7);
     /* Paper on paper: the card's tone is a shade from the page, so its edge is the stronger rule. */
     --card-edge: var(--line-2);
   }
@@ -243,7 +251,8 @@ p {
   color: var(--muted);
 }
 
-.fact.bad {
+/* A fault is a red "!" and the words in ink. */
+.fact.bad .icon {
   color: var(--red);
 }
 
@@ -569,7 +578,6 @@ textarea {
 .crumb:active:not(:disabled),
 button.chip:active,
 .passage:active,
-.index-row:active,
 .more:active,
 button.key:active,
 .menu-key:active,
@@ -800,18 +808,24 @@ p.aside {
   font-weight: 600;
 }
 
-/* Every fault that blocks you is red. "warn" is the same fault, said by a
-   button that opens the fix. */
+/* A fault is one thing on every screen: a red "!", then the words in ink, on
+   the card's own surface and hairline. Red is the mark and nothing else; there
+   is no tinted fill. "warn" is the same fault, said by a button that opens the
+   fix. */
 .banner.warn,
 .banner.bad {
-  background: var(--red-soft);
-  border-color: transparent;
+  color: var(--text);
+}
+
+.banner.warn .icon,
+.banner.bad .icon {
+  align-self: flex-start;
+  margin-top: 2px;
   color: var(--red);
 }
 
-.banner.warn b,
-.banner.bad b {
-  color: var(--red);
+button.banner:hover {
+  border-color: var(--line-input);
 }
 
 .banner .icon-btn {
@@ -819,10 +833,6 @@ p.aside {
   height: 24px;
   margin: -4px -8px -4px auto;
   color: inherit;
-}
-
-button.banner:hover {
-  border-color: var(--red);
 }
 
 /* A due thing: a small amber clock glyph and a few words. */
@@ -869,11 +879,6 @@ button.banner:hover {
 }
 
 
-.chip.bad {
-  border-color: transparent;
-  background: var(--red-soft);
-  color: var(--red);
-}
 
 /* ---- the level: a tally of ten strokes ---- */
 
@@ -882,9 +887,10 @@ button.banner:hover {
    in hand is solid from its foot up to the share earned towards the next
    level and an outline above that; those above are outlines. The solid part
    covers the stroke's whole width, so it reads at row size. Three sizes (the
-   small one is 3px by 14px with 3px between, the least that can be read in
-   the real window). --a is the filled share of a stroke, --g the share of it
-   earned today, drawn in a brighter tint at least --min-g tall. */
+   small one is 4px by 16px with 3px between). A stroke with any progress in
+   it is filled at least 4px (--min-a) over its whole width, so it reads at row
+   size and is never a speck. --a is the filled share of a stroke, --g the
+   share of it earned today, drawn in a brighter tint at least --min-g tall. */
 .lvl {
   display: inline-flex;
   align-items: center;
@@ -898,8 +904,8 @@ button.banner:hover {
   --h: 18px;
   --gap: 3px;
   --bw: 1.5px;
-  --min-a: 3px;
-  --min-g: 3px;
+  --min-a: 4px;
+  --min-g: 4px;
   display: inline-flex;
   align-items: flex-end;
   flex: none;
@@ -907,8 +913,8 @@ button.banner:hover {
 }
 
 .tally.sm {
-  --w: 3px;
-  --h: 14px;
+  --w: 4px;
+  --h: 16px;
   --bw: 1px;
 }
 
@@ -975,35 +981,44 @@ button.banner:hover {
   }
 }
 
-.lvl-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
+/* The level in words: one sentence, the level itself in ink and the rest quiet. Said beside the tally at the medium and large sizes, and under it at the small one, where a course is a row. */
+.lvl-said {
+  display: block;
   min-width: 0;
-  line-height: var(--lh-tight);
-  color: var(--muted);
+  max-width: 28ch;
   font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--muted);
+  text-wrap: pretty;
 }
 
-.lvl-text b {
-  white-space: nowrap;
-  font-size: var(--fs-ui);
+.lvl-said b {
   font-weight: 600;
   color: var(--text);
-  font-variant-numeric: lining-nums tabular-nums;
 }
 
-.lvl-why {
+.lvl.lg .lvl-said {
+  max-width: none;
+  font-size: var(--fs-ui);
+}
+
+/* Where there is room the next step is one clause that wraps whole, so a line never ends on "4 more". */
+.lvl.md .lvl-said .next,
+.lvl.lg .lvl-said .next {
+  display: inline-block;
+}
+
+.lvl.sm {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+
+.lvl.sm .lvl-said {
   max-width: 24ch;
   text-wrap: balance;
-}
-
-.lvl.sm .lvl-text b {
-  font-size: var(--fs-small);
-}
-
-.lvl.lg .lvl-text b {
-  font-size: var(--fs-read);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-tight);
 }
 
 /* ---- the proof mark: three dots ---- */
@@ -1119,8 +1134,8 @@ button.banner:hover {
 
 /* Seven days, Monday to Sunday. A day is a small solid square, never an
    outlined box (that would be taken for something to tick) and never a circle
-   (the proof's). A day studied is ink; any other day is a quieter grey, with no
-   outline; today has a short ink rule under its square. The grey is the
+   (the proof's). A day studied is ink; a day missed is a quieter grey, with no
+   outline; a day still to come is an empty outline; today has a short ink rule under its square. The grey is the
    field-edge grey, so a day that was not studied is still 3:1 on the page.
    Every day keeps the room for the rule, so nothing moves when it is today. */
 .week {
@@ -1155,6 +1170,12 @@ button.banner:hover {
 
 .week-day.done i {
   background: var(--text);
+}
+
+/* A day still to come is an empty outline, fainter than a day that was missed (a filled grey), so what is past and what is ahead read apart. */
+.week-day.ahead i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
 .week-day.today i::after {

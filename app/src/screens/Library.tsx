@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, GoalText, Level, PaletteKey, TopBar, WeekLine, agoText, clockText, examWhen, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import { Due, Fault, GoalText, Level, MarginNote, PaletteKey, TopBar, WeekLine, agoText, clockText, examWhen, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Card } from "../types";
 
 /** A course's name as a title: "Demo-Course" reads "Demo Course". */
@@ -35,7 +35,14 @@ function statusOf(card: Card): { text: string; tone: string } | null {
 /** What is so of the course, as plain words and not something to press: the exam and how near it is, or where the course stands. */
 function ExamFact({ card }: { card: Card }) {
   const status = statusOf(card);
-  if (status) return <span className={status.tone === "bad" ? "fact bad" : "fact"}>{status.text}</span>;
+  if (status) {
+    return (
+      <span className={status.tone === "bad" ? "fact bad" : "fact"}>
+        {status.tone === "bad" && <Icon name="bang" size={14} />}
+        {status.text}
+      </span>
+    );
+  }
   const exam = card.exam;
   if (!exam) return <span className="fact">No exam set</span>;
   return (
@@ -83,16 +90,16 @@ function CourseCard(props: {
   const [asking, setAsking] = useState(false);
   const open = useRef<HTMLButtonElement>(null);
   const remove = useRef<HTMLButtonElement>(null);
-  const keep = useRef<HTMLButtonElement>(null);
+  const confirm = useRef<HTMLButtonElement>(null);
   const now = useNow(card.sitting ? 1000 : 60_000);
   const detail = useId();
 
   useEffect(() => {
     if (props.focus) open.current?.focus({ preventScroll: false });
   }, [props.focus]);
-  // The question opens on "Keep". Closing it puts focus back on the control that opened it.
+  // A confirmation is one pattern everywhere: the action first (ink-filled, as it removes something), then the outlined way out. Return does the action, Esc the way out, and focus starts on the action. Closing it puts focus back on the control that opened it.
   useEffect(() => {
-    if (asking) keep.current?.focus();
+    if (asking) confirm.current?.focus();
   }, [asking]);
 
   const proofs = card.proofs;
@@ -123,11 +130,11 @@ function CourseCard(props: {
         <h2 className="h-section">Remove {name}?</h2>
         <p className="cc-note">It leaves this list. Your files and your record stay on your Mac.</p>
         <div className="row">
-          <button className="btn" ref={keep} onClick={cancel}>
-            Keep
-          </button>
-          <button className="btn danger" onClick={props.onForget}>
+          <button className="btn danger" ref={confirm} onClick={props.onForget}>
             Remove
+          </button>
+          <button className="btn" onClick={cancel}>
+            Keep
           </button>
         </div>
       </div>
@@ -216,9 +223,14 @@ function CourseCard(props: {
         {card.due > 0 && <Due n={card.due} />}
       </div>
       <div className="lr-level">
-        {hasProofs && <Level proofs={proofs} size="sm" text="level" title={`${proofs.earned} of ${proofs.total} proofs`} />}
+        {hasProofs && <Level proofs={proofs} size="sm" title={`${proofs.earned} of ${proofs.total} proofs`} />}
       </div>
-      <div className="lr-remove">{removeButton}</div>
+      <div className="lr-remove">
+        {removeButton}
+        <span className="row-chev" aria-hidden="true">
+          <Icon name="right" size={14} />
+        </span>
+      </div>
     </div>
   );
 }
@@ -257,18 +269,21 @@ export function Library(props: {
     if (focus >= count && count > 0) setFocus(count - 1);
   }, [count, focus]);
 
+  // The three ways to add a course are one row in one style: outlined and 32px under the list; with no course yet the first is the screen's green button and the others are the outlined 36px beside it.
+  const first = props.cards !== null && props.cards.length === 0;
+  const size = first ? "btn" : "btn small";
   const add = (
     <div className="shelf-add">
-      <button className={props.cards !== null && props.cards.length === 0 ? "btn primary" : "btn"} title="Open a course folder (⌘O)" onClick={props.onPick}>
-        <Icon name="folder" size={16} />
+      <button className={first ? "btn primary" : size} title="Open a course folder (⌘O)" onClick={props.onPick}>
+        {!first && <Icon name="folder" size={16} />}
         Open a course folder…
       </button>
-      <button className="btn ghost" onClick={props.onNew}>
-        <Icon name="plus" size={16} />
+      <button className={size} onClick={props.onNew}>
+        {!first && <Icon name="plus" size={16} />}
         Make a new course…
       </button>
-      <button className="btn ghost" disabled={props.finding} onClick={props.onFind} title="Looks through your home folder for courses that Magnesium was set up in from a terminal">
-        <Icon name="search" size={16} />
+      <button className={size} disabled={props.finding} onClick={props.onFind} title="Looks through your home folder for courses that Magnesium was set up in from a terminal">
+        {!first && <Icon name="search" size={16} />}
         {props.finding ? "Looking…" : "Find course folders on this Mac"}
       </button>
     </div>
@@ -276,35 +291,45 @@ export function Library(props: {
 
   let body: JSX.Element;
   if (cards === null) {
+    const holders = (props.folders.length > 0 ? props.folders : [""]).slice(0, 6).map((path, index) => {
+      const name = displayName(path.split("/").filter(Boolean).pop() ?? "");
+      // A placeholder takes the room a real card or row takes, so nothing below it moves when the courses are read.
+      return index === 0 ? (
+        <div key={path || index} className="next-card library-next ghosted" aria-hidden="true">
+          <div className="cc-body">
+            <div className="cc-text">
+              <div className="cc-name">
+                <h2 className="h-section">{name}&nbsp;</h2>
+              </div>
+              <p className="cc-where">&nbsp;</p>
+            </div>
+          </div>
+          <div className="cc-foot">&nbsp;</div>
+        </div>
+      ) : (
+        <div key={path || index} className="ledger-row ghosted" aria-hidden="true">
+          <div className="lr-main">
+            <div className="cc-name">
+              <h2 className="h-section">{name}&nbsp;</h2>
+            </div>
+            <p className="cc-where">&nbsp;</p>
+          </div>
+        </div>
+      );
+    });
     body = (
-      <div className="cards">
-        {(props.folders.length > 0 ? props.folders : [""]).slice(0, 6).map((path, index) => {
-          const name = displayName(path.split("/").filter(Boolean).pop() ?? "");
-          // A placeholder takes the room a real card or row takes, so nothing below it moves when the courses are read.
-          return index === 0 ? (
-            <div key={path || index} className="next-card library-next ghosted" aria-hidden="true">
-              <div className="cc-body">
-                <div className="cc-text">
-                  <div className="cc-name">
-                    <h2 className="h-section">{name}&nbsp;</h2>
-                  </div>
-                  <p className="cc-where">&nbsp;</p>
-                </div>
-              </div>
-              <div className="cc-foot">&nbsp;</div>
-            </div>
-          ) : (
-            <div key={path || index} className="ledger-row ghosted" aria-hidden="true">
-              <div className="lr-main">
-                <div className="cc-name">
-                  <h2 className="h-section">{name}&nbsp;</h2>
-                </div>
-                <p className="cc-where">&nbsp;</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <>
+        <div className="sec">
+          <MarginNote>Next</MarginNote>
+          {holders[0]}
+        </div>
+        {holders.length > 1 && (
+          <div className="sec courses">
+            <MarginNote>Courses</MarginNote>
+            {holders.slice(1)}
+          </div>
+        )}
+      </>
     );
   } else if (cards.length === 0) {
     body = (
@@ -315,37 +340,45 @@ export function Library(props: {
       </div>
     );
   } else {
+    const rendered = cards.map((card, index) => {
+      // The main card goes straight into its lesson when it can. A
+      // course that is new, needs an upgrade or has a paper running
+      // opens its page, which says what comes first.
+      const straight = index === 0 && props.ready && card.state === "ready" && !card.sitting;
+      const open = () => {
+        if (props.starting) return;
+        if (straight) props.onContinue(card.folder);
+        else props.onOpen(card.folder);
+      };
+      return (
+        <CourseCard
+          key={card.folder}
+          card={card}
+          hero={index === 0}
+          focus={moved && index === focus}
+          starting={index === 0 && props.starting}
+          onOpen={open}
+          onCourse={straight ? () => props.onOpen(card.folder) : undefined}
+          onForget={() => props.onForget(card.folder)}
+          onMove={(by) => {
+            setMoved(true);
+            setFocus(Math.max(0, Math.min(count - 1, index + by)));
+          }}
+        />
+      );
+    });
     body = (
       <>
-        <div className="cards">
-          {cards.map((card, index) => {
-            // The main card goes straight into its lesson when it can. A
-            // course that is new, needs an upgrade or has a paper running
-            // opens its page, which says what comes first.
-            const straight = index === 0 && props.ready && card.state === "ready" && !card.sitting;
-            const open = () => {
-              if (props.starting) return;
-              if (straight) props.onContinue(card.folder);
-              else props.onOpen(card.folder);
-            };
-            return (
-              <CourseCard
-                key={card.folder}
-                card={card}
-                hero={index === 0}
-                focus={moved && index === focus}
-                starting={index === 0 && props.starting}
-                onOpen={open}
-                onCourse={straight ? () => props.onOpen(card.folder) : undefined}
-                onForget={() => props.onForget(card.folder)}
-                onMove={(by) => {
-                  setMoved(true);
-                  setFocus(Math.max(0, Math.min(count - 1, index + by)));
-                }}
-              />
-            );
-          })}
-        </div>
+        <section className="sec" aria-label="Next">
+          <MarginNote>Next</MarginNote>
+          {rendered[0]}
+        </section>
+        {rendered.length > 1 && (
+          <section className="sec courses" aria-label="Courses">
+            <MarginNote>Courses</MarginNote>
+            {rendered.slice(1)}
+          </section>
+        )}
         {add}
       </>
     );
@@ -380,10 +413,13 @@ export function Library(props: {
           {body}
           {cards !== null && count > 0 && (
             // Until the week is known its room is kept, so nothing moves when it arrives.
-            <div className="shelf-foot">{props.activity ? <WeekLine activity={props.activity} /> : <span className="week-line" aria-hidden="true" />}</div>
+            <div className="shelf-foot sec">
+              <MarginNote>This week</MarginNote>
+              {props.activity ? <WeekLine activity={props.activity} /> : <span className="week-line" aria-hidden="true" />}
+            </div>
           )}
           {props.notice && <div className="banner">{props.notice}</div>}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
         </div>
       </div>
     </section>
