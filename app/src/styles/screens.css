@@ -8,19 +8,27 @@
   margin-bottom: var(--s5);
 }
 
-/* ---- the names of sections ----
-   The lesson's margin notes are the product's own device, so every page that
-   has sections names them the same way: one name, shown by the room there is.
-   With 120px left of the column (a window 960px wide has it: the column is
-   720px, centred) the name hangs in the margin, Literata italic and quiet,
-   right-aligned a gap left of the column, and level with its section's first
-   line: it shares that line's baseline (a grid does the aligning, so a line
-   with mathematics in it, or a different size, still lines up). There is no
-   rule here: the rule belongs to the answer page. Narrower, the same name
-   stands above its section as one heading, Literata at the card size, 600.
-   A section whose block already says its name has no note. */
+/* ---- the booklet's margin, on every page that has one ----
+   The lesson is a page of an answer booklet, and so is every page whose
+   sections have names. With 120px or more left of the column (a window 960px
+   wide has it: the column is 720px, centred) a section's name hangs in the
+   margin as a note, and a margin rule stands beside the column: the lesson's
+   own hairline, in its colour, one --gap left of the text. Narrower, there is
+   no margin: no notes and no rule, and the same name stands above its section
+   as a heading.
+   One margin style. A note is Literata italic, --fs-small, --muted. It is
+   level with the first line of the section it names (they share a baseline: a
+   grid does the aligning, so a line with mathematics in it, or a different
+   size, still lines up). Its right edge is one --s3 left of the rule (the
+   lesson's measure), and it takes no more than the gutter allows: a name that
+   is too long for it wraps to a second line, and it never comes nearer than
+   --s4 to the window's edge. A section whose block already says its name has
+   no note. A row's title (Proofs, Timed paper, New lesson) is not a note: it
+   stays in the column, as a row's title does. */
 .screen {
-  --note-gap: var(--s4);
+  --gap: var(--s5);
+  --note-x: calc(var(--gap) + var(--s3));
+  --note-w: clamp(56px, calc(var(--edge-l) - var(--note-x) - var(--s4)), 9.5rem);
 }
 
 .sec-name {
@@ -35,6 +43,19 @@
 }
 
 @media (min-width: 960px) {
+  /* The margin rule: the page's own column of ruled paper, as long as the page
+     (the scroller's own contents, so it scrolls with them). */
+  .screen.library .scroll,
+  .screen.course .scroll,
+  .screen.progress .scroll,
+  .screen.summary > .center {
+    background-image: linear-gradient(var(--line-2), var(--line-2));
+    background-repeat: no-repeat;
+    background-attachment: local;
+    background-size: 1px 100%;
+    background-position: calc(var(--edge-l) - var(--gap)) 0;
+  }
+
   /* A section is one cell: its name and its first block share the row, and the first line of each is on one baseline. */
   .sec,
   .group,
@@ -45,37 +66,52 @@
 
   .sec > .sec-name,
   .group > .sec-name,
-  .foot-section > .sec-name,
-  .index-row > .sec-name {
+  .foot-section > .sec-name {
     grid-area: 1 / 1;
     align-self: baseline;
     justify-self: start;
     width: max-content;
+    max-width: var(--note-w);
     margin-bottom: 0;
     font-size: var(--fs-small);
     font-style: italic;
     font-weight: 400;
     line-height: 1.4;
-    white-space: nowrap;
     text-align: right;
+    text-wrap: balance;
     color: var(--muted);
-    translate: calc(-100% - var(--note-gap)) 0;
+    translate: calc(-100% - var(--note-x)) 0;
     pointer-events: none;
   }
 
   .sec > .sec-name + *,
   .group > .sec-name + *,
-  .foot-section > .sec-name + *,
-  .index-row > .sec-name + * {
+  .foot-section > .sec-name + * {
     grid-area: 1 / 1;
     align-self: baseline;
   }
-
 }
 
 .cards {
   display: flex;
   flex-direction: column;
+}
+
+/* How a course is said, wherever it is said. The exam is one sentence in the
+   interface face, "Midterm 1 is on Tue 17 Nov, in 6 days.", on a line of its
+   own under the course's name: the library's card, its rows and the course
+   page. What else is so of a course (a paper running, nothing started) is a
+   fact in the same style. */
+.exam {
+  display: block;
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--muted);
+}
+
+.exam .katex {
+  font-size: 1.05em;
 }
 
 /* The next card: the one course to go on with, in the same design as the course page's. */
@@ -118,23 +154,24 @@
   min-width: 0;
 }
 
-/* A course's name, and its exam beside it. */
+/* A course's name, and under it its exam on a line of its own. */
 .cc-name {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s1) var(--s3);
+  flex-direction: column;
+  gap: var(--s1);
   min-width: 0;
 }
 
-/* Where the course stopped. It wraps, whole: a title is never cut off. */
+/* Where the course stopped: the goal. It is the card's main line, set as the course page's card sets it: Literata at the card size, 600. */
 .cc-where {
   text-wrap: pretty;
   margin-top: var(--s1);
   font-family: var(--serif);
-  font-size: var(--fs-ui);
-  line-height: var(--lh-ui);
-  color: var(--muted);
+  font-size: var(--fs-card);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  color: var(--text);
+  overflow-wrap: break-word;
 }
 
 /* The problem a goal came from has its own quiet line under the goal: never joined to the end of the title, never above it. */
@@ -155,18 +192,17 @@
 
 .cc-title.dim {
   color: var(--faint);
+  font-weight: 400;
 }
 
-.cc-ago {
-  display: block;
-  margin-top: var(--s1);
-  font-family: var(--sans);
-}
-
-.library-next .cc-where {
-  margin-top: var(--s2);
-  max-width: 56ch;
-  font-size: var(--fs-read);
+/* (Named with the card so the card's own paragraph rule, which is more specific, does not set it in the quiet ink.) */
+.library-next p.cc-where {
+  margin-top: var(--s4);
+  max-width: 44ch;
+  font-family: var(--serif);
+  font-size: var(--fs-card);
+  font-weight: 600;
+  line-height: var(--lh-tight);
   color: var(--text);
 }
 
@@ -187,7 +223,7 @@
   margin-top: var(--s2);
 }
 
-/* The level stands at the foot's right, level with the button, so the card's
+/* The level stands at the foot's right, level with the buttons, so the card's
    lower right is the level and the room above it is the course's own words. */
 .cc-foot .lvl {
   margin-left: auto;
@@ -225,23 +261,25 @@
 }
 
 /* The ruled index: every other course is a row between two hairlines, with no
-   box and no shadow. A row's words and its hairlines stand on the column's own
-   edge, as the title and the card above them do. The row's box is 12px wider
-   each side (a margin out, the padding back in), so a keyboard ring has room
-   inside it and never crosses a letter. A row has no hover fill: pointed at,
-   its words go to ink and its chevron appears. */
+   box and no shadow. A row gives its goal the row: the name, its exam on a
+   line of its own, the goal across the full width clamped to two lines, and
+   one meta line with the counts and the level. A row's words and its
+   hairlines stand on the column's own edge, as the title and the card above
+   them do. The row's box is 12px wider each side (a margin out, the padding
+   back in), so a keyboard ring has room inside it and never crosses a letter.
+   A row has no hover fill: pointed at, its title is underlined and its
+   chevron goes to ink. */
 .ledger-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 168px 196px 50px;
-  /* The three columns share one top: the cap height of the title's first line (the facts and the level are set down to it, below). */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head side"
+    "goal goal"
+    "meta meta";
   align-items: start;
-  /* Set down from the row's top to the title's cap height: the facts' first line by 3px, the tally's top by 8.3px, the 32px remove control level with the title's line. */
-  --lr-facts-top: 3px;
-  --lr-level-top: 8.3px;
-  --lr-remove-top: -2px;
   column-gap: var(--s3);
-  min-height: 88px;
+  row-gap: var(--s2);
   margin: 0 calc(var(--s3) * -1);
   padding: var(--s4) var(--s3);
   border-radius: var(--r-control);
@@ -267,12 +305,24 @@
   background: var(--line-2);
 }
 
-.ledger-row:hover .cc-where {
-  color: var(--text);
+/* The goal, across the whole row: the reading face at the interface size, two lines at most, its full words in the row's title. */
+.ledger-row .cc-where {
+  grid-area: goal;
+  margin-top: 0;
+  max-width: none;
+  font-size: var(--fs-ui);
+  font-weight: 400;
+  line-height: var(--lh-ui);
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  transition: color var(--t-fast) ease-out;
 }
 
-.ledger-row .cc-where {
-  transition: color var(--t-fast) ease-out;
+.ledger-row:hover .cc-where {
+  color: var(--text);
 }
 
 .ledger-row:has(.cc-open:active) {
@@ -300,29 +350,28 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 }
 
 .lr-main {
+  grid-area: head;
   min-width: 0;
 }
 
-.lr-proofs {
+/* One meta line: the counts, what is due, and the level (the tally and its sentence). */
+.lr-meta {
+  grid-area: meta;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s1);
-  padding-top: var(--lr-facts-top, 0px);
-}
-
-.lr-level {
-  display: flex;
-  justify-content: flex-start;
-  padding-top: var(--lr-level-top, 0px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s4);
+  min-width: 0;
 }
 
 .lr-remove {
+  grid-area: side;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--s1);
-  margin-top: var(--lr-remove-top, 0px);
+  /* Level with the title's line, whose height is a card heading's. */
+  margin-top: -2px;
 }
 
 /* The chevron: a row that opens something says so, quietly at rest and in ink when it is pointed at or reached by keyboard. */
@@ -338,6 +387,14 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 html[data-input="key"] .ledger-row:has(:focus-visible) .row-chev,
 html[data-input="key"] .index-row:focus-visible .row-chev {
   color: var(--text);
+}
+
+/* A row answers the pointer where it is: its title is underlined, 1px, 3px under the letters. */
+.ledger-row:hover .cc-open,
+.index-row:hover .index-name {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .cc-open::after {
@@ -393,13 +450,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   min-height: 40px;
 }
 
-/* The remove control stands at the foot's right end, with the level before it when there is one. */
-.cc-foot .cc-more {
-  margin-left: auto;
-}
-
-.cc-foot .lvl + .cc-more {
-  margin-left: 0;
+/* The remove control stands at the card's top right, level with the course's name, as a row's stands; the foot is the buttons and the level. */
+.library-next .cc-more {
+  position: absolute;
+  top: calc(var(--s6) - 2px);
+  right: var(--s5);
 }
 
 .asking {
@@ -444,12 +499,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 /* A placeholder takes the room a real card or row takes, so what is below
    it does not move when the courses have been read. */
 .library-next.ghosted {
-  min-height: 288px;
+  min-height: 328px;
 }
 
 .ledger-row.ghosted {
   align-items: start;
-  min-height: 110px;
+  min-height: 150px;
 }
 
 .ghosted h2 {
@@ -494,9 +549,16 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 }
 
 .week-line .h-label,
-.week-line .run-line {
+.week-line .run-line,
+.week-line .week-said {
   line-height: var(--lh-tight);
   margin-top: 0;
+}
+
+/* The caption says what the strip shows, and the run after it says how long it has gone on. */
+.week-line .week-said,
+.week-line .run-line {
+  padding-top: 1px;
 }
 
 .empty {
@@ -517,8 +579,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   margin-top: var(--s4);
 }
 
-/* In a narrow window a row's facts (skills, due, level) stand under its words
-   in one line, so the words keep the row's width. */
+/* In a narrow window the exam and the level are under the words, in one column. */
 @media (max-width: 820px) {
   .cc-foot .lvl {
     flex: 0 1 calc(100% - 56px);
@@ -528,44 +589,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 
   .cc-foot .lvl + .cc-more {
     margin-left: auto;
-  }
-
-  .ledger-row {
-    grid-template-columns: auto minmax(0, 1fr) 50px;
-    row-gap: var(--s3);
-    --lr-facts-top: 0px;
-    --lr-level-top: 0px;
-  }
-
-  .lr-main {
-    grid-column: 1 / span 2;
-    grid-row: 1;
-  }
-
-  .lr-remove {
-    grid-column: 3;
-    grid-row: 1;
-    align-self: start;
-  }
-
-  .lr-proofs {
-    grid-column: 1;
-    grid-row: 2;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s1) var(--s4);
-  }
-
-  .lr-level {
-    grid-column: 2 / span 2;
-    grid-row: 2;
-    align-items: center;
-  }
-
-  .lr-level .lvl {
-    flex-direction: row;
-    align-items: center;
   }
 }
 
@@ -577,9 +600,10 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 
 .course-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s5);
+  gap: var(--s3) var(--s5);
   margin-bottom: var(--s5);
 }
 
@@ -587,14 +611,10 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   min-width: 0;
 }
 
-/* A screen's subtitle (the exam, the course, what a setup is) is the reading face in the quiet ink, on every screen. */
+/* A screen's subtitle is the exam, said the one way it is said everywhere (.exam): a sentence in the interface face. */
 .exam-line {
   margin-top: var(--s2);
-  font-family: var(--serif);
-  font-size: var(--fs-ui);
-  line-height: var(--lh-ui);
-  color: var(--muted);
-  min-height: 22px;
+  min-height: 20px;
 }
 
 /* The level on the course page opens the proofs. Its words end on the column's right edge; its hover fill reaches past it. */
@@ -615,21 +635,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
     border-color var(--t-fast) ease-out;
 }
 
-.level-stack .board-link {
-  max-width: 34ch;
-  text-wrap: balance;
-}
-
-.level-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--s1);
-  text-align: right;
-}
-
 .level:hover {
   background: var(--hover);
+}
+
+.level:active {
+  background: var(--press);
 }
 
 /* The next card: the one thing to do now, on this page and as the library's first card. */
@@ -702,19 +713,22 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 
 /* A row of the index is a row of the library's ledger: the whole row is the
    button, its hairlines run the column's full width, it takes no hover fill,
-   and pointed at it darkens its name and its chevron. Its box is the column's
-   own, so its keyboard ring is drawn inside the column, and its words are set
-   in from the ring. With room in the margin its name hangs there as a note,
-   on the baseline of its first line; without, the name is the row's heading
-   and the chevron stands at its end. */
+   and pointed at its title is underlined and its chevron goes to ink. Its text,
+   its dots and its chevron stand on the column's own edge, flush with the card
+   above and the material strip below; its box is 12px wider each side (a
+   margin out, the padding back in), so the keyboard ring is drawn inside that
+   box and never crosses a letter. The row's title is the row's, in the column
+   in the reading face at the card size, as a course's name is in the library:
+   it is not a note in the margin. */
 .index-row {
   position: relative;
-  --chev-line: 21.75px;
+  --chev-line: calc(var(--fs-card) * var(--lh-tight));
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  --row-in: var(--s2);
-  width: 100%;
-  padding: var(--s4) var(--row-in);
+  gap: var(--s2);
+  width: calc(100% + var(--s3) * 2);
+  margin: 0 calc(var(--s3) * -1);
+  padding: var(--s4) var(--s3);
   border: 0;
   border-radius: var(--r-control);
   background: transparent;
@@ -726,8 +740,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 .index-row:last-child::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: var(--s3);
+  right: var(--s3);
   height: 1px;
   background: var(--line-2);
 }
@@ -740,11 +754,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   bottom: 0;
 }
 
-/* The chevron stands at the column's right edge, level with the row's first line, over no text: the first line leaves room for it. */
+/* The chevron stands at the column's right edge, level with the title, over no text. */
 .index-row .row-chev {
   position: absolute;
   top: calc(var(--s4) + (var(--chev-line) - 14px) / 2);
-  right: var(--row-in);
+  right: var(--s3);
 }
 
 .index-row:active {
@@ -752,33 +766,9 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   transition-duration: 80ms;
 }
 
-.index-row > .sec-name {
-  padding-right: 28px;
-}
-
-@media (min-width: 960px) {
-  .index-row > .sec-name {
-    padding-right: 0;
-  }
-
-  /* A row's name is something to open, so it is set as a link to a page is: in ink, Literata, 600, where the notes of other sections are italic and quiet. */
-  .index-row > .sec-name {
-    font-style: normal;
-    font-weight: 600;
-    color: var(--text);
-    /* The row's words are set in from its ring; the name stands level with the other notes, on the column's own edge. */
-    translate: calc(-100% - var(--note-gap) - var(--row-in)) 0;
-  }
-}
-
-@media (max-width: 959px) {
-  .index-row {
-    --chev-line: 28.6px;
-  }
-
-  .index-row > .sec-name {
-    margin-bottom: var(--s2);
-  }
+.index-name {
+  padding-right: var(--s6);
+  margin-bottom: 0;
 }
 
 /* The name of a step: a label of the window, so the interface face. */
@@ -2312,13 +2302,20 @@ html[data-input="key"] .composer .box:focus-within {
   margin-top: 0;
 }
 
-/* A lesson with nothing marked leads with what comes next, then says why there is no proof in a sentence or two. */
+/* Every line that is read down Lesson done runs to one measure, so the right
+   edges of neighbouring lines agree: about 75 characters of the interface
+   face, a little fewer of the reading face. */
+.summary-col {
+  --measure: 560px;
+}
+
+/* A lesson with nothing marked leads with what moved, when the record has it, then says plainly that nothing was marked, then what is due. */
 .summary-why {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
   margin-top: var(--s3);
-  max-width: 44ch;
+  max-width: var(--measure);
 }
 
 .summary-lead {
@@ -2326,7 +2323,7 @@ html[data-input="key"] .composer .box:focus-within {
   font-size: var(--fs-read);
   line-height: var(--lh-read);
   color: var(--text);
-  text-wrap: balance;
+  text-wrap: pretty;
 }
 
 .summary-because {
@@ -2336,10 +2333,14 @@ html[data-input="key"] .composer .box:focus-within {
   text-wrap: pretty;
 }
 
+.summary-because.due-next {
+  color: var(--text);
+}
+
 /* The one line that says why a right answer was not a proof: quiet, in the reading face. */
 .summary-why.quiet {
   display: block;
-  max-width: 52ch;
+  margin-top: var(--s3);
   font-family: var(--serif);
   font-size: var(--fs-ui);
   line-height: var(--lh-read);
@@ -2358,6 +2359,7 @@ html[data-input="key"] .composer .box:focus-within {
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: var(--measure);
   margin-top: var(--s5);
   border-top: 1px solid var(--line-2);
   border-bottom: 1px solid var(--line-2);
@@ -2387,6 +2389,7 @@ html[data-input="key"] .composer .box:focus-within {
 /* The review of the lesson's marks: each skill answered, and what the mark said. */
 .marked {
   width: 100%;
+  max-width: var(--measure);
   margin-top: var(--s5);
 }
 
@@ -2415,6 +2418,7 @@ html[data-input="key"] .composer .box:focus-within {
   color: var(--text);
 }
 
+/* What the lesson said of the answer, in the lesson's own words: "Marked right", "Right, with help", "Not right yet". */
 .marked-verdict {
   flex: none;
   font-size: var(--fs-small);
@@ -2440,11 +2444,6 @@ html[data-input="key"] .composer .box:focus-within {
   text-align: left;
 }
 
-/* On Lesson done the sentence has the room, so it is one line. */
-.level-line .lvl.lg .lvl-said {
-  max-width: none;
-  text-wrap: pretty;
-}
 
 /* Today's counts, the steps done and where to pick up: one quiet block. */
 .summary-facts {
@@ -2452,6 +2451,7 @@ html[data-input="key"] .composer .box:focus-within {
   flex-direction: column;
   gap: var(--s2);
   width: 100%;
+  max-width: var(--measure);
   margin-top: var(--s5);
   padding-top: var(--s4);
   border-top: 1px solid var(--line);
@@ -2478,12 +2478,14 @@ html[data-input="key"] .composer .box:focus-within {
   display: flex;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: var(--s4);
+  gap: var(--s2) var(--s4);
   margin-top: var(--s5);
 }
 
-.summary-week .run-line {
-  line-height: var(--lh-ui);
+.summary-week .run-line,
+.summary-week .week-said {
+  line-height: var(--lh-tight);
+  padding-top: 1px;
 }
 
 .summary-col .row {
@@ -2512,7 +2514,7 @@ html[data-input="key"] .composer .box:focus-within {
   }
 
   .earned-row {
-    padding: var(--s2);
+    padding: var(--s2) 0;
   }
 }
 
@@ -2543,68 +2545,89 @@ html[data-input="key"] .composer .box:focus-within {
   color: var(--muted);
 }
 
-/* What a proof is, in one quiet line under the title: "Proofs" alone reads as mathematical proofs. */
-.board-what {
-  margin-top: var(--s1);
-  font-family: var(--serif);
-  font-size: var(--fs-ui);
-  color: var(--muted);
-}
-
 .board-targets {
   margin-top: var(--s3);
 }
 
-/* The proofs and the level, on the one scope they are said of: the tally, then the words. */
+/* The student's own count, first: one line. The level (the tally and its sentence) and the proofs earned for the exam they are counted for; the two wrap, whole, when the column is narrow. */
 .board-level {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s2);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s5);
   margin-bottom: var(--s5);
-}
-
-.board-level .lvl.lg .lvl-said {
-  max-width: none;
 }
 
 .board-sum {
   min-width: 0;
-  max-width: 56ch;
-  font-size: var(--fs-small);
+  font-size: var(--fs-ui);
   line-height: var(--lh-ui);
   color: var(--muted);
   text-wrap: pretty;
-}
-
-/* The line that ties the level to the counts beside it: a proof is the unit of both. */
-.board-link {
-  min-width: 0;
-  max-width: 56ch;
-  font-size: var(--fs-small);
-  line-height: var(--lh-ui);
-  color: var(--muted);
-}
-
-.legend-sec {
-  margin-top: var(--s5);
 }
 
 .board-head .exam-line {
   min-height: 0;
 }
 
-/* What every mark on the page means, at the foot: the mark, then its words. */
+/* What every mark on the page means: at the foot, shut until it is wanted. The mark, then its words, each mark level with the first line of its words. */
+.legend-sec {
+  width: 100%;
+}
+
+.legend-sec summary {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 0 calc(var(--s2) * -1);
+  align-items: center;
+  gap: var(--s1);
+  height: 32px;
+  padding: 0 var(--s3) 0 var(--s2);
+  border-radius: var(--r-control);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+  transition: background var(--t-fast) ease-out;
+}
+
+.legend-sec summary::-webkit-details-marker {
+  display: none;
+}
+
+.legend-sec summary:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.legend-sec summary:active {
+  background: var(--press);
+}
+
+.legend-sec summary:focus-visible {
+  outline-offset: 0;
+}
+
+.legend-sec summary .icon {
+  transition: transform var(--t-fast) ease-out;
+}
+
+.legend-sec[open] summary .icon {
+  transform: rotate(90deg);
+}
+
 .legend {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s2) var(--s3);
-  margin: 0;
+  align-items: start;
+  gap: var(--s3) var(--s3);
+  max-width: 62ch;
+  margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-small);
-  line-height: var(--lh-tight);
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -2612,11 +2635,24 @@ html[data-input="key"] .composer .box:focus-within {
   display: contents;
 }
 
+/* A mark is as tall as the first line of its words, and centred on it. */
 .legend .dots,
 .legend .due,
 .legend .tally,
 .legend .legend-word {
   justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--fs-small) * var(--lh-ui));
+}
+
+.legend .tally {
+  align-items: center;
+}
+
+.legend-rule {
+  grid-column: 1 / -1;
+  color: var(--text);
 }
 
 /* Sections and rows share one left edge, and the button one right edge with the rows' last words. */
@@ -2786,6 +2822,11 @@ html[data-input="key"] .composer .box:focus-within {
   list-style: none;
 }
 
+.score:first-child,
+.weeks-row:first-child {
+  border-top: 0;
+}
+
 .score {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2891,6 +2932,11 @@ html[data-input="key"] .composer .box:focus-within {
   font-size: var(--fs-caption);
   line-height: var(--lh-ui);
   color: var(--muted);
+}
+
+/* Quiet, under the countdown, its words on the column's edge. */
+.paper-reopen {
+  margin: var(--s2) 0 0 calc(var(--s3) * -1);
 }
 
 .paper-rule {
@@ -3464,53 +3510,74 @@ html[data-input="key"] .composer .box:focus-within {
   color: var(--text);
 }
 
+/* The course's material: a place files can be dropped. At rest it is a solid
+   hairline; its edge is dashed only while files are dragged over it, because
+   a dashed edge means one thing in this window, a place to drop files. */
 .material-strip {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2) var(--s3);
+  flex-direction: column;
+  gap: var(--s2);
   margin-top: var(--s4);
   padding: var(--s3) var(--s4);
-  border: 1px dashed var(--line-input);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-card);
   font-size: var(--fs-small);
   color: var(--muted);
 }
 
-/* What the course already holds. The names are the content, so they are ink;
-   one that can be pressed (to ask for a lesson from it) is underlined, as a
-   link in a reply is. */
+.material-strip[data-over="yes"] {
+  border-style: dashed;
+  border-color: var(--muted);
+}
+
+.material-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  min-height: 40px;
+}
+
+.material-head .btn:first-of-type {
+  margin-left: auto;
+}
+
+/* What the course already holds: a count, and the newest files, each on its own line. The names are the content, so they are ink and plain text; to start a lesson from one there is a labelled button on its row. */
 .material-held {
   flex: 1 1 14rem;
   min-width: 0;
-  overflow-wrap: anywhere;
 }
 
-.file-name {
+.material-files {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
   padding: 0;
-  border: 0;
-  background: none;
+  list-style: none;
+}
+
+.material-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: 40px;
+  border-top: 1px solid var(--line);
+}
+
+/* A name never breaks at a hyphen or a space: it is one line, and a name too long for the row is cut with an ellipsis (its full name is its title). */
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text);
-  font: inherit;
-  text-align: left;
-  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
 }
 
-/* A file you can press (to ask for a lesson from it) is a small quiet button: no underline, which would read as a link and a field's contents alike. */
-button.file-name {
-  padding: 2px var(--s2);
-  margin: 0 -2px;
-  border-radius: var(--r-control);
-  cursor: pointer;
-  transition: background var(--t-fast) ease-out;
-}
-
-button.file-name:hover {
-  background: var(--hover);
-}
-
-button.file-name:active {
-  background: var(--press);
+.material-more {
+  padding: var(--s2) 0 0;
+  border-top: 1px solid var(--line);
 }
 
 .palette.paste {

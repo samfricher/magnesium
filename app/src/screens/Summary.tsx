@@ -24,12 +24,17 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * answers marked today, 2 new skills. 3 questions due tomorrow." Null when
  * there is nothing to say.
  */
-export function todaySentence(today: Today | null, options: { proofs?: boolean; tomorrow?: boolean; split?: boolean } = {}): string | null {
+export function todaySentence(
+  today: Today | null,
+  options: { proofs?: boolean; tomorrow?: boolean; split?: boolean; lesson?: number } = {},
+): string | null {
   if (!today) return null;
   // What was done, then what is due: two short sentences, the same on the course page and on Lesson done.
-  const { proofs = true, tomorrow = true, split = true } = options;
+  const { proofs = true, tomorrow = true, split = true, lesson } = options;
+  // On Lesson done the lesson's own marks are listed above, so the day's count is said only when it is a different one, and says what it counts: "Today: 5 answers marked, across lessons."
+  const across = lesson !== undefined && today.answered > 0 && today.answered !== lesson;
   const done = [
-    today.answered > 0 ? `${plural(today.answered, "answer", "answers")} marked today` : null,
+    today.answered > 0 && lesson === undefined ? `${plural(today.answered, "answer", "answers")} marked today` : null,
     today.started > 0 ? plural(today.started, "new skill", "new skills") : null,
     proofs && today.proofs > 0 ? plural(today.proofs, "proof", "proofs") : null,
   ].filter((part): part is string => part !== null);
@@ -37,6 +42,7 @@ export function todaySentence(today: Today | null, options: { proofs?: boolean; 
   // Joined, one sentence; split, what was done and what comes are two short sentences.
   const parts = split ? [done.join(", "), next ?? ""] : [[...done, ...(next ? [next] : [])].join(", ")];
   const said = parts.filter((part) => part !== "").map((part) => `${part.replace(/^./, (c) => c.toUpperCase())}.`);
+  if (across) said.unshift(`Today: ${plural(today.answered, "answer", "answers")} marked, across lessons.`);
   return said.length > 0 ? said.join(" ") : null;
 }
 
@@ -70,6 +76,9 @@ export type Sitting = {
   /** The answers the lesson showed a mark for, in the order they were marked. Empty when the record has none. */
   marks: Reviewed[];
 };
+
+/** What the lesson says of a mark, in its own words. */
+const VERDICT_SAID: Record<Reviewed["verdict"], string> = { right: "Marked right", "right with help": "Right, with help", "not yet": "Not right yet" };
 
 /** One marked answer of the lesson, said by the skill it was on: "right", "right with help" or "not yet". */
 export type Reviewed = { name: string; verdict: "right" | "right with help" | "not yet" };
@@ -157,7 +166,9 @@ export function Summary(props: {
         ? `${plural(sitting.tomorrow, "skill", "skills")} to prove tomorrow.`
         : null
     : null;
-  const today = todaySentence(sitting.today, { proofs: proofs === 0, tomorrow: comes === null });
+  // The lesson's own count of marks: the record's list when it has one, else the count the window worked out.
+  const lessonMarks = sitting.marks.length > 0 ? sitting.marks.length : (sitting.marked ?? 0);
+  const today = todaySentence(sitting.today, { proofs: proofs === 0, tomorrow: comes === null, lesson: lessonMarks });
   // Answers were marked, and not every one is a proof: say why, once.
   const fewer = !unmarked && Math.max(sitting.marked ?? 0, sitting.today?.answered ?? 0) > proofs;
   const marked = !sitting.today && sitting.marked !== null && sitting.marked > 0 ? `${plural(sitting.marked, "answer", "answers")} marked.` : null;
@@ -165,9 +176,20 @@ export function Summary(props: {
   const named = sitting.stoppedAt ? /\bstep (\d+)\b/i.exec(sitting.stoppedAt) : null;
   const agrees = !named || Number(named[1]) === sitting.stepsDone + 1;
   const steps = sitting.stepsTotal > 0 && agrees ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
+  // What moved in a lesson with nothing marked, when the data has it: "You reached step 3 of 5: what the y-intercept gives."
+  const reached = (() => {
+    if (!unmarked || sitting.stepsTotal <= 0) return null;
+    if (named && sitting.stoppedAt && Number(named[1]) <= sitting.stepsTotal) {
+      const rest = sitting.stoppedAt.slice(named.index + named[0].length).replace(/^\s*[:,.\u2013-]\s*/, "").trim();
+      return { text: `You reached step ${named[1]} of ${sitting.stepsTotal}${rest ? `: ${sentence(rest)}` : "."}`, saysStop: true };
+    }
+    return agrees && sitting.stepsDone > 0 ? { text: `You finished ${sitting.stepsDone} of ${sitting.stepsTotal} steps.`, saysStop: false } : null;
+  })();
   const tomorrow = sitting.today ? 0 : sitting.tomorrow;
   const slips = slippedBy(sitting.slipped, sitting.today?.day ?? activity?.today ?? null);
-  const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0 && slips.length === 0;
+  const showSteps = steps !== null && reached === null;
+  const showStop = sitting.stoppedAt !== null && !reached?.saysStop;
+  const nothing = !today && !marked && !showSteps && !showStop && tomorrow === 0 && slips.length === 0;
   return (
     <section className="screen summary" data-screen="summary">
       <TopBar
@@ -186,8 +208,13 @@ export function Summary(props: {
           </h1>
           {unmarked && (
             <div className="summary-why" data-role="why">
-              {comes && <p className="summary-lead">{comes}</p>}
-              <p className="summary-because">No answer was recorded as marked in this lesson, so no proof yet.</p>
+              {reached && (
+                <p className="summary-lead">
+                  <Line text={reached.text} />
+                </p>
+              )}
+              <p className="summary-because">Nothing was marked in this lesson, so no proof yet.</p>
+              {comes && <p className="summary-because due-next">{comes}</p>}
             </div>
           )}
 
@@ -214,13 +241,13 @@ export function Summary(props: {
           {sitting.marks.length > 0 && (
             <section className="sec marked" data-role="marked" aria-labelledby="marked-today">
               <h2 className="sec-name" id="marked-today">
-                Marked today
+                Marked in this lesson
               </h2>
               <ul className="marked-list">
                 {sitting.marks.slice(0, 6).map((mark, index) => (
                   <li key={index}>
                     <Line text={mark.name} className="marked-skill" />
-                    <span className="marked-verdict">{mark.verdict}</span>
+                    <span className="marked-verdict">{VERDICT_SAID[mark.verdict]}</span>
                   </li>
                 ))}
                 {sitting.marks.length > 6 && <li className="marked-more">and {sitting.marks.length - 6} more</li>}
@@ -242,9 +269,9 @@ export function Summary(props: {
                 </p>
               ))}
               {marked && <p>{marked}</p>}
-              {steps && <p>{steps}</p>}
+              {showSteps && <p>{steps}</p>}
               {tomorrow > 0 && <p>{plural(tomorrow, "skill", "skills")} to prove tomorrow.</p>}
-              {sitting.stoppedAt && (
+              {showStop && sitting.stoppedAt && (
                 <p className="selectable next-time">
                   Next time: <Line text={sentence(sitting.stoppedAt)} />
                 </p>

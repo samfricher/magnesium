@@ -8,9 +8,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, Fault, GoalText, Level, MarginNote, PaletteKey, TopBar, WeekLine, agoText, clockText, examWhen, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import { Due, Fault, GoalText, Level, MarginNote, PaletteKey, TopBar, WeekLine, agoText, clockText, ExamLine, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Card } from "../types";
 
 /** A course's name as a title: "Demo-Course" reads "Demo Course". */
@@ -32,28 +31,20 @@ function statusOf(card: Card): { text: string; tone: string } | null {
   }
 }
 
-/** What is so of the course, as plain words and not something to press: the exam and how near it is, or where the course stands. */
+/** What is so of the course, said the one way on every page: the exam as a sentence ("Midterm 1 is on Tue 17 Nov, in 6 days."), or where the course stands. */
 function ExamFact({ card }: { card: Card }) {
   const status = statusOf(card);
   if (status) {
     return (
-      <span className={status.tone === "bad" ? "fact bad" : "fact"}>
+      <span className={status.tone === "bad" ? "fact bad" : "exam"}>
         {status.tone === "bad" && <Icon name="bang" size={14} />}
         {status.text}
       </span>
     );
   }
   const exam = card.exam;
-  if (!exam) return <span className="fact">No exam set</span>;
-  return (
-    <span className="fact">
-      <Icon name="calendar" size={14} />
-      <span className="fact-text">
-        <Line text={exam.title} />
-        {examWhen(exam)}
-      </span>
-    </span>
-  );
+  if (!exam) return <span className="exam">No exam set.</span>;
+  return <ExamLine exam={exam} />;
 }
 
 /**
@@ -209,6 +200,8 @@ function CourseCard(props: {
     );
   }
 
+  const skills = <ProofSummary card={card} />;
+  const hasMeta = (card.state === "ready" && skillsProven(card.proofs) !== null) || card.due > 0 || hasProofs;
   return (
     <div className={kind} data-folder={card.folder} onKeyDown={onKeyDown}>
       <div className="lr-main">
@@ -220,18 +213,17 @@ function CourseCard(props: {
           </h2>
           <ExamFact card={card} />
         </div>
-        <p className="cc-where" id={detail}>
-          {where}
-          {card.days_ago !== null && <span className="cc-meta cc-ago">Last studied {agoText(card.days_ago)}</span>}
+      </div>
+      <p className="cc-where" id={detail} title={card.goal ? card.goal.replace(/\$/g, "") : undefined}>
+        {where}
+      </p>
+      {hasMeta && (
+        <p className="lr-meta">
+          {skills}
+          {card.due > 0 && <Due n={card.due} />}
+          {hasProofs && <Level proofs={proofs} size="sm" title={`${proofs.earned} of ${proofs.total} proofs`} />}
         </p>
-      </div>
-      <div className="lr-proofs">
-        <ProofSummary card={card} />
-        {card.due > 0 && <Due n={card.due} />}
-      </div>
-      <div className="lr-level">
-        {hasProofs && <Level proofs={proofs} size="sm" title={`${proofs.earned} of ${proofs.total} proofs`} />}
-      </div>
+      )}
       <div className="lr-remove">
         {removeButton}
         <span className="row-chev" aria-hidden="true">
@@ -307,6 +299,7 @@ export function Library(props: {
             <div className="cc-text">
               <div className="cc-name">
                 <h2 className="h-section">{name}&nbsp;</h2>
+                <span className="exam">&nbsp;</span>
               </div>
               <p className="cc-where">&nbsp;</p>
             </div>
@@ -318,9 +311,10 @@ export function Library(props: {
           <div className="lr-main">
             <div className="cc-name">
               <h2 className="h-section">{name}&nbsp;</h2>
+              <span className="exam">&nbsp;</span>
             </div>
-            <p className="cc-where">&nbsp;</p>
           </div>
+          <p className="cc-where">&nbsp;</p>
         </div>
       );
     });

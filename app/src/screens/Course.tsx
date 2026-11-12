@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, ExamSentence, Fault, GoalText, Level, MarginNote, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import { Due, ExamLine, Fault, GoalText, Level, MarginNote, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Materials, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
@@ -45,6 +45,8 @@ export function Course(props: {
   onPasteText: () => void;
   /** The files already in the course's material folder, or null while they are being read or cannot be. */
   materials: Materials | null;
+  /** Files are being dragged over the window: the material strip is where they drop. */
+  dragging?: boolean;
 }) {
   const { home, progress } = props;
   const [goal, setGoalNow] = useState(() => drafts.get(home.folder) ?? "");
@@ -71,15 +73,16 @@ export function Course(props: {
   useEffect(() => {
     if (asking) input.current?.focus();
     else if (wasAsking.current) {
-      const target = document.querySelector<HTMLElement>('.index-row[data-role="new-lesson"]') ?? document.querySelector<HTMLElement>(".screen .btn.primary:not(:disabled)");
-      target?.focus({ preventScroll: true });
+      // Only the row that opened it: no other control is given focus by the window itself, so a Space that scrolls never presses one.
+      document.querySelector<HTMLElement>('.index-row[data-role="new-lesson"]')?.focus({ preventScroll: true });
     }
     wasAsking.current = asking;
   }, [asking]);
 
-  /** A file's name was pressed while the card asks what to learn: it asks for a lesson from that file. */
+  /** "Start from this" on a file's row: the card asks what to learn, with a lesson from that file already written in. */
   const teachFrom = (name: string) => {
     setGoal(`Teach me from ${name}`);
+    props.onAsk(true);
     input.current?.focus();
   };
 
@@ -248,6 +251,7 @@ export function Course(props: {
         }))
       : [];
   const allSkills = proofs?.skills ?? 0;
+  const held = props.materials !== null && props.materials.files + props.materials.keys > 0;
 
   return (
     <section className="screen course" data-screen="course">
@@ -266,7 +270,7 @@ export function Course(props: {
             <div className="course-title">
               <h1 className="h-title">{displayName(home.name)}</h1>
               <p className="exam-line">
-                {exam ? <ExamSentence exam={exam} /> : usable && home.state === "ready" ? "No exam set." : " "}
+                {exam ? <ExamLine exam={exam} /> : usable && home.state === "ready" ? <span className="exam">No exam set.</span> : " "}
               </p>
             </div>
             {skills && (
@@ -276,10 +280,7 @@ export function Course(props: {
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="level-stack">
-                  <Level proofs={proofs} size="md" />
-                  <span className="board-link">Three proofs prove a skill. Each proof moves your level.</span>
-                </span>
+                <Level proofs={proofs} size="md" />
               </button>
             )}
           </header>
@@ -301,7 +302,7 @@ export function Course(props: {
           {usable && !sitting && (
             <div className="index">
               <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="index-name sec-name">Proofs</span>
+                <span className="index-name h-section">Proofs</span>
                 <span className="index-body">
                   <span className="index-what num">
                     {progress && proofs && proofs.total > 0 ? (skillsProven(proofs) ?? "") : PROOF_DEFINITION}
@@ -328,7 +329,7 @@ export function Course(props: {
                 </span>
               </button>
               <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
-                <span className="index-name sec-name">Timed paper</span>
+                <span className="index-name h-section">Timed paper</span>
                 <span className="index-body">
                   <span className="index-what">
                     {nextPaper
@@ -344,7 +345,7 @@ export function Course(props: {
               </button>
               {!fresh && (
                 <button className="index-row" data-role="new-lesson" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
-                  <span className="index-name sec-name">New lesson</span>
+                  <span className="index-name h-section">New lesson</span>
                   <span className="index-body">
                     <span className="index-what">Another topic: pick what to learn next.</span>
                   </span>
@@ -358,19 +359,18 @@ export function Course(props: {
           {usable && !sitting && (
             <div className="sec">
               <MarginNote>Material</MarginNote>
-              <div className="material-strip" data-role="material-strip">
-                <Icon name="clip" size={16} />
-                {props.materials && props.materials.files + props.materials.keys > 0 ? (
-                  <MaterialHeld listed={props.materials} onPick={asking ? teachFrom : null} />
-                ) : (
-                  <span>Add course material: drop files here, or choose them</span>
-                )}
-                <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
-                  {props.adding ? "Adding…" : "Choose files"}
-                </button>
-                <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
-                  Paste text
-                </button>
+              <div className="material-strip" data-role="material-strip" data-over={props.dragging ? "yes" : undefined}>
+                <div className="material-head">
+                  <Icon name="clip" size={16} />
+                  {held ? <MaterialHeld listed={props.materials!} /> : <span className="material-held">Add course material: drop files here, or choose them</span>}
+                  <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+                    {props.adding ? "Adding…" : "Choose files"}
+                  </button>
+                  <button className="btn small" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+                    Paste text
+                  </button>
+                </div>
+                {held && <MaterialFiles listed={props.materials!} onStart={teachFrom} />}
               </div>
             </div>
           )}
@@ -385,45 +385,42 @@ function listWords(items: readonly string[]): string {
   return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/**
- * What the course's material folder holds, in a line: how many files, the
- * newest by name, and how many answer keys, which are counted and never
- * named. While the card asks what to learn, a name asks for a lesson from it.
- */
-function MaterialHeld({ listed, onPick }: { listed: Materials; onPick: ((name: string) => void) | null }) {
-  const names = listed.names.slice(0, 2);
-  const more = listed.files - names.length;
-  const name = (each: string) =>
-    onPick ? (
-      <button key={each} className="file-name" title="Use this file for the lesson" onClick={() => onPick(each)} data-role="material-file">
-        {each}
-      </button>
-    ) : (
-      <span key={each} className="file-name">
-        {each}
-      </span>
-    );
+/** What the course's material folder holds, in a line: how many files, and how many answer keys, which are counted and never named. */
+function MaterialHeld({ listed }: { listed: Materials }) {
+  const files = listed.files === 1 ? "1 file" : `${listed.files} files`;
   const keys = listed.keys === 1 ? "1 answer key" : `${listed.keys} answer keys`;
   return (
     <span className="material-held" data-role="material-held">
-      {listed.files > 0 && (
-        <>
-          {listed.files} {listed.files === 1 ? "file" : "files"}:{" "}
-          {names.length === 2 && more <= 0 ? (
-            <>
-              {name(names[0])} and {name(names[1])}
-            </>
-          ) : names.length === 2 ? (
-            <>
-              {name(names[0])}, {name(names[1])} and {more} more
-            </>
-          ) : (
-            names.map(name)
-          )}
-          {listed.keys > 0 && <>, and {keys}</>}
-        </>
-      )}
-      {listed.files === 0 && <>{keys}, kept closed</>}
+      {listed.files > 0 && (listed.keys > 0 ? `${files} and ${keys}` : files)}
+      {listed.files === 0 && `${keys}, kept closed`}
     </span>
+  );
+}
+
+/**
+ * The newest files, each on its own row. A file's name is plain text. To ask
+ * for a lesson from a file there is a labelled quiet button on its row,
+ * always shown and reached by Tab.
+ */
+function MaterialFiles({ listed, onStart }: { listed: Materials; onStart: (name: string) => void }) {
+  const names = listed.names.slice(0, 2);
+  const more = listed.files - names.length;
+  if (names.length === 0) return null;
+  return (
+    <>
+      <ul className="material-files">
+        {names.map((each) => (
+          <li key={each}>
+            <span className="file-name" title={each}>
+              {each}
+            </span>
+            <button className="btn ghost small" title={`Ask for a lesson from ${each}`} onClick={() => onStart(each)} data-role="material-file">
+              Start from this
+            </button>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && <span className="material-more">and {more} more</span>}
+    </>
   );
 }

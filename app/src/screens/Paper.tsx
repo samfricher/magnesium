@@ -17,6 +17,8 @@ export function Paper(props: {
   onStart: (paper: PaperInfo, minutes: number) => void;
   onHandIn: () => void;
   onEnd: () => void;
+  /** Open the running paper's file again, when the window knows it. Absent when it does not. */
+  onOpenPaper?: () => void;
   onBack: () => void;
   onPalette: () => void;
 }) {
@@ -65,6 +67,11 @@ export function Paper(props: {
                 {over ? "over" : "left"} of {sitting.minutes} min
               </small>
             </p>
+            {props.onOpenPaper && (
+              <button className="btn ghost paper-reopen" title="Open the paper's file again" onClick={props.onOpenPaper} data-role="paper-open">
+                Open the paper again
+              </button>
+            )}
             <p className="paper-rule">
               {over ? (
                 "Time is up. Hand in what you have."

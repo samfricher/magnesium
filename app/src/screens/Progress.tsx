@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Choice, Due, ExamSentence, Fault, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
+import { Choice, Due, ExamLine, Fault, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -145,7 +145,6 @@ export function Progress(props: {
             <div className="board-title">
               <h1 className="h-title">Proofs</h1>
               <p className="board-course">{displayName(props.folderName)}</p>
-              <p className="board-what">Answers you got right on your own, each on its own day.</p>
               {data.targets.length > 1 ? (
                 <div className="board-targets">
                   <Choice
@@ -158,7 +157,7 @@ export function Progress(props: {
               ) : (
                 exam && (
                   <p className="exam-line">
-                    <ExamSentence exam={exam} />
+                    <ExamLine exam={exam} />
                   </p>
                 )
               )}
@@ -166,14 +165,20 @@ export function Progress(props: {
           </header>
 
           {skills && (
-            // The level and the next step lead; the counts are the detail under it, said of the one exam they are counted for, so the two reconcile.
+            // The student's own count leads, in one line: the level and its next step, and the proofs earned for the exam they are counted for.
             <div className="board-level">
               {levelShown && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
               <p className="board-sum num">
-                For {exam ? <Line text={exam.title} /> : "this course"}:{" "}
-                {proofs.levelled && proofs.total > 0 ? `${proofs.earned} of ${proofs.total} proofs earned, ${skills}.` : `${skills}. A course with no plan has no level.`}
+                {proofs.levelled && proofs.total > 0 ? (
+                  <>
+                    {proofs.earned} of {proofs.total} proofs earned for {exam ? <Line text={exam.title} /> : "this course"}.
+                  </>
+                ) : (
+                  <>
+                    {skills}. A course with no plan has no level.
+                  </>
+                )}
               </p>
-              {levelShown && <p className="board-link">Three proofs prove a skill. Each proof moves your level.</p>}
             </div>
           )}
 
@@ -197,41 +202,6 @@ export function Progress(props: {
             </div>
           ) : (
             <>
-            <section className="foot-section legend-sec">
-              <h2 className="sec-name">Marks</h2>
-              <ul className="legend">
-                <li>
-                  <ProofDot state="on" />
-                  <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
-                </li>
-                <li>
-                  <ProofDot state="off" />
-                  <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
-                </li>
-                <li>
-                  <span className="due" aria-hidden="true">
-                    <Icon name="clock" size={14} />
-                  </span>
-                  <span>To prove today: you can earn this skill&apos;s next proof today.</span>
-                </li>
-                {waiting && (
-                  <li>
-                    <b className="legend-word">needs a fix first</b>
-                    <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
-                  </li>
-                )}
-                {levelShown && (
-                  <li>
-                    <Tally proofs={proofs} size="sm" />
-                    <span>
-                      {proofs.level >= 10
-                        ? "The level is ten strokes, and all ten are full."
-                        : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
-                    </span>
-                  </li>
-                )}
-              </ul>
-            </section>
               <Group
                 title="To prove today"
                 count={dueCounts(due.length, props.questionsDue)}
@@ -286,7 +256,7 @@ export function Progress(props: {
                 )}
                 {data.helped_count > 0 && (
                   <section className="foot-section">
-                    <h2 className="sec-name">With help, not counted</h2>
+                    <h2 className="sec-name">With help</h2>
                     <p>
                       {data.helped_count === 1 ? "1 answer" : `${data.helped_count} answers`}
                       {data.helped.length > 0 ? `: ${data.helped.join(", ")}` : ""}. {data.helped_count === 1 ? "It returns" : "They return"} as{" "}
@@ -308,7 +278,7 @@ export function Progress(props: {
                         </div>
                       ))}
                     </div>
-                    <p className="foot-key">A filled square is a day with an answer marked, a grey one a day without, an outline a day still to come. The rule under a square is today.</p>
+                    <p className="foot-key">A filled square is a day with an answer marked. Every other day is an outline. The rule under a square is today.</p>
                   </section>
                 )}
                 {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (
@@ -333,6 +303,44 @@ export function Progress(props: {
                     )}
                   </div>
                 )}
+                <details className="legend-sec">
+                  <summary>
+                    <Icon name="right" size={14} />
+                    What the marks mean
+                  </summary>
+                  <ul className="legend">
+                    <li>
+                      <ProofDot state="on" />
+                      <span>A proof: one right answer you gave alone, on its own day. Three proofs prove a skill, and each proof moves your level.</span>
+                    </li>
+                    <li>
+                      <ProofDot state="off" />
+                      <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
+                    </li>
+                    <li>
+                      <span className="due" aria-hidden="true">
+                        <Icon name="clock" size={14} />
+                      </span>
+                      <span>To prove today: you can earn this skill&apos;s next proof today.</span>
+                    </li>
+                    {waiting && (
+                      <li>
+                        <b className="legend-word">needs a fix first</b>
+                        <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
+                      </li>
+                    )}
+                    {levelShown && (
+                      <li>
+                        <Tally proofs={proofs} size="sm" />
+                        <span>
+                          {proofs.level >= 10
+                            ? "The level is ten strokes, and all ten are full."
+                            : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
+                        </span>
+                      </li>
+                    )}
+                  </ul>
+                </details>
               </footer>
             </>
           )}

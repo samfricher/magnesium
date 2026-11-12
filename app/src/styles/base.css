@@ -1,4 +1,4 @@
-/* One window, made for studying: the pages of an exam booklet, and a slate to work on at night.
+/* One window, made for studying: the pages of an exam booklet, and a board to work on at night.
 
    Five rules decide what is here.
    1. Colour is spent only on what you have proved and on the one thing that
@@ -31,22 +31,25 @@
 :root {
   color-scheme: dark;
 
-  /* Slate: a blackboard's green-grey, with chalk-white writing on it. */
-  --bg: #232b27;
-  --surface: #29322d;
-  --raised: #303a34;
-  --hover: #37423b;
-  --line: rgba(236, 238, 231, 0.11);
-  --line-2: rgba(236, 238, 231, 0.2);
-  /* The border of a field you type in, a choice and an unfilled mark: 3:1 or better on the page, a card and a sheet. */
-  --line-input: #87918a;
+  /* The board: a blackboard's green-grey, lifted well off black, with chalk-white writing on it.
+     Every ink is 4.5:1 or better on the page, a card, a sheet, a hover, a press and a chosen row
+     (the least is the proof green on a chosen row, 4.84); a field's edge and an unfilled mark are
+     3:1 or better on all of them. */
+  --bg: #28322d;
+  --surface: #2f3a34;
+  --raised: #36423b;
+  --hover: #3b4740;
+  --line: rgba(240, 242, 236, 0.13);
+  --line-2: rgba(240, 242, 236, 0.24);
+  /* The border of a field you type in, a choice and an unfilled mark: 3:1 or better on the page, a card, a sheet and a chosen row. */
+  --line-input: #919c93;
   /* A control while it is pressed: it sinks one step below its hover fill. */
-  --press: #2d3631;
-  /* A row chosen in a list (the menu, the papers): at least 1.3:1 from the sheet or page it is on, lighter in this scheme as a hover is, with ink text above 4.5:1. */
+  --press: #333e38;
+  /* A row or a segment chosen: lighter than a hover, as the hover is lighter than the page, with ink text above 4.5:1 and an ink edge. */
   --selected: #414e47;
-  --text: #eceee7;
-  --muted: #bac1b8;
-  --faint: #a8b0a8;
+  --text: #f0f2ec;
+  --muted: #ccd2ca;
+  --faint: #bcc3ba;
   --accent: #8fcfa7;
   --accent-ink: #0f2a1c;
   --accent-hover: #a6dbbb;
@@ -54,19 +57,19 @@
   --accent-soft: rgba(143, 207, 167, 0.1);
   --accent-mid: rgba(143, 207, 167, 0.42);
   /* A brighter tint of the proof green: the part of the level earned today. */
-  --accent-bright: #d6f9e5;
-  --amber: #e8b962;
-  --amber-soft: rgba(232, 185, 98, 0.12);
-  --red: #f29587;
-  --red-soft: rgba(242, 149, 135, 0.12);
+  --accent-bright: #c4f2d6;
+  --amber: #efc06a;
+  --amber-soft: rgba(239, 192, 106, 0.12);
+  --red: #fba597;
+  --red-soft: rgba(251, 165, 151, 0.12);
   /* The one shadow, for what floats. */
-  --shadow: 0 16px 48px rgba(8, 12, 10, 0.55), 0 2px 8px rgba(8, 12, 10, 0.35);
+  --shadow: 0 16px 48px rgba(10, 15, 12, 0.5), 0 2px 8px rgba(10, 15, 12, 0.3);
   /* What sits behind a sheet or a drop: the window set aside, dark enough that the page behind no longer competes. */
-  --veil: rgba(8, 12, 10, 0.78);
-  /* The edge of a card on the page. In the slate the tone alone is enough. */
-  --card-edge: var(--line);
-  /* The magnesium flare: near-white, for an instant. */
-  --flare: #f4fffa;
+  --veil: rgba(14, 20, 17, 0.78);
+  /* The edge of a card on the page: the card is one step lighter than the page, and its edge is a little firmer than a row's hairline. */
+  --card-edge: rgba(240, 242, 236, 0.17);
+  /* The magnesium flare: paper-bright, for an instant. */
+  --flare: #f6fff9;
 
   --serif: "Literata Variable", Literata, ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   --sans: "Magnesium Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -144,6 +147,7 @@
     --red: #962d21;
     --red-soft: rgba(150, 45, 33, 0.08);
     --shadow: 0 16px 48px rgba(31, 42, 34, 0.16), 0 2px 8px rgba(31, 42, 34, 0.08);
+    --flare: #ffffff;
     /* Behind a sheet or a drop: the page itself, thinned to 70%, so the window is set aside and not darkened. */
     --veil: rgba(236, 240, 232, 0.7);
     /* Paper on paper: the card's tone is a shade from the page, so its edge is the stronger rule. */
@@ -448,13 +452,17 @@ textarea {
 
 /* ---- controls ---- */
 
-/* The secondary button: 36px, a hairline, ink. */
+/* Buttons: three roles and two heights.
+   Primary is the green fill. Secondary (.btn) has no fill and a 1px edge that
+   is 3:1 on every surface. The quiet text button (.btn.ghost) has no edge.
+   Every regular button is 40px tall and every .small one 32px, in any role, so
+   a primary and the secondary beside it share their top and their bottom. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--s2);
-  height: 36px;
+  height: 40px;
   padding: 0 var(--s4);
   border: 1px solid var(--line-input);
   font-family: var(--sans);
@@ -479,17 +487,9 @@ textarea {
   transition-duration: 80ms;
 }
 
-/* Disabled is its own look and never a hover's: no fill, a dashed edge, the faint ink. A hover is a fill, so a button that cannot be pressed is never taken for one that is pointed at. */
-.btn:disabled {
-  border: 1px dashed var(--line-input);
-  background: transparent;
-  color: var(--faint);
-}
-
-/* The primary button: 40px, green, label only. One to a screen. Its shortcut
-   is in its title and in the command palette, never in the label. */
+/* The primary button: green, label only. One to a screen. Its shortcut is in
+   its title and in the command palette, never in the label. */
 .btn.primary {
-  height: 40px;
   padding: 0 var(--s5);
   border-color: transparent;
   background: var(--accent);
@@ -506,20 +506,12 @@ textarea {
   transition-duration: 80ms;
 }
 
-.btn.primary:disabled {
-  border: 1px dashed var(--line-input);
-  background: transparent;
-  color: var(--faint);
-}
-
-/* The quiet button: text only, until it is pointed at. One size, 32px, wherever it stands. */
+/* The quiet button: text only, until it is pointed at. */
 .btn.ghost {
-  height: 32px;
   border-color: transparent;
   background: transparent;
   color: var(--muted);
   padding: 0 var(--s3);
-  font-size: var(--fs-small);
 }
 
 .btn.ghost:hover:not(:disabled) {
@@ -527,8 +519,21 @@ textarea {
   color: var(--text);
 }
 
+/* Disabled is one look for every role, and it is never dashed (a dashed edge
+   means a place to drop files, and only while files are over it): no fill, a
+   solid hairline, the label in the faint ink, no hover, and the cursor says
+   so. A quiet button has no hairline to lose. */
+.btn:disabled,
+.btn.primary:disabled,
 .btn.ghost:disabled {
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--faint);
+  cursor: default;
+}
+
+.btn.ghost:disabled {
+  border-color: transparent;
 }
 
 /* A step that cannot be undone is drawn in ink, filled: red is for faults, and a confirmation (Keep beside it) is what protects it. */
@@ -552,6 +557,10 @@ textarea {
   padding: 0 var(--s3);
   font-size: var(--fs-small);
   gap: var(--s2);
+}
+
+.btn.primary.small {
+  padding: 0 var(--s4);
 }
 
 .icon-btn {
@@ -602,9 +611,10 @@ button.key:active,
 }
 
 /* The one choice control: one of several, side by side. 32px, or 28px small.
-   The choice made is filled in ink with the page's colour on it, so it is told
-   at a glance and without the weight alone. Arrow keys move and choose; the
-   group is a single stop for Tab. */
+   The choice made is the chosen tint (--selected) with an ink edge and an ink
+   label, so it is told at a glance and by more than the weight; it is never a
+   solid block. A pointed-at segment takes the hover fill, a step lighter than
+   the page. Arrow keys move and choose; the group is a single stop for Tab. */
 .choose {
   display: inline-flex;
   align-items: stretch;
@@ -666,10 +676,14 @@ button.key:active,
   background: var(--press);
 }
 
+/* The ink edge is drawn just outside the segment, over the group's own edge and the divider beside it, so choosing moves nothing. */
 .choose button[aria-checked="true"] {
-  background: var(--text);
-  color: var(--bg);
+  position: relative;
+  z-index: 1;
+  background: var(--selected);
+  color: var(--text);
   font-weight: 600;
+  box-shadow: 0 0 0 1px var(--text);
 }
 
 .choose.locked {
@@ -986,8 +1000,9 @@ button.banner:hover {
    share of it earned today, drawn in a brighter tint at least --min-g tall. */
 .lvl {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s2) var(--s3);
   min-width: 0;
   text-align: left;
 }
@@ -1011,13 +1026,12 @@ button.banner:hover {
   --bw: 1px;
 }
 
-/* The large tally is Lesson done's: today's gain is drawn at least 8px tall. */
+/* The large tally is the library card's, Proofs' and Lesson done's. Today's gain is drawn at its true share of the stroke, and never less than 4px tall so it can be seen. */
 .tally.lg {
   --w: 6px;
   --h: 28px;
   --gap: 4px;
   --bw: 2px;
-  --min-g: 10px;
 }
 
 .tally i {
@@ -1074,11 +1088,14 @@ button.banner:hover {
   }
 }
 
-/* The level in words: one sentence, the level itself in ink and the rest quiet. Said beside the tally at the medium and large sizes, and under it at the small one, where a course is a row. */
+/* The level in words: one sentence, the level itself in ink and the rest
+   quiet. It is laid out one way at every size and on every page that says it:
+   the tally, then the sentence on one line beside it. Only when the column is
+   too narrow for both does the sentence wrap under the tally, whole. */
 .lvl-said {
   display: block;
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 28ch;
   font-size: var(--fs-small);
   line-height: var(--lh-ui);
   color: var(--muted);
@@ -1091,37 +1108,16 @@ button.banner:hover {
 }
 
 .lvl.lg .lvl-said {
-  max-width: none;
   font-size: var(--fs-ui);
 }
 
-/* Where there is room the next step is one clause that wraps whole, so a line never ends on "4 more". */
-.lvl.md .lvl-said .next,
-.lvl.lg .lvl-said .next {
+/* The next step is one clause that wraps whole, so a line never ends on "4 more". */
+.lvl-said .next {
   display: inline-block;
 }
 
 .lvl.sm {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s2);
-}
-
-/* In a row the sentence is two clean lines, the level and then the step: "Level 6." and "5 more proofs to reach level 7.", the second never broken. */
-.lvl.sm .lvl-said {
-  max-width: none;
-  font-size: var(--fs-caption);
-  line-height: var(--lh-tight);
-}
-
-.lvl.sm .lvl-said b,
-.lvl.sm .lvl-said .next {
-  display: block;
-}
-
-.lvl.sm .lvl-said .next {
-  margin-top: var(--s1);
-  white-space: nowrap;
+  gap: var(--s2) var(--s3);
 }
 
 /* ---- the proof mark: three dots ---- */
@@ -1163,14 +1159,15 @@ button.banner:hover {
   outline-offset: 2px;
 }
 
-/* The magnesium flare: the new proof burns white for an instant and settles
-   into proof green. It happens once, on Lesson done, and is the only
-   celebration in the window. */
+/* The magnesium flare: the new proof burns paper-bright with an ink edge for
+   about 300ms and settles into proof green. It happens once, on Lesson done,
+   and is the only celebration in the window. Where motion is reduced it is
+   left out, and the dot is drawn as it settles. */
 @keyframes flare {
   0%,
-  14% {
+  45% {
     background: var(--flare);
-    border-color: var(--flare);
+    border-color: var(--text);
   }
   100% {
     background: var(--accent);
@@ -1179,7 +1176,7 @@ button.banner:hover {
 }
 
 .dots i.flare {
-  animation: flare 700ms var(--ease) 260ms both;
+  animation: flare 660ms var(--ease) 260ms both;
 }
 
 /* The three-dot mark on the loading screen and the empty library: ink, a
@@ -1229,18 +1226,20 @@ button.banner:hover {
 
 /* ---- the run and the week ---- */
 
-.run-line {
+.run-line,
+.week-said {
   font-size: var(--fs-small);
+  line-height: var(--lh-tight);
   color: var(--muted);
   white-space: nowrap;
 }
 
-/* Seven days, Monday to Sunday. A day is a small solid square, never an
-   outlined box (that would be taken for something to tick) and never a circle
-   (the proof's). A day studied is ink; a day missed is a quieter grey, with no
-   outline; a day still to come is an empty outline; today has a short ink rule under its square. The grey is the
-   field-edge grey, so a day that was not studied is still 3:1 on the page.
-   Every day keeps the room for the rule, so nothing moves when it is today. */
+/* Seven days, Monday to Sunday. A day with an answer marked is a filled
+   square in ink; every other day, past, today or still to come, is an empty
+   outline in the field-edge grey (3:1 on the page). Nothing is a grey fill,
+   because a fill reads as studied. A square is never a circle (the proof's).
+   Today has a short ink rule under its square. Every day keeps the room for
+   the rule, so nothing moves when it is today. */
 .week {
   display: inline-flex;
   align-items: flex-start;
@@ -1261,7 +1260,8 @@ button.banner:hover {
   height: 10px;
   margin: 1px 0 5px;
   border-radius: 2px;
-  background: var(--line-input);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-input);
 }
 
 .week-day b {
@@ -1273,12 +1273,7 @@ button.banner:hover {
 
 .week-day.done i {
   background: var(--text);
-}
-
-/* A day still to come is an empty outline in the field-edge grey (3:1 on the page, as a missed day is), so what is past (filled) and what is ahead (an outline) read apart by shape. */
-.week-day.ahead i {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--line-input);
+  box-shadow: none;
 }
 
 .week-day.today i::after {

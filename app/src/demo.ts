@@ -41,6 +41,8 @@ let shelf = "";
 let forgotten: string[] = [];
 let found = false;
 let studiedToday = true;
+// #library:fresh is a window that has never had a study day: the week is all outlines and says so.
+let history = true;
 // A sitting earns a proof when a check or a redo it opened with was passed.
 let sittingsDone = 0;
 let stoppedAt: string | null = "step 3: what the y-intercept gives.";
@@ -283,11 +285,11 @@ function activity(): Activity {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   };
   // Studied on these days before today, and today once a sitting is done.
-  const before = [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30];
+  const before = history ? [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30] : [];
   const days = before.map((back) => day(back));
   if (studiedToday) days.push(day(0));
   days.sort();
-  return { today: day(0), days, run: studiedToday ? 4 : 3, studied_today: studiedToday };
+  return { today: day(0), days, run: !history ? 0 : studiedToday ? 4 : 3, studied_today: studiedToday };
 }
 
 function progress(target: string | null = null): Progress {
@@ -730,6 +732,10 @@ export function chooseVariant(): void {
   const [screen, state] = location.hash.slice(1).split(":");
   if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
   if (screen === "library" && state === "empty") shelf = "empty";
+  if (state === "fresh" && screen !== "session") {
+    history = false;
+    studiedToday = false;
+  }
   // The end of a sitting shows today's day being earned.
   // Nothing is marked yet today, so no study day is ticked and no count is made: the counts and the week agree.
   if (screen === "summary") {

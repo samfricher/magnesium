@@ -1144,6 +1144,7 @@ export function App() {
         onAddFiles={() => void chooseMaterial()}
         onPasteText={() => setPasting("")}
         materials={materials}
+        dragging={dragging && canAdd()}
       />
     );
   } else if (view === "session") {
@@ -1215,6 +1216,7 @@ export function App() {
         onStart={(paper, minutes) => void startPaper(paper, minutes)}
         onHandIn={() => void handIn()}
         onEnd={() => void endPaper()}
+        onOpenPaper={home.sitting?.path ? () => void api?.openFile(home.sitting!.path!).catch(() => {}) : undefined}
         onBack={() => setView("course")}
         onPalette={() => setPalette(true)}
       />

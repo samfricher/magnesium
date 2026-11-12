@@ -45,15 +45,6 @@ export function agoText(days: number | null): string {
   return `${days} days ago`;
 }
 
-/** The words after an exam's title in a chip: " in 6 days", " is tomorrow", " is today", or "". */
-export function examWhen(exam: Exam): string {
-  const days = exam.days_left;
-  if (days === null || days === undefined || days < 0) return "";
-  if (days === 0) return " is today";
-  if (days === 1) return " is tomorrow";
-  return ` in ${days} days`;
-}
-
 /** The exam as one sentence: "Midterm 1 is on Tue 17 Nov, in 6 days." The title may hold mathematics. */
 export function ExamSentence({ exam }: { exam: Exam }) {
   const days = exam.days_left;
@@ -65,6 +56,15 @@ export function ExamSentence({ exam }: { exam: Exam }) {
       <Line text={exam.title} />
       {tail ? ` is ${tail}.` : ""}
     </>
+  );
+}
+
+/** The exam, the one way it is said on every page: a sentence in the interface face, "Midterm 1 is on Tue 17 Nov, in 6 days." */
+export function ExamLine({ exam, className }: { exam: Exam; className?: string }) {
+  return (
+    <span className={`exam${className ? ` ${className}` : ""}`}>
+      <ExamSentence exam={exam} />
+    </span>
   );
 }
 
@@ -437,43 +437,16 @@ export function Choice<T extends string>(props: {
   );
 }
 
-/** The element the window itself put focus on when a screen opened. */
-let placed: Element | null = null;
-
-/**
- * When a screen opens, focus goes to its one green button, or to its title
- * when it has none, so a keyboard starts somewhere sensible. In pointer mode
- * no ring shows (main.tsx sets data-input). It takes nothing from a control
- * the screen or the learner already focused, and it moves on from its own
- * placing when `ready` changes (a button that arrives once data has been read).
- */
-function useScreenFocus(ready: unknown): void {
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const active = document.activeElement;
-      if (active && active !== document.body && active !== placed) return;
-      if (document.querySelector(".palette-veil")) return;
-      const screen = document.querySelector(".screen");
-      const target = screen?.querySelector<HTMLElement>(".btn.primary:not(:disabled)") ?? screen?.querySelector<HTMLElement>("h1") ?? null;
-      if (!target) return;
-      if (target.tagName === "H1") target.tabIndex = -1;
-      target.focus({ preventScroll: true });
-      placed = target;
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [ready]);
-}
-
 /**
  * The keys a screen takes when nothing has focus. The window moves no focus by
- * itself on load, so a ring is never hidden and the first Tab lands on the
- * first control; until then Return does the screen's one green button, and
+ * itself on load (a green button that had focus would start a lesson on
+ * Space, the Mac's page-down key, with no ring to show it), so the first Tab
+ * lands on the first control; until then Return does the screen's one green button, and
  * the keys that scroll a page (arrows, Space, Page Up and Down, Home, End)
  * scroll the screen's own scroll area, which is not the document and so would
  * not take them by itself.
  */
-export function useReturnForPrimary(ready: unknown = true): void {
-  useScreenFocus(ready);
+export function useReturnForPrimary(_ready: unknown = true): void {
   useEffect(() => {
     // A Return that began before this screen opened (the one that ended a lesson, say) is not for this screen's green button, and neither is one that is held down: the screen would be gone before it was seen.
     const opened = performance.now();
@@ -489,11 +462,8 @@ export function useReturnForPrimary(ready: unknown = true): void {
       if (stale(event)) return;
       if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const focused = document.activeElement;
-      const own = focused !== null && focused === placed;
-      if (focused && focused !== document.body && !own) return;
+      if (focused && focused !== document.body) return;
       if (document.querySelector(".palette-veil")) return;
-      // The control the window placed focus on does its own Return and Space; the keys that scroll still scroll.
-      if (own && (event.key === "Enter" || event.key === " ")) return;
       if (event.key === "Enter") {
         if (event.shiftKey) return;
         const button = document.querySelector<HTMLButtonElement>(".screen .btn.primary:not(:disabled)");
@@ -625,7 +595,8 @@ function addDays(day: string, by: number): string {
 
 /**
  * Seven days, Monday to Sunday, `back` weeks before the week of `today`. A day
- * studied is filled, today is ringed, any other day is an empty ring.
+ * with an answer marked is a filled square; every other day is an empty
+ * outline, and today has a rule under it.
  */
 export function Week({ days, today, back = 0, letters = true }: { days: string[]; today: string; back?: number; letters?: boolean }) {
   const sinceMonday = (new Date(`${today}T12:00:00`).getDay() + 6) % 7;
@@ -647,17 +618,35 @@ export function Week({ days, today, back = 0, letters = true }: { days: string[]
   );
 }
 
-/** The week of study days the learner is in, and the run, as the end of a lesson shows them. */
-export function ThisWeek({ activity }: { activity: Activity }) {
-  return <Week days={activity.days} today={activity.today} />;
+/** How many days of the week of `today` have an answer marked, from the record's days. */
+export function studyDaysThisWeek(activity: Activity): number {
+  const sinceMonday = (new Date(`${activity.today}T12:00:00`).getDay() + 6) % 7;
+  const studied = new Set(activity.days);
+  return WEEKDAYS.filter((_, index) => studied.has(addDays(activity.today, index - sinceMonday))).length;
 }
 
-/** The study week as one quiet line: its name, the seven days, the run. */
+/** What the strip shows, from the record: "2 study days this week", or "No study days yet this week". */
+export function WeekSaid({ activity }: { activity: Activity }) {
+  const n = studyDaysThisWeek(activity);
+  return <span className="week-said num">{n === 0 ? "No study days yet this week" : `${n} study ${n === 1 ? "day" : "days"} this week`}</span>;
+}
+
+/** The week of study days the learner is in, with its caption, and the run, as the end of a lesson shows them. */
+export function ThisWeek({ activity }: { activity: Activity }) {
+  return (
+    <>
+      <Week days={activity.days} today={activity.today} />
+      <WeekSaid activity={activity} />
+    </>
+  );
+}
+
+/** The study week as one quiet line: the seven days, what they show, the run. */
 export function WeekLine({ activity }: { activity: Activity }) {
   return (
     <p className="week-line">
       <span className="h-label week-label">Days you studied this week</span>
-      <Week days={activity.days} today={activity.today} />
+      <ThisWeek activity={activity} />
       <Run days={activity.run} />
     </p>
   );
