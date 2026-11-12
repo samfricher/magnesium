@@ -21,10 +21,7 @@ export function displayName(name: string): string {
 function statusOf(card: Card): { text: string; tone: string } | null {
   if (card.sitting) return { text: "Paper running", tone: "plain" };
   switch (card.state) {
-    case "not_set_up":
-      return { text: "New", tone: "plain" };
-    case "empty":
-      return { text: "Ready to start", tone: "plain" };
+    // A course with nothing started says so once, in the line where the lesson would be.
     case "needs_upgrade":
       return { text: "Needs an upgrade", tone: "plain" };
     case "no_runtime":
@@ -147,7 +144,7 @@ function CourseCard(props: {
       <GoalText goal={card.goal} />
     </span>
   ) : (
-    <span className="cc-title dim">{card.state === "ready" || card.state === "empty" ? "Nothing started yet" : " "}</span>
+    <span className="cc-title dim">{card.state === "ready" || card.state === "empty" || card.state === "not_set_up" ? "Nothing started yet" : " "}</span>
   );
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.target !== open.current) return;
@@ -180,7 +177,6 @@ function CourseCard(props: {
               <ProofSummary card={card} />
             </p>
           </div>
-          {hasProofs && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
         </div>
         <div className="cc-foot">
           <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper" : "Continue the lesson"} onClick={props.onOpen}>
@@ -192,7 +188,7 @@ function CourseCard(props: {
             </button>
           )}
           {card.due > 0 && <Due n={card.due} />}
-          <span className="grow" />
+          {hasProofs && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
           {removeButton}
         </div>
       </div>
@@ -263,9 +259,9 @@ export function Library(props: {
 
   const add = (
     <div className="shelf-add">
-      <button className="btn" title="Open a course (⌘O)" onClick={props.onPick}>
+      <button className="btn" title="Add a course (⌘O)" onClick={props.onPick}>
         <Icon name="folder" size={16} />
-        Open a course
+        Add a course…
       </button>
       <button className="btn ghost" onClick={props.onNew}>
         <Icon name="plus" size={16} />
@@ -360,7 +356,7 @@ export function Library(props: {
       <TopBar
         right={
           <>
-            <button className="menu-key" title="This Mac's setup: Claude Code, Magnesium, how lessons run" onClick={props.onSetup}>
+            <button className="menu-key" title="Check this Mac is ready for lessons" onClick={props.onSetup}>
               <Icon name="gear" size={16} />
               Setup
             </button>

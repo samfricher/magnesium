@@ -10,6 +10,8 @@
 // one. Under them: today's counts, where the learner stopped, and today's
 // place in the week.
 
+import { useEffect, useState } from "react";
+
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
 import { Level, PaletteKey, ProofDots, Run, ThisWeek, TopBar, proofsOf, sentence, useReturnForPrimary } from "../ui/bits";
@@ -67,6 +69,9 @@ export type Sitting = {
   tomorrow: number;
 };
 
+/** The sittings whose end has been seen once. The proof flare and the tally's growth play the first time only; a return to the screen shows them at rest. */
+const seen = new WeakSet<object>();
+
 export function Summary(props: {
   sitting: Sitting;
   activity: Activity | null;
@@ -79,6 +84,10 @@ export function Summary(props: {
 }) {
   const { sitting, activity } = props;
   useReturnForPrimary();
+  const [first] = useState(() => !seen.has(sitting));
+  useEffect(() => {
+    seen.add(sitting);
+  }, [sitting]);
   // The proofs earned in this lesson.
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
   // The mark is a check only when something moved: a proof, or an answer marked.
@@ -120,7 +129,7 @@ export function Summary(props: {
             <div className="earned" data-role="earned">
               {sitting.earned.slice(0, 4).map(({ row, proofs: gained }) => (
                 <span className="earned-row" key={row.name}>
-                  <ProofDots earned={proofsOf(row.dots)} today={gained} flare size={20} />
+                  <ProofDots earned={proofsOf(row.dots)} today={gained} flare={first} size={20} />
                   <Line text={row.name} className="earned-name" />
                 </span>
               ))}
@@ -135,6 +144,7 @@ export function Summary(props: {
                 size="lg"
                 text="none"
                 gain={proofs}
+                still={!first}
                 title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
               />
               <span>{level}</span>

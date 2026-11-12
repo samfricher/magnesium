@@ -118,7 +118,7 @@
     --accent-press: #124a30;
     --accent-soft: rgba(29, 106, 74, 0.08);
     --accent-mid: rgba(29, 106, 74, 0.4);
-    --accent-bright: #2b9a69;
+    --accent-bright: #4fbf8a;
     --amber: #995500;
     --amber-soft: rgba(153, 85, 0, 0.09);
     --red: #a53527;
@@ -195,11 +195,14 @@ p {
   overflow-wrap: break-word;
 }
 
+/* A count beside a heading is plain words in the quiet ink, never a raised figure. */
 .h-section .h-count {
+  margin-left: var(--s2);
   font-family: var(--sans);
   font-size: var(--fs-small);
   font-weight: 400;
   color: var(--muted);
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .h-label {
@@ -299,6 +302,18 @@ textarea {
 }
 
 .screen {
+  /* One column for the top strip and the page under it. --col is the width of
+     the page's content; the column is centred, and never starts left of the
+     inset that clears the traffic lights. A screen with another width sets
+     --col. The strip and the page both take their left and right edges from
+     --edge-l and --edge-r, so the back link, the title and the cards that
+     follow stand on one line at every window width. (100vw, not 100%, so the
+     strip and the scroll area agree to the pixel whether a scrollbar shows.) */
+  --col: 720px;
+  --inset: 76px;
+  --outset: var(--s5);
+  --edge-l: max(var(--inset), calc((100vw - var(--col)) / 2));
+  --edge-r: max(var(--outset), calc((100vw - var(--col)) / 2));
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -329,11 +344,11 @@ textarea {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: var(--s2) var(--s6) var(--s7);
+  padding: var(--s2) var(--edge-r) var(--s7) var(--edge-l);
 }
 
 .screen > .center > * {
-  margin: auto;
+  margin: auto 0;
 }
 
 /* The top strip is also how the window is dragged. The traffic lights sit
@@ -345,12 +360,28 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: var(--s3);
+  padding: 0 var(--edge-r) 0 var(--edge-l);
+}
+
+/* The strip's two ends are the page's own edges: the back link's arrow stands
+   where the title below it begins, and the menu key's key where the column
+   ends. A control's hover fill reaches 8px past the edge, as a row's does. */
+.bar-side:first-child .crumb {
+  margin-left: calc(var(--s2) * -1);
+}
+
+.bar-side.end .menu-key:last-child {
+  margin-right: calc(var(--s2) * -1);
+}
+
+/* The lesson's strip has its own geometry until the lesson takes the column
+   too: set --col on .session to the lesson's width, delete these two rules
+   and the End link's margin in the lesson's styles, and it follows. */
+.screen.session .bar {
   padding: 0 var(--s4);
 }
 
-/* The two sides are the same width, so the middle is the window's middle.
-   The left side starts after the traffic lights. */
-.bar-side:first-child {
+.screen.session .bar-side:first-child {
   padding-left: 76px;
 }
 
@@ -391,7 +422,7 @@ textarea {
   gap: var(--s2);
   height: 36px;
   padding: 0 var(--s4);
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--line-input);
   font-family: var(--sans);
   border-radius: var(--r-control);
   background: transparent;
@@ -461,7 +492,7 @@ textarea {
 
 .btn.danger {
   color: var(--red);
-  border-color: var(--red-soft);
+  border-color: var(--red);
   background: var(--red-soft);
 }
 
@@ -504,7 +535,6 @@ textarea {
 .crumb:active:not(:disabled),
 button.chip:active,
 .passage:active,
-.paper-list button:active,
 .index-row:active,
 .more:active,
 .add-menu .menu button:active,
@@ -607,14 +637,16 @@ html:not([data-input="key"]) .choose:has(button:focus-visible) {
   outline: none;
 }
 
-/* A key hint: a keycap on a button, or a key named in a line of text. */
+/* The keycap: the one way a key is drawn, wherever a key is named (the menu's
+   key, a shortcut list, a numbered option). Outlined, never filled; add class
+   "key" to anything that is a key. */
 .key,
 kbd {
   display: inline-flex;
   align-items: center;
   height: 24px;
   padding: 0 var(--s2);
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--line-input);
   border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
@@ -673,12 +705,6 @@ button.key:hover {
   transition: border-color var(--t-fast) ease-out;
 }
 
-.field.big {
-  height: 52px;
-  padding: 0 var(--s4);
-  border-radius: var(--r-card);
-}
-
 .field::placeholder,
 textarea::placeholder {
   color: var(--faint);
@@ -700,7 +726,7 @@ textarea::placeholder {
 }
 
 .row.center {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .aside {
@@ -712,7 +738,7 @@ textarea::placeholder {
 p.aside {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--s2);
   text-wrap: balance;
 }
@@ -795,7 +821,7 @@ button.banner:hover {
   max-width: 100%;
   height: 24px;
   padding: 0 var(--s3);
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--line-input);
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
@@ -850,6 +876,9 @@ button.banner:hover {
 .tally i {
   --a: 0;
   --g: 0;
+  /* The least that is drawn of any share above nothing: 3px. */
+  --ma: 0px;
+  --mg: 0px;
   position: relative;
   width: calc(var(--u) * 4);
   height: calc(var(--u) * 16);
@@ -872,16 +901,20 @@ button.banner:hover {
 
 .tally i::before {
   bottom: 0;
-  height: calc(var(--a) * 100%);
+  height: max(var(--ma), calc(var(--a) * 100%));
   background: var(--accent);
 }
 
 /* What was earned today sits on top of the rest, in a brighter tint, and grows once. */
 .tally i::after {
-  bottom: calc(var(--a) * 100%);
-  height: calc(var(--g) * 100%);
+  bottom: max(var(--ma), calc(var(--a) * 100%));
+  height: max(var(--mg), calc(var(--g) * 100%));
   background: var(--accent-bright);
   transform-origin: bottom;
+}
+
+/* Only Lesson done, the first time it is seen, grows it; anywhere else it is drawn at rest. */
+.tally.grows i::after {
   animation: grow 700ms var(--ease) 260ms both;
 }
 
@@ -1027,8 +1060,10 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-/* Seven days, Monday to Sunday: quieter than the proof mark. A day studied is
-   a filled 10px dot, today a ring in ink, any other day a ring in --faint. */
+/* Seven days, Monday to Sunday. A study day is a small square, so it is never
+   taken for a proof, which is the only filled circle in the window: a day
+   studied is a filled 10px square in ink, today a ring round its square, any
+   other day an outlined square in --faint. */
 .week {
   display: inline-flex;
   align-items: flex-start;
@@ -1048,7 +1083,7 @@ button.banner:hover {
   height: 10px;
   margin-top: 1px;
   border: 1.5px solid var(--faint);
-  border-radius: 50%;
+  border-radius: 2px;
 }
 
 .week-day b {
@@ -1068,6 +1103,11 @@ button.banner:hover {
 }
 
 .week-day.today.done i {
+  outline: 1.5px solid var(--text);
+  outline-offset: 1.5px;
+}
+
+.week-day.today:not(.done) i {
   outline: 1.5px solid var(--text);
   outline-offset: 1.5px;
 }
@@ -1161,6 +1201,8 @@ button.banner:hover {
   height: 44px;
   border: 0;
   background: transparent;
+  /* What is typed is ink; only the placeholder is faint. */
+  color: var(--text);
   font-size: var(--fs-ui);
 }
 
@@ -1174,13 +1216,20 @@ button.banner:hover {
 }
 
 /* The list is sized to whole rows (40px each), so no row is ever cut in half. */
+/* The list shows seven rows and half of the eighth, so a list that goes on is
+   seen to go on, and a soft fade at its foot says so too while there is more
+   below (the palette sets data-more). */
 .palette-list {
   --row: 40px;
-  max-height: calc(var(--row) * 8 + var(--s2) * 2);
+  max-height: calc(var(--row) * 7.5 + var(--s2) * 2);
   overflow-y: auto;
   padding: var(--s2);
-  scroll-snap-type: y proximity;
   scroll-padding: var(--s2);
+}
+
+.palette-list[data-more="yes"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent 100%);
 }
 
 .palette-list [role="option"] {
@@ -1192,7 +1241,6 @@ button.banner:hover {
   border-radius: var(--r-control);
   color: var(--muted);
   font-size: var(--fs-ui);
-  scroll-snap-align: start;
   cursor: pointer;
   transition: background var(--t-fast) ease-out;
 }
@@ -1298,7 +1346,7 @@ button.banner:hover {
   }
 
   .palette-list {
-    max-height: calc(40px * 6 + var(--s2) * 2);
+    max-height: calc(40px * 5.5 + var(--s2) * 2);
   }
 
   .palette-keys {
@@ -1314,7 +1362,7 @@ button.banner:hover {
   /* Nothing that loops is shortened to 0.01ms, which would leave it frozen at
      whatever opacity it stopped on: it is removed, and rests at full opacity. */
   .dots i.flare,
-  .tally i::after,
+  .tally.grows i::after,
   .mark.breathing i,
   .ghosted {
     animation: none !important;

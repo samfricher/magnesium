@@ -47,7 +47,16 @@ function Step(props: { ok: boolean; choice?: boolean; title: string; detail: str
   );
 }
 
-function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKeep: () => void; onCheck: () => void }) {
+/** Whether the program is what stops a lesson, so that its step holds the screen's one green button. */
+function runtimeBlocks(runtime: RuntimeSetup): boolean {
+  return runtime.state !== "ready" && runtime.state !== "kept";
+}
+
+/**
+ * The program's step. `lead` is true when this step holds up the lesson and is
+ * the first that does: its action is the screen's one primary button.
+ */
+function RuntimeStep(props: { runtime: RuntimeSetup; lead: boolean; onReplace: () => void; onKeep: () => void; onCheck: () => void }) {
   const { runtime } = props;
   const installed = runtime.installed;
   const bundled = runtime.bundled;
@@ -87,7 +96,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
               Replace with {versionNumber(bundled.version)}
             </button>
           )}
-          <button className="btn small" onClick={props.onCheck}>
+          <button className={bundled || !props.lead ? "btn small" : "btn primary"} onClick={props.onCheck}>
             Check again
           </button>
         </div>
@@ -114,7 +123,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
     >
       <p className="selectable">{runtime.message}</p>
       <div className="row">
-        <button className="btn small" onClick={props.onCheck}>
+        <button className={props.lead ? "btn primary" : "btn small"} onClick={props.onCheck}>
           Try again
         </button>
       </div>
@@ -122,7 +131,8 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
   );
 }
 
-function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: () => void; onCheck: () => void; onLink: (url: string) => void }) {
+/** `lead` is true when nothing before this step holds up the lesson: its action is the screen's one primary button. */
+function AccountStep(props: { account: Account; lead: boolean; signingIn: boolean; onSignIn: () => void; onCheck: () => void; onLink: (url: string) => void }) {
   const { account } = props;
   const name = account.name || "Claude Code";
   if (!account.installed) {
@@ -133,11 +143,11 @@ function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: ()
         </p>
         <div className="row">
           {account.install_page && (
-            <button className="btn small" onClick={() => props.onLink(account.install_page!)}>
+            <button className={props.lead ? "btn primary" : "btn small"} onClick={() => props.onLink(account.install_page!)}>
               Anthropic&apos;s install page <Icon name="external" size={14} />
             </button>
           )}
-          <button className="btn small" onClick={props.onCheck}>
+          <button className={props.lead && !account.install_page ? "btn primary" : "btn small"} onClick={props.onCheck}>
             Check again
           </button>
         </div>
@@ -146,7 +156,7 @@ function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: ()
   }
   const signIn = (
     <div className="row">
-      <button className="btn small" disabled={props.signingIn} onClick={props.onSignIn}>
+      <button className={props.lead ? "btn primary" : "btn small"} disabled={props.signingIn} onClick={props.onSignIn}>
         {props.signingIn ? "Waiting for the browser…" : "Sign in"}
       </button>
       <button className="btn small" onClick={props.onCheck}>
@@ -203,6 +213,8 @@ export function Setup(props: {
   useReturnForPrimary();
   const ready = setupReady(setup);
   const version = aboutText(props.about);
+  // The one green button is the action that unblocks setup: the program's if that is what is wrong, else Claude Code's. Once setup is ready it is Done.
+  const programFirst = setup ? runtimeBlocks(setup.runtime) : false;
 
   let title = "Before your first lesson";
   let sub = "Magnesium runs on this Mac and teaches through Claude Code.";
@@ -236,8 +248,15 @@ export function Setup(props: {
           <p className="setup-sub">{sub}</p>
           {setup && !ready && (
             <div className="steps">
-              <RuntimeStep runtime={setup.runtime} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
-              <AccountStep account={setup.account} signingIn={props.signingIn} onSignIn={props.onSignIn} onCheck={props.onCheck} onLink={props.onLink} />
+              <RuntimeStep runtime={setup.runtime} lead={programFirst} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
+              <AccountStep
+                account={setup.account}
+                lead={!programFirst}
+                signingIn={props.signingIn}
+                onSignIn={props.onSignIn}
+                onCheck={props.onCheck}
+                onLink={props.onLink}
+              />
             </div>
           )}
           {setup && (
@@ -249,8 +268,15 @@ export function Setup(props: {
               <div className="steps">
                 {ready && (
                   <>
-                    <RuntimeStep runtime={setup.runtime} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
-                    <AccountStep account={setup.account} signingIn={props.signingIn} onSignIn={props.onSignIn} onCheck={props.onCheck} onLink={props.onLink} />
+                    <RuntimeStep runtime={setup.runtime} lead={false} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
+                    <AccountStep
+                      account={setup.account}
+                      lead={false}
+                      signingIn={props.signingIn}
+                      onSignIn={props.onSignIn}
+                      onCheck={props.onCheck}
+                      onLink={props.onLink}
+                    />
                   </>
                 )}
                 <div className="step plain">
@@ -290,12 +316,16 @@ export function Setup(props: {
             </details>
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
-          <div className="row center">
-            <button className="btn primary" disabled={!ready} title="Done (Return)" onClick={props.onBack} data-role="setup-done">
-              {props.canGoBack ? "Done" : "Go to your library"}
-            </button>
-            {setup && !ready && <span className="aside">Finish the steps above first.</span>}
-          </div>
+          {/* While a step above is open, its own action is the one green button; the way out is said in words, never as a button that cannot be pressed. */}
+          {ready ? (
+            <div className="row center">
+              <button className="btn primary" title="Done (Return)" onClick={props.onBack} data-role="setup-done">
+                {props.canGoBack ? "Done" : "Go to your library"}
+              </button>
+            </div>
+          ) : (
+            setup && <p className="aside">{props.canGoBack ? "Once these steps are done, Done takes you back to the library." : "Once these steps are done, you can go to your library."}</p>
+          )}
         </div>
       </div>
     </section>

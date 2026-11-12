@@ -2,7 +2,7 @@
 // happens on paper, away from the screen. The tutor and the key are both out
 // of reach until the learner hands in.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "../ui/icons";
 import { PaletteKey, TopBar, clockText, radioKey, useNow, useReturnForPrimary } from "../ui/bits";
@@ -28,6 +28,12 @@ export function Paper(props: {
   const [picked, setPicked] = useState<PaperInfo | null>(props.chosen ?? home.papers.find((p) => !p.sat) ?? home.papers[0] ?? null);
   const [minutes, setMinutes] = useState<string>(String(picked?.minutes ?? home.block_minutes));
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // Handing in marks the paper and ends the sitting, so it asks first. Keep working has focus, so Return never hands in by itself.
+  const [confirmIn, setConfirmIn] = useState(false);
+  const keep = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirmIn) keep.current?.focus();
+  }, [confirmIn]);
 
   if (sitting) {
     const total = sitting.minutes * 60;
@@ -55,25 +61,57 @@ export function Paper(props: {
                 </>
               )}
             </p>
-            <div className="row center paper-actions">
-              <button className="btn primary" onClick={props.onHandIn}>
-                Hand in a photo or PDF
-              </button>
-              {confirmEnd ? (
-                <>
-                  <button className="btn danger" onClick={props.onEnd}>
-                    End the paper
+            {confirmIn ? (
+              <div
+                className="paper-ask"
+                role="group"
+                aria-label={`Hand in ${sitting.name}?`}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setConfirmIn(false);
+                  }
+                }}
+              >
+                <p className="paper-ask-q">Hand in {sitting.name} now?</p>
+                <div className="row center paper-actions">
+                  <button
+                    className="btn primary"
+                    onClick={() => {
+                      setConfirmIn(false);
+                      props.onHandIn();
+                    }}
+                    data-role="paper-hand-in"
+                  >
+                    Hand in
                   </button>
-                  <button className="btn ghost" onClick={() => setConfirmEnd(false)}>
-                    Keep going
+                  <button className="btn" ref={keep} onClick={() => setConfirmIn(false)}>
+                    Keep working
                   </button>
-                </>
-              ) : (
-                <button className="btn ghost" data-role="paper-end" onClick={() => setConfirmEnd(true)}>
-                  End without handing in
+                </div>
+              </div>
+            ) : (
+              <div className="row center paper-actions">
+                <button className="btn primary" onClick={() => setConfirmIn(true)} data-role="paper-submit">
+                  Hand in a photo or PDF
                 </button>
-              )}
-            </div>
+                {confirmEnd ? (
+                  <>
+                    <button className="btn danger" onClick={props.onEnd}>
+                      End the paper
+                    </button>
+                    <button className="btn ghost" onClick={() => setConfirmEnd(false)}>
+                      Keep going
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn ghost" data-role="paper-end" onClick={() => setConfirmEnd(true)}>
+                    End without handing in
+                  </button>
+                )}
+              </div>
+            )}
             {confirmEnd && <p className="aside">Ending now marks nothing.</p>}
             <p className="aside">
               <Icon name="lock" size={13} /> The tutor is off and the key is locked until you hand in.
@@ -142,7 +180,6 @@ export function Paper(props: {
                       setMinutes(String(paper.minutes ?? home.block_minutes));
                     }}
                   >
-                    <i />
                     <span>{paper.name}</span>
                     <small>{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} min` : ""}</small>
                   </button>

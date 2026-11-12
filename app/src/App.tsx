@@ -52,7 +52,7 @@ const SHORTCUTS: Command = {
   shortcuts: [
     ["⌘K", "Open this menu"],
     ["⌘N", "New lesson (on a course page)"],
-    ["⌘O", "Open a course (in the library and on a course page)"],
+    ["⌘O", "Add a course (in the library and on a course page)"],
     ["⌘⇧H", "Hint (in a lesson)"],
     ["⌘⇧D", "I don't know (in a lesson)"],
     ["⌘⇧L", "I'm lost (in a lesson)"],
@@ -892,11 +892,11 @@ export function App() {
     if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
     list.push({ label: "Library", hint: "all courses", icon: "list", run: showLibrary });
     if (course) {
-      list.push({ label: displayName(course.name), hint: "course page", icon: "back", run: () => setView("course") });
+      list.push({ label: displayName(course.name), hint: "course page", icon: "folder", run: () => setView("course") });
       list.push({
         label: "Proofs",
         hint: "what you have proved",
-        icon: "chart",
+        icon: "proof",
         keywords: "progress stats score skills level",
         run: () => void openProgress(null),
       });
@@ -934,7 +934,7 @@ export function App() {
     }
     list.push({
       label: "Setup",
-      hint: "Claude Code, Magnesium, payment, how lessons run",
+      hint: "check this Mac is ready for lessons",
       icon: "gear",
       keywords: "settings preferences account engine lessons run on advanced version",
       run: () => openSetup(),
@@ -946,7 +946,7 @@ export function App() {
       (progress?.targets ?? [])
         .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
         .forEach((exam) =>
-          list.push({ label: `Proofs: ${exam.title}`, hint: exam.day ?? undefined, icon: "chart", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
+          list.push({ label: `Proofs: ${exam.title}`, hint: exam.day ?? undefined, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
         );
       if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
         list.push({ label: "Add course material…", hint: "or drop files on the window", icon: "clip", run: () => void chooseMaterial() });
@@ -974,7 +974,7 @@ export function App() {
       });
     }
     if (!inLesson) {
-      list.push({ label: "Open a course…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
+      list.push({ label: "Add a course…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
       list.push({ label: "New course…", icon: "plus", run: () => void newFolder() });
       list.push({ label: "Find courses on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
       if (home) {
@@ -1150,6 +1150,7 @@ export function App() {
         folderName={home.name}
         backLabel={inLesson ? "Lesson" : displayName(home.name)}
         onTarget={(target) => void loadProgress(target, true)}
+        questionsDue={home.checks_due === null ? null : home.redos_due + home.checks_due}
         onStart={!inLesson && !home.sitting && home.state === "ready" ? () => void continueLesson(false) : undefined}
         onBack={back}
         onPalette={() => setPalette(true)}

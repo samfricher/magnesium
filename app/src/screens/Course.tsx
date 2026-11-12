@@ -15,25 +15,6 @@ import { todaySentence } from "./Summary";
 /** What a proof is, for a course that has none yet. */
 const PROOF_DEFINITION = "A proof is a right answer with no help, on its own day. Three prove a skill.";
 
-/** What this window has been told about a folder's material, kept per folder: "skipped" or "added". Reads and writes never throw. */
-const MATERIAL_KEY = "magnesium.material:";
-
-function rememberedMaterial(folder: string): string | null {
-  try {
-    return window.localStorage.getItem(MATERIAL_KEY + folder);
-  } catch {
-    return null;
-  }
-}
-
-function rememberMaterial(folder: string, what: "skipped" | "added"): void {
-  try {
-    window.localStorage.setItem(MATERIAL_KEY + folder, what);
-  } catch {
-    // Without storage the step is simply asked again next time.
-  }
-}
-
 export function Course(props: {
   home: Home;
   progress: Progress | null;
@@ -64,26 +45,13 @@ export function Course(props: {
   const [goal, setGoal] = useState("");
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
-  // "Skip for now" on the first step of a new folder. It sticks for that folder: the step is not asked again.
-  const [skipped, setSkipped] = useState(() => rememberedMaterial(home.folder) !== null);
-  useEffect(() => {
-    setDeclined(false);
-    setSkipped(rememberedMaterial(home.folder) !== null);
-  }, [home.folder]);
-  // Material added through the window is remembered too, for when the folder is empty again of anything the window can see.
-  useEffect(() => {
-    if (props.material !== null) rememberMaterial(home.folder, "added");
-  }, [props.material, home.folder]);
+  useEffect(() => setDeclined(false), [home.folder]);
   useReturnForPrimary();
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
-  // A course that is known to have material (papers, an exam, a lesson begun) never shows the step.
-  const hasMaterial = home.papers.length > 0 || home.exam !== null || home.last !== null;
-  // A folder with nothing in it starts with its material: slides, notes, papers.
-  // Once something is added, or the step is skipped, it asks what to learn.
-  const gathering = fresh && !hasMaterial && !skipped && props.material === null && !props.asking;
-  const asking = !gathering && (fresh || props.asking);
+  // A new course leads with what to learn. Adding material is a quiet row under it, never a step to get past.
+  const asking = fresh || props.asking;
 
   useEffect(() => {
     if (asking) input.current?.focus();
@@ -101,6 +69,8 @@ export function Course(props: {
   const dueSentence = dueParts.length > 0 ? `${dueParts.join(", then ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const sitting = home.sitting;
   const proofs = progress?.proofs ?? null;
+  // The skills those questions are for, when the runtime has said which skills are due.
+  const dueSkills = progress && !progress.message ? progress.in_progress.filter((row) => row.due).length : null;
   const usable = home.state === "ready" || home.state === "empty" || home.state === "not_set_up";
 
   let card: JSX.Element;
@@ -161,34 +131,6 @@ export function Course(props: {
         </div>
       </>
     );
-  } else if (gathering) {
-    card = (
-      <>
-        <h2 className="h-section">Add your course material</h2>
-        <p>
-          Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
-        </p>
-        <div className="row">
-          <button className="btn" disabled={props.adding} title="Choose files" onClick={props.onAddFiles} data-role="add-files">
-            {props.adding ? "Adding…" : "Choose files"}
-          </button>
-          <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
-            Paste text
-          </button>
-          <button
-            className="btn ghost"
-            disabled={props.adding}
-            onClick={() => {
-              rememberMaterial(home.folder, "skipped");
-              setSkipped(true);
-            }}
-            data-role="skip-material"
-          >
-            Skip for now
-          </button>
-        </div>
-      </>
-    );
   } else if (asking) {
     const start = () => goal.trim() !== "" && !props.starting && props.onNewLesson(goal.trim());
     card = (
@@ -196,7 +138,7 @@ export function Course(props: {
         <h2 className="h-section">What do you want to learn?</h2>
         <input
           ref={input}
-          className="field big"
+          className="field"
           type="text"
           placeholder="A topic, a file in this course, or an exam and its date"
           autoComplete="off"
@@ -244,7 +186,7 @@ export function Course(props: {
           </button>
           {due > 0 && (
             <span className="dues">
-              <Due n={due} />
+              <Due n={due} skills={dueSkills} />
               {dueSentence && <span className="dues-what">{dueSentence}</span>}
             </span>
           )}
@@ -256,8 +198,16 @@ export function Course(props: {
   const today = todaySentence(progress?.today ?? null);
   const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
   const buckets = progress && !progress.message ? bucketsSentence(skillBuckets(progress)) : null;
-  // The skills in play: those with a proof to earn, the ones due today first.
-  const inPlay = progress ? [...progress.in_progress.filter((row) => row.due), ...progress.in_progress.filter((row) => !row.due)] : [];
+  // Every skill in play, in the order the Proofs page lists them: due today, in progress, then proven.
+  const inPlay =
+    progress && !progress.message
+      ? [
+          ...progress.in_progress.filter((row) => row.due),
+          ...progress.in_progress.filter((row) => !row.due),
+        ].map((row) => ({ name: row.name, earned: proofsOf(row.dots) }))
+          // A proven skill holds all three proofs.
+          .concat(progress.confirmed.map((row) => ({ name: row.name, earned: 3 })))
+      : [];
 
   return (
     <section className="screen course" data-screen="course">
@@ -315,10 +265,10 @@ export function Course(props: {
                   )}
                   {inPlay.length > 0 && (
                     <span className="index-marks" aria-hidden="true">
-                      {inPlay.slice(0, 8).map((row, at) => (
-                        <ProofDots key={`${row.name}${at}`} earned={proofsOf(row.dots)} label="" />
+                      {inPlay.slice(0, 24).map((row, at) => (
+                        <ProofDots key={`${row.name}${at}`} earned={row.earned} label="" />
                       ))}
-                      {inPlay.length > 8 && <span className="index-more">+{inPlay.length - 8}</span>}
+                      {inPlay.length > 24 && <span className="index-more">+{inPlay.length - 24}</span>}
                     </span>
                   )}
                 </span>
@@ -348,10 +298,10 @@ export function Course(props: {
               )}
             </div>
           )}
-          {usable && !sitting && !gathering && (
+          {usable && !sitting && (
             <div className="material-strip" data-role="material-strip">
               <Icon name="clip" size={16} />
-              <span>Drop files here, or choose them</span>
+              <span>Add course material: drop files here, or choose them</span>
               <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
                 {props.adding ? "Adding…" : "Choose files"}
               </button>

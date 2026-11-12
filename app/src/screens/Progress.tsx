@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Choice, Due, ExamSentence, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, plain, proofsOf, skillsProven } from "../ui/bits";
+import { Choice, Due, ExamSentence, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -24,14 +24,15 @@ function RowView({ row, tone }: { row: Row; tone: string }) {
   );
 }
 
-function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]; fold: number; tone: string; action?: JSX.Element | null }) {
+function Group({ title, count, rows, fold, tone, action }: { title: string; count: string; rows: Row[]; fold: number; tone: string; action?: JSX.Element | null }) {
   const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const shown = all ? rows : rows.slice(0, fold);
   return (
     <section className="group">
       <h2 className="h-section">
-        {title} <span className="h-count">({rows.length})</span>
+        {title}
+        <span className="h-count">{count}</span>
         {action}
       </h2>
       {shown.map((row, index) => (
@@ -56,6 +57,18 @@ function scoreShare(score: string): number | null {
   return total > 0 ? Math.min(1, Number(parts[1]) / total) : null;
 }
 
+/** "24/30" said as "24 of 30"; any other form as it was written. */
+function scoreText(score: string): string {
+  const parts = /^\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/.exec(score);
+  return parts ? `${parts[1]} of ${parts[2]}` : score;
+}
+
+/** "2026-11-08" as "Sun 8 Nov"; any other form as it was written. */
+function dayText(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+}
+
 export function Progress(props: {
   data: ProgressData | null;
   activity: Activity | null;
@@ -65,10 +78,14 @@ export function Progress(props: {
   onTarget: (target: string) => void;
   /** Continue the lesson, which opens with what is due. Absent while a lesson or a paper is running. */
   onStart?: () => void;
+  /** The quick checks and paper redos due today, or null when the window cannot tell. */
+  questionsDue: number | null;
   onBack: () => void;
   onPalette: () => void;
 }) {
   const { data, activity } = props;
+  // Return does Continue, the one green button, when nothing has focus; the arrow, Space and Page keys scroll the page.
+  useReturnForPrimary();
   const bar = (
     <TopBar
       left={
@@ -139,6 +156,7 @@ export function Progress(props: {
             <>
               <Group
                 title="To prove today"
+                count={dueCounts(due.length, props.questionsDue)}
                 rows={due}
                 fold={12}
                 tone="open"
@@ -150,9 +168,9 @@ export function Progress(props: {
                   ) : null
                 }
               />
-              <Group title="In progress" rows={later} fold={10} tone="open" />
-              <Group title="Proven" rows={data.confirmed} fold={6} tone="proven" />
-              <Group title="Not tested yet" rows={data.untested} fold={6} tone="untested" />
+              <Group title="In progress" count={dueCounts(later.length, null)} rows={later} fold={10} tone="open" />
+              <Group title="Proven" count={dueCounts(data.confirmed.length, null)} rows={data.confirmed} fold={6} tone="proven" />
+              <Group title="Not tested yet" count={dueCounts(data.untested.length, null)} rows={data.untested} fold={6} tone="untested" />
 
               <footer className="board-foot selectable">
                 <section className="foot-section">
@@ -175,7 +193,11 @@ export function Progress(props: {
                     {levelShown && (
                       <li>
                         <Tally proofs={proofs} size="sm" />
-                        <span>The level is ten strokes. One fills as you earn the proofs for the next level.</span>
+                        <span>
+                          {proofs.level >= 10
+                            ? "The level is ten strokes, and all ten are full."
+                            : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
+                        </span>
                       </li>
                     )}
                   </ul>
@@ -183,22 +205,26 @@ export function Progress(props: {
                 {data.scores.length > 0 && (
                   <section className="foot-section">
                     <h2 className="h-section">
-                      Papers <span className="h-count">({data.scores.length})</span>
+                      Papers
+                      <span className="h-count">{data.scores.length === 1 ? "1 paper" : `${data.scores.length} papers`}</span>
                     </h2>
-                    <div className="scores">
+                    <ol className="scores">
                       {data.scores.map((score) => {
                         const share = scoreShare(score.score);
                         return (
-                          <div className="score" key={`${score.paper}${score.date}`}>
-                            <span className="score-bar">
-                              <i style={{ height: `${Math.round((share ?? 0) * 100)}%` }} />
-                            </span>
-                            <b className="num">{score.score}</b>
-                            <span>{score.paper}</span>
-                          </div>
+                          <li className="score" key={`${score.paper}${score.date}`}>
+                            <span className="score-name">{score.paper}</span>
+                            <span className="score-date">{dayText(score.date)}</span>
+                            <b className="score-num num">{scoreText(score.score)}</b>
+                            {share !== null && (
+                              <span className="score-rule" aria-hidden="true">
+                                <i style={{ width: `${Math.max(2, Math.round(share * 100))}%` }} />
+                              </span>
+                            )}
+                          </li>
                         );
                       })}
-                    </div>
+                    </ol>
                   </section>
                 )}
                 {sure.length > 0 && (
@@ -215,11 +241,12 @@ export function Progress(props: {
                 {data.helped_count > 0 && (
                   <section className="foot-section">
                     <h2 className="h-section">
-                      With help, not counted <span className="h-count">({data.helped_count})</span>
+                      With help, not counted
+                      <span className="h-count">{data.helped_count === 1 ? "1 answer" : `${data.helped_count} answers`}</span>
                     </h2>
                     <p>
-                      {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
-                      {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
+                      {data.helped.length > 0 && `${data.helped.join(", ")}. `}
+                      {data.helped_count === 1 ? "It returns" : "They return"} as {data.helped_count === 1 ? "a question" : "questions"}.
                     </p>
                   </section>
                 )}
@@ -236,7 +263,7 @@ export function Progress(props: {
                         </div>
                       ))}
                     </div>
-                    <p className="foot-key">A filled circle is a day with an answer marked. The ringed circle is today.</p>
+                    <p className="foot-key">A filled square is a day with an answer marked. The ringed square is today.</p>
                   </section>
                 )}
                 {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (

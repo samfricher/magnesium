@@ -83,7 +83,8 @@ export function GoalText({ goal }: { goal: string }) {
   return (
     <>
       <Line text={title} />
-      {ref && <span className="goal-ref">, {ref}</span>}
+      {/* The word joiner keeps ", PS3 Q3" on the line of the title's last word; it is never left alone on a line. */}
+      {ref && <span className="goal-ref">{"\u2060"}, {ref}</span>}
     </>
   );
 }
@@ -182,9 +183,19 @@ export function bucketsSentence(buckets: SkillBuckets): string | null {
   return parts.length > 0 ? `${parts.join(", ")}.` : null;
 }
 
-/** "5 questions due today": quick checks and paper redos, the one noun for them on every screen. */
-export function questionsDue(n: number): string {
-  return `${plural(n, "question", "questions")} due today`;
+/**
+ * "5 questions due today, on 2 skills": quick checks and paper redos are
+ * questions, and what they prove are skills; the two nouns are said together
+ * wherever either is. A screen that cannot tell the skills says the questions.
+ */
+export function questionsDue(n: number, skills?: number | null): string {
+  const said = `${plural(n, "question", "questions")} due today`;
+  return skills !== undefined && skills !== null && skills > 0 ? `${said}, on ${plural(skills, "skill", "skills")}` : said;
+}
+
+/** "2 skills, 5 questions": the same two counts, as they stand beside a heading. */
+export function dueCounts(skills: number, questions: number | null): string {
+  return questions !== null && questions > 0 ? `${plural(skills, "skill", "skills")}, ${plural(questions, "question", "questions")}` : plural(skills, "skill", "skills");
 }
 
 /** The next level, in words: "4 more proofs to reach level 6." Null at the top, or with no level. */
@@ -246,17 +257,25 @@ export function ProofDot({ state }: { state: "on" | "off" | "new" }) {
 
 const TOP_LEVEL = 10;
 
-/** The tally's ten strokes, how much of each is filled, and how much of that was earned today. */
+/** The smallest fill that can be seen, in pixels: any progress at all is at least this tall. */
+const SEEN = 3;
+
+/**
+ * The tally's ten strokes: how much of each is filled, and how much of that
+ * was earned today. Level N fills strokes 1 to N; the stroke after them is
+ * filled from its foot by the share earned towards level N+1; the rest are
+ * outlines. A stroke at level 10 has nothing after it.
+ */
 export function levelStrokes(proofs: Proofs, gain: number): { a: number; g: number; full: boolean }[] {
   const { earned, total } = proofs;
-  // Where the course stands, in strokes. Levels are tenths of the proofs, as the runtime counts them: level n begins at the n-1th ninth.
+  // Where the course stands, in strokes: the level, and the share of the way to the next. Levels are tenths of the proofs, as the runtime counts them: level n begins at the n-1th ninth.
   const at = (held: number): number => {
     if (total <= 0) return 0;
     const level = Math.min(TOP_LEVEL, 1 + Math.floor((Math.max(0, held) * (TOP_LEVEL - 1)) / total));
     if (level >= TOP_LEVEL) return TOP_LEVEL;
     const lo = Math.ceil(((level - 1) * total) / (TOP_LEVEL - 1));
     const hi = Math.ceil((level * total) / (TOP_LEVEL - 1));
-    return level - 1 + (hi > lo ? Math.max(0, Math.min(1, (held - lo) / (hi - lo))) : 0);
+    return level + (hi > lo ? Math.max(0, Math.min(1, (held - lo) / (hi - lo))) : 0);
   };
   let now = at(earned);
   if (proofs.level >= TOP_LEVEL) now = TOP_LEVEL;
@@ -264,8 +283,8 @@ export function levelStrokes(proofs: Proofs, gain: number): { a: number; g: numb
     // The runtime says how many proofs the next level is away, which is the width of this stroke.
     const lo = Math.ceil(((proofs.level - 1) * total) / (TOP_LEVEL - 1));
     const hi = earned + proofs.to_next;
-    now = proofs.level - 1 + (hi > lo ? Math.max(0, Math.min(1, (earned - lo) / (hi - lo))) : 0);
-  }
+    now = proofs.level + (hi > lo ? Math.max(0, Math.min(1, (earned - lo) / (hi - lo))) : 0);
+  } else now = proofs.level;
   const before = gain > 0 ? Math.min(now, at(earned - gain)) : now;
   return Array.from({ length: TOP_LEVEL }, (_, k) => {
     const end = Math.max(0, Math.min(1, now - k));
@@ -275,11 +294,21 @@ export function levelStrokes(proofs: Proofs, gain: number): { a: number; g: numb
 }
 
 /** The tally alone: ten strokes. */
-export function Tally({ proofs, size = "md", gain = 0 }: { proofs: Proofs; size?: "sm" | "md" | "lg"; gain?: number }) {
+export function Tally({ proofs, size = "md", gain = 0, still = false }: { proofs: Proofs; size?: "sm" | "md" | "lg"; gain?: number; still?: boolean }) {
   return (
-    <span className={`tally ${size}`} aria-hidden="true">
+    <span className={`tally ${size}${gain > 0 && !still ? " grows" : ""}`} aria-hidden="true">
       {levelStrokes(proofs, gain).map((stroke, index) => (
-        <i key={index} className={stroke.full ? "full" : undefined} style={{ ["--a" as string]: stroke.a, ["--g" as string]: stroke.g }} />
+        <i
+          key={index}
+          className={stroke.full ? "full" : undefined}
+          style={{
+            ["--a" as string]: stroke.a,
+            ["--g" as string]: stroke.g,
+            // Any progress at all is drawn at least SEEN pixels tall.
+            ["--ma" as string]: stroke.a > 0 ? `${SEEN}px` : "0px",
+            ["--mg" as string]: stroke.g > 0.001 ? `${SEEN}px` : "0px",
+          }}
+        />
       ))}
     </span>
   );
@@ -294,6 +323,7 @@ export function Level({
   proofs,
   size = "md",
   gain = 0,
+  still = false,
   text = "next",
   title,
 }: {
@@ -301,6 +331,8 @@ export function Level({
   size?: "sm" | "md" | "lg";
   /** How many proofs were earned today, to draw in the brighter tint. */
   gain?: number;
+  /** Draw today's part at rest. Only the first sight of Lesson done grows it. */
+  still?: boolean;
   /** "next": the level and the next-level line; "level": the level only; "none": the tally alone. */
   text?: "next" | "level" | "none";
   title?: string;
@@ -309,7 +341,7 @@ export function Level({
   const name = `Level ${proofs.level} of ${TOP_LEVEL}${next ? `, ${next.replace(/\.$/, "")}` : ""}`;
   return (
     <span className={`lvl ${size}`} role="img" aria-label={name} title={title}>
-      <Tally proofs={proofs} size={size} gain={gain} />
+      <Tally proofs={proofs} size={size} gain={gain} still={still} />
       {text !== "none" && (
         <span className="lvl-text">
           <b>Level {proofs.level}</b>
@@ -392,33 +424,49 @@ export function Choice<T extends string>(props: {
 }
 
 /**
- * Enter does the screen's one green button when nothing has focus. The
- * window moves no focus by itself on load, so a ring is never hidden and the
- * first Tab lands on the first control; Return still goes straight on.
+ * The keys a screen takes when nothing has focus. The window moves no focus by
+ * itself on load, so a ring is never hidden and the first Tab lands on the
+ * first control; until then Return does the screen's one green button, and
+ * the keys that scroll a page (arrows, Space, Page Up and Down, Home, End)
+ * scroll the screen's own scroll area, which is not the document and so would
+ * not take them by itself.
  */
 export function useReturnForPrimary(): void {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const focused = document.activeElement;
       if (focused && focused !== document.body) return;
       if (document.querySelector(".palette-veil")) return;
-      const button = document.querySelector<HTMLButtonElement>(".screen .btn.primary:not(:disabled)");
-      if (!button) return;
+      if (event.key === "Enter") {
+        if (event.shiftKey) return;
+        const button = document.querySelector<HTMLButtonElement>(".screen .btn.primary:not(:disabled)");
+        if (!button) return;
+        event.preventDefault();
+        button.click();
+        return;
+      }
+      const area = document.querySelector<HTMLElement>(".screen > .scroll, .screen > .center");
+      if (!area) return;
+      const page = area.clientHeight * 0.9;
+      const by: Record<string, number> = { ArrowDown: 48, ArrowUp: -48, PageDown: page, PageUp: -page, " ": event.shiftKey ? -page : page };
+      if (event.key === "Home") area.scrollTo({ top: 0 });
+      else if (event.key === "End") area.scrollTo({ top: area.scrollHeight });
+      else if (event.key in by && !(event.shiftKey && event.key !== " ")) area.scrollBy({ top: by[event.key] });
+      else return;
       event.preventDefault();
-      button.click();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 }
 
-/** A due thing: an amber point and a few words. With a number, "5 questions due today"; without, "due today". */
-export function Due({ n }: { n?: number }) {
+/** A due thing: an amber point and a few words. With a number, "5 questions due today, on 2 skills"; without, "due today". */
+export function Due({ n, skills }: { n?: number; skills?: number | null }) {
   return (
     <span className="due">
       <i />
-      {n === undefined ? "due today" : questionsDue(n)}
+      {n === undefined ? "due today" : questionsDue(n, skills)}
     </span>
   );
 }

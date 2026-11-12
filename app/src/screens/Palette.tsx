@@ -39,10 +39,18 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
     });
   }, [props.commands, query]);
 
+  // Whether the list goes on below what is shown: it fades at its foot while it does.
+  const [more, setMore] = useState(false);
+  const measure = () => {
+    const box = list.current;
+    setMore(box !== null && box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+  };
   useEffect(() => setAt(0), [query]);
   useEffect(() => {
     list.current?.children[at]?.scrollIntoView({ block: "nearest" });
+    measure();
   }, [at]);
+  useLayoutEffect(measure, [shown, keys]);
 
   // Focus goes to the input and stays there: a screen behind that takes
   // focus a moment later (an answer box, say) is given no keystrokes.
@@ -143,7 +151,7 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
             <p className="palette-keys-back">Press Esc to go back to the list.</p>
           </div>
         ) : (
-          <div className="palette-list" id="palette-list" role="listbox" aria-label="Commands" ref={list}>
+          <div className="palette-list" id="palette-list" role="listbox" aria-label="Commands" ref={list} data-more={more ? "yes" : "no"} onScroll={measure}>
             {shown.map((command, index) => (
               <div
                 key={`${command.label}${command.hint ?? ""}`}
