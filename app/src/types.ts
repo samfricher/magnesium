@@ -82,6 +82,55 @@ export type Step = { step: string; status: "todo" | "doing" | "done" | string };
 
 export type Rail = { goal: string | null; steps: Step[]; next_action: string | null };
 
+/**
+ * How the window sends a message. "talk": conversation (a question, a change
+ * to the plan, something off the plan) that is never marked, and the open
+ * task stays open. "answer": an answer to the open task, marked as any answer
+ * is. Omitted: the tutor decides, as before.
+ */
+export type Intent = "talk" | "answer";
+
+/** One thing on the plan's list of what to study, as the plan file holds it. */
+export type PlanItem = {
+  /** Stable while the item's title is: the plan's own number when it has one. */
+  id: string;
+  title: string;
+  status: "todo" | "doing" | "done";
+  /** The day the plan puts it on, "2026-11-14", when it names one. */
+  day: string | null;
+  /** The plan's own words about it: its purpose or length. */
+  note: string | null;
+};
+
+/**
+ * The open folder's study plan, read fresh from the runtime and the plan
+ * files. Every field is empty when the folder has none: no plan is never
+ * "behind".
+ */
+export type Plan = {
+  /** The plan's key, e.g. "midterm-2". */
+  target: string | null;
+  /** e.g. "Midterm 2". */
+  title: string | null;
+  /** "2026-11-20", or null when undated. */
+  exam_date: string | null;
+  /** The goal being worked on. */
+  goal: string | null;
+  /** That goal's route. */
+  steps: Step[];
+  /** The plan's ordered list of what to study, as the plan holds it. */
+  items: PlanItem[];
+  /** The plan file's Markdown, for a concept that shows it as a document. */
+  text: string | null;
+  /** The plan file, relative to the study folder: "Study/midterm-2/plan.md". */
+  path: string | null;
+  /** When any of the above last changed, ms since the epoch. */
+  changed_ms: number | null;
+};
+
+/** A part of the plan that a turn changed. */
+export type PlanPart = "exam_date" | "items" | "goal" | "steps" | "text";
+
 /** 2 is a pass that counts, 1 a pass made before a later failure, 0 a pass still to make. */
 export type Dots = [number, number, number];
 
@@ -152,7 +201,11 @@ export type AgentEvent =
   | { type: "withdrawn"; id: string }
   | { type: "turn_ended"; ok: boolean; interrupted: boolean; error: string | null }
   | { type: "notice"; kind: NoticeKind; text: string }
-  | { type: "exited"; expected: boolean; detail: string | null };
+  | { type: "exited"; expected: boolean; detail: string | null }
+  /** Sent after a turn that changed the plan, the goal, its steps or the exam date. Read `plan()` for how it stands. */
+  | { type: "plan_changed"; what: PlanPart[] }
+  /** The record has a new mark for the last message, so no screen polls `marks`. */
+  | { type: "marked"; mark: Mark };
 
 export type Words = { shown: string; sent: string };
 
@@ -264,7 +317,8 @@ export interface Core {
   signIn(): Promise<void>;
   about(): Promise<About>;
   openSession(resume: boolean): Promise<Opened>;
-  send(text: string): Promise<void>;
+  /** Send the learner's words. `intent` says what they are; omitted, the tutor decides. */
+  send(text: string, intent?: Intent): Promise<void>;
   sendNewLesson(goal: string): Promise<void>;
   sendShown(shown: string, sent: string): Promise<void>;
   interrupt(): Promise<void>;
@@ -272,6 +326,8 @@ export interface Core {
   answer(id: string, answers: Answer[]): Promise<void>;
   stop(stoppedAt: string | null): Promise<void>;
   rail(): Promise<Rail>;
+  /** The open folder's study plan, read fresh. */
+  plan(): Promise<Plan>;
   progress(target: string | null): Promise<Progress>;
   setBlockMinutes(minutes: number): Promise<void>;
   attach(path: string, group: string): Promise<string>;

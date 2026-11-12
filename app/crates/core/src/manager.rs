@@ -16,13 +16,14 @@ use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
-    Harness, Payment, StartOptions,
+    Harness, Intent, Payment, StartOptions,
 };
 use crate::files;
 use crate::find;
 use crate::install::{self, RuntimeSetup};
 use crate::material::{self, Added};
 use crate::paths;
+use crate::plan::{self, Plan};
 use crate::runtime;
 use crate::store::{Engine, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
@@ -263,6 +264,11 @@ impl Manager {
 
     pub fn rail(&self) -> AgentResult<Rail> {
         Ok(study::rail(&self.need_folder()?))
+    }
+
+    /// The open folder's study plan, read fresh.
+    pub fn plan(&self) -> AgentResult<Plan> {
+        Ok(plan::read(&self.need_folder()?))
     }
 
     /// The answers the runtime has marked in the open folder, oldest first.
@@ -520,23 +526,36 @@ impl Manager {
         act(conversation.as_mut())
     }
 
-    fn send_as(&self, shown: &str, sent: &str, typed: bool) -> AgentResult<()> {
+    fn send_as(
+        &self,
+        shown: &str,
+        sent: &str,
+        typed: bool,
+        intent: Option<Intent>,
+    ) -> AgentResult<()> {
         let buffer = Arc::clone(&lock(&self.inner).buffer);
         {
             let mut buffer = lock(&buffer);
             buffer.learner = shown.to_owned();
             buffer.typed = typed;
         }
-        self.with_conversation(|conversation| conversation.send(sent))
+        self.with_conversation(|conversation| conversation.send_with(sent, intent))
     }
 
-    /// Send the learner's words exactly as typed.
+    /// Send the learner's words exactly as typed, and leave it to the tutor
+    /// whether they answer the open task.
     pub fn send(&self, text: &str) -> AgentResult<()> {
+        self.send_with(text, None)
+    }
+
+    /// Send the learner's words exactly as typed, saying what they are:
+    /// talk is never marked, an answer is marked as any answer is.
+    pub fn send_with(&self, text: &str, intent: Option<Intent>) -> AgentResult<()> {
         let text = text.trim();
         if text.is_empty() {
             return Ok(());
         }
-        self.send_as(text, text, true)
+        self.send_as(text, text, true, intent)
     }
 
     /// Start a new lesson on what the learner named.
@@ -546,7 +565,12 @@ impl Manager {
             return Ok(());
         }
         let engine = lock(&self.inner).engine;
-        self.send_as(goal, &self.harness_for(engine).new_lesson(goal), false)
+        self.send_as(
+            goal,
+            &self.harness_for(engine).new_lesson(goal),
+            false,
+            None,
+        )
     }
 
     /// Wait, at most `limit`, until the last reply's record is kept: the
@@ -710,7 +734,7 @@ impl Manager {
     /// sitting, or the request to mark a paper. They can be shown one way and
     /// worded another for the agent, and they are not counted as an answer.
     pub fn send_shown(&self, shown: &str, sent: &str) -> AgentResult<()> {
-        self.send_as(shown, sent, false)
+        self.send_as(shown, sent, false, None)
     }
 
     pub fn set_block_minutes(&self, minutes: u32) {
