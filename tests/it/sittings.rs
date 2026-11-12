@@ -1,6 +1,6 @@
 //! A sitting opens with what is due: quick checks and paper redos, which the
 //! runtime schedules from recorded attempts.
-use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
+use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -104,18 +104,10 @@ fn store(e: &TestEnvironment) -> Connection {
 }
 
 /// What a later day looks like to the runtime: every recorded answer and
-/// change moves a day and two hours back, so a check made today is due, and
-/// the last learner message was more than three hours ago.
+/// change moves one local day back, so a check made today is due, and the
+/// last learner message was more than three hours ago.
 fn next_day(e: &TestEnvironment) {
-    let back = 26 * HOUR_MS;
-    let conn = store(e);
-    conn.execute(
-        "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
-        [back],
-    )
-    .unwrap();
-    conn.execute("UPDATE practice_events SET at_ms=at_ms-?1", [back])
-        .unwrap();
+    clock::days_pass(&e.workspace, 1);
     sittings(e)
         .execute(
             "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
