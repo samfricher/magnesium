@@ -112,7 +112,11 @@ export function Palette(props: { commands: Command[]; footer?: string | null; on
             }}
             onKeyDown={(e) => {
               if (composing(e)) return;
-              if (e.key === "ArrowDown") {
+              // Tab never leaves the menu: it moves through the items, as the arrow keys do.
+              if (e.key === "Tab") {
+                e.preventDefault();
+                if (!keys) setAt((n) => Math.max(0, Math.min(shown.length - 1, n + (e.shiftKey ? -1 : 1))));
+              } else if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setAt((n) => Math.min(n + 1, shown.length - 1));
               } else if (e.key === "ArrowUp") {

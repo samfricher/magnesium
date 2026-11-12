@@ -1,4 +1,8 @@
-/* ---- the library: every course, the most urgent first ---- */
+/* ---- the library: the next lesson, then a ruled index of the courses ---- */
+
+.screen.library {
+  --col-w: 960px;
+}
 
 .shelf {
   max-width: 960px;
@@ -6,11 +10,12 @@
   padding: var(--s4) var(--s7) var(--s8);
 }
 
+/* The title, and under it the week of study days with its caption. */
 .shelf-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s5);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
   margin-bottom: var(--s5);
 }
 
@@ -23,69 +28,230 @@
 
 .shelf-week {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--s2);
+  align-items: center;
+  gap: var(--s4);
+  min-height: 40px;
 }
 
 .shelf-caption {
+  display: flex;
+  flex-direction: column;
   font-size: var(--fs-small);
+  line-height: 20px;
   color: var(--muted);
 }
 
-.shelf-days {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s4);
-}
-
-.shelf-days .run-line {
-  line-height: 20px;
-}
-
 .cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: var(--s4);
-}
-
-/* A course card is a surface, not a button. Its one main action is a real
-   button (.cc-open) whose hit area is stretched over the whole card; the
-   course page and the remove control are separate buttons above it. It is
-   flat: the border and the fill answer a hover. */
-.course-card {
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
-  min-height: 176px;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  background: var(--surface);
+}
+
+/* The next card: the one course to go on with, in the same design as the course page's. */
+.library-next {
+  position: relative;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
   transition:
     border-color var(--t-fast) ease-out,
     background var(--t-fast) ease-out,
     transform var(--t-fast) ease-out;
 }
 
-.course-card:hover {
+.library-next:hover {
   border-color: var(--line-2);
   background: var(--hover);
 }
 
-.course-card:has(.cc-open:active) {
+.library-next:has(.cc-open:active) {
+  background: var(--press);
   transform: translateY(1px);
   transition-duration: 80ms;
 }
 
-.course-card:not(.hero):has(.cc-open:focus-visible) {
+.next-card.library-next h2 {
+  margin-top: 0;
+  font-size: var(--fs-title);
+  line-height: 1.15;
+}
+
+.cc-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s5);
+}
+
+.cc-text {
+  min-width: 0;
+}
+
+/* A course's name, and its exam beside it. */
+.cc-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  min-width: 0;
+}
+
+.cc-name h2 {
+  font-family: var(--serif);
+  font-size: var(--fs-card);
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+}
+
+/* Where the course stopped. It wraps, whole: a title is never cut off. */
+.cc-where {
+  margin-top: var(--s1);
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cc-ref {
+  margin-right: var(--s2);
+  font-family: var(--sans);
+  font-size: var(--fs-caption);
+  color: var(--muted);
+}
+
+.cc-title .katex {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.cc-title.dim {
+  color: var(--faint);
+}
+
+.cc-ago {
+  display: block;
+  margin-top: var(--s1);
+  font-family: var(--sans);
+}
+
+.library-next .cc-where {
+  margin-top: var(--s3);
+  max-width: 52ch;
+  font-size: var(--fs-read);
+  color: var(--text);
+}
+
+.library-next .cc-ref {
+  display: block;
+  margin: 0 0 var(--s1);
+}
+
+.library-next .cc-ago {
+  margin-top: var(--s2);
+}
+
+.library-next .cc-title .katex {
+  white-space: nowrap;
+}
+
+.library-next .cc-proofs {
+  margin-top: var(--s3);
+}
+
+.library-next .cc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s2);
+}
+
+.cc-meta {
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+/* Proofs, in one line: the mark of a proven skill, and how many are proven. */
+.cc-proofs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The ruled index: every other course is a row between two hairlines, with no box and no shadow. */
+.ledger-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 208px 56px 32px;
+  align-items: center;
+  column-gap: var(--s4);
+  min-height: 88px;
+  margin: 0 calc(var(--s3) * -1);
+  padding: var(--s4) var(--s3);
+  border-radius: var(--r-control);
+  transition: background var(--t-fast) ease-out;
+}
+
+.ledger-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--s3);
+  right: var(--s3);
+  height: 1px;
+  background: var(--line-2);
+}
+
+.ledger-row:last-child::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: var(--s3);
+  right: var(--s3);
+  height: 1px;
+  background: var(--line-2);
+}
+
+.ledger-row:hover {
+  background: var(--hover);
+}
+
+.ledger-row:has(.cc-open:active) {
+  background: var(--press);
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.ledger-row:has(.cc-open:focus-visible) {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
+html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
   outline: none;
+}
+
+.lr-main {
+  min-width: 0;
+}
+
+.lr-proofs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+.lr-level {
+  display: flex;
+  justify-content: center;
+}
+
+.lr-remove {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .cc-open::after {
@@ -95,7 +261,11 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   border-radius: var(--r-card);
 }
 
-/* The card's name, when the name is its button. */
+.ledger-row .cc-open::after {
+  border-radius: var(--r-control);
+}
+
+/* The name of a row, when the name is its button. */
 .cc-open:not(.btn) {
   padding: 0;
   border: 0;
@@ -110,7 +280,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   outline: none;
 }
 
-.course-card .btn.cc-open:active {
+.btn.cc-open:active {
   transform: none;
 }
 
@@ -121,122 +291,49 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   z-index: 1;
 }
 
-.course-card.hero {
-  grid-column: 1 / -1;
-  min-height: 0;
-  gap: var(--s4);
-  padding: var(--s6);
-}
-
-.cc-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s2);
-  min-height: 28px;
-}
-
+/* The remove control is the same on every course: seen when the row is pointed at or reached by keyboard. */
 .cc-more {
-  width: 28px;
-  height: 28px;
-  margin: 0 -4px 0 0;
   opacity: 0;
   transition: opacity var(--t-fast);
 }
 
-.course-card:hover .cc-more,
-.course-card:focus-within .cc-more {
+.library-next:hover .cc-more,
+.ledger-row:hover .cc-more,
+html[data-input="key"] .library-next:has(:focus-visible) .cc-more,
+html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   opacity: 1;
 }
 
-.cc-body {
-  flex: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s4);
-}
-
-.cc-text {
-  min-width: 0;
-}
-
-.course-card h2 {
-  font-family: var(--serif);
-  font-size: var(--fs-card);
-  font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-/* What the course is on now: a short reference over a title set in the reading face. */
-.cc-goal {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: var(--s2);
-}
-
-.cc-ref {
-  font-size: var(--fs-caption);
-  color: var(--muted);
-}
-
-.cc-title {
-  font-family: var(--serif);
-  font-size: var(--fs-ui);
-  line-height: 1.45;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-
-.cc-title .katex {
-  display: inline-block;
-  white-space: nowrap;
-}
-
-.cc-title.dim {
-  color: var(--faint);
-}
-
-.course-card.hero .cc-title {
-  font-size: var(--fs-read);
-  line-height: 1.5;
-  max-width: 48ch;
-  color: var(--text);
-}
-
 .cc-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s2) var(--s4);
-  min-height: 24px;
+  min-height: 40px;
 }
 
-.cc-meta {
-  font-size: var(--fs-small);
-  color: var(--muted);
-}
-
-.course-card.asking {
+.asking {
   justify-content: center;
 }
 
-.course-card.asking:hover {
+.asking:hover {
   border-color: var(--line);
   background: var(--surface);
 }
 
-.course-card.asking h2 {
+.ledger-row.asking {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--s2);
+}
+
+.ledger-row.asking:hover {
+  background: transparent;
+}
+
+.asking h2 {
+  font-family: var(--serif);
   font-size: var(--fs-read);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .cc-note {
@@ -244,22 +341,31 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--muted);
 }
 
-.course-card.ghosted {
+.next-card.asking .cc-note {
+  margin-top: var(--s2);
+}
+
+.ledger-row.asking .row {
+  margin-top: var(--s1);
+}
+
+.ghosted {
   pointer-events: none;
   animation: breathe 1.6s ease-in-out infinite;
 }
 
-/* A placeholder takes the room a card with a title, a goal and a foot takes,
-   so the cards below it do not move when the courses have been read. */
-.course-card.ghosted {
-  min-height: 212px;
+/* A placeholder takes the room a real card or row takes, so what is below
+   it does not move when the courses have been read. */
+.library-next.ghosted {
+  min-height: 288px;
 }
 
-.course-card.hero.ghosted {
-  min-height: 272px;
+.ledger-row.ghosted {
+  align-items: start;
+  min-height: 110px;
 }
 
-.course-card.ghosted h2 {
+.ghosted h2 {
   color: var(--faint);
 }
 
@@ -294,7 +400,60 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   margin-top: var(--s4);
 }
 
+@media (max-width: 640px) {
+  .ledger-row {
+    grid-template-columns: minmax(0, 1fr) 56px 32px;
+    row-gap: var(--s2);
+  }
+
+  .lr-proofs {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s4);
+  }
+
+  .lr-level {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .lr-remove {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+}
+
 /* ---- one course: one card that says what to do now ---- */
+
+/* The back link sits over the content column's left edge, once the window is
+   wide enough to clear the traffic lights. */
+.screen.course,
+.screen.progress,
+.screen.setup,
+.screen.paper {
+  --col-pad: var(--s7);
+  --bar-left: max(76px, calc((100vw - var(--col-w)) / 2 + var(--col-pad) - var(--s4) - 13px));
+}
+
+.screen.course {
+  --col-w: 760px;
+}
+
+.screen.progress {
+  --col-w: 820px;
+}
+
+.screen.setup {
+  --col-w: 540px;
+  --col-pad: var(--s6);
+}
+
+.screen.paper {
+  --col-w: 460px;
+  --col-pad: var(--s6);
+}
 
 .course-col {
   max-width: 760px;
@@ -353,9 +512,18 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   border-color: var(--line-2);
 }
 
-.level:active {
-  transform: translateY(1px);
-  transition-duration: 80ms;
+.level-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  max-width: 230px;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.level-next {
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* The next card: the one thing to do now, on this page and as the library's first card. */
@@ -383,11 +551,6 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   font-weight: 600;
   line-height: 1.24;
   text-wrap: balance;
-}
-
-.next-card .katex,
-.tile .katex {
-  white-space: nowrap;
 }
 
 .next-card p:not(.next-ref) {
@@ -419,61 +582,71 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--muted);
 }
 
-.tiles {
+/* Proofs, a timed paper, a new lesson: a ruled index, one row each. */
+.index {
+  margin-top: var(--s5);
+  border-top: 1px solid var(--line-2);
+}
+
+.index-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--s3);
-  margin-top: var(--s4);
-}
-
-/* Proofs, a timed paper, a new lesson: one tile design. */
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  min-height: 128px;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  background: var(--surface);
+  grid-template-columns: 8.5rem minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: var(--s4);
+  width: 100%;
+  padding: var(--s4) var(--s3);
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
   text-align: left;
-  transition:
-    background var(--t-fast) ease-out,
-    border-color var(--t-fast) ease-out,
-    transform var(--t-fast) ease-out;
+  transition: background var(--t-fast) ease-out;
 }
 
-.tile:hover {
+.index-row:hover {
   background: var(--hover);
-  border-color: var(--line-2);
 }
 
-.tile:active {
-  transform: translateY(1px);
-  transition-duration: 80ms;
-}
-
-.tile-head {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-size: var(--fs-small);
-  font-weight: 600;
+.index-row .icon {
+  align-self: center;
   color: var(--muted);
 }
 
-.tile-main {
+.index-name {
   font-family: var(--serif);
   font-size: var(--fs-read);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.4;
 }
 
-.tile-foot {
-  margin-top: auto;
-  font-size: var(--fs-small);
-  line-height: 1.45;
+.index-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.index-what {
+  font-size: var(--fs-ui);
+  line-height: 1.5;
   color: var(--muted);
+}
+
+.index-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+
+.index-more {
+  font-size: var(--fs-caption);
+  color: var(--muted);
+}
+
+.next-card .katex {
+  white-space: nowrap;
 }
 
 /* ---- the lesson: one column, one answer box ---- */
@@ -1228,36 +1401,40 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--muted);
 }
 
+/* What was earned: each skill with its proof mark at 20px, between two hairlines. */
 .earned {
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
   width: 100%;
   margin-top: var(--s5);
-  padding: var(--s4) var(--s5);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  background: var(--surface);
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
   text-align: left;
 }
 
 .earned-row {
   display: flex;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s4);
+  padding: var(--s3) var(--s2);
   font-family: var(--serif);
-  font-size: var(--fs-read);
+  font-size: var(--fs-card);
+  line-height: 1.3;
 }
 
-.earned-row .dots {
-  padding: var(--s1);
+.earned-row + .earned-row {
+  border-top: 1px solid var(--line);
+}
+
+.earned .aside {
+  padding: var(--s2);
 }
 
 .level-line {
   display: flex;
   align-items: center;
-  gap: var(--s3);
-  margin-top: var(--s4);
+  gap: var(--s4);
+  margin-top: var(--s5);
   font-family: var(--serif);
   font-size: var(--fs-read);
   line-height: 1.4;
@@ -1328,8 +1505,8 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
     margin-top: var(--s4);
   }
 
-  .earned {
-    padding: var(--s3) var(--s4);
+  .earned-row {
+    padding: var(--s2);
   }
 }
 
@@ -1410,15 +1587,16 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
-/* What every mark on the page means. */
+/* What every mark on the page means: the mark, then its words, in one narrow column of marks. */
 .legend {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s2) var(--s3);
   margin: 0 0 var(--s5);
-  padding: var(--s3) var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
   list-style: none;
   font-size: var(--fs-small);
   line-height: 1.4;
@@ -1426,16 +1604,20 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 .legend li {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s3);
+  display: contents;
 }
 
-.legend li > .legend-text {
-  grid-column: 1 / -1;
+.legend .dots,
+.legend .due,
+.legend-ring {
+  justify-self: start;
 }
 
+.legend-ring .level-fill {
+  fill: none;
+}
+
+/* Sections and rows share one left edge, and the button one right edge with the rows' last words. */
 .group {
   margin-top: var(--s5);
 }
@@ -1446,7 +1628,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   align-items: center;
   gap: var(--s2);
   min-height: 40px;
-  margin: 0 0 var(--s1) var(--s3);
+  margin: 0 0 var(--s1);
   font-size: var(--fs-ui);
   font-weight: 600;
   color: var(--text);
@@ -1464,27 +1646,21 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .skill {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--s3);
   position: relative;
-  padding: var(--s3);
-  border-radius: var(--r-control);
-  transition: background var(--t-fast);
+  padding: var(--s3) 0;
 }
 
-.skill + .skill::before {
+.skill::before {
   content: "";
   position: absolute;
   top: 0;
-  left: var(--s3);
-  right: var(--s3);
+  left: 0;
+  right: 0;
   height: 1px;
   background: var(--line);
-}
-
-.skill:hover {
-  background: var(--surface);
 }
 
 .skill-text {
@@ -1518,7 +1694,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 .more {
-  margin: var(--s1) 0 0 var(--s1);
+  margin: var(--s1) 0 0 calc(var(--s3) * -1);
   height: 32px;
   padding: 0 var(--s3);
   border: 0;
@@ -1554,7 +1730,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .foot-section > p,
 .foot-notes p {
-  margin-left: var(--s3);
+  margin-left: 0;
   font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--muted);
@@ -1568,7 +1744,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 .scores {
   display: flex;
   gap: var(--s4);
-  margin: var(--s2) 0 0 var(--s3);
+  margin: var(--s2) 0 0;
 }
 
 .score {
@@ -1613,7 +1789,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  margin: var(--s2) 0 var(--s3) var(--s3);
+  margin: var(--s2) 0 var(--s3);
 }
 
 .weeks-row {
@@ -1798,12 +1974,19 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 /* Every problem that blocks you is red, in its mark and in its words. */
-.step:not(.ok):not(.plain) .step-head span {
+.step:not(.ok):not(.plain):not(.choice) .step-head span {
   color: var(--red);
 }
 
 .step.plain .step-mark {
   background: transparent;
+}
+
+/* A choice is not a fault: a neutral ring and a dash, in ink. */
+.step.choice .step-mark {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1.5px var(--faint);
 }
 
 .step-body {
@@ -1853,6 +2036,63 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .setup-col > .row {
   margin-top: var(--s5);
+}
+
+/* The path, the payment and the engine are there when wanted, and shut until then. */
+.advanced {
+  width: 100%;
+  margin-top: var(--s5);
+  text-align: left;
+}
+
+.advanced summary {
+  display: flex;
+  width: fit-content;
+  margin: 0 auto;
+  align-items: center;
+  gap: var(--s1);
+  height: 32px;
+  padding: 0 var(--s3) 0 var(--s2);
+  border-radius: var(--r-control);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+  transition: background var(--t-fast) ease-out;
+}
+
+.advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced summary:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.advanced summary:active {
+  background: var(--press);
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.advanced summary .icon {
+  transition: transform var(--t-fast) ease-out;
+}
+
+.advanced[open] summary .icon {
+  transform: rotate(90deg);
+}
+
+.advanced .steps {
+  margin-top: var(--s2);
+}
+
+.advanced > .aside {
+  margin-top: var(--s3);
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .setup-col > .banner {
@@ -2281,12 +2521,6 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .engine .segmented {
   margin-top: 0;
-}
-
-.engine .segmented button {
-  height: 24px;
-  padding: 0 var(--s3);
-  font-size: var(--fs-caption);
 }
 
 .engine .segmented button:disabled {

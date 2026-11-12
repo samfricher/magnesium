@@ -35,7 +35,23 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
         if (event.target === event.currentTarget) props.onCancel();
       }}
     >
-      <div className="palette paste" role="dialog" aria-label="Paste text" data-role="paste-sheet">
+      <div
+        className="palette paste"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paste text"
+        data-role="paste-sheet"
+        onKeyDown={(event) => {
+          // Tab goes round the sheet and never out of it.
+          if (event.key !== "Tab") return;
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("textarea, button:not(:disabled)"));
+          const at = items.indexOf(document.activeElement as HTMLElement);
+          if (items.length === 0) return;
+          const to = (at + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+          event.preventDefault();
+          items[to]?.focus();
+        }}
+      >
         <span className="eyebrow">Paste text</span>
         <textarea
           className="field paste-box"

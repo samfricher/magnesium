@@ -51,8 +51,11 @@ const SHORTCUTS: Command = {
   keywords: "help keys shortcuts",
   shortcuts: [
     ["⌘K", "Open this menu"],
-    ["⌘N", "Start a new lesson"],
-    ["⌘O", "Open a course"],
+    ["⌘N", "New lesson (on a course page)"],
+    ["⌘O", "Open a course (in the library and on a course page)"],
+    ["⌘⇧H", "Hint (in a lesson)"],
+    ["⌘⇧D", "I don't know (in a lesson)"],
+    ["⌘⇧L", "I'm lost (in a lesson)"],
     ["⌘.", "Stop the reply being written"],
     ["Return", "Send your answer"],
     ["Shift Return", "Start a new line in your answer"],
@@ -906,7 +909,7 @@ export function App() {
     }
     if (inLesson) {
       list.push({
-        label: "End sitting",
+        label: "End lesson",
         hint: "save where you stopped",
         icon: "close",
         keywords: "quit stop finish end",
@@ -923,14 +926,14 @@ export function App() {
         hint: `now ${engineName(engine.chosen)}`,
         icon: "gear",
         keywords: "engine claude code magnesium",
-        disabled: inLesson ? "after this sitting" : undefined,
+        disabled: inLesson ? "after this lesson" : undefined,
         run: () => void chooseEngine(other),
       });
     }
     if (course) {
       BLOCKS.filter((minutes) => minutes !== course.block_minutes).forEach((minutes) =>
         list.push({
-          label: `Sitting length: ${minutes} min`,
+          label: `Lesson length: ${minutes} min`,
           hint: `now ${course.block_minutes} min`,
           icon: "timer",
           keywords: "block time length",

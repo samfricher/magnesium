@@ -29,11 +29,12 @@ export function aboutText(about: About | null): string | null {
   return about.commit ? `Magnesium ${about.version} (${about.commit.slice(0, 7)})` : `Magnesium ${about.version}, built from source`;
 }
 
-function Step(props: { ok: boolean; title: string; detail: string; children?: ReactNode }) {
+/** A step is done, a fault to fix (red), or a choice to make (neutral: nothing is wrong). */
+function Step(props: { ok: boolean; choice?: boolean; title: string; detail: string; children?: ReactNode }) {
   return (
-    <div className={props.ok ? "step ok" : "step"}>
+    <div className={props.ok ? "step ok" : props.choice ? "step choice" : "step"}>
       <span className="step-mark" aria-hidden="true">
-        <Icon name={props.ok ? "check" : "warn"} size={props.ok ? 13 : 14} />
+        <Icon name={props.ok ? "check" : props.choice ? "dash" : "warn"} size={props.ok ? 13 : 14} />
       </span>
       <div className="step-body">
         <div className="step-head">
@@ -57,7 +58,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
   if (runtime.state === "different" && installed && bundled) {
     const theirs = installed.version ? `version ${versionNumber(installed.version)}` : "a copy that does not run";
     return (
-      <Step ok={false} title="Magnesium" detail={`another copy at ${where}`}>
+      <Step ok={false} choice title="Magnesium" detail={`another copy at ${where}`}>
         <p className="selectable">
           This Mac has Magnesium {theirs}. This app came with {versionNumber(bundled.version)}. Replace it? The window, Claude Code and a terminal
           all use the one copy. The newer one upgrades a course&apos;s record when it opens the course, after asking you, and keeps a copy of
@@ -212,8 +213,8 @@ export function Setup(props: {
     title = "Magnesium needs updating";
     sub = "The program on this Mac is older than this window needs.";
   } else if (ready) {
-    title = "This Mac is ready";
-    sub = "What lessons run on, and how they are paid for.";
+    title = "Ready";
+    sub = setup.payment === "api_key" ? "Lessons are paid for with your API key, per use." : "Lessons use your Claude plan.";
   }
 
   return (
@@ -233,43 +234,63 @@ export function Setup(props: {
         <div className="setup-col">
           <h1>{title}</h1>
           <p className="setup-sub">{sub}</p>
-          {setup && (
+          {setup && !ready && (
             <div className="steps">
               <RuntimeStep runtime={setup.runtime} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
               <AccountStep account={setup.account} signingIn={props.signingIn} onSignIn={props.onSignIn} onCheck={props.onCheck} onLink={props.onLink} />
-              <div className="step plain">
-                <span className="step-mark" aria-hidden="true" />
-                <div className="step-body">
-                  <div className="step-head">
-                    <b>Pay for lessons with</b>
-                  </div>
-                  <div className="segmented" role="radiogroup" aria-label="Pay for lessons with">
-                    <button role="radio" aria-checked={setup.payment === "plan"} className={setup.payment === "plan" ? "on" : undefined} onClick={() => props.onPayment("plan")}>
-                      Your Claude plan
-                    </button>
-                    <button
-                      role="radio"
-                      aria-checked={setup.payment === "api_key"}
-                      className={setup.payment === "api_key" ? "on" : undefined}
-                      onClick={() => props.onPayment("api_key")}
-                    >
-                      An API key, per use
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {props.engine && (
+            </div>
+          )}
+          {setup && (
+            <details className="advanced">
+              <summary>
+                <Icon name="right" size={14} />
+                Advanced
+              </summary>
+              <div className="steps">
+                {ready && (
+                  <>
+                    <RuntimeStep runtime={setup.runtime} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
+                    <AccountStep account={setup.account} signingIn={props.signingIn} onSignIn={props.onSignIn} onCheck={props.onCheck} onLink={props.onLink} />
+                  </>
+                )}
                 <div className="step plain">
                   <span className="step-mark" aria-hidden="true" />
                   <div className="step-body">
                     <div className="step-head">
-                      <b>Lessons run on</b>
+                      <b>Pay for lessons with</b>
                     </div>
-                    {props.engine}
+                    <div className="segmented" role="radiogroup" aria-label="Pay for lessons with">
+                      <button role="radio" aria-checked={setup.payment === "plan"} className={setup.payment === "plan" ? "on" : undefined} onClick={() => props.onPayment("plan")}>
+                        Your Claude plan
+                      </button>
+                      <button
+                        role="radio"
+                        aria-checked={setup.payment === "api_key"}
+                        className={setup.payment === "api_key" ? "on" : undefined}
+                        onClick={() => props.onPayment("api_key")}
+                      >
+                        An API key, per use
+                      </button>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
+                {props.engine && (
+                  <div className="step plain">
+                    <span className="step-mark" aria-hidden="true" />
+                    <div className="step-body">
+                      <div className="step-head">
+                        <b>Lessons run on</b>
+                      </div>
+                      {props.engine}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="aside selectable">
+                Setting a course up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
+                Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
+              </p>
+            </details>
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
           <div className="row center">
@@ -278,12 +299,6 @@ export function Setup(props: {
             </button>
             {setup && !ready && <span className="aside">Finish the steps above first.</span>}
           </div>
-          {setup && (
-            <p className="aside selectable">
-              Setting a course up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
-              Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
-            </p>
-          )}
           {version && <p className="aside version selectable">{version}</p>}
         </div>
       </div>

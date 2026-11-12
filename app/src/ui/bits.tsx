@@ -4,7 +4,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-import type { Activity, Dots as DotsData, Exam, Proofs } from "../types";
+import type { Activity, Dots as DotsData, Exam, Progress, Proofs } from "../types";
 import { Icon } from "./icons";
 import { Line } from "./Rich";
 
@@ -129,21 +129,57 @@ export function IconButton(props: {
   );
 }
 
+/** The menu's key, with its name: "Menu ⌘K". The same on every screen. */
 export function PaletteKey({ onClick }: { onClick: () => void }) {
   return (
-    <button className="key" title="Menu: library, proofs, papers, settings (⌘K)" aria-label="Open the menu" onClick={onClick}>
-      &#8984;K
+    <button className="menu-key" title="Menu: library, proofs, papers, settings (⌘K)" aria-label="Open the menu (Command K)" onClick={onClick}>
+      Menu
+      <kbd aria-hidden="true">&#8984;K</kbd>
     </button>
   );
 }
 
-/**
- * A folder with no plan has no level: its skills are counted, as proven and
- * in progress. Null when there is nothing to count, or when there is a level.
- */
-export function skillCounts(proofs: Proofs): string | null {
-  if (proofs.levelled || proofs.skills === 0) return null;
-  return `${proofs.proven} of ${proofs.skills} skills proven, ${proofs.skills - proofs.proven} in progress`;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** "3 of 11 skills proven": what the library can say of a course, and the lead of what the other screens say. */
+export function skillsProven(proofs: Proofs): string | null {
+  if (proofs.skills === 0) return null;
+  return `${proofs.proven} of ${proofs.skills} ${proofs.skills === 1 ? "skill" : "skills"} proven`;
+}
+
+/** The skills of a course in the four places they can be, counted the one way on every screen. */
+export type SkillBuckets = { proven: number; today: number; later: number; untested: number };
+
+export function skillBuckets(progress: Progress): SkillBuckets {
+  const today = progress.in_progress.filter((row) => row.due).length;
+  return {
+    proven: progress.proofs.proven,
+    today,
+    later: progress.in_progress.length - today,
+    untested: progress.untested.length,
+  };
+}
+
+/** "3 proven, 2 to prove today, 4 in progress, 2 not tested yet." Null when there is nothing to count. */
+export function bucketsSentence(buckets: SkillBuckets): string | null {
+  const parts = [
+    buckets.proven > 0 ? `${buckets.proven} proven` : null,
+    buckets.today > 0 ? `${buckets.today} to prove today` : null,
+    buckets.later > 0 ? `${buckets.later} in progress` : null,
+    buckets.untested > 0 ? `${buckets.untested} not tested yet` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? `${parts.join(", ")}.` : null;
+}
+
+/** "5 questions due today": quick checks and paper redos, the one noun for them on every screen. */
+export function questionsDue(n: number): string {
+  return `${plural(n, "question", "questions")} due today`;
+}
+
+/** The next level, in words: "4 more proofs to reach level 6." Null at the top, or with no level. */
+export function nextLevelSentence(proofs: Proofs): string | null {
+  if (!proofs.levelled || proofs.total === 0 || proofs.to_next <= 0) return null;
+  return `${plural(proofs.to_next, "more proof", "more proofs")} to reach level ${proofs.level + 1}.`;
 }
 
 /** The share of a course's proofs that are earned. */
@@ -162,11 +198,30 @@ export function proofsOf(dots: DotsData): number {
  * new dot burns white for an instant and settles into green. There is no
  * other state: a skill that was restarted shows rings and says so in words.
  */
-export function ProofDots({ earned, today = 0, flare = false }: { earned: number; today?: number; flare?: boolean }) {
+export function ProofDots({
+  earned,
+  today = 0,
+  flare = false,
+  size = 12,
+  label,
+}: {
+  earned: number;
+  today?: number;
+  flare?: boolean;
+  /** 12 everywhere a skill appears; 20 for the reward at the end of a lesson. */
+  size?: 12 | 20;
+  /** What the mark says to a screen reader, when "2 of 3 proofs" is not enough. "" hides it, where words beside it say the same. */
+  label?: string;
+}) {
   const total = Math.max(0, Math.min(3, earned));
   const fresh = Math.max(0, Math.min(total, today));
   return (
-    <span className="dots" role="img" aria-label={`${total} of 3 proofs${fresh > 0 ? `, ${fresh} earned today` : ""}`}>
+    <span
+      className={size === 20 ? "dots lg" : "dots"}
+      role={label === "" ? undefined : "img"}
+      aria-hidden={label === "" ? true : undefined}
+      aria-label={label === "" ? undefined : (label ?? `${total} of 3 proofs${fresh > 0 ? `, ${fresh} earned today` : ""}`)}
+    >
       {[0, 1, 2].map((index) => (
         <i key={index} className={index < total - fresh ? "on" : index < total ? (flare ? "on new flare" : "on new") : undefined} />
       ))}
@@ -186,26 +241,53 @@ export function ProofDot({ state }: { state: "on" | "off" | "new" }) {
 const LEVEL_SIZE = { sm: 56, md: 80, lg: 104 } as const;
 
 /** The level: a thin ring that fills with the share of proofs earned, the number in the middle. */
-export function Level({ value, size = "md", share, title }: { value: number; size?: "sm" | "md" | "lg"; share?: number; title?: string }) {
+export function Level({
+  value,
+  size = "md",
+  share,
+  gain = 0,
+  title,
+}: {
+  value: number;
+  size?: "sm" | "md" | "lg";
+  share?: number;
+  /** The share of the course's proofs earned today. Drawn in green over the rest, which turns to ink. */
+  gain?: number;
+  title?: string;
+}) {
   const box = LEVEL_SIZE[size];
   const stroke = 2.5;
   const radius = (box - stroke) / 2;
   const round = 2 * Math.PI * radius;
   const filled = Math.max(0, Math.min(1, share ?? 0));
+  const today = Math.max(0, Math.min(filled, gain));
+  const before = filled - today;
+  const centre = box / 2;
   return (
     <span className={`level-ring ${size}`} style={{ width: box, height: box }} role="img" aria-label={`Level ${value}`} title={title}>
       <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
-        <circle className="level-track" cx={box / 2} cy={box / 2} r={radius} />
-        {filled > 0 && (
+        <circle className="level-track" cx={centre} cy={centre} r={radius} />
+        {before > 0 && (
           <circle
-            className="level-fill"
-            cx={box / 2}
-            cy={box / 2}
+            className={today > 0 ? "level-fill before" : "level-fill"}
+            cx={centre}
+            cy={centre}
             r={radius}
             strokeWidth={stroke}
             strokeDasharray={round}
-            strokeDashoffset={round * (1 - filled)}
-            transform={`rotate(-90 ${box / 2} ${box / 2})`}
+            strokeDashoffset={round * (1 - before)}
+            transform={`rotate(-90 ${centre} ${centre})`}
+          />
+        )}
+        {today > 0 && (
+          <circle
+            className="level-fill gain"
+            cx={centre}
+            cy={centre}
+            r={radius}
+            strokeWidth={stroke}
+            style={{ strokeDasharray: `${round * today} ${round}`, ["--round" as string]: `${round}px` }}
+            transform={`rotate(${-90 + 360 * before} ${centre} ${centre})`}
           />
         )}
       </svg>
@@ -217,12 +299,12 @@ export function Level({ value, size = "md", share, title }: { value: number; siz
   );
 }
 
-/** A due thing: an amber point and a few words. With no number, "due today". */
+/** A due thing: an amber point and a few words. With a number, "5 questions due today"; without, "due today". */
 export function Due({ n }: { n?: number }) {
   return (
     <span className="due">
       <i />
-      {n === undefined ? "due today" : `${n} due today`}
+      {n === undefined ? "due today" : questionsDue(n)}
     </span>
   );
 }

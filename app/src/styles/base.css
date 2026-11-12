@@ -37,6 +37,10 @@
   --hover: #2c3441;
   --line: rgba(233, 235, 238, 0.08);
   --line-2: rgba(233, 235, 238, 0.16);
+  /* The border of a field you type in: 3:1 or better on the page, a card and a sheet. */
+  --line-input: #7d8695;
+  /* A control while it is pressed: one step beyond its hover fill. */
+  --press: #232a34;
   --text: #e9ebee;
   --muted: #b3bac5;
   --faint: #949caa;
@@ -102,6 +106,8 @@
     --hover: #e6e8e2;
     --line: rgba(27, 33, 43, 0.1);
     --line-2: rgba(27, 33, 43, 0.18);
+    --line-input: #737c8a;
+    --press: #dadcd5;
     --text: #1b212b;
     --muted: #475060;
     --faint: #5f6877;
@@ -290,7 +296,7 @@ textarea {
 /* The two sides are the same width, so the middle is the window's middle.
    The left side starts after the traffic lights. */
 .bar-side:first-child {
-  padding-left: 76px;
+  padding-left: var(--bar-left, 76px);
 }
 
 .bar-side {
@@ -410,16 +416,6 @@ textarea {
   gap: var(--s2);
 }
 
-/* A button that is only the look of one, inside a card that is the button. */
-.btn.as-label {
-  pointer-events: none;
-}
-
-/* The same look, when the card around it is pointed at. */
-.course-card:hover .btn.primary.as-label {
-  background: var(--accent-hover);
-}
-
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -443,6 +439,30 @@ textarea {
 
 .icon-btn:disabled {
   color: var(--faint);
+}
+
+/* One pressed state for every control that is not green: 1px down, one step
+   beyond its hover fill, 80ms. The primary button darkens its own green. */
+.btn:not(.primary):active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.crumb:active:not(:disabled),
+button.chip:active,
+.passage:active,
+.targets button:active,
+.segmented button:active:not(:disabled),
+.paper-list button:active,
+.index-row:active,
+.more:active,
+.add-menu .menu button:active,
+.level:active {
+  background: var(--press);
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.palette-list [role="option"]:active {
+  background: var(--press);
+  transition-duration: 80ms;
 }
 
 /* A key hint: a keycap on a button, or a key named in a line of text. */
@@ -503,7 +523,7 @@ button.key:hover {
   width: 100%;
   height: 44px;
   padding: 0 var(--s4);
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--line-input);
   border-radius: var(--r-control);
   background: var(--raised);
   color: var(--text);
@@ -523,11 +543,11 @@ textarea::placeholder {
 }
 
 .field:hover {
-  border-color: var(--faint);
+  border-color: var(--muted);
 }
 
 .field:focus {
-  border-color: var(--muted);
+  border-color: var(--text);
 }
 
 .row {
@@ -649,7 +669,8 @@ button.banner:hover {
   opacity: 0.85;
 }
 
-/* A small label: neutral ink on a quiet fill. */
+/* A small label: neutral ink in a hairline pill. It has no fill, so it reads
+   the same on the page, on a card and on a row that is pointed at. */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -657,8 +678,9 @@ button.banner:hover {
   max-width: 100%;
   height: 24px;
   padding: 0 var(--s3);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-pill);
-  background: var(--hover);
+  background: transparent;
   color: var(--muted);
   font-size: var(--fs-caption);
   font-weight: 600;
@@ -672,6 +694,7 @@ button.banner:hover {
 
 
 .chip.bad {
+  border-color: transparent;
   background: var(--red-soft);
   color: var(--red);
 }
@@ -702,6 +725,24 @@ button.banner:hover {
   stroke-linecap: round;
 }
 
+/* With today's gain drawn, what was earned before today is ink and what was
+   earned today is green. The green arc grows once, with the proof's flare. */
+.level-fill.before {
+  stroke: var(--text);
+  stroke-linecap: butt;
+}
+
+.level-fill.gain {
+  stroke-linecap: butt;
+  animation: grow 700ms var(--ease) 260ms both;
+}
+
+@keyframes grow {
+  from {
+    stroke-dasharray: 0 var(--round);
+  }
+}
+
 .level-mid {
   position: absolute;
   inset: 0;
@@ -721,7 +762,9 @@ button.banner:hover {
 
 .level-mid small {
   margin-top: 2px;
+  font-family: var(--sans);
   font-size: var(--fs-caption);
+  font-weight: 400;
   color: var(--muted);
 }
 
@@ -739,19 +782,30 @@ button.banner:hover {
 
 /* ---- the proof mark: three dots ---- */
 
+/* 12px, 5px apart; 20px for the reward at the end of a lesson. */
 .dots {
   display: inline-flex;
   align-items: center;
-  gap: var(--s1);
+  gap: 5px;
   flex: none;
+}
+
+.dots.lg {
+  gap: var(--s2);
 }
 
 /* A proof still to earn is a ring in --faint, 3:1 on every surface. */
 .dots i {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   border: 1.5px solid var(--faint);
   border-radius: 50%;
+}
+
+.dots.lg i {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
 }
 
 .dots i.on {
@@ -762,6 +816,10 @@ button.banner:hover {
 /* Earned today: the same dot with a soft halo. */
 .dots i.new {
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dots.lg i.new {
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 /* The magnesium flare: the new proof burns white for an instant and settles
@@ -845,11 +903,12 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-/* Seven days, Monday to Sunday. A day studied is filled, today is ringed, any other day is an empty ring. */
+/* Seven days, Monday to Sunday: quieter than the proof mark. A day studied is
+   a filled 10px dot, today a ring in ink, any other day a ring in --faint. */
 .week {
   display: inline-flex;
   align-items: flex-start;
-  gap: var(--s2);
+  gap: var(--s3);
 }
 
 .week-day {
@@ -857,18 +916,20 @@ button.banner:hover {
   flex-direction: column;
   align-items: center;
   gap: var(--s1);
+  width: 12px;
 }
 
 .week-day i {
-  width: 20px;
-  height: 20px;
+  width: 10px;
+  height: 10px;
+  margin-top: 1px;
   border: 1.5px solid var(--faint);
   border-radius: 50%;
 }
 
 .week-day b {
   font-size: var(--fs-caption);
-  font-weight: 600;
+  font-weight: 400;
   line-height: 16px;
   color: var(--faint);
 }
@@ -884,11 +945,41 @@ button.banner:hover {
 
 .week-day.today.done i {
   outline: 1.5px solid var(--text);
-  outline-offset: 2px;
+  outline-offset: 1.5px;
 }
 
 .week-day.today b {
+  font-weight: 600;
   color: var(--text);
+}
+
+/* The menu key: the word and its key. */
+.menu-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 32px;
+  padding: 0 var(--s2) 0 var(--s3);
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
+}
+
+.menu-key:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.menu-key:active {
+  background: var(--press);
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
 /* ---- commands, behind ⌘K ---- */
@@ -928,14 +1019,22 @@ button.banner:hover {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  padding: 0 var(--s4);
-  border-bottom: 1px solid var(--line);
+  margin: var(--s3) var(--s3) 0;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-control);
+  background: var(--raised);
   color: var(--faint);
+  transition: border-color var(--t-fast) ease-out;
+}
+
+.palette-in:focus-within {
+  border-color: var(--text);
 }
 
 .palette-in input {
   flex: 1;
-  height: 52px;
+  height: 44px;
   border: 0;
   background: transparent;
   font-size: var(--fs-ui);
@@ -1001,11 +1100,6 @@ button.banner:hover {
   color: var(--text);
 }
 
-.palette-list [role="option"]:active {
-  background: var(--line-2);
-  transition-duration: 80ms;
-}
-
 .palette-list [role="option"].off {
   cursor: default;
 }
@@ -1022,7 +1116,9 @@ button.banner:hover {
 }
 
 .palette-keys {
-  padding: var(--s3) var(--s4) var(--s4);
+  max-height: calc(100vh - 13vh - 140px);
+  overflow-y: auto;
+  padding: var(--s3) var(--s4) var(--s3);
 }
 
 .palette-keys-title {
@@ -1036,7 +1132,7 @@ button.banner:hover {
   display: flex;
   align-items: center;
   gap: var(--s4);
-  min-height: 36px;
+  min-height: 32px;
   font-size: var(--fs-ui);
 }
 
@@ -1059,14 +1155,27 @@ button.banner:hover {
   color: var(--faint);
 }
 
-@media (max-height: 560px) {
+@media (max-height: 640px) {
+  .palette-veil {
+    padding-top: 5vh;
+  }
+
   .palette-list {
     max-height: calc(40px * 6 + var(--s2) * 2);
+  }
+
+  .palette-keys {
+    max-height: calc(100vh - 5vh - 140px);
+  }
+
+  .palette-key {
+    min-height: 30px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dots i.flare {
+  .dots i.flare,
+  .level-fill.gain {
     animation: none;
   }
 

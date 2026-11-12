@@ -1,13 +1,13 @@
 // One course. The page answers one question, "what do I do now?", with one
-// card and one button. Under it, three quiet tiles lead to everything else
-// about the course: the proofs, a timed paper, a new lesson.
+// card and one button. Under it, a ruled index of three rows leads to
+// everything else about the course: the proofs, a timed paper, a new lesson.
 
 import { useEffect, useRef, useState } from "react";
 
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, ExamSentence, Level, PROOF_HINT, PaletteKey, TopBar, agoText, clockText, composing, proofShare, sentence, skillCounts, splitGoal, useNow } from "../ui/bits";
+import { Due, ExamSentence, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, bucketsSentence, clockText, composing, nextLevelSentence, proofShare, proofsOf, sentence, skillBuckets, skillsProven, splitGoal, useNow } from "../ui/bits";
 import type { Home, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
@@ -180,14 +180,13 @@ export function Course(props: {
         />
         <div className="row">
           <button className="btn primary" disabled={goal.trim() === "" || props.starting} title="Start (Return)" onClick={start}>
-            {props.starting ? "Starting…" : "Start"}
+            {props.starting ? "Starting…" : home.state === "not_set_up" ? "Start your first lesson" : "Start"}
           </button>
           {!fresh && (
             <button className="btn ghost" onClick={() => props.onAsk(false)}>
               Back
             </button>
           )}
-          {home.state === "not_set_up" && <span className="aside">Start sets this course up for Magnesium.</span>}
         </div>
       </>
     );
@@ -214,7 +213,7 @@ export function Course(props: {
         ) : null}
         <div className="row">
           <button className="btn primary" autoFocus disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
-            {props.starting ? "Starting…" : last ? "Continue" : "Start"}
+            {props.starting ? "Starting…" : last ? "Continue" : "Start your first lesson"}
           </button>
           {due > 0 && (
             <span className="dues">
@@ -228,7 +227,11 @@ export function Course(props: {
   }
 
   const today = todaySentence(progress?.today ?? null);
-  const skills = proofs ? skillCounts(proofs) : null;
+  const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
+  const nextLevel = proofs ? nextLevelSentence(proofs) : null;
+  const buckets = progress && !progress.message ? bucketsSentence(skillBuckets(progress)) : null;
+  // The skills in play: those with a proof to earn, the ones due today first.
+  const inPlay = progress ? [...progress.in_progress.filter((row) => row.due), ...progress.in_progress.filter((row) => !row.due)] : [];
 
   return (
     <section className="screen course" data-screen="course">
@@ -252,14 +255,17 @@ export function Course(props: {
             </div>
             {skills && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <span>{skills}</span>
+                <span className="level-text">{skills}</span>
               </button>
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
                 <Level value={proofs.level} size="md" share={proofShare(proofs)} />
-                <span className="num">
-                  {proofs.earned} of {proofs.total} proofs
+                <span className="level-text num">
+                  <span>
+                    {proofs.earned} of {proofs.total} proofs
+                  </span>
+                  {nextLevel && <span className="level-next">{nextLevel}</span>}
                 </span>
               </button>
             )}
@@ -278,51 +284,46 @@ export function Course(props: {
           {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
 
           {usable && !sitting && (
-            <div className="tiles">
-              <button className="tile" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="tile-head">
-                  <Icon name="chart" size={16} />
-                  Proofs
-                </span>
-                {progress && proofs && proofs.total > 0 ? (
-                  <>
-                    <span className="tile-main">
-                      {proofs.proven} of {proofs.skills} skills proven
+            <div className="index">
+              <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
+                <span className="index-name">Proofs</span>
+                <span className="index-body">
+                  {progress && proofs && proofs.total > 0 ? (
+                    <span className="index-what num">{buckets ?? skillsProven(proofs)}</span>
+                  ) : (
+                    <span className="index-what">{PROOF_DEFINITION}</span>
+                  )}
+                  {inPlay.length > 0 && (
+                    <span className="index-marks" aria-hidden="true">
+                      {inPlay.slice(0, 8).map((row, at) => (
+                        <ProofDots key={`${row.name}${at}`} earned={proofsOf(row.dots)} label="" />
+                      ))}
+                      {inPlay.length > 8 && <span className="index-more">+{inPlay.length - 8}</span>}
                     </span>
-                    <span className="tile-foot">{progress.in_progress.length} in progress.</span>
-                  </>
-                ) : (
-                  <span className="tile-foot">{PROOF_DEFINITION}</span>
-                )}
+                  )}
+                </span>
+                <Icon name="right" size={16} />
               </button>
-              <button className="tile" onClick={() => props.onPaper(nextPaper)}>
-                <span className="tile-head">
-                  <Icon name="paper" size={16} />
-                  Timed paper
-                </span>
-                {nextPaper ? (
-                  <>
-                    <span className="tile-main">{nextPaper.name}</span>
-                    <span className="tile-foot">
-                      A timed practice exam from your past papers{nextPaper.minutes ? `, ${nextPaper.minutes} minutes` : ""}.
-                    </span>
-                  </>
-                ) : (
-                  <span className="tile-foot">
-                    {home.papers.length > 0
-                      ? "All papers sat. A timed practice exam from your past papers."
-                      : "None yet: the tutor writes one when you ask."}
+              <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
+                <span className="index-name">Timed paper</span>
+                <span className="index-body">
+                  <span className="index-what">
+                    {nextPaper
+                      ? `${nextPaper.name}${nextPaper.minutes ? `, ${nextPaper.minutes} minutes` : ""}. A practice exam from your past papers.`
+                      : home.papers.length > 0
+                        ? "All papers sat. A timed practice exam from your past papers."
+                        : "None yet: the tutor writes one when you ask."}
                   </span>
-                )}
+                </span>
+                <Icon name="right" size={16} />
               </button>
               {!fresh && (
-                <button className="tile" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
-                  <span className="tile-head">
-                    <Icon name="plus" size={16} />
-                    New lesson
+                <button className="index-row" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
+                  <span className="index-name">New lesson</span>
+                  <span className="index-body">
+                    <span className="index-what">Another topic: pick what to learn next.</span>
                   </span>
-                  <span className="tile-main">Another topic</span>
-                  <span className="tile-foot">Pick what to learn next.</span>
+                  <Icon name="right" size={16} />
                 </button>
               )}
             </div>

@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, Level, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, ExamSentence, plain, proofShare, proofsOf, skillCounts } from "../ui/bits";
+import { Due, Level, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, ExamSentence, bucketsSentence, nextLevelSentence, plain, proofShare, proofsOf, skillBuckets, skillsProven } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -63,7 +63,7 @@ export function Progress(props: {
   folderName: string;
   backLabel: string;
   onTarget: (target: string) => void;
-  /** Start a sitting, which opens with what is due. Absent while a lesson or a paper is running. */
+  /** Continue the lesson, which opens with what is due. Absent while a lesson or a paper is running. */
   onStart?: () => void;
   onBack: () => void;
   onPalette: () => void;
@@ -95,7 +95,9 @@ export function Progress(props: {
   const due = data.in_progress.filter((row) => row.due);
   const later = data.in_progress.filter((row) => !row.due);
   const sure = data.scores.filter((s) => s.sure_total !== null && s.sure_right !== null);
-  const skills = skillCounts(proofs);
+  const skills = proofs.levelled ? null : skillsProven(proofs);
+  const buckets = data.message ? null : bucketsSentence(skillBuckets(data));
+  const nextLevel = nextLevelSentence(proofs);
   const levelShown = !data.level_unknown && proofs.levelled;
 
   return (
@@ -124,17 +126,12 @@ export function Progress(props: {
               )}
               {skills && <p className="board-sum">{skills}. A course with no plan has no level.</p>}
               {proofs.levelled && proofs.total > 0 && (
-                <>
-                  <p className="board-sum num">
-                    {proofs.earned} of {proofs.total} proofs. {proofs.proven} of {proofs.skills} skills proven.
-                  </p>
-                  {proofs.to_next > 0 && (
-                    <p className="board-next num">
-                      {proofs.to_next} more {proofs.to_next === 1 ? "proof" : "proofs"} to reach level {proofs.level + 1}.
-                    </p>
-                  )}
-                </>
+                <p className="board-sum num">
+                  {proofs.earned} of {proofs.total} proofs.
+                </p>
               )}
+              {buckets && <p className="board-sum num">{buckets}</p>}
+              {levelShown && nextLevel && <p className="board-next num">{nextLevel}</p>}
             </div>
           </header>
 
@@ -152,24 +149,30 @@ export function Progress(props: {
                   <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
                 </li>
                 <li>
-                  <Due />
-                  <span>You can earn this skill&apos;s next proof today.</span>
+                  <span className="due" aria-hidden="true">
+                    <i />
+                  </span>
+                  <span>Due today: you can earn this skill&apos;s next proof today.</span>
                 </li>
                 {levelShown && (
                   <li>
-                    <span className="legend-text">The level&apos;s ring fills as you earn proofs.</span>
+                    <svg className="legend-ring" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                      <circle className="level-track" cx="7" cy="7" r="5.5" />
+                      <circle className="level-fill" cx="7" cy="7" r="5.5" strokeWidth="2" strokeDasharray="14 35" transform="rotate(-90 7 7)" />
+                    </svg>
+                    <span>The level&apos;s ring fills as you earn proofs.</span>
                   </li>
                 )}
               </ul>
               <Group
-                title="Prove today"
+                title="To prove today"
                 rows={due}
                 fold={12}
                 tone="open"
                 action={
                   props.onStart ? (
                     <button className="btn primary" onClick={props.onStart}>
-                      Start
+                      Continue
                     </button>
                   ) : null
                 }
@@ -249,7 +252,7 @@ export function Progress(props: {
                     {data.checks_unknown && (
                       <p>
                         Quick checks are not shown. This version of Magnesium keeps them where the window cannot read them yet. The tutor still
-                        asks them as each sitting opens.
+                        asks them as each lesson opens.
                       </p>
                     )}
                     {data.unreadable > 0 && (

@@ -6,11 +6,11 @@
 // button, stretched over the card, and the course page and the remove
 // control are separate buttons beside it.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { IconButton, Due, Level, PaletteKey, Run, ThisWeek, TopBar, Week, agoText, clockText, examWhen, proofShare, skillCounts, splitGoal, useNow } from "../ui/bits";
+import { Due, Level, PaletteKey, ProofDots, Run, TopBar, Week, agoText, clockText, examWhen, proofShare, skillsProven, splitGoal, useNow } from "../ui/bits";
 import type { Activity, Card } from "../types";
 
 /** Today as a day on the calendar, in this Mac's time. */
@@ -58,18 +58,38 @@ function ExamChip({ card }: { card: Card }) {
   );
 }
 
+/** Where the course stopped, as a reference over a title. */
 function Goal({ goal }: { goal: string }) {
   const { ref, title } = splitGoal(goal);
   return (
-    <p className="cc-goal">
+    <>
       {ref && <span className="cc-ref">{ref}</span>}
       <span className="cc-title">
         <Line text={title} />
       </span>
-    </p>
+    </>
   );
 }
 
+/** The course's proofs in a few words: one mark of a proven skill, and "3 of 11 skills proven". */
+function ProofSummary({ card }: { card: Card }) {
+  const said = skillsProven(card.proofs);
+  if (!said || card.state !== "ready") return null;
+  return (
+    <span className="cc-proofs num">
+      <ProofDots earned={card.proofs.proven > 0 ? 3 : 0} label="" />
+      {said}
+    </span>
+  );
+}
+
+/**
+ * One course. The first is the "next" card, the one with the lesson's button;
+ * the others are rows of a ruled index. Either way the course's name is the
+ * one real button, stretched over the whole of it: its action is the lesson
+ * for the next card and the course page for a row. The remove control, and the
+ * course page from the next card, are separate buttons beside it.
+ */
 function CourseCard(props: {
   card: Card;
   hero: boolean;
@@ -89,6 +109,7 @@ function CourseCard(props: {
   const remove = useRef<HTMLButtonElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const now = useNow(card.sitting ? 1000 : 60_000);
+  const detail = useId();
 
   useEffect(() => {
     if (props.focus) open.current?.focus({ preventScroll: false });
@@ -100,10 +121,10 @@ function CourseCard(props: {
 
   const proofs = card.proofs;
   const hasProofs = proofs.levelled && proofs.total > 0;
-  const counts = skillCounts(proofs);
   const sitting = card.sitting;
   const leftSeconds = sitting ? Math.round((sitting.started_ms + sitting.minutes * 60_000 - now) / 1000) : 0;
   const name = displayName(card.name);
+  const kind = props.hero ? "next-card library-next" : "ledger-row";
 
   if (asking) {
     const cancel = () => {
@@ -112,7 +133,7 @@ function CourseCard(props: {
     };
     return (
       <div
-        className={props.hero ? "course-card hero asking" : "course-card asking"}
+        className={`${kind} asking`}
         role="group"
         aria-label={`Remove ${name}?`}
         onKeyDown={(event) => {
@@ -137,85 +158,93 @@ function CourseCard(props: {
     );
   }
 
-  const label = props.starting ? "Starting…" : sitting ? "Back to the paper" : props.onCourse ? (card.goal ? "Continue" : "Start") : "Open";
-  const main = sitting ? (
-    <p className="cc-goal">
+  const label = props.starting ? "Starting…" : sitting ? "Back to the paper" : props.onCourse ? (card.goal ? "Continue" : "Start your first lesson") : "Open";
+  const where = sitting ? (
+    <>
       <span className="cc-ref">{sitting.name}</span>
       <span className="cc-title num">
         {clockText(leftSeconds)} {leftSeconds >= 0 ? "left" : "over"}
       </span>
-    </p>
+    </>
   ) : card.goal ? (
     <Goal goal={card.goal} />
   ) : (
-    <p className="cc-goal">
-      <span className="cc-title dim">{card.state === "ready" || card.state === "empty" ? "Nothing started yet" : " "}</span>
-    </p>
+    <span className="cc-title dim">{card.state === "ready" || card.state === "empty" ? "Nothing started yet" : " "}</span>
+  );
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.target !== open.current) return;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      props.onMove(1);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      props.onMove(-1);
+    }
+  };
+  const removeButton = (
+    <button ref={remove} className="icon-btn cc-more" title="Remove from library" aria-label={`Remove ${name} from library`} onClick={() => setAsking(true)}>
+      <Icon name="trash" size={16} />
+    </button>
   );
 
-  return (
-    <div
-      className={props.hero ? "course-card hero" : "course-card"}
-      data-folder={card.folder}
-      onKeyDown={(event) => {
-        if (event.target !== open.current) return;
-        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-          event.preventDefault();
-          props.onMove(1);
-        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-          event.preventDefault();
-          props.onMove(-1);
-        }
-      }}
-    >
-      <div className="cc-top">
-        <ExamChip card={card} />
-        <button
-          ref={remove}
-          className="icon-btn cc-more"
-          title="Remove from library"
-          aria-label={`Remove ${name} from library`}
-          onClick={() => setAsking(true)}
-        >
-          <Icon name="trash" size={16} />
-        </button>
-      </div>
-      <div className="cc-body">
-        <div className="cc-text">
-          <h2>
-            {props.hero ? (
-              name
-            ) : (
-              <button ref={open} className="cc-open" onClick={props.onOpen}>
-                {name}
-              </button>
-            )}
-          </h2>
-          {main}
+  if (props.hero) {
+    return (
+      <div className={kind} data-folder={card.folder} onKeyDown={onKeyDown}>
+        <div className="cc-body">
+          <div className="cc-text">
+            <div className="cc-name">
+              <h2>{name}</h2>
+              <ExamChip card={card} />
+            </div>
+            <p className="cc-where">
+              {where}
+              {card.days_ago !== null && <span className="cc-meta cc-ago">Last studied {agoText(card.days_ago)}</span>}
+            </p>
+            <ProofSummary card={card} />
+          </div>
+          {hasProofs && <Level value={proofs.level} size="lg" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
         </div>
-        {hasProofs && <Level value={proofs.level} size={props.hero ? "lg" : "sm"} share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
-      </div>
-      <div className="cc-foot">
-        {props.hero && (
-          <button ref={open} className="btn primary cc-open" onClick={props.onOpen}>
+        <div className="cc-foot">
+          <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper" : "Continue the lesson"} onClick={props.onOpen}>
             {label}
           </button>
-        )}
-        {props.onCourse && (
-          <button className="btn ghost small cc-side" data-role="course-page" title="This course's page: proofs, papers, a new lesson" onClick={props.onCourse}>
-            Course page
-          </button>
-        )}
-        {card.due > 0 && <Due n={card.due} />}
-        {counts && <span className="cc-meta">{counts}</span>}
-        {hasProofs && props.hero && (
-          <span className="cc-meta num">
-            {proofs.earned} of {proofs.total} proofs
-          </span>
-        )}
-        <span className="grow" />
-        {card.days_ago !== null && <span className="cc-meta">{agoText(card.days_ago)}</span>}
+          {props.onCourse && (
+            <button className="btn ghost cc-side" data-role="course-page" title="This course's page: proofs, papers, a new lesson" onClick={props.onCourse}>
+              Course page
+            </button>
+          )}
+          {card.due > 0 && <Due n={card.due} />}
+          <span className="grow" />
+          {removeButton}
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className={kind} data-folder={card.folder} onKeyDown={onKeyDown}>
+      <div className="lr-main">
+        <div className="cc-name">
+          <h2>
+            <button ref={open} className="cc-open" aria-describedby={detail} onClick={props.onOpen}>
+              {name}
+            </button>
+          </h2>
+          <ExamChip card={card} />
+        </div>
+        <p className="cc-where" id={detail}>
+          {where}
+          {card.days_ago !== null && <span className="cc-meta cc-ago">Last studied {agoText(card.days_ago)}</span>}
+        </p>
+      </div>
+      <div className="lr-proofs">
+        <ProofSummary card={card} />
+        {card.due > 0 && <Due n={card.due} />}
+      </div>
+      <div className="lr-level">
+        {hasProofs && <Level value={proofs.level} size="sm" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
+      </div>
+      <div className="lr-remove">{removeButton}</div>
     </div>
   );
 }
@@ -272,20 +301,32 @@ export function Library(props: {
   if (cards === null) {
     body = (
       <div className="cards">
-        {(props.folders.length > 0 ? props.folders : [""]).slice(0, 6).map((path, index) => (
-          <div key={path || index} className={index === 0 ? "course-card hero ghosted" : "course-card ghosted"}>
-            <div className="cc-top">
-              <span className="chip plain">&nbsp;</span>
+        {(props.folders.length > 0 ? props.folders : [""]).slice(0, 6).map((path, index) => {
+          const name = displayName(path.split("/").filter(Boolean).pop() ?? "");
+          // A placeholder takes the room a real card or row takes, so nothing below it moves when the courses are read.
+          return index === 0 ? (
+            <div key={path || index} className="next-card library-next ghosted" aria-hidden="true">
+              <div className="cc-body">
+                <div className="cc-text">
+                  <div className="cc-name">
+                    <h2>{name}&nbsp;</h2>
+                  </div>
+                  <p className="cc-where">&nbsp;</p>
+                </div>
+              </div>
+              <div className="cc-foot">&nbsp;</div>
             </div>
-            <div className="cc-body">
-              <div className="cc-text">
-                <h2>{displayName(path.split("/").filter(Boolean).pop() ?? "")}&nbsp;</h2>
-                <p className="cc-goal">&nbsp;</p>
+          ) : (
+            <div key={path || index} className="ledger-row ghosted" aria-hidden="true">
+              <div className="lr-main">
+                <div className="cc-name">
+                  <h2>{name}&nbsp;</h2>
+                </div>
+                <p className="cc-where">&nbsp;</p>
               </div>
             </div>
-            <div className="cc-foot">&nbsp;</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   } else if (cards.length === 0) {
@@ -335,7 +376,10 @@ export function Library(props: {
       <TopBar
         right={
           <>
-            <IconButton icon="gear" label="This Mac's setup: Claude Code, Magnesium, how lessons run" onClick={props.onSetup} />
+            <button className="menu-key" title="This Mac's setup: Claude Code, Magnesium, how lessons run" onClick={props.onSetup}>
+              <Icon name="gear" size={16} />
+              Setup
+            </button>
             <PaletteKey onClick={props.onPalette} />
           </>
         }
@@ -346,20 +390,21 @@ export function Library(props: {
             <h1>Library</h1>
             {props.activity && count > 0 ? (
               <div className="shelf-week">
-                <p className="shelf-caption">Days you studied this week</p>
-                <div className="shelf-days">
-                  <ThisWeek activity={props.activity} />
+                <Week days={props.activity.days} today={props.activity.today} />
+                <p className="shelf-caption">
+                  Days you studied this week
                   <Run days={props.activity.run} />
-                </div>
+                </p>
               </div>
             ) : (
-              // Until the week is known its room is kept, so the title and the cards do not move when it arrives.
+              // Until the week is known its room is kept, so the title and the courses do not move when it arrives.
               (cards === null || count > 0) && (
                 <div className="shelf-week" aria-hidden="true" style={{ visibility: "hidden" }}>
-                  <p className="shelf-caption">Days you studied this week</p>
-                  <div className="shelf-days">
-                    <Week days={[]} today={localDay()} />
-                  </div>
+                  <Week days={[]} today={localDay()} />
+                  <p className="shelf-caption">
+                    Days you studied this week
+                    <span className="run-line">&nbsp;</span>
+                  </p>
                 </div>
               )
             )}

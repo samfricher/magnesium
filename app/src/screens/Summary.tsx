@@ -1,4 +1,4 @@
-// The end of a sitting. One screen that closes it, so the learner stops with
+// The end of a lesson. One screen that closes it, so the learner stops with
 // a clear end and a reason to come back.
 //
 // It says how many answers the tutor marked in this sitting, and says so
@@ -28,7 +28,7 @@ export function todaySentence(today: Today | null, options: { proofs?: boolean; 
     today.answered > 0 ? `${plural(today.answered, "answer", "answers")} marked today` : null,
     today.started > 0 ? plural(today.started, "new skill", "new skills") : null,
     proofs && today.proofs > 0 ? plural(today.proofs, "proof", "proofs") : null,
-    tomorrow && today.due_tomorrow > 0 ? `${today.due_tomorrow} due tomorrow` : null,
+    tomorrow && today.due_tomorrow > 0 ? `${plural(today.due_tomorrow, "question", "questions")} due tomorrow` : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? `${parts.join(", ")}.` : null;
 }
@@ -78,6 +78,7 @@ export function Summary(props: {
   onPalette: () => void;
 }) {
   const { sitting, activity } = props;
+  // The proofs earned in this lesson.
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
   // The mark is a check only when something moved: a proof, or an answer marked.
   const moved = proofs > 0 || (sitting.marked ?? 0) > 0;
@@ -88,7 +89,7 @@ export function Summary(props: {
     ? sitting.tomorrow > 0
       ? `${plural(sitting.tomorrow, "skill comes", "skills come")} back tomorrow.`
       : sitting.today && sitting.today.due_tomorrow > 0
-        ? `${sitting.today.due_tomorrow} due tomorrow.`
+        ? `${plural(sitting.today.due_tomorrow, "question", "questions")} due tomorrow.`
         : null
     : null;
   const today = todaySentence(sitting.today, { proofs: proofs === 0, tomorrow: comes === null });
@@ -104,14 +105,14 @@ export function Summary(props: {
             <Icon name={moved ? "check" : "dash"} size={22} />
           </span>
           <h1 data-role={unmarked ? "unmarked" : undefined}>
-            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "No answer was marked, so no proof was earned." : "Sitting done"}
+            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "No answer was marked, so no proof was earned." : "Lesson done"}
           </h1>
 
           {proofs > 0 && (
             <div className="earned" data-role="earned">
               {sitting.earned.slice(0, 4).map(({ row, proofs: gained }) => (
                 <span className="earned-row" key={row.name}>
-                  <ProofDots earned={proofsOf(row.dots)} today={gained} flare />
+                  <ProofDots earned={proofsOf(row.dots)} today={gained} flare size={20} />
                   <Line text={row.name} className="earned-name" />
                 </span>
               ))}
@@ -123,7 +124,15 @@ export function Summary(props: {
 
           {level && (
             <p className="level-line" data-role="level">
-              {props.proofs && <Level value={props.proofs.level} size="sm" share={proofShare(props.proofs)} />}
+              {props.proofs && (
+                <Level
+                  value={props.proofs.level}
+                  size="md"
+                  share={proofShare(props.proofs)}
+                  gain={props.proofs.total > 0 ? proofs / props.proofs.total : 0}
+                  title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
+                />
+              )}
               <span>{level}</span>
             </p>
           )}

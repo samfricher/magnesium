@@ -244,7 +244,7 @@ function library(): Card[] {
     }),
     card("Probability", {
       exam: { target: "test-2", title: "Test 2", date: "2026-12-12", day: "Sat 12 Dec", days_left: 31 },
-      goal: "The cdf method for $U = \\sqrt{Y}$",
+      goal: "The cdf method for $U = \\sqrt{Y}$, and why a transformation of $Y$ that is not one-to-one needs the sum over every branch of its inverse",
       days_ago: 6,
       proofs: proofs(6, 1, 14),
     }),
@@ -309,7 +309,7 @@ function progress(): Progress {
       row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
       row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
       // Never got wrong: answered right, alone and cold, on two papers.
-      row([2, 2, 0], "substrate concentration", "cold in Paper A Q2", "–"),
+      row([2, 2, 0], "substrate concentration", "right, alone, in Paper A Q2", "–"),
     ],
     confirmed: [
       row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),

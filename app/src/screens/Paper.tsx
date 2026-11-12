@@ -60,7 +60,7 @@ export function Paper(props: {
               {confirmEnd ? (
                 <>
                   <button className="btn danger" onClick={props.onEnd}>
-                    End the sitting
+                    End the paper
                   </button>
                   <button className="btn ghost" onClick={() => setConfirmEnd(false)}>
                     Keep going
