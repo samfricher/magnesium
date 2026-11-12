@@ -1082,6 +1082,31 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   user-select: none;
 }
 
+/* What the runtime's record says of an answer, one quiet line each, under the
+   answer. It is pulled up into the answer's own margin, and the room for it is
+   kept from the moment the reply starts, so it arrives without moving anything.
+   It comes in by moving (the page's enter), never from nothing. */
+.mark-lines {
+  margin: calc(var(--s2) - var(--s5)) 0 var(--s4) calc(var(--s4) + var(--s4));
+  min-height: calc(var(--fs-small) * 1.5);
+}
+
+.mark-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+  animation: enter var(--t-move) var(--ease) both;
+}
+
+/* The one filled circle: a proof. A mark that is not counted has no dot. */
+.mark-line .dots {
+  flex: none;
+}
+
 /* The line the window sent to open the lesson. Nobody typed it. */
 .resumed {
   margin: 0 0 var(--s5);
@@ -2830,6 +2855,42 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   border-radius: var(--r-card);
   font-size: var(--fs-small);
   color: var(--muted);
+}
+
+/* What the course already holds. The names are the content, so they are ink;
+   one that can be pressed (to ask for a lesson from it) is underlined, as a
+   link in a reply is. */
+.material-held {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+button.file-name {
+  text-decoration: underline;
+  text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--t-fast) ease-out;
+}
+
+button.file-name:hover {
+  text-decoration-color: var(--text);
+}
+
+button.file-name:focus-visible {
+  border-radius: 4px;
+  outline-offset: 2px;
 }
 
 .palette.paste {

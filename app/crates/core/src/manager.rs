@@ -265,6 +265,18 @@ impl Manager {
         Ok(study::rail(&self.need_folder()?))
     }
 
+    /// The answers the runtime has marked in the open folder, oldest first.
+    /// None when this runtime has no `attempts` command. The lesson compares
+    /// two readings of this and never takes the tutor's word for a mark.
+    pub fn marks(&self) -> AgentResult<Option<Vec<runtime::Mark>>> {
+        Ok(runtime::marks(&self.need_folder()?))
+    }
+
+    /// The files in the open course's material folder.
+    pub fn material_list(&self) -> AgentResult<material::Listed> {
+        Ok(material::list(&study::root(&self.need_folder()?)))
+    }
+
     /// Set a folder up for Magnesium, which adds a `.magnesium` folder to it.
     pub fn set_up(&self) -> AgentResult<Home> {
         let folder = self.need_folder()?;

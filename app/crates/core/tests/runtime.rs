@@ -441,6 +441,32 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_eq!(progress.helped_count, 1, "{progress:#?}");
     assert_eq!(progress.helped, vec!["units of a rate".to_owned()]);
 
+    // The lesson's marks are the runtime's rows, typed: the wrong first try,
+    // and the right one given a hint, which is not cold. Nothing is added to
+    // them, so the lesson can say only what the record says.
+    let marks = mg_core::runtime::marks(&scratch.folder).expect("the runtime has attempts");
+    assert_eq!(marks.len(), 2, "{marks:#?}");
+    let wrong = marks
+        .iter()
+        .find(|m| m.label == "reciprocal of the intercept")
+        .unwrap();
+    assert_eq!(
+        (
+            wrong.mark.as_str(),
+            wrong.help.as_str(),
+            wrong.cold,
+            wrong.paper.as_deref()
+        ),
+        ("wrong", "none", true, None)
+    );
+    let helped = marks.iter().find(|m| m.label == "units of a rate").unwrap();
+    assert_eq!(
+        (helped.mark.as_str(), helped.help.as_str(), helped.cold),
+        ("right", "hint", false)
+    );
+    assert_ne!(wrong.id, helped.id);
+    assert!(!wrong.id.is_empty() && wrong.at.starts_with(&today.format("%Y-%m-%d").to_string()));
+
     // The proofs and the level are the runtime's: three proofs for each
     // skill of the plan, the untested one included, earned by the passes
     // that count. The two skills from chat are in no plan: they are listed,
