@@ -50,6 +50,10 @@ export const emptySession: SessionState = {
 
 export type Action =
   | { type: "opened"; turns: Turn[] }
+  /** The page of a lesson shown again, without starting the agent. */
+  | { type: "loaded"; turns: Turn[] }
+  /** The lesson was closed: the page stays as it was, with nothing running. */
+  | { type: "closed" }
   | { type: "reopened" }
   | { type: "sent"; shown: string; now: number }
   | { type: "picked"; shown: string; now: number }
@@ -155,6 +159,19 @@ export function reduce(state: SessionState, action: Action): SessionState {
           : null,
       };
     }
+    case "loaded": {
+      const turns = action.turns;
+      const last = turns.length > 0 ? turns[turns.length - 1] : null;
+      return {
+        ...emptySession,
+        earlier: turns.slice(0, -1),
+        live: last
+          ? { ...blankLive(last.learner, last.ms, "idle"), done: last.tutor ? [last.tutor] : [], interrupted: last.interrupted }
+          : null,
+      };
+    }
+    case "closed":
+      return { ...state, open: false, cards: [], live: state.live ? { ...state.live, status: "idle", streaming: "", done: state.live.streaming.trim() ? [...state.live.done, state.live.streaming] : state.live.done } : null };
     case "reopened":
       // The agent was restarted under a lesson that is still on screen.
       return { ...state, open: true };

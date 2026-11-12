@@ -25,7 +25,12 @@ const pictures = new Map<string, Promise<string>>();
 const drawn = new Map<string, string>();
 const failed = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
-const keyOf = (source: string) => `${window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"}:${source}`;
+/** The scheme on screen: the one the learner or the harness set, else the system's. */
+const darkNow = () => {
+  const set = document.documentElement.dataset.scheme;
+  return set ? set === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+};
+const keyOf = (source: string) => `${darkNow() ? "dark" : "light"}:${source}`;
 
 /**
  * A diagram is as big as it was drawn, so its words keep their size. It may be
@@ -41,14 +46,14 @@ function keepWordsReadable(holder: HTMLElement) {
   holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1);
 }
 
-/** A diagram's boxes take the window's control radius, not square corners. */
+/** A diagram's boxes take a small radius, not square corners. */
 function roundNodes(svg: string): string {
   try {
     const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
     if (doc.querySelector("parsererror")) return svg;
     doc.querySelectorAll(".node rect, .cluster rect, rect.actor, rect.note").forEach((rect) => {
-      rect.setAttribute("rx", "8");
-      rect.setAttribute("ry", "8");
+      rect.setAttribute("rx", "6");
+      rect.setAttribute("ry", "6");
     });
     return new XMLSerializer().serializeToString(doc.documentElement);
   } catch {
@@ -84,24 +89,24 @@ async function drawOne(source: string, room: number) {
   try {
     // The diagram library is large, so it is fetched only when a diagram appears.
     const mermaid = (await import("mermaid")).default;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = darkNow();
     // The window's own colours, read from its tokens so a diagram follows the
     // scheme. The diagram library works colours out from these, so they are
     // resolved to plain values here.
     const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "gray";
     const ink = {
-      box: token("--raised"),
+      box: token("--shelf"),
       text: token("--text"),
-      edge: token("--line-input"),
-      line: token("--muted"),
-      second: token("--hover"),
-      third: token("--surface"),
+      edge: token("--rule-strong"),
+      line: token("--quiet"),
+      second: token("--shelf"),
+      third: token("--ground"),
     };
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
-      fontFamily: '"Magnesium Sans", -apple-system, BlinkMacSystemFont, sans-serif',
+      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
       // A diagram fits the column; CSS scales it to the width it is given.
       flowchart: { useMaxWidth: false },
       sequence: { useMaxWidth: false },
