@@ -281,30 +281,3 @@ export const PROOF_HINT = "A proof is one answer you gave alone, on its own day.
 /** What the run is, in one line, for a tooltip. */
 export const RUN_HINT = "Days on which you had an answer marked, in a row. One missed day a week is a rest day and does not end the run.";
 
-/**
- * The lesson's old clock ring. Only the lesson screen still draws it, and it
- * goes when the clock there becomes plain text. Nothing else is a ring but the level.
- */
-export function Ring(props: { share: number; size: number; stroke?: number; tone?: string }) {
-  const stroke = props.stroke ?? 3;
-  const radius = (props.size - stroke) / 2;
-  const round = 2 * Math.PI * radius;
-  const share = Math.max(0, Math.min(1, props.share));
-  return (
-    <span className={`ring ${props.tone ?? ""}`} style={{ width: props.size, height: props.size }} aria-hidden="true">
-      <svg width={props.size} height={props.size} viewBox={`0 0 ${props.size} ${props.size}`}>
-        <circle className="ring-track" cx={props.size / 2} cy={props.size / 2} r={radius} strokeWidth={stroke} />
-        <circle
-          className="ring-fill"
-          cx={props.size / 2}
-          cy={props.size / 2}
-          r={radius}
-          strokeWidth={stroke}
-          strokeDasharray={round}
-          strokeDashoffset={round * (1 - share)}
-          transform={`rotate(-90 ${props.size / 2} ${props.size / 2})`}
-        />
-      </svg>
-    </span>
-  );
-}

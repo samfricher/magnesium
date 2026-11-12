@@ -604,8 +604,6 @@ export function Session(props: {
   state: SessionState;
   rail: RailData | null;
   blockMinutes: number;
-  /** The name of the engine this conversation runs on. The lesson no longer shows it. */
-  engine?: string | null;
   /** A dialog over the window, such as the command palette: the lesson is inert behind it. */
   overlay?: boolean;
   onSend: (text: string) => void;

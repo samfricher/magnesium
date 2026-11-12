@@ -2289,13 +2289,6 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--muted);
 }
 
-/* The engine of the conversation on screen, in the lesson's top strip. */
-.engine-tag {
-  font-size: var(--fs-caption);
-  color: var(--faint);
-  white-space: nowrap;
-}
-
 /* Today's counts: one plain line on the course page and at the end of a sitting. */
 .today-line {
   margin-top: var(--s3);
@@ -2306,12 +2299,6 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .engine-line {
   text-wrap: pretty;
-}
-
-@media (max-width: 760px) {
-  .engine-tag {
-    display: none;
-  }
 }
 
 /* The engine's lines share one cell, so a new pick never changes the height. */

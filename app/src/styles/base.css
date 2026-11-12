@@ -676,31 +676,6 @@ button.banner:hover {
   color: var(--red);
 }
 
-/* ---- the lesson's clock ring (goes when the clock there is plain text) ---- */
-
-.ring {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-}
-
-.ring svg {
-  display: block;
-}
-
-.ring-track {
-  fill: none;
-  stroke: var(--line-2);
-}
-
-.ring-fill {
-  fill: none;
-  stroke: var(--muted);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.9s var(--ease);
-}
-
 /* ---- the level: the one ring ---- */
 
 .level-ring {

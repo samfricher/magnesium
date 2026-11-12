@@ -121,8 +121,6 @@ export function App() {
   const [about, setAbout] = useState<About | null>(null);
   // Which engine runs lessons. null when the core cannot say.
   const [engine, setEngine] = useState<EngineChoice | null>(null);
-  // The engine of the conversation on the lesson screen.
-  const [lessonEngine, setLessonEngine] = useState<Engine | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   // What Claude Code said before the sign-in, to see when its answer changes.
   const accountBefore = useRef("");
@@ -565,12 +563,11 @@ export function App() {
   };
 
   /**
-   * Open the lesson screen and send the first words of the sitting. Work on a
-   * paper always runs on Claude Code. No lesson starts while this Mac's setup
+   * Open the lesson screen and send the first words of the sitting. No lesson starts while this Mac's setup
    * needs a look, such as a magnesium program older than the window needs.
    * Resolves to whether the lesson screen opened.
    */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>, paper = false): Promise<boolean> => {
+  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
     const { api } = now.current;
     if (!api) return false;
     if (!setupReady(now.current.setup)) {
@@ -583,7 +580,6 @@ export function App() {
     try {
       const opened = await api.openSession(resume);
       dispatch({ type: "opened", turns: opened.turns });
-      setLessonEngine(paper ? "plugin" : (opened.engine ?? null));
       sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
       proofsBefore.current = null;
       void api
@@ -661,8 +657,7 @@ export function App() {
     if (!api) return;
     try {
       if (!session.open) {
-        const opened = await api.openSession(true);
-        if (opened.engine) setLessonEngine((old) => (old === "plugin" ? old : opened.engine));
+        await api.openSession(true);
         dispatch({ type: "reopened" });
       }
       sitting.current.answers += 1;
@@ -776,7 +771,7 @@ export function App() {
       if (files.length === 0) return;
       const words = await api.paperEnd(files);
       await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent), true);
+      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
       else setView("course");
     } catch (problem) {
       setError(String(problem));
@@ -1113,7 +1108,6 @@ export function App() {
         state={session}
         rail={rail}
         blockMinutes={home.block_minutes}
-        engine={lessonEngine ? engineName(lessonEngine) : null}
         overlay={palette || pasting !== null}
         onSend={(text) => void say(text)}
         onInterrupt={() => void guard((api) => api.interrupt())()}
