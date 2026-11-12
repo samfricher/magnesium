@@ -374,17 +374,6 @@ textarea {
   margin-right: calc(var(--s2) * -1);
 }
 
-/* The lesson's strip has its own geometry until the lesson takes the column
-   too: set --col on .session to the lesson's width, delete these two rules
-   and the End link's margin in the lesson's styles, and it follows. */
-.screen.session .bar {
-  padding: 0 var(--s4);
-}
-
-.screen.session .bar-side:first-child {
-  padding-left: 76px;
-}
-
 .bar-side {
   display: flex;
   align-items: center;

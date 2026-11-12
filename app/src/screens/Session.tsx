@@ -1069,7 +1069,6 @@ export function Session(props: {
   material: string[] | null;
   onDismissMaterial: () => void;
   onAddFiles: () => void;
-  onPasteText: () => void;
 }) {
   const { state } = props;
   const live = state.live;

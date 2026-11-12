@@ -1125,7 +1125,6 @@ export function App() {
         material={material}
         onDismissMaterial={() => setMaterial(null)}
         onAddFiles={() => void chooseMaterial()}
-        onPasteText={() => setPasting("")}
       />
     );
   } else if (view === "summary" && summary) {

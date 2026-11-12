@@ -2,7 +2,7 @@
 // what was added, the sheet for pasted text, the veil while files are dragged
 // over the window, and the menu in the answer box.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { Icon } from "./icons";
 
@@ -96,60 +96,3 @@ export function DropVeil({ course }: { course: string }) {
   );
 }
 
-/** The paperclip in the answer box: pick files, or paste text. */
-export function AddMenu(props: { disabled: boolean; onFiles: () => void; onPaste: () => void }) {
-  const [open, setOpen] = useState(false);
-  const holder = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!holder.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", key);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
-  return (
-    <span className="add-menu" ref={holder}>
-      <button
-        className={open ? "icon-btn on" : "icon-btn"}
-        title="Add course material"
-        aria-label="Add course material"
-        aria-expanded={open}
-        disabled={props.disabled}
-        data-role="add-material"
-        onClick={() => setOpen(!open)}
-      >
-        <Icon name="clip" size={17} />
-      </button>
-      {open && (
-        <span className="menu" role="menu">
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              props.onFiles();
-            }}
-          >
-            Choose files…
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              props.onPaste();
-            }}
-          >
-            Paste text…
-          </button>
-        </span>
-      )}
-    </span>
-  );
-}

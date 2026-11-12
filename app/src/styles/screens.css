@@ -716,13 +716,25 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s5)), transparent 100%);
 }
 
-/* End stands on the column's left edge when the window has room for that. */
-.session .bar-side:first-child .crumb {
-  margin-left: max(0px, calc((100vw - min(100vw - 2 * var(--s6), var(--column))) / 2 - 92px - var(--s2)));
+/* The lesson takes the shared column, so End, the margin and the answer box
+   stand on the same left edge as every other screen's back link and title.
+   With a source open beside the lesson the page is two columns, and the strip
+   keeps to the window's insets instead. */
+.screen.session {
+  --col: var(--column);
 }
 
-.session.has-source .bar-side:first-child .crumb {
-  margin-left: 0;
+.screen.session.has-source {
+  --edge-l: var(--inset);
+  --edge-r: var(--outset);
+}
+
+.session:not(.has-source) .stage,
+.session:not(.has-source) .dock,
+.session:not(.has-source) .dock-notes,
+.session:not(.has-source) .task-pin-holder {
+  padding-left: var(--edge-l);
+  padding-right: var(--edge-r);
 }
 
 /* Said to a screen reader only. */
