@@ -53,6 +53,10 @@ pub struct Facts {
     /// The course graphs in the study folder, as paths from it. They do not
     /// change during a conversation, so only the whole state names them.
     pub graphs: Vec<String>,
+    /// The study plans, one line each: the file, its exam and its date.
+    pub plans: Vec<String>,
+    /// The window sent this message as talk, not as an answer.
+    pub talk: bool,
 }
 
 /// One quick check, as the tutor needs it. The key is the tutor's, to mark
@@ -205,6 +209,10 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
                 .iter()
                 .map(|path| format!("Course graph: {path}")),
         );
+        if facts.plans.is_empty() {
+            lines.push("Study plan: none".to_owned());
+        }
+        lines.extend(facts.plans.iter().map(|line| format!("Study plan: {line}")));
     }
     if !facts.known.is_empty() {
         lines.push(
@@ -281,6 +289,12 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     if !facts.help.is_empty() {
         lines.push("Help each kind of problem needs now:".to_owned());
         lines.extend(facts.help.iter().map(|line| format!("- {line}")));
+    }
+    if facts.talk {
+        lines.push(
+            "The learner sent this message as talk, not as an answer to the open task: it is not marked, whatever it says. Set answer to null and task to null, and reply to what they said. The open task stays open; pose it again when they come back to it."
+                .to_owned(),
+        );
     }
     if !facts.open_labels.is_empty() {
         lines.push(format!(
