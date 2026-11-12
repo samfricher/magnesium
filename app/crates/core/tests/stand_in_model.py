@@ -53,8 +53,8 @@ What a turn does is chosen by words in the learner's message (inside
   by the way   (any case) answer an off-plan question: no task, no mark
   back to      (any case) pose the open task again, in the same words
   The stats course: when the state names the plan "Midterm 2" (the scratch
-  course of scripts/scratch-course.sh), a lesson's first message with no
-  other trigger poses "What is the standard error of the mean?" for a sample
+  course of scripts/scratch-course.sh), a lesson's first message (or words
+  with no number while no task is open) with no other trigger poses "What is the standard error of the mean?" for a sample
   of 25 with s = 10; an answer of 2 is right (cold), any other is wrong; the
   next task asks for the 95% margin of error (t* = 2.064): about 4.13 is
   right.
@@ -480,7 +480,9 @@ def reply_for(learner, state):
         if open_task[0] == STATS_SECOND and re.search(r"4\.1", learner):
             return "Right: 2.064 × 2 ≈ 4.13 minutes, so the interval is 47.9 to 56.1." + block(
                 answer="right", skill="margin of error", note="Multiplied t* by the standard error.", cold=True), False
-        if open_task[0] is None and not re.search(r"\d", learner):
+        # A lesson's first message (the state says no task is open), or
+        # any words with no number while none is.
+        if open_task[0] is None and ("Open task: none" in state or not re.search(r"\d", learner)):
             return f"Let's start with the standard error. {STATS_FIRST}" + block(
                 note="Lesson start.", task=STATS_FIRST, steps=STATS_STEPS), False
     if "Km = 2" in learner:

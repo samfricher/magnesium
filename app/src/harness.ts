@@ -11,17 +11,26 @@
 //   type {text}             into the focused field (input, textarea, contenteditable)
 //   key {key, meta?, shift?, alt?, ctrl?}   on the focused element; an Enter
 //                           nobody handled submits as a real one would
-//   click {target}          a data-drive name, else exact visible text, else
-//                           a substring of visible text, among visible elements
-//   focus {target}          the same lookup, then focus
-//   wait_idle {timeout_ms}  no reply running and nothing pending for 1.5 s
+//   click {target, by?}     a data-drive name, else exact visible text, else
+//                           a substring of visible text, among visible
+//                           elements; with by: "drive", the name only
+//   focus {target, by?}     the same lookup, then focus
+//   wait_idle {timeout_ms, quiet_ms?}  no reply running and nothing pending
+//                           (no marked or plan_changed to come) for 1.5 s
+//   wait_reply {timeout_ms} the tutor's reply has begun to show (or ended)
 //   wait {ms}
 //   text                    the page's visible text
 //   perf                    measure input latency in the composer now
-//   scheme {scheme}         "dark" or "light": sets <html data-scheme>
+//   scheme {scheme}         "dark" or "light": sets <html data-scheme>;
+//                           "system" takes it off again
+//   plan                    the open folder's plan, as core.plan() reads it
+//   transcript              every message sent (with its intent), every
+//                           reply, and every marked and plan_changed, so far
+//   ready                   whether ready() was called, and the startup time
 //   quit
 
 import { core, isDemo } from "./bridge";
+import type { AgentEvent, Intent } from "./types";
 
 type Config = { drive: boolean; perf: boolean; started_ms: number };
 type Op = { id: number; op: string; [key: string]: unknown };
@@ -120,10 +129,13 @@ function editable(element: Element | null): HTMLElement | null {
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 const CLICKABLE = "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem], [role=option], label, summary, input, select, textarea, [tabindex], [data-drive]";
 
-/** The element a target names: a data-drive name, else exact visible text, else part of it. */
-function find(target: string): HTMLElement | null {
+/**
+ * The element a target names: a data-drive name, else exact visible text,
+ * else part of it. With `driveOnly`, a data-drive name and nothing else.
+ */
+function find(target: string, driveOnly = false): HTMLElement | null {
   const named = Array.from(document.querySelectorAll<HTMLElement>(`[data-drive="${CSS.escape(target)}"]`)).filter(visible);
-  if (named.length > 0) return named[0];
+  if (named.length > 0 || driveOnly) return named[0] ?? null;
   const wanted = collapse(target).toLowerCase();
   const all = Array.from(document.body.querySelectorAll<HTMLElement>("*")).filter(
     (element) => !["SCRIPT", "STYLE", "TEMPLATE"].includes(element.tagName) && visible(element),
@@ -308,23 +320,105 @@ async function measureInput(): Promise<Latency | { error: string }> {
 
 let running = false;
 let lastEventAt = 0;
+let deltas = 0;
+let turnsEnded = 0;
+
+type Entry =
+  | { at: string; kind: "send" | "new_lesson" | "shown"; text: string; intent: Intent | null; sent?: string }
+  | { at: string; kind: "reply"; text: string; ok: boolean; interrupted: boolean; error: string | null }
+  | { at: string; kind: "marked"; mark: unknown }
+  | { at: string; kind: "plan_changed"; what: string[] }
+  | { at: string; kind: "notice"; text: string };
+const transcript: Entry[] = [];
+let replyBlocks: string[] = [];
+let replyStreaming = "";
+
+function note(event: AgentEvent): void {
+  const at = new Date().toISOString();
+  switch (event.type) {
+    case "turn_started":
+      replyBlocks = [];
+      replyStreaming = "";
+      break;
+    case "text_delta":
+      replyStreaming += event.text;
+      break;
+    case "text_done":
+      replyBlocks.push(event.text);
+      replyStreaming = "";
+      break;
+    case "turn_ended": {
+      const text = [...replyBlocks, replyStreaming].filter((block) => block.trim() !== "").join("\n\n");
+      transcript.push({ at, kind: "reply", text, ok: event.ok, interrupted: event.interrupted, error: event.error });
+      replyBlocks = [];
+      replyStreaming = "";
+      break;
+    }
+    case "marked":
+      transcript.push({ at, kind: "marked", mark: event.mark });
+      break;
+    case "plan_changed":
+      transcript.push({ at, kind: "plan_changed", what: event.what });
+      break;
+    case "notice":
+      transcript.push({ at, kind: "notice", text: event.text });
+      break;
+  }
+}
 
 async function listen(): Promise<void> {
   const c = await core();
+  // Every message the screens send is noted with its intent, for the
+  // scenario runner's transcript. The screens call these on the same object.
+  const send = c.send.bind(c);
+  const sendNewLesson = c.sendNewLesson.bind(c);
+  const sendShown = c.sendShown.bind(c);
+  c.send = (text: string, intent?: Intent) => {
+    transcript.push({ at: new Date().toISOString(), kind: "send", text, intent: intent ?? null });
+    return send(text, intent);
+  };
+  c.sendNewLesson = (goal: string) => {
+    transcript.push({ at: new Date().toISOString(), kind: "new_lesson", text: goal, intent: null });
+    return sendNewLesson(goal);
+  };
+  c.sendShown = (shown: string, sent: string) => {
+    transcript.push({ at: new Date().toISOString(), kind: "shown", text: shown, intent: null, sent });
+    return sendShown(shown, sent);
+  };
   await c.onEvent((event) => {
     lastEventAt = Date.now();
     if (event.type === "turn_started") running = true;
-    if (event.type === "turn_ended" || event.type === "exited") running = false;
+    if (event.type === "text_delta" || event.type === "text_done") deltas += 1;
+    if (event.type === "turn_ended" || event.type === "exited") {
+      running = false;
+      turnsEnded += 1;
+    }
+    note(event);
   });
 }
 
-async function waitIdle(timeoutMs: number): Promise<Result> {
+/** Resolves once the tutor's reply shows a few pieces, or a turn ends. */
+async function waitReply(timeoutMs: number): Promise<Result> {
+  const start = Date.now();
+  const from = deltas;
+  const ended = turnsEnded;
+  while (Date.now() - start < timeoutMs) {
+    if (deltas - from >= 3 || turnsEnded > ended) {
+      await nextPaint();
+      return { ok: true, waited_ms: Date.now() - start, ended: turnsEnded > ended };
+    }
+    await sleep(20);
+  }
+  return { ok: false, error: `no reply within ${timeoutMs} ms`, waited_ms: Date.now() - start };
+}
+
+async function waitIdle(timeoutMs: number, quietMs = QUIET_MS): Promise<Result> {
   const start = Date.now();
   let quietSince = 0;
   while (Date.now() - start < timeoutMs) {
     const idle = !running && (await invoke<boolean>("harness_idle").catch(() => true));
     const now = Date.now();
-    if (idle && now - lastEventAt >= QUIET_MS) {
+    if (idle && now - Math.max(lastEventAt, start) >= quietMs) {
       quietSince ||= now;
       if (now - quietSince >= 200) return { ok: true, waited_ms: now - start };
     } else quietSince = 0;
@@ -350,20 +444,32 @@ async function run(op: Op): Promise<Result> {
       return { ok: true, focused: describe(document.activeElement) };
     }
     case "click": {
-      const element = find(String(op.target ?? ""));
+      const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
       click(element);
       return { ok: true, clicked: describe(element) };
     }
     case "focus": {
-      const element = find(String(op.target ?? ""));
+      const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
       const target = editable(element) ?? focusable(element);
       target.focus();
       return { ok: document.activeElement === target, focused: describe(document.activeElement) };
     }
     case "wait_idle":
-      return waitIdle(Number(op.timeout_ms ?? 120_000));
+      return waitIdle(Number(op.timeout_ms ?? 120_000), op.quiet_ms === undefined ? QUIET_MS : Number(op.quiet_ms));
+    case "wait_reply":
+      return waitReply(Number(op.timeout_ms ?? 120_000));
+    case "plan": {
+      const c = await core();
+      try {
+        return { ok: true, plan: await c.plan() };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
+    case "transcript":
+      return { ok: true, transcript };
     case "wait":
       await sleep(Number(op.ms ?? 0));
       return { ok: true };
@@ -375,8 +481,9 @@ async function run(op: Op): Promise<Result> {
     }
     case "scheme": {
       const scheme = String(op.scheme ?? op.value ?? "");
-      if (scheme !== "dark" && scheme !== "light") return { ok: false, error: "scheme is dark or light" };
-      document.documentElement.dataset.scheme = scheme;
+      if (scheme === "system") delete document.documentElement.dataset.scheme;
+      else if (scheme === "dark" || scheme === "light") document.documentElement.dataset.scheme = scheme;
+      else return { ok: false, error: "scheme is dark, light or system" };
       await nextPaint();
       return { ok: true };
     }
