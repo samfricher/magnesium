@@ -27,6 +27,20 @@ const failed = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
 const keyOf = (source: string) => `${window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"}:${source}`;
 
+/**
+ * A diagram is as big as it was drawn, so its words keep their size. It may be
+ * narrowed to fit the column, but only to four fifths, which keeps 15 px words
+ * at 12 px; past that it scrolls sideways in its own box. It is never scaled
+ * to fit a height.
+ */
+function keepWordsReadable(holder: HTMLElement) {
+  const svg = holder.querySelector("svg");
+  if (!svg) return;
+  const width = parseFloat(svg.getAttribute("width") ?? "") || Number(/^[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg.getAttribute("viewBox") ?? "")?.[1] ?? 0);
+  if (width > 0) svg.style.minWidth = `${Math.round(width * 0.8)}px`;
+  holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1);
+}
+
 /** Put each diagram already drawn in the place of its placeholder. Returns the ones still to draw. */
 function reuseDiagrams(root: HTMLElement): HTMLElement[] {
   const waiting: HTMLElement[] = [];
@@ -40,6 +54,7 @@ function reuseDiagrams(root: HTMLElement): HTMLElement[] {
       holder.className = "diagram";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
+      keepWordsReadable(holder);
     } else if (failed.has(keyOf(source))) {
       // A diagram that will not draw stays as the text the tutor wrote.
       pre.classList.add("undrawn");

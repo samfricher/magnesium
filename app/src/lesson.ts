@@ -182,7 +182,7 @@ export function busy(state: SessionState): boolean {
 }
 
 /**
- * The words the window sends for the learner when a sitting opens. They are
+ * The words the window sends for the learner when a lesson opens. They are
  * plain words, as a learner would type them in a terminal. The runtime opens
  * the sitting with what is due, so the window does not ask for it. Only the
  * learner's own saved line is quoted back: the tutor's note of what comes
@@ -213,6 +213,19 @@ export function opening(text: string): { stoppedAt: string | null } | null {
  * got right with a hint again, cold, the next day.
  */
 export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
+
+/**
+ * What the learner said, apart from how sure they said they were. The window
+ * sends the answer, then "Confidence: sure" (or unsure, or guess) as a line of
+ * its own; the lesson shows that as a tag, not as words the learner wrote.
+ */
+export function splitConfidence(text: string): { text: string; confidence: "Sure" | "Unsure" | "Guess" | null } {
+  const found = /(?:^|\n\n)Confidence: (sure|unsure|guess)(?=\n\n|$)/i.exec(text);
+  if (!found) return { text, confidence: null };
+  const word = found[1].toLowerCase();
+  const rest = `${text.slice(0, found.index)}${text.slice(found.index + found[0].length)}`.trim();
+  return { text: rest, confidence: word === "sure" ? "Sure" : word === "unsure" ? "Unsure" : "Guess" };
+}
 
 /** Whether a line the learner sent is a request for a hint. */
 export function isHint(text: string): boolean {
