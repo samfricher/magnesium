@@ -8,7 +8,7 @@ import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
 import { Due, ExamSentence, GoalText, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, bucketsSentence, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
-import type { Home, Paper, Progress } from "../types";
+import type { Home, Materials, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
 
@@ -40,6 +40,8 @@ export function Course(props: {
   onDismissMaterial: () => void;
   onAddFiles: () => void;
   onPasteText: () => void;
+  /** The files already in the course's material folder, or null while they are being read or cannot be. */
+  materials: Materials | null;
 }) {
   const { home, progress } = props;
   const [goal, setGoal] = useState("");
@@ -56,6 +58,12 @@ export function Course(props: {
   useEffect(() => {
     if (asking) input.current?.focus();
   }, [asking]);
+
+  /** A file's name was pressed while the card asks what to learn: it asks for a lesson from that file. */
+  const teachFrom = (name: string) => {
+    setGoal(`Teach me from ${name}`);
+    input.current?.focus();
+  };
 
   const exam = home.exam;
   const nextPaper = home.papers.find((paper) => !paper.sat) ?? null;
@@ -303,7 +311,11 @@ export function Course(props: {
           {usable && !sitting && (
             <div className="material-strip" data-role="material-strip">
               <Icon name="clip" size={16} />
-              <span>Add course material: drop files here, or choose them</span>
+              {props.materials && props.materials.files + props.materials.keys > 0 ? (
+                <MaterialHeld listed={props.materials} onPick={asking ? teachFrom : null} />
+              ) : (
+                <span>Add course material: drop files here, or choose them</span>
+              )}
               <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
                 {props.adding ? "Adding…" : "Choose files"}
               </button>
@@ -315,5 +327,48 @@ export function Course(props: {
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * What the course's material folder holds, in a line: how many files, the
+ * newest by name, and how many answer keys, which are counted and never
+ * named. While the card asks what to learn, a name asks for a lesson from it.
+ */
+function MaterialHeld({ listed, onPick }: { listed: Materials; onPick: ((name: string) => void) | null }) {
+  const names = listed.names.slice(0, 2);
+  const more = listed.files - names.length;
+  const name = (each: string) =>
+    onPick ? (
+      <button key={each} className="file-name" title={`Teach me from ${each}`} onClick={() => onPick(each)} data-role="material-file">
+        {each}
+      </button>
+    ) : (
+      <span key={each} className="file-name">
+        {each}
+      </span>
+    );
+  const keys = listed.keys === 1 ? "1 answer key" : `${listed.keys} answer keys`;
+  return (
+    <span className="material-held" data-role="material-held">
+      {listed.files > 0 && (
+        <>
+          {listed.files} {listed.files === 1 ? "file" : "files"}:{" "}
+          {names.length === 2 && more <= 0 ? (
+            <>
+              {name(names[0])} and {name(names[1])}
+            </>
+          ) : names.length === 2 ? (
+            <>
+              {name(names[0])}, {name(names[1])} and {more} more
+            </>
+          ) : (
+            names.map(name)
+          )}
+          {listed.keys > 0 && <>, and {keys}</>}
+        </>
+      )}
+      {listed.files === 0 && <>{keys}, kept closed</>}
+    </span>
   );
 }

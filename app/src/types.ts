@@ -164,6 +164,31 @@ export type Words = { shown: string; sent: string };
  */
 export type Added = { saved: string[]; keys: number; lines: string[] };
 
+/**
+ * One answer the runtime has marked, as its record has it. The lesson says a
+ * mark only from a row that was not there before the answer was sent.
+ * `mark` is the first try: "right", "partly", "wrong" or "declined". `help` is
+ * "none", "hint", "step" or "solution". `at` is local time, "2026-11-12 09:41".
+ */
+export type Mark = {
+  id: string;
+  at: string;
+  label: string;
+  mark: "right" | "partly" | "wrong" | "declined" | string;
+  help: "none" | "hint" | "step" | "solution" | string;
+  cold: boolean;
+  /** The paper it was given on, or null in a lesson. */
+  paper: string | null;
+};
+
+/**
+ * What a course's material folder holds. `names` are the most recent files,
+ * newest first, as the folder names them ("Week 4/slides.pdf" for a file in a
+ * folder). `files` counts every one that is not an answer key; `keys` counts
+ * the answer keys, which are never named.
+ */
+export type Materials = { names: string[]; files: number; keys: number };
+
 /** A source a reply cited, ready for the panel beside the lesson. */
 export type Source = {
   name: string;
@@ -254,6 +279,10 @@ export interface Core {
   addMaterial(paths: string[]): Promise<Added>;
   /** Save pasted text as a text file in the same place. */
   addPastedText(text: string): Promise<Added>;
+  /** The files already in this course's material folder. */
+  materialList(): Promise<Materials>;
+  /** The answers the runtime has marked, oldest first, or null when this runtime has no `attempts` command. */
+  marks(): Promise<Mark[] | null>;
   /**
    * Called with the paths of files dropped on the window, and with whether
    * files are being dragged over it. Resolves to a function that stops it.

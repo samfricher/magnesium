@@ -15,7 +15,8 @@ use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
 use mg_core::manager::{EngineChoice, Opened, Setup};
-use mg_core::material::Added;
+use mg_core::material::{Added, Listed};
+use mg_core::runtime::Mark;
 use mg_core::store::{Engine, PaperSitting};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
@@ -230,6 +231,20 @@ fn add_material(shell: State<'_, Shell>, paths: Vec<String>) -> Reply<Added> {
     plain(shell.manager.add_material(&sources))
 }
 
+/// The runtime's marked answers in the open folder, or none when its
+/// runtime has no such command. The lesson shows a mark only from these.
+#[tauri::command(async)]
+fn marks(shell: State<'_, Shell>) -> Reply<Option<Vec<Mark>>> {
+    plain(shell.manager.marks())
+}
+
+/// What the open course's material folder holds: names, newest first, and a
+/// count of answer keys that are never named.
+#[tauri::command(async)]
+fn material_list(shell: State<'_, Shell>) -> Reply<Listed> {
+    plain(shell.manager.material_list())
+}
+
 #[tauri::command(async)]
 fn add_pasted_text(shell: State<'_, Shell>, text: String) -> Reply<Added> {
     plain(shell.manager.add_pasted_text(&text))
@@ -385,6 +400,8 @@ fn main() {
             attach,
             add_material,
             add_pasted_text,
+            marks,
+            material_list,
             source,
             source_pdf,
             open_file,

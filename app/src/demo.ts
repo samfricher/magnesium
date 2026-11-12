@@ -13,6 +13,7 @@ import type {
   Core,
   Engine,
   Home,
+  Mark,
   Opened,
   Paper,
   PaperSitting,
@@ -47,6 +48,19 @@ let stoppedAt: string | null = "step 3: what the y-intercept gives.";
 // except at #summary:unmarked, which shows a sitting with none marked.
 let markedToday = 4;
 let marking = true;
+// The record's marked answers in the demo, oldest first. An answer sent in the
+// demo lesson adds a row a moment later, as the runtime would. At
+// #session:nomarks the runtime has no `attempts` command, and says so.
+const demoMarks: Mark[] = [
+  { id: "demo-1", at: "2026-11-09 18:20", label: "reading Km from a plot", mark: "right", help: "none", cold: true, paper: null },
+  { id: "demo-2", at: "2026-11-09 18:26", label: "the slope of a Lineweaver-Burk line", mark: "wrong", help: "none", cold: true, paper: null },
+];
+let marksAvailable = true;
+// A hint asked since the last marked answer: the next answer is given with help.
+let helpAsked = false;
+// Files in the demo course's material folder, newest first, and its answer keys.
+let materialNames = ["week3-confidence-intervals.md", "week2-sampling.md", "Week 4 slides.pdf"];
+let materialKeys = 1;
 // What runs lessons, and the engine the demo course's conversation began on.
 let engineChosen: Engine = "plugin";
 let conversationEngine: Engine | null = "plugin";
@@ -408,6 +422,35 @@ function material(paths: string[], pasted = false): Added {
   return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
 }
 
+/** Remember what the demo's folder now holds, as the core would find it. */
+function keep(added: Added): void {
+  materialNames = [...added.saved.map((path) => path.replace(/^Study\/materials\//, "")), ...materialNames];
+  materialKeys += added.keys;
+}
+
+/** The row the runtime would write for an answer sent in the demo lesson, or none. */
+function markFor(text: string): Mark | null {
+  const lower = text.toLowerCase();
+  if (/(can i have a hint|i'm lost)/.test(lower)) {
+    helpAsked = true;
+    return null;
+  }
+  if (lower.includes("don't know") || lower.includes("(unmarked)") || !marking) return null;
+  if (/\((source|key|stream|limit|permission|slow)\)|diagram/.test(lower)) return null;
+  const helped = helpAsked;
+  helpAsked = false;
+  const wrong = lower.includes("(wrong)");
+  return {
+    id: `demo-${demoMarks.length + 1}`,
+    at: new Date().toISOString().slice(0, 10) + " " + new Date().toTimeString().slice(0, 5),
+    label: "reading Vmax from a Lineweaver-Burk plot",
+    mark: wrong ? "wrong" : "right",
+    help: helped ? "hint" : "none",
+    cold: !helped,
+    paper: null,
+  };
+}
+
 export function demoCore(): Core {
   const handlers = new Set<(event: AgentEvent) => void>();
   const emit = (event: AgentEvent) => handlers.forEach((handler) => handler(event));
@@ -570,6 +613,9 @@ export function demoCore(): Core {
     send: async (text) => {
       if (marking) markedToday += 1;
       void reply(text);
+      const row = markFor(text);
+      // The record is written while the reply is: a moment after it is sent.
+      if (row) window.setTimeout(() => demoMarks.push(row), 500);
     },
     sendNewLesson: async (goal) => void reply(goal),
     sendShown: async (shown) => void reply(shown),
@@ -593,12 +639,18 @@ export function demoCore(): Core {
     attach: async () => "Study/handed-in/working/2026-11-10/IMG_0412.jpg",
     addMaterial: async (paths) => {
       await wait(500);
-      return material(paths);
+      const added = material(paths);
+      keep(added);
+      return added;
     },
     addPastedText: async () => {
       await wait(300);
-      return material(["Pasted text 2026-11-11 14-03-22.txt"], true);
+      const added = material(["Pasted text 2026-11-11 14-03-22.txt"], true);
+      keep(added);
+      return added;
     },
+    materialList: async () => (variant === "new" ? { names: [], files: 0, keys: 0 } : { names: materialNames.slice(0, 20), files: materialNames.length, keys: materialKeys }),
+    marks: async () => (marksAvailable ? demoMarks.map((row) => ({ ...row })) : null),
     onDrop: async (handler, hover) => {
       // A browser drops a file with a name and no path, which is enough to show the screens.
       const over = (event: DragEvent) => {
@@ -661,6 +713,8 @@ export function chooseVariant(): void {
     markedToday = 0;
   }
   if (screen === "summary" && state === "unmarked") marking = false;
+  // A runtime from before the `attempts` command has no marks to show.
+  if (state === "nomarks") marksAvailable = false;
   // Magnesium picked, with the demo course's conversation begun on Claude Code.
   if (state === "magnesium") engineChosen = "direct";
   if (screen === "welcome" && state) {
@@ -727,6 +781,27 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       key: "show me the key (key)",
       math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
     };
+    // What a learner does in the lesson: the answer is typed in the box and sent with its button, so the page reads the record before it goes.
+    const answerInBox = async (text: string) => {
+      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
+      if (!box) return;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(box, text);
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await wait(60);
+      document.querySelector<HTMLButtonElement>(".composer button.send")?.click();
+    };
+    // Marked right, alone and cold; right with a hint; wrong; and a runtime that cannot say.
+    if (state === "marked" || state === "wrong" || state === "nomarks") {
+      await answerInBox(state === "wrong" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
+      return;
+    }
+    if (state === "helped") {
+      Array.from(document.querySelectorAll<HTMLButtonElement>(".composer button")).find((b) => b.textContent?.trim() === "Hint")?.click();
+      await wait(300);
+      await quiet();
+      await answerInBox("Vmax is 4 µM/s");
+      return;
+    }
     if (state && words[state]) await actions.say(words[state]);
     if (state === "source" || state === "key") {
       await wait(300);

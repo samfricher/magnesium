@@ -17,6 +17,7 @@ import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState
 import { core } from "../bridge";
 import { HELP, busy, isHint, opening, splitConfidence, tutorText, type Card, type SessionState } from "../lesson";
 import { hasMath, hasTask, renderPlain, sourceLinks } from "../render";
+import { MarkLines, useMarks } from "../marks";
 import { sourceRef, type SourceRef } from "../sources";
 import { Line, Rich } from "../ui/Rich";
 import { MaterialNote } from "../ui/Material";
@@ -1131,6 +1132,13 @@ export function Session(props: {
   const keepGoing = useRef<HTMLButtonElement>(null);
   const now = useNow(20_000);
   const cardEscape = useRef<(() => void) | null>(null);
+  // What the runtime's record says of each answer sent here: read before it is sent, and again once the reply is whole.
+  const { arm } = useMarks(live?.since ?? null, live !== null && !isBusy);
+  const sendAnswer = (words: string) => {
+    // A request for help is not an answer: the record has no mark to wait for.
+    if (!(Object.values(HELP) as string[]).includes(words.trim())) arm();
+    props.onSend(words);
+  };
 
   // A source a reply cited opens beside the lesson, but only after the learner
   // has answered that reply's task, and it closes when the tutor poses the
@@ -1254,11 +1262,12 @@ export function Session(props: {
   }, [state.earlier, setsTask, live]);
 
   /** One exchange of the lesson: what was said, the reply, and what a hint costs. */
-  const exchange = (turn: { learner: string; tutor: string; interrupted: boolean }, index: number, opts: { writing: boolean }) => {
+  const exchange = (turn: { learner: string; tutor: string; interrupted: boolean; ms: number }, index: number, opts: { writing: boolean }) => {
     const hint = isHint(turn.learner) && turn.tutor !== "";
     return (
       <>
         {turn.learner && <Turn text={turn.learner} />}
+        {turn.learner && <MarkLines since={turn.ms} replying={turn.tutor !== ""} />}
         {hint && <div className="lesson-label help-label">Hint</div>}
         {turn.tutor !== "" && (
           <div className={opts.writing ? "tutor writing" : "tutor"} data-role={index === state.earlier.length ? "tutor" : undefined}>
@@ -1511,6 +1520,7 @@ export function Session(props: {
                   {state.earlier.slice(0, earlier).map((turn, index) => (
                     <div className="exchange" key={index}>
                       {turn.learner && <Turn text={turn.learner} />}
+                      {turn.learner && <MarkLines since={turn.ms} replying={false} />}
                       <div className="tutor">
                         <Rich text={turn.tutor} final stopped={turn.interrupted} onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} />
                       </div>
@@ -1533,7 +1543,7 @@ export function Session(props: {
                 );
               }),
               <div className={liveSetsTask ? "exchange now holds-open" : "exchange now"} ref={liveRef} key={state.earlier.length}>
-                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted }, state.earlier.length, { writing: isBusy })}
+                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted, ms: live.since }, state.earlier.length, { writing: isBusy })}
                 {!live && <p className="hint">Say what you want to work on.</p>}
                 {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
                 {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
@@ -1657,7 +1667,7 @@ export function Session(props: {
                     disabled={isBusy}
                     paused={covered}
                     draftKey={`${state.earlier.length}:${live?.since ?? 0}`}
-                    onSend={props.onSend}
+                    onSend={sendAnswer}
                     onNote={props.onNote}
                     onAddFiles={props.onAddFiles}
                     working={

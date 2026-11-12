@@ -29,6 +29,7 @@ import type {
   Engine,
   EngineChoice,
   Home,
+  Materials,
   Paper as PaperInfo,
   Payment,
   Progress as ProgressData,
@@ -134,6 +135,8 @@ export function App() {
   // Adding course material: what it said, whether it is under way, whether
   // files are being dragged over the window, and the text being pasted.
   const [material, setMaterial] = useState<string[] | null>(null);
+  // What the course's material folder already holds. null until it has been read, or when it cannot be.
+  const [materials, setMaterials] = useState<Materials | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [pasting, setPasting] = useState<string | null>(null);
@@ -201,6 +204,17 @@ export function App() {
     }
   }, []);
 
+  /** Read what the open course's material folder holds. A core that cannot say shows nothing: the course page reads as it did. */
+  const loadMaterials = useCallback(async () => {
+    const { api } = now.current;
+    if (!api) return;
+    try {
+      setMaterials(await api.materialList());
+    } catch {
+      setMaterials(null);
+    }
+  }, []);
+
   /** Which engine runs lessons, and the one the open folder's conversation began on. */
   const loadEngine = useCallback(async () => {
     const { api } = now.current;
@@ -258,6 +272,7 @@ export function App() {
         dispatch({ type: "reset" });
         setRail(null);
         setProgress(null);
+        setMaterials(null);
         setSummary(null);
         setAsking(false);
         if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
@@ -462,6 +477,7 @@ export function App() {
     setMaterial(null);
     try {
       setMaterial((await api.addMaterial(paths)).lines);
+      void loadMaterials();
     } catch (problem) {
       setMaterial([String(problem)]);
     } finally {
@@ -471,6 +487,12 @@ export function App() {
 
   addMaterialRef.current = addMaterial;
   canAddRef.current = canAdd;
+
+  // The course page says what the course already holds, read when it is shown.
+  const courseFolder = view === "course" ? (home?.folder ?? null) : null;
+  useEffect(() => {
+    if (courseFolder !== null) void loadMaterials();
+  }, [courseFolder, loadMaterials]);
 
   const chooseMaterial = async () => {
     const { api } = now.current;
@@ -490,6 +512,7 @@ export function App() {
     try {
       setMaterial((await api.addPastedText(text)).lines);
       setPasting(null);
+      void loadMaterials();
     } catch (problem) {
       setPasting(null);
       setMaterial([String(problem)]);
@@ -1088,6 +1111,7 @@ export function App() {
         onDismissMaterial={() => setMaterial(null)}
         onAddFiles={() => void chooseMaterial()}
         onPasteText={() => setPasting("")}
+        materials={materials}
       />
     );
   } else if (view === "session") {
