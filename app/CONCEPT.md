@@ -187,3 +187,15 @@ What my first plan had that I would have produced for any app, and what changed:
 - **Marks as coloured badges after the answer.** Moved to the gutter, in the quiet colour, with a shape and at most four words.
 
 What is open, decided here: the window learns that a task is open from the reply's text, because no event says so; the engine keeps the real open task, so a misread costs nothing worse than today. The learner editing the plan file with ⌘E needs one new core command that writes only `Study/*/plan.md`, and refuses if the file changed since it was read; the record and the gap log are never touched.
+
+## Round 4
+
+The round-1 judges called this new and "an editor, not an app wearing a theme"; what held the four feelings was noise left on the page. This round changes structure and behaviour, not the look.
+
+- **A lesson at rest is almost nothing.** Reopened, the lesson shows its open task with the half-written answer drawn as mathematics, then where you stopped and Continue; everything before is one quiet line ("The lesson so far"). Running, it shows this sitting and folds the earlier ones. After a week, Return continues, the tutor picks up where the screen said, and the caret is in the task.
+- **The plan is read, not opened.** The plan document is the exam and its day, then what to study in order, each on its day. What the tutor moved is marked once, until seen; days that now run backwards say so. The file itself is one click away, and ⌘E edits it.
+- **The open task comes from the record.** On Magnesium the engine says, after each turn, which task is open and whether the reply posed it (`open_task`, from concept B). The task block, the pinned line and the caret follow it, so a real tutor's bold question is never an empty strip.
+- **Only the place to write under a task.** Help and confidence moved to keys and ⌘K, behind one quiet Help key. Placeholders meet AA, and `hints = off` removes them.
+- **Settings is a file.** It is plain text and applied as you type: any installed font for the page and for your own words, any colours, every key binding, and hints. ⌘K reaches every value.
+- **The record speaks once.** An answer with no mark says "No mark" with its reason one key away; a retry says nothing; the record page never claims more than its rows.
+- **Chrome with a ground.** Documents fade at an edge where more lies beyond; the tab row gets a hairline when scrolled; sheets get a scrim.
