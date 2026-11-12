@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
 
+pub mod clock;
 pub mod mcp;
 pub mod snapshot;
 pub mod sources;
