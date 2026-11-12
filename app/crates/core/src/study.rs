@@ -1007,6 +1007,9 @@ pub struct Rail {
     pub goal: Option<String>,
     pub steps: Vec<Step>,
     pub next_action: Option<String>,
+    /// The task the record holds open, when the record keeps it where the
+    /// window can read it (a lesson on Magnesium). None otherwise.
+    pub task: Option<String>,
 }
 
 pub fn rail(folder: &Path) -> Rail {
@@ -1022,6 +1025,7 @@ pub fn rail(folder: &Path) -> Rail {
         goal: text(&session["goal"]),
         steps: peek::goal_steps(&root),
         next_action: text(&session["next_action"]).or_else(|| text(&session["current_problem"])),
+        task: peek::open_task(&root),
     }
 }
 

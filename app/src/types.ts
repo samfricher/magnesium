@@ -80,7 +80,8 @@ export type Opened = { resumed: boolean; turns: Turn[]; engine: Engine };
 
 export type Step = { step: string; status: "todo" | "doing" | "done" | string };
 
-export type Rail = { goal: string | null; steps: Step[]; next_action: string | null };
+/** `task` is the task the record holds open, when the record keeps it where the window can read it (a lesson on Magnesium); null otherwise. */
+export type Rail = { goal: string | null; steps: Step[]; next_action: string | null; task?: string | null };
 
 /**
  * How the window sends a message. "talk": conversation (a question, a change
@@ -232,7 +233,12 @@ export type Mark = {
   cold: boolean;
   /** The paper it was given on, or null in a lesson. */
   paper: string | null;
+  /** The task it answered, as the record keeps it, when it says. */
+  question?: string | null;
 };
+
+/** One course's part of the log: the turns the window kept in every conversation, and the record's marks. */
+export type JournalCourse = { folder: string; name: string; turns: Turn[]; marks: Mark[] | null };
 
 /**
  * What a course's material folder holds. `names` are the most recent files,
@@ -290,6 +296,8 @@ export interface Core {
   initialFolder(): Promise<string | null>;
   recent(): Promise<string[]>;
   library(): Promise<Card[]>;
+  /** Every course's kept turns and marked answers since `sinceMs`, for the log. Read without opening a folder. */
+  journal(sinceMs: number): Promise<JournalCourse[]>;
   forgetFolder(path: string): Promise<void>;
   /** Look for study folders set up in a terminal. Resolves to how many were new. */
   findFolders(): Promise<number>;

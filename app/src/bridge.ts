@@ -16,6 +16,7 @@ async function tauriCore(): Promise<Core> {
     initialFolder: () => invoke("initial_folder"),
     recent: () => invoke("recent"),
     library: () => invoke("library"),
+    journal: (sinceMs) => invoke("journal", { sinceMs }),
     forgetFolder: (path) => invoke("forget_folder", { path }),
     findFolders: () => invoke("find_folders"),
     activity: () => invoke("activity"),

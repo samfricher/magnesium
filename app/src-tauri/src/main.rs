@@ -14,6 +14,7 @@ use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
+use mg_core::journal::Course as JournalCourse;
 use mg_core::manager::{EngineChoice, Opened, Setup};
 use mg_core::material::{Added, Listed};
 use mg_core::plan::Plan;
@@ -58,6 +59,12 @@ fn recent(shell: State<'_, Shell>) -> Vec<String> {
 #[tauri::command(async)]
 fn library(shell: State<'_, Shell>) -> Vec<Card> {
     shell.manager.library()
+}
+
+/// Every course's kept turns and marked answers since `since_ms`, for the log.
+#[tauri::command(async)]
+fn journal(shell: State<'_, Shell>, since_ms: i64) -> Vec<JournalCourse> {
+    shell.manager.journal(since_ms)
 }
 
 #[tauri::command(async)]
@@ -379,6 +386,7 @@ fn main() {
             initial_folder,
             recent,
             library,
+            journal,
             forget_folder,
             find_folders,
             activity,

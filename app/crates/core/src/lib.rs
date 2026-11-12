@@ -10,6 +10,7 @@
 //!   study folders set up in a terminal.
 //! - [`material`] copies course material the learner adds into the study
 //!   folder and words what search can and cannot read of it.
+//! - [`journal`] reads every course's kept turns and marks, for the log.
 //! - [`plan`] reads the open folder's study plan and says what a turn
 //!   changed in it.
 //! - [`manager`] holds one open study folder and its one conversation.
@@ -26,6 +27,7 @@ pub mod find;
 pub mod gaplog;
 pub mod host_client;
 pub mod install;
+pub mod journal;
 pub mod lesson_state;
 pub mod manager;
 pub mod material;

@@ -363,6 +363,17 @@ impl Store {
         }
     }
 
+    /// Every turn the window kept for a folder, in every conversation,
+    /// oldest first.
+    pub fn all_turns(&self, folder: &Path) -> Vec<Turn> {
+        let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
+            .collect()
+    }
+
     /// The turns the window showed in one conversation, oldest first.
     pub fn turns(&self, folder: &Path, session: &str) -> Vec<Turn> {
         let Ok(text) = fs::read_to_string(self.transcript(folder)) else {

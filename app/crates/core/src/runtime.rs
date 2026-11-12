@@ -65,6 +65,10 @@ pub struct Mark {
     pub cold: bool,
     /// The paper the answer was given on, or none in a lesson.
     pub paper: Option<String>,
+    /// The task the answer was to, as the record keeps it. None when the
+    /// record does not say.
+    #[serde(default)]
+    pub question: Option<String>,
 }
 
 /// The marked answers in what `magnesium attempts --json` printed, oldest
@@ -93,6 +97,7 @@ pub fn marks_from(printed: &str) -> Option<Vec<Mark>> {
                     help: text("help").unwrap_or_else(|| "none".to_owned()),
                     cold: row["cold"].as_bool().unwrap_or(false),
                     paper: text("paper"),
+                    question: text("question"),
                 })
             })
             .collect(),
@@ -230,6 +235,7 @@ mod tests {
                 help: "none".into(),
                 cold: true,
                 paper: None,
+                question: Some("What is b in x² − 5x + 6 = 0?".into()),
             }
         );
         assert_eq!(

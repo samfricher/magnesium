@@ -145,6 +145,29 @@ pub fn goal_steps(root: &Path) -> Vec<Step> {
         .unwrap_or_default()
 }
 
+/// The task the record holds open, as the direct engine writes it into the
+/// most recently saved checkpoint's plan text. None when no task is open, or
+/// when the checkpoint was written by a tutor that keeps it elsewhere. The
+/// window uses it to know where the learner's next words go: into the open
+/// task, as an answer, or onto the page, as talk.
+pub fn open_task(root: &Path) -> Option<String> {
+    let conn = open(&root.join(".magnesium/state.sqlite"))?;
+    let checkpoint: String = conn
+        .query_row(
+            "SELECT checkpoint_json FROM learning_sessions ORDER BY updated_at_ms DESC, session_id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()?;
+    let value: Value = serde_json::from_str(&checkpoint).ok()?;
+    value["plan_text"]
+        .as_str()?
+        .lines()
+        .find_map(|line| line.strip_prefix(crate::record::TASK_LINE))
+        .map(|task| task.trim().to_owned())
+        .filter(|task| !task.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +221,41 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn the_open_task_is_read_from_the_newest_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(open_task(dir.path()), None);
+        let control = dir.path().join(".magnesium");
+        std::fs::create_dir_all(&control).unwrap();
+        let conn = Connection::open(control.join("state.sqlite")).unwrap();
+        let plan = format!(
+            "{}What is b in x² − 5x + 6 = 0?\nHelp given so far: none.",
+            crate::record::TASK_LINE
+        );
+        conn.execute_batch("CREATE TABLE learning_sessions(session_id TEXT, checkpoint_json TEXT, updated_at_ms INTEGER);")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO learning_sessions VALUES('s1', ?1, 5)",
+            [serde_json::json!({ "plan_text": plan }).to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_sessions VALUES('s0', '{\"plan_text\": null}', 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            open_task(dir.path()).as_deref(),
+            Some("What is b in x² − 5x + 6 = 0?")
+        );
+        conn.execute(
+            "UPDATE learning_sessions SET updated_at_ms = 9 WHERE session_id = 's0'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(open_task(dir.path()), None);
     }
 
     #[test]

@@ -21,6 +21,7 @@ use crate::agent::{
 use crate::files;
 use crate::find;
 use crate::install::{self, RuntimeSetup};
+use crate::journal;
 use crate::material::{self, Added};
 use crate::paths;
 use crate::plan::{self, Plan};
@@ -204,6 +205,12 @@ impl Manager {
     /// them, so a lesson in the open folder goes on.
     pub fn library(&self) -> Vec<Card> {
         study::library(&self.store.recent(), &self.store)
+    }
+
+    /// Every course's kept turns and marked answers from `since_ms` on, for
+    /// the log. Read without opening a folder.
+    pub fn journal(&self, since_ms: i64) -> Vec<journal::Course> {
+        journal::read(&self.store.recent(), &self.store, since_ms)
     }
 
     /// Take a folder out of the library. The folder is not touched. The open
