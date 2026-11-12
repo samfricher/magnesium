@@ -179,14 +179,17 @@ pub(crate) fn due_rows_json(items: &[Item], day: NaiveDate) -> Value {
     )
 }
 
-/// At most this many rows waiting for a repair go out as data.
-const MAX_WAITING_AS_DATA: usize = 24;
+/// At most this many rows waiting for a repair go out as data: more than a
+/// sitting can fail, at most 6 redos of 12 rows each, so a row that failed
+/// in the caller's own sitting is always listed.
+const MAX_WAITING_AS_DATA: usize = 96;
 
-/// The gap-log rows waiting for a repair, as data, in plan and row order:
-/// open, not closed, with no next redo. A repair schedules the first redo
-/// of such a row; on any other row it does nothing or moves a redo that is
-/// already set, so a caller records one only for a row listed here. `item`
-/// is the name a practice change takes, as in [`due_rows_json`].
+/// The gap-log rows waiting for a repair, as data, the most recently
+/// changed first: open, not closed, with no next redo. A repair schedules
+/// the first redo of such a row; on any other row it does nothing or moves
+/// a redo that is already set, so a caller records one only for a row
+/// listed here. `item` is the name a practice change takes, as in
+/// [`due_rows_json`].
 pub(crate) fn waiting_rows_json(items: &[Item]) -> Value {
     let mut waiting = items
         .iter()
@@ -196,7 +199,13 @@ pub(crate) fn waiting_rows_json(items: &[Item]) -> Value {
                 && item.state.next_on.is_none()
         })
         .collect::<Vec<_>>();
-    waiting.sort_by_key(|item| (item.facts.plan.clone(), item.facts.row_no));
+    waiting.sort_by_key(|item| {
+        (
+            std::cmp::Reverse(item.facts.events.iter().map(|event| event.event_no).max()),
+            item.facts.plan.clone(),
+            item.facts.row_no,
+        )
+    });
     Value::Array(
         waiting
             .into_iter()
