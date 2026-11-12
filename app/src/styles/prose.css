@@ -10,7 +10,6 @@
   line-height: 1.62;
   color: var(--text);
   overflow-wrap: break-word;
-  hanging-punctuation: first;
 }
 .prose > :first-child { margin-top: 0; }
 .prose p { margin: 0 0 0.85em; }
@@ -90,3 +89,6 @@
 /* The open task's rule runs on into its line, under it. */
 .turn.open .tutor { margin-bottom: 0; }
 .turn.open .prose div.task { padding-bottom: 0.2rem; }
+
+/* The words the engine needs a due question to open with, drawn quiet and unnumbered. */
+.prose .earlier { font: 400 0.765rem/1 var(--app); color: var(--quiet); margin-right: 0.35em; }

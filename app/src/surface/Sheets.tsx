@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { core } from "../bridge";
 import { drawPage, openPdf, type Pdf } from "../pdf";
 import type { SourceRef } from "../sources";
+import { prefsToText, textToPrefs, type Prefs } from "../prefs";
 import type { Source } from "../types";
 
 function PdfView({ path, start, onNote }: { path: string; start: number | null; onNote: (note: string) => void }) {
@@ -173,6 +174,49 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           }}
         />
         <p className="layer-keys">{props.saving ? "Saving…" : "⌘↩ keep it   esc close"}</p>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The settings as a text the learner edits, as in Ghostty or Sublime: one
+ * setting a line. Each change is read and applied as it is typed; a line that
+ * cannot be read is named under the text and changes nothing.
+ */
+export function ConfigSheet(props: { prefs: Prefs; onApply: (prefs: Prefs) => void; onClose: () => void }) {
+  const [text, setText] = useState(() => prefsToText(props.prefs));
+  const [problems, setProblems] = useState<string[]>([]);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const base = useRef(props.prefs);
+  useEffect(() => field.current?.focus(), []);
+  const change = (value: string) => {
+    setText(value);
+    const read = textToPrefs(value, base.current);
+    setProblems(read.problems);
+    props.onApply(read.prefs);
+  };
+  return (
+    <>
+      <div className="scrim" onMouseDown={props.onClose} />
+      <div className="layer sheet config" role="dialog" aria-modal="true" aria-label="Settings as text" data-layer="Settings as text">
+        <p className="sheet-name">Settings, as text</p>
+        <textarea
+          ref={field}
+          className="paste-field"
+          data-drive="settings-text"
+          value={text}
+          spellCheck={false}
+          onChange={(event) => change(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              props.onClose();
+            }
+          }}
+        />
+        <p className="layer-keys">{problems.length > 0 ? problems.slice(0, 2).join(";   ") : "applied as you type, kept on this Mac   esc close"}</p>
       </div>
     </>
   );

@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { HELP } from "../lesson";
-import { FACES, INKS, MEASURES, SCHEMES, SIZES, VOICES, type Prefs } from "../prefs";
+import { FACES, INKS, MEASURES, SCHEMES, SIZES, VOICES, faceCss, keyName, type Prefs } from "../prefs";
 import { sourceRef, type SourceRef } from "../sources";
 import type { About, Card, Core, Engine, EngineChoice, Home, Mark, Materials, Paper, Payment, Plan, Progress, Setup } from "../types";
 import { displayName, longDay, shortDay, type PlanDiff } from "../words";
@@ -22,6 +22,7 @@ type Acts = {
   /** Start without the quick checks and paper redos that are due: they stay due. */
   startSkip: () => void;
   setBlock: (minutes: number) => void;
+  editConfig: () => void;
   /** Close the layer and say this to the tutor, as talk; at rest it starts a lesson with these words. */
   say: (text: string) => void;
   sayKeep: (text: string) => void;
@@ -66,14 +67,6 @@ type Props = {
   open: (kind: LayerKind) => void;
   prefsChange: (change: Partial<Prefs>) => void;
   act: Acts;
-};
-
-const FACE_CSS: Record<string, string> = {
-  charter: 'Charter, "Iowan Old Style", Georgia, serif',
-  iowan: '"Iowan Old Style", Charter, Georgia, serif',
-  newyork: 'ui-serif, "New York", "Iowan Old Style", Georgia, serif',
-  system: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
-  mono: 'ui-monospace, "SF Mono", Menlo, monospace',
 };
 
 const STATUS_MARK: Record<string, string> = { done: "✓", doing: "●", todo: "○" };
@@ -164,12 +157,14 @@ export function Layers(props: Props) {
         alt: plan.path ? () => act.openFile(plan.path!) : undefined,
       });
     }
+    // The block in hand: the one the plan marks doing, else the first not done.
+    const current = plan.items.find((item) => item.status === "doing")?.id ?? plan.items.find((item) => item.status !== "done")?.id;
     for (const item of plan.items) {
       const moved = changed?.moved[item.id];
       rows.push({
         id: `item-${item.id}`,
         kind: "thing",
-        mark: STATUS_MARK[item.status] ?? "○",
+        mark: item.id === current ? "●" : (STATUS_MARK[item.status] ?? "○"),
         label: <Line text={item.title} className={item.status === "done" ? "done" : undefined} />,
         text: item.title,
         hint: moved ? MOVED_WORDS[moved] : item.note ? <Line text={item.note} /> : undefined,
@@ -300,18 +295,37 @@ export function Layers(props: Props) {
 
   if (kind === "settings") {
     const { prefs, prefsChange, engine, setup } = props;
+    const custom = (value: string, known: [string, string][]) => !known.some(([name]) => name === value.toLowerCase());
     const rows: Row[] = [
       {
         id: "face",
         label: "Reading face",
         text: "font face reading",
-        choices: FACES.map(([value, label]) => ({ label, chosen: prefs.face === value, face: FACE_CSS[value], pick: () => prefsChange({ face: value }) })),
+        choices: [
+          ...FACES.map(([value, label]) => ({ label, chosen: prefs.face.toLowerCase() === value, face: faceCss(value), pick: () => prefsChange({ face: value }) })),
+          ...(custom(prefs.face, FACES) ? [{ label: prefs.face, chosen: true, face: faceCss(prefs.face), pick: () => {} }] : []),
+        ],
       },
-      { id: "voice", label: "Your words", text: "font your words mono", choices: VOICES.map(([value, label]) => ({ label, chosen: prefs.voice === value, pick: () => prefsChange({ voice: value }) })) },
-      { id: "size", label: "Text size", text: "size text", choices: SIZES.map((value) => ({ label: String(value), chosen: prefs.size === value, pick: () => prefsChange({ size: value }) })) },
-      { id: "measure", label: "Line length", text: "width measure line", choices: MEASURES.map(([value, label]) => ({ label, chosen: prefs.measure === value, pick: () => prefsChange({ measure: value }) })) },
+      {
+        id: "voice",
+        label: "Your words",
+        text: "font your words mono",
+        choices: [
+          ...VOICES.map(([value, label]) => ({ label, chosen: prefs.voice.toLowerCase() === value, pick: () => prefsChange({ voice: value }) })),
+          ...(custom(prefs.voice, VOICES) ? [{ label: prefs.voice, chosen: true, face: faceCss(prefs.voice), pick: () => {} }] : []),
+        ],
+      },
+      { id: "size", label: "Text size", text: "size text", choices: [...new Set([...SIZES, prefs.size])].sort((x, y) => x - y).map((value) => ({ label: String(value), chosen: prefs.size === value, pick: () => prefsChange({ size: value }) })) },
+      { id: "measure", label: "Line length", text: "width measure line length", choices: MEASURES.map(([value, label]) => ({ label, chosen: prefs.measure === value, pick: () => prefsChange({ measure: value }) })) },
       { id: "scheme", label: "Scheme", text: "dark light scheme theme", choices: SCHEMES.map(([value, label]) => ({ label, chosen: prefs.scheme === value, pick: () => prefsChange({ scheme: value }) })) },
-      { id: "ink", label: "Ink", text: "ink colour caret", choices: INKS.map(([value, label]) => ({ label, chosen: prefs.ink === value, pick: () => prefsChange({ ink: value }) })) },
+      {
+        id: "ink",
+        label: "Ink",
+        text: "ink colour caret",
+        choices: Object.keys(INKS).map((value) => ({ label: value, chosen: prefs.ink === value, pick: () => prefsChange({ ink: value, inkDark: value }) })),
+      },
+      { id: "hints", label: "Lines that name keys", text: "hints keys lines", choices: [true, false].map((value) => ({ label: value ? "Shown" : "Hidden", chosen: prefs.hints === value, pick: () => prefsChange({ hints: value }) })) },
+      { id: "text", label: "Edit as text…", text: "edit settings as text config file font colour keys bindings", hint: "any font, colour or key", drive: "settings-text", run: act.editConfig },
     ];
     if (props.home) {
       const minutes = props.home.block_minutes;
@@ -353,23 +367,24 @@ export function Layers(props: Props) {
   }
 
   // ⌘K: everything, and words for the tutor.
+  const k = (action: keyof Prefs["keys"]) => keyName(props.prefs.keys[action]);
   const rows: Row[] = [];
   const ready = home?.state === "ready" || home?.state === "empty" || home?.state === "not_set_up";
   if (!props.inLesson && home && ready && !home.sitting) rows.push({ id: "start", label: "Start", text: "start continue carry on lesson", hint: "↩", run: act.start });
   if (!props.inLesson && home?.state === "ready" && !home.sitting && (home.checks_due ?? 0) + home.redos_due > 0) {
     rows.push({ id: "skip", label: "Start without the quick checks", text: "start skip checks redos due", hint: "they stay for another day", run: act.startSkip });
   }
-  if (props.inLesson && props.busy) rows.push({ id: "interrupt", label: "Stop the reply", text: "stop reply interrupt", hint: "⌘.", run: act.interrupt });
-  if (props.inLesson && props.taskOpen) rows.push({ id: "help", label: "Help with the task", text: "help hint lost don't know", hint: "⌘/", run: () => props.open("help") });
+  if (props.inLesson && props.busy) rows.push({ id: "interrupt", label: "Stop the reply", text: "stop reply interrupt", hint: k("stop"), run: act.interrupt });
+  if (props.inLesson && props.taskOpen) rows.push({ id: "help", label: "Help with the task", text: "help hint lost don't know", hint: k("help"), run: () => props.open("help") });
   rows.push(
-    { id: "plan", label: "The plan", text: "plan exam date midterm items", hint: "⌘P", run: () => props.open("plan") },
-    { id: "courses", label: "Courses", text: "courses library folders switch", hint: "⌘O", run: () => props.open("courses") },
-    { id: "material", label: "Material and papers", text: "material files papers slides notes", hint: "⌘E", run: () => props.open("material") },
-    { id: "work", label: "Your work", text: "work record marks history past answers progress", hint: "⌘Y", run: () => props.open("work") },
-    { id: "settings", label: "Settings", text: "settings preferences font size scheme dark light ink keys engine payment", hint: "⌘,", run: () => props.open("settings") },
+    { id: "plan", label: "The plan", text: "plan exam date midterm items", hint: k("plan"), run: () => props.open("plan") },
+    { id: "courses", label: "Courses", text: "courses library folders switch", hint: k("courses"), run: () => props.open("courses") },
+    { id: "material", label: "Material and papers", text: "material files papers slides notes", hint: k("material"), run: () => props.open("material") },
+    { id: "work", label: "Your work", text: "work record marks history past answers progress", hint: k("work"), run: () => props.open("work") },
+    { id: "settings", label: "Settings", text: "settings preferences font size scheme dark light ink keys engine payment", hint: k("settings"), run: () => props.open("settings") },
   );
   if (props.inLesson) rows.push({ id: "stop", label: "Stop here for now", text: "stop end finish quit lesson sitting", run: act.stop });
-  if (!props.inLesson && home) rows.push({ id: "new", label: "A new lesson…", text: "new lesson goal", hint: "⌘N", run: act.newLesson });
+  if (!props.inLesson && home) rows.push({ id: "new", label: "A new lesson…", text: "new lesson goal", hint: k("new"), run: act.newLesson });
   for (const source of props.sources) {
     const ref = sourceRef(source.href);
     if (ref) rows.push({ id: `src-${source.href}`, label: `Open ${source.text}`, text: `source open ${source.text}`, run: () => act.openSource(ref) });
@@ -409,6 +424,7 @@ export function Layers(props: Props) {
     { id: "find", label: "Find folders on this Mac", text: "find search folders", run: act.findFolders },
   );
   if (home) rows.push({ id: "forget", label: `Take ${displayName(home.name)} off the list`, text: "remove forget take off", hint: "the folder stays", run: () => act.forgetFolder(home.folder) });
+  rows.push({ id: "config", label: "Edit settings as text…", text: "settings text config font colour keys bindings preferences", hint: "any font, colour or key", run: act.editConfig });
   rows.push({ id: "keys", kind: "note", label: "↩ start or send   Esc steps back   ⌘= ⌘− text size   ⌘U photos of your work", text: "keys shortcuts keyboard help" });
   return (
     <Layer

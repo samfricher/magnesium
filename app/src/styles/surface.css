@@ -6,75 +6,73 @@
  * window (its few words).
  */
 
+/* Each colour has a light and a dark value (-l, -d); the learner's own,
+   from their settings, are set on the page over these. The quiet text, the
+   rules and the raised ground are mixed from the text and the ground, so a
+   colour of their own keeps every pair readable: quiet text is 5:1 or more
+   on its ground, and the line an answer is written on 3:1. */
 :root {
-  --ground: #fafaf8;
-  --text: #1e2023;
-  --quiet: #6a6e75;
-  --faint: #cdcfd3;
-  --raised: #ffffff;
-  --edge: rgba(30, 32, 35, 0.11);
-  --tint: rgba(30, 32, 35, 0.055);
-  --scrim: rgba(250, 250, 248, 0.62);
-  --shadow: 0 18px 50px rgba(20, 22, 26, 0.13), 0 2px 6px rgba(20, 22, 26, 0.06);
-
+  --ground-l: #fafaf8;
+  --ground-d: #1c1d20;
+  --text-l: #1e2023;
+  --text-d: #e3e3df;
   --ink-l: #2f3f86;
   --ink-d: #9aa9ee;
+
+  --ground: var(--ground-l);
+  --text: var(--text-l);
   --ink: var(--ink-l);
+  --raised: color-mix(in srgb, var(--ground), white 70%);
+  --quiet: color-mix(in srgb, var(--text) 64%, var(--ground));
+  --line: color-mix(in srgb, var(--text) 50%, var(--ground));
+  --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
+  --edge: color-mix(in srgb, var(--text) 11%, transparent);
+  --tint: color-mix(in srgb, var(--text) 5.5%, transparent);
+  --scrim: color-mix(in srgb, var(--ground) 62%, transparent);
+  --shadow: 0 18px 50px rgba(20, 22, 26, 0.13), 0 2px 6px rgba(20, 22, 26, 0.06);
   --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
 
   --read: Charter, "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-  --you: var(--mono);
   --app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --you: var(--app);
 
   --size: 17px;
-  --measure: 38em;
+  /* 66 characters of the reading face. */
+  --measure: 31em;
   /* How far the task's rule and the prompt hang left of the column. */
   --hang: 20px;
 
   color-scheme: light;
 }
 
-:root[data-ink="green"] { --ink-l: #2e5b4a; --ink-d: #86c2a6; }
-:root[data-ink="violet"] { --ink-l: #4e3c8c; --ink-d: #bdaeef; }
-:root[data-ink="graphite"] { --ink-l: #3b3e44; --ink-d: #c7cad0; }
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
-    --ground: #1c1d20;
-    --text: #e3e3df;
-    --quiet: #9a9da3;
-    --faint: #3d4045;
-    --raised: #26282c;
-    --edge: rgba(255, 255, 255, 0.09);
-    --tint: rgba(255, 255, 255, 0.06);
-    --scrim: rgba(20, 21, 24, 0.6);
-    --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --ground: var(--ground-d);
+    --text: var(--text-d);
     --ink: var(--ink-d);
+    --raised: color-mix(in srgb, var(--ground), white 6%);
+    --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
 }
 :root[data-scheme="dark"] {
-  --ground: #1c1d20;
-  --text: #e3e3df;
-  --quiet: #9a9da3;
-  --faint: #3d4045;
-  --raised: #26282c;
-  --edge: rgba(255, 255, 255, 0.09);
-  --tint: rgba(255, 255, 255, 0.06);
-  --scrim: rgba(20, 21, 24, 0.6);
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --ground: var(--ground-d);
+  --text: var(--text-d);
   --ink: var(--ink-d);
+  --raised: color-mix(in srgb, var(--ground), white 6%);
+  --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   color-scheme: dark;
 }
 
-:root[data-face="iowan"] { --read: "Iowan Old Style", Charter, Georgia, serif; }
-:root[data-face="newyork"] { --read: ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif; }
-:root[data-face="system"] { --read: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
-:root[data-face="mono"] { --read: var(--mono); }
-:root[data-voice="reading"] { --you: var(--read); }
-:root[data-measure="narrow"] { --measure: 32em; }
-:root[data-measure="wide"] { --measure: 46em; }
+/* The key-hint lines, off when the learner says so. */
+:root[data-hints="off"] .keys,
+:root[data-hints="off"] .keyhint,
+:root[data-hints="off"] .record-keys,
+:root[data-hints="off"] .layer-keys,
+:root[data-hints="off"] .foot-keys { display: none; }
 
 * { box-sizing: border-box; }
 
@@ -192,7 +190,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   white-space: pre;
 }
 .now > .status { white-space: normal; max-width: 34em; }
-.now > .keys { opacity: 0.85; }
+
 
 /* The choices a setup step offers, as Spotlight offers results. */
 .choices-rest {
@@ -236,9 +234,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   background: transparent;
   color: var(--text);
   caret-color: var(--ink);
-  font: 400 0.882rem/1.6 var(--you);
+  font: 400 0.941rem/1.6 var(--you);
 }
-.line .field::placeholder { color: var(--quiet); opacity: 0.7; font-family: var(--app); font-size: 0.765rem; }
+.line .field::placeholder { color: var(--quiet); opacity: 1; font-family: var(--app); font-size: 0.765rem; }
 
 /* The conversation's line: a prompt hung in the margin. */
 .line.rest::before,
@@ -266,20 +264,35 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .task-line.joined { margin-top: 0; }
 .task-line .line.task { margin: 0; }
 .line.task .field {
-  background-image: linear-gradient(to right, var(--faint) 50%, transparent 0);
-  background-size: 6px 1px;
-  background-repeat: repeat-x;
-  background-position: 0 calc(100% - 1px);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.15rem;
 }
+.line.task.on .field { border-bottom-color: var(--ink); }
 .task-line .restated {
   margin: 0 0 0.4rem;
-  font-size: 0.941rem;
-  line-height: 1.5;
-  color: var(--quiet);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--text);
   cursor: text;
 }
-.task-line.on .restated { color: var(--text); }
-.task-line + .line.talk { margin-top: 1.1rem; }
+/* A task left open while the learner talks: one quiet line, its answer line folded away. */
+.task-line.parked { padding-top: 0.1rem; padding-bottom: 0.1rem; }
+.task-line.parked .restated {
+  margin: 0;
+  font-size: 0.941rem;
+  color: var(--quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-line.parked .line.task { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.task-line + .line.talk { margin-top: 0.9rem; }
+.foot-keys {
+  margin: 0.7rem 0 0;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+}
 
 .line .keyhint {
   position: absolute;
@@ -287,7 +300,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   bottom: 0.3rem;
   font: 400 0.706rem/1.6 var(--app);
   color: var(--quiet);
-  opacity: 0.75;
   pointer-events: none;
 }
 .line .with {
@@ -307,9 +319,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   margin-top: 0.7rem;
   font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
-  opacity: 0.85;
 }
-.aside-line:hover { color: var(--text); opacity: 1; }
+.aside-line:hover { color: var(--text); }
 .aside-line .keyname { font-family: var(--app); }
 .aside-line.tether .line { color: inherit; }
 
@@ -319,18 +330,19 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .turn { margin: 0; }
 .before .turn:first-child { padding-top: 56px; }
 .before { padding-bottom: 2rem; }
-.before .turn { opacity: 0.88; }
+
 .sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
 
 .you {
   margin: 1.5rem 0 1.1rem;
-  font: 400 0.882rem/1.6 var(--you);
+  font: 400 0.941rem/1.6 var(--you);
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   position: relative;
 }
-.you.pick { color: var(--quiet); }
+.you.pick,
+.you.help { color: var(--quiet); }
 
 /* An answer sits inside the task it answers: on the task's rule, under it. */
 .answer {
@@ -358,6 +370,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .answer .record { margin-top: 0.35rem; }
 .you.talk + .record { margin: -0.6rem 0 1rem; }
 .record.quiet { color: var(--quiet); margin-bottom: 1rem; }
+.answer .record.unmarked { margin-bottom: 0; }
+.record.plan-brief { margin: 0.8rem 0 1rem; color: var(--quiet); }
 .record.note {
   margin: 1rem 0 0 calc(-1 * var(--hang));
   padding-left: calc(var(--hang) - 2px);
@@ -391,8 +405,10 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .cursor {
   display: inline-block;
-  width: 0.5em;
+  width: 0.45em;
   height: 1.05em;
+  margin-left: 0.12em;
+  vertical-align: -0.15em;
   background: var(--ink);
   opacity: 0.7;
 }
@@ -411,14 +427,16 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .card-detail { margin: 0 0 0.5rem; font: 400 0.824rem/1.5 var(--mono); color: var(--quiet); overflow-wrap: anywhere; }
 .card-question { margin: 0 0 0.5rem; }
 .card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
+/* The permission card's choices are the window's one kind of choice, as on the first screen. */
+.card-acts { gap: 2px; }
 .act {
-  padding: 0.22rem 0.7rem;
-  border: 1px solid var(--edge);
+  padding: 0.3rem 0.7rem;
   border-radius: 4px;
-  font: 400 0.765rem/1.5 var(--app);
-  background: var(--raised);
+  font: 400 0.824rem/1.4 var(--app);
+  color: var(--text);
 }
-.act:hover, .act:focus { border-color: var(--ink); }
+.act:hover { background: var(--tint); }
+.act:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
 
 /* Files over the window. */
 .veil {
@@ -487,12 +505,16 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   font: 400 0.882rem/1.6 var(--you);
   padding: 0;
 }
-.layer-line input::placeholder { color: var(--quiet); opacity: 0.75; }
+.layer-line input::placeholder { color: var(--quiet); opacity: 1; }
 
 .rows {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0.35rem 0;
+  padding: 0.35rem 0 0.6rem;
   outline: none;
+  /* A list longer than the layer fades at its foot instead of being cut by it. */
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.6rem), transparent);
 }
 .row {
   display: grid;
