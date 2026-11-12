@@ -139,7 +139,7 @@ export function IconButton(props: {
       disabled={props.disabled}
       onClick={props.onClick}
     >
-      <Icon name={props.icon} size={props.size ?? 18} />
+      <Icon name={props.icon} size={props.size ?? 16} />
     </button>
   );
 }
@@ -524,40 +524,71 @@ export function useReturnForPrimary(ready: unknown = true): void {
 const RETURN_GRACE_MS = 150;
 
 /**
- * A fault, drawn one way on every screen: a red "!" and the words in ink, on
- * the card's own surface with its hairline. Red is the mark and nothing else.
+ * A fault, drawn one way on every screen: the red "!" at the left of the first
+ * line, the title in the interface face at 600, what it means in the quiet
+ * ink under it, and, when there is something to do, the one action below, a
+ * primary button. Red is the mark and nothing else. `framed` sets it on a card
+ * of its own, for a fault that stands alone on a page; inside a card that is
+ * already there (a setup step, the next card) it has no frame. `detail` is
+ * the title's own quiet addendum ("Magnesium  not installed").
  */
-export function Fault({ children, className }: { children: ReactNode; className?: string }) {
+export function Fault(props: {
+  title?: ReactNode;
+  detail?: ReactNode;
+  children?: ReactNode;
+  action?: ReactNode;
+  framed?: boolean;
+  className?: string;
+}) {
   return (
-    <div className={`banner bad selectable${className ? ` ${className}` : ""}`}>
-      <Icon name="bang" size={16} />
-      <span>{children}</span>
+    <div className={`fault${props.framed === false ? "" : " framed"}${props.className ? ` ${props.className}` : ""}`}>
+      <span className="fault-mark" aria-hidden="true">
+        <Icon name="bang" size={16} />
+      </span>
+      <div className="fault-body selectable">
+        <p className="fault-title">
+          {props.title ?? "Something went wrong"}
+          {props.detail ? <span className="fault-detail">{props.detail}</span> : null}
+        </p>
+        {props.children ? <p className="fault-what">{props.children}</p> : null}
+        {props.action ? <div className="fault-act">{props.action}</div> : null}
+      </div>
     </div>
   );
 }
 
 /**
- * The name of a section, hung in the page's margin as the booklet's marginal
- * note: Literata italic, small, quiet, right-aligned a gap left of the column
- * and level with the section's first line. Where the window has no room left
- * of the column (under 960px wide) it is not drawn, or, for a row that is
- * named by it, it stands in the row as that row's name. Its screen reader
- * text is the section's own heading or button, so it is hidden from them.
+ * The name of a section. One name, shown one of two ways by the width of the
+ * window (screens.css): with 120px of room left of the column it hangs there
+ * as the booklet's marginal note, Literata italic and quiet, level with the
+ * section's first line (baseline to baseline); without it the same name stands
+ * above its section as a heading, Literata at the card size and 600. A
+ * heading or a button that the section already has can wear it directly with
+ * the class `sec-name`; this component is the note for a section that has
+ * none, and is hidden from a screen reader, which has the section's own label.
  */
 export function MarginNote({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span className={`margin-note${className ? ` ${className}` : ""}`} aria-hidden="true">
+    <span className={`sec-name${className ? ` ${className}` : ""}`} aria-hidden="true">
       {children}
     </span>
   );
 }
 
-/** A due thing: a small amber clock and a few words (a clock, not a dot, so it is never taken for a proof). With a number, questions are due: "5 questions due today, on 2 skills"; without, it is a skill's own row, and skills are "to prove today". */
-export function Due({ n, skills }: { n?: number; skills?: number | null }) {
+/** A due thing: a small amber clock and a few words (a clock, not a dot, so it is never taken for a proof). With a number, questions are due: "5 questions due today, on 2 skills"; without, it is a skill's own row, and skills are "to prove today". `bare` is the clock alone, for a row that stands in a section which already says so. */
+export function Due({ n, skills, bare }: { n?: number; skills?: number | null; bare?: boolean }) {
+  const said = n === undefined ? "to prove today" : questionsDue(n, skills);
+  if (bare) {
+    return (
+      <span className="due bare" role="img" aria-label={said} title={said}>
+        <Icon name="clock" size={14} />
+      </span>
+    );
+  }
   return (
     <span className="due">
       <Icon name="clock" size={14} />
-      {n === undefined ? "to prove today" : questionsDue(n, skills)}
+      {said}
     </span>
   );
 }

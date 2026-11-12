@@ -30,7 +30,8 @@ function RowView({ row, tone }: { row: Row; tone: string }) {
         {last && <Line text={last} className="skill-what" />}
       </span>
       {row.due ? (
-        <Due />
+        // The section this row stands in says "to prove today"; the row keeps the amber clock that says it too.
+        <Due bare />
       ) : row.note === FIX_FIRST ? (
         <span className="skill-note">needs a fix first</span>
       ) : (
@@ -46,11 +47,11 @@ function Group({ title, count, rows, fold, tone, action }: { title: string; coun
   const shown = all ? rows : rows.slice(0, fold);
   return (
     <section className="group">
-      <h2 className="h-section">
-        {title}
+      <h2 className="sec-name">{title}</h2>
+      <div className="group-head">
         <span className="h-count">{count}</span>
         {action}
-      </h2>
+      </div>
       {shown.map((row, index) => (
         <RowView key={`${row.name}-${index}`} row={row} tone={tone} />
       ))}
@@ -172,6 +173,7 @@ export function Progress(props: {
                 For {exam ? <Line text={exam.title} /> : "this course"}:{" "}
                 {proofs.levelled && proofs.total > 0 ? `${proofs.earned} of ${proofs.total} proofs earned, ${skills}.` : `${skills}. A course with no plan has no level.`}
               </p>
+              {levelShown && <p className="board-link">Three proofs prove a skill. Each proof moves your level.</p>}
             </div>
           )}
 
@@ -195,6 +197,41 @@ export function Progress(props: {
             </div>
           ) : (
             <>
+            <section className="foot-section legend-sec">
+              <h2 className="sec-name">Marks</h2>
+              <ul className="legend">
+                <li>
+                  <ProofDot state="on" />
+                  <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
+                </li>
+                <li>
+                  <ProofDot state="off" />
+                  <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
+                </li>
+                <li>
+                  <span className="due" aria-hidden="true">
+                    <Icon name="clock" size={14} />
+                  </span>
+                  <span>To prove today: you can earn this skill&apos;s next proof today.</span>
+                </li>
+                {waiting && (
+                  <li>
+                    <b className="legend-word">needs a fix first</b>
+                    <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
+                  </li>
+                )}
+                {levelShown && (
+                  <li>
+                    <Tally proofs={proofs} size="sm" />
+                    <span>
+                      {proofs.level >= 10
+                        ? "The level is ten strokes, and all ten are full."
+                        : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </section>
               <Group
                 title="To prove today"
                 count={dueCounts(due.length, props.questionsDue)}
@@ -214,47 +251,9 @@ export function Progress(props: {
               <Group title="Not tested yet" count={dueCounts(data.untested.length, null)} rows={data.untested} fold={6} tone="untested" />
 
               <footer className="board-foot selectable">
-                <section className="foot-section">
-                  <h2 className="h-section">What the marks mean</h2>
-                  <ul className="legend">
-                    <li>
-                      <ProofDot state="on" />
-                      <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
-                    </li>
-                    <li>
-                      <ProofDot state="off" />
-                      <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
-                    </li>
-                    <li>
-                      <span className="due" aria-hidden="true">
-                        <Icon name="clock" size={14} />
-                      </span>
-                      <span>To prove today: you can earn this skill&apos;s next proof today.</span>
-                    </li>
-                    {waiting && (
-                      <li>
-                        <b className="legend-word">needs a fix first</b>
-                        <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
-                      </li>
-                    )}
-                    {levelShown && (
-                      <li>
-                        <Tally proofs={proofs} size="sm" />
-                        <span>
-                          {proofs.level >= 10
-                            ? "The level is ten strokes, and all ten are full."
-                            : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
-                        </span>
-                      </li>
-                    )}
-                  </ul>
-                </section>
                 {data.scores.length > 0 && (
                   <section className="foot-section">
-                    <h2 className="h-section">
-                      Papers
-                      <span className="h-count">{data.scores.length === 1 ? "1 paper" : `${data.scores.length} papers`}</span>
-                    </h2>
+                    <h2 className="sec-name">Papers</h2>
                     <ol className="scores">
                       {data.scores.map((score) => {
                         const share = scoreShare(score.score);
@@ -276,7 +275,7 @@ export function Progress(props: {
                 )}
                 {sure.length > 0 && (
                   <section className="foot-section">
-                    <h2 className="h-section">Sure but wrong</h2>
+                    <h2 className="sec-name">Sure but wrong</h2>
                     <p>
                       {sure
                         .map((score) => `${(score.sure_total ?? 0) - (score.sure_right ?? 0)} of ${score.sure_total} on ${score.paper}`)
@@ -287,21 +286,20 @@ export function Progress(props: {
                 )}
                 {data.helped_count > 0 && (
                   <section className="foot-section">
-                    <h2 className="h-section">
-                      With help, not counted
-                      <span className="h-count">{data.helped_count === 1 ? "1 answer" : `${data.helped_count} answers`}</span>
-                    </h2>
+                    <h2 className="sec-name">With help, not counted</h2>
                     <p>
-                      {data.helped.length > 0 && `${data.helped.join(", ")}. `}
-                      {data.helped_count === 1 ? "It returns" : "They return"} as {data.helped_count === 1 ? "a question" : "questions"}.
+                      {data.helped_count === 1 ? "1 answer" : `${data.helped_count} answers`}
+                      {data.helped.length > 0 ? `: ${data.helped.join(", ")}` : ""}. {data.helped_count === 1 ? "It returns" : "They return"} as{" "}
+                      {data.helped_count === 1 ? "a question" : "questions"}.
                     </p>
                   </section>
                 )}
                 {activity && (
                   <section className="foot-section" title={RUN_HINT}>
-                    <h2 className="h-section">
-                      Days you studied <Run days={activity.run} invite />
-                    </h2>
+                    <h2 className="sec-name">Days you studied</h2>
+                    <p className="foot-run">
+                      <Run days={activity.run} invite />
+                    </p>
                     <div className="weeks">
                       {WEEK_NAMES.map((name, back) => (
                         <div className="weeks-row" key={name}>

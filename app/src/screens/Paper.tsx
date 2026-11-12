@@ -129,7 +129,7 @@ export function Paper(props: {
             )}
             {confirmEnd && <p className="aside">Ending now marks nothing.</p>}
             <p className="aside">
-              <Icon name="lock" size={13} /> The tutor is off and the key is locked until you hand in.
+              <Icon name="lock" size={14} /> The tutor is off and the key is locked until you hand in.
             </p>
             {props.error && <Fault>{props.error}</Fault>}
           </div>

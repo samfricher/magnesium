@@ -54,7 +54,7 @@
   --accent-soft: rgba(143, 207, 167, 0.1);
   --accent-mid: rgba(143, 207, 167, 0.42);
   /* A brighter tint of the proof green: the part of the level earned today. */
-  --accent-bright: #b4efca;
+  --accent-bright: #d6f9e5;
   --amber: #e8b962;
   --amber-soft: rgba(232, 185, 98, 0.12);
   --red: #f29587;
@@ -296,6 +296,11 @@ textarea {
   cursor: auto;
 }
 
+/* Running text never leaves a word alone on its last line. A rule of its own (no weight), so a paragraph that balances its lines keeps doing so. */
+:where(.screen:not([data-screen="session"]), .palette) p {
+  text-wrap: pretty;
+}
+
 .icon {
   flex: none;
   display: block;
@@ -474,8 +479,10 @@ textarea {
   transition-duration: 80ms;
 }
 
+/* Disabled is its own look and never a hover's: no fill, a dashed edge, the faint ink. A hover is a fill, so a button that cannot be pressed is never taken for one that is pointed at. */
 .btn:disabled {
-  border-color: var(--line);
+  border: 1px dashed var(--line-input);
+  background: transparent;
   color: var(--faint);
 }
 
@@ -500,7 +507,8 @@ textarea {
 }
 
 .btn.primary:disabled {
-  background: var(--hover);
+  border: 1px dashed var(--line-input);
+  background: transparent;
   color: var(--faint);
 }
 
@@ -520,7 +528,7 @@ textarea {
 }
 
 .btn.ghost:disabled {
-  border-color: transparent;
+  border: 1px solid transparent;
 }
 
 /* A step that cannot be undone is drawn in ink, filled: red is for faults, and a confirmation (Keep beside it) is what protects it. */
@@ -828,6 +836,76 @@ button.banner:hover {
   border-color: var(--line-input);
 }
 
+/* ---- a fault: one layout, wherever it stands ----
+   The red "!" at the left of the first line; the title in the interface face
+   at 600; what it means in the quiet ink under it; and, when there is
+   something to do, the one action below, a primary button. Red is the mark
+   and nothing else. A fault that stands alone on a page is framed as a card
+   (.framed); inside a card that is already there it is not. The lesson's
+   notice is this too. */
+.fault {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: var(--s3);
+  width: 100%;
+  text-align: left;
+}
+
+.fault.framed {
+  margin-top: var(--s4);
+  padding: var(--s4);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+/* The mark is as tall as the first line, so it is centred on it. */
+.fault-mark {
+  display: grid;
+  place-items: center;
+  height: calc(var(--fs-ui) * var(--lh-ui));
+  color: var(--red);
+}
+
+.fault-body {
+  min-width: 0;
+}
+
+.fault-title {
+  font-family: var(--sans);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  line-height: var(--lh-ui);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* What the fault is, said quietly after the title on the same line. */
+.fault-detail {
+  margin-left: var(--s3);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.fault-what {
+  max-width: 62ch;
+  margin-top: var(--s1);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.fault-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+
 .banner .icon-btn {
   width: 24px;
   height: 24px;
@@ -924,7 +1002,7 @@ button.banner:hover {
   --h: 28px;
   --gap: 4px;
   --bw: 2px;
-  --min-g: 8px;
+  --min-g: 10px;
 }
 
 .tally i {
@@ -1014,11 +1092,21 @@ button.banner:hover {
   gap: var(--s2);
 }
 
+/* In a row the sentence is two clean lines, the level and then the step: "Level 6." and "5 more proofs to reach level 7.", the second never broken. */
 .lvl.sm .lvl-said {
-  max-width: 24ch;
-  text-wrap: balance;
+  max-width: none;
   font-size: var(--fs-caption);
   line-height: var(--lh-tight);
+}
+
+.lvl.sm .lvl-said b,
+.lvl.sm .lvl-said .next {
+  display: block;
+}
+
+.lvl.sm .lvl-said .next {
+  margin-top: var(--s1);
+  white-space: nowrap;
 }
 
 /* ---- the proof mark: three dots ---- */
@@ -1332,6 +1420,16 @@ button.banner:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A shortcut is a keycap at the row's right end, in one column whatever the row says. */
+.palette-list [role="option"] kbd {
+  flex: none;
+  margin-left: auto;
+}
+
+.palette-list [role="option"] small + kbd {
+  margin-left: var(--s3);
 }
 
 /* The row in hand: pressed in one step, a 2px bar of ink at its edge, its words in ink. */

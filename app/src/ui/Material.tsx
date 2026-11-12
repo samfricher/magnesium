@@ -96,7 +96,7 @@ export function DropVeil({ course }: { course: string }) {
   return (
     <div className="drop-veil" data-role="drop-veil" aria-hidden="true">
       <div>
-        <Icon name="plus" size={26} />
+        <Icon name="plus" size={16} />
         <b>Drop to add to {course}</b>
         <span>Slides, notes, papers. The tutor can search what it can read.</span>
       </div>

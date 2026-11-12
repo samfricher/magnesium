@@ -52,8 +52,8 @@ let marking = true;
 // demo lesson adds a row a moment later, as the runtime would. At
 // #session:nomarks the runtime has no `attempts` command, and says so.
 const demoMarks: Mark[] = [
-  { id: "demo-1", at: "2026-11-09 18:20", label: "reading Km from a plot", mark: "right", help: "none", cold: true, paper: null },
-  { id: "demo-2", at: "2026-11-09 18:26", label: "the slope of a Lineweaver-Burk line", mark: "wrong", help: "none", cold: true, paper: null },
+  { id: "demo-1", at: "2026-11-09 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "demo-2", at: "2026-11-09 18:26", label: "slope and $K_m$", mark: "wrong", help: "none", cold: true, paper: null },
 ];
 let marksAvailable = true;
 // Set once the demo lesson has recorded a wrong answer: the record brings that skill back tomorrow, not today.
@@ -461,8 +461,8 @@ function markFor(text: string): Mark | null {
     id: `demo-${demoMarks.length + 1}`,
     // The record's times are local, to the minute.
     at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
-    // A wrong answer is on the skill the learner slipped on, which the record names; a right one is on the lesson's goal.
-    label: wrong ? "slope and $K_m$" : "reading Vmax from a Lineweaver-Burk plot",
+    // A mark is on a skill, named as the Proofs page names it: a wrong answer on the skill the learner slipped on, a right one on the one the lesson is about.
+    label: wrong ? "slope and $K_m$" : "intercept and $V_{max}$",
     mark: wrong ? "wrong" : "right",
     help: helped ? "hint" : "none",
     cold: !helped,

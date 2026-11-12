@@ -41,13 +41,21 @@ const PATHS: Record<string, string[]> = {
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 18, fill = false }: { name: string; size?: number; fill?: boolean }) {
+/**
+ * An icon is drawn at one of two sizes: 16px in a control, and 14px inline
+ * with small text. Any other size asked for is drawn at the nearer of the two,
+ * so a screen cannot add a third.
+ */
+export type IconSize = 14 | 16;
+
+export function Icon({ name, size = 16, fill = false }: { name: string; size?: number; fill?: boolean }) {
   const paths = PATHS[name] ?? [];
+  const px: IconSize = size <= 15 ? 14 : 16;
   return (
     <svg
       className="icon"
-      width={size}
-      height={size}
+      width={px}
+      height={px}
       viewBox="0 0 24 24"
       fill={fill ? "currentColor" : "none"}
       stroke="currentColor"

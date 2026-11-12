@@ -15,7 +15,7 @@ import { Paper } from "./screens/Paper";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { Setup, setupReady } from "./screens/Setup";
-import { Summary, type Sitting } from "./screens/Summary";
+import { Summary, reviewIn, type Sitting } from "./screens/Summary";
 import { EngineControl } from "./ui/Engine";
 import { DropVeil, PasteSheet } from "./ui/Material";
 import type {
@@ -47,7 +47,6 @@ const BLOCKS = [25, 50, 90];
 /** The window's keys, for the entry in the menu that lists them. */
 const SHORTCUTS: Command = {
   label: "Keyboard shortcuts",
-  hint: "all the keys",
   icon: "keys",
   keywords: "help keys shortcuts",
   shortcuts: [
@@ -759,6 +758,7 @@ export function App() {
       earned: [],
       tomorrow: 0,
       slipped: [],
+      marks: [],
     };
     try {
       await api.stop(saved);
@@ -787,6 +787,7 @@ export function App() {
         done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
       }
       done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
+      done.marks = await reviewIn(api, [...after.in_progress, ...after.confirmed, ...after.untested], session.startedMs);
     } catch {
       // Without the record the end screen says what it can.
     }
@@ -934,11 +935,10 @@ export function App() {
     // A course is open when its page, its lesson or one of its screens is up.
     const course = home && !home.sitting && (view !== "library" || inLesson) ? home : null;
     if (home?.sitting) {
-      if (view !== "paper") list.push({ label: "Back to the paper", hint: home.sitting.name, icon: "paper", run: () => setView("paper") });
+      if (view !== "paper") list.push({ label: "Back to the paper", icon: "paper", run: () => setView("paper") });
       else
         list.push({
           label: "End without handing in",
-          hint: "asks first",
           icon: "close",
           keywords: "quit stop finish",
           run: () => document.querySelector<HTMLButtonElement>('[data-role="paper-end"]')?.click(),
@@ -948,12 +948,11 @@ export function App() {
     }
     // The same core, in every context.
     if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
-    list.push({ label: "Library", hint: "all courses", icon: "list", run: showLibrary });
+    list.push({ label: "Library", icon: "list", run: showLibrary });
     if (course) {
-      list.push({ label: displayName(course.name), hint: "course page", icon: "folder", run: () => setView("course") });
+      list.push({ label: displayName(course.name), icon: "folder", run: () => setView("course") });
       list.push({
         label: "Proofs",
-        hint: "what you have proved",
         icon: "proof",
         keywords: "progress stats score skills level",
         run: () => void openProgress(null),
@@ -961,7 +960,7 @@ export function App() {
       const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
       list.push({
         label: "Start a timed paper",
-        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : "timed practice exam",
+        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : undefined,
         icon: "paper",
         keywords: "exam timed practice",
         run: () => openPaper(null),
@@ -970,7 +969,6 @@ export function App() {
     if (inLesson) {
       list.push({
         label: "End lesson",
-        hint: "save where you stopped",
         icon: "close",
         keywords: "quit stop finish end",
         run: () => {
@@ -998,7 +996,6 @@ export function App() {
     }
     list.push({
       label: "Setup",
-      hint: "check this Mac is ready for lessons",
       icon: "gear",
       keywords: "settings preferences account engine lessons run on advanced version",
       run: () => openSetup(),
@@ -1010,23 +1007,23 @@ export function App() {
       (progress?.targets ?? [])
         .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
         .forEach((exam) =>
-          list.push({ label: `Proofs: ${exam.title}`, hint: exam.day ?? undefined, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
+          list.push({ label: `Proofs for ${exam.title}`, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
         );
       if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
-        list.push({ label: "Add course material…", hint: "or drop files on the window", icon: "clip", run: () => void chooseMaterial() });
+        list.push({ label: "Add course material…", icon: "clip", run: () => void chooseMaterial() });
         list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
       }
       if (!inLesson && (course.checks_due ?? 0) > 0 && course.state === "ready") {
         list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
       }
-      if (!inLesson) list.push({ label: "New lesson", hint: "⌘N", icon: "plus", run: askNewLesson });
+      if (!inLesson) list.push({ label: "New lesson", key: "⌘N", icon: "plus", run: askNewLesson });
     }
     const account = setup?.account;
     if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", icon: "bang", run: () => openSetup() });
+      list.push({ label: `Sign in to ${account.name}`, icon: "bang", run: () => openSetup() });
     }
     if (!inLesson) {
-      list.push({ label: "Open a course folder…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
+      list.push({ label: "Open a course folder…", key: "⌘O", icon: "folder", run: () => void pickFolder() });
       list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
       list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
       if (home) {

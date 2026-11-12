@@ -79,6 +79,8 @@ function CourseCard(props: {
   focus: boolean;
   /** The hero's lesson is starting. */
   starting: boolean;
+  /** This Mac can run a lesson. When it cannot, the fix is the screen's one green button, and the card's is outlined. */
+  ready: boolean;
   /** The card's main action: the lesson for the hero, else the course page. */
   onOpen: () => void;
   /** The course page, from the hero, whose main action is the lesson. */
@@ -187,7 +189,7 @@ function CourseCard(props: {
           </div>
         </div>
         <div className="cc-foot">
-          <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
+          <button ref={open} className={props.ready ? "btn primary cc-open" : "btn cc-open"} title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
             {label}
           </button>
           {props.onCourse && (
@@ -269,21 +271,21 @@ export function Library(props: {
     if (focus >= count && count > 0) setFocus(count - 1);
   }, [count, focus]);
 
-  // The three ways to add a course are one row in one style: outlined and 32px under the list; with no course yet the first is the screen's green button and the others are the outlined 36px beside it.
+  // The three ways to add a course are one row in one style: outlined and 32px under the list; with no course yet the first is the screen's green button and all three are 40px, so they stand on one line. One button, one icon, in either place.
   const first = props.cards !== null && props.cards.length === 0;
   const size = first ? "btn" : "btn small";
   const add = (
-    <div className="shelf-add">
+    <div className={first ? "shelf-add big" : "shelf-add"}>
       <button className={first ? "btn primary" : size} title="Open a course folder (⌘O)" onClick={props.onPick}>
-        {!first && <Icon name="folder" size={16} />}
+        <Icon name="folder" size={16} />
         Open a course folder…
       </button>
       <button className={size} onClick={props.onNew}>
-        {!first && <Icon name="plus" size={16} />}
+        <Icon name="plus" size={16} />
         Make a new course…
       </button>
       <button className={size} disabled={props.finding} onClick={props.onFind} title="Looks through your home folder for courses that Magnesium was set up in from a terminal">
-        {!first && <Icon name="search" size={16} />}
+        <Icon name="search" size={16} />
         {props.finding ? "Looking…" : "Find course folders on this Mac"}
       </button>
     </div>
@@ -317,10 +319,11 @@ export function Library(props: {
         </div>
       );
     });
+    // The notes are said only when there is a second course to tell the next one from, here as when the courses have been read.
     body = (
       <>
         <div className="sec">
-          <MarginNote>Next</MarginNote>
+          {holders.length > 1 && <MarginNote>Next</MarginNote>}
           {holders[0]}
         </div>
         {holders.length > 1 && (
@@ -357,6 +360,7 @@ export function Library(props: {
           hero={index === 0}
           focus={moved && index === focus}
           starting={index === 0 && props.starting}
+          ready={props.ready}
           onOpen={open}
           onCourse={straight ? () => props.onOpen(card.folder) : undefined}
           onForget={() => props.onForget(card.folder)}
@@ -369,8 +373,8 @@ export function Library(props: {
     });
     body = (
       <>
-        <section className="sec" aria-label="Next">
-          <MarginNote>Next</MarginNote>
+        <section className="sec" aria-label={rendered.length > 1 ? "Next" : "Course"}>
+          {rendered.length > 1 && <MarginNote>Next</MarginNote>}
           {rendered[0]}
         </section>
         {rendered.length > 1 && (
@@ -403,12 +407,16 @@ export function Library(props: {
             <h1 className="h-title">Library</h1>
           </header>
           {!props.ready && (
-            <button className="banner warn" onClick={props.onSetup}>
-              <Icon name="bang" size={16} />
-              Something on this Mac needs fixing before a lesson can start.
-              <span className="grow" />
-              <b>Fix it</b>
-            </button>
+            <Fault
+              title="Something on this Mac needs fixing"
+              action={
+                <button className="btn primary" onClick={props.onSetup}>
+                  Fix it
+                </button>
+              }
+            >
+              A lesson cannot start until it is fixed.
+            </Fault>
           )}
           {body}
           {cards !== null && count > 0 && (

@@ -102,18 +102,17 @@ export function Course(props: {
   let card: JSX.Element;
   if (home.state === "no_runtime" || home.state === "unreadable") {
     card = (
-      <>
-        <h2 className="h-section fault">
-          <Icon name="bang" size={20} />
-          {home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}
-        </h2>
-        <p className="say selectable">{home.message}</p>
-        <div className="row">
+      <Fault
+        framed={false}
+        title={home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}
+        action={
           <button className="btn primary" title="Try again (Return)" onClick={props.onRetry}>
             Try again
           </button>
-        </div>
-      </>
+        }
+      >
+        {home.message}
+      </Fault>
     );
   } else if (home.state === "needs_upgrade") {
     card = declined ? (
@@ -233,10 +232,12 @@ export function Course(props: {
   const buckets = progress && !progress.message ? skillBuckets(progress) : null;
   const counts = buckets
     ? ([
-        ["To prove today", buckets.today],
-        ["In progress", buckets.later],
-        ["Not tested yet", buckets.untested],
-      ] as const).filter(([, n]) => n > 0)
+        [`${buckets.today} to prove today`, buckets.today],
+        [`${buckets.later} in progress`, buckets.later],
+        [`${buckets.untested} not tested yet`, buckets.untested],
+      ] as const)
+        .filter(([, n]) => n > 0)
+        .map(([said]) => said)
     : [];
   // Up to five skills in play, in the order the Proofs page lists them: due today first, then the others.
   const inPlay =
@@ -275,13 +276,15 @@ export function Course(props: {
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Level proofs={proofs} size="md" />
+                <span className="level-stack">
+                  <Level proofs={proofs} size="md" />
+                  <span className="board-link">Three proofs prove a skill. Each proof moves your level.</span>
+                </span>
               </button>
             )}
           </header>
 
           <section className="sec" aria-label="Next">
-            <MarginNote>Next</MarginNote>
             <div className="next-card" data-card="next">
               {card}
             </div>
@@ -298,47 +301,34 @@ export function Course(props: {
           {usable && !sitting && (
             <div className="index">
               <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="index-name margin-note">Proofs</span>
+                <span className="index-name sec-name">Proofs</span>
                 <span className="index-body">
-                  {progress && proofs && proofs.total > 0 ? (
-                    <>
-                      <span className="index-what num">{skillsProven(proofs) ? `${skillsProven(proofs)}.` : ""}</span>
-                    </>
-                  ) : (
-                    <span className="index-what">{PROOF_DEFINITION}</span>
-                  )}
-                  {(inPlay.length > 0 || counts.length > 0) && (
-                    <span className="index-detail">
-                      {inPlay.length > 0 && (
-                        <span className="index-skills">
-                          {inPlay.slice(0, 5).map((row, at) => (
-                            <span className="index-skill" key={`${row.name}${at}`}>
-                              <ProofDots earned={row.earned} />
-                              <Line text={row.name} className="index-skill-name" />
-                            </span>
-                          ))}
+                  <span className="index-what num">
+                    {progress && proofs && proofs.total > 0 ? (skillsProven(proofs) ?? "") : PROOF_DEFINITION}
+                  </span>
+                  {inPlay.length > 0 && (
+                    <span className="index-skills">
+                      {inPlay.slice(0, 5).map((row, at) => (
+                        <span className="index-skill" key={`${row.name}${at}`}>
+                          <ProofDots earned={row.earned} />
+                          <Line text={row.name} className="index-skill-name" />
                         </span>
-                      )}
-                      {counts.length > 0 && progress && proofs && proofs.total > 0 && (
-                        <span className="counts num">
-                          {counts.map(([label, n]) => (
-                            <span key={label} className="counts-row">
-                              <span>{label}</span>
-                              <span>{n}</span>
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                      ))}
                     </span>
                   )}
-                  {allSkills > 0 && <span className="index-all num">{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</span>}
+                  {allSkills > 0 && (
+                    <span className="index-all num">
+                      <b>{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</b>
+                      {counts.length > 0 && progress && proofs && proofs.total > 0 ? `: ${listWords(counts)}.` : ""}
+                    </span>
+                  )}
                 </span>
                 <span className="row-chev" aria-hidden="true">
                   <Icon name="right" size={14} />
                 </span>
               </button>
               <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
-                <span className="index-name margin-note">Timed paper</span>
+                <span className="index-name sec-name">Timed paper</span>
                 <span className="index-body">
                   <span className="index-what">
                     {nextPaper
@@ -354,7 +344,7 @@ export function Course(props: {
               </button>
               {!fresh && (
                 <button className="index-row" data-role="new-lesson" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
-                  <span className="index-name margin-note">New lesson</span>
+                  <span className="index-name sec-name">New lesson</span>
                   <span className="index-body">
                     <span className="index-what">Another topic: pick what to learn next.</span>
                   </span>
@@ -388,6 +378,11 @@ export function Course(props: {
       </div>
     </section>
   );
+}
+
+/** "a", "a and b", "a, b and c". */
+function listWords(items: readonly string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /**

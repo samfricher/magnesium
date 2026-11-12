@@ -8,9 +8,17 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { composing } from "../ui/bits";
 import { Icon } from "../ui/icons";
 
+/**
+ * One row of the menu: an icon, the label, and at the right what is worth
+ * saying of it. A row has a `hint` only where its label leaves something
+ * open (which paper, what it is now, where it is), and a `key` where it has a
+ * shortcut. Neither is a description of what the item is.
+ */
 export type Command = {
   label: string;
   hint?: string;
+  /** The item's shortcut, drawn as a keycap at the row's right end. */
+  key?: string;
   icon?: string;
   /** Other words that find this item. */
   keywords?: string;
@@ -19,7 +27,7 @@ export type Command = {
   /** Instead of running, show these keys and what they do. */
   shortcuts?: [string, string][];
   /** Instead of running, open these as the list: one item for a setting, its values inside. */
-  choices?: { label: string; hint?: string; run: () => void }[];
+  choices?: { label: string; hint?: string; key?: string; run: () => void }[];
   run: () => void;
 };
 
@@ -116,7 +124,7 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
         }}
       >
         <div className="palette-in">
-          <Icon name="search" size={17} />
+          <Icon name="search" size={16} />
           <input
             ref={input}
             role="combobox"
@@ -189,7 +197,8 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
                 >
                   <Icon name={command.icon ?? "right"} size={16} />
                   <span>{command.label}</span>
-                  <small>{command.disabled ?? command.hint}</small>
+                  {(command.disabled ?? command.hint) && <small>{command.disabled ?? command.hint}</small>}
+                  {command.key && <kbd aria-label={`shortcut ${command.key}`}>{command.key}</kbd>}
                 </div>
               ))}
               {shown.length === 0 && <div className="palette-none">Nothing matches. Try: proofs, new lesson, paper.</div>}

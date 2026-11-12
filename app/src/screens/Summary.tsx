@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
 import { Level, PaletteKey, ProofDots, Run, ThisWeek, TopBar, proofsOf, sentence, useReturnForPrimary } from "../ui/bits";
-import type { Activity, Proofs, Row, Today } from "../types";
+import type { Activity, Core, Proofs, Row, Today } from "../types";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -67,7 +67,41 @@ export type Sitting = {
   tomorrow: number;
   /** The skills answered wrong in this lesson, from the marks the lesson recorded, and the day the record brings each back. Empty when the record has none. */
   slipped: { name: string; next_day: string }[];
+  /** The answers the lesson showed a mark for, in the order they were marked. Empty when the record has none. */
+  marks: Reviewed[];
 };
+
+/** One marked answer of the lesson, said by the skill it was on: "right", "right with help" or "not yet". */
+export type Reviewed = { name: string; verdict: "right" | "right with help" | "not yet" };
+
+/**
+ * The marks the lesson recorded, as the lesson showed them (a lesson answer
+ * marked right or wrong, and nothing else), each named by the skill the record
+ * calls it: the same name Proofs gives it. The record's times are local, "2026-11-12
+ * 09:41", to the minute.
+ */
+export async function reviewIn(api: Core, rows: Row[], startedMs: number | null): Promise<Reviewed[]> {
+  if (startedMs === null) return [];
+  let marks: Awaited<ReturnType<Core["marks"]>> = null;
+  try {
+    marks = await api.marks();
+  } catch {
+    return [];
+  }
+  if (!marks) return [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const began = new Date(startedMs);
+  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
+  const key = (text: string) => text.trim().toLowerCase();
+  const out: Reviewed[] = [];
+  for (const mark of marks) {
+    if (mark.paper !== null || mark.at < since || mark.label.trim() === "") continue;
+    const verdict = mark.mark === "wrong" ? "not yet" : mark.mark === "right" ? (mark.help === "none" ? "right" : "right with help") : null;
+    if (verdict === null) continue;
+    out.push({ name: rows.find((each) => key(each.name) === key(mark.label))?.name ?? mark.label.trim(), verdict });
+  }
+  return out;
+}
 
 /** "tomorrow", "in 3 days", "today", or "on Mon 16 Nov" when the day now is not known. */
 function backWhen(day: string, today: string | null): string {
@@ -114,12 +148,13 @@ export function Summary(props: {
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
   const unmarked = sitting.sent > 0 && sitting.marked === 0;
   const level = props.proofs !== null && props.proofs.levelled && props.proofs.total > 0;
-  // With nothing marked, say when the next chance comes. Otherwise today's counts say it.
+  // With nothing marked, what comes next leads, and in the words of the other screens: questions due, else skills to prove. Otherwise today's counts say it.
+  const due = sitting.today?.due_tomorrow ?? 0;
   const comes = unmarked
-    ? sitting.tomorrow > 0
-      ? `${plural(sitting.tomorrow, "skill", "skills")} to prove tomorrow.`
-      : sitting.today && sitting.today.due_tomorrow > 0
-        ? `${plural(sitting.today.due_tomorrow, "question", "questions")} due tomorrow.`
+    ? due > 0
+      ? `${plural(due, "question", "questions")} ${due === 1 ? "is" : "are"} due tomorrow.`
+      : sitting.tomorrow > 0
+        ? `${plural(sitting.tomorrow, "skill", "skills")} to prove tomorrow.`
         : null
     : null;
   const today = todaySentence(sitting.today, { proofs: proofs === 0, tomorrow: comes === null });
@@ -150,10 +185,10 @@ export function Summary(props: {
             {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "Lesson saved" : "Lesson done"}
           </h1>
           {unmarked && (
-            <p className="summary-why" data-role="why">
-              The tutor didn&apos;t mark an answer in this lesson, so there is no proof yet. The tutor&apos;s words aren&apos;t the mark: only answers the tutor records count towards a proof. A proof is an answer the tutor marks right, given without help, on its own day.
-              {comes ? ` ${comes}` : ""}
-            </p>
+            <div className="summary-why" data-role="why">
+              {comes && <p className="summary-lead">{comes}</p>}
+              <p className="summary-because">No answer was recorded as marked in this lesson, so no proof yet.</p>
+            </div>
           )}
 
           {proofs > 0 && (
@@ -174,6 +209,23 @@ export function Summary(props: {
             <div className="level-line" data-role="level">
               <Level proofs={props.proofs} size="lg" gain={proofs} still={!first} title={`${props.proofs.earned} of ${props.proofs.total} proofs`} />
             </div>
+          )}
+
+          {sitting.marks.length > 0 && (
+            <section className="sec marked" data-role="marked" aria-labelledby="marked-today">
+              <h2 className="sec-name" id="marked-today">
+                Marked today
+              </h2>
+              <ul className="marked-list">
+                {sitting.marks.slice(0, 6).map((mark, index) => (
+                  <li key={index}>
+                    <Line text={mark.name} className="marked-skill" />
+                    <span className="marked-verdict">{mark.verdict}</span>
+                  </li>
+                ))}
+                {sitting.marks.length > 6 && <li className="marked-more">and {sitting.marks.length - 6} more</li>}
+              </ul>
+            </section>
           )}
 
           {!nothing && (
