@@ -357,6 +357,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            harness::note("setup start");
             mg_core::paths::warm_up();
             let handle = app.handle().clone();
             let store = Arc::new(Store::open());
@@ -369,6 +370,7 @@ fn main() {
             )
             .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
+            harness::note("setup done");
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
                 // A check that never reports must still end.
                 let handle = app.handle().clone();
@@ -380,6 +382,12 @@ fn main() {
                 });
             }
             Ok(())
+        })
+        .on_page_load(|_webview, payload| {
+            harness::note(match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "page load started",
+                tauri::webview::PageLoadEvent::Finished => "page load finished",
+            });
         })
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {

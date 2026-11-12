@@ -40,6 +40,16 @@ pub fn mark_start() {
     let _ = STARTED_MS.set(now_ms());
 }
 
+/// With perf on, say on standard error how long after the start `what`
+/// happened: the shell's own moments before the page runs (setup done, the
+/// page starting and finishing to load), beside the page's own marks.
+pub fn note(what: &str) {
+    if perf_file().is_some() {
+        let started = STARTED_MS.get().copied().unwrap_or_else(now_ms);
+        eprintln!("[startup] {what}: {} ms", now_ms() - started);
+    }
+}
+
 fn named(var: &str) -> Option<PathBuf> {
     std::env::var_os(var)
         .filter(|value| !value.is_empty())
