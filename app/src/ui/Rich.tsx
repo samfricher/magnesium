@@ -7,7 +7,7 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { renderInline, renderMarkdown, setSourcesApart, withoutOpenMath } from "../render";
+import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -34,8 +34,7 @@ async function drawDiagrams(root: HTMLElement) {
     securityLevel: "strict",
     theme: "base",
     fontFamily: '"Atkinson Hyperlegible Next Variable", -apple-system, BlinkMacSystemFont, sans-serif',
-    // A diagram keeps its own size, so its labels stay readable. A wide one
-    // scrolls inside its box.
+    // A diagram fits the column; CSS scales it to the width it is given.
     flowchart: { useMaxWidth: false },
     sequence: { useMaxWidth: false },
     themeVariables: {
@@ -55,16 +54,30 @@ async function drawDiagrams(root: HTMLElement) {
   for (const block of blocks) {
     const pre = block.parentElement;
     if (!pre || !pre.isConnected) continue;
-    const id = `mg-diagram-${++diagrams}`;
+    const source = block.textContent ?? "";
     try {
-      const { svg } = await mermaid.render(id, block.textContent ?? "");
+      let { svg } = await mermaid.render(`mg-diagram-${++diagrams}`, source);
+      // A wide chart shrunk to the column is too small to read. Stood on its
+      // end it is narrower, so the labels keep their size.
+      const room = pre.clientWidth - 32;
+      const wide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg)?.[1] ?? 0);
+      if (wide > room * 1.4 && /^\s*(graph|flowchart)\s+LR\b/i.test(source)) {
+        try {
+          const tall = (await mermaid.render(`mg-diagram-${++diagrams}`, source.replace(/^(\s*(?:graph|flowchart)\s+)LR\b/i, "$1TB"))).svg;
+          const tallWide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(tall)?.[1] ?? 0);
+          if (tallWide < wide) svg = tall;
+        } catch {
+          // The first drawing stands.
+        }
+      }
       const holder = document.createElement("div");
       holder.className = "diagram";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
     } catch {
       // A diagram that will not draw stays as the text the tutor wrote.
-      document.querySelectorAll(`#d${id}`).forEach((leftover) => leftover.remove());
+      pre.classList.add("undrawn");
+      document.querySelectorAll(`#dmg-diagram-${diagrams}`).forEach((leftover) => leftover.remove());
     }
   }
 }
@@ -133,13 +146,19 @@ type Props = {
   linksOpen?: boolean;
   /** Called with a link that opens a source beside the lesson. Without it such a link opens in the system's viewer. */
   onSource?: (source: SourceRef) => void;
+  /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
+  stopped?: boolean;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource }: Props) {
-  const html = useMemo(
-    () => (onSource ? setSourcesApart(renderMarkdown(final ? text : withoutOpenMath(text)), linksOpen) : renderMarkdown(final ? text : withoutOpenMath(text))),
-    [text, final, linksOpen, onSource],
-  );
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false }: Props) {
+  // A reply still being written, or stopped, never shows the marks of a
+  // formula, a bold span or a link it ends inside of. A display formula that
+  // is held back keeps a line's room, so what follows does not jump when it closes.
+  const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
+  const html = useMemo(() => {
+    const drawn = renderMarkdown(held.text);
+    return onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+  }, [held.text, linksOpen, onSource]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,7 +201,12 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     }
   };
 
-  return <div className="prose" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <>
+      <div className="prose" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      {held.wait && !final && <div className="math-wait" aria-hidden="true" />}
+    </>
+  );
 });
 
 /** One line of text with its mathematics. Used for goals, steps, names and the learner's own words. */

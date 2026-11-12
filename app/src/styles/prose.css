@@ -115,6 +115,7 @@
 }
 
 .prose .table {
+  max-width: 100%;
   margin: 0 0 1em;
   overflow-x: auto;
 }
@@ -204,9 +205,49 @@
   text-align: center;
 }
 
+/* A diagram is fitted to the column, never cropped by it. Its height is kept
+   while it is drawn, so what is below it does not jump. */
 .prose .diagram svg {
-  max-width: none;
+  display: block;
+  max-width: 100%;
   height: auto;
+  max-height: 28em;
+  margin: 0 auto;
+}
+
+.prose pre.diagram-wait:not(.undrawn) {
+  position: relative;
+  min-height: 11em;
+  overflow: hidden;
+  border-style: solid;
+}
+
+.prose pre.diagram-wait:not(.undrawn) code {
+  visibility: hidden;
+}
+
+.prose pre.diagram-wait:not(.undrawn)::after {
+  content: "Drawing the diagram";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+/* The room a display formula will take, kept while it is still being written. */
+.math-wait {
+  height: 5em;
+  font-size: var(--fs-read);
+  animation: make-room var(--t-move) var(--ease) both;
+}
+
+@keyframes make-room {
+  from {
+    height: 0;
+  }
 }
 
 /* The thing to do next. A paragraph the tutor opened with a bold "Task." is
@@ -222,6 +263,14 @@
 
 .prose div.task > :last-child {
   margin-bottom: 0;
+}
+
+/* A task that has been answered is no longer the one to do: no fill, no green,
+   a hairline rule. Only the live task is green. */
+.answered .prose div.task,
+.answered .prose :not(div.task) > p.task {
+  background: none;
+  box-shadow: inset 1px 0 0 var(--line-2);
 }
 
 .prose div.task .katex-display {

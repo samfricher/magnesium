@@ -476,14 +476,32 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 /* What scrolls fades out at both ends, so it is plain when there is more below. */
-.stage {
+.session {
+  --column: calc(34 * var(--fs-read));
+}
+
+/* The transcript is as tall as what it holds, up to the room there is, and the
+   answer box follows its end. A tall window has no gap between them; a short one
+   scrolls the transcript above the box. The room kept under the last thing is
+   more than the fade at the foot, so the fade never covers a task. */
+.session .stage {
+  flex: 0 1 auto;
   padding: 0 var(--s6);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 26px), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 26px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - var(--s5)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - var(--s5)), transparent 100%);
 }
 
 .stage .column {
-  padding: var(--s5) 0 var(--s7);
+  padding: var(--s5) 0 var(--s6);
+}
+
+/* End stands on the column's left edge when the window has room for that. */
+.session .bar-side:first-child .crumb {
+  margin-left: max(0px, calc((100vw - min(100vw - 2 * var(--s6), var(--column))) / 2 - 92px - var(--s2)));
+}
+
+.session.has-source .bar-side:first-child .crumb {
+  margin-left: 0;
 }
 
 .track-holder {
@@ -491,28 +509,43 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   min-width: 0;
 }
 
+/* The goal's steps: a button, so it has a boundary, a hover fill and a pressed state. */
 .track {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  max-width: min(520px, 46vw);
+  max-width: min(440px, 40vw);
   height: 32px;
-  padding: 0 var(--s3);
-  border: 0;
+  padding: 0 var(--s2) 0 var(--s3);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-small);
   font-weight: 400;
   transition:
-    background var(--t-fast),
-    color var(--t-fast);
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .track:hover,
 .track.on {
   background: var(--hover);
   color: var(--text);
+}
+
+.track:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.track .icon {
+  color: var(--faint);
+  transition: transform var(--t-fast) ease-out;
+}
+
+.track.on .icon {
+  transform: rotate(180deg);
 }
 
 .track-label {
@@ -618,26 +651,19 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   box-shadow: 0 0 0 3px var(--line);
 }
 
+/* The clock is plain text. Its number is in the reading face, lining and tabular. */
 .clock {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
   color: var(--muted);
   font-size: var(--fs-small);
+  white-space: nowrap;
 }
 
 .clock b {
-  font-size: var(--fs-small);
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   color: var(--text);
-}
-
-.clock small {
-  font-size: var(--fs-caption);
-  color: var(--muted);
-  margin-left: -4px;
-  white-space: nowrap;
 }
 
 .earlier-toggle {
@@ -679,14 +705,28 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   flex-direction: column;
 }
 
+.exchange + .exchange {
+  margin-top: var(--s5);
+}
+
 .exchange.now {
   scroll-margin-top: var(--s4);
 }
 
-/* With the earlier turns open above it, the exchange in hand fills the view,
-   so it can still sit at the top of it. */
-.exchange.now.anchored {
-  min-height: calc(100vh - 52px - 230px);
+/* Help is marked as help: a quiet word in ink above the reply, and once per
+   task, what a hint costs. */
+.help-label {
+  margin-bottom: var(--s1);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.help-note {
+  margin-top: var(--s3);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 /* The learner's answer is not a chat bubble: it is a note set in from the
@@ -729,16 +769,15 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   animation: enter var(--t-move) var(--ease) both;
 }
 
-/* While the tutor writes, a soft point marks the end of the text. */
+/* While the tutor writes, a caret marks the end of the text. It is a bar, not a dot, so it is not taken for a proof. */
 .tutor.writing .prose > :last-child::after {
   content: "";
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-left: var(--s2);
-  border-radius: 50%;
+  width: 2px;
+  height: 0.95em;
+  margin-left: var(--s1);
   background: var(--muted);
-  vertical-align: 0.12em;
+  vertical-align: -0.12em;
   animation: breathe 1.1s ease-in-out infinite;
 }
 
@@ -748,43 +787,27 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--faint);
 }
 
+/* The working line: a caret, the words, and Stop beside them. */
 .thinking {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  min-height: 30px;
+  min-height: 32px;
   margin-top: var(--s4);
-  color: var(--faint);
+  color: var(--muted);
   font-size: var(--fs-small);
 }
 
-.thinking-label {
-  flex: 1;
+.working-bar {
+  flex: none;
+  width: 2px;
+  height: 16px;
+  background: var(--muted);
+  animation: breathe 1.1s ease-in-out infinite;
 }
 
 .thinking .btn {
-  opacity: 0.75;
-}
-
-.pulse {
-  display: inline-flex;
-  gap: var(--s1);
-}
-
-.pulse i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
-  animation: breathe 1.2s ease-in-out infinite;
-}
-
-.pulse i:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.pulse i:nth-child(3) {
-  animation-delay: 0.32s;
+  margin-left: var(--s1);
 }
 
 .stopped {
@@ -862,6 +885,11 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   background: var(--hover);
 }
 
+.option:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
 .option.on {
   border-color: var(--text);
   background: var(--hover);
@@ -894,6 +922,7 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 .dock {
+  position: relative;
   flex: none;
   padding: 0 var(--s6) var(--s4);
 }
@@ -908,19 +937,45 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   padding: var(--s2) var(--s2) var(--s2) var(--s4);
 }
 
+/* When the end of the transcript is out of view. */
+.more-below {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--s1));
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  width: max-content;
+  height: 28px;
+  margin: 0 auto;
+  padding: 0 var(--s3) 0 var(--s2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  animation: rise var(--t-move) var(--ease) both;
+}
+
+.more-below:hover {
+  background: var(--hover);
+}
+
+/* The answer box is a sheet. When it has the focus it has the same 2px ring as
+   every control, whether the focus came from a key or a click: it is where
+   the learner types. */
 .composer .box {
   border: 1px solid var(--line-2);
   border-radius: var(--r-card);
   background: var(--raised);
-  transition: border-color var(--t-fast) ease-out;
 }
 
 .composer .box:focus-within {
-  border-color: var(--muted);
-}
-
-.composer.off .box {
-  opacity: 0.6;
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 
 .composer textarea:focus-visible,
@@ -942,72 +997,72 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 
 .composer .tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s1);
+  gap: var(--s1) var(--s2);
   padding: var(--s1) var(--s2) var(--s2) var(--s3);
 }
 
+.composer .tools .icon-btn {
+  margin-left: calc(-1 * var(--s1));
+}
+
+.composer .tools .icon-btn + .icon-btn,
+.composer .tools .add-menu + .icon-btn {
+  margin-left: 0;
+}
+
+/* Send is a small primary button, neutral while there is nothing to send. */
 .composer .send {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  margin-left: var(--s2);
-  border: 0;
-  border-radius: var(--r-control);
-  background: var(--accent);
-  color: var(--accent-ink);
-  transition: background var(--t-fast) ease-out;
+  margin-left: var(--s1);
 }
 
-.composer .send:disabled {
-  background: var(--hover);
-  color: var(--faint);
+.queued {
+  font-size: var(--fs-small);
+  color: var(--muted);
 }
 
-.composer .send:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.composer .send:active:not(:disabled) {
-  background: var(--accent-press);
-  transform: translateY(1px);
-}
-
-/* How sure the learner is. It shows once there is an answer to be sure of. */
+/* Optional: how sure the learner is. It shows once there is an answer to be sure of. */
 .sure {
   display: inline-flex;
-  padding: var(--s1);
-  border-radius: var(--r-control);
-  background: var(--bg);
+  align-items: center;
+  gap: var(--s1);
 }
 
 .sure-label {
-  align-self: center;
-  padding: 0 var(--s2) 0 var(--s2);
+  padding: 0 var(--s2) 0 0;
   font-size: var(--fs-caption);
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .sure button {
-  height: 26px;
+  height: 28px;
   padding: 0 var(--s3);
-  border: 0;
+  border: 1px solid var(--line-2);
   border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-caption);
   font-weight: 600;
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .sure button:hover {
+  background: var(--hover);
   color: var(--text);
 }
 
-.sure button.on {
+.sure button:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.sure button[aria-pressed="true"] {
+  border-color: var(--text);
   background: var(--hover);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
 .files {
@@ -1044,51 +1099,42 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--text);
 }
 
-/* What the learner typed, with its mathematics drawn, before it is sent. */
+/* What the learner typed, with its mathematics drawn, inside the box. Its room
+   is kept from the first dollar sign, so the box does not change height. */
 .preview {
-  margin: 0 var(--s2) var(--s2);
-  padding: var(--s3) var(--s4);
-  border-radius: var(--r-card);
-  border: 1px dashed var(--line-2);
-  font-size: var(--fs-ui);
-  line-height: 1.6;
-  color: var(--text);
+  min-height: 3em;
   max-height: 150px;
+  margin: var(--s1) var(--s4) 0;
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line-2);
   overflow-y: auto;
+  font-family: var(--serif);
+  font-size: var(--fs-read);
+  line-height: 1.5;
+  color: var(--text);
   overflow-wrap: anywhere;
 }
 
-/* The two ways to say you are stuck. They are always in reach, and plain. */
+.preview .katex {
+  font-size: 1.05em;
+}
+
+.preview-empty {
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  color: var(--faint);
+}
+
+/* The three ways to say you are stuck: standard secondary buttons in one row. */
 .outs {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s2);
   padding: var(--s3) 0 0;
 }
 
-/* The same look as every secondary button. */
-.outs button {
-  height: 36px;
-  padding: 0 var(--s4);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-control);
-  background: transparent;
-  color: var(--text);
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  transition: background var(--t-fast) ease-out;
-}
-
-.outs button:hover:not(:disabled) {
-  background: var(--hover);
-}
-
-.outs button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.outs button:disabled {
-  border-color: var(--line);
-  color: var(--faint);
+.outs .btn:disabled {
+  color: var(--muted);
 }
 
 .sheet {
@@ -1840,10 +1886,70 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 .session-main {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* The task in hand, held at the top of the column when it has scrolled out of
+   view. A click brings the whole task back. */
+.task-pin-holder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: 0 var(--s6);
+  pointer-events: none;
+}
+
+.task-pin {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    var(--shadow);
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
+  line-height: 1.4;
+  text-align: left;
+  pointer-events: auto;
+  animation: rise var(--t-move) var(--ease) both;
+  transition: background var(--t-fast) ease-out;
+}
+
+.task-pin:hover {
+  background: var(--hover);
+}
+
+.task-pin-label {
+  flex: none;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.task-pin-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.task-pin-text .katex {
+  font-size: 1.05em;
+  white-space: nowrap;
 }
 
 /* The panel takes about two fifths of the window. The lesson narrows beside it and stays in view. */
@@ -1942,22 +2048,29 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s2);
-  margin: var(--s4) 0 var(--s4);
+  margin: var(--s4) 0 0;
 }
 
+.passages-label {
+  margin-right: var(--s1);
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+/* A source chip: ink on a hairline pill. It is a link to a page, not a proof, so it is not green. */
 .passage {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
   max-width: 100%;
-  height: 32px;
-  padding: 0 var(--s3) 0 var(--s3);
+  height: 28px;
+  padding: 0 var(--s3);
   border: 1px solid var(--line-2);
   border-radius: var(--r-pill);
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   font-size: var(--fs-small);
-  font-weight: 600;
+  font-weight: 400;
   transition:
     background var(--t-fast) ease-out,
     border-color var(--t-fast) ease-out;
@@ -1966,7 +2079,11 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 .passage:hover,
 .passage.on {
   background: var(--hover);
-  border-color: var(--text);
+}
+
+.passage:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
 .passage .icon {
@@ -2103,15 +2220,18 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 }
 
 @media (max-width: 900px) {
-  /* Too narrow for two columns: the source takes the lower half, and the lesson stays above it. */
+  /* Too narrow for two columns: the source opens as a sheet over the lesson, with a close button. */
   .session-body.with-source {
-    flex-direction: column;
+    position: relative;
   }
 
   .session-body.with-source .source-panel {
+    position: absolute;
+    inset: var(--s2) var(--s4) var(--s4);
+    z-index: 6;
     width: auto;
-    height: 52%;
-    margin: 0 var(--s4) var(--s4);
+    margin: 0;
+    box-shadow: var(--shadow);
   }
 }
 
