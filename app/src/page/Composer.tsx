@@ -1,9 +1,9 @@
-// The line the learner writes on. There is one, and where it stands says
-// what it is: inside the open exercise it is an answer; on the page it is
-// talk, which the record never marks. Esc moves it between the two. Nothing
-// on it is labelled "your answer".
+// A line the learner writes on. Where it stands says what it is: the line
+// inside the open exercise takes answers to that task; the line on the page
+// takes talk, which the record never marks. Esc moves between the two.
+// Nothing on either is labelled "your answer".
 //
-// It keeps its own text, so a keystroke redraws this and nothing else.
+// Each keeps its own text, so a keystroke redraws that line and nothing else.
 
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 
@@ -57,10 +57,12 @@ const composing = (event: React.KeyboardEvent) => event.nativeEvent.isComposing 
 export type ComposerHandle = { focus: () => void; setText: (text: string) => void; text: () => string };
 
 type Props = {
+  /** "task": the line inside the open exercise. "page": the line on the page. */
   place: Place;
-  /** A task is open, so Esc can move between it and the page. */
+  /** The other line is there, so Esc can move to it. */
   canMove: boolean;
-  onPlace: (place: Place) => void;
+  onMove: () => void;
+  onFocus: () => void;
   /** The tutor is writing: a message waits until it is done. */
   busy: boolean;
   /** Writing is shut, and why. */
@@ -167,30 +169,6 @@ export const Composer = memo(
       box.current?.focus();
     };
 
-    // ⌘⇧H, ⌘⇧L and ⌘⇧D ask for help on the open task; ⌘⇧A adds a photo; ⌘⇧S the symbols.
-    useEffect(() => {
-      const key = (event: KeyboardEvent) => {
-        if (!event.metaKey || !event.shiftKey || event.altKey || event.ctrlKey || props.shut) return;
-        if (event.code === "KeyA") {
-          event.preventDefault();
-          void photo();
-          return;
-        }
-        if (event.code === "KeyS") {
-          event.preventDefault();
-          setSymbols((open) => !open);
-          return;
-        }
-        if (!props.canMove && !inTask) return;
-        const words = event.code === "KeyH" ? HELP.hint : event.code === "KeyD" ? HELP.unknown : event.code === "KeyL" ? HELP.lost : null;
-        if (!words || props.busy) return;
-        event.preventDefault();
-        props.onHelp(words);
-      };
-      window.addEventListener("keydown", key);
-      return () => window.removeEventListener("keydown", key);
-    });
-
     const preview = useMemo(() => (text.includes("$") && hasMath(text) ? renderPlain(text) : null), [text]);
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -208,9 +186,21 @@ export const Composer = memo(
         }
         if (props.canMove) {
           event.preventDefault();
-          props.onPlace(inTask ? "page" : "task");
+          props.onMove();
         }
         return;
+      }
+      if (event.metaKey && event.shiftKey && !event.altKey && !event.ctrlKey && props.tools) {
+        if (event.code === "KeyA") {
+          event.preventDefault();
+          void photo();
+          return;
+        }
+        if (event.code === "KeyS") {
+          event.preventDefault();
+          setSymbols((open) => !open);
+          return;
+        }
       }
       const pick = /^Digit([123])$/.exec(event.code);
       if (pick && inTask && event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
@@ -225,7 +215,7 @@ export const Composer = memo(
         <div className="field" data-value={`${text} `}>
           <textarea
             ref={box}
-            data-drive="composer"
+            data-drive={inTask ? "answer" : "talk"}
             rows={1}
             value={text}
             spellCheck
@@ -234,6 +224,7 @@ export const Composer = memo(
             placeholder={props.shut ?? props.placeholder}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
+            onFocus={props.onFocus}
           />
         </div>
         {preview && <div className="preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: preview }} />}

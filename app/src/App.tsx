@@ -12,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { core, isDemo } from "./bridge";
 import { clock, dayOf, daysBefore, longDay, today, whenSaid } from "./days";
 import * as harness from "./harness";
-import { busy, emptySession, isHelp, openingWords, pickedWords, reduce, tutorText, type SessionState } from "./lesson";
+import { busy, emptySession, HELP, isHelp, openingWords, pickedWords, reduce, tutorText, type SessionState } from "./lesson";
 import { courseName, pagesFrom } from "./log";
 import { applyPrefs, flushLeft, keepLeft, loadLeft, loadPrefs, SIZES, type Prefs } from "./prefs";
 import { taskText } from "./render";
@@ -116,6 +116,8 @@ export function App() {
   const [sitting, setSitting] = useState<{ folder: string; course: string; start: number } | null>(null);
   const [convEngine, setConvEngine] = useState<Engine | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null);
+  // With Claude Code the window cannot always tell whether a reply set a task: the line under it then takes the reply.
+  const [replyOpen, setReplyOpen] = useState(false);
   const [place, setPlaceState] = useState<Place>(() => loadLeft(day).place);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [moved, setMoved] = useState<Record<string, string>>(() => loadLeft(day).moved);
@@ -139,11 +141,22 @@ export function App() {
   const [signingIn, setSigningIn] = useState(false);
   const [narrow, setNarrow] = useState(() => window.innerWidth < 860);
 
-  const composer = useRef<ComposerHandle>(null);
+  // The two lines the learner writes on: inside the open exercise, and on the page.
+  const answerBox = useRef<ComposerHandle>(null);
+  const pageBox = useRef<ComposerHandle>(null);
+  const composer = {
+    current: {
+      focus: () => {
+        const wanted = now.current.place === "task" ? answerBox.current ?? pageBox.current : pageBox.current ?? answerBox.current;
+        wanted?.focus();
+      },
+    },
+  };
   const scroller = useRef<HTMLElement>(null);
   const left = useRef(loadLeft(day));
   // The learner moved the cursor, or began writing, since the last reply: the window no longer moves it.
   const touched = useRef(false);
+  const answerOpenRef = useRef(false);
   // The record's mark ids the window has accounted for, and the reading taken before the last answer.
   const known = useRef<Set<string> | null>(null);
   const shownMarks = useRef(new Set<string>());
@@ -156,9 +169,10 @@ export function App() {
   const setPlace = useCallback((next: Place) => {
     touched.current = true;
     setPlaceState(next);
+    now.current.place = next;
     left.current = { ...left.current, place: next };
     keepLeft(left.current);
-    window.requestAnimationFrame(() => composer.current?.focus());
+    window.requestAnimationFrame(() => composer.current.focus());
   }, []);
 
   const patchMeta = useCallback((since: number, change: (old: Meta) => Meta) => {
@@ -239,6 +253,7 @@ export function App() {
         dispatch({ type: "reset" });
         setSitting(null);
         setOpenTask(null);
+        setReplyOpen(false);
         setPlaceState("task");
         setProgress(null);
         setMaterials(null);
@@ -396,9 +411,14 @@ export function App() {
       const open = recorded ?? (convEngine === "direct" ? null : boxed);
       patchMeta(since, (old) => ({ ...old, posed: old.posed ?? posed }));
       setOpenTask(open);
+      now.current.openTask = open;
+      const unknown = convEngine !== "direct" && open === null && reply.trim() !== "";
+      setReplyOpen(unknown);
       if (!touched.current) {
-        const unknown = convEngine !== "direct" && open === null && reply.trim() !== "";
-        setPlaceState(posed || unknown || (open && m.intent !== "talk") ? "task" : "page");
+        const next: Place = posed || unknown || (open && m.intent !== "talk") ? "task" : "page";
+        setPlaceState(next);
+        now.current.place = next;
+        window.requestAnimationFrame(() => composer.current.focus());
       }
     },
     [patchMeta],
@@ -439,6 +459,7 @@ export function App() {
       else {
         touched.current = false;
         setPlaceState(now.current.openTask ? "task" : "page");
+        window.requestAnimationFrame(() => composer.current.focus());
       }
     } else if (event.type === "marked" && live) {
       addMark(live.since, event.mark);
@@ -513,7 +534,7 @@ export function App() {
       note(String(problem));
     } finally {
       setStarting(false);
-      window.requestAnimationFrame(() => composer.current?.focus());
+      window.requestAnimationFrame(() => composer.current.focus());
     }
   };
 
@@ -549,6 +570,7 @@ export function App() {
       return newLesson(text);
     }
     const help = isHelp(text);
+    // The line inside the exercise takes answers; the page takes talk, which is never marked.
     const intent: Intent | undefined = help ? undefined : at === "page" ? "talk" : openTask ? "answer" : convEngine === "direct" ? "talk" : undefined;
     const since = Date.now();
     try {
@@ -562,6 +584,12 @@ export function App() {
       dispatch({ type: "sent", shown: text, now: since });
       touched.current = false;
       if (intent === "answer" && !help) setOpenTask(null);
+      if (at === "task") setReplyOpen(false);
+      if (at === "task" && !help) {
+        setPlaceState("page");
+        now.current.place = "page";
+        window.requestAnimationFrame(() => composer.current.focus());
+      }
       await api.send(text, intent);
     } catch (problem) {
       dispatch({ type: "failed", error: String(problem) });
@@ -611,7 +639,7 @@ export function App() {
         // The page keeps what it had.
       }
     }
-    window.requestAnimationFrame(() => composer.current?.focus());
+    window.requestAnimationFrame(() => composer.current.focus());
   };
 
   const decide = (id: string, decision: Decision) => void now.current.api?.decide(id, decision).catch((p) => note(String(p)));
@@ -627,7 +655,7 @@ export function App() {
     setSheet(null);
     if (now.current.home?.folder === folder) return;
     await enterFolder((api) => api.openFolder(folder));
-    window.requestAnimationFrame(() => composer.current?.focus());
+    window.requestAnimationFrame(() => composer.current.focus());
   };
 
   const pickFolder = async () => {
@@ -719,7 +747,7 @@ export function App() {
     }
     if (next === "courses") void readLibrary();
     if (next === "plan") void readPlan();
-    if (next === null) window.requestAnimationFrame(() => composer.current?.focus());
+    if (next === null) window.requestAnimationFrame(() => composer.current.focus());
   }, [readLibrary, readPlan]);
 
   const startPaper = async (minutes: number) => {
@@ -841,7 +869,12 @@ export function App() {
         event.preventDefault();
         run();
       };
-      if (event.shiftKey) return;
+      if (event.shiftKey) {
+        const words = event.code === "KeyH" ? HELP.hint : event.code === "KeyL" ? HELP.lost : event.code === "KeyD" ? HELP.unknown : null;
+        const { session, openTask } = now.current;
+        if (words && (openTask !== null || answerOpenRef.current) && !busy(session)) take(() => help(words));
+        return;
+      }
       if (key === "k") take(() => openSheet(now.current.sheet === "commands" ? null : "commands"));
       else if (key === "o") take(() => openSheet("courses"));
       else if (key === "i") take(() => now.current.home && openSheet("course"));
@@ -852,7 +885,7 @@ export function App() {
       else if (key === "n")
         take(() => {
           setFresh(true);
-          window.requestAnimationFrame(() => composer.current?.focus());
+          window.requestAnimationFrame(() => composer.current.focus());
         });
       else if (key === "arrowup") take(() => scrollToDay(-1));
       else if (key === "arrowdown") take(() => scrollToDay(1));
@@ -962,9 +995,19 @@ export function App() {
 
   const lesson = Boolean(session.open || session.live);
   const writing = busy(session);
+  // The open task's own line: there while a task is open (or a reply might have set one).
+  const answerOpen = lesson && !starting && stopping === null && session.cards.length === 0 && (openTask !== null || (replyOpen && !writing));
+  answerOpenRef.current = answerOpen;
+  const photo = async () => {
+    const api = now.current.api;
+    if (!api) return [];
+    const saved: string[] = [];
+    for (const path of await api.pickFiles()) saved.push(await api.attach(path, "working"));
+    return saved;
+  };
   const lastItem = items[items.length - 1] ?? null;
   const lastSetsTask = lastItem !== null && lastItem.final && (lastItem.meta.posed !== null || taskText(lastItem.tutor) !== null);
-  const dock = openTask !== null && lesson && !writing && !(lastSetsTask && (place === "task" || place === "page")) ? openTask : null;
+  const dock = openTask !== null && lesson && !(lastSetsTask && lastItem?.final) ? openTask : null;
   const stopsToday = kept.stops.filter((s) => dayOf(s.ms) === day);
 
   // The one line to pick up, when no lesson is running in this window.
@@ -987,18 +1030,11 @@ export function App() {
   const composerHint = (() => {
     if (!lesson) return suggestion?.kind === "pick" || suggestion?.kind === "begin" ? (folders.length > 1 ? "Your other courses: ⌘O" : null) : null;
     if (writing) return "⌘. stops the reply";
-    if (place === "task" && (openTask || lastSetsTask)) return "Esc writes on the page instead";
-    if (place === "page" && openTask) return "Esc goes back to the task";
+    if (answerOpen) return "Esc: back to the task";
     return null;
   })();
   const composerShut = home?.sitting ? "The tutor waits while the paper runs." : !setupReady(setup) ? null : null;
-  const placeholder = !lesson
-    ? fresh || suggestion?.kind === "begin"
-      ? "What do you want to work on?"
-      : "Or write your own first line"
-    : place === "task" && (openTask || lastSetsTask)
-      ? ""
-      : "Write to the tutor";
+  const placeholder = !lesson ? (fresh || suggestion?.kind === "begin" ? "What do you want to work on?" : "Or write your own first line") : answerOpen ? "Or write on the page" : "Write to the tutor";
 
   const commands: Command[] = [
     ...(suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") ? [{ label: "Pick up the lesson", key: "↩", run: () => void start() }] : []),
@@ -1010,7 +1046,7 @@ export function App() {
     { label: "The plan", key: "⌘P", keywords: "agenda exam midterm schedule", run: () => openSheet("plan") },
     { label: "Settings", key: "⌘,", keywords: "font face size theme scheme dark light keys engine payment", run: () => openSheet("settings") },
     { label: "Add material", keywords: "files pdf notes slides", run: () => void now.current.api?.pickMaterial().then(addMaterial) },
-    { label: "Add a photo of my working", key: "⌘⇧A", run: () => composer.current?.focus() },
+    { label: "Add a photo of my working", key: "⌘⇧A", run: () => composer.current.focus() },
     { label: "Open a folder", run: () => void pickFolder() },
     { label: "New folder", run: () => void newFolder() },
     { label: "Find folders on this Mac", run: () => void findFolders() },
@@ -1154,10 +1190,10 @@ export function App() {
             )}
 
             {dock && (
-              <div className={place === "task" ? "row exercise dock open" : "row exercise dock"} data-role="open-task">
+              <div className="row exercise dock open" data-role="open-task">
                 <div className="gut" />
                 <div className="txt">
-                  <button className="dock-btn" onClick={() => setPlace("task")} title="Esc">
+                  <button className="dock-btn" onClick={() => setPlace("task")} title="The task you left open">
                     <LineText text={dock} />
                   </button>
                 </div>
@@ -1179,7 +1215,7 @@ export function App() {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setStopping(null);
-                          composer.current?.focus();
+                          composer.current.focus();
                         }
                       }}
                       data-drive="stop-line"
@@ -1188,43 +1224,67 @@ export function App() {
                 </div>
               </div>
             ) : (
-              (home || lesson) &&
-              setupReady(setup) &&
-              suggestion?.kind !== "upgrade" && (
-                <div className={place === "task" && lesson && (openTask || lastSetsTask || convEngine !== "direct") ? "row write in-task" : "row write"} key="composer">
-                  <div className="gut" />
-                  <div className="txt">
-                    <Composer
-                      ref={composer}
-                      place={lesson ? place : "page"}
-                      canMove={lesson && (openTask !== null || lastSetsTask)}
-                      tools={lesson}
-                      onPlace={setPlace}
-                      busy={writing || starting}
-                      shut={composerShut}
-                      placeholder={placeholder}
-                      hint={composerHint}
-                      draft={left.current.draft}
-                      onDraft={(text) => {
-                        if (text !== left.current.draft) touched.current = true;
-                        left.current = { ...left.current, draft: text, day };
-                        keepLeft(left.current);
-                      }}
-                      onSend={(text, at) => void say(text, at)}
-                      onEmptyReturn={!lesson && suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") && !fresh ? () => void start() : undefined}
-                      onHelp={help}
-                      onPhoto={async () => {
-                        const api = now.current.api;
-                        if (!api) return [];
-                        const saved: string[] = [];
-                        for (const path of await api.pickFiles()) saved.push(await api.attach(path, "working"));
-                        return saved;
-                      }}
-                      onNote={note}
-                    />
+              <>
+                {answerOpen && (
+                  <div className="row write in-task" key="answer-line">
+                    <div className="gut" />
+                    <div className="txt">
+                      <Composer
+                        ref={answerBox}
+                        place="task"
+                        canMove
+                        onMove={() => setPlace("page")}
+                        onFocus={() => setPlaceState("task")}
+                        tools
+                        busy={writing || starting}
+                        shut={composerShut}
+                        placeholder=""
+                        hint={writing ? null : "Esc: write on the page"}
+                        draft={left.current.answer}
+                        onDraft={(text) => {
+                          if (text !== left.current.answer) touched.current = true;
+                          left.current = { ...left.current, answer: text, day };
+                          keepLeft(left.current);
+                        }}
+                        onSend={(text, at) => void say(text, at)}
+                        onHelp={help}
+                        onPhoto={photo}
+                        onNote={note}
+                      />
+                    </div>
                   </div>
-                </div>
-              )
+                )}
+                {(home || lesson) && setupReady(setup) && suggestion?.kind !== "upgrade" && (
+                  <div className={answerOpen ? "row write page beside" : "row write page"} key="page-line">
+                    <div className="gut" />
+                    <div className="txt">
+                      <Composer
+                        ref={pageBox}
+                        place="page"
+                        canMove={answerOpen}
+                        onMove={() => setPlace("task")}
+                        onFocus={() => setPlaceState("page")}
+                        tools={lesson && !answerOpen}
+                        busy={writing || starting}
+                        shut={composerShut}
+                        placeholder={placeholder}
+                        hint={composerHint}
+                        draft={left.current.draft}
+                        onDraft={(text) => {
+                          if (text !== left.current.draft) touched.current = true;
+                          left.current = { ...left.current, draft: text, day };
+                          keepLeft(left.current);
+                        }}
+                        onSend={(text, at) => void say(text, at)}
+                        onEmptyReturn={!lesson && suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") && !fresh ? () => void start() : undefined}
+                        onHelp={help}
+                        onPhoto={photo}
+                        onNote={note}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
 
@@ -1247,7 +1307,7 @@ export function App() {
         </div>
       )}
 
-      {source && <SourcePanel source={source} sheet onClose={() => (setSource(null), composer.current?.focus())} onNote={note} />}
+      {source && <SourcePanel source={source} sheet onClose={() => (setSource(null), composer.current.focus())} onNote={note} />}
       {sheet === "commands" && <Commands commands={commands} onClose={() => openSheet(null)} />}
       {sheet === "courses" && (
         <Courses

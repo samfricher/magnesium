@@ -438,3 +438,16 @@ code { font-family: var(--mono); font-size: 0.86em; }
   .sheet { animation: none; }
   .row.working .txt::after { animation: none; content: "..."; }
 }
+
+/* The page's own line, under an open exercise: talk goes here. */
+.row.write.page.beside { margin-top: 1.5rem; }
+.row.write.page.beside textarea::placeholder { opacity: 0.7; }
+
+/* The answer line follows its task without a break in the rule. */
+.row.reply:has(+ .row.write.in-task) .txt,
+.row.reply:has(+ .row.exercise.answer) .txt { margin-bottom: 0; }
+.row.exercise.posed:has(+ .row.write.in-task) .txt { padding-bottom: 0; }
+.row.exercise.dock + .row.write.in-task { margin-top: 0; }
+.composer.in-task textarea { padding-top: 0.25rem; min-height: calc(var(--lead) * 1rem + 0.6rem); }
+/* A hint about Esc is for the line being written on. */
+.composer:not(:focus-within) .hint { visibility: hidden; }

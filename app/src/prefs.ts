@@ -69,7 +69,9 @@ export function applyPrefs(prefs: Prefs, save = true): void {
 export type Left = {
   folder: string | null;
   scroll: number;
+  /** The half-written line on the page, and the one inside the open task. */
   draft: string;
+  answer: string;
   place: "task" | "page";
   day: string;
   /** Plan changes noted today, kept so the agenda still says what moved after a restart. */
@@ -84,6 +86,7 @@ export function loadLeft(day: string): Left {
     folder: typeof saved.folder === "string" ? saved.folder : null,
     scroll: sameDay && typeof saved.scroll === "number" ? saved.scroll : 0,
     draft: typeof saved.draft === "string" ? saved.draft : "",
+    answer: typeof saved.answer === "string" ? saved.answer : "",
     place: saved.place === "page" ? "page" : "task",
     day,
     moved: sameDay && saved.moved && typeof saved.moved === "object" ? (saved.moved as Record<string, string>) : {},
