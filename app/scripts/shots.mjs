@@ -5,7 +5,7 @@
 //   npm run shots -- s3      only the states whose name contains "s3"
 //
 // The evidence contract's states come first, at 1040 by 720 in the dark and
-// the light scheme; `narrow-lesson` is a lesson at 720 by 560, dark only.
+// the light scheme; `narrow-lesson` is a lesson at 720 by 560, in both.
 // The rest show the other documents and setup states.
 
 import { mkdir } from "node:fs/promises";
@@ -29,7 +29,7 @@ const shots = [
   ["s4-return", "s4-return", 5600, BOTH],
   ["s5-week", "s5-week", 900, BOTH],
   ["s5-week-next", "s5-week-next", 1600, BOTH],
-  ["narrow-lesson", "s2-answer", 2600, DARK, { width: 720, height: 560 }],
+  ["narrow-lesson", "s2-answer", 2600, BOTH, { width: 720, height: 560 }],
   ["settings", "settings", 900, BOTH],
   ["open", "open", 900, BOTH],
   ["commands", "commands", 900, DARK],
