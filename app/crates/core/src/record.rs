@@ -655,6 +655,13 @@ pub struct Lesson {
 }
 
 impl Lesson {
+    /// A new sitting starts from what is due now: the checks and redos the
+    /// last one listed and did not pose are gone.
+    pub fn begin_sitting(&mut self) {
+        self.checks.clear();
+        self.redos.clear();
+    }
+
     /// Start a new day's list of answered skills when the day has changed.
     pub fn set_today(&mut self, day: &str) {
         if self.today != day {

@@ -207,6 +207,8 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 
 **Cold answers.** An answer is sent cold when it is a due quick check answered with no help, or when the tutor's block says it came from a blank page and the runtime would take it: no help, not a decline, and no answer on that skill earlier the same day as far as the engine knows. If the runtime still refuses it, the answer is sent again as not cold, so the mark is kept.
 
+**A new sitting** starts from what is due now: the quick checks and redos the last sitting listed and did not pose are dropped. The engine tells a sitting by the wall clock, as the runtime does, so a window left open while the Mac sleeps sees the new sitting.
+
 `crates/core/tests/direct.rs` drives it with a stand-in model and the real runtime. `crates/core/tests/live_direct.rs` runs it against the real Claude Code (ignored by default; it starts a model on your subscription).
 
 ## Where things are

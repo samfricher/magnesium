@@ -468,8 +468,10 @@ struct State {
     /// The quick-check names last told to the model.
     labels_told: Vec<String>,
     labels: Vec<String>,
-    /// When the learner last sent a message, to tell a new sitting.
-    last_message: Option<Instant>,
+    /// When the learner last sent a message, to tell a new sitting. The
+    /// wall clock, as the runtime's: on macOS an `Instant` stops while the
+    /// Mac sleeps, so a window left open overnight would see no new sitting.
+    last_message: Option<SystemTime>,
     /// The runtime was asked for what this sitting opens with.
     checks_asked: bool,
     /// The turn in which the learner chose to go on without what the
@@ -502,7 +504,7 @@ impl State {
     /// It is listed again if it is still due.
     fn begin_sitting(&mut self) {
         self.checks_asked = false;
-        self.lesson.redos.clear();
+        self.lesson.begin_sitting();
     }
 }
 
@@ -1107,13 +1109,15 @@ impl Prepared {
 fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str) -> Prepared {
     let host = &shared.host;
     let mut state = lock(&shared.state);
-    let new_sitting = state
-        .last_message
-        .is_none_or(|last| last.elapsed() > SITTING_GAP);
+    let new_sitting = state.last_message.is_none_or(|last| {
+        SystemTime::now()
+            .duration_since(last)
+            .is_ok_and(|gap| gap > SITTING_GAP)
+    });
     if new_sitting {
         state.begin_sitting();
     }
-    state.last_message = Some(Instant::now());
+    state.last_message = Some(SystemTime::now());
     let mut facts = Facts {
         now: local_now(),
         full: !state.told && !shared.resumed,
@@ -2283,6 +2287,45 @@ mod tests {
         state.begin_sitting();
         assert!(state.lesson.redos.is_empty());
         assert!(!state.checks_asked);
+    }
+
+    #[test]
+    fn a_new_sitting_drops_the_checks_the_last_one_listed_and_did_not_pose() {
+        let mut state = State {
+            checks_asked: true,
+            ..State::default()
+        };
+        state.lesson.checks = ["sign of b", "reading a"]
+            .into_iter()
+            .zip(1..)
+            .map(|(label, number)| record::DueCheck {
+                number,
+                label: label.into(),
+                misses: vec![],
+                question: None,
+                key: None,
+            })
+            .collect();
+        // Check 1 is posed; check 2 is listed and not posed.
+        state.lesson.apply(
+            &record::parse(r#"{"answer": null, "task": "What is b in x² − 5x?"}"#).unwrap(),
+            &Message::default(),
+            "Quick check 1: What is b in x² − 5x?",
+            "r-1",
+        );
+        assert_eq!(state.lesson.checks.len(), 1);
+        // Hours later a new sitting begins and brings no list, as when
+        // nothing is due or another conversation took the opener. The
+        // tutor remembers check 2 and poses it: it binds nothing.
+        state.begin_sitting();
+        assert!(state.lesson.checks.is_empty());
+        state.lesson.apply(
+            &record::parse(r#"{"answer": null, "task": "What is a in 3x² + x?"}"#).unwrap(),
+            &Message::default(),
+            "Quick check 2: What is a in 3x² + x?",
+            "r-2",
+        );
+        assert_eq!(state.lesson.task.as_ref().unwrap().check, None);
     }
 
     #[test]
