@@ -1,0 +1,51 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/settings-dark.png", "shots/commands-dark.png", "shots/reopen-dark.png", "window/s2-answer-dark.png"],
+      "blocks_next_point": "It does not reopen exactly as I left it. On shots/reopen-dark.png the open question ('What is Vmax, with its units?') comes back as a plain paragraph with no task rule and no answer line, and the input says '↩ say it'. Compare shots/s2-start-dark.png, where the same question is a live task. Also, ⌘K does not reach setting values: in my turn, typing 'mono' offered only 'Say to the tutor: \"mono\"', and 'dark' only opened Settings. Otherwise this is the closest a study app has come to feeling like mine. My material, in Charter, is the only large text. The app talks in one small SF line. ⌘, has face, my-words face, size, measure, scheme, ink and a hint toggle, plus 'Edit as text' for any font, colour or key. All of it applied live from the arrow keys."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s1-cold-first-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "Every open task carries three app-made lines at its foot: the answer rule, '› or say something else' and a key-hint line (shots/s2-start-dark.png, window/s2-start-dark.png). That is the only chrome left in a lesson. The rest surface is three lines and a caret: course, next thing, where I stopped. There is no sidebar, strip, count or library."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "live/s5-week-next-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "After a week away, the one sentence under the title is about owed work: 'A few questions from earlier come first, then where you stopped.' (shots/s5-week-dark.png). Return then opens a 'From earlier' question rather than my own place (shots/s5-week-next-dark.png). There is no count, but it still leads with what is due. Everything else is one key. Return starts the chosen thing, and typing anything starts that instead. ⌘Y shows past work as dated plain sentences ('right, on your own', 'not right yet'), with no streak, XP or congratulations."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/plan-after.json", "live/attempts.json", "window/s3-after-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "In the live run, what is in view after the plan change is the tutor's own markdown table (live/s3-after-dark.png). The window's record-drawn 'The plan changed' block and the input are below the fold. So the first confirmation I see is the tutor's claim, not the plan file's. The stand-in run shows that block in view (window/s3-after-dark.png). The behaviour itself is right. The real tutor asked for the date, the date went in on the talk line, and plan-after.json moved the exam to 29 Nov and re-spaced the blocks. attempts.json stayed empty. The off-plan n − 1 answer left the task as one quiet line at the foot, and 'back to the task' made it live again with the caret in it (live/s4-return-dark.png). In my turn, ⌘P, typing and Return changed the plan from inside the plan layer, and ↑ went back into the task without asking the tutor."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s3-after-light.png", "shots/settings-light.png", "shots/narrow-lesson-dark.png", "live/s3-after-dark.png"],
+      "blocks_next_point": "Two small faults. In shots/s5-week-next-dark.png, 'From earlier' sits inline before the question in a smaller sans, so the question starts at a different x than every other task. In my turn at text size 19, the lesson's task rule showed outside the left edge of the settings sheet. Otherwise it is very consistent. There is one ink. Serif for the material, SF for me and the app. Every layer is the same sheet in both schemes, the KaTeX sits well beside Charter, and the live markdown table renders cleanly. The help layer's footer ('1 2 3 or ↩ ⌥1 ⌥2 ⌥3 in your answer: sure, unsure, a guess') packs too much into one line."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "live/s2-answer-dark.png", "window/s2-answer-dark.png", "shots/s4-offplan-dark.png", "shots/reopen-dark.png"],
+      "blocks_next_point": "The tutor's words and the record's line can contradict each other right next to each other. In my turn the tutor said 'Right: s/√n = 10/5 = 2 minutes' while the window said 'Not marked: only a first try at a task is marked, and this was another try.' In live/s2-answer-dark.png the tutor said 'That's the rule' over 'Not marked: the record kept no mark for this answer.' Both are truthful, but I have to work out which one to believe. Elsewhere it is always clear what happens next. The key-hint line changes with the field ('↩ hand in your answer' versus '↑ answer the task'), and a mark never comes from the tutor's words."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Measured startup to first real content is 582 to 848 ms (window/perf.json: first 848, main 616, week 582; my turn 762). That is well ahead of Obsidian but not native-instant. Input latency is median 17 ms and p95 19 to 20 ms, which is just over one 16 ms frame. In my turn, layers and setting changes painted with no visible lag."
+    }
+  },
+  "still_dislike": [
+    "Reopen does not restore the open task as a task: shots/reopen-dark.png shows the question as plain prose with '↩ say it', not the answer line I left. That breaks 'reopens exactly as I left it'.",
+    "⌘K is not the universal entry point it claims to be. Setting values are not commands: 'mono' offers only 'Say to the tutor', and 'dark' only opens Settings. I want 'Reading face: Mono' or 'Scheme: Dark' to be one Return away, the way Obsidian and Sublime work.",
+    "After a long live reply, the view stops mid-reply with the input and the record's 'The plan changed' block off-screen (live/s3-after-dark.png). The tutor's table is what I see, not the record."
+  ],
+  "bugs": [
+    "shots/reopen-dark.png: after reopening, the open task ('The line meets the y-axis at 0.25 s/µM. What is Vmax, with its units?') is drawn as a plain paragraph with no task rule or answer line, and the input reads '↩ say it'. shots/s2-start-dark.png shows the same task live, with an answer line.",
+    "Cosmetic, from my window turn at text size 19: the lesson's task rule shows outside the left edge of the settings sheet.",
+    "window/s3-before-dark.png and live/s3-before-dark.png: the quiet open-task line at the foot is cut mid-word with an ellipsis ('margin of error o…', '32 min…'), so the task I am supposed to remember cannot be read."
+  ],
+  "window_turn": "Keyboard only, in about 3 minutes, in a lesson earlier judges had left open (light scheme). ⌘, opened settings. → set Iowan Old Style, ↓↓→ set 19 px, and Scheme → Dark. Each change applied live to the lesson behind the sheet. ⌘/ then 1 asked for a hint. 'b = 5' and Return handed it in on the task line. The tutor said 'Not quite', and the window said 'Not marked: the record kept no mark for this answer' rather than inventing a mark. Esc moved to the talk line. 'by the way, is a t interval just a z interval with fatter tails?' got the stand-in's canned unmarked reply, and the task stayed as one quiet line at the foot. ↑ put the caret straight back in the task. ⌘P opened the plan with the current item marked. Typing 'I skipped three days and the midterm moved, change the plan' there and pressing Return produced the tutor's reply, then a record-drawn 'The plan changed' block (Midterm 2: Sun 29 Nov → Sun 6 Dec; Confidence intervals now before Hypothesis tests). ⌘K with 'mono' offered only 'Say to the tutor', and with 'dark' only 'Settings'. ⌘Y listed 'standard error of a mean, Thu 12 Nov, not right yet'. ↑ and a right answer gave the tutor's 'Right:' with the window's 'Not marked: only a first try at a task is marked, and this was another try.' perf: median 17 ms, p95 20 ms, startup 762 ms. I put the face, size and scheme back to Charter, 17 and Like the Mac, then released the lock. I could not quit and relaunch, so I judged reopen only from shots/reopen-dark.png."
+}

@@ -1,0 +1,60 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s2-start-dark.png", "shots/settings-dark.png", "shots/s1-cold-light.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The material really is the interface: a 66-character Charter column with KaTeX, the learner in SF, no chrome, and settings that apply live (my turn: Iowan Old Style at 19 in dark repainted the lesson at once). What still sounds like an app is its own sentences on every state: '↩ hand in your answer  ⌘/ help  esc say something else' under each task, 'or say something else' in each composer, and rule explanations like 'Not marked: only a first try at a task is marked, and this was another try.' under an answer (my window turn). They are set in the same quiet grey as the learner's own subtitle (shots/s1-cold-dark: placeholder, hint line and 'You stopped at step 3' all measure #979896 on #1C1D20), so the app talks at the same volume as the material's secondary text."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-light.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "Cold open is five short lines on an empty ground, with no counts, no sidebar and no footer, in both schemes. That is the brief done exactly. What keeps it from 10 is that, while a task is open, the foot has three layers stacked within about 90 px: the answer rule, '› or say something else' and the hint line (shots/s2-start-dark, y 430 to 500). While talking it has the dimmed pinned task, the composer and the hints (shots/s4-offplan-dark). There are two fields to type in at once, each with its own marker (an ink bar and a ›)."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "Return starts the next thing, and nothing is owed or counted: s5-week says 'A few questions from earlier come first' with no number, and ⌘Y is dated sentences with no streaks. But the one action is the weakest thing on the screen. '↩ carry on' is a 12.5 px quiet-grey hint below the composer, and the placeholder above it starts with 'or' ('or say what you would rather do'), so it is an alternative to something that has no visible form (shots/s1-cold-dark, window/s1-cold-dark). The next step depends on reading the smallest grey line."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "live/s2-answer-dark.png"],
+      "blocks_next_point": "Live, this works. The tutor asked for the new date and the record moved (live/plan-after.json: exam 22 → 29 Nov, blocks re-dayed). The n − 1 tangent stayed unmarked with the task kept as one quiet line at the foot. 'OK, back to the task' made it the live task again with the caret in it (live/s4-return). An unmarked answer says so truthfully (live/s2-answer: 'Not marked: the record kept no mark'). What blocks the next point: at the moment of the change (live/s3-after-dark) the screen is scrolled to the start of the reply, so the only visible confirmation is the tutor's own Markdown table. The record-drawn 'The plan changed' card and the composer are below the fold. The ⌘P layer also shows no day per block (my turn; shots/plan-dark), so a re-spacing that changes only days, like this live one, cannot be seen in the plan at all."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s3-after-light.png", "shots/commands-dark.png", "shots/s1-cold-first-dark.png", "shots/permission-light.png", "window/s3-after-dark.png", "shots/narrow-lesson-dark.png"],
+      "blocks_next_point": "The system holds together. There are three faces with clear jobs, a major-third scale, 17/1.62 serif prose and one ink. Every grey passes AA: quiet text measures 5.82:1 on the dark ground and 4.88:1 on the light one, and ink 7.45 and 9.23. Every layer is one component, and the narrow column reflows cleanly. The tier below the text is flat, though: one grey does six jobs (course label, subtitle, placeholder, key hints, the record's lines, the pinned task), so nothing separates something you can type into from something you just read. Below that are pixel faults. Layer input text sits about 4 px left of the list rows (commands, plan, courses: input x≈250, rows x≈254). The selected row on decision screens stops at x≈678 while the column runs to 784. The permission card nests a second ink bar inside its own ink rule. Content slides under the traffic lights and is cut mid-glyph at the top edge with no fade (window/s3-after-dark)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s3-before-dark.png", "shots/s3-after-dark.png", "shots/s4-return-dark.png", "shots/s5-week-next-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "What just happened is always stated by the record ('Marked right, on your own.', 'The plan changed', 'From earlier'). What to do next is always in the hint line ('↑ answer the task' while talking). But once the heading scrolls away, nothing on the surface says which lesson or step you are in (shots/s3-after-dark, shots/s4-offplan-dark, window/s4-offplan-dark start mid-reply). The steps exist only in ⌘P, so 'where am I' takes a keystroke."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Typing is at one frame: 17 ms median, 19 ms p95, 20 ms max over 60 samples, the same in every run including mine. Startup is 582–848 ms against the stand-in (window/perf.json) and 628–1106 ms live, a second time measured 762 ms. That is better than an Electron editor but not Sublime's sub-half-second. The first open at 848 ms (1106 ms live) is what blocks a 9."
+    }
+  },
+  "still_dislike": [
+    "One quiet grey (#979896 dark, #6D6E70 light) does every secondary job: subtitle, placeholder, key hints, the record's lines, the pinned task, and even the learner's own 'Can I have a hint?'. The input reads like a caption, and on s1-cold the one action ('↩ carry on') is the least visible thing on the page. Split this into at least two tiers (material secondary and app chrome), and give the composer a visible field state.",
+    "The surface has no top edge. Text scrolls under the traffic lights and is cut mid-line (window/s3-after-dark, shots/s3-before-dark), and the lesson heading scrolls away with it, so mid-lesson nothing names the lesson or step. A thin fixed band, or a fade under the title bar that carries the lesson name, would fix both.",
+    "Two fields at once while a task is open (the answer rule plus '› or say something else', 30 px apart, shots/s2-start-dark), plus a hint line under both. The concept defends it, but at the pixel level it is two inputs, two markers and three strata where one would read better."
+  ],
+  "bugs": [
+    "Layer input text is about 4 px left of the list rows below it: shots/commands-dark.png (placeholder x≈250, rows x≈254 at 1x), the same in shots/plan-dark.png, shots/courses-dark.png, shots/material-dark.png and the real window's ⌘P layer.",
+    "On decision screens the selected-row fill ends at x≈678 while the column, the body copy and the heading rule run to about 784: shots/s1-cold-first-dark.png, shots/paper-dark.png, shots/upgrade-dark.png, shots/setup-replace-dark.png.",
+    "Permission card: the selected 'Allow once' has its own ink bar nested about 20 px inside the card's ink rule, giving two parallel ink verticals (shots/permission-light.png, shots/permission-dark.png).",
+    "Content scrolls under the traffic lights and is clipped mid-glyph at the window's top edge with no fade: window/s3-after-dark.png ('Marked right, on your own.' at y≈7), window/s4-offplan-dark.png, shots/s3-before-dark.png (the V_max line cut at y=0).",
+    "The same link is styled two ways: 'Week 4 slides, p. 12' is underlined in shots/s2-answer-dark.png and shots/reopen-dark.png but plain in shots/s2-start-dark.png and shots/permission-dark.png.",
+    "The ⌘/ help layer opens at the top of the window, about 360 px from the answer line it acts on. In shots/help-light.png its top edge cuts through a line of body text (y≈83).",
+    "Learner lines are inconsistent: the learner's 'Can I have a hint?' is drawn in quiet grey while their other lines are in full text colour (real window, my turn).",
+    "In settings, the plain-value rows ('any font, colour or key', 'Magnesium, until this lesson ends') end about 2.5 px right of the underlined option rows (shots/settings-dark.png: full-size x 1615 vs 1610).",
+    "live/s3-after-dark.png: after the plan change the view is left at the start of the reply, so the record-drawn plan card and the composer are off-screen. The only visible confirmation is the tutor's own table.",
+    "The plan layer shows no day per block (shots/plan-dark.png, and the real window's ⌘P), so a change that only re-spaces days (live/plan-after.json) is invisible in the plan.",
+    "Learner maths mixes faces in one line: 'V_max' is set in KaTeX serif and '= 4 µM/s' in SF (shots/s2-answer-dark.png), which breaks the two-voices type rule.",
+    "shots/ has narrow-lesson-dark only. There is no narrow-lesson-light, so the narrow size is not shown in the light scheme."
+  ],
+  "window_turn": "About 4 minutes, keyboard only. The window reopened where the previous judge left it: mid-lesson in light, with history, a collapsed plan-change line and a truthful 'Not marked: only a first try at a task is marked, and this was another try.' under a retry, under a tutor line that began 'Right:'. ⌘P opened the plan layer over the lesson with 'Midterm 2, Sunday 6 December / moved from Sun 29 Nov' and the swapped rows tinted 'moved up / moved down'. It has no days per block, and its input text sits about 4 px left of the rows. ⌘, opened settings. I used ← → and ↑ ↓ to set Iowan Old Style, size 19 and Dark, and the lesson behind repainted instantly with nothing else moving. Esc moved focus from the task to the conversation line. 'by the way, does the t distribution ever become exactly normal?' came back as unmarked talk, with the open task kept as one dimmed, truncated line at the foot and the hint '↑ answer the task'. ↑ put the caret back in the task. 'Can I have a hint?' sent from there was drawn as a quiet-grey learner line, unlike my other lines. Typing latency measured 17 ms median, 19 ms p95, startup 762 ms. I set Charter, 17 and Like the Mac back before releasing the lock."
+}

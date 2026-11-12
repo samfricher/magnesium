@@ -1,0 +1,57 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The structure is different, not just the paint. FIRST SCREEN: the old one was a Library page (baseline library.jpg) with a 'Next' card, the other course cards, levels, proof bars, '5 questions due today' and two buttons. The new one (shots/s1-cold-dark) is one pre-chosen next thing, three lines and a caret: Return starts it, and typing anything starts something else. MOVING AROUND: the old app had pages with back links (Library > Course > Proofs, Lesson, then a Summary). Here there are no pages. Courses, plan, material, your work and settings are panels opened over the one surface with ⌘O/⌘P/⌘E/⌘Y/⌘, and closed with Esc (shots/courses-dark, plan-dark, material-dark, work-dark, settings-dark). LESSON, TASK, ANSWER: the old lesson (baseline session.jpg) had one 'Your answer' box under everything, a 'Step 3 of 5' strip, End lesson, and Hint/I don't know/I'm lost buttons. Here the answer is written on a line inside the task, and talk has its own line that is always there and is never marked (shots/s2-start-dark, live/s4-offplan-dark, and checked in my turn). Help moved to ⌘/. PROGRESS: the old proof dots, levels, 'To prove today', study-day squares and the 'One proof earned' summary (baseline progress.jpg, summary.jpg) are all gone. ⌘Y is a list of dated sentences (shots/work-dark), and 'Stop here for now' goes straight back to the start line with no summary (my turn). WHAT CARRIED OVER: the inside of the lesson column. The tutor still writes in a serif, the current question still has a rule down its left side, the mark is still small type under the answer, 'You stopped at step 3, what the y-intercept gives' is the old course page's line almost word for word, and ⌘K existed before. So the lesson's small-scale layout will feel familiar. Everything around it is a different idea."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-answer-light.png", "shots/settings-dark.png", "shots/commands-dark.png", "shots/reopen-dark.png", "shots/reopen-light.png"],
+      "blocks_next_point": "It does not reopen exactly as left. In shots/reopen-dark.png the open question 'What is V_max, with its units?' comes back as plain prose: no task rule, no answer line, and the only field is the talk line ('↩ say it'). An answer typed after reopening would therefore go as talk and could never be marked. In shots/s2-start-dark.png the same question is a live task. Also, shots/reopen-light.png shows the same state scrolled to a different place from the dark shot."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "During a lesson, three pieces of furniture are stacked under every task: the answer rule, '› or say something else' and the key-hint line ('↩ hand in your answer ⌘/ help esc say something else') (shots/s2-start-dark.png). While you talk, a parked-task line joins them (shots/s3-after-dark.png). The rest surface holds almost nothing; the lesson's foot still holds four things."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "window/s2-start-dark.png", "live/s5-week-next-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "The one-key start can land one key short of the task. In my turn I chose Stop, then pressed Return on 'carry on'. The tutor said 'Go on.' and the task came back only as a dimmed, cut-off line ('…s = 10 mi…') with the caret on the talk line; ↑ was needed before I could answer. The task is not live every time Return starts or resumes."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/s2-answer-dark.png", "window/s3-after-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "In the real lesson, the window's own confirmation of the plan change is not on screen. live/s3-after-dark.png keeps the learner's line pinned at the top, and the long reply pushes the window's 'The plan changed' rows, the parked pizza task and the talk line below the fold. The only visible sign of the change is the tutor's own table, i.e. the tutor's words. window/s3-after-dark.png shows the block working with the stand-in. Talk stayed unmarked, the off-plan answer was never marked, and the 'back to the task' turn made the task live again with the caret in it (live/s4-return-dark.png)."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/plan-dark.png", "shots/plan-light.png", "shots/settings-dark.png", "shots/narrow-lesson-dark.png", "live/s3-after-dark.png"],
+      "blocks_next_point": "The two lists in the plan panel look like one. In shots/plan-dark.png the lesson's steps ('Write the rate equation' … 'Check the units') sit under a small grey caption with the same ✓/●/○ marks, the same serif and the same row height as the plan's items. The 'Repair' item and its own steps therefore look like two items of the same list. Smaller faults: the settings panel shows read-only rows ('Lessons run on: Magnesium, until this lesson ends') in the same form as choosable options, and the parked task is cut off mid-word ('margin of error o…', window/s3-before-dark.png)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-start-dark.png", "shots/s3-after-dark.png", "shots/s4-return-dark.png", "live/s2-answer-dark.png", "window/s2-answer-dark.png", "shots/reopen-dark.png"],
+      "blocks_next_point": "Feedback and the next task run together. In window/s2-answer-dark.png the tutor's verdict 'Right: s/√n = 10/5 = 2 minutes. Next step.' is drawn inside the ruled block of the next task. 'What just happened' and 'what to do next' read as one question, right under the record's 'Marked right, on your own.' On the plus side, a missing mark is explained in the record's terms ('Not marked: the record kept no mark for this answer.', live/s2-answer-dark.png), and the hint line always names what Return does."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 582–848 ms with the stand-in (window/perf.json: first 848, main 616, week 582) and up to 1106 ms with the real Claude Code (live/perf.json: first 1106, week 1010). That is faster than Obsidian but above the half-second of a native editor. Typing is effectively one frame: median 17 ms, p95 19 ms, max 20 ms, and I measured the same in my turn."
+    }
+  },
+  "still_dislike": [
+    "The record's proof that the plan changed can end up off screen. In live/s3-after-dark.png the long reply pushes 'The plan changed' rows, the parked task and the talk line below the fold, so the learner sees only the tutor's table. Keep the record's lines and the input in view after a reply.",
+    "Reopening drops the open task. In shots/reopen-dark.png the question comes back as prose with only a 'say it' line, so the learner can no longer hand in an answer that would be marked.",
+    "The lesson's foot is crowded: the answer rule, '› or say something else', the key-hint line, plus a parked-task line while you talk (shots/s3-after-dark.png). The idea that the place is the label needs a permanent line of instructions to explain it."
+  ],
+  "bugs": [
+    "shots/reopen-dark.png: after reopening, the open task 'What is V_max, with its units?' has no task rule and no answer line. The only field is the talk line ('↩ say it'), although the same question is a live task in shots/s2-start-dark.png.",
+    "shots/reopen-light.png vs shots/reopen-dark.png: the same reopen state shows two different scroll positions in the two schemes. Light is mid-history, dark is at the bottom.",
+    "live/s3-after-dark.png and live/s3-after-light.png: after the plan-change reply, the composer, the parked task and the window's 'The plan changed' rows are all below the fold. No input is visible on screen.",
+    "window/s2-answer-dark.png: the tutor's feedback ('Right: … Next step.') is drawn inside the next task's ruled block instead of as prose above it, as it is in shots/s2-answer-dark.png.",
+    "Real window, my turn: Stop here for now, then Return on 'carry on'. The tutor's 'Go on.' left the task parked as a dimmed, cut-off line with the caret on talk, and ↑ was needed to answer. This is partly the stand-in tutor's reply, but the task was never made live."
+  ],
+  "window_turn": "Took the lock at 15:01 and released it at 15:03. The window was mid-lesson from an earlier judge, in the light scheme, and I did everything from the keyboard. ⌘P opened the plan panel over the lesson. It matched the record: 'Midterm 2, Sunday 29 November — moved from Sun 22 Nov', Hypothesis tests 'moved up', Confidence intervals 'moved down'. ⌘Y showed one row, 'standard error of a mean — Thu 12 Nov, not right yet', which is the record's mark for the earlier wrong first try; there were no dots or levels. ⌘K listed help, the plan, courses, material, your work, settings, 'Stop here for now' and 'Work on …' for each plan item. I typed 'b = -5' on the talk line: it appeared as my line with the › and got no mark and no 'not marked' note, so talk stays unmarked. The earlier judge's 'b = -5' on the answer line had correctly said 'Not marked: only a first try at a task is marked'. 'Stop here for now' gave no summary screen and went straight back to the start line ('Sampling distributions / You stopped at: What is the standard error of the mean? / ↩ carry on'). Return resumed, but the tutor said 'Go on.' and the task stayed parked as a dimmed, cut-off line until ↑ put the caret back in it. The perf op gave median 17 ms and p95 19 ms. ⌘, then → changed the reading face from Charter to Iowan Old Style live with the keyboard; I set it back before releasing the lock."
+}

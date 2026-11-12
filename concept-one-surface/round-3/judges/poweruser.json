@@ -1,0 +1,53 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/settings-dark.png", "shots/reopen-dark.png", "shots/commands-dark.png", "window/s4-return-dark.png"],
+      "blocks_next_point": "The window still talks over my material: a band at the foot repeats the record's line that is already shown above it ('Marked right, on your own.' twice on shots/s2-answer-dark.png; the plan change twice on shots/s3-after-dark.png), and I can't switch it off the way I can switch off the key hints. A tool I own says a thing once. The 'Change a file: Allow once / Always allow / Refuse' card (shots/permission-dark.png) is the one place it still asks me for something."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s4-return-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "At rest it is three lines and a field, which is right. Mid-lesson the foot stacks up to three things under the reply: the plan-change card, the faded open task, and the footer restating the card (shots/s3-after-dark.png, window/s3-after-dark.png). The calmest moment of a lesson is still busier than it needs to be."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "In the demo the rest line says where I stopped ('You stopped at step 3…', shots/s1-cold-dark.png). After a week the real window shows only the block title and '↩ carry on' (window/s5-week-dark.png, live/s5-week-dark.png). Return then opened the flour-bag question, which that screen never mentioned (live/s5-week-next-dark.png), so the one key does something it never named."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "With the real tutor the plan really changed (exam moved to 29 Nov, blocks re-spaced, per live/plan-after.json), off-plan talk stayed unmarked (live/attempts.json is empty), and 'back to the task' put the caret back in the task. But on live/s3-after-dark.png the foot band covers the tutor's new-dates table after its first row, and the window's own 'The plan changed' card is not on screen. The only visible sign of the change is the one-line footer."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-start-dark.png", "window/s2-start-dark.png", "shots/s3-after-dark.png", "shots/narrow-lesson-dark.png", "shots/plan-dark.png", "shots/settings-light.png"],
+      "blocks_next_point": "The edge fades cut text mid-glyph. The course name above the lesson heading is sliced in half on every lesson start (shots/s2-start-dark.png, window/s2-start-dark.png). The sticky header sits on ghost fragments of faded maths (shots/s3-after-dark.png). The foot band slices a line of prose through its middle at the narrow size (shots/narrow-lesson-dark.png). The type and the single layer component are otherwise very good in both schemes."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s2-answer-dark.png", "window/s2-answer-dark.png", "live/s2-answer-dark.png", "shots/s3-before-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "The record's footer sits directly under the new, unanswered task. On shots/s2-answer-dark.png and window/s2-answer-dark.png, 'Marked right, on your own.' appears right below the empty Km / margin-of-error line and reads as the mark for a question I haven't answered yet. On live/s2-answer-dark.png the tutor says 'That's right' over a bare 'no mark', and the reason is only on hover."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "window/perf-first.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Keystroke to paint is 17 ms median and 19 ms p95, essentially one frame. Startup is 591 to 643 ms warm and 932 ms on first open (window/perf.json), and 1090 ms first open live. That is well ahead of Obsidian but still over the half-second where a native editor feels instant."
+    }
+  },
+  "still_dislike": [
+    "The foot band. It repeats the record's line already printed above it (shots/s2-answer-dark.png, shots/s3-after-dark.png) and sits on top of the tutor's reply: it hides the new-dates table on live/s3-after-dark.png and cuts a prose line on shots/narrow-lesson-dark.png. Say it once, in place, and never cover my material.",
+    "The top fade slices the course name on every lesson start and leaves glyph fragments under the sticky header (shots/s2-start-dark.png, window/s2-start-dark.png, shots/s3-after-dark.png). It looks broken in an app whose whole identity is clean text.",
+    "The real rest screen doesn't name where I stopped (window/s5-week-dark.png, live/s5-week-dark.png: title + 'carry on' only), so '↩ carry on' is a blind key; the demo's 'You stopped at…' line should be real."
+  ],
+  "bugs": [
+    "The course name above the lesson heading is clipped to half height under the top edge at the start of every lesson: shots/s2-start-dark.png, shots/reopen-dark.png, window/s2-start-dark.png, live/s5-week-next-dark.png.",
+    "The foot band overlays the conversation instead of the conversation scrolling clear of it. The tutor's table is cut after row 1 on live/s3-after-dark.png and live/s3-after-light.png, and the 'The plan changed' card is not visible. On shots/narrow-lesson-dark.png a prose line is cut through its middle.",
+    "The record line is shown twice while both are in view: shots/s2-answer-dark.png and window/s2-answer-dark.png ('Marked right, on your own.' under the answer and again under the next task's line), and shots/s3-after-dark.png and window/s3-after-dark.png (the plan-change card and a footer with the same words).",
+    "The sticky header ('Reading Vmax and Km…  What the slope gives') sits over half-faded fragments of the maths line below it: shots/s3-after-dark.png and shots/s3-after-light.png.",
+    "Demo plan layer: list order and dates disagree. 'Cold redos… moved up, Sat 14 Nov' is listed above 'Paper B… moved down, Fri 13 Nov' (shots/plan-dark.png). In my turn the real plan layer did the same with the stand-in's record ('Hypothesis tests, moved up, Mon 16 Nov' above 'Confidence intervals, moved down, Sat 14 Nov'), and the window shows this without comment."
+  ],
+  "window_turn": "Took the lock and spent about 3 minutes, keyboard only. The window reopened exactly where the previous judge left it: the same lesson, the same scroll, the same open task. ⌘, opened settings. With ↑↓ and ←→ I changed the reading face to Iowan, the size to 19 and the scheme to Dark, and each change applied live behind the sheet; I set them back the same way before leaving. Esc stepped out of the task to the talk line, with the task pinned faded above it. I typed 'by the way, what is a z-score?' and Return: it was answered, unmarked, and I stayed on the talk line. ⌘P showed the plan with the moved rows marked and the exam date. I typed 'change the plan, put confidence intervals back first' into its own line and Return: the sheet closed, the tutor answered, and a 'The plan changed' card showed Midterm 2 Sun 29 Nov → Sun 6 Dec and the reorder, read from the record. The footer then repeated the card's words. ↑ moved the field back into the task, and a retry ('b = 5') showed no mark, as the concept says a retry should. ⌘K opened one layer with shortcuts listed for everything. Typing latency measured 17 ms median, 19 ms p95. I never needed the mouse. Things I noticed: the open task pinned at the foot overlapped the last line of the tutor's reply ('Try it once' cut off), and the hint row of the ⌘K sheet sits tight against its bottom edge. I did not try 'Edit as text…', because it may open a file outside the scratch folder."
+}

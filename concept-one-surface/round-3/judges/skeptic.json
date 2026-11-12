@@ -1,0 +1,61 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The old design is a set of pages: Library (a 'Next' card with exam countdown, skills proven, '5 questions due today', level bar, Continue and Course page buttons, then every course with its own due count and level, baseline-round9/library.jpg) leading to a Course page with Proofs dots (course.jpg), a Proofs page (progress.jpg), a lesson with a top strip ('End lesson', 'Step 3 of 5' pill, Menu), margin labels and a boxed 'Your answer' composer with Send and Hint/I don't know/I'm lost buttons (session-marked.jpg), and an end-of-lesson summary that says 'One proof earned' with a level bar, a week strip and '4 days running' (summary.jpg). This build has none of those places. There is one surface: at rest it is the course name, one lesson title, one line saying where you stopped and one input with '↩ carry on' (shots/s1-cold-dark.png). Return turns that same surface into the lesson. Courses, plan, material, your work and settings are layers called up by ⌘O, ⌘P, ⌘E, ⌘Y and ⌘, over the lesson, not pages (shots/courses-dark.png, plan-dark.png, work-dark.png). Levels, proof dots, due counts, study days, countdowns and the summary are gone. Progress is a ledger in words ('Thu 12 Nov, right, on your own', shots/work-dark.png). The answer box is replaced by where you type: an answer line opens inside the task, and the '›' line beside it is talk that code never marks (shots/s4-offplan-dark.png). Plan changes come from the record and show inline under the reply (window/s3-after-dark.png). Some lesson internals carry over: the ⌘K palette, serif type for the tutor and sans for the learner, a left rule on the task, the hint/lost/don't-know trio (now ⌘/), 'Marked right' wording, and a vertical transcript with the input at the bottom. Those are parts of the lesson. The structure is new."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/reopen-dark.png", "shots/s2-answer-dark.png", "window/s1-cold-dark.png"],
+      "blocks_next_point": "The only large text is the material, and settings let you change the face, your words' face, size, line length, scheme and ink, or edit everything as text. The reopen keeps the draft. But the app still speaks in its own small voice on every lesson screen, and the key-hints switch cannot silence it. The persistent record line under the input repeats what is already on screen: 'Marked right, on your own.' appears twice on shots/s2-answer-dark.png, and 'no mark' appears twice on live/s2-answer-dark.png. Its reason is available only on hover."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s4-offplan-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "Opened cold, the surface is three lines and an input, compared with about ten facts and two buttons per course in baseline-round9/library.jpg. The calm breaks exactly when something happens: on shots/s3-after-dark.png and window/s3-after-dark.png the plan change is drawn twice, once as the card under the reply and again as a two-line blue line at the foot."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "Return starts it, typing starts it, nothing is counted and there are no streaks. The week-away screen is weaker in both builds. In the real window (window/s5-week-dark.png, live/s5-week-dark.png) the rest surface drops the 'where you stopped' line and shows only the course and the block title, so '↩ carry on' opens something it does not name. In the demo (shots/s5-week-dark.png) it says '⌘K start without them' while only one item is named on screen."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "The real tutor's plan change reached the record: the exam moved to 29 Nov and the blocks were re-spaced. The talk was never marked (live attempts.json is empty), and '↑ answer' and 'back to the task' re-armed the flour task. But on live/s3-after-dark.png the new schedule cannot be seen. The tutor's table shows only its first row ('Sampling distributions, today, 12 Nov') before the pinned open task covers the rest, and the 'plan changed' card is not in view. Only the one-line foot note 'The blocks, re-spaced from Mon 16 Nov' says what moved, so the learner has to press ⌘P to see the new days."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-start-dark.png", "shots/s3-after-dark.png", "shots/narrow-lesson-dark.png", "shots/plan-dark.png", "window/s2-start-dark.png", "shots/settings-light.png"],
+      "blocks_next_point": "Every layer uses the same component, there is one ink, and both schemes hold up. The course kicker ('Biochemistry', 'Intro Statistics') sits under the fixed top fade at scroll 0 and is half erased on every lesson screen (shots/s2-start-dark.png, shots/reopen-dark.png, window/s2-start-dark.png, live/s5-week-next-dark.png). It reads as a rendering bug at the first glance of every lesson. Other faults: on shots/s3-after-dark.png the sticky header's step name sits a few px below the title baseline, and maths subscripts ghost through the fade under it. On shots/narrow-lesson-dark.png a paragraph is cut mid-line by the foot band and the task the line answers is off screen. On shots/plan-dark.png the 'changed' rows use the same tint as the selection, so three rows look selected."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["live/s2-answer-dark.png", "shots/s5-week-dark.png", "shots/s4-return-dark.png", "live/s3-after-dark.png", "shots/narrow-lesson-dark.png"],
+      "blocks_next_point": "In the real lesson the tutor says 'That's right' and the window says 'no mark', twice, with the reason only on hover (live/s2-answer-dark.png). The learner cannot tell whether the answer counted or why not. Answer versus talk is also signalled only by a tiny grey 'esc talk instead' or '↑ answer' and a left rule. That works once learned, but nothing on the first lesson screen says what the difference means."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Measured startup is 591 to 643 ms warm and 932 ms on first open (1090 ms in live). My turn measured 762 ms. Typing paints in 17 ms median and 19 ms p95. That is better than Obsidian, but first open is about double a native editor's under-half-second, and a keystroke is just over one 60 Hz frame."
+    }
+  },
+  "still_dislike": [
+    "In the real lesson the screen does not reliably follow a plan change. On live/s3-after-dark.png the pinned open task and the foot band cover the new schedule after its first row, and the inline 'plan changed' card is out of view. The dock should never cover the end of the stream.",
+    "The persistent record line at the foot repeats facts already on screen: a mark twice on shots/s2-answer-dark.png, a plan change twice on shots/s3-after-dark.png and window/s3-after-dark.png, and 'no mark' twice on live/s2-answer-dark.png. Show it only when the original has scrolled out of view.",
+    "'no mark' under an answer the tutor just called right (live/s2-answer-dark.png), with the reason only on hover. It is truthful but leaves the learner unsure whether the work counted. The reason should be readable without the mouse."
+  ],
+  "bugs": [
+    "The course kicker is clipped by the fixed top fade on every lesson screen at scroll 0: shots/s2-start-dark.png, shots/reopen-dark.png, shots/working-dark.png, window/s2-start-dark.png, live/s5-week-next-dark.png. It shows in light too on my turn.",
+    "live/s3-after-dark.png and live/s3-after-light.png: the tutor's re-spaced schedule table is cut after its first row by the pinned open task. The stream is not scrolled to its end, so the remaining rows and the inline plan card are hidden.",
+    "⌘K filtering fails on multi-word queries (my window turn). 'stop here' does not match 'Stop here for now': the only row is 'Say to the tutor: \"stop here\"', and Return sent it to the tutor as talk. 'stop' alone matches. 'plan' also matches 'Pay with an API key'.",
+    "The record line is duplicated while the original is still in view: shots/s2-answer-dark.png ('Marked right, on your own.' x2), shots/s3-after-dark.png and window/s3-after-dark.png (plan change as card and foot line), live/s2-answer-dark.png ('no mark' x2).",
+    "shots/narrow-lesson-dark.png: at the narrow size a paragraph is cut mid-line by the foot band and the task the open answer line belongs to is off screen. shots/narrow-lesson-light.png shows it, so the two schemes are captured at different scroll positions.",
+    "shots/s5-week-dark.png: '⌘K start without them' refers to more than the one item named on screen.",
+    "window/s5-week-dark.png and live/s5-week-dark.png: the week-away rest surface has no 'where you stopped' line, unlike shots/s1-cold-dark.png and my turn's stop screen ('You stopped at: …').",
+    "shots/plan-dark.png: the demo plan lists Cold redos (Sat 14 Nov) before Paper B (Fri 13 Nov), so order and dates contradict. The 'changed' row tint matches the selection tint.",
+    "shots/s3-after-dark.png: in the sticky header the step name ('What the slope gives') sits lower than the lesson title's baseline, and maths fragments from the scrolled text show through the fade beneath it."
+  ],
+  "window_turn": "I took the lock after a 4-minute wait. The window was already in a lesson holding earlier judges' history, in the light scheme. ⌘P opened the plan layer: exam 'moved from Sun 22 Nov' to Sun 6 Dec, with the moved rows tagged 'moved up' and 'moved down' and the lesson's steps below. In the layer's own line I typed 'change the plan, the midterm moved again' and pressed Return. The layer closed, the tutor replied, and a 'The plan changed' card (Sun 6 Dec → Sun 13 Dec; Hypothesis tests now before Confidence intervals; ⌘P the whole plan) appeared under the reply, with the same text repeated at the foot. ↑ moved the input back into the re-posed task. I answered 'b = -5'; the stand-in said 'Not quite' and the window showed no mark, which is correct because it was a retry. ⌘Y listed one entry, 'standard error of a mean, Thu 12 Nov, not right yet', so nothing invented. In ⌘K, 'stop here' did not match 'Stop here for now' and Return sent it to the tutor as talk; 'stop' matched. Stop here for now gave the rest surface: 'Intro Statistics / Sampling distributions / You stopped at: What is the standard error of the mean? / ↩ carry on'. Return put me back in the task with the input in its answer line. ⌘/ opened the 1 hint / 2 I'm lost / 3 I don't know layer. Everything was reachable by keyboard. The kicker at the top was half erased again. perf: startup 762 ms, typing 17 ms median and 19 ms p95. I released the lock."
+}

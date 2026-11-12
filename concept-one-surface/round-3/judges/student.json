@@ -1,0 +1,54 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/reopen-dark.png", "shots/settings-dark.png", "shots/s2-answer-dark.png"],
+      "blocks_next_point": "The app's voice repeats itself on my page: the record's line is drawn under my answer and again at the foot ('Marked right, on your own.' twice in shots/s2-answer-dark.png; the plan-change card plus the same sentence under the composer in shots/s3-after-dark.png), so the window speaks twice where my material should be alone."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "window/s5-week-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "Calm at rest, but mid-lesson the foot band adds a second copy of whatever just happened (shots/s3-after-dark.png: 'The plan changed' block, then the same change again under the composer; shots/narrow-lesson-dark.png: 'Marked right, on your own.' twice in one view). One copy would be enough."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "window/s2-start-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "The week-away line in shots/s5-week-dark.png, 'First: reading Vmax from the y-intercept, from Thu 5 Nov.' with '⌘K start without them', gives me a past date and an unnamed 'them'. When I skim it, it reads like a queue I've owed since the 5th, and that is the one moment on this screen that makes me hesitate."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "In the real lesson the plan really changed (exam to 29 Nov, blocks respread in live/plan-after.json) and nothing off-plan was marked (live/attempts.json empty). But on live/s3-after-dark.png the tutor's new-days table is cut off after its first row behind the parked question, and the 'The plan changed' block is not on screen. I only get the one-line summary at the foot and can't see my new days without scrolling or ⌘P."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-light.png", "shots/s3-after-light.png", "shots/s2-start-dark.png", "shots/narrow-lesson-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "The narrow view is broken in dark: on shots/narrow-lesson-dark.png the live question ('What is Km?') has scrolled out of sight behind the foot, and the answer line sits under a sentence cut in half, while the light version shows the question. Smaller: the course label is half-clipped at the top edge of every lesson (shots/s2-start-dark.png, window/s2-start-dark.png)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-answer-dark.png", "shots/s4-return-dark.png", "live/s2-answer-dark.png", "shots/s5-week-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "On live/s2-answer-dark.png the tutor says 'That's right' and the window says 'no mark', twice, with the reason only on hover. As a skimmer I can't tell whether my answer counted. The record is honest, but the window needs to say why in plain view (for example, that only a first try at the posed task is marked)."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Typing is one frame (median 17 ms, p95 19 ms), but opening takes 591 to 643 ms normally and 932 ms on first open (1090 ms in live/perf.json). That is well ahead of Electron, but not the under-half-a-second open of a native editor."
+    }
+  },
+  "still_dislike": [
+    "The verdict is said twice: 'Not right yet.' (in my turn) and 'Marked right, on your own.' (shots/s2-answer-dark.png) appear under my answer and again at the foot, so a wrong answer stings twice. Show it once.",
+    "Coming back after a week, 'First: reading Vmax from the y-intercept, from Thu 5 Nov.' and '⌘K start without them' (shots/s5-week-dark.png) bring back the owed feeling with a past date and a vague 'them'. Name the thing without the old date, and don't use 'them'.",
+    "When the real tutor changes the plan, the new days are cut off behind the parked question (live/s3-after-dark.png). Separately, 'That's right' followed by 'no mark' (live/s2-answer-dark.png) leaves me unsure what just happened. Keep the end of the reply and the plan-change block in view, and say why there is no mark without needing a hover."
+  ],
+  "bugs": [
+    "live/s3-after-dark.png (and -light): the view does not follow the end of the tutor's reply. The reply's table of new days is cut off after 'Sampling distributions / today, 12 Nov' under the parked task, and the inline 'The plan changed' block is out of view.",
+    "shots/narrow-lesson-dark.png: at the narrow size the question being answered is not visible; the answer line floats under a half-cut sentence ('The slope is the other half of the line…'), while shots/narrow-lesson-light.png at the same size shows the question. The scroll position is inconsistent.",
+    "shots/s2-start-dark.png, shots/s5-week-next-dark.png, window/s2-start-dark.png, live/s5-week-next-dark.png: the course name ('Biochemistry' / 'Intro Statistics') above the lesson heading is half-clipped and faded by the top edge, so it looks like a rendering glitch.",
+    "shots/s2-answer-dark.png, shots/narrow-lesson-dark.png, shots/s3-after-dark.png, live/s2-answer-dark.png: the record's latest line is shown twice on one screen (inline, then again at the foot).",
+    "shots/plan-dark.png: the plan layer lists 'Cold redos… moved up, Sat 14 Nov' above 'Paper B moved down, Fri 13 Nov', so the order contradicts the dates. In my turn the stand-in's reorder showed the same thing ('Hypothesis tests, moved up, Mon 16 Nov' above 'Confidence intervals, moved down, Sat 14 Nov'), and the window shows it with no sign that the days no longer fit the order.",
+    "My turn: a 'by the way…' question typed straight into the task's answer line, without pressing Esc, was drawn inside the task's answer block, styled like an answer under the question. It got no mark, and the field then switched to talk, but for a moment it looks as if my tangent was handed in as an answer."
+  ],
+  "window_turn": "I took the lock and found the window at rest: 'Intro Statistics / Sampling distributions / the standard error of a mean…', a line with '↩ start', and '⌘K everything else'. I pressed Return on the empty line, and one key later I was looking at a question with the caret in its answer line, without deciding anything. I typed 'Can I have a hint?' into the answer line: it was drawn as talk (›) and not marked. I answered 'b = 5' (wrong): the window showed a quiet 'Not right yet.' under my answer and again at the foot, with no red and no score, and ⌘Y later listed only that one record mark ('standard error of a mean, Thu 12 Nov, not right yet'). I typed 'by the way, why is it called standard error…' without pressing Esc: the tutor said it was off the plan and nothing was marked, the open question stayed as one quiet line at the foot, and the field switched to talk ('↑ answer'). However, my tangent was drawn inside the task block, as if it were an answer. 'change the plan, I am behind' gave the tutor's reply plus a 'The plan changed' block (Midterm 2, Sun 22 Nov → Sun 29 Nov; Hypothesis tests now before Confidence intervals) and the same line at the foot. ⌘P showed the plan with the moved rows tinted, no late or overdue state and no countdown; Hypothesis tests (Mon 16 Nov) was listed above Confidence intervals (Sat 14 Nov). 'back to the question' made the question the live task again with the caret in it. 'b = -5' as a retry got no mark (only first tries are marked), and the stand-in's 'Not quite' was not turned into a mark. ⌘K showed one list with 'Stop here for now' and every plan block. Typing latency measured median 17 ms, p95 20 ms, startup 762 ms. I released the lock after about 2.5 minutes."
+}

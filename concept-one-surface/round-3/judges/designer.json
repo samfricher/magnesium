@@ -1,0 +1,56 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/settings-dark.png", "shots/reopen-dark.png", "shots/commands-dark.png"],
+      "blocks_next_point": "The material really is the interface: Charter for the material and the tutor, SF for you, and the app's words small. Reading face, your words, size, line length, scheme and ink all apply live; I checked this in the real window. What still sounds like the app is the foot band, which prints the record's line a second time under the field ('Marked right, on your own.' appears twice on shots/s2-answer-dark.png, and 'no mark' twice on live/s2-answer-dark.png). The app speaks twice where once would do."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-light.png", "shots/s3-after-dark.png", "window/s3-after-dark.png"],
+      "blocks_next_point": "At rest it is three lines, a field and one hint, which is as calm as the job allows. In a lesson the same fact appears twice: shots/s3-after-dark.png shows the plan change as a card (y≈450) and again as the foot line (y≈669), and the open task both at y≈208 and dimmed at y≈586."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/work-dark.png", "shots/s1-cold-first-dark.png"],
+      "blocks_next_point": "Return is the only step, the caret is already in the field, nothing is counted, and ⌘Y keeps your work in words. After a week (shots/s5-week-dark.png) the door reads 'First: reading Vmax from the y-intercept, from Thu 5 Nov.' and then '⌘K start without them'. The date says how old the item is, and 'them' points to a plural that the line never shows."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/plan-after.json", "live/attempts.json", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "With the real Claude Code it works. The plan really moved (exam 22→29 Nov, blocks respread in live/plan-after.json), and the foot line read it from plan(). Off-plan talk left the record empty, and 'back to the task' put the caret back in the task. But the foot band covers the conversation: on live/s3-before-dark.png the tutor's question 'what is the midterm's new date?' is cut off under the band. On live/s3-after-dark.png the respread table stops after its first row and the inline change card is out of view, so the learner sees the change only in the 13 px foot line."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-start-dark.png", "shots/s5-week-next-dark.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/settings-light.png", "shots/plan-dark.png", "shots/s1-cold-light.png"],
+      "blocks_next_point": "The type system is strong: Charter 17/1.62 with KaTeX that sits on its baseline, SF for your words, one 66-character column, hanging rails and chevron, and one component for every layer. The scroll edges are faulty on nearly every lesson screen. (1) The top fade applies at scroll 0, so the course kicker shows at about 10% opacity above the title (shots/s2-start-dark.png and shots/s5-week-next-dark.png, 'Biochemistry'; window/s2-start-dark.png, 'Intro Statistics'). (2) Subscripts and fraction bars bleed through the fade under the sticky header (shots/s3-after-light.png, 'Vmax … 0.25'). (3) At the narrow size the foot band cuts a line through its x-height with no fade (shots/narrow-lesson-dark.png, 'The slope is the other half of the line')."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s4-offplan-dark.png", "shots/s4-return-dark.png", "live/s2-answer-dark.png", "live/s3-before-dark.png"],
+      "blocks_next_point": "Which line you are on is clear: the ink rule plus 'esc talk instead' when answering, '›' plus '↑ answer' when talking. But the foot's record line sits directly under the next question's empty field. On shots/s2-answer-dark.png, 'Marked right, on your own.' sits under the unanswered Km field and reads as if the Km question is already marked."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Typing is about one frame (median 17 ms, p95 19 ms, max 20; the same in my own turn). Startup is 591–643 ms on a normal open and 932–1090 ms on first open, well ahead of Electron editors but not yet under the half-second a native editor gives."
+    }
+  },
+  "still_dislike": [
+    "The scroll edges. The top fade eats the course kicker at scroll 0 and lets subscripts ghost under the sticky header. The foot band hard-cuts or hides the tutor's last lines (live/s3-before-dark.png: the question asking for the new date is clipped; live/s3-after-dark.png: the table stops after one row; shots/narrow-lesson-dark.png: a line is cut through its x-height). The surface needs a proper scroll inset above the band and no mask at scroll 0.",
+    "The record's line is printed twice whenever the inline one is on screen ('Marked right, on your own.' twice on shots/s2-answer-dark.png, the plan change twice on shots/s3-after-dark.png), and the foot copy sits under the next question's empty field as if that question were marked. Show the foot line only once the inline one has scrolled out of view.",
+    "Consistency of the small things. In light mode the quiet tier ('⌘K everything else', 'esc talk instead', the sticky header's step) measures about #767778 on #FAFAF8, 4.29:1, below AA at 12.5–13 px. The sticky header's two items sit on baselines about 2 pt apart, because the title carries inline KaTeX (shots/s3-after-light.png). After a retry, the replaced 'Not quite…' block keeps its ink rule while the re-posed task has one too, so two rails look live at once (real window, my turn). In the plan layer the 'changed' row tint is nearly the selection tint (shots/plan-dark.png)."
+  ],
+  "bugs": [
+    "The top fade applies at scroll 0: the course kicker shows at about 10% opacity above the lesson title on shots/s2-start-dark.png, shots/s5-week-next-dark.png, shots/working-dark.png, window/s2-start-dark.png and live/s2-start-dark.png.",
+    "live/s3-before-dark.png: the second line of the tutor's question to the learner ('new date?') is clipped under the foot band's open task.",
+    "live/s3-after-dark.png: the tutor's respread table is cut after its first row by the foot band, and the inline 'The plan changed' card is out of view; only the foot line shows the change.",
+    "shots/narrow-lesson-dark.png: at the narrow size the transcript line just above the field is cut through its x-height, with no fade.",
+    "Real window (my turn): after a hint, the replaced 'Not quite: … What is the standard error of the mean?' block keeps the ink rail while the newly posed task also has one, so two blocks look live.",
+    "Real window (my turn): a 1–2 px rail fragment with no text is left at the top fade (about x=206, y=72 at 1x) after scrolling.",
+    "shots/plan-dark.png (demo data): 'Cold redos … moved up, Sat 14 Nov' is listed above 'Paper B … moved down, Fri 13 Nov', so the reordered plan's dates run backwards.",
+    "shots/source-dark.png: the file name in the viewer header starts at x=130 but 'Page 2 of 3' in the footer starts at x=134, a 4 px misalignment."
+  ],
+  "window_turn": "The lock was free after about 7 minutes. The window was in the light scheme, mid-lesson from an earlier judge: 'Go on.' with the open task dimmed at the foot and '↑ answer'. ↑ put the field into the task. 'b = 5' got the tutor's 'Not quite', and the record's 'no mark' showed both inline and in the foot. The answered task collapsed nicely to just its question. ⌘, opened settings on the reading-face row. Iowan Old Style and size 19 applied at once to the transcript and to the panel itself. 'Can I have a hint?' went as talk, the hint appeared, the task was posed again and the caret went back into it. Here the old 'Not quite' block kept its ink rail alongside the new one. Esc, then 'change the plan': the reply was followed by a 'The plan changed' card (Midterm 2 Sun 13 Dec → Sun 20 Dec; Confidence intervals now before Hypothesis tests) and the same line in the foot. ⌘P showed the plan with the moved rows tinted and labelled 'moved up' / 'moved down'. ⌘K with 'pap' filtered to 'Material and papers' and offered 'Say to the tutor: \"pap\"'. Switching the scheme to Dark was instant and matched the demo, including a stray rail fragment at the top fade. The perf op gave median 17 ms, p95 19 ms, max 20. I set the face, size and scheme back to Charter, 17 and Like the Mac, closed settings, and released the lock."
+}

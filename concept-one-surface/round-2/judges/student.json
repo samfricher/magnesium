@@ -1,0 +1,50 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-dark.png", "shots/settings-dark.png", "shots/reopen-dark.png", "window/s1-cold-dark.png"],
+      "blocks_next_point": "The big text is my material and the tutor, and nothing is dressed up. But the app's own rule-talk still shows up under my answers: 'Not marked: the record kept no mark for this answer.' (live/s2-answer-dark.png) and, on my retry in the real window, 'Not marked: only a first try at a task is marked, and this was another try.' 'The record' is the app's word, not mine, and it reads like a referee explaining the rules."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "live/s5-week-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "Opening it shows three lines and a caret, and that is almost nothing. In a lesson the bottom says the same thing twice: the placeholder 'or say something else' and right under it the hint 'esc say something else' (shots/s2-start-dark.png, window/s2-start-dark.png). After a plan change, a grey 'The plan changed: …' line also stays in the scroll from then on (shots/s4-return-dark.png)."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "live/s5-week-next-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "Return from cold put me straight into a question in under two seconds, with nothing to decide and no counts, streaks or 'you were away'. The one thing that still sounds like owing is the week-away line 'A few questions from earlier come first, then where you stopped.' (shots/s5-week-dark.png). It has no number, but it still says there is homework before I get back to my own place, and I need ⌘K to skip it. live/s5-week-next-dark.png ('Picking up at step 2') is the version that just lets me in."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "window/s3-after-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "With the real tutor it really works. It asked for the new date, moved the exam to 29 Nov and re-spaced the blocks in plan.md. The n − 1 tangent got no mark (live/attempts.json is empty), and 'OK, back to the task' put the caret back in the pizza question. In live/s3-after-dark.png, though, the window's own 'The plan changed' card and my talk line are below the bottom of the window, so the screen's confirmation is only the tutor's table. With the stand-in (window/s3-after-dark.png) the card sits right under the reply, and that is what I want to see every time."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/narrow-lesson-dark.png", "shots/plan-light.png", "shots/settings-dark.png"],
+      "blocks_next_point": "It looks clean and the same in both schemes. The tutor is in a serif and I am in plain sans, with no bubbles and one quiet blue. The settings sheet is a wall of eleven rows of small options (shots/settings-dark.png), and the doubled foot hints make the bottom of every lesson look busier than the rest."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-start-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "live/s2-answer-dark.png", "live/s3-after-dark.png", "shots/reopen-dark.png"],
+      "blocks_next_point": "Most of the time I knew what to do. The task has a line to write on, the foot says '↩ hand in your answer' or '↑ answer the task', and a parked task waits as one grey line. Two things lost me. After a long reply in live/s3-after-dark.png there is no line to type on in view. And 'Not marked: the record kept no mark for this answer' (live/s2-answer-dark.png) leaves me wondering whether I did something wrong."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Measured startup was 582–848 ms in window/ (848 ms on the very first open) and up to 1106 ms in live/. Keystroke-to-paint was median 17 ms and p95 19 ms, just over one frame. Opening in under half a second, with keystrokes inside 16 ms, would earn the next point."
+    }
+  },
+  "still_dislike": [
+    "The rule-explaining lines under my answers: 'Not marked: only a first try at a task is marked, and this was another try.' (my real-window turn) and 'Not marked: the record kept no mark for this answer.' (live/s2-answer-dark.png). They make me feel counted and refereed. On a retry I would rather see nothing at all.",
+    "After a week away, 'A few questions from earlier come first, then where you stopped.' (shots/s5-week-dark.png) is still a small 'you owe' at the door. Let me land where I stopped and let the tutor slip the old questions in.",
+    "After a long tutor reply the window does not keep my line or the parked task in view (live/s3-after-dark.png), so I have to scroll to find where to type and whether the plan really changed. The foot also says 'say something else' twice (shots/s2-start-dark.png)."
+  ],
+  "bugs": [
+    "live/s3-after-dark.png and live/s3-after-light.png: once the plan-change reply has finished, the view stops at the tutor's last paragraph. Neither the window's 'The plan changed' card nor the talk line and parked task are on screen, while the stand-in run shows them (window/s3-after-dark.png).",
+    "shots/reopen-dark.png: on reopen, the open task 'What is V_max, with its units?' is drawn as plain prose, with no task rule and no answer line, and the foot offers only '↩ say it'. In shots/s2-start-dark.png the same task has its rule and line, so reopen seems not to restore the task as a task. An answer typed here would go as talk and could not be marked."
+  ],
+  "window_turn": "Took the lock at 14:58 and released it at about 15:01. It opened on 'Intro Statistics / Sampling distributions / the standard error of a mean…' with '↩ start' and nothing else. I pressed Return, and in about 1.9 s I was on a question with the caret already in its answer line. I typed 'Can I have a hint?' into the answer line: the window treated it as help, showed it as talk with '›' and gave no mark, and the task stayed open. 'b = 5' handed in as an answer got 'Not right yet.' in small blue under it, with no red and no score. Esc moved me to the talk line, where I asked an off-plan 'by the way' question. The tutor said nothing was marked, and the task stayed parked as one grey line with '↑ answer the task'. 'I skipped three days and the midterm moved, change the plan' produced an inline 'The plan changed' card (Midterm 2: Sun 22 Nov → Sun 29 Nov; Hypothesis tests now before Confidence intervals). ⌘P showed the plan with 'moved from Sun 22 Nov', 'moved up' and 'moved down', with no per-day dates and nothing late. 'OK, back to the task.' put the caret back in the task. A second answer got 'Not marked: only a first try at a task is marked, and this was another try.' ⌘Y showed one plain row: 'standard error of a mean, Thu 12 Nov, not right yet'. ⌘K is a short list of commands. A perf check during my turn gave median 17 ms, p95 19 ms, startup 762 ms. Nothing broke, and I never felt behind. The only time I felt watched was the 'only a first try is marked' line."
+}
