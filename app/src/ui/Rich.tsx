@@ -7,7 +7,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { holdBack, numberTasks, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -220,20 +220,17 @@ type Props = {
   onSource?: (source: SourceRef) => void;
   /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
   stopped?: boolean;
-  /** The number of the first task this reply sets, in the order the lesson set them. Drawn in the page's margin. */
-  taskFrom?: number;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, taskFrom }: Props) {
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false }: Props) {
   // A reply still being written, or stopped, never shows the marks of a
   // formula, a bold span or a link it ends inside of. A display formula that
   // is held back keeps a line's room, so what follows does not jump when it closes.
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
   const html = useMemo(() => {
     const drawn = renderMarkdown(held.text);
-    const linked = onSource ? setSourcesApart(drawn, linksOpen) : drawn;
-    return taskFrom === undefined ? linked : numberTasks(linked, taskFrom).html;
-  }, [held.text, linksOpen, onSource, taskFrom]);
+    return onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+  }, [held.text, linksOpen, onSource]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet

@@ -757,8 +757,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 /* The steps. One not yet reached is a ring in --faint, as a proof not yet
-   earned is, so it holds 3:1 against the strip. Done is filled; the one in
-   hand is filled in ink. */
+   earned is, so it holds 3:1 against the strip. Done is filled in ink; the
+   step in hand is green, the same green as the live task's mark in the margin. */
 .pips {
   display: flex;
   gap: var(--s1);
@@ -775,13 +775,13 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .pips i.done {
-  background: var(--muted);
-  box-shadow: inset 0 0 0 1.5px var(--muted);
+  background: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--text);
 }
 
 .pips i.cur {
-  background: var(--text);
-  box-shadow: inset 0 0 0 1.5px var(--text);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
 .plan {
@@ -856,8 +856,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .plan li.done i {
-  background: var(--muted);
-  border-color: var(--muted);
+  background: var(--text);
+  border-color: var(--text);
   color: var(--raised);
 }
 
@@ -867,8 +867,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .plan li.cur i {
-  border-color: var(--text);
-  box-shadow: 0 0 0 3px var(--line);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* The clock is a plain caption in the UI face: muted, regular weight, tabular figures. */
@@ -1151,10 +1151,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   align-items: flex-start;
   gap: var(--s3);
   width: 100%;
+  min-height: 40px;
   padding: var(--s3) var(--s4);
   border: 1px solid var(--line-input, var(--line-2));
   border-radius: var(--r-control);
-  background: var(--raised);
+  background: transparent;
   font-size: var(--fs-ui);
   line-height: 1.45;
   text-align: left;
@@ -1173,30 +1174,36 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   transition-duration: 80ms;
 }
 
-/* The option chosen is held: a stronger edge and a fill, and its letter turns to ink. It is not sent until Enter. */
-.option.on {
-  border-color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--text);
-  background: var(--hover);
+/* The option chosen is held: the pressed fill and a 2px ink bar down its left
+   edge (an inset shadow, so nothing moves). It is not sent until Return. */
+.option.on,
+.option.on:hover {
+  background: var(--press, var(--hover));
+  box-shadow: inset 2px 0 0 var(--text);
 }
 
+/* Its number is a keycap: an outlined key, as everywhere else the window shows a key. */
 .option i {
   display: grid;
   place-items: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--s1);
+  border: 1px solid var(--line-input);
   border-radius: var(--r-control);
-  background: var(--hover);
+  background: transparent;
+  font-family: var(--sans);
   font-size: var(--fs-caption);
   font-style: normal;
   font-weight: 600;
+  line-height: 1;
   color: var(--muted);
 }
 
 .option.on i {
-  background: var(--text);
-  color: var(--bg);
+  border-color: var(--text);
+  color: var(--text);
 }
 
 .option small {
@@ -1327,7 +1334,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   line-height: 1.5;
 }
 
-/* The row of tools never wraps, so Send keeps one place, bottom right, in every state. */
+/* The row of tools never wraps, so Send keeps one place, bottom right, in every
+   state. Its height is the tallest thing in it, Send at 40px, so the row is
+   the same height with or without "How sure?". */
 .composer .tools {
   display: flex;
   flex-wrap: nowrap;
@@ -1345,7 +1354,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-left: 0;
 }
 
-/* Send is a small primary button, neutral while there is nothing to send. */
+/* Send is the one primary button of the lesson, 40px like every other. */
 .composer .send {
   flex: none;
   margin-left: var(--s1);
@@ -1361,14 +1370,19 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 /* How sure the learner is: optional, in the answer box's own foot, left of
-   Send. One small choice control (28px): a bordered group, segments told apart
-   by a hairline, the chosen one filled with ink. The label shows when the box
-   is wide enough. */
+   Send, and lighter than Send: a hairline group (32px) in the quiet ink, the
+   chosen one filled with ink. It is about the answer, so it appears once
+   something is typed; until then its room is kept and it is not seen or
+   reached, so nothing moves. The label shows when the box is wide enough. */
 .sure {
   display: inline-flex;
   align-items: center;
   flex: none;
   gap: var(--s2);
+}
+
+.sure.idle {
+  visibility: hidden;
 }
 
 .sure-label {
@@ -1377,11 +1391,21 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 .seg {
+  position: relative;
   display: inline-flex;
-  height: 28px;
-  border: 1px solid var(--line-input);
+  height: 32px;
   border-radius: var(--r-control);
   overflow: hidden;
+}
+
+/* The group's hairline is drawn over the segments, so each of them is the full 32px to press. */
+.seg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-control);
+  pointer-events: none;
 }
 
 .seg button {
@@ -1392,10 +1416,12 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding: 0 var(--s3);
   border: 0;
   background: transparent;
-  color: var(--text);
+  color: var(--muted);
   font-size: var(--fs-small);
   font-weight: 400;
-  transition: background var(--t-fast) ease-out;
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
 }
 
 .seg button + button {
@@ -1414,13 +1440,15 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .seg button:hover {
   background: var(--hover);
+  color: var(--text);
 }
 
 .seg button:active {
   background: var(--press, var(--hover));
 }
 
-.seg button[aria-checked="true"] {
+.seg button[aria-checked="true"],
+.seg button[aria-checked="true"]:hover {
   background: var(--text);
   color: var(--bg);
   font-weight: 600;
@@ -1499,8 +1527,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
-  height: 26px;
-  padding: 0 var(--s1) 0 var(--s2);
+  height: 32px;
+  padding: 0 0 0 var(--s2);
   border-radius: var(--r-control);
   background: var(--hover);
   font-size: var(--fs-caption);
@@ -1510,8 +1538,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .file button {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: var(--r-control);
   background: transparent;
@@ -1566,8 +1594,13 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-left: var(--s1);
 }
 
-.outs .btn:disabled {
+/* While the tutor writes they are plainly off: the faintest ink, regular
+   weight, no hover, and the cursor says so. */
+.outs .btn:disabled,
+.outs .btn:disabled:hover {
+  background: transparent;
   color: var(--faint);
+  font-weight: 400;
   cursor: not-allowed;
 }
 
@@ -2341,9 +2374,13 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: inherit;
 }
 
+/* On a tall window the lesson's frame (transcript, answer box and a source
+   beside them) stops at 860px and stands in the middle, so the answer box
+   stays pinned to the foot of the frame and close to the text it answers. */
 .session-body {
-  flex: 1;
+  flex: 0 1 860px;
   min-height: 0;
+  margin-block: auto;
   display: flex;
 }
 
@@ -2356,9 +2393,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 /* The task in hand, held at the top of the page when it has scrolled out of
-   view. It is the same question: its number in the margin, the same green rule,
-   on a strip of page colour with a hairline under it. A click brings the whole
-   task back. */
+   view. It is the same question with the same green segment of the margin
+   rule, on a strip of page colour with a hairline under it. A click brings the
+   whole task back. */
 .task-pin-holder {
   position: absolute;
   top: 0;
@@ -2390,19 +2427,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   text-align: left;
   pointer-events: auto;
   transition: background var(--t-fast) ease-out;
-}
-
-/* Its number in the margin, and the green rule where the margin rule is. */
-.task-pin::before {
-  content: attr(data-n);
-  position: absolute;
-  top: calc(var(--s3) - 2px);
-  right: calc(100% - var(--margin) + var(--s3));
-  font-size: var(--fs-card);
-  font-weight: 600;
-  font-variant-numeric: lining-nums tabular-nums;
-  line-height: 21px;
-  color: var(--accent);
 }
 
 .task-pin::after {
