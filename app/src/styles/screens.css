@@ -639,9 +639,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 /* ---- the lesson: a page of an answer booklet ---- */
 
-/* The lesson's column is a page: a margin, one rule, and the text, which is
-   34em of the reading size (about 66 characters). Question numbers hang in the
-   margin; everything the tutor and the learner write sits right of the rule. */
+/* The lesson's column is the text: 34em of the reading size (about 66
+   characters), centred in the window as every other screen's column is. The
+   booklet's margin hangs outside it to the left: one rule, a gap of space
+   between the rule and the text, and the margin beyond. The text is what
+   stands on the page's centre line, and what the top strip's End and Menu
+   keys stand at the two edges of. */
 .column {
   width: 100%;
   max-width: calc(34 * var(--fs-read));
@@ -653,7 +656,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   /* 56px at 1040 wide, 40px at 720. */
   --margin: clamp(40px, calc(40px + (100vw - 720px) * 0.05), 56px);
   --gap: var(--s5);
-  --column: calc(var(--text-width) + var(--margin) + var(--gap));
 }
 
 .session.has-source {
@@ -667,12 +669,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .session .column {
-  max-width: var(--column);
-  padding-left: calc(var(--margin) + var(--gap));
+  max-width: var(--text-width);
 }
 
 /* The margin rule runs the height of the transcript, and the page it is ruled
-   on fills the room above the answer box even while it is short. */
+   on fills the room above the answer box even while it is short. It hangs
+   outside the text, one gap to its left. */
 .stage .column {
   position: relative;
   min-height: 100%;
@@ -685,7 +687,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--margin);
+  left: calc(-1 * var(--gap));
   width: 1px;
   background: var(--line-2);
   pointer-events: none;
@@ -724,16 +726,18 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .session .stage {
   flex: 1 1 0;
   padding: 0 var(--s6);
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s5)), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s5)), transparent 100%);
+  /* A short fade at the top edge, so a line that scrolls up under the strip
+     fades out and is not cut through. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - var(--s5)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - var(--s5)), transparent 100%);
 }
 
-/* The lesson takes the shared column, so End, the margin and the answer box
-   stand on the same left edge as every other screen's back link and title.
-   With a source open beside the lesson the page is two columns, and the strip
-   keeps to the window's insets instead. */
+/* The lesson's --col is the text's own width, so End stands on the text's left
+   edge and Menu on its right edge, as on every other screen. The margin hangs
+   outside to the left. With a source open beside the lesson the page is two
+   columns, and the strip keeps to the window's insets instead. */
 .screen.session {
-  --col: var(--column);
+  --col: var(--text-width);
 }
 
 .screen.session.has-source {
@@ -747,6 +751,16 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .session:not(.has-source) .task-pin-holder {
   padding-left: var(--edge-l);
   padding-right: var(--edge-r);
+}
+
+/* With a source open, the text is centred in what is left of the window, with
+   room at its left for the rule and the margin. */
+.session.has-source .stage,
+.session.has-source .dock,
+.session.has-source .dock-notes,
+.session.has-source .task-pin-holder {
+  padding-left: calc(var(--margin) + var(--gap));
+  padding-right: var(--s6);
 }
 
 /* Said to a screen reader only. */
@@ -778,16 +792,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   min-width: 0;
 }
 
-/* "Step 3 of 5": said to a screen reader when the strip has room for the step's
-   own words, and shown in their place when it has not. */
+/* "Step 3 of 5" comes first, then the marks, then the step's words, at every
+   width. When room is short the words go first, then the marks. */
 .track-where {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+  flex: none;
   white-space: nowrap;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 /* The goal's steps: a button, so it has a boundary, a hover fill and a pressed state. */
@@ -845,7 +855,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   flex: none;
 }
 
-.pips i {
+.pips i,
+.plan li i {
   width: 16px;
   height: 6px;
   border-radius: var(--r-pill);
@@ -854,12 +865,14 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   transition: background 0.4s;
 }
 
-.pips i.done {
+.pips i.done,
+.plan li.done i {
   background: var(--text);
   box-shadow: inset 0 0 0 1.5px var(--text);
 }
 
-.pips i.cur {
+.pips i.cur,
+.plan li.cur i {
   background: var(--accent);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
@@ -919,26 +932,17 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   color: var(--muted);
 }
 
+/* The steps here are the strip's capsules, and the same three states: done is
+   ink, the step in hand is green, a step ahead is an outline. A filled circle
+   is a proof and means nothing else in the lesson. */
 .plan li i {
-  display: grid;
-  place-items: center;
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: var(--s1);
-  border-radius: 50%;
-  border: 1.5px solid var(--faint);
-  color: var(--raised);
+  /* Centred on the first line of the step (13.5px at 1.4). */
+  margin-top: 7px;
 }
 
 .plan li.done {
   color: var(--faint);
-}
-
-.plan li.done i {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--raised);
 }
 
 .plan li.cur {
@@ -946,9 +950,14 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   font-weight: 600;
 }
 
-.plan li.cur i {
-  background: var(--accent);
-  border-color: var(--accent);
+/* How long the lesson is, and what is left of it: the clock lives here until its last ten minutes. */
+.plan-time {
+  margin: var(--s4) 0 0;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-small);
+  color: var(--muted);
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 /* The clock is a plain caption in the UI face: muted, regular weight, tabular figures. */
@@ -1062,7 +1071,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   display: inline-block;
   margin-left: var(--s2);
   padding: 0 var(--s2);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   background: var(--hover);
   color: var(--text);
   font-size: var(--fs-caption);
@@ -1222,26 +1231,33 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .options {
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
   margin: var(--s3) 0 var(--s3);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
+/* Plain rows, as in the command menu and the paper list: a hairline between
+   them, the hover fill on the one pointed at, and the one chosen pressed in
+   with a 2px bar of ink at its edge. The number is a keycap on the left. */
 .option {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--s3);
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   padding: var(--s3) var(--s4);
-  border: 1px solid var(--line-input, var(--line-2));
-  border-radius: var(--r-control);
+  border: 0;
+  border-radius: 0;
   background: transparent;
   font-size: var(--fs-ui);
   line-height: 1.45;
   text-align: left;
-  transition:
-    background var(--t-fast),
-    border-color var(--t-fast);
+  transition: background var(--t-fast) ease-out;
+}
+
+.option + .option {
+  border-top: 1px solid var(--line);
 }
 
 .option:hover {
@@ -1254,12 +1270,23 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   transition-duration: 80ms;
 }
 
-/* The option chosen is held: the pressed fill and a 2px ink bar down its left
-   edge (an inset shadow, so nothing moves). It is not sent until Return. */
+/* The row chosen: a step of ink in the card's own fill, in the direction of the
+   hover fill (lighter in the dark scheme, darker in the light), at least 1.3:1
+   from the card, and a 3px bar of ink at its edge. */
 .option.on,
 .option.on:hover {
-  background: var(--press, var(--hover));
-  box-shadow: inset 2px 0 0 var(--text);
+  background: color-mix(in srgb, var(--text) 16%, var(--surface));
+}
+
+.option.on::before {
+  content: "";
+  position: absolute;
+  top: var(--s2);
+  bottom: var(--s2);
+  left: 0;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--text);
 }
 
 /* Its number is a keycap: an outlined key, as everywhere else the window shows a key. */
@@ -1310,9 +1337,10 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 /* The band between the transcript and the answer box. Its room is always kept,
    so what stands in it (the passages the last reply cited, the cue that more
-   is below) never covers text and never moves anything. */
+   is below) never covers text and never moves anything. A 32px control, and
+   12px of air between it and the answer box. */
 .band {
-  height: 36px;
+  height: 48px;
 }
 
 .band-row {
@@ -1321,7 +1349,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   gap: var(--s3);
   height: 100%;
   min-width: 0;
-  padding-bottom: var(--s1);
+  padding: var(--s1) 0 var(--s3);
 }
 
 .dock-notes {
@@ -1355,11 +1383,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   display: flex;
   align-items: center;
   gap: var(--s1);
-  height: 28px;
+  height: 32px;
   margin: 0 auto;
   padding: 0 var(--s3) 0 var(--s2);
   border: 1px solid var(--line-2);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   background: var(--raised);
   box-shadow: var(--shadow);
   color: var(--text);
@@ -1382,8 +1410,13 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
    the page gives it only steps its border; the 2px ring is for a learner who
    Tabbed into it. */
 .composer .box {
+  /* The text and its preview together take at most about a third of the window,
+     and scroll inside it, so a long answer never pushes the task out of view. */
+  display: flex;
+  flex-direction: column;
+  max-height: max(168px, 35vh);
   border: 1px solid var(--line-input, var(--line-2));
-  border-radius: var(--r-card);
+  border-radius: var(--r-control);
   background: var(--raised);
   transition: border-color var(--t-fast) ease-out;
 }
@@ -1404,8 +1437,10 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .composer textarea {
   display: block;
+  flex: 0 1 auto;
   width: 100%;
   min-height: 26px;
+  overflow-y: auto;
   padding: var(--s4) var(--s4) var(--s1);
   border: 0;
   background: transparent;
@@ -1418,6 +1453,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
    state. Its height is the tallest thing in it, Send at 40px, so the row is
    the same height with or without "How sure?". */
 .composer .tools {
+  flex: none;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -1633,17 +1669,25 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 /* What the learner typed, with its mathematics drawn, inside the box. Its room
    is kept from the first dollar sign, so the box does not change height. */
 .preview {
+  flex: 0 1 auto;
   min-height: 3em;
-  max-height: 150px;
+  /* Three lines, and its own scroll beyond them. */
+  max-height: calc(4.5em + var(--s4));
   margin: var(--s1) var(--s4) 0;
   padding: var(--s2) 0;
   border-top: 1px solid var(--line-2);
   overflow-y: auto;
   font-family: var(--serif);
-  font-size: var(--fs-read);
+  font-size: var(--fs-ui);
   line-height: 1.5;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+/* While there is more below, the last line fades into the box. */
+.preview[data-more="yes"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
 }
 
 .preview .katex {
@@ -1674,13 +1718,13 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-left: var(--s1);
 }
 
-/* While the tutor writes they are plainly off: the faintest ink, regular
-   weight, no hover, and the cursor says so. */
+/* While the tutor writes they are plainly off: the faintest ink, no hover,
+   and the cursor says so. Weight and width are the enabled ones, so nothing
+   at the foot of the lesson shifts when the tutor starts or stops writing. */
 .outs .btn:disabled,
 .outs .btn:disabled:hover {
   background: transparent;
   color: var(--faint);
-  font-weight: 400;
   cursor: not-allowed;
 }
 
@@ -2479,25 +2523,21 @@ html[data-input="key"] .composer .box[data-ring="key"] {
     padding-right: var(--s4);
   }
 
-  /* The strip is narrow: it says which step, and leaves the step's words to the plan. */
+  /* The strip is narrow: it says which step, with its marks, and leaves the step's words to the plan. */
   .track-label {
     display: none;
-  }
-
-  .track-where {
-    position: static;
-    width: auto;
-    height: auto;
-    margin: 0;
-    overflow: visible;
-    clip: auto;
-    color: var(--text);
-    font-size: var(--fs-small);
   }
 
   /* The strip's two ends (End lesson; the clock and "Menu ⌘K") need their room. */
   .track {
     max-width: 34vw;
+  }
+}
+
+/* Very narrow: the marks go before the order changes; "Step 3 of 5" stays. */
+@media (max-width: 600px) {
+  .pips {
+    display: none;
   }
 }
 
@@ -2549,10 +2589,10 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
-  width: 100%;
-  max-width: var(--column);
-  margin: 0 auto;
-  padding: var(--s3) 0 var(--s3) calc(var(--margin) + var(--gap));
+  /* The strip's fill reaches 12px past the text on each side; the text is the column. */
+  width: calc(100% + 2 * var(--s3));
+  margin: 0 calc(-1 * var(--s3));
+  padding: var(--s3);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2570,7 +2610,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   position: absolute;
   top: var(--s2);
   bottom: var(--s2);
-  left: calc(var(--margin) - 1px);
+  left: calc(var(--s3) - var(--gap) - 1px);
   width: 3px;
   background: var(--accent);
 }
@@ -2670,6 +2710,14 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   box-shadow: 0 0 0 1px var(--line-2);
 }
 
+/* In the dark scheme a pure white sheet is the brightest thing on screen:
+   it is dimmed to sit with the slate. The light scheme is as drawn. */
+@media (prefers-color-scheme: dark) {
+  canvas.source-page {
+    filter: brightness(0.86) contrast(0.95);
+  }
+}
+
 .source-image {
   display: block;
   max-width: 100%;
@@ -2711,17 +2759,17 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   white-space: nowrap;
 }
 
-/* A source chip: ink on a hairline pill. It is a link to a page, not a proof, so it is not green. */
+/* A source chip: ink on a hairline rectangle. It is a link to a page, not a proof, so it is not green. */
 .passage {
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
   gap: var(--s2);
   min-width: 0;
-  height: 28px;
+  height: 32px;
   padding: 0 var(--s3);
   border: 1px solid var(--line-2);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--text);
   font-size: var(--fs-small);
@@ -2967,11 +3015,11 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   }
 
   .band {
-    height: 28px;
+    height: 44px;
   }
 
   .band-row {
-    padding-bottom: 0;
+    padding: 0 0 var(--s3);
   }
 
   .composer textarea {

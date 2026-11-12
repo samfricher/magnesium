@@ -60,7 +60,7 @@ const SHORTCUTS: Command = {
     ["Return", "Send your answer, or do the screen's green button"],
     ["Shift+Return", "Start a new line in your answer"],
     ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
-    ["1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\". ↑ ↓ and Return also choose."],
+    ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
     ["Esc", "Go back, or close what is open"],
   ],
   run: () => {},

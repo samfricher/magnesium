@@ -219,7 +219,24 @@ const rendered = new Map<string, string>();
 
 const escape = (text: string) => text.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch);
 
-function renderMath({ tex, display }: Math): string {
+/**
+ * A subscript that is a word names a thing, and a word is upright: V_{max}
+ * and V_max both become V_{\text{max}}. Only this short list of words: a
+ * single letter or an index (x_{ij}, K_m) stays italic, as it is a variable.
+ */
+const WORDS = "max|min|eq|tot|avg|obs|exp|crit|cat|sys|rel|net|in|out|ref";
+const BRACED = new RegExp(`(^|[^\\\\])_\\{\\s*(${WORDS})\\s*\\}`, "g");
+const BARE = new RegExp(`(^|[^\\\\])_(${WORDS})(?![A-Za-z])`, "g");
+
+export function uprightWords(tex: string): string {
+  if (!tex.includes("_")) return tex;
+  // Twice: two subscripts side by side share the character between them.
+  const once = (text: string) => text.replace(BRACED, "$1_{\\text{$2}}").replace(BARE, "$1_{\\text{$2}}");
+  return once(once(tex));
+}
+
+function renderMath({ tex: source, display }: Math): string {
+  const tex = uprightWords(source);
   const key = (display ? "D" : "I") + tex;
   let html = rendered.get(key);
   if (html === undefined) {
