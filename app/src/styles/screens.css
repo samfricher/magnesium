@@ -33,9 +33,9 @@
   background: var(--hover);
 }
 
+/* The card sinks one step; the button in it takes the shared pressed shift itself. */
 .library-next:has(.cc-open:active) {
   background: var(--press);
-  transform: translateY(1px);
   transition-duration: 80ms;
 }
 
@@ -241,10 +241,6 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 
 .cc-open:not(.btn):focus-visible {
   outline: none;
-}
-
-.btn.cc-open:active {
-  transform: none;
 }
 
 .cc-side,
@@ -2276,8 +2272,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   transition-duration: 80ms;
 }
 
-.paper-list button.on {
-  background: var(--press);
+.paper-list button.on,
+.paper-list button.on:active {
+  background: var(--selected);
 }
 
 .paper-list button.on::before {
@@ -2286,8 +2283,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   top: var(--s2);
   bottom: var(--s2);
   left: 0;
-  width: 2px;
-  border-radius: 1px;
+  width: 3px;
+  border-radius: 1.5px;
   background: var(--text);
 }
 

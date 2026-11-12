@@ -42,6 +42,8 @@
   --line-input: #87918a;
   /* A control while it is pressed: it sinks one step below its hover fill. */
   --press: #2d3631;
+  /* A row chosen in a list (the menu, the papers): at least 1.3:1 from the sheet or page it is on, lighter in this scheme as a hover is, with ink text above 4.5:1. */
+  --selected: #414e47;
   --text: #eceee7;
   --muted: #bac1b8;
   --faint: #a8b0a8;
@@ -116,6 +118,7 @@
     --line-2: rgba(27, 33, 43, 0.18);
     --line-input: #737c8a;
     --press: #dadcd5;
+    --selected: #d1d5ce;
     --text: #1b212b;
     --muted: #475060;
     --faint: #566070;
@@ -473,6 +476,8 @@ textarea {
 
 .btn.primary:active:not(:disabled) {
   background: var(--accent-press);
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
 .btn.primary:disabled {
@@ -499,10 +504,20 @@ textarea {
   border-color: transparent;
 }
 
+/* A step that cannot be undone is drawn in ink, filled: red is for faults, and a confirmation (Keep beside it) is what protects it. */
 .btn.danger {
-  color: var(--red);
-  border-color: var(--red);
-  background: var(--red-soft);
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: var(--muted);
+}
+
+.btn.danger:active:not(:disabled) {
+  background: var(--faint);
 }
 
 .btn.small {
@@ -1286,7 +1301,11 @@ button.banner:hover {
 }
 
 .palette-list [role="option"].on {
-  background: var(--press);
+  background: var(--selected);
+}
+
+.palette-list [role="option"].on:active {
+  background: var(--selected);
 }
 
 .palette-list [role="option"].on::before {
@@ -1295,8 +1314,8 @@ button.banner:hover {
   top: var(--s2);
   bottom: var(--s2);
   left: 0;
-  width: 2px;
-  border-radius: 1px;
+  width: 3px;
+  border-radius: 1.5px;
   background: var(--text);
 }
 
@@ -1320,6 +1339,10 @@ button.banner:hover {
   color: var(--faint);
 }
 
+.palette-list [role="option"].off.on span {
+  color: var(--muted);
+}
+
 .palette-none {
   padding: var(--s4);
   text-align: center;
@@ -1341,10 +1364,11 @@ button.banner:hover {
   margin-bottom: var(--s2);
 }
 
+/* Two columns, the keys in a fixed one, so every description starts at one x however long a key is. */
 .palette-key-grid {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: start;
   gap: var(--s2) var(--s4);
 }
 
@@ -1355,7 +1379,15 @@ button.banner:hover {
 
 .palette-key kbd {
   justify-self: start;
-  white-space: nowrap;
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.palette-key > span {
+  padding-top: 2px;
 }
 
 .palette-keys-back {

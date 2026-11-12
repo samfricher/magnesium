@@ -51,7 +51,7 @@ const SHORTCUTS: Command = {
   keywords: "help keys shortcuts",
   shortcuts: [
     ["⌘K", "Open this menu"],
-    ["⌘N", "New lesson (on a course page)"],
+    ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
     ["⌘O", "Add a course (in the library and on a course page)"],
     ["⌘⇧H", "Hint (in a lesson)"],
     ["⌘⇧D", "I don't know (in a lesson)"],
@@ -60,7 +60,7 @@ const SHORTCUTS: Command = {
     ["Return", "Send your answer, or do the screen's green button"],
     ["Shift+Return", "Start a new line in your answer"],
     ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
-    ["1 2 3, or ↑ ↓ and Return", "Choose an answer when the tutor asks \"Which of these was in your head?\""],
+    ["1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\". ↑ ↓ and Return also choose."],
     ["Esc", "Go back, or close what is open"],
   ],
   run: () => {},
