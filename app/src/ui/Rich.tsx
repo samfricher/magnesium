@@ -217,7 +217,8 @@ type Props = {
    */
   linksOpen?: boolean;
   /** Called with a link that opens a source beside the lesson. Without it such a link opens in the system's viewer. */
-  onSource?: (source: SourceRef) => void;
+  /** `from` is the link that was pressed, so closing the source can give the focus back to it. */
+  onSource?: (source: SourceRef, from?: HTMLElement) => void;
   /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
   stopped?: boolean;
 };
@@ -269,7 +270,7 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     if (href === "" || href.startsWith("#")) return;
     const source = onSource ? sourceRef(href) : null;
     if (source) {
-      if (linksOpen) onSource?.(source);
+      if (linksOpen) onSource?.(source, link as HTMLElement);
       return;
     }
     const api = await core();

@@ -938,14 +938,16 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   right: 0;
   z-index: 2;
   height: 28px;
-  /* Eased: page colour all but whole for the first 8px, so a line's tops are
-     gone before its middle shows, and clear at one line (about 30px) down. */
+  /* Page colour whole for the first 12px, then eased clear by 28px. The first
+     12px hide a line, its underline and every other decoration under it (an
+     underline hangs below the letters, so it would otherwise outlast them as
+     a faint rule), and the rest dissolves what is still showing. */
   background: linear-gradient(
     to bottom,
     var(--bg) 0,
-    var(--bg) 6px,
-    color-mix(in srgb, var(--bg) 78%, transparent) 12px,
-    color-mix(in srgb, var(--bg) 40%, transparent) 19px,
+    var(--bg) 12px,
+    color-mix(in srgb, var(--bg) 70%, transparent) 16px,
+    color-mix(in srgb, var(--bg) 36%, transparent) 21px,
     color-mix(in srgb, var(--bg) 0%, transparent) 28px
   );
   pointer-events: none;
@@ -1059,6 +1061,15 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 
   .session .answered .prose p.task > strong:first-child {
     color: var(--muted);
+  }
+
+  /* The learner's answer: its note hangs in the margin beside its first line,
+     the answer is indented one --s4, so the note reaches that much further. */
+  .session .you .you-label {
+    display: block;
+    position: absolute;
+    top: calc(var(--s1) + 0.2em);
+    right: calc(100% + var(--s4) + var(--note-x));
   }
 
   /* Hint, over the reply it names: a note of no height at the top of the reply,
@@ -1406,6 +1417,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   font-size: 1.05em;
 }
 
+/* The margin note "Your answer" is for the wide page, where the margin carries
+   the lesson's labels; below that the indent and the bar already say whose it is. */
+.you .you-label {
+  display: none;
+}
+
 .you-tag {
   display: inline-block;
   margin-left: var(--s2);
@@ -1421,29 +1438,65 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   user-select: none;
 }
 
-/* What the runtime's record says of an answer, one quiet line each, under the
-   answer. It is pulled up into the answer's own margin, and the room for it is
-   kept from the moment the reply starts, so it arrives without moving anything.
-   It comes in by moving (the page's enter), never from nothing. */
+/* What the runtime's record says of an answer: one quiet line, at the foot of
+   the tutor's reply to it, drawn once the reply is whole and the record has
+   its mark. It is the last thing in the exchange, so no room is kept for it
+   and nothing moves when it arrives; it comes in by moving (the page's
+   enter), never from nothing. Words only: the filled green circle is for a
+   proof earned, and this line says no more than that the answer counts
+   towards one. */
 .mark-lines {
-  margin: calc(var(--s2) - var(--s5)) 0 var(--s4) calc(var(--s4) + var(--s4));
-  min-height: calc(var(--fs-small) * 1.5);
+  margin: var(--s4) 0 0;
 }
 
 .mark-line {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
   margin: 0;
-  font-size: var(--fs-small);
+  font-family: var(--sans);
+  font-size: var(--fs-ui);
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--text);
   animation: enter var(--t-move) var(--ease) both;
 }
 
-/* The one filled circle: a proof. A mark that is not counted has no dot. */
-.mark-line .dots {
-  flex: none;
+/* Its lead word says what it is about, quietly; the verdict is in ink, so the
+   line reads as part of the page and not as a footnote. */
+.mark-lead {
+  color: var(--muted);
+}
+
+/* In a turn that is no longer the exchange in hand it is quiet throughout. */
+.exchange.answered .mark-line,
+.exchange.carried .mark-line,
+.earlier .mark-line {
+  color: var(--muted);
+}
+
+.mark-line + .mark-line {
+  margin-top: var(--s1);
+}
+
+/* Only the live task is in full ink. What came before it (the learner's
+   notes, the tutor's replies and the tasks already answered, above the
+   exchange in hand) is set in the quiet ink, mathematics too, which takes the
+   colour of the line it is in. A reply that still holds the task in hand keeps
+   that one task in ink. */
+.exchange.answered .you,
+.exchange.answered .tutor .prose,
+.exchange.carried .you,
+.exchange.carried .tutor .prose,
+.earlier .you,
+.earlier .tutor .prose {
+  color: var(--muted);
+}
+
+.exchange.carried.holds-open .prose div.task,
+.exchange.carried.holds-open .prose :not(div.task) > p.task {
+  color: var(--text);
+}
+
+.exchange.carried .you-tag,
+.earlier .you-tag {
+  color: var(--muted);
 }
 
 /* The line the window sent to open the lesson. Nobody typed it. */
@@ -1538,6 +1591,34 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   color: var(--muted);
 }
 
+/* A fault in the lesson (the usage limit, the tutor's program stopping) is
+   drawn as a fault is on every other screen: a red "!", the words in ink, on
+   the card's own surface with its hairline. Red is on the mark alone, and
+   there is no tinted fill. */
+.session .banner.bad,
+.session .banner.warn {
+  align-items: flex-start;
+  border-color: var(--card-edge);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.session .banner.bad b,
+.session .banner.warn b {
+  color: var(--text);
+}
+
+.session .banner.bad > .icon,
+.session .banner.warn > .icon {
+  margin-top: 0.1em;
+  color: var(--red);
+}
+
+.session .banner.warn .icon-btn {
+  margin-top: -4px;
+  color: var(--muted);
+}
+
 /* A card in the page: the question, the request for permission, the End
    sheet. One recipe: a surface, a hairline, the card radius, no shadow. Its
    heading is the reading face at the UI size; its actions are one row, the
@@ -1625,7 +1706,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   min-height: 44px;
   padding: var(--s3) var(--s4);
   border: 0;
-  border-radius: 0;
+  border-radius: var(--r-control);
   background: transparent;
   font-size: var(--fs-ui);
   line-height: 1.45;
@@ -1633,8 +1714,17 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   transition: background var(--t-fast) ease-out;
 }
 
-.option + .option {
-  border-top: 1px solid var(--line);
+/* The hairline between two rows is drawn inside the row, inset from the
+   corners, so the row's hover fill can be rounded like every other row's. */
+.option + .option::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--s3);
+  right: var(--s3);
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
 }
 
 .option:hover {
@@ -1651,7 +1741,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
    (1px, then a gap) and of the chosen row's bar (3px at the edge, then a gap),
    so the three never lie on one another. */
 html[data-input="key"] .option:focus-visible {
-  border-radius: var(--r-control);
   outline: 2px solid var(--text);
   outline-offset: -5px;
 }

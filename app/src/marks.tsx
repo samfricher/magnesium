@@ -14,53 +14,81 @@ import { Line } from "./ui/Rich";
 import type { Mark } from "./types";
 
 /** The words for one marked answer, or null when the lesson has nothing to say about it. */
-export type MarkSaid = { proof: boolean; before: string; skill: string | null; after: string };
+export type MarkSaid = { before: string; skill: string | null; after: string };
+
+/** The quiet lead word of the line: what it is about. The verdict after it is in ink. */
+export const MARK_LEAD = "Your answer:";
+
+/** A local day as YYYY-MM-DD, the form a record's date takes. */
+const dayOf = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+/**
+ * When a wrong answer returns, if the record says. A row that carries the day
+ * it is next due (`due`, "2026-11-13") and that day is tomorrow says
+ * "tomorrow"; a row with no such day, or a later one, says only that it comes
+ * back on a later day. The window never works the day out for itself.
+ */
+function returns(row: Mark): string {
+  const due = (row as Mark & { due?: unknown }).due;
+  if (typeof due === "string") {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (due.slice(0, 10) === dayOf(tomorrow)) return "It comes back tomorrow.";
+  }
+  return "It comes back on a later day.";
+}
 
 /**
  * What a row says, in the words of the runtime's rule: an answer counts
  * towards a proof only when it was right, with no help, from a blank page.
  * A partly right answer, a decline and a paper's answer have no line here.
+ * The line is about the answer it marked ("Your answer: ..."), and says only
+ * that the answer counts towards a proof: a proof is earned by the runtime on
+ * its own day, never by one answer, so no mark of an earned proof is drawn.
  */
 export function markSaid(row: Mark): MarkSaid | null {
   if (row.paper !== null) return null;
   if (row.mark === "right") {
-    if (row.help !== "none") return { proof: false, before: "Marked right, with help: not counted.", skill: null, after: "" };
-    if (!row.cold) return { proof: false, before: "Marked right. Not counted towards a proof.", skill: null, after: "" };
+    if (row.help !== "none") return { before: "marked right, with help. Not counted towards a proof.", skill: null, after: "" };
+    if (!row.cold) return { before: "marked right. Not counted towards a proof.", skill: null, after: "" };
     const skill = row.label.trim() === "" ? null : row.label.trim();
-    return { proof: true, before: skill ? "Marked right. Counts towards a proof of " : "Marked right. Counts towards a proof.", skill, after: skill ? "." : "" };
+    return {
+      before: skill ? "marked right. Counts towards a proof of " : "marked right. Counts towards a proof.",
+      skill,
+      after: skill ? "." : "",
+    };
   }
-  if (row.mark === "wrong") return { proof: false, before: "Marked: not yet. It comes back later.", skill: null, after: "" };
+  if (row.mark === "wrong") return { before: `marked not yet. ${returns(row)}`, skill: null, after: "" };
   return null;
 }
 
 /** Every row shown in this window, by the exchange it belongs to (the time it began). Kept so a lesson left and returned to still shows them. */
 const shown = new Map<number, Mark[]>();
-/** The exchanges that hold a line for a mark. */
+/** The exchanges whose answer was read before it was sent, so the window is watching the record for their mark. */
 const reserved = new Set<number>();
 
-/** The quiet lines under one answer, or the room for them. Nothing above or below moves when they arrive. */
-export function MarkLines({ since, replying }: { since: number; replying: boolean }) {
+/**
+ * The quiet lines about one answer, set at the foot of the tutor's reply to it.
+ * They are drawn only once the record has a mark for the answer, and no room
+ * is kept for them: they are the last thing in the exchange, so nothing above
+ * them moves when they arrive.
+ */
+export function MarkLines({ since }: { since: number }) {
   const rows = shown.get(since) ?? [];
   const lines = rows.flatMap((row) => {
     const said = markSaid(row);
     return said ? [{ id: row.id, said }] : [];
   });
-  // The room is kept once the reply starts, so the reply is never pushed down by a line arriving later.
-  if (lines.length === 0 && !(reserved.has(since) && replying)) return null;
+  if (lines.length === 0) return null;
   return (
-    <div className="mark-lines" data-role="marks" data-state={lines.length > 0 ? "said" : "held"}>
+    <div className="mark-lines" data-role="marks" data-state="said">
       {lines.map(({ id, said }) => (
-        <p className="mark-line" key={id} data-proof={said.proof ? "yes" : "no"}>
-          {said.proof && (
-            <span className="dots" aria-hidden="true">
-              <i className="on" />
-            </span>
-          )}
-          <span>
-            {said.before}
-            {said.skill && <Line text={said.skill} />}
-            {said.after}
-          </span>
+        <p className="mark-line" key={id}>
+          <span className="mark-lead">{MARK_LEAD} </span>
+          {said.before}
+          {said.skill && <Line text={said.skill} />}
+          {said.after}
         </p>
       ))}
     </div>
@@ -139,7 +167,7 @@ export function useMarks(since: number | null, settled: boolean): { arm: () => v
     reserved.add(since);
     readings.current.set(since, a.reading);
     void a.reading.then((rows) => {
-      // The runtime could not say: no line, and no room for one.
+      // The runtime could not say: the exchange is not watched, and nothing is said.
       if (rows === null) {
         reserved.delete(since);
         if (alive.current) redraw();
