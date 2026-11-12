@@ -56,7 +56,12 @@ const OPEN_MS = 60_000;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // The words the learner types, from the brief's scenarios.
-const ANSWER = "The standard error is s/√n = 10/√25 = 2 minutes.";
+// The stand-in model poses a standard-error question and marks this right.
+// The real tutor's first question differs from run to run, so the live
+// answer is a genuine attempt that fits any first question on sampling.
+const ANSWER = live
+  ? "I think an average varies less than a single value does: its spread is the spread of one value divided by √n."
+  : "The standard error is s/√n = 10/√25 = 2 minutes.";
 const CHANGE = "I skipped three days and the midterm moved, change the plan";
 const OFF_PLAN = "By the way, why do we divide by n − 1 for the sample standard deviation?";
 const BACK = "OK, back to the task.";
@@ -192,6 +197,11 @@ async function keepTranscript(window, heading) {
   transcripts.push({ heading, entries: answer.ok ? answer.transcript : [] });
 }
 
+async function window_plan(window) {
+  const answer = await window.op({ op: "plan" });
+  return answer.ok ? answer.plan : null;
+}
+
 async function readPlan(window, file) {
   const answer = await step(window, `plan into ${file}`, { op: "plan" });
   writeFileSync(join(out, file), JSON.stringify(answer.ok ? answer.plan : { error: answer.error }, null, 2));
@@ -240,6 +250,18 @@ try {
   await step(main, "s3: the reply begins", { op: "wait_reply", timeout_ms: TURN_MS });
   await shoot(main, "s3-before");
   await step(main, "s3: the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The message names no new date, and a real tutor may rightly ask for one.
+  // If the exam has not moved, give the date it asked for, a week later.
+  const moved = await window_plan(main);
+  const before = JSON.parse(readFileSync(join(out, "plan-before.json"), "utf8"));
+  if (before.exam_date && moved && moved.exam_date === before.exam_date) {
+    const date = new Date(`${before.exam_date}T12:00:00`);
+    date.setDate(date.getDate() + 7);
+    const words = date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    run.steps.push({ label: "s3: the tutor asked for the date", date: words });
+    await say(main, "s3: the new date", `It's on ${words} now, same time.`, "talk");
+    await step(main, "s3: the plan changes", { op: "wait_idle", timeout_ms: TURN_MS });
+  }
   await shoot(main, "s3-after");
   await readPlan(main, "plan-after.json");
 
