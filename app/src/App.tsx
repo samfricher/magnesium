@@ -832,12 +832,18 @@ export function App() {
       if (!alive) return off();
       setApi(api);
       latest.current.api = api;
-      const [fresh, built, list] = await Promise.all([api.setup(), api.about(), api.recent().catch(() => [] as string[])]);
-      setAbout(built);
-      setSetup(fresh);
+      // The folder opens while this Mac's setup is checked, so the page is
+      // back as it was left as soon as the folder is read. A setup that
+      // needs the learner is shown in its place when the check answers.
+      const checked = api.setup().then((fresh) => {
+        setSetup(fresh);
+        return fresh;
+      });
+      void api.about().then(setAbout, () => {});
+      const [list, named] = await Promise.all([api.recent().catch(() => [] as string[]), api.initialFolder().catch(() => null)]);
       setRecent(list);
-      const first = (await api.initialFolder()) ?? list[0] ?? null;
-      if (first && setupReady(fresh)) await openFolder(first);
+      const first = named ?? list[0] ?? null;
+      if (!first || !(await openFolder(first))) await checked;
       setBooted(true);
       if (isDemo) (await import("./demo")).startFromAddress(actions);
       else if (await api.selftest()) {
@@ -1115,7 +1121,7 @@ export function App() {
 
   const onDraft = useCallback((which: string, text: string) => keepQuietly((layout) => ({ ...layout, drafts: { ...layout.drafts, [which]: text } })), [keepQuietly]);
 
-  const suggestions = (plan?.items ?? []).filter((item) => item.status !== "done").map((item) => plainText(item.title));
+  const suggestions = (plan?.items ?? []).filter((item) => item.status !== "done").map((item) => item.title);
 
   const renderDoc = (doc: DocId, paneIndex: number, active: boolean) => {
     if (doc === "setup" || (!folder && doc === "lesson")) {
@@ -1304,8 +1310,11 @@ export function App() {
   const left = sitting ? Math.max(0, Math.ceil((sitting.started_ms + sitting.minutes * 60_000 - now) / 60_000)) : 0;
   const live = session.live;
   const tutorState = live && live.status !== "idle" ? (live.doing ? live.doing : live.status === "writing" ? "The tutor is writing" : "The tutor is thinking") : null;
-  const engineName = engine ? ((session.open ? (engine.conversation ?? engine.chosen) : engine.chosen) === "direct" ? "Magnesium" : "Claude Code") : null;
-  const noFolder = !folder;
+  // Until the folder has been read, the window is its empty ground: no
+  // "loading", nothing to read twice.
+  if (!booted) return <div className="window" aria-busy="true" />;
+  const setupBlocks = setup !== null && !setupReady(setup);
+  const noFolder = !folder || setupBlocks;
   const shownPanes = noFolder ? [{ tabs: ["setup"], active: "setup" }] : panesShown;
 
   return (
@@ -1378,7 +1387,6 @@ export function App() {
         )}
         <span className="status-spacer" />
         {tutorState && <span className="status-item tutor">{tutorState}</span>}
-        {engineName && folder && <span className="status-item">{engineName}</span>}
         <button className="status-item keys" onClick={() => setSheet("commands")} title="Every command">
           ⌘K
         </button>

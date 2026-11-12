@@ -561,7 +561,7 @@ export function LessonDoc(props: LessonProps) {
             drive="talk"
             composer
             label="What to work on"
-            placeholder={props.suggestions[0] ?? "A topic, a chapter, a question from your course"}
+            placeholder={props.suggestions[0]?.replace(/[$\\{}_^]/g, "") ?? "A topic, a chapter, a question from your course"}
             initial={props.drafts.talk ?? ""}
             onDraft={(text) => props.onDraft("talk", text)}
             onKey={onTalkKey}
@@ -575,7 +575,7 @@ export function LessonDoc(props: LessonProps) {
               {props.suggestions.slice(0, 4).map((item, n) => (
                 <li key={item}>
                   <button type="button" data-drive={n === 0 ? "start" : undefined} onClick={() => props.onNewLesson(item)}>
-                    {item}
+                    <span dangerouslySetInnerHTML={{ __html: renderInline(item) }} />
                     {n === 0 && <kbd>Return</kbd>}
                   </button>
                 </li>
