@@ -21,7 +21,7 @@ export type Command = {
   run: () => void;
 };
 
-export function Palette(props: { commands: Command[]; footer?: string | null; onClose: () => void }) {
+export function Palette(props: { commands: Command[]; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const [keys, setKeys] = useState<Command | null>(null);
@@ -131,13 +131,15 @@ export function Palette(props: { commands: Command[]; footer?: string | null; on
         </div>
         {keys?.shortcuts ? (
           <div className="palette-keys" id="palette-list">
-            <p className="palette-keys-title">{keys.label}</p>
-            {keys.shortcuts.map(([key, what]) => (
-              <div className="palette-key" key={key}>
-                <kbd>{key}</kbd>
-                <span>{what}</span>
-              </div>
-            ))}
+            <p className="palette-keys-title h-label">{keys.label}</p>
+            <div className="palette-key-grid">
+              {keys.shortcuts.map(([key, what]) => (
+                <div className="palette-key" key={key}>
+                  <kbd>{key}</kbd>
+                  <span>{what}</span>
+                </div>
+              ))}
+            </div>
             <p className="palette-keys-back">Press Esc to go back to the list.</p>
           </div>
         ) : (
@@ -161,7 +163,6 @@ export function Palette(props: { commands: Command[]; footer?: string | null; on
             {shown.length === 0 && <div className="palette-none">Nothing matches. Try: proofs, new lesson, paper.</div>}
           </div>
         )}
-        {props.footer && <div className="palette-foot selectable">{props.footer}</div>}
       </div>
     </div>
   );

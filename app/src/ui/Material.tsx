@@ -52,7 +52,7 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           items[to]?.focus();
         }}
       >
-        <span className="eyebrow">Paste text</span>
+        <h2 className="h-section">Paste text</h2>
         <textarea
           className="field paste-box"
           autoFocus

@@ -2,7 +2,7 @@
 // the week of study days, the due token, and a few ways to say a time. Each
 // concept is drawn here once and used everywhere.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 import type { Activity, Dots as DotsData, Exam, Progress, Proofs } from "../types";
 import { Icon } from "./icons";
@@ -75,6 +75,17 @@ export function splitGoal(goal: string): { ref: string | null; title: string } {
   const rest = parts ? parts[2] : goal.trim();
   const title = rest.replace(/^[a-z]/, (letter) => letter.toUpperCase()).replace(/\s+[\u00b7\u2022]\s+/g, ", ");
   return { ref, title };
+}
+
+/** A goal as its title, and after it the problem it came from in the quiet ink: "Reading Vmax from a plot, PS3 Q3". */
+export function GoalText({ goal }: { goal: string }) {
+  const { ref, title } = splitGoal(goal);
+  return (
+    <>
+      <Line text={title} />
+      {ref && <span className="goal-ref">, {ref}</span>}
+    </>
+  );
 }
 
 /** A line of text with no middle dots in it, and a full stop at its end. */
@@ -182,11 +193,6 @@ export function nextLevelSentence(proofs: Proofs): string | null {
   return `${plural(proofs.to_next, "more proof", "more proofs")} to reach level ${proofs.level + 1}.`;
 }
 
-/** The share of a course's proofs that are earned. */
-export function proofShare(proofs: Proofs): number {
-  return proofs.total === 0 ? 0 : proofs.earned / proofs.total;
-}
-
 /** How many proofs a skill holds that count: its filled dots. */
 export function proofsOf(dots: DotsData): number {
   return dots.filter((dot) => dot === 2).length;
@@ -238,65 +244,173 @@ export function ProofDot({ state }: { state: "on" | "off" | "new" }) {
   );
 }
 
-const LEVEL_SIZE = { sm: 56, md: 80, lg: 104 } as const;
+const TOP_LEVEL = 10;
 
-/** The level: a thin ring that fills with the share of proofs earned, the number in the middle. */
-export function Level({
-  value,
-  size = "md",
-  share,
-  gain = 0,
-  title,
-}: {
-  value: number;
-  size?: "sm" | "md" | "lg";
-  share?: number;
-  /** The share of the course's proofs earned today. Drawn in green over the rest, which turns to ink. */
-  gain?: number;
-  title?: string;
-}) {
-  const box = LEVEL_SIZE[size];
-  const stroke = 2.5;
-  const radius = (box - stroke) / 2;
-  const round = 2 * Math.PI * radius;
-  const filled = Math.max(0, Math.min(1, share ?? 0));
-  const today = Math.max(0, Math.min(filled, gain));
-  const before = filled - today;
-  const centre = box / 2;
+/** The tally's ten strokes, how much of each is filled, and how much of that was earned today. */
+export function levelStrokes(proofs: Proofs, gain: number): { a: number; g: number; full: boolean }[] {
+  const { earned, total } = proofs;
+  // Where the course stands, in strokes. Levels are tenths of the proofs, as the runtime counts them: level n begins at the n-1th ninth.
+  const at = (held: number): number => {
+    if (total <= 0) return 0;
+    const level = Math.min(TOP_LEVEL, 1 + Math.floor((Math.max(0, held) * (TOP_LEVEL - 1)) / total));
+    if (level >= TOP_LEVEL) return TOP_LEVEL;
+    const lo = Math.ceil(((level - 1) * total) / (TOP_LEVEL - 1));
+    const hi = Math.ceil((level * total) / (TOP_LEVEL - 1));
+    return level - 1 + (hi > lo ? Math.max(0, Math.min(1, (held - lo) / (hi - lo))) : 0);
+  };
+  let now = at(earned);
+  if (proofs.level >= TOP_LEVEL) now = TOP_LEVEL;
+  else if (proofs.to_next > 0) {
+    // The runtime says how many proofs the next level is away, which is the width of this stroke.
+    const lo = Math.ceil(((proofs.level - 1) * total) / (TOP_LEVEL - 1));
+    const hi = earned + proofs.to_next;
+    now = proofs.level - 1 + (hi > lo ? Math.max(0, Math.min(1, (earned - lo) / (hi - lo))) : 0);
+  }
+  const before = gain > 0 ? Math.min(now, at(earned - gain)) : now;
+  return Array.from({ length: TOP_LEVEL }, (_, k) => {
+    const end = Math.max(0, Math.min(1, now - k));
+    const a = Math.max(0, Math.min(1, before - k));
+    return { a, g: end - a, full: end >= 1 };
+  });
+}
+
+/** The tally alone: ten strokes. */
+export function Tally({ proofs, size = "md", gain = 0 }: { proofs: Proofs; size?: "sm" | "md" | "lg"; gain?: number }) {
   return (
-    <span className={`level-ring ${size}`} style={{ width: box, height: box }} role="img" aria-label={`Level ${value}`} title={title}>
-      <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
-        <circle className="level-track" cx={centre} cy={centre} r={radius} />
-        {before > 0 && (
-          <circle
-            className={today > 0 ? "level-fill before" : "level-fill"}
-            cx={centre}
-            cy={centre}
-            r={radius}
-            strokeWidth={stroke}
-            strokeDasharray={round}
-            strokeDashoffset={round * (1 - before)}
-            transform={`rotate(-90 ${centre} ${centre})`}
-          />
-        )}
-        {today > 0 && (
-          <circle
-            className="level-fill gain"
-            cx={centre}
-            cy={centre}
-            r={radius}
-            strokeWidth={stroke}
-            style={{ strokeDasharray: `${round * today} ${round}`, ["--round" as string]: `${round}px` }}
-            transform={`rotate(${-90 + 360 * before} ${centre} ${centre})`}
-          />
-        )}
-      </svg>
-      <span className="level-mid">
-        <b className="num">{value}</b>
-        <small>Level</small>
-      </span>
+    <span className={`tally ${size}`} aria-hidden="true">
+      {levelStrokes(proofs, gain).map((stroke, index) => (
+        <i key={index} className={stroke.full ? "full" : undefined} style={{ ["--a" as string]: stroke.a, ["--g" as string]: stroke.g }} />
+      ))}
     </span>
   );
+}
+
+/**
+ * The level: a tally of ten strokes, and beside it "Level 5" and, where there
+ * is room, how many proofs are left to the next. With `gain`, the part earned
+ * today is drawn brighter and grows once.
+ */
+export function Level({
+  proofs,
+  size = "md",
+  gain = 0,
+  text = "next",
+  title,
+}: {
+  proofs: Proofs;
+  size?: "sm" | "md" | "lg";
+  /** How many proofs were earned today, to draw in the brighter tint. */
+  gain?: number;
+  /** "next": the level and the next-level line; "level": the level only; "none": the tally alone. */
+  text?: "next" | "level" | "none";
+  title?: string;
+}) {
+  const next = nextLevelSentence(proofs);
+  const name = `Level ${proofs.level} of ${TOP_LEVEL}${next ? `, ${next.replace(/\.$/, "")}` : ""}`;
+  return (
+    <span className={`lvl ${size}`} role="img" aria-label={name} title={title}>
+      <Tally proofs={proofs} size={size} gain={gain} />
+      {text !== "none" && (
+        <span className="lvl-text">
+          <b>Level {proofs.level}</b>
+          {text === "next" && next && <span>{next}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Move to the next or the previous of a group of radio buttons with the arrow keys. Returns true when the key was one. */
+export function radioKey(event: ReactKeyboardEvent, at: number, count: number, move: (to: number) => void): boolean {
+  let to = at;
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") to = (at + 1) % count;
+  else if (event.key === "ArrowLeft" || event.key === "ArrowUp") to = (at - 1 + count) % count;
+  else if (event.key === "Home") to = 0;
+  else if (event.key === "End") to = count - 1;
+  else return false;
+  event.preventDefault();
+  event.stopPropagation();
+  move(to);
+  return true;
+}
+
+/**
+ * The one choice control: one of several, side by side. Arrow keys move and
+ * choose, the group is one stop for Tab, and the choice made is filled in ink.
+ */
+export function Choice<T extends string>(props: {
+  value: T | null;
+  options: { value: T; label: ReactNode; title?: string }[];
+  onChange: (value: T) => void;
+  /** What the group is, for a screen reader. */
+  label: string;
+  size?: "md" | "sm";
+  disabled?: boolean;
+}) {
+  const { options } = props;
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const chosen = options.findIndex((option) => option.value === props.value);
+  return (
+    <div
+      className={`choose${props.size === "sm" ? " sm" : ""}${props.disabled ? " locked" : ""}`}
+      role="radiogroup"
+      aria-label={props.label}
+      aria-disabled={props.disabled || undefined}
+      onKeyDown={(event) => {
+        if (props.disabled || options.length === 0) return;
+        const at = chosen >= 0 ? chosen : 0;
+        radioKey(event, at, options.length, (to) => {
+          props.onChange(options[to].value);
+          buttons.current[to]?.focus();
+        });
+      }}
+    >
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          ref={(node) => {
+            buttons.current[index] = node;
+          }}
+          type="button"
+          role="radio"
+          aria-checked={index === chosen}
+          tabIndex={index === (chosen >= 0 ? chosen : 0) ? 0 : -1}
+          title={option.title}
+          disabled={props.disabled}
+          onClick={() => {
+            if (index !== chosen) props.onChange(option.value);
+          }}
+        >
+          <span>{option.label}</span>
+          <span className="c-ghost" aria-hidden="true">
+            {option.label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Enter does the screen's one green button when nothing has focus. The
+ * window moves no focus by itself on load, so a ring is never hidden and the
+ * first Tab lands on the first control; Return still goes straight on.
+ */
+export function useReturnForPrimary(): void {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const focused = document.activeElement;
+      if (focused && focused !== document.body) return;
+      if (document.querySelector(".palette-veil")) return;
+      const button = document.querySelector<HTMLButtonElement>(".screen .btn.primary:not(:disabled)");
+      if (!button) return;
+      event.preventDefault();
+      button.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 }
 
 /** A due thing: an amber point and a few words. With a number, "5 questions due today"; without, "due today". */
@@ -352,9 +466,20 @@ export function Week({ days, today, back = 0, letters = true }: { days: string[]
   );
 }
 
-/** The week of study days the learner is in, and the run, as the library and the end of a sitting show them. */
+/** The week of study days the learner is in, and the run, as the end of a lesson shows them. */
 export function ThisWeek({ activity }: { activity: Activity }) {
   return <Week days={activity.days} today={activity.today} />;
+}
+
+/** The study week as one quiet line: its name, the seven days, the run. */
+export function WeekLine({ activity }: { activity: Activity }) {
+  return (
+    <p className="week-line">
+      <span className="h-label">This week</span>
+      <Week days={activity.days} today={activity.today} />
+      <Run days={activity.run} />
+    </p>
+  );
 }
 
 /** What a proof is, in one line, for a tooltip. */

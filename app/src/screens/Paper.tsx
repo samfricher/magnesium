@@ -2,10 +2,10 @@
 // happens on paper, away from the screen. The tutor and the key are both out
 // of reach until the learner hands in.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Icon } from "../ui/icons";
-import { PaletteKey, TopBar, clockText, useNow } from "../ui/bits";
+import { PaletteKey, TopBar, clockText, radioKey, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Paper as PaperInfo } from "../types";
 import { displayName } from "./Library";
 
@@ -21,6 +21,8 @@ export function Paper(props: {
   onPalette: () => void;
 }) {
   const { home } = props;
+  useReturnForPrimary();
+  const options = useRef<(HTMLButtonElement | null)[]>([]);
   const now = useNow(1000);
   const sitting = home.sitting;
   const [picked, setPicked] = useState<PaperInfo | null>(props.chosen ?? home.papers.find((p) => !p.sat) ?? home.papers[0] ?? null);
@@ -54,7 +56,7 @@ export function Paper(props: {
               )}
             </p>
             <div className="row center paper-actions">
-              <button className="btn primary" autoFocus onClick={props.onHandIn}>
+              <button className="btn primary" onClick={props.onHandIn}>
                 Hand in a photo or PDF
               </button>
               {confirmEnd ? (
@@ -100,23 +102,40 @@ export function Paper(props: {
         <div className="paper-col">
           {home.papers.length === 0 ? (
             <>
-              <h1>No paper to sit yet</h1>
+              <h1 className="h-title">No paper to sit yet</h1>
               <p className="paper-rule">The tutor builds papers for an exam. Start a lesson and name the exam, and its papers appear here.</p>
               <div className="row center">
-                <button className="btn primary" autoFocus title="Back (Return)" onClick={props.onBack}>
+                <button className="btn primary" title="Back (Return)" onClick={props.onBack}>
                   Back
                 </button>
               </div>
             </>
           ) : (
             <>
-              <h1>Sit a paper</h1>
-              <div className="paper-list" role="radiogroup" aria-label="Papers">
-                {home.papers.map((paper) => (
+              <h1 className="h-title">Timed paper</h1>
+              <div
+                className="paper-list"
+                role="radiogroup"
+                aria-label="Papers"
+                onKeyDown={(event) => {
+                  const at = Math.max(0, home.papers.findIndex((paper) => paper.path === picked?.path));
+                  radioKey(event, at, home.papers.length, (to) => {
+                    const paper = home.papers[to];
+                    setPicked(paper);
+                    setMinutes(String(paper.minutes ?? home.block_minutes));
+                    options.current[to]?.focus();
+                  });
+                }}
+              >
+                {home.papers.map((paper, index) => (
                   <button
                     key={paper.path}
+                    ref={(node) => {
+                      options.current[index] = node;
+                    }}
                     role="radio"
                     aria-checked={picked?.path === paper.path}
+                    tabIndex={picked?.path === paper.path || (picked === null && index === 0) ? 0 : -1}
                     className={picked?.path === paper.path ? "on" : undefined}
                     onClick={() => {
                       setPicked(paper);

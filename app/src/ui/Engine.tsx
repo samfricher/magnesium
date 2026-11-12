@@ -4,9 +4,8 @@
 // so a new pick takes effect with the next lesson, and the learner record
 // carries the progress across.
 
-import type { KeyboardEvent } from "react";
-
 import type { Engine, EngineChoice, Payment } from "../types";
+import { Choice } from "./bits";
 
 const ENGINES: Engine[] = ["plugin", "direct"];
 
@@ -33,40 +32,20 @@ export function EngineControl(props: {
   bare?: boolean;
 }) {
   const { choice, locked } = props;
-  const pick = (engine: Engine) => {
-    if (!locked && engine !== choice.chosen) props.onChoose(engine);
-  };
-  // Arrow keys move the pick, as in any group of radio buttons.
-  const onKey = (event: KeyboardEvent) => {
-    const by = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
-    if (by === 0 || locked) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const next = ENGINES[(ENGINES.indexOf(choice.chosen) + by + ENGINES.length) % ENGINES.length];
-    pick(next);
-    const group = event.currentTarget as HTMLElement;
-    window.setTimeout(() => group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus(), 0);
-  };
   const changes = choice.conversation !== null && choice.conversation !== choice.chosen;
   return (
     <div className={locked ? "engine locked" : "engine"} data-role="engine">
       <div className="engine-pick">
-        {!props.bare && <span className="engine-label">Lessons run on</span>}
-        <div className="segmented" role="radiogroup" aria-label="Lessons run on" aria-disabled={locked || undefined} onKeyDown={onKey}>
-          {ENGINES.map((engine) => (
-            <button
-              key={engine}
-              role="radio"
-              aria-checked={choice.chosen === engine}
-              tabIndex={choice.chosen === engine ? 0 : -1}
-              className={choice.chosen === engine ? "on" : undefined}
-              disabled={locked}
-              onClick={() => pick(engine)}
-            >
-              {engineName(engine)}
-            </button>
-          ))}
-        </div>
+        {!props.bare && <span className="h-label">Lessons run on</span>}
+        <Choice
+          label="Lessons run on"
+          value={choice.chosen}
+          disabled={locked}
+          options={ENGINES.map((engine) => ({ value: engine, label: engineName(engine) }))}
+          onChange={(engine) => {
+            if (!locked && engine !== choice.chosen) props.onChoose(engine);
+          }}
+        />
         {locked && <span className="engine-why">End the lesson to change this.</span>}
       </div>
       {/* Both lines are laid out, one over the other, and the one not picked

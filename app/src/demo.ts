@@ -274,7 +274,7 @@ function activity(): Activity {
   return { today: day(0), days, run: studiedToday ? 4 : 3, studied_today: studiedToday };
 }
 
-function progress(): Progress {
+function progress(target: string | null = null): Progress {
   if (variant === "new" || variant === "upgrade" || variant === "broken") {
     return {
       targets: [],
@@ -298,7 +298,10 @@ function progress(): Progress {
       { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
       { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 },
     ],
-    exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
+    exam:
+      target === "final"
+        ? { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 }
+        : { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
     in_progress: [
       // After a sitting in the demo, the first skill has earned its second proof.
       sittingsDone > 0
@@ -583,7 +586,7 @@ export function demoCore(): Core {
       sittingsDone += 1;
     },
     rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
-    progress: async () => progress(),
+    progress: async (target) => progress(target ?? null),
     setBlockMinutes: async (minutes) => {
       blockMinutes = minutes;
     },

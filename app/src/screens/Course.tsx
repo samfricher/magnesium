@@ -7,13 +7,32 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, ExamSentence, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, bucketsSentence, clockText, composing, nextLevelSentence, proofShare, proofsOf, sentence, skillBuckets, skillsProven, splitGoal, useNow } from "../ui/bits";
+import { Due, ExamSentence, GoalText, Level, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, bucketsSentence, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Home, Paper, Progress } from "../types";
 import { displayName } from "./Library";
 import { todaySentence } from "./Summary";
 
 /** What a proof is, for a course that has none yet. */
 const PROOF_DEFINITION = "A proof is a right answer with no help, on its own day. Three prove a skill.";
+
+/** What this window has been told about a folder's material, kept per folder: "skipped" or "added". Reads and writes never throw. */
+const MATERIAL_KEY = "magnesium.material:";
+
+function rememberedMaterial(folder: string): string | null {
+  try {
+    return window.localStorage.getItem(MATERIAL_KEY + folder);
+  } catch {
+    return null;
+  }
+}
+
+function rememberMaterial(folder: string, what: "skipped" | "added"): void {
+  try {
+    window.localStorage.setItem(MATERIAL_KEY + folder, what);
+  } catch {
+    // Without storage the step is simply asked again next time.
+  }
+}
 
 export function Course(props: {
   home: Home;
@@ -45,18 +64,25 @@ export function Course(props: {
   const [goal, setGoal] = useState("");
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
-  // "Skip" on the first step of a new folder, for this folder while it stays open.
-  const [skipped, setSkipped] = useState(false);
+  // "Skip for now" on the first step of a new folder. It sticks for that folder: the step is not asked again.
+  const [skipped, setSkipped] = useState(() => rememberedMaterial(home.folder) !== null);
   useEffect(() => {
     setDeclined(false);
-    setSkipped(false);
+    setSkipped(rememberedMaterial(home.folder) !== null);
   }, [home.folder]);
+  // Material added through the window is remembered too, for when the folder is empty again of anything the window can see.
+  useEffect(() => {
+    if (props.material !== null) rememberMaterial(home.folder, "added");
+  }, [props.material, home.folder]);
+  useReturnForPrimary();
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
+  // A course that is known to have material (papers, an exam, a lesson begun) never shows the step.
+  const hasMaterial = home.papers.length > 0 || home.exam !== null || home.last !== null;
   // A folder with nothing in it starts with its material: slides, notes, papers.
   // Once something is added, or the step is skipped, it asks what to learn.
-  const gathering = fresh && !skipped && props.material === null && !props.asking;
+  const gathering = fresh && !hasMaterial && !skipped && props.material === null && !props.asking;
   const asking = !gathering && (fresh || props.asking);
 
   useEffect(() => {
@@ -81,13 +107,13 @@ export function Course(props: {
   if (home.state === "no_runtime" || home.state === "unreadable") {
     card = (
       <>
-        <span className="eyebrow bad">
-          <Icon name="warn" size={14} /> Something to fix first
-        </span>
-        <h2>{home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}</h2>
+        <h2 className="h-section fault">
+          <Icon name="warn" size={20} />
+          {home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}
+        </h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
-          <button className="btn primary" autoFocus title="Try again (Return)" onClick={props.onRetry}>
+          <button className="btn primary" title="Try again (Return)" onClick={props.onRetry}>
             Try again
           </button>
         </div>
@@ -96,7 +122,7 @@ export function Course(props: {
   } else if (home.state === "needs_upgrade") {
     card = declined ? (
       <>
-        <h2>This course stays as it was</h2>
+        <h2 className="h-section">This course stays as it was</h2>
         <p>A lesson cannot start here until the course is upgraded. Nothing in it was changed.</p>
         <div className="row">
           <button className="btn" disabled={props.upgrading} onClick={props.onUpgrade}>
@@ -106,10 +132,10 @@ export function Course(props: {
       </>
     ) : (
       <>
-        <h2>Upgrade this course?</h2>
+        <h2 className="h-section">Upgrade this course?</h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
+          <button className="btn primary" disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
             {props.upgrading ? "Upgrading…" : "Upgrade"}
           </button>
           {!props.upgrading && (
@@ -124,13 +150,12 @@ export function Course(props: {
     const leftSeconds = Math.round((sitting.started_ms + sitting.minutes * 60_000 - now) / 1000);
     card = (
       <>
-        <p className="next-ref">A paper is running</p>
-        <h2>
+        <h2 className="h-section">
           {sitting.name}, <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
         </h2>
-        <p>The tutor is off until you hand in.</p>
+        <p>A paper is running. The tutor is off until you hand in.</p>
         <div className="row">
-          <button className="btn primary" autoFocus title="Back to the paper (Return)" onClick={() => props.onPaper(null)}>
+          <button className="btn primary" title="Back to the paper (Return)" onClick={() => props.onPaper(null)}>
             Back to the paper
           </button>
         </div>
@@ -139,18 +164,26 @@ export function Course(props: {
   } else if (gathering) {
     card = (
       <>
-        <h2>Add your course material</h2>
+        <h2 className="h-section">Add your course material</h2>
         <p>
           Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
         </p>
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.adding} title="Choose files (Return)" onClick={props.onAddFiles} data-role="add-files">
+          <button className="btn" disabled={props.adding} title="Choose files" onClick={props.onAddFiles} data-role="add-files">
             {props.adding ? "Adding…" : "Choose files"}
           </button>
           <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
             Paste text
           </button>
-          <button className="btn ghost" disabled={props.adding} onClick={() => setSkipped(true)} data-role="skip-material">
+          <button
+            className="btn ghost"
+            disabled={props.adding}
+            onClick={() => {
+              rememberMaterial(home.folder, "skipped");
+              setSkipped(true);
+            }}
+            data-role="skip-material"
+          >
             Skip for now
           </button>
         </div>
@@ -160,7 +193,7 @@ export function Course(props: {
     const start = () => goal.trim() !== "" && !props.starting && props.onNewLesson(goal.trim());
     card = (
       <>
-        <h2>What do you want to learn?</h2>
+        <h2 className="h-section">What do you want to learn?</h2>
         <input
           ref={input}
           className="field big"
@@ -192,27 +225,21 @@ export function Course(props: {
     );
   } else {
     const last = home.last;
-    const goal = last ? splitGoal(last.goal) : null;
     const stopped = last?.stopped_at ? sentence(last.stopped_at) : null;
     const upNext = last?.next_action ? sentence(last.next_action) : null;
     card = (
       <>
-        {last && (
-          <p className="next-ref">
-            <span>{goal?.ref ?? ""}</span>
-            {last.days_ago !== null && <span>Last studied {agoText(last.days_ago)}</span>}
-          </p>
-        )}
-        <h2 className="selectable">
-          {goal ? <Line text={goal.title} /> : <Line text={`Start on ${exam?.title ?? displayName(home.name)}`} />}
+        <h2 className="h-section selectable">
+          {last ? <GoalText goal={last.goal} /> : <Line text={`Start on ${exam?.title ?? displayName(home.name)}`} />}
         </h2>
+        {last && last.days_ago !== null && <p className="next-meta">Last studied {agoText(last.days_ago)}</p>}
         {stopped ? (
           <p className="selectable">You stopped at <Line text={stopped} /></p>
         ) : upNext ? (
           <p className="selectable">Up next: <Line text={upNext} /></p>
         ) : null}
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
+          <button className="btn primary" disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
             {props.starting ? "Starting…" : last ? "Continue" : "Start your first lesson"}
           </button>
           {due > 0 && (
@@ -228,7 +255,6 @@ export function Course(props: {
 
   const today = todaySentence(progress?.today ?? null);
   const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
-  const nextLevel = proofs ? nextLevelSentence(proofs) : null;
   const buckets = progress && !progress.message ? bucketsSentence(skillBuckets(progress)) : null;
   // The skills in play: those with a proof to earn, the ones due today first.
   const inPlay = progress ? [...progress.in_progress.filter((row) => row.due), ...progress.in_progress.filter((row) => !row.due)] : [];
@@ -248,25 +274,19 @@ export function Course(props: {
         <div className="course-col">
           <header className="course-head">
             <div className="course-title">
-              <h1>{displayName(home.name)}</h1>
+              <h1 className="h-title">{displayName(home.name)}</h1>
               <p className="exam-line">
                 {exam ? <ExamSentence exam={exam} /> : usable && home.state === "ready" ? "No exam set." : " "}
               </p>
             </div>
             {skills && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="level-text">{skills}</span>
+                <span className="lvl-text">{skills}</span>
               </button>
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Level value={proofs.level} size="md" share={proofShare(proofs)} />
-                <span className="level-text num">
-                  <span>
-                    {proofs.earned} of {proofs.total} proofs
-                  </span>
-                  {nextLevel && <span className="level-next">{nextLevel}</span>}
-                </span>
+                <Level proofs={proofs} size="md" />
               </button>
             )}
           </header>
@@ -332,10 +352,10 @@ export function Course(props: {
             <div className="material-strip" data-role="material-strip">
               <Icon name="clip" size={16} />
               <span>Drop files here, or choose them</span>
-              <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+              <button className="btn" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
                 {props.adding ? "Adding…" : "Choose files"}
               </button>
-              <button className="btn small" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+              <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
                 Paste text
               </button>
             </div>

@@ -14,9 +14,9 @@ import { Palette, type Command } from "./screens/Palette";
 import { Paper } from "./screens/Paper";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
-import { Setup, aboutText, setupReady } from "./screens/Setup";
+import { Setup, setupReady } from "./screens/Setup";
 import { Summary, type Sitting } from "./screens/Summary";
-import { EngineControl, engineName } from "./ui/Engine";
+import { EngineControl } from "./ui/Engine";
 import { DropVeil, PasteSheet } from "./ui/Material";
 import type {
   About,
@@ -57,8 +57,10 @@ const SHORTCUTS: Command = {
     ["⌘⇧D", "I don't know (in a lesson)"],
     ["⌘⇧L", "I'm lost (in a lesson)"],
     ["⌘.", "Stop the reply being written"],
-    ["Return", "Send your answer"],
-    ["Shift Return", "Start a new line in your answer"],
+    ["Return", "Send your answer, or do the screen's green button"],
+    ["Shift+Return", "Start a new line in your answer"],
+    ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
+    ["1 2 3, or ↑ ↓ and Return", "Choose an answer when the tutor asks \"Which of these was in your head?\""],
     ["Esc", "Go back, or close what is open"],
   ],
   run: () => {},
@@ -900,7 +902,7 @@ export function App() {
       });
       const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
       list.push({
-        label: "Sit a paper",
+        label: "Start a timed paper",
         hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : "timed practice exam",
         icon: "paper",
         keywords: "exam timed practice",
@@ -919,17 +921,6 @@ export function App() {
         },
       });
     }
-    if (engine) {
-      const other: Engine = engine.chosen === "plugin" ? "direct" : "plugin";
-      list.push({
-        label: `Lessons run on ${engineName(other)}`,
-        hint: `now ${engineName(engine.chosen)}`,
-        icon: "gear",
-        keywords: "engine claude code magnesium",
-        disabled: inLesson ? "after this lesson" : undefined,
-        run: () => void chooseEngine(other),
-      });
-    }
     if (course) {
       BLOCKS.filter((minutes) => minutes !== course.block_minutes).forEach((minutes) =>
         list.push({
@@ -942,10 +933,10 @@ export function App() {
       );
     }
     list.push({
-      label: "This Mac's setup",
-      hint: "Claude Code, Magnesium, payment",
+      label: "Setup",
+      hint: "Claude Code, Magnesium, payment, how lessons run",
       icon: "gear",
-      keywords: "settings preferences account",
+      keywords: "settings preferences account engine lessons run on advanced version",
       run: () => openSetup(),
     });
     list.push(SHORTCUTS);
@@ -1187,7 +1178,7 @@ export function App() {
       </div>
       {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
       {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
-      {palette && <Palette commands={commands()} footer={aboutText(about)} onClose={() => setPalette(false)} />}
+      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
     </div>
   );
 }

@@ -1,44 +1,13 @@
 /* ---- the library: the next lesson, then a ruled index of the courses ---- */
 
-.screen.library {
-  --col-w: 960px;
-}
-
 .shelf {
   max-width: 960px;
   margin: 0 auto;
   padding: var(--s4) var(--s7) var(--s8);
 }
 
-/* The title, and under it the week of study days with its caption. */
 .shelf-head {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s3);
   margin-bottom: var(--s5);
-}
-
-.shelf-head h1 {
-  font-family: var(--serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.shelf-week {
-  display: flex;
-  align-items: center;
-  gap: var(--s4);
-  min-height: 40px;
-}
-
-.shelf-caption {
-  display: flex;
-  flex-direction: column;
-  font-size: var(--fs-small);
-  line-height: 20px;
-  color: var(--muted);
 }
 
 .cards {
@@ -70,18 +39,18 @@
 
 .next-card.library-next h2 {
   margin-top: 0;
-  font-size: var(--fs-title);
-  line-height: 1.15;
 }
 
 .cc-body {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--s5);
+  gap: var(--s4) var(--s5);
 }
 
 .cc-text {
+  flex: 1 1 280px;
   min-width: 0;
 }
 
@@ -89,17 +58,9 @@
 .cc-name {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: var(--s1) var(--s3);
   min-width: 0;
-}
-
-.cc-name h2 {
-  font-family: var(--serif);
-  font-size: var(--fs-card);
-  font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: break-word;
 }
 
 /* Where the course stopped. It wraps, whole: a title is never cut off. */
@@ -111,11 +72,13 @@
   color: var(--muted);
 }
 
-.cc-ref {
-  margin-right: var(--s2);
+/* The problem a goal came from follows it, in the quiet ink. */
+.goal-ref {
   font-family: var(--sans);
-  font-size: var(--fs-caption);
+  font-size: var(--fs-small);
+  font-weight: 400;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .cc-title .katex {
@@ -134,26 +97,18 @@
 }
 
 .library-next .cc-where {
-  margin-top: var(--s3);
-  max-width: 52ch;
+  margin-top: var(--s2);
+  max-width: 56ch;
   font-size: var(--fs-read);
   color: var(--text);
 }
 
-.library-next .cc-ref {
-  display: block;
-  margin: 0 0 var(--s1);
-}
-
-.library-next .cc-ago {
-  margin-top: var(--s2);
-}
-
-.library-next .cc-title .katex {
-  white-space: nowrap;
-}
-
-.library-next .cc-proofs {
+/* Last studied, and what is proven: one quiet line. */
+.next-card p.cc-metas {
+  display: flex;
+  font-family: var(--sans);
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
   margin-top: var(--s3);
 }
 
@@ -170,7 +125,7 @@
   color: var(--muted);
 }
 
-/* Proofs, in one line: the mark of a proven skill, and how many are proven. */
+/* Proofs, in one line: how many skills are proven. */
 .cc-proofs {
   display: inline-flex;
   align-items: center;
@@ -184,7 +139,7 @@
 .ledger-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 208px 56px 32px;
+  grid-template-columns: minmax(0, 1fr) 184px 116px 32px;
   align-items: center;
   column-gap: var(--s4);
   min-height: 88px;
@@ -246,7 +201,7 @@ html:not([data-input="key"]) .ledger-row:has(.cc-open:focus-visible) {
 
 .lr-level {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .lr-remove {
@@ -329,13 +284,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   background: transparent;
 }
 
-.asking h2 {
-  font-family: var(--serif);
-  font-size: var(--fs-read);
-  font-weight: 600;
-  line-height: 1.3;
-}
-
 .cc-note {
   font-size: var(--fs-small);
   color: var(--muted);
@@ -376,6 +324,26 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   margin-top: var(--s5);
 }
 
+/* The study week, as one quiet line at the foot of the library. Its room is kept until it is known. */
+.shelf-foot {
+  min-height: 32px;
+  margin-top: var(--s6);
+}
+
+.week-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s2) var(--s4);
+  min-height: 32px;
+}
+
+.week-line .h-label,
+.week-line .run-line {
+  line-height: 12px;
+  margin-top: 0;
+}
+
 .empty {
   display: flex;
   flex-direction: column;
@@ -383,12 +351,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   gap: var(--s3);
   padding: var(--s8) 0 var(--s5);
   text-align: center;
-}
-
-.empty h2 {
-  font-family: var(--serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
 }
 
 .empty p {
@@ -402,7 +364,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 @media (max-width: 640px) {
   .ledger-row {
-    grid-template-columns: minmax(0, 1fr) 56px 32px;
+    grid-template-columns: minmax(0, 1fr) 116px 32px;
     row-gap: var(--s2);
   }
 
@@ -427,34 +389,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 /* ---- one course: one card that says what to do now ---- */
 
-/* The back link sits over the content column's left edge, once the window is
-   wide enough to clear the traffic lights. */
-.screen.course,
-.screen.progress,
-.screen.setup,
-.screen.paper {
-  --col-pad: var(--s7);
-  --bar-left: max(76px, calc((100vw - var(--col-w)) / 2 + var(--col-pad) - var(--s4) - 13px));
-}
-
-.screen.course {
-  --col-w: 760px;
-}
-
-.screen.progress {
-  --col-w: 820px;
-}
-
-.screen.setup {
-  --col-w: 540px;
-  --col-pad: var(--s6);
-}
-
-.screen.paper {
-  --col-w: 460px;
-  --col-pad: var(--s6);
-}
-
 .course-col {
   max-width: 760px;
   margin: 0 auto;
@@ -473,15 +407,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   min-width: 0;
 }
 
-.course-head h1,
-.board-title h1 {
-  font-family: var(--serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  line-height: 1.12;
-  overflow-wrap: break-word;
-}
-
 /* The exam, as one sentence in the quiet ink. */
 .exam-line {
   margin-top: var(--s2);
@@ -491,11 +416,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   min-height: 22px;
 }
 
+/* The level on the course page opens the proofs. */
 .level {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  padding: var(--s2) var(--s3) var(--s2) var(--s2);
+  padding: var(--s2) var(--s3);
   border: 1px solid transparent;
   border-radius: var(--r-card);
   background: transparent;
@@ -512,20 +438,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   border-color: var(--line-2);
 }
 
-.level-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-  max-width: 230px;
-  line-height: 1.4;
-  text-wrap: balance;
-}
-
-.level-next {
-  font-weight: 600;
-  color: var(--text);
-}
-
 /* The next card: the one thing to do now, on this page and as the library's first card. */
 .next-card {
   display: flex;
@@ -536,30 +448,25 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   background: var(--surface);
 }
 
-.next-ref {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s4);
-  font-size: var(--fs-small);
-  color: var(--muted);
-}
-
 .next-card h2 {
-  margin-top: var(--s2);
-  font-family: var(--serif);
-  font-size: var(--fs-card);
-  font-weight: 600;
-  line-height: 1.24;
+  margin-top: 0;
   text-wrap: balance;
 }
 
-.next-card p:not(.next-ref) {
+.next-card p {
   margin-top: var(--s3);
   font-family: var(--serif);
   font-size: var(--fs-ui);
   line-height: 1.6;
   color: var(--muted);
   max-width: 62ch;
+}
+
+.next-card p.next-meta {
+  margin-top: var(--s2);
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  line-height: 1.5;
 }
 
 .next-card .field {
@@ -580,6 +487,17 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .dues-what {
   font-size: var(--fs-small);
   color: var(--muted);
+}
+
+/* A fault, said in a heading: the mark in red, the words in ink. */
+.h-section.fault {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.h-section.fault .icon {
+  color: var(--red);
 }
 
 /* Proofs, a timed paper, a new lesson: a ruled index, one row each. */
@@ -613,7 +531,9 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   color: var(--muted);
 }
 
-.index-name {
+/* The name of an item in a list: the reading face, a step below a section's heading. */
+.index-name,
+.step-name {
   font-family: var(--serif);
   font-size: var(--fs-read);
   font-weight: 600;
@@ -1576,6 +1496,13 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   text-align: center;
 }
 
+/* The end of a lesson reads down one left edge: the headline, the proofs, the level, one quiet block. */
+.summary-col {
+  align-items: flex-start;
+  max-width: 520px;
+  text-align: left;
+}
+
 /* A check only when something moved. Nothing marked gets a quiet ring and a dash. */
 .done-mark {
   display: grid;
@@ -1597,21 +1524,20 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .paper-col h1,
 .setup-col h1 {
   margin-top: var(--s5);
-  font-family: var(--serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  line-height: 1.2;
-  text-wrap: balance;
 }
 
 .summary-col h1 {
   margin-top: var(--s4);
-  font-size: var(--fs-display);
-  line-height: 1.15;
 }
 
-.summary-col h1[data-role="unmarked"] {
-  font-size: var(--fs-title);
+/* Why nothing was marked, in plain words, right under the headline. */
+.summary-why {
+  margin-top: var(--s3);
+  max-width: 44ch;
+  font-family: var(--serif);
+  font-size: var(--fs-read);
+  line-height: 1.55;
+  color: var(--text);
 }
 
 .setup-sub {
@@ -1653,40 +1579,38 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   align-items: center;
   gap: var(--s4);
   margin-top: var(--s5);
-  font-family: var(--serif);
-  font-size: var(--fs-read);
+  font-size: var(--fs-ui);
   line-height: 1.4;
   text-align: left;
 }
 
-.summary-lead {
-  margin-top: var(--s3);
-  font-family: var(--serif);
-  font-size: var(--fs-read);
-  line-height: 1.5;
-  color: var(--muted);
-}
-
+/* Today's counts, the steps done and where to pick up: one quiet block. */
 .summary-facts {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  margin-top: var(--s4);
-  font-size: var(--fs-ui);
+  width: 100%;
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--muted);
 }
 
+.summary-facts .today-line {
+  margin-top: 0;
+}
+
 .summary-facts .next-time {
   font-family: var(--serif);
-  font-size: var(--fs-read);
+  font-size: var(--fs-ui);
   color: var(--text);
 }
 
 .summary-week {
   display: flex;
   align-items: flex-start;
-  justify-content: center;
   flex-wrap: wrap;
   gap: var(--s4);
   margin-top: var(--s5);
@@ -1700,12 +1624,12 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-top: var(--s5);
 }
 
+.summary-col .row.center {
+  justify-content: flex-start;
+}
+
 /* A short window: the same screen, with less air. */
 @media (max-height: 640px) {
-  .summary-col h1 {
-    font-size: var(--fs-title);
-  }
-
   .done-mark {
     width: 40px;
     height: 40px;
@@ -1717,6 +1641,10 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   .summary-week,
   .earned {
     margin-top: var(--s3);
+  }
+
+  .summary-facts {
+    padding-top: var(--s3);
   }
 
   .summary-col .row {
@@ -1738,7 +1666,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .board-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--s5);
   margin-bottom: var(--s5);
 }
@@ -1748,73 +1677,36 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   min-width: 0;
 }
 
-.board-sum {
-  margin-top: var(--s2);
-  font-size: var(--fs-ui);
-  color: var(--muted);
-}
-
-.board-next {
+/* The course the proofs are of, quiet under the title. */
+.board-course {
   margin-top: var(--s1);
+  font-family: var(--serif);
   font-size: var(--fs-ui);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.targets {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  margin-top: var(--s3);
-  padding: var(--s1);
-  border-radius: var(--r-control);
-  background: var(--surface);
-  border: 1px solid var(--line);
-}
-
-.targets button,
-.segmented button {
-  height: 28px;
-  padding: 0 var(--s3);
-  border: 0;
-  border-radius: var(--r-control);
-  background: transparent;
   color: var(--muted);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  transition:
-    background var(--t-fast) ease-out,
-    color var(--t-fast) ease-out;
 }
 
-.targets button:hover:not(.on),
-.segmented button:hover:not(.on):not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
+.board-targets {
+  margin-top: var(--s3);
 }
 
-.targets button:active,
-.segmented button:active:not(:disabled) {
-  transform: translateY(1px);
+.board-sum {
+  margin-top: var(--s3);
+  font-size: var(--fs-ui);
+  color: var(--muted);
 }
 
-.targets button.on,
-.segmented button.on {
-  background: var(--hover);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+.board-head .exam-line {
+  min-height: 0;
 }
 
-/* What every mark on the page means: the mark, then its words, in one narrow column of marks. */
+/* What every mark on the page means, at the foot: the mark, then its words. */
 .legend {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--s2) var(--s3);
-  margin: 0 0 var(--s5);
-  padding: var(--s3) 0;
-  border-top: 1px solid var(--line-2);
-  border-bottom: 1px solid var(--line-2);
+  margin: var(--s3) 0 0;
+  padding: 0;
   list-style: none;
   font-size: var(--fs-small);
   line-height: 1.4;
@@ -1827,12 +1719,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .legend .dots,
 .legend .due,
-.legend-ring {
+.legend .tally {
   justify-self: start;
-}
-
-.legend-ring .level-fill {
-  fill: none;
 }
 
 /* Sections and rows share one left edge, and the button one right edge with the rows' last words. */
@@ -1840,26 +1728,23 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-top: var(--s5);
 }
 
-.group h3,
-.foot-section h3 {
+.group h2,
+.foot-section h2 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: 40px;
   margin: 0 0 var(--s1);
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  color: var(--text);
 }
 
-.group h3 span,
-.foot-section h3 span {
-  font-weight: 400;
-  color: var(--muted);
-}
-
-.group h3 .btn {
+.group h2 .btn {
   margin-left: auto;
+}
+
+.foot-section h2 .run-line {
+  margin-left: var(--s2);
+  font-family: var(--sans);
+  font-weight: 400;
 }
 
 .skill {
@@ -1928,13 +1813,14 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: var(--text);
 }
 
+/* Nothing to show yet: the words begin at the title's own left edge. */
 .board-empty {
-  padding: var(--s7) 0;
-  text-align: center;
+  padding: var(--s5) 0 var(--s7);
+  text-align: left;
   color: var(--muted);
   font-family: var(--serif);
   font-size: var(--fs-read);
-  text-wrap: balance;
+  max-width: 44ch;
 }
 
 .board-foot {
@@ -1952,11 +1838,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--muted);
-}
-
-.foot-section .run-line {
-  margin-left: var(--s2);
-  font-weight: 400;
 }
 
 .scores {
@@ -1977,6 +1858,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .score b {
   font-size: var(--fs-small);
+  font-weight: 600;
   color: var(--text);
 }
 
@@ -2192,7 +2074,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 /* Every problem that blocks you is red, in its mark and in its words. */
-.step:not(.ok):not(.plain):not(.choice) .step-head span {
+.step:not(.ok):not(.plain):not(.choice) .step-detail {
   color: var(--red);
 }
 
@@ -2220,12 +2102,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   min-height: 24px;
 }
 
-.step-head b {
-  font-size: var(--fs-ui);
-  font-weight: 600;
-}
-
-.step-head span {
+.step-detail {
   font-size: var(--fs-caption);
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -2242,14 +2119,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-top: var(--s3);
 }
 
-.segmented {
-  display: inline-flex;
-  gap: var(--s1);
+.step-body .choose,
+.step-body .engine .choose {
   margin-top: var(--s2);
-  padding: var(--s1);
-  border-radius: var(--r-control);
-  background: var(--bg);
-  border: 1px solid var(--line);
 }
 
 .setup-col > .row {
@@ -2319,10 +2191,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .setup-col > .aside {
   margin-top: var(--s5);
-}
-
-.setup-col > .aside.version {
-  margin-top: var(--s2);
 }
 
 /* ---- a narrow window ---- */
@@ -2758,19 +2626,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   gap: var(--s3);
 }
 
-.engine .segmented {
-  margin-top: 0;
-}
-
-.engine .segmented button:disabled {
-  cursor: default;
-}
-
-.engine.locked .segmented {
-  opacity: 0.55;
-}
-
-.engine-label,
 .engine-why,
 .engine-line {
   font-size: var(--fs-caption);

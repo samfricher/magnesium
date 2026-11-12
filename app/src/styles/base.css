@@ -1,4 +1,4 @@
-/* One window, made for studying: ink on paper.
+/* One window, made for studying: the pages of an exam booklet, and a slate to work on at night.
 
    Five rules decide what is here.
    1. Colour is spent only on what you have proved and on the one thing that
@@ -30,36 +30,37 @@
 :root {
   color-scheme: dark;
 
-  /* Ink: a blue-black page with paper-white text. */
-  --bg: #191e26;
-  --surface: #1f252f;
-  --raised: #262d39;
-  --hover: #2c3441;
-  --line: rgba(233, 235, 238, 0.08);
-  --line-2: rgba(233, 235, 238, 0.16);
-  /* The border of a field you type in: 3:1 or better on the page, a card and a sheet. */
-  --line-input: #7d8695;
-  /* A control while it is pressed: one step beyond its hover fill. */
-  --press: #232a34;
-  --text: #e9ebee;
-  --muted: #b3bac5;
-  --faint: #949caa;
-  --accent: #7cc3a2;
-  --accent-ink: #0e2a1e;
-  --accent-hover: #93d0b4;
-  --accent-press: #67ab89;
-  --accent-soft: rgba(124, 195, 162, 0.1);
-  --accent-mid: rgba(124, 195, 162, 0.42);
-  --amber: #e2b260;
-  --amber-soft: rgba(226, 178, 96, 0.12);
-  --red: #ee8f82;
-  --red-soft: rgba(238, 143, 130, 0.12);
+  /* Slate: a blackboard's green-grey, with chalk-white writing on it. */
+  --bg: #1a1f1c;
+  --surface: #202622;
+  --raised: #272e2a;
+  --hover: #2e3631;
+  --line: rgba(232, 234, 227, 0.1);
+  --line-2: rgba(232, 234, 227, 0.18);
+  /* The border of a field you type in, a choice and an unfilled mark: 3:1 or better on the page, a card and a sheet. */
+  --line-input: #7e877f;
+  /* A control while it is pressed: it sinks one step below its hover fill. */
+  --press: #242a26;
+  --text: #e8eae3;
+  --muted: #b4bab2;
+  --faint: #979e97;
+  --accent: #88c9a1;
+  --accent-ink: #0f2a1c;
+  --accent-hover: #9dd6b3;
+  --accent-press: #74b38d;
+  --accent-soft: rgba(136, 201, 161, 0.1);
+  --accent-mid: rgba(136, 201, 161, 0.42);
+  /* A brighter tint of the proof green: the part of the level earned today. */
+  --accent-bright: #c6f0d7;
+  --amber: #e4b45f;
+  --amber-soft: rgba(228, 180, 95, 0.12);
+  --red: #ef9083;
+  --red-soft: rgba(239, 144, 131, 0.12);
   /* The one shadow, for what floats. */
-  --shadow: 0 16px 48px rgba(5, 8, 12, 0.5), 0 2px 8px rgba(5, 8, 12, 0.3);
-  --veil: rgba(14, 18, 24, 0.55);
-  /* The magnesium flare: near-white light, and its glow. */
+  --shadow: 0 16px 48px rgba(4, 8, 6, 0.5), 0 2px 8px rgba(4, 8, 6, 0.3);
+  --veil: rgba(14, 18, 15, 0.55);
+  /* The magnesium flare: near-white, for an instant. */
   --flare: #f4fffa;
-  --flare-glow: rgba(244, 255, 250, 0.8);
 
   --serif: "Literata Variable", Literata, ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   --sans: "Magnesium Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -110,20 +111,20 @@
     --press: #dadcd5;
     --text: #1b212b;
     --muted: #475060;
-    --faint: #5f6877;
+    --faint: #566070;
     --accent: #1d6a4a;
     --accent-ink: #ffffff;
     --accent-hover: #175939;
     --accent-press: #124a30;
     --accent-soft: rgba(29, 106, 74, 0.08);
     --accent-mid: rgba(29, 106, 74, 0.4);
-    --amber: #8a5600;
-    --amber-soft: rgba(138, 86, 0, 0.09);
-    --red: #ae3b2f;
-    --red-soft: rgba(174, 59, 47, 0.08);
+    --accent-bright: #2b9a69;
+    --amber: #995500;
+    --amber-soft: rgba(153, 85, 0, 0.09);
+    --red: #a53527;
+    --red-soft: rgba(165, 53, 39, 0.08);
     --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
     --veil: rgba(241, 242, 238, 0.6);
-    --flare-glow: rgba(29, 106, 74, 0.5);
   }
 }
 
@@ -172,6 +173,60 @@ h2,
 h3,
 p {
   margin: 0;
+}
+
+/* One style for each level of heading, on every screen. A screen's title and
+   a section's heading are set in the reading face; a label for a group of
+   controls is the small bold sans. */
+.h-title {
+  font-family: var(--serif);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.15;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.h-section {
+  font-family: var(--serif);
+  font-size: var(--fs-card);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+
+.h-section .h-count {
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.h-label {
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* A plain fact: what is so, not something to press. Muted words and, if it helps, a small glyph. No outline. */
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 100%;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.fact .icon {
+  color: var(--muted);
+}
+
+.fact.bad {
+  color: var(--red);
 }
 
 code {
@@ -296,7 +351,7 @@ textarea {
 /* The two sides are the same width, so the middle is the window's middle.
    The left side starts after the traffic lights. */
 .bar-side:first-child {
-  padding-left: var(--bar-left, 76px);
+  padding-left: 76px;
 }
 
 .bar-side {
@@ -337,6 +392,7 @@ textarea {
   height: 36px;
   padding: 0 var(--s4);
   border: 1px solid var(--line-2);
+  font-family: var(--sans);
   border-radius: var(--r-control);
   background: transparent;
   color: var(--text);
@@ -448,8 +504,6 @@ textarea {
 .crumb:active:not(:disabled),
 button.chip:active,
 .passage:active,
-.targets button:active,
-.segmented button:active:not(:disabled),
 .paper-list button:active,
 .index-row:active,
 .more:active,
@@ -463,6 +517,94 @@ button.chip:active,
 .palette-list [role="option"]:active {
   background: var(--press);
   transition-duration: 80ms;
+}
+
+/* The one choice control: one of several, side by side. 32px, or 28px small.
+   The choice made is filled in ink with the page's colour on it, so it is told
+   at a glance and without the weight alone. Arrow keys move and choose; the
+   group is a single stop for Tab. */
+.choose {
+  display: inline-flex;
+  align-items: stretch;
+  flex: none;
+  height: 32px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-control);
+  background: transparent;
+}
+
+.choose.sm {
+  height: 28px;
+}
+
+.choose button {
+  display: grid;
+  place-items: center;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  white-space: nowrap;
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
+}
+
+.choose button:first-child {
+  border-radius: calc(var(--r-control) - 1px) 0 0 calc(var(--r-control) - 1px);
+}
+
+.choose button:last-child {
+  border-radius: 0 calc(var(--r-control) - 1px) calc(var(--r-control) - 1px) 0;
+}
+
+.choose button + button {
+  border-left: 1px solid var(--line);
+}
+
+/* The label is laid twice in one cell, the second time in the heavier weight and unseen, so a segment never changes width when it is chosen. */
+.choose button > * {
+  grid-area: 1 / 1;
+}
+
+.choose .c-ghost {
+  font-weight: 600;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.choose button:hover:not([aria-checked="true"]):not(:disabled) {
+  background: var(--hover);
+}
+
+.choose button:active:not([aria-checked="true"]):not(:disabled) {
+  background: var(--press);
+}
+
+.choose button[aria-checked="true"] {
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.choose.locked {
+  opacity: 0.55;
+}
+
+.choose:has(button:focus-visible) {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+html:not([data-input="key"]) .choose:has(button:focus-visible) {
+  outline: none;
+}
+
+.choose button:focus-visible {
+  outline: none;
 }
 
 /* A key hint: a keycap on a button, or a key named in a line of text. */
@@ -559,31 +701,6 @@ textarea::placeholder {
 
 .row.center {
   justify-content: center;
-}
-
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.eyebrow i {
-  font-style: normal;
-  font-weight: 400;
-  color: var(--faint);
-  font-size: var(--fs-caption);
-}
-
-.eyebrow i::before {
-  content: "·";
-  margin: 0 var(--s2) 0 0;
-}
-
-.eyebrow.bad {
-  color: var(--red);
 }
 
 .aside {
@@ -699,85 +816,104 @@ button.banner:hover {
   color: var(--red);
 }
 
-/* ---- the level: the one ring ---- */
+/* ---- the level: a tally of ten strokes ---- */
 
-.level-ring {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
+/* A level is a share of the plan's proofs in tenths, so it is drawn as ten
+   strokes, as a marker counts. Strokes below the level are filled; the stroke
+   in hand is filled from its foot by the share earned towards the next level;
+   those above are empty outlines. One proportion (4 by 16, 3 apart) in three
+   sizes. --a is the filled share of a stroke, --g the share of it earned today. */
+.lvl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  text-align: left;
+}
+
+.tally {
+  --u: 1px;
+  display: inline-flex;
+  align-items: flex-end;
   flex: none;
+  gap: calc(var(--u) * 3);
 }
 
-.level-ring svg {
-  display: block;
+.tally.sm {
+  --u: 0.75px;
 }
 
-/* The track is a hairline in --faint, 3:1 or better on every surface. The arc is the share of proofs earned. */
-.level-track {
-  fill: none;
-  stroke: var(--faint);
-  stroke-width: 1.5;
+.tally.lg {
+  --u: 1.5px;
 }
 
-.level-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-linecap: round;
+.tally i {
+  --a: 0;
+  --g: 0;
+  position: relative;
+  width: calc(var(--u) * 4);
+  height: calc(var(--u) * 16);
+  border: max(1px, calc(var(--u) * 1.5)) solid var(--line-input);
+  border-radius: calc(var(--u) * 2);
+  overflow: hidden;
 }
 
-/* With today's gain drawn, what was earned before today is ink and what was
-   earned today is green. The green arc grows once, with the proof's flare. */
-.level-fill.before {
-  stroke: var(--text);
-  stroke-linecap: butt;
+.tally i.full {
+  border-color: var(--accent);
 }
 
-.level-fill.gain {
-  stroke-linecap: butt;
+.tally i::before,
+.tally i::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.tally i::before {
+  bottom: 0;
+  height: calc(var(--a) * 100%);
+  background: var(--accent);
+}
+
+/* What was earned today sits on top of the rest, in a brighter tint, and grows once. */
+.tally i::after {
+  bottom: calc(var(--a) * 100%);
+  height: calc(var(--g) * 100%);
+  background: var(--accent-bright);
+  transform-origin: bottom;
   animation: grow 700ms var(--ease) 260ms both;
 }
 
 @keyframes grow {
   from {
-    stroke-dasharray: 0 var(--round);
+    transform: scaleY(0);
   }
 }
 
-.level-mid {
-  position: absolute;
-  inset: 0;
+.lvl-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
+  gap: var(--s1);
+  min-width: 0;
+  line-height: 1.35;
+  color: var(--muted);
+  font-size: var(--fs-small);
 }
 
-.level-mid b {
-  color: var(--text);
-  font-family: var(--serif);
+.lvl-text b {
+  font-size: var(--fs-ui);
   font-weight: 600;
+  color: var(--text);
   font-variant-numeric: lining-nums tabular-nums;
 }
 
-.level-mid small {
-  margin-top: 2px;
-  font-family: var(--sans);
-  font-size: var(--fs-caption);
-  font-weight: 400;
-  color: var(--muted);
+.lvl.sm .lvl-text b {
+  font-size: var(--fs-small);
 }
 
-.level-ring.sm b {
+.lvl.lg .lvl-text b {
   font-size: var(--fs-read);
-}
-
-.level-ring.md b {
-  font-size: var(--fs-card);
-}
-
-.level-ring.lg b {
-  font-size: var(--fs-title);
 }
 
 /* ---- the proof mark: three dots ---- */
@@ -813,36 +949,24 @@ button.banner:hover {
   background: var(--accent);
 }
 
-/* Earned today: the same dot with a soft halo. */
+/* Earned today: the filled dot with a ring, 1.5px in the proof green, 2px off it. */
 .dots i.new {
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.dots.lg i.new {
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The magnesium flare: the new proof burns white for an instant and settles
-   into proof green. It happens once, on Sitting done, and is the only
+   into proof green. It happens once, on Lesson done, and is the only
    celebration in the window. */
 @keyframes flare {
-  0% {
-    background: var(--flare);
-    box-shadow:
-      0 0 0 0 var(--flare-glow),
-      0 0 0 0 var(--accent-soft);
-  }
+  0%,
   14% {
     background: var(--flare);
-    box-shadow:
-      0 0 14px 6px var(--flare-glow),
-      0 0 0 4px var(--accent-mid);
+    border-color: var(--flare);
   }
   100% {
     background: var(--accent);
-    box-shadow:
-      0 0 0 0 transparent,
-      0 0 0 3px var(--accent-soft);
+    border-color: var(--accent);
   }
 }
 
@@ -1088,12 +1212,32 @@ button.banner:hover {
   white-space: nowrap;
 }
 
+/* The row in hand: pressed in one step, a 2px bar of ink at its edge, its words in ink. */
+.palette-list [role="option"] {
+  position: relative;
+}
+
 .palette-list [role="option"].on {
-  background: var(--hover);
+  background: var(--press);
+}
+
+.palette-list [role="option"].on::before {
+  content: "";
+  position: absolute;
+  top: var(--s2);
+  bottom: var(--s2);
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text);
 }
 
 .palette-list [role="option"].on small {
   color: var(--muted);
+}
+
+.palette-list [role="option"].on span {
+  color: var(--text);
 }
 
 .palette-list [role="option"].on .icon {
@@ -1123,35 +1267,28 @@ button.banner:hover {
 
 .palette-keys-title {
   margin-bottom: var(--s2);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--muted);
+}
+
+.palette-key-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s2) var(--s4);
 }
 
 .palette-key {
-  display: flex;
-  align-items: center;
-  gap: var(--s4);
-  min-height: 32px;
+  display: contents;
   font-size: var(--fs-ui);
 }
 
 .palette-key kbd {
-  min-width: 96px;
-  justify-content: center;
+  justify-self: start;
+  white-space: nowrap;
 }
 
 .palette-keys-back {
   margin-top: var(--s2);
   font-size: var(--fs-caption);
-  color: var(--faint);
-}
-
-.palette-foot {
-  padding: var(--s2) var(--s4);
-  border-top: 1px solid var(--line);
-  font-size: var(--fs-caption);
-  line-height: 1.4;
   color: var(--faint);
 }
 
@@ -1168,15 +1305,20 @@ button.banner:hover {
     max-height: calc(100vh - 5vh - 140px);
   }
 
-  .palette-key {
-    min-height: 30px;
+  .palette-key-grid {
+    gap: var(--s1) var(--s4);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Nothing that loops is shortened to 0.01ms, which would leave it frozen at
+     whatever opacity it stopped on: it is removed, and rests at full opacity. */
   .dots i.flare,
-  .level-fill.gain {
-    animation: none;
+  .tally i::after,
+  .mark.breathing i,
+  .ghosted {
+    animation: none !important;
+    opacity: 1;
   }
 
   *,

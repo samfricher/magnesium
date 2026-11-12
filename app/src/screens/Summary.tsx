@@ -12,7 +12,7 @@
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Level, PaletteKey, ProofDots, Run, ThisWeek, TopBar, proofShare, proofsOf, sentence } from "../ui/bits";
+import { Level, PaletteKey, ProofDots, Run, ThisWeek, TopBar, proofsOf, sentence, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Proofs, Row, Today } from "../types";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -78,6 +78,7 @@ export function Summary(props: {
   onPalette: () => void;
 }) {
   const { sitting, activity } = props;
+  useReturnForPrimary();
   // The proofs earned in this lesson.
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
   // The mark is a check only when something moved: a proof, or an answer marked.
@@ -96,6 +97,7 @@ export function Summary(props: {
   const marked = !sitting.today && sitting.marked !== null && sitting.marked > 0 ? `${plural(sitting.marked, "answer", "answers")} marked.` : null;
   const steps = sitting.stepsTotal > 0 ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
   const tomorrow = sitting.today ? 0 : sitting.tomorrow;
+  const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0;
   return (
     <section className="screen summary" data-screen="summary">
       <TopBar center={<span className="bar-title">{props.courseName}</span>} right={<PaletteKey onClick={props.onPalette} />} />
@@ -104,9 +106,15 @@ export function Summary(props: {
           <span className={moved ? "done-mark" : "done-mark quiet"} aria-hidden="true">
             <Icon name={moved ? "check" : "dash"} size={22} />
           </span>
-          <h1 data-role={unmarked ? "unmarked" : undefined}>
-            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "No answer was marked, so no proof was earned." : "Lesson done"}
+          <h1 className="h-title" data-role={unmarked ? "unmarked" : undefined}>
+            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "No proof this time" : "Lesson done"}
           </h1>
+          {unmarked && (
+            <p className="summary-why" data-role="why">
+              The tutor didn&apos;t mark an answer in this lesson, so no proof yet. A proof is an answer the tutor marks right, given without help, on its own day.
+              {comes ? ` ${comes}` : ""}
+            </p>
+          )}
 
           {proofs > 0 && (
             <div className="earned" data-role="earned">
@@ -120,38 +128,36 @@ export function Summary(props: {
             </div>
           )}
 
-          {comes && <p className="summary-lead">{comes}</p>}
-
-          {level && (
+          {level && props.proofs && (
             <p className="level-line" data-role="level">
-              {props.proofs && (
-                <Level
-                  value={props.proofs.level}
-                  size="md"
-                  share={proofShare(props.proofs)}
-                  gain={props.proofs.total > 0 ? proofs / props.proofs.total : 0}
-                  title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
-                />
-              )}
+              <Level
+                proofs={props.proofs}
+                size="lg"
+                text="none"
+                gain={proofs}
+                title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
+              />
               <span>{level}</span>
             </p>
           )}
 
-          <div className="summary-facts">
-            {today && (
-              <p className="today-line" data-role="today">
-                {today}
-              </p>
-            )}
-            {marked && <p>{marked}</p>}
-            {steps && <p>{steps}</p>}
-            {sitting.stoppedAt && (
-              <p className="selectable next-time">
-                Next time: <Line text={sentence(sitting.stoppedAt)} />
-              </p>
-            )}
-            {tomorrow > 0 && <p>{plural(tomorrow, "skill", "skills")} can earn a proof tomorrow.</p>}
-          </div>
+          {!nothing && (
+            <div className="summary-facts">
+              {today && (
+                <p className="today-line" data-role="today">
+                  {today}
+                </p>
+              )}
+              {marked && <p>{marked}</p>}
+              {steps && <p>{steps}</p>}
+              {tomorrow > 0 && <p>{plural(tomorrow, "skill", "skills")} can earn a proof tomorrow.</p>}
+              {sitting.stoppedAt && (
+                <p className="selectable next-time">
+                  Next time: <Line text={sentence(sitting.stoppedAt)} />
+                </p>
+              )}
+            </div>
+          )}
 
           {activity && (
             <div className="summary-week">
@@ -161,7 +167,7 @@ export function Summary(props: {
           )}
 
           <div className="row center">
-            <button className="btn primary" autoFocus title="Done (Return)" onClick={props.onDone} data-role="summary-done">
+            <button className="btn primary" title="Done (Return)" onClick={props.onDone} data-role="summary-done">
               Done
             </button>
             <button className="btn ghost" onClick={props.onProgress}>

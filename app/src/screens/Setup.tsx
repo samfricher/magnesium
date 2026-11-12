@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../ui/icons";
-import { PaletteKey, TopBar } from "../ui/bits";
+import { Choice, PaletteKey, TopBar, useReturnForPrimary } from "../ui/bits";
 import type { About, Account, Payment, RuntimeSetup, Setup as SetupData } from "../types";
 
 /** Whether a lesson can start: the program runs and Claude Code is signed in. */
@@ -38,8 +38,8 @@ function Step(props: { ok: boolean; choice?: boolean; title: string; detail: str
       </span>
       <div className="step-body">
         <div className="step-head">
-          <b>{props.title}</b>
-          <span className="selectable">{props.detail}</span>
+          <b className="step-name">{props.title}</b>
+          <span className="step-detail selectable">{props.detail}</span>
         </div>
         {props.children}
       </div>
@@ -65,7 +65,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
           it first.
         </p>
         <div className="row">
-          <button className="btn primary" autoFocus title="Replace (Return)" onClick={props.onReplace}>
+          <button className="btn primary" title="Replace (Return)" onClick={props.onReplace}>
             Replace
           </button>
           <button className="btn ghost" onClick={props.onKeep}>
@@ -83,7 +83,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
         <p className="selectable">{runtime.message}</p>
         <div className="row">
           {bundled && (
-            <button className="btn primary" autoFocus title="Replace (Return)" onClick={props.onReplace}>
+            <button className="btn primary" title="Replace (Return)" onClick={props.onReplace}>
               Replace with {versionNumber(bundled.version)}
             </button>
           )}
@@ -200,8 +200,8 @@ export function Setup(props: {
   engine: ReactNode;
 }) {
   const { setup } = props;
+  useReturnForPrimary();
   const ready = setupReady(setup);
-  const choosing = setup?.runtime.state === "different" || setup?.runtime.state === "too_old";
   const version = aboutText(props.about);
 
   let title = "Before your first lesson";
@@ -232,7 +232,7 @@ export function Setup(props: {
       />
       <div className="center">
         <div className="setup-col">
-          <h1>{title}</h1>
+          <h1 className="h-title">{title}</h1>
           <p className="setup-sub">{sub}</p>
           {setup && !ready && (
             <div className="steps">
@@ -257,21 +257,17 @@ export function Setup(props: {
                   <span className="step-mark" aria-hidden="true" />
                   <div className="step-body">
                     <div className="step-head">
-                      <b>Pay for lessons with</b>
+                      <span className="h-label">Pay for lessons with</span>
                     </div>
-                    <div className="segmented" role="radiogroup" aria-label="Pay for lessons with">
-                      <button role="radio" aria-checked={setup.payment === "plan"} className={setup.payment === "plan" ? "on" : undefined} onClick={() => props.onPayment("plan")}>
-                        Your Claude plan
-                      </button>
-                      <button
-                        role="radio"
-                        aria-checked={setup.payment === "api_key"}
-                        className={setup.payment === "api_key" ? "on" : undefined}
-                        onClick={() => props.onPayment("api_key")}
-                      >
-                        An API key, per use
-                      </button>
-                    </div>
+                    <Choice
+                      label="Pay for lessons with"
+                      value={setup.payment}
+                      options={[
+                        { value: "plan", label: "Your Claude plan" },
+                        { value: "api_key", label: "An API key, per use" },
+                      ]}
+                      onChange={props.onPayment}
+                    />
                   </div>
                 </div>
                 {props.engine && (
@@ -279,13 +275,14 @@ export function Setup(props: {
                     <span className="step-mark" aria-hidden="true" />
                     <div className="step-body">
                       <div className="step-head">
-                        <b>Lessons run on</b>
+                        <span className="h-label">Lessons run on</span>
                       </div>
                       {props.engine}
                     </div>
                   </div>
                 )}
               </div>
+              {version && <p className="aside version selectable">{version}</p>}
               <p className="aside selectable">
                 Setting a course up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
                 Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
@@ -294,12 +291,11 @@ export function Setup(props: {
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
           <div className="row center">
-            <button className="btn primary" autoFocus={ready && !choosing} disabled={!ready} title="Done (Return)" onClick={props.onBack} data-role="setup-done">
+            <button className="btn primary" disabled={!ready} title="Done (Return)" onClick={props.onBack} data-role="setup-done">
               {props.canGoBack ? "Done" : "Go to your library"}
             </button>
             {setup && !ready && <span className="aside">Finish the steps above first.</span>}
           </div>
-          {version && <p className="aside version selectable">{version}</p>}
         </div>
       </div>
     </section>

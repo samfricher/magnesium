@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, Level, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, ExamSentence, bucketsSentence, nextLevelSentence, plain, proofShare, proofsOf, skillBuckets, skillsProven } from "../ui/bits";
+import { Choice, Due, ExamSentence, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, plain, proofsOf, skillsProven } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
@@ -30,10 +30,10 @@ function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]
   const shown = all ? rows : rows.slice(0, fold);
   return (
     <section className="group">
-      <h3>
-        {title} <span>({rows.length})</span>
+      <h2 className="h-section">
+        {title} <span className="h-count">({rows.length})</span>
         {action}
-      </h3>
+      </h2>
       {shown.map((row, index) => (
         <RowView key={`${row.name}-${index}`} row={row} tone={tone} />
       ))}
@@ -95,10 +95,8 @@ export function Progress(props: {
   const due = data.in_progress.filter((row) => row.due);
   const later = data.in_progress.filter((row) => !row.due);
   const sure = data.scores.filter((s) => s.sure_total !== null && s.sure_right !== null);
-  const skills = proofs.levelled ? null : skillsProven(proofs);
-  const buckets = data.message ? null : bucketsSentence(skillBuckets(data));
-  const nextLevel = nextLevelSentence(proofs);
-  const levelShown = !data.level_unknown && proofs.levelled;
+  const skills = skillsProven(proofs);
+  const levelShown = !data.level_unknown && proofs.levelled && proofs.total > 0;
 
   return (
     <section className="screen progress" data-screen="progress">
@@ -106,16 +104,17 @@ export function Progress(props: {
       <div className="scroll">
         <div className="board">
           <header className="board-head">
-            {levelShown && <Level value={proofs.level} size="md" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
             <div className="board-title">
-              <h1>{displayName(props.folderName)}</h1>
+              <h1 className="h-title">Proofs</h1>
+              <p className="board-course">{displayName(props.folderName)}</p>
               {data.targets.length > 1 ? (
-                <div className="targets" role="group" aria-label="Exam">
-                  {data.targets.map((target) => (
-                    <button key={target.target} className={target.target === exam?.target ? "on" : undefined} aria-pressed={target.target === exam?.target} onClick={() => props.onTarget(target.target)}>
-                      <Line text={target.title} />
-                    </button>
-                  ))}
+                <div className="board-targets">
+                  <Choice
+                    label="Exam"
+                    value={exam?.target ?? null}
+                    options={data.targets.map((target) => ({ value: target.target, label: <Line text={target.title} /> }))}
+                    onChange={props.onTarget}
+                  />
                 </div>
               ) : (
                 exam && (
@@ -124,46 +123,20 @@ export function Progress(props: {
                   </p>
                 )
               )}
-              {skills && <p className="board-sum">{skills}. A course with no plan has no level.</p>}
-              {proofs.levelled && proofs.total > 0 && (
+              {skills && (
                 <p className="board-sum num">
-                  {proofs.earned} of {proofs.total} proofs.
+                  {skills}
+                  {proofs.levelled && proofs.total > 0 ? `, ${proofs.earned} of ${proofs.total} proofs earned.` : ". A course with no plan has no level."}
                 </p>
               )}
-              {buckets && <p className="board-sum num">{buckets}</p>}
-              {levelShown && nextLevel && <p className="board-next num">{nextLevel}</p>}
             </div>
+            {levelShown && <Level proofs={proofs} size="md" title={`${proofs.earned} of ${proofs.total} proofs`} />}
           </header>
 
           {data.message ? (
             <div className="board-empty">{data.message}</div>
           ) : (
             <>
-              <ul className="legend" aria-label="What the marks mean">
-                <li>
-                  <ProofDot state="on" />
-                  <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
-                </li>
-                <li>
-                  <ProofDot state="off" />
-                  <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
-                </li>
-                <li>
-                  <span className="due" aria-hidden="true">
-                    <i />
-                  </span>
-                  <span>Due today: you can earn this skill&apos;s next proof today.</span>
-                </li>
-                {levelShown && (
-                  <li>
-                    <svg className="legend-ring" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                      <circle className="level-track" cx="7" cy="7" r="5.5" />
-                      <circle className="level-fill" cx="7" cy="7" r="5.5" strokeWidth="2" strokeDasharray="14 35" transform="rotate(-90 7 7)" />
-                    </svg>
-                    <span>The level&apos;s ring fills as you earn proofs.</span>
-                  </li>
-                )}
-              </ul>
               <Group
                 title="To prove today"
                 rows={due}
@@ -182,11 +155,36 @@ export function Progress(props: {
               <Group title="Not tested yet" rows={data.untested} fold={6} tone="untested" />
 
               <footer className="board-foot selectable">
+                <section className="foot-section">
+                  <h2 className="h-section">What the marks mean</h2>
+                  <ul className="legend">
+                    <li>
+                      <ProofDot state="on" />
+                      <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
+                    </li>
+                    <li>
+                      <ProofDot state="off" />
+                      <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
+                    </li>
+                    <li>
+                      <span className="due" aria-hidden="true">
+                        <i />
+                      </span>
+                      <span>Due today: you can earn this skill&apos;s next proof today.</span>
+                    </li>
+                    {levelShown && (
+                      <li>
+                        <Tally proofs={proofs} size="sm" />
+                        <span>The level is ten strokes. One fills as you earn the proofs for the next level.</span>
+                      </li>
+                    )}
+                  </ul>
+                </section>
                 {data.scores.length > 0 && (
                   <section className="foot-section">
-                    <h3>
-                      Papers <span>({data.scores.length})</span>
-                    </h3>
+                    <h2 className="h-section">
+                      Papers <span className="h-count">({data.scores.length})</span>
+                    </h2>
                     <div className="scores">
                       {data.scores.map((score) => {
                         const share = scoreShare(score.score);
@@ -205,7 +203,7 @@ export function Progress(props: {
                 )}
                 {sure.length > 0 && (
                   <section className="foot-section">
-                    <h3>Sure but wrong</h3>
+                    <h2 className="h-section">Sure but wrong</h2>
                     <p>
                       {sure
                         .map((score) => `${(score.sure_total ?? 0) - (score.sure_right ?? 0)} of ${score.sure_total} on ${score.paper}`)
@@ -216,9 +214,9 @@ export function Progress(props: {
                 )}
                 {data.helped_count > 0 && (
                   <section className="foot-section">
-                    <h3>
-                      With help, not counted <span>({data.helped_count})</span>
-                    </h3>
+                    <h2 className="h-section">
+                      With help, not counted <span className="h-count">({data.helped_count})</span>
+                    </h2>
                     <p>
                       {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
                       {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
@@ -227,9 +225,9 @@ export function Progress(props: {
                 )}
                 {activity && (
                   <section className="foot-section" title={RUN_HINT}>
-                    <h3>
+                    <h2 className="h-section">
                       Days you studied <Run days={activity.run} invite />
-                    </h3>
+                    </h2>
                     <div className="weeks">
                       {WEEK_NAMES.map((name, back) => (
                         <div className="weeks-row" key={name}>

@@ -10,15 +10,8 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, Level, PaletteKey, Run, TopBar, Week, agoText, clockText, examWhen, proofShare, skillsProven, splitGoal, useNow } from "../ui/bits";
+import { Due, GoalText, Level, PaletteKey, TopBar, WeekLine, agoText, clockText, examWhen, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Card } from "../types";
-
-/** Today as a day on the calendar, in this Mac's time. */
-function localDay(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
 
 /** A course's name as a title: "Demo-Course" reads "Demo Course". */
 export function displayName(name: string): string {
@@ -42,32 +35,20 @@ function statusOf(card: Card): { text: string; tone: string } | null {
   }
 }
 
-/** A neutral chip: the exam and how near it is, as "Midterm 1 in 6 days". */
-function ExamChip({ card }: { card: Card }) {
+/** What is so of the course, as plain words and not something to press: the exam and how near it is, or where the course stands. */
+function ExamFact({ card }: { card: Card }) {
   const status = statusOf(card);
-  if (status) return <span className={`chip ${status.tone}`}>{status.text}</span>;
+  if (status) return <span className={status.tone === "bad" ? "fact bad" : "fact"}>{status.text}</span>;
   const exam = card.exam;
-  if (!exam) return <span className="chip">No exam set</span>;
+  if (!exam) return <span className="fact">No exam set</span>;
   return (
-    <span className="chip">
-      <span className="chip-text">
+    <span className="fact">
+      <Icon name="calendar" size={14} />
+      <span className="fact-text">
         <Line text={exam.title} />
         {examWhen(exam)}
       </span>
     </span>
-  );
-}
-
-/** Where the course stopped, as a reference over a title. */
-function Goal({ goal }: { goal: string }) {
-  const { ref, title } = splitGoal(goal);
-  return (
-    <>
-      {ref && <span className="cc-ref">{ref}</span>}
-      <span className="cc-title">
-        <Line text={title} />
-      </span>
-    </>
   );
 }
 
@@ -142,7 +123,7 @@ function CourseCard(props: {
           }
         }}
       >
-        <h2>Remove {name}?</h2>
+        <h2 className="h-section">Remove {name}?</h2>
         <p className="cc-note">It leaves this list. Your files and your record stay on your Mac.</p>
         <div className="row">
           <button className="btn" ref={keep} onClick={cancel}>
@@ -158,14 +139,13 @@ function CourseCard(props: {
 
   const label = props.starting ? "Starting…" : sitting ? "Back to the paper" : props.onCourse ? (card.goal ? "Continue" : "Start your first lesson") : "Open";
   const where = sitting ? (
-    <>
-      <span className="cc-ref">{sitting.name}</span>
-      <span className="cc-title num">
-        {clockText(leftSeconds)} {leftSeconds >= 0 ? "left" : "over"}
-      </span>
-    </>
+    <span className="cc-title num">
+      {sitting.name}, {clockText(leftSeconds)} {leftSeconds >= 0 ? "left" : "over"}
+    </span>
   ) : card.goal ? (
-    <Goal goal={card.goal} />
+    <span className="cc-title">
+      <GoalText goal={card.goal} />
+    </span>
   ) : (
     <span className="cc-title dim">{card.state === "ready" || card.state === "empty" ? "Nothing started yet" : " "}</span>
   );
@@ -191,16 +171,16 @@ function CourseCard(props: {
         <div className="cc-body">
           <div className="cc-text">
             <div className="cc-name">
-              <h2>{name}</h2>
-              <ExamChip card={card} />
+              <h2 className="h-section">{name}</h2>
+              <ExamFact card={card} />
             </div>
-            <p className="cc-where">
-              {where}
-              {card.days_ago !== null && <span className="cc-meta cc-ago">Last studied {agoText(card.days_ago)}</span>}
+            <p className="cc-where">{where}</p>
+            <p className="cc-metas">
+              {card.days_ago !== null && <span className="cc-meta">Last studied {agoText(card.days_ago)}</span>}
+              <ProofSummary card={card} />
             </p>
-            <ProofSummary card={card} />
           </div>
-          {hasProofs && <Level value={proofs.level} size="lg" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
+          {hasProofs && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
         </div>
         <div className="cc-foot">
           <button ref={open} className="btn primary cc-open" title={sitting ? "Back to the paper" : "Continue the lesson"} onClick={props.onOpen}>
@@ -223,12 +203,12 @@ function CourseCard(props: {
     <div className={kind} data-folder={card.folder} onKeyDown={onKeyDown}>
       <div className="lr-main">
         <div className="cc-name">
-          <h2>
+          <h2 className="h-section">
             <button ref={open} className="cc-open" aria-describedby={detail} onClick={props.onOpen}>
               {name}
             </button>
           </h2>
-          <ExamChip card={card} />
+          <ExamFact card={card} />
         </div>
         <p className="cc-where" id={detail}>
           {where}
@@ -240,7 +220,7 @@ function CourseCard(props: {
         {card.due > 0 && <Due n={card.due} />}
       </div>
       <div className="lr-level">
-        {hasProofs && <Level value={proofs.level} size="sm" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
+        {hasProofs && <Level proofs={proofs} size="sm" text="level" title={`${proofs.earned} of ${proofs.total} proofs`} />}
       </div>
       <div className="lr-remove">{removeButton}</div>
     </div>
@@ -272,7 +252,10 @@ export function Library(props: {
 }) {
   const { cards } = props;
   const [focus, setFocus] = useState(0);
+  // The window moves no focus by itself: a card is focused only once an arrow key has moved to it.
+  const [moved, setMoved] = useState(false);
   const count = cards?.length ?? 0;
+  useReturnForPrimary();
 
   useEffect(() => {
     if (focus >= count && count > 0) setFocus(count - 1);
@@ -307,7 +290,7 @@ export function Library(props: {
               <div className="cc-body">
                 <div className="cc-text">
                   <div className="cc-name">
-                    <h2>{name}&nbsp;</h2>
+                    <h2 className="h-section">{name}&nbsp;</h2>
                   </div>
                   <p className="cc-where">&nbsp;</p>
                 </div>
@@ -318,7 +301,7 @@ export function Library(props: {
             <div key={path || index} className="ledger-row ghosted" aria-hidden="true">
               <div className="lr-main">
                 <div className="cc-name">
-                  <h2>{name}&nbsp;</h2>
+                  <h2 className="h-section">{name}&nbsp;</h2>
                 </div>
                 <p className="cc-where">&nbsp;</p>
               </div>
@@ -330,7 +313,7 @@ export function Library(props: {
   } else if (cards.length === 0) {
     body = (
       <div className="empty">
-        <h2>Add your first course</h2>
+        <h2 className="h-section">Add your first course</h2>
         <p>A course is a folder with your notes, slides and past papers.</p>
         {add}
       </div>
@@ -354,12 +337,15 @@ export function Library(props: {
                 key={card.folder}
                 card={card}
                 hero={index === 0}
-                focus={index === focus}
+                focus={moved && index === focus}
                 starting={index === 0 && props.starting}
                 onOpen={open}
                 onCourse={straight ? () => props.onOpen(card.folder) : undefined}
                 onForget={() => props.onForget(card.folder)}
-                onMove={(by) => setFocus(Math.max(0, Math.min(count - 1, index + by)))}
+                onMove={(by) => {
+                  setMoved(true);
+                  setFocus(Math.max(0, Math.min(count - 1, index + by)));
+                }}
               />
             );
           })}
@@ -385,27 +371,7 @@ export function Library(props: {
       <div className="scroll">
         <div className="shelf">
           <header className="shelf-head">
-            <h1>Library</h1>
-            {props.activity && count > 0 ? (
-              <div className="shelf-week">
-                <Week days={props.activity.days} today={props.activity.today} />
-                <p className="shelf-caption">
-                  Days you studied this week
-                  <Run days={props.activity.run} />
-                </p>
-              </div>
-            ) : (
-              // Until the week is known its room is kept, so the title and the courses do not move when it arrives.
-              (cards === null || count > 0) && (
-                <div className="shelf-week" aria-hidden="true" style={{ visibility: "hidden" }}>
-                  <Week days={[]} today={localDay()} />
-                  <p className="shelf-caption">
-                    Days you studied this week
-                    <span className="run-line">&nbsp;</span>
-                  </p>
-                </div>
-              )
-            )}
+            <h1 className="h-title">Library</h1>
           </header>
           {!props.ready && (
             <button className="banner warn" onClick={props.onSetup}>
@@ -416,6 +382,10 @@ export function Library(props: {
             </button>
           )}
           {body}
+          {cards !== null && count > 0 && (
+            // Until the week is known its room is kept, so nothing moves when it arrives.
+            <div className="shelf-foot">{props.activity ? <WeekLine activity={props.activity} /> : <span className="week-line" aria-hidden="true" />}</div>
+          )}
           {props.notice && <div className="banner">{props.notice}</div>}
           {props.error && <div className="banner bad selectable">{props.error}</div>}
         </div>
