@@ -31,6 +31,8 @@ export type LessonTurn = Turn & {
   posed?: string;
   /** For an answer: the task it answered, as it stood when it was sent. */
   question?: string;
+  /** For an answer the record kept no mark for: why, in the record's terms. */
+  unmarked?: string;
 };
 
 /** The exchange on screen: what the learner said and the tutor's reply to it. */
@@ -51,6 +53,7 @@ export type Live = {
   change?: PlanDiff;
   posed?: string;
   question?: string;
+  unmarked?: string;
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -86,6 +89,7 @@ export type Action =
   | { type: "reopened" }
   | { type: "sent"; shown: string; now: number; said?: Said; question?: string }
   | { type: "planned"; change: PlanDiff }
+  | { type: "unmarked"; since: number; reason: string }
   | { type: "picked"; shown: string; now: number }
   | { type: "event"; event: AgentEvent }
   | { type: "note"; notice: Notice }
@@ -117,6 +121,7 @@ function asTurn(live: Live): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
+    ...(live.unmarked ? { unmarked: live.unmarked } : {}),
   };
 }
 
@@ -225,6 +230,17 @@ export function reduce(state: SessionState, action: Action): SessionState {
         },
         cards: [],
         startedMs: state.startedMs ?? action.now,
+      };
+    }
+    case "unmarked": {
+      // Only when the record still has no mark for that answer.
+      const mark = (turn: { marks?: Mark[] }) => (turn.marks ?? []).length > 0;
+      if (state.live && state.live.since === action.since) {
+        return mark(state.live) ? state : { ...state, live: { ...state.live, unmarked: action.reason } };
+      }
+      return {
+        ...state,
+        earlier: state.earlier.map((turn) => (turn.ms === action.since && turn.said === "answer" && !mark(turn) ? { ...turn, unmarked: action.reason } : turn)),
       };
     }
     case "planned": {

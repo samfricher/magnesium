@@ -215,7 +215,6 @@ export const Composer = memo(function Composer(props: Props) {
           {queued && <span className="queued">goes when the tutor finishes</span>}
         </p>
       )}
-      {place === "task" && text === "" && <span className="keyhint" aria-hidden="true">⌘/ help</span>}
     </div>
   );
 });

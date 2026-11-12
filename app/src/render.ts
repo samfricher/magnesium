@@ -321,7 +321,7 @@ export function renderMarkdown(src: string): string {
   // A diagram is drawn as soon as its code is complete. Until then its place is kept, not its code.
   html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');
   // The label loses the full stop or colon the tutor closed it with.
-  return setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label.replace(/\s*[.:]\s*<\/strong>$/, "</strong>")}`));
+  return quietEarlier(setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label.replace(/\s*[.:]\s*<\/strong>$/, "</strong>")}`)));
 }
 
 /**
@@ -433,29 +433,53 @@ export function setSourcesApart(html: string, open: boolean): string {
   return holder.innerHTML;
 }
 
-const alnum = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+/** The words of a text worth matching on: three letters or more, lower case, formulas left out. */
+export function taskWords(text: string): string[] {
+  const plain = text
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g, " ")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+  return plain.split(" ").filter((word) => word.length >= 3);
+}
+
+/** How much of a task's words a text holds, from 0 to 1. */
+export function coverage(text: string, task: string): number {
+  const wanted = new Set(taskWords(task));
+  if (wanted.size === 0) return 0;
+  const have = new Set(taskWords(text));
+  let found = 0;
+  wanted.forEach((word) => have.has(word) && (found += 1));
+  return found / wanted.size;
+}
+
+/** Whether a reply poses this task: it holds nearly all of the task's words. */
+export function poses(reply: string, task: string): boolean {
+  return reply.trim() !== "" && coverage(reply, task) >= 0.8;
+}
 
 /**
- * Set apart the task a reply ends with when the tutor wrote it with no bold
+ * Set apart the task a reply poses, when the tutor wrote it with no bold
  * opening word: `task` is the task as the engine read it from the tutor's
- * record. The block from the last one that holds the task's words to the end
- * of the reply is the task. Only a look: nothing reads a mark from it.
+ * record. The task is the shortest run of blocks at the end of the reply
+ * that holds nearly all of its words, so the question and its options go in
+ * one block, and the feedback before it stays outside. Only a look: nothing
+ * reads a mark from it.
  */
 export function markTask(html: string, task: string): string {
   if (html.includes('class="task"') || task.trim() === "") return html;
-  // The task's words outside its formulas, longest last run first: a formula
-  // is drawn on the page in another form than its source.
-  const runs = task
-    .split(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/)
-    .map(alnum)
-    .filter((run) => run.length > 0);
-  const probe = [...runs].reverse().find((run) => run.length >= 12) ?? runs.sort((a, b) => b.length - a.length)[0];
-  if (!probe) return html;
-  const needle = probe.slice(-40);
   const holder = document.createElement("template");
   holder.innerHTML = html;
   const blocks = Array.from(holder.content.children);
-  const start = blocks.map((block) => alnum(block.textContent ?? "").includes(needle)).lastIndexOf(true);
+  if (blocks.length === 0) return html;
+  let start = -1;
+  let text = "";
+  for (let at = blocks.length - 1; at >= 0; at--) {
+    text = `${blocks[at].textContent ?? ""} ${text}`;
+    if (coverage(text, task) >= 0.8) {
+      start = at;
+      break;
+    }
+  }
   if (start === -1) return html;
   const box = document.createElement("div");
   box.className = "task";
@@ -467,4 +491,16 @@ export function markTask(html: string, task: string): string {
     node = next;
   }
   return holder.innerHTML;
+}
+
+/**
+ * The words the engine needs a due question to open with ("Quick check 2:",
+ * "Paper redo 1:") are not a queue to show: they are drawn as one quiet
+ * "From earlier", with no number.
+ */
+export function quietEarlier(html: string): string {
+  return html.replace(
+    /(<p[^>]*>|<li>)\s*(?:<strong>)?(?:Quick check|Paper redo|Repair)\s+\d+(?:\s+of\s+\d+)?\s*[:.]?\s*(?:<\/strong>)?\s*[:.]?/g,
+    (_whole, open: string) => `${open}<span class="earlier">From earlier</span> `,
+  );
 }

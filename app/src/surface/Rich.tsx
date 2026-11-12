@@ -231,9 +231,23 @@ type Props = {
   stopped?: boolean;
   /** The task this reply posed, as the engine read it: the part of the reply that holds it is set apart. */
   task?: string;
+  /** The reply is being written: a caret stands after its last word. */
+  caret?: boolean;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, task }: Props) {
+/** The writing caret, put after the last word of the last block. */
+function withCaret(html: string): string {
+  const caret = '<span class="cursor" aria-hidden="true"></span>';
+  const holder = document.createElement("template");
+  holder.innerHTML = html;
+  let last: Element | null = holder.content.lastElementChild;
+  while (last && last.lastElementChild && /^(DIV|UL|OL|BLOCKQUOTE)$/.test(last.tagName) && !last.classList.contains("katex-display")) last = last.lastElementChild;
+  if (!last || /^(PRE|TABLE|HR|DIV)$/.test(last.tagName) || last.classList.contains("katex-display")) return `${html}<p>${caret}</p>`;
+  last.insertAdjacentHTML("beforeend", caret);
+  return holder.innerHTML;
+}
+
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, task, caret = false }: Props) {
   // A reply still being written, or stopped, never shows the marks of a
   // formula, a bold span or a link it ends inside of. A display formula that
   // is held back keeps a line's room, so what follows does not jump when it closes.
@@ -241,8 +255,9 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
   const html = useMemo(() => {
     const whole = renderMarkdown(held.text);
     const drawn = task && final ? markTask(whole, task) : whole;
-    return onSource ? setSourcesApart(drawn, linksOpen) : drawn;
-  }, [held.text, linksOpen, onSource, task, final]);
+    const linked = onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+    return caret ? withCaret(linked) : linked;
+  }, [held.text, linksOpen, onSource, task, final, caret]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet

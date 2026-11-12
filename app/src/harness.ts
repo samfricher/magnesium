@@ -43,7 +43,14 @@ const KEYSTROKES = 60;
 let readyCalled = false;
 let config: Config | null = null;
 let invokeFn: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
-const perfResult: { startup_ms?: number; ready_ms?: number; input?: Latency; input_error?: string } = {};
+const perfResult: { startup_ms?: number; ready_ms?: number; input?: Latency; input_error?: string; marks?: Record<string, number> } = {};
+// Moments on the way to the first screen, by name, as wall-clock ms: written with the startup, from process start.
+const marks: Record<string, number> = {};
+
+/** Note a moment on the way to the first screen, for the perf file. Does nothing without perf on. */
+export function mark(name: string): void {
+  if (!(name in marks)) marks[name] = Date.now();
+}
 // A measurement running holds the drive loop, so nothing types into the composer meanwhile.
 let measuring: Promise<unknown> | null = null;
 
@@ -78,6 +85,7 @@ export function ready(): void {
     await nextPaint();
     perfResult.startup_ms = Date.now() - found.started_ms;
     perfResult.ready_ms = calledAt - found.started_ms;
+    perfResult.marks = Object.fromEntries(Object.entries(marks).map(([name, at]) => [name, at - found.started_ms]));
     await writePerf();
     // Input latency, once a composer can be typed into.
     for (;;) {

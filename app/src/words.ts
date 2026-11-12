@@ -50,7 +50,7 @@ export function markWords(mark: Mark): string {
     case "partly":
       return help ? `Marked partly right${on}, ${help}.` : `Marked partly right${on}.`;
     case "wrong":
-      return `Not right yet${on}. It comes back another day.`;
+      return `Not right yet${on}.`;
     case "declined":
       return "Left for another day.";
     default:

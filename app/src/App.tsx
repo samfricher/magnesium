@@ -9,22 +9,22 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { ready } from "./harness";
+import { mark, ready } from "./harness";
 import { busy, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "./lesson";
-import { applyPrefs, flushPlaces, keepPlace, lastCourse, loadPrefs, placeOf, savePrefs, SITTING_GAP_MS, SIZES, type Prefs } from "./prefs";
-import { hasTask } from "./render";
+import { actionOf, keyName, applyPrefs, flushPlaces, keepPlace, lastCourse, loadPrefs, placeOf, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
+import { hasTask, poses } from "./render";
 import type { SourceRef } from "./sources";
 import { Composer, type Sending } from "./surface/Composer";
 import { Cards, Notices, Turn, Working } from "./surface/Conversation";
 import { Layers, type LayerKind } from "./surface/Layers";
 import { Line } from "./surface/Rich";
-import { PasteSheet, SourceSheet } from "./surface/Sheets";
+import { ConfigSheet, PasteSheet, SourceSheet } from "./surface/Sheets";
 import type { About, AgentEvent, Answer, Card, Core, Decision, Engine, EngineChoice, Home, Paper, Payment, Plan, Setup, Turn as SavedTurn } from "./types";
 import { displayName, firstWords, planDiff, stoppedWords, type PlanDiff } from "./words";
 
 type Phase = "loading" | "rest" | "lesson";
 
-export type Overlay = { kind: LayerKind } | { kind: "source"; source: SourceRef } | { kind: "paste"; text: string } | null;
+export type Overlay = { kind: LayerKind } | { kind: "source"; source: SourceRef } | { kind: "paste"; text: string } | { kind: "config" } | null;
 
 /** Lessons start only when this Mac is set up: the program is usable and Claude Code is signed in. */
 export function setupReady(setup: Setup | null): boolean {
@@ -69,11 +69,25 @@ export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask
   if (session.task !== undefined) {
     const text = session.task.text;
     if (!text) return null;
-    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].posed === text) return { text, at: i };
+    // The reply that posed it last: the engine says so, or the reply holds
+    // nearly all of its words, as a tutor does when it poses it again.
+    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].posed === text || poses(turns[i].tutor, text)) return { text, at: i };
     return { text, at: -1 };
   }
   const at = openTaskAt(turns);
   return at >= 0 ? { text: taskText(turns[at].tutor), at } : null;
+}
+
+/**
+ * Why the record kept no mark for an answer, in the record's terms. Only a
+ * first try at a task is marked, so a second answer to the same task is not.
+ */
+function unmarkedWhy(session: SessionState, since: number): string {
+  const turns = [...session.earlier, ...(session.live ? [session.live] : [])] as { since?: number; ms?: number; said?: Said; question?: string; learner: string }[];
+  const at = turns.findIndex((turn) => (turn.since ?? turn.ms) === since);
+  const question = at >= 0 ? turns[at].question : undefined;
+  const earlier = question !== undefined && turns.slice(0, Math.max(0, at)).some((turn) => turn.said === "answer" && turn.question === question);
+  return earlier ? "Not marked: only a first try at a task is marked, and this was another try." : "Not marked: the record kept no mark for this answer.";
 }
 
 /** The task's own words in a reply: from its bold opening word to the end. */
@@ -150,6 +164,7 @@ export function App() {
   // Photos dropped while the line is in a task, for the line to take.
   const [incoming, setIncoming] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  const [painted, setPainted] = useState(false);
   const [answerDraft, setAnswerDraft] = useState("");
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
@@ -239,6 +254,7 @@ export function App() {
     setNotes([]);
     try {
       const opened = await open();
+      mark("folder");
       now.current.home = opened;
       setHome(opened);
       dispatch({ type: "reset" });
@@ -247,13 +263,20 @@ export function App() {
       keepPlace(opened.folder, {});
       setDraft(place.draft);
       setAnswerDraft(place.answerDraft);
-      const [turns, fresh] = await Promise.all([api.turns().catch(() => [] as SavedTurn[]), api.plan().catch(() => null)]);
-      now.current.plan = fresh;
-      setPlan(fresh);
       // Inside the lesson again only when it was left within the runtime's own
       // sitting gap, and the record agrees the lesson is from today.
       const recent = Date.now() - place.seenMs < SITTING_GAP_MS && (opened.last?.days_ago ?? 99) === 0;
-      if (mayReopen && place.inLesson && recent && opened.state === "ready" && !opened.sitting && turns.length > 0) {
+      const reopen = mayReopen && place.inLesson && recent && opened.state === "ready" && !opened.sitting;
+      const planning = api.plan().then(
+        (fresh) => {
+          now.current.plan = fresh;
+          setPlan(fresh);
+        },
+        () => {},
+      );
+      const turns = await api.turns().catch(() => [] as SavedTurn[]);
+      mark("turns");
+      if (reopen && turns.length > 0) {
         dispatch({ type: "opened", turns });
         // Where the line was is put back as it was, not worked out again.
         settled.current = turns[turns.length - 1].ms;
@@ -268,6 +291,8 @@ export function App() {
       } else {
         setBefore(turns);
         setLineState("talk");
+        // The next thing is drawn at once; with no lesson to carry on, it waits for the plan's next item.
+        if (!opened.last) await planning;
         setPhase("rest");
         keepPlace(opened.folder, { inLesson: false });
       }
@@ -288,15 +313,20 @@ export function App() {
     let alive = true;
     let unlisten = () => {};
     void (async () => {
+      mark("page");
       const api = await core();
-      const off = await api.onEvent((event: AgentEvent) => onEventRef.current(event));
+      mark("core");
+      // The first calls go together: nothing waits on another it does not need.
+      const [off, initial, recent] = await Promise.all([
+        api.onEvent((event: AgentEvent) => onEventRef.current(event)),
+        api.initialFolder(),
+        api.recent().catch(() => [] as string[]),
+      ]);
+      mark("first-calls");
       if (!alive) return off();
       unlisten = off;
       now.current.api = api;
       setApi(api);
-      // The program is set up, or a question about it answered, while the
-      // course is read: the digest that reads a course never upgrades it.
-      const [initial, recent] = await Promise.all([api.initialFolder(), api.recent().catch(() => [] as string[])]);
       const remembered = lastCourse();
       const folder = initial ?? (remembered && recent.includes(remembered) ? remembered : (recent[0] ?? null));
       // The course is read and drawn while this Mac is looked at: the digest
@@ -338,7 +368,12 @@ export function App() {
 
   // The first screen is painted with its real content: tell the harness.
   useEffect(() => {
-    if (phase !== "loading" && (home !== null || setup !== null)) requestAnimationFrame(() => ready());
+    if (phase !== "loading" && (home !== null || setup !== null))
+      requestAnimationFrame(() => {
+        ready();
+        // The conversation left, above the first screen and out of view, is drawn after it.
+        setPainted(true);
+      });
   }, [phase, home, setup]);
 
   // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
@@ -389,10 +424,16 @@ export function App() {
     // the learner's line; after help with it, the line goes back in; after
     // anything else it is on the conversation's line.
     if (event.type === "open_task" && now.current.phase === "lesson") {
-      const said = now.current.session.live?.said;
-      if (event.task && event.posed) setLine("task");
-      else if (event.task && said === "help") setLine("task");
+      const live = now.current.session.live;
+      const reply = live ? tutorText(live) : "";
+      if (event.task && (event.posed || poses(reply, event.task))) setLine("task");
+      else if (event.task && live?.said === "help") setLine("task");
       else setLine("talk");
+      // An answer the record kept no mark for says why, once the record has had its moment.
+      if (live && live.said === "answer") {
+        const since = live.since;
+        window.setTimeout(() => dispatch({ type: "unmarked", since, reason: unmarkedWhy(now.current.session, since) }), 1800);
+      }
     }
     if (event.type === "plan_changed") {
       const was = now.current.plan;
@@ -786,37 +827,29 @@ export function App() {
       const { phase, overlay, session, line, prefs } = now.current;
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
-      if (command && !event.altKey && !event.shiftKey) {
-        const layers: Record<string, LayerKind> = { k: "commands", o: "courses", p: "plan", e: "material", y: "work", ",": "settings" };
-        if (layers[key]) {
-          event.preventDefault();
-          if (now.current.setup && setupReady(now.current.setup)) toggle(layers[key]);
-          else if (key === "," || key === "k") toggle(layers[key]);
-          return;
-        }
-        if (key === "/") {
-          event.preventDefault();
+      // The learner's own keys, from their settings.
+      const action = actionOf(event, prefs.keys);
+      if (action) {
+        event.preventDefault();
+        const layers: Partial<Record<KeyAction, LayerKind>> = { commands: "commands", courses: "courses", plan: "plan", material: "material", work: "work", settings: "settings" };
+        const layer = layers[action];
+        if (layer) {
+          if ((now.current.setup && setupReady(now.current.setup)) || layer === "settings" || layer === "commands") toggle(layer);
+        } else if (action === "help") {
           if (phase === "lesson") toggle("help");
-          return;
-        }
-        if (key === ".") {
-          event.preventDefault();
+        } else if (action === "stop") {
           if (busy(session)) interrupt();
-          return;
-        }
-        if (key === "=" || key === "+" || key === "-" || key === "0") {
-          event.preventDefault();
-          const at = SIZES.indexOf(prefs.size);
-          const size = key === "0" ? 17 : SIZES[Math.max(0, Math.min(SIZES.length - 1, at + (key === "-" ? -1 : 1)))];
-          changePrefs({ size });
-          return;
-        }
-        if (key === "n" && phase === "rest" && now.current.home) {
-          event.preventDefault();
+        } else if (action === "new" && phase === "rest" && now.current.home) {
           setOverlay(null);
           setNewLesson(true);
-          return;
         }
+        return;
+      }
+      if (command && !event.altKey && !event.shiftKey && (key === "=" || key === "+" || key === "-" || key === "0")) {
+        event.preventDefault();
+        const size = key === "0" ? 17 : Math.max(12, Math.min(28, prefs.size + (key === "-" ? -2 : 2)));
+        changePrefs({ size });
+        return;
       }
       if (event.key === "Escape" && !event.defaultPrevented) {
         if (overlay) {
@@ -858,7 +891,7 @@ export function App() {
       el.scrollTop = el.scrollHeight - el.clientHeight - restoring.current;
       restoring.current = null;
     }
-  }, [phase, before.length]);
+  }, [phase, before.length, painted]);
 
   useEffect(() => {
     const el = surface.current;
@@ -899,8 +932,10 @@ export function App() {
   const openAt = task?.at ?? -1;
   now.current.task = task;
   const held = phase === "lesson" && line === "task" && task !== null;
-  // The task's question is said above its line unless the reply just above posed it.
-  const restated = task && openAt !== turns.length - 1 ? firstWords(task.text, 160) : null;
+  // The task's question is said above its line unless the reply just above
+  // posed it: in full while the learner is in it, else on one quiet line.
+  const parked = task !== null && openAt !== turns.length - 1;
+  const restated = parked ? (held ? task.text : firstWords(task.text, 160)) : null;
   const isBusy = busy(session);
 
   const rest = restView();
@@ -909,13 +944,15 @@ export function App() {
     if (phase !== "rest") return null;
     const course = home ? displayName(home.name) : null;
     const base = { course, status: null, line: false, start: null, choices: [], keys: "" };
+    // A step this Mac needs is not about a course: it has no course's name over it.
+    const mac = { ...base, course: null };
     if (!setup && !home) return { ...base, next: "Looking at this Mac…", where: null };
     // While this Mac is still being looked at, the course is drawn as it will be.
     const runtime = setup?.runtime ?? { state: "ready" as const, installed: null, bundled: null, installed_now: false, message: null };
     const account = setup?.account ?? { name: "Claude Code", installed: true, signed_in: true, paid_with: null, detail: null, problem: null, install_page: null };
     if (runtime.state === "different" && runtime.installed && runtime.bundled) {
       return {
-        ...base,
+        ...mac,
         next: "Another magnesium program is on this Mac",
         where: `Version ${versionNumber(runtime.installed.version)} is at ${runtime.installed.shown_path}. This app carries ${versionNumber(runtime.bundled.version)}. A newer program upgrades each study folder's record when it opens it, after keeping a copy.`,
         choices: [
@@ -928,7 +965,7 @@ export function App() {
     if (runtime.state === "too_old" || runtime.state === "missing" || runtime.state === "failed") {
       const guide = "https://github.com/samfricher/magnesium/blob/main/docs/install.md";
       return {
-        ...base,
+        ...mac,
         next: runtime.state === "too_old" ? "The magnesium program on this Mac is too old for this window" : "The magnesium program could not be set up",
         where: runtime.message,
         choices: [
@@ -941,9 +978,9 @@ export function App() {
     }
     if (!account.installed) {
       return {
-        ...base,
-        next: `Magnesium teaches through ${account.name}, which is not on this Mac`,
-        where: `${account.problem ?? ""} It needs a paid Claude plan or an Anthropic Console account.`.trim(),
+        ...mac,
+        next: `Install ${account.name}`,
+        where: `Magnesium teaches through ${account.name}, which this window cannot find on this Mac. It needs a paid Claude plan or an Anthropic Console account.`,
         choices: [
           ...(account.install_page ? [{ label: "Open Anthropic's install page", run: () => void api?.openUrl(account.install_page!) }] : []),
           { label: "Check again", run: () => void checkAgain() },
@@ -953,7 +990,7 @@ export function App() {
     }
     if (!account.signed_in) {
       return {
-        ...base,
+        ...mac,
         next: `Sign in to ${account.name}`,
         where: signingIn
           ? "Waiting for the sign-in to finish in your browser."
@@ -999,7 +1036,7 @@ export function App() {
     if (home.state === "needs_upgrade") {
       return {
         ...base,
-        next: "An earlier Magnesium set this folder up",
+        next: "This folder needs an upgrade",
         where: home.message,
         choices: [
           { label: "Upgrade it", run: () => void upgrade() },
@@ -1015,11 +1052,16 @@ export function App() {
       return { ...base, next: "A new lesson", where: "Say what it is about. The tutor takes it as the goal.", line: true, keys: "↩ start it   esc not now" };
     }
     const item = plan?.items.find((each) => each.status === "doing") ?? plan?.items.find((each) => each.status === "todo") ?? null;
+    // The line says what Return opens, and nothing it cannot keep. What is
+    // due from earlier is posed first, so the line says so, with no count.
+    const due = (home.checks_due ?? 0) + home.redos_due > 0;
+    const commandsKey = keyName(prefs.keys.commands);
     if (home.state === "ready" && home.last) {
-      const where = home.last.stopped_at ? stoppedWords(home.last.stopped_at) : home.last.next_action ? `Next: ${home.last.next_action}` : null;
-      return { ...base, next: home.last.goal, where, line: true, start: () => void start(), keys: "↩ carry on   ⌘K everything else" };
+      const stopped = home.last.stopped_at ? stoppedWords(home.last.stopped_at) : null;
+      const where = due ? (stopped ? "A few questions from earlier come first, then where you stopped." : "A few questions from earlier come first, then this.") : stopped;
+      return { ...base, next: home.last.goal, where, line: true, start: () => void start(), keys: due ? `↩ carry on   ${commandsKey} start without them, or anything else` : `↩ carry on   ${commandsKey} everything else` };
     }
-    if (item) return { ...base, next: item.title, where: item.note, line: true, start: () => void start(), keys: "↩ start   ⌘K everything else" };
+    if (item) return { ...base, next: item.title, where: due ? "A few questions from earlier come first, then this." : item.note, line: true, start: () => void start(), keys: `↩ start   ${commandsKey} everything else` };
     return {
       ...base,
       next: displayName(home.name),
@@ -1079,7 +1121,7 @@ export function App() {
       <div className="drag" data-tauri-drag-region />
       <main className="surface" ref={surface} onScroll={onScroll} aria-hidden={overlay !== null ? true : undefined}>
         <div className="column">
-          {shownBefore.length > 0 && (
+          {painted && shownBefore.length > 0 && (
             <div className="before" aria-label="Earlier in this conversation">
               {shownBefore.map((turn, at) => (
                 <Turn
@@ -1170,18 +1212,19 @@ export function App() {
                       writing={live && session.live!.status !== "idle"}
                       divider={false}
                       task={index === openAt ? task?.text : undefined}
-                      showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor))}
+                      showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor) || (turn.question !== undefined && poses(before.tutor, turn.question)))}
+                      settled={index < turns.length - 1}
                       onSource={openSource}
                       onNote={note}
                       onHold={onHold}
                     />
                   );
                 })}
-                {session.live && <Working live={session.live} />}
+                {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 <Notices notices={session.notices} onDismiss={onDismiss} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && task && (
-                  <div className={`task-line${held ? " on" : ""}${restated ? "" : " joined"}`}>
+                  <div className={`task-line${held ? " on" : ""}${restated ? "" : " joined"}${parked && !held ? " parked" : ""}`}>
                     {restated && (
                       <p className="restated" onClick={() => setLine("task")}>
                         <Line text={restated} />
@@ -1219,6 +1262,14 @@ export function App() {
                     onNote={note}
                   />
                 )}
+                {/* One quiet line of keys for the foot, which the learner can turn off. */}
+                <p className="foot-keys">
+                  {task === null
+                    ? `↩ say it   ${keyName(prefs.keys.commands)} everything else`
+                    : held
+                      ? `↩ hand in your answer   ${keyName(prefs.keys.help)} help   esc say something else`
+                      : `↑ answer the task   ${keyName(prefs.keys.commands)} everything else`}
+                </p>
               </>
             )}
           </section>
@@ -1231,10 +1282,21 @@ export function App() {
       )}
       {overlay?.kind === "source" ? (
         <SourceSheet source={overlay.source} onClose={() => setOverlay(null)} onNote={note} />
+      ) : overlay?.kind === "config" ? (
+        <ConfigSheet
+          prefs={prefs}
+          onApply={(next) => {
+            savePrefs(next);
+            applyPrefs(next, next.scheme !== prefs.scheme);
+            setPrefs(next);
+          }}
+          onClose={() => setOverlay(null)}
+        />
       ) : overlay?.kind === "paste" ? (
         <PasteSheet initial={overlay.text} saving={adding} onSave={(text) => void savePasted(text)} onClose={() => setOverlay(null)} />
       ) : overlay ? (
         <Layers
+          key={overlay.kind}
           kind={overlay.kind}
           api={api}
           home={home}
@@ -1256,6 +1318,7 @@ export function App() {
           act={{
             start: () => (setOverlay(null), void start()),
             startSkip: () => (setOverlay(null), void start(undefined, true)),
+            editConfig: () => setOverlay({ kind: "config" }),
             setBlock: (minutes) => {
               void api?.setBlockMinutes(minutes);
               setHome((old) => (old ? { ...old, block_minutes: minutes } : old));
@@ -1311,6 +1374,7 @@ function liveTurn(session: SessionState): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
+    ...(live.unmarked ? { unmarked: live.unmarked } : {}),
   };
 }
 

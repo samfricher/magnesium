@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
-import "./harness";
+import { mark } from "./harness";
 import { applyPrefs, loadPrefs } from "./prefs";
 import "./styles/surface.css";
 import "./styles/prose.css";
@@ -13,6 +13,7 @@ declare global {
   }
 }
 window.__mgErrors = [];
+mark("script");
 window.addEventListener("error", (event) => window.__mgErrors.push(`error: ${event.message}`));
 window.addEventListener("unhandledrejection", (event) => window.__mgErrors.push(`rejection: ${String(event.reason)}`));
 document.addEventListener("securitypolicyviolation", (event) =>
@@ -49,15 +50,6 @@ new MutationObserver((changes) => {
   }
 }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "href", "role"] });
 
-// The text faces are the Mac's own, so nothing waits for them. The faces
-// mathematics is set in are bundled; a goal with a formula in it is the
-// first line on the surface, so the first paint waits for them, up to 150 ms.
-const MATH = ["normal 400 1em KaTeX_Main", "italic 400 1em KaTeX_Math"];
-async function mathReady(): Promise<void> {
-  const loads = MATH.map((face) => document.fonts.load(face, "Aa0"));
-  await Promise.race([Promise.allSettled(loads), new Promise((done) => window.setTimeout(done, 150))]);
-}
-
-void mathReady()
-  .catch(() => {})
-  .then(() => createRoot(document.getElementById("root")!).render(<App />));
+// The text faces are the Mac's own and the faces mathematics is set in are
+// bundled, so nothing waits for a face: the first paint is the real one.
+createRoot(document.getElementById("root")!).render(<App />);

@@ -29,9 +29,17 @@ function Marks({ marks }: { marks: Mark[] }) {
   );
 }
 
-export function PlanChange({ change }: { change: PlanDiff }) {
+export function PlanChange({ change, brief }: { change: PlanDiff; brief?: boolean }) {
   const shown = change.changes.filter((each) => !each.route);
   if (shown.length === 0) return null;
+  // Once read, the change settles to one quiet line.
+  if (brief) {
+    return (
+      <p className="record plan-brief" data-role="plan-change">
+        The plan changed: {shown.map((each) => `${each.what}, ${each.detail}`).join("; ")}.
+      </p>
+    );
+  }
   return (
     <div className="record plan" data-role="plan-change">
       <p className="record-head">The plan changed</p>
@@ -56,9 +64,18 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
   const { text: words, confidence } = splitConfidence(text);
   const marks = turn.marks ?? [];
   if (turn.pick) return <Said text={words} className="you pick" />;
-  if (turn.said === "answer" || turn.said === "help" || (turn.said === undefined && isHelp(text))) {
+  // Help asked for is the window's own words, said for the learner: one quiet line, not an answer.
+  if (turn.said === "help" || (turn.said === undefined && isHelp(text))) {
     return (
-      <div className={turn.said === "answer" ? "answer" : "answer help"}>
+      <>
+        <Said text={words} className="you talk help" />
+        <Marks marks={marks} />
+      </>
+    );
+  }
+  if (turn.said === "answer") {
+    return (
+      <div className="answer">
         {showQuestion && turn.question && (
           <p className="question">
             <Line text={firstWords(turn.question)} />
@@ -67,6 +84,7 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
         <Said text={words} className="you" />
         {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
         <Marks marks={marks} />
+        {marks.length === 0 && turn.unmarked && <p className="record quiet unmarked">{turn.unmarked}</p>}
       </div>
     );
   }
@@ -94,13 +112,15 @@ type TurnProps = {
   task?: string;
   /** Say above an answer which task it answered: the task is not just above it. */
   showQuestion: boolean;
+  /** A later turn follows: what this one changed in the plan is one quiet line now. */
+  settled?: boolean;
   onSource: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
   onHold: () => void;
 };
 
 /** One exchange. Finished exchanges are drawn once and kept: a new word in the live reply redraws only the live one. */
-export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, divider, task, showQuestion, onSource, onNote, onHold }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, divider, task, showQuestion, settled, onSource, onNote, onHold }: TurnProps) {
   const reply = turn.tutor;
   return (
     <article
@@ -112,17 +132,18 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, d
       <Learner turn={turn} showQuestion={showQuestion} />
       {reply.trim() !== "" && (
         <div className="tutor">
-          <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} onSource={onSource} onNote={onNote} task={task ?? turn.posed} />
+          <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} onSource={onSource} onNote={onNote} task={task ?? turn.posed} caret={writing} />
         </div>
       )}
       {turn.interrupted && <p className="record quiet">Stopped.</p>}
-      {turn.change && <PlanChange change={turn.change} />}
+      {turn.change && <PlanChange change={turn.change} brief={settled} />}
     </article>
   );
 });
 
 export function Working({ live }: { live: Live }) {
-  if (live.status === "idle") return null;
+  // While words come, the caret is at their end, inside the reply.
+  if (live.status === "idle" || (live.status === "writing" && (live.streaming !== "" || live.done.length > 0))) return null;
   const words = live.status === "working" && live.doing ? live.doing : null;
   return (
     <p className={`working ${live.status}`} role="status" aria-label={words ?? "The tutor is writing"}>
