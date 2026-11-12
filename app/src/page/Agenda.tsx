@@ -88,9 +88,8 @@ export function planChanges(before: Plan | null, after: Plan): { lines: string[]
     lines.push(`Added: ${item.title}.`);
   }
   if (dropped.length > 0) lines.push(`Taken off: ${dropped.map((item) => item.title).join(", ")}.`);
-  if (before.goal !== after.goal && after.goal) lines.push(`Working on: ${after.goal}.`);
-  const steps = (plan: Plan) => plan.steps.map((s) => s.step).join("\n");
-  if (steps(before) !== steps(after)) lines.push("The steps for this goal changed.");
-  if (lines.length === 0 && before.text !== after.text) lines.push("The plan's notes changed.");
+  // A new goal the learner asked for is said; the first goal of a lesson, and the
+  // tutor's ticks on the steps, are the lesson going on, not a change of plan.
+  if (before.goal && after.goal && before.goal !== after.goal) lines.push(`Working on: ${after.goal}.`);
   return { lines, moved };
 }

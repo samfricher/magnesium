@@ -163,23 +163,24 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.reply = reply.slice(0, 120);
     if (!reply.includes("Self-check")) throw new Error(`the reply was not the stand-in's echo: ${reply.slice(0, 80)}`);
 
-    await until("the page to draw the reply", () => document.querySelector(".tutor .prose") !== null, 5000);
+    await until("the page to draw the reply", () => document.querySelector(".today .row.reply .prose") !== null, 5000);
     await wait(1500);
-    steps.math = document.querySelectorAll(".tutor .katex").length;
-    steps.diagram = document.querySelectorAll(".tutor .diagram svg").length;
+    steps.math = document.querySelectorAll(".today .row.reply .katex").length;
+    steps.diagram = document.querySelectorAll(".today .row.reply .diagram svg").length;
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
 
     await actions.say("PERMISSION");
     await until("the permission card", () => session().cards.length > 0);
-    steps.card = document.querySelector(".ask h3")?.textContent ?? null;
+    steps.card = document.querySelector(".today .row.card .ask p")?.textContent ?? null;
+    if (!steps.card) throw new Error("the permission card was not on today's page");
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 
     // The learner's own line on screen draws its mathematics too.
     await actions.say("my answer is $x^2$");
     await until("the reply to the answer", () => idle() && session().live?.learner.includes("my answer") === true);
-    steps.saidMath = document.querySelectorAll(".exchange.now .you .katex").length;
+    steps.saidMath = document.querySelectorAll(".today .row.said .words .katex, .today .row.exercise.answer .words .katex").length;
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
 
     const rail = await api.rail();
@@ -188,16 +189,27 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 
     actions.openSheet("course");
-    await wait(300);
-    steps.progressScreen = document.querySelector('[data-screen="progress"]') !== null;
+    await until("the course's sheet with its record", () => document.querySelector('[data-sheet="course"] [aria-label="The record"]') !== null, 5000);
+    steps.recordSheet = true;
+    actions.openSheet(null);
 
-    // Ending the sitting from the page: the lesson is kept and the end
-    // screen shows. A study day is a day with a marked answer, and the
+    // Talk, written on the page, goes as talk: the stand-in echoes it.
+    await actions.say("a line on the page", "page");
+    await until("the reply to talk", () => idle() && session().live?.learner === "a line on the page");
+    steps.talk = document.querySelector('.today .row.said[data-intent="talk"]') !== null;
+    if (!steps.talk) throw new Error("a line written on the page was not shown as talk");
+
+    // Ending the sitting from the page: the lesson is kept and the stop
+    // line is written on today's page. A study day is a day with a marked answer, and the
     // stand-in tutor marks none. So with a runtime that says which days had
     // one, today is not a study day, however many messages were sent. With
     // an earlier runtime the window counts the answers sent from it.
     await actions.stop("self-check stop line");
-    await until("the end of the sitting", () => document.querySelector('[data-screen="summary"]') !== null, 10_000);
+    await until(
+      "the stop line on today's page",
+      () => Array.from(document.querySelectorAll(".today .row.said.opening")).some((row) => row.textContent?.includes("self-check stop line")),
+      10_000,
+    );
     const after = await api.home();
     const studied = await api.activity();
     const fromRecord = !progress.level_unknown;

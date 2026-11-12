@@ -91,7 +91,7 @@ code { font-family: var(--mono); font-size: 0.86em; }
 /* ------------------------------------------------------------- frame */
 
 .window { height: 100vh; position: relative; }
-.drag { position: fixed; inset: 0 0 auto 0; height: 40px; z-index: 4; background: linear-gradient(var(--paper) 60%, transparent); }
+.drag { position: fixed; inset: 0 0 auto 0; height: 52px; z-index: 4; background: linear-gradient(var(--paper) 72%, transparent); }
 .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: var(--top) 32px 0; scroll-padding-top: var(--top); }
 
 /* Today's rows and the agenda side by side; earlier days under today's rows. */
@@ -271,6 +271,11 @@ code { font-family: var(--mono); font-size: 0.86em; }
 }
 .composer .field::after { content: attr(data-value); visibility: hidden; max-height: 12lh; overflow: hidden; }
 .composer textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
   resize: none;
   overflow: hidden;
   background: transparent;

@@ -32,21 +32,37 @@ export function courseName(name: string): string {
   return name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || name;
 }
 
-/** Each mark goes with the last turn sent at or before its minute, in the same course. */
+const flat = (text: string) => text.replace(/[\s$*_`\\{}]+/g, " ").trim().toLowerCase();
+
+/**
+ * Each mark goes with the turn that answered its question: the first turn
+ * after the reply that asked it. Without a question it goes with the last turn
+ * sent at or before its minute, in the same course.
+ */
 function attach(turns: Turn[], marks: Mark[]): { byTurn: Map<number, Mark[]>; loose: Mark[] } {
   const byTurn = new Map<number, Mark[]>();
   const loose: Mark[] = [];
   const sorted = [...turns].sort((a, b) => a.ms - b.ms);
+  const taken = new Set<number>();
   for (const mark of marks) {
     const at = recordMs(mark.at);
     if (at === null) continue;
-    // The record writes the minute; the turn began earlier in it, or before it.
+    const before = sorted.filter((turn) => turn.ms <= at + 59_999 && at - turn.ms < GAP && dayOf(turn.ms) === dayOf(at));
     let found: Turn | null = null;
-    for (const turn of sorted) {
-      if (turn.ms <= at + 59_999) found = turn;
-      else break;
+    const asked = mark.question ? flat(mark.question).slice(0, 32) : "";
+    if (asked.length >= 12) {
+      for (let i = 1; i < sorted.length; i++) {
+        const turn = sorted[i];
+        if (!before.includes(turn) || taken.has(turn.ms)) continue;
+        if (flat(sorted[i - 1].tutor).includes(asked)) {
+          found = turn;
+          break;
+        }
+      }
     }
-    if (found && mark.paper === null && dayOf(found.ms) === dayOf(at) && at - found.ms < GAP) {
+    found ??= [...before].reverse().find((turn) => !taken.has(turn.ms)) ?? null;
+    if (found && mark.paper === null) {
+      taken.add(found.ms);
       byTurn.set(found.ms, [...(byTurn.get(found.ms) ?? []), mark]);
     } else loose.push(mark);
   }

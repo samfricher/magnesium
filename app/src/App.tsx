@@ -332,7 +332,13 @@ export function App() {
   useLayoutEffect(() => {
     if (restored.current || journal === null) return;
     restored.current = true;
-    if (left.current.day === day && left.current.scroll > 0 && scroller.current) scroller.current.scrollTop = left.current.scroll;
+    const el = scroller.current;
+    const todayRows = el?.querySelectorAll(".today [data-ms]").length ?? 0;
+    // Only a page with today's work on it is put back where it was; otherwise today's top is where the day starts.
+    if (el && todayRows > 0 && left.current.day === day && left.current.scroll > 0) {
+      const end = el.querySelector<HTMLElement>(".today")?.offsetHeight ?? 0;
+      el.scrollTop = Math.min(left.current.scroll, Math.max(0, end - el.clientHeight + 120));
+    }
   }, [journal, day]);
 
   useEffect(() => {
@@ -1024,7 +1030,7 @@ export function App() {
       const stoppedAt = home.last.stopped_at ?? (home.last.goal ? home.last.next_action : null);
       return { kind: "pick" as const, course, when: whenSaid(lastDay, day), line, at: stoppedAt };
     }
-    return { kind: "begin" as const, course, line: home.exam ? `Start on ${home.exam.title}` : null };
+    return { kind: "begin" as const, course, line: null, exam: home.exam?.title ?? null };
   }, [lesson, setup, home, folders, day]);
 
   const composerHint = (() => {
@@ -1034,7 +1040,7 @@ export function App() {
     return null;
   })();
   const composerShut = home?.sitting ? "The tutor waits while the paper runs." : !setupReady(setup) ? null : null;
-  const placeholder = !lesson ? (fresh || suggestion?.kind === "begin" ? "What do you want to work on?" : "Or write your own first line") : answerOpen ? "Or write on the page" : "Write to the tutor";
+  const placeholder = !lesson ? (fresh ? "What do you want to work on?" : "Or write your own first line") : answerOpen ? "Or write on the page" : "Write to the tutor";
 
   const commands: Command[] = [
     ...(suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") ? [{ label: "Pick up the lesson", key: "↩", run: () => void start() }] : []),
@@ -1054,7 +1060,8 @@ export function App() {
     ...(home?.papers ?? []).map((p) => ({ label: `Sit ${p.name}`, keywords: "paper exam timed", run: () => (setPaper(p), setSheet("paper")) })),
   ];
 
-  const startLabel = suggestion?.kind === "pick" ? `Pick up where you stopped ${suggestion.when}` : suggestion?.kind === "begin" ? `Start ${suggestion.course}` : null;
+  const startLabel =
+    suggestion?.kind === "pick" ? `Pick up where you stopped ${suggestion.when}` : suggestion?.kind === "begin" ? (suggestion.exam ? `Start on ${suggestion.exam}` : `Start ${suggestion.course}`) : null;
 
   return (
     <main className="window" data-narrow={narrow ? "yes" : undefined}>
@@ -1246,7 +1253,11 @@ export function App() {
                           left.current = { ...left.current, answer: text, day };
                           keepLeft(left.current);
                         }}
-                        onSend={(text, at) => void say(text, at)}
+                        onSend={(text, at) => {
+                          left.current = { ...left.current, answer: "" };
+                          keepLeft(left.current);
+                          void say(text, at);
+                        }}
                         onHelp={help}
                         onPhoto={photo}
                         onNote={note}
@@ -1275,7 +1286,11 @@ export function App() {
                           left.current = { ...left.current, draft: text, day };
                           keepLeft(left.current);
                         }}
-                        onSend={(text, at) => void say(text, at)}
+                        onSend={(text, at) => {
+                          left.current = { ...left.current, draft: "" };
+                          keepLeft(left.current);
+                          void say(text, at);
+                        }}
                         onEmptyReturn={!lesson && suggestion && (suggestion.kind === "pick" || suggestion.kind === "begin") && !fresh ? () => void start() : undefined}
                         onHelp={help}
                         onPhoto={photo}
