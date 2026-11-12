@@ -199,3 +199,15 @@ The round-1 judges called this new and "an editor, not an app wearing a theme"; 
 - **Settings is a file.** It is plain text and applied as you type: any installed font for the page and for your own words, any colours, every key binding, and hints. ⌘K reaches every value.
 - **The record speaks once.** An answer with no mark says "No mark" with its reason one key away; a retry says nothing; the record page never claims more than its rows.
 - **Chrome with a ground.** Documents fade at an edge where more lies beyond; the tab row gets a hairline when scrolled; sheets get a scrim.
+
+## Round 5
+
+The round-4 judges named the same few things; each is fixed in behaviour, not look.
+
+- **The task comes back where it is answered.** With the real tutor, "back to the task" gets the question restated in prose, and the engine never says a reply to talk posed a task. Now a reply to talk that carries most of the open task's words shows it: the task block and the answer place go under it, the caret goes in, and the pinned line goes.
+- **The draft is drawn once.** A kept draft with mathematics is drawn in place, as an editor's live preview draws it; its source shows only while it is edited.
+- **The plan pane comes and goes.** It opens beside the lesson when the plan changes and closes once the change is seen (a message written, Esc, a new sitting). A window opened later opens on one page.
+- **Every change is marked, and order is kept.** Moved, new and re-dated items carry a bar, with old days struck through. Reordered rows take their days with them, in the stand-in and in what the tutor is told; a day out of order is said quietly, not as an alarm.
+- **The app's words left the column.** Key hints and "plan changed at" sit in the status line in the window's own type.
+- **Marks explain themselves.** "No mark, not taken as the answer" when the engine kept the task open; the help words are help wherever they are typed.
+- **Craft.** The light change colour is at AA, the tab names start at the text column, there is one date format ("Thu 12 Nov"), names are cut with one ellipsis, the lesson follows its end in two panes, and ⌘K lists every setting value so any can be set back.
