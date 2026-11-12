@@ -249,6 +249,16 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   animation: breathe 1.6s ease-in-out infinite;
 }
 
+/* A placeholder takes the room a card with a title, a goal and a foot takes,
+   so the cards below it do not move when the courses have been read. */
+.course-card.ghosted {
+  min-height: 212px;
+}
+
+.course-card.hero.ghosted {
+  min-height: 272px;
+}
+
 .course-card.ghosted h2 {
   color: var(--faint);
 }
@@ -480,12 +490,12 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   --column: calc(34 * var(--fs-read));
 }
 
-/* The transcript is as tall as what it holds, up to the room there is, and the
-   answer box follows its end. A tall window has no gap between them; a short one
-   scrolls the transcript above the box. The room kept under the last thing is
-   more than the fade at the foot, so the fade never covers a task. */
+/* The transcript fills the room above the answer box, and the answer box stays
+   on the foot of the window: it never moves while the tutor writes. A short
+   transcript sits at the top; a long one scrolls. The room kept under the last
+   thing is more than the fade at the foot, so the fade never covers a task. */
 .session .stage {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   padding: 0 var(--s6);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - var(--s5)), transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - var(--s5)), transparent 100%);
@@ -705,7 +715,8 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   flex-direction: column;
 }
 
-.exchange + .exchange {
+.exchange + .exchange,
+.passages + .exchange {
   margin-top: var(--s5);
 }
 
@@ -787,13 +798,15 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   color: var(--faint);
 }
 
-/* The working line: a caret, the words, and Stop beside them. */
+/* The working line: a caret, the words, and Stop beside them. It stands at the
+   end of the row of help buttons under the answer box, not at the end of the
+   text, so it does not move as the reply grows. */
 .thinking {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex: 1;
   gap: var(--s3);
-  min-height: 32px;
-  margin-top: var(--s4);
   color: var(--muted);
   font-size: var(--fs-small);
 }
@@ -927,7 +940,12 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   padding: 0 var(--s6) var(--s4);
 }
 
-.dock .banner {
+.dock-notes {
+  flex: none;
+  padding: 0 var(--s6);
+}
+
+.dock-notes .banner {
   margin: 0 0 var(--s3);
 }
 
@@ -1860,7 +1878,8 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   }
 
   .stage,
-  .dock {
+  .dock,
+  .dock-notes {
     padding-left: var(--s4);
     padding-right: var(--s4);
   }
@@ -2011,6 +2030,9 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
 /* A page is paper: white in either scheme, as the author drew it. */
 .source-page {
   display: block;
+  /* Until the page is drawn, its room is a sheet of paper's, so the panel does not grow under the reader. */
+  width: 100%;
+  aspect-ratio: 17 / 22;
   margin: 0 auto;
   border-radius: var(--r-control);
   background: #fff;
@@ -2049,6 +2071,10 @@ html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
   align-items: center;
   gap: var(--s2);
   margin: var(--s4) 0 0;
+}
+
+.passages.gone {
+  visibility: hidden;
 }
 
 .passages-label {

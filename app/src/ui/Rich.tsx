@@ -3,7 +3,7 @@
 // `Rich` draws a whole reply: Markdown, formulas, diagrams, local images.
 // `Line` draws one line anywhere else on the page, with the same formulas.
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
@@ -18,67 +18,102 @@ let diagrams = 0;
 // of the kept copy.
 const pictures = new Map<string, Promise<string>>();
 
-async function drawDiagrams(root: HTMLElement) {
-  const blocks = Array.from(root.querySelectorAll<HTMLElement>("pre > code.language-mermaid"));
-  if (blocks.length === 0) return;
-  // The diagram library is large, so it is fetched only when a diagram appears.
-  const mermaid = (await import("mermaid")).default;
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  // The window's own colours, so a diagram reads as part of the page. The
-  // diagram library works colours out from these, so they are plain hex.
-  const ink = dark
-    ? { box: "#262d39", text: "#e9ebee", edge: "#4b5565", line: "#b3bac5", second: "#2c3441", third: "#1f252f" }
-    : { box: "#ffffff", text: "#1b212b", edge: "#c4c8bf", line: "#475060", second: "#e6e8e2", third: "#fafaf7" };
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: "base",
-    fontFamily: '"Atkinson Hyperlegible Next Variable", -apple-system, BlinkMacSystemFont, sans-serif',
-    // A diagram fits the column; CSS scales it to the width it is given.
-    flowchart: { useMaxWidth: false },
-    sequence: { useMaxWidth: false },
-    themeVariables: {
-      darkMode: dark,
-      background: "transparent",
-      fontSize: "15px",
-      primaryColor: ink.box,
-      primaryTextColor: ink.text,
-      primaryBorderColor: ink.edge,
-      lineColor: ink.line,
-      secondaryColor: ink.second,
-      tertiaryColor: ink.third,
-      textColor: ink.text,
-      edgeLabelBackground: ink.third,
-    },
-  });
-  for (const block of blocks) {
+// A diagram drawn once is kept by its source. A reply that is still being
+// written is put on the page again with every chunk; a diagram that has been
+// drawn goes back in the same instant, so it never blinks back to its
+// placeholder and what is below it never moves.
+const drawn = new Map<string, string>();
+const failed = new Set<string>();
+const inflight = new Map<string, Promise<void>>();
+const keyOf = (source: string) => `${window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"}:${source}`;
+
+/** Put each diagram already drawn in the place of its placeholder. Returns the ones still to draw. */
+function reuseDiagrams(root: HTMLElement): HTMLElement[] {
+  const waiting: HTMLElement[] = [];
+  for (const block of Array.from(root.querySelectorAll<HTMLElement>("pre > code.language-mermaid"))) {
     const pre = block.parentElement;
-    if (!pre || !pre.isConnected) continue;
     const source = block.textContent ?? "";
-    try {
-      let { svg } = await mermaid.render(`mg-diagram-${++diagrams}`, source);
-      // A wide chart shrunk to the column is too small to read. Stood on its
-      // end it is narrower, so the labels keep their size.
-      const room = pre.clientWidth - 32;
-      const wide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg)?.[1] ?? 0);
-      if (wide > room * 1.4 && /^\s*(graph|flowchart)\s+LR\b/i.test(source)) {
-        try {
-          const tall = (await mermaid.render(`mg-diagram-${++diagrams}`, source.replace(/^(\s*(?:graph|flowchart)\s+)LR\b/i, "$1TB"))).svg;
-          const tallWide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(tall)?.[1] ?? 0);
-          if (tallWide < wide) svg = tall;
-        } catch {
-          // The first drawing stands.
-        }
-      }
+    const svg = drawn.get(keyOf(source));
+    if (!pre) continue;
+    if (svg !== undefined) {
       const holder = document.createElement("div");
       holder.className = "diagram";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
-    } catch {
+    } else if (failed.has(keyOf(source))) {
       // A diagram that will not draw stays as the text the tutor wrote.
       pre.classList.add("undrawn");
-      document.querySelectorAll(`#dmg-diagram-${diagrams}`).forEach((leftover) => leftover.remove());
+    } else {
+      waiting.push(block);
     }
+  }
+  return waiting;
+}
+
+async function drawOne(source: string, room: number) {
+  try {
+    // The diagram library is large, so it is fetched only when a diagram appears.
+    const mermaid = (await import("mermaid")).default;
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    // The window's own colours, so a diagram reads as part of the page. The
+    // diagram library works colours out from these, so they are plain hex.
+    const ink = dark
+      ? { box: "#262d39", text: "#e9ebee", edge: "#4b5565", line: "#b3bac5", second: "#2c3441", third: "#1f252f" }
+      : { box: "#ffffff", text: "#1b212b", edge: "#c4c8bf", line: "#475060", second: "#e6e8e2", third: "#fafaf7" };
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      fontFamily: '"Atkinson Hyperlegible Next Variable", -apple-system, BlinkMacSystemFont, sans-serif',
+      // A diagram fits the column; CSS scales it to the width it is given.
+      flowchart: { useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      themeVariables: {
+        darkMode: dark,
+        background: "transparent",
+        fontSize: "15px",
+        primaryColor: ink.box,
+        primaryTextColor: ink.text,
+        primaryBorderColor: ink.edge,
+        lineColor: ink.line,
+        secondaryColor: ink.second,
+        tertiaryColor: ink.third,
+        textColor: ink.text,
+        edgeLabelBackground: ink.third,
+      },
+    });
+    let { svg } = await mermaid.render(`mg-diagram-${++diagrams}`, source);
+    // A wide chart shrunk to the column is too small to read. Stood on its
+    // end it is narrower, so the labels keep their size.
+    const wide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg)?.[1] ?? 0);
+    if (wide > room * 1.4 && /^\s*(graph|flowchart)\s+LR\b/i.test(source)) {
+      try {
+        const tall = (await mermaid.render(`mg-diagram-${++diagrams}`, source.replace(/^(\s*(?:graph|flowchart)\s+)LR\b/i, "$1TB"))).svg;
+        const tallWide = Number(/viewBox="[\d.-]+ [\d.-]+ ([\d.]+)/.exec(tall)?.[1] ?? 0);
+        if (tallWide < wide) svg = tall;
+      } catch {
+        // The first drawing stands.
+      }
+    }
+    drawn.set(keyOf(source), svg);
+  } catch {
+    failed.add(keyOf(source));
+    document.querySelectorAll(`#dmg-diagram-${diagrams}`).forEach((leftover) => leftover.remove());
+  }
+}
+
+/** Draw the diagrams in `blocks`, and put each in its place in `root` as it is done. */
+async function drawDiagrams(root: HTMLElement, blocks: HTMLElement[]) {
+  for (const block of blocks) {
+    const source = block.textContent ?? "";
+    let job = inflight.get(keyOf(source));
+    if (!job) {
+      job = drawOne(source, root.clientWidth - 32).finally(() => inflight.delete(keyOf(source)));
+      inflight.set(keyOf(source), job);
+    }
+    await job;
+    // The text may have been put on the page again while this was drawn.
+    if (root.isConnected) reuseDiagrams(root);
   }
 }
 
@@ -135,7 +170,7 @@ function markPaths(root: HTMLElement) {
 
 type Props = {
   text: string;
-  /** False while the text is still being written. Diagrams wait for the end. */
+  /** False while the text is still being written. */
   final: boolean;
   onNote?: (note: string) => void;
   /**
@@ -161,12 +196,22 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
   }, [held.text, linksOpen, onSource]);
   const ref = useRef<HTMLDivElement>(null);
 
+  // A diagram already drawn goes back before the page is painted; one not yet
+  // drawn is drawn as soon as its code is complete (the one a reply is still
+  // inside of is not).
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const waiting = reuseDiagrams(root);
+    const open = !final && (held.text.match(/^ {0,3}(?:```|~~~)/gm)?.length ?? 0) % 2 === 1;
+    void drawDiagrams(root, waiting.filter((block) => !(open && block.parentElement === root.lastElementChild)));
+  }, [html, final]);
+
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
     void loadImages(root, final);
     markPaths(root);
-    if (final) void drawDiagrams(root);
   }, [html, final]);
 
   const onClick = async (event: React.MouseEvent<HTMLDivElement>) => {

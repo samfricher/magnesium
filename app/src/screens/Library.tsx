@@ -10,8 +10,15 @@ import { useEffect, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { IconButton, Due, Level, PaletteKey, Run, ThisWeek, TopBar, agoText, clockText, examWhen, proofShare, skillCounts, splitGoal, useNow } from "../ui/bits";
+import { IconButton, Due, Level, PaletteKey, Run, ThisWeek, TopBar, Week, agoText, clockText, examWhen, proofShare, skillCounts, splitGoal, useNow } from "../ui/bits";
 import type { Activity, Card } from "../types";
+
+/** Today as a day on the calendar, in this Mac's time. */
+function localDay(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
 /** A course's name as a title: "Demo-Course" reads "Demo Course". */
 export function displayName(name: string): string {
@@ -337,7 +344,7 @@ export function Library(props: {
         <div className="shelf">
           <header className="shelf-head">
             <h1>Library</h1>
-            {props.activity && count > 0 && (
+            {props.activity && count > 0 ? (
               <div className="shelf-week">
                 <p className="shelf-caption">Days you studied this week</p>
                 <div className="shelf-days">
@@ -345,6 +352,16 @@ export function Library(props: {
                   <Run days={props.activity.run} />
                 </div>
               </div>
+            ) : (
+              // Until the week is known its room is kept, so the title and the cards do not move when it arrives.
+              (cards === null || count > 0) && (
+                <div className="shelf-week" aria-hidden="true" style={{ visibility: "hidden" }}>
+                  <p className="shelf-caption">Days you studied this week</p>
+                  <div className="shelf-days">
+                    <Week days={[]} today={localDay()} />
+                  </div>
+                </div>
+              )
             )}
           </header>
           {!props.ready && (

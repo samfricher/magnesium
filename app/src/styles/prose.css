@@ -222,6 +222,11 @@
   border-style: solid;
 }
 
+/* What follows a diagram waits for it, so the drawing never pushes down text that is already being read. */
+.prose pre.diagram-wait:not(.undrawn) ~ * {
+  display: none;
+}
+
 .prose pre.diagram-wait:not(.undrawn) code {
   visibility: hidden;
 }

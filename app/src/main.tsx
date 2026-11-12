@@ -30,4 +30,27 @@ document.documentElement.dataset.input = "pointer";
 window.addEventListener("keydown", () => (document.documentElement.dataset.input = "key"), true);
 window.addEventListener("pointerdown", () => (document.documentElement.dataset.input = "pointer"), true);
 
-createRoot(document.getElementById("root")!).render(<App />);
+// The first paint uses the final faces. They are bundled with the window, so
+// this takes a few milliseconds and makes no request; a face that cannot be
+// had within 300 ms is not waited for, and the page draws with the fallback.
+// Besides the two text faces, the few that mathematics is set in: a goal or a
+// step with a formula in it is a different width until they are there.
+const FACES = [
+  ...['"Literata Variable"', '"Atkinson Hyperlegible Next Variable"'].flatMap((face) => ["normal", "italic"].map((style) => `${style} 400 1em ${face}`)),
+  "normal 400 1em KaTeX_Main",
+  "italic 400 1em KaTeX_Main",
+  "normal 700 1em KaTeX_Main",
+  "italic 400 1em KaTeX_Math",
+  "normal 400 1em KaTeX_Size1",
+  "normal 400 1em KaTeX_Size2",
+  "normal 400 1em KaTeX_AMS",
+];
+const SAMPLE = "Aa0 µ–α";
+async function facesReady(): Promise<void> {
+  const loads = FACES.map((face) => document.fonts.load(face, SAMPLE));
+  await Promise.race([Promise.allSettled(loads), new Promise((done) => window.setTimeout(done, 300))]);
+}
+
+void facesReady()
+  .catch(() => {})
+  .then(() => createRoot(document.getElementById("root")!).render(<App />));

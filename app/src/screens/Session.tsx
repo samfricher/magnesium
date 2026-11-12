@@ -332,6 +332,8 @@ function Composer(props: {
   onNote: (text: string) => void;
   onAddFiles: () => void;
   onPasteText: () => void;
+  /** The working line, shown at the end of the row of help buttons while the tutor writes. */
+  working?: React.ReactNode;
 }) {
   const [text, setText] = useState("");
   const [confidence, setConfidence] = useState<string | null>(null);
@@ -547,6 +549,7 @@ function Composer(props: {
         >
           I&apos;m lost
         </button>
+        {props.working}
       </div>
     </div>
   );
@@ -669,7 +672,11 @@ export function Session(props: {
     return () => window.removeEventListener("keydown", key);
   });
 
-  const text = useDeferredValue(live ? tutorText(live) : "");
+  // The text of the reply may lag behind the stream, but never across a change
+  // of turn: the next reply does not begin with the last one's words on screen.
+  const raw = live ? tutorText(live) : "";
+  const lagged = useDeferredValue(useMemo(() => ({ since: live?.since, raw }), [live?.since, raw]));
+  const text = lagged.since === live?.since ? lagged.raw : raw;
 
   const setsTask = useMemo(() => state.earlier.map((turn) => hasTask(turn.tutor)), [state.earlier]);
   const liveSetsTask = text !== "" && hasTask(text);
@@ -699,7 +706,8 @@ export function Session(props: {
     () => (last >= 0 && setsTask[last] ? sourceLinks(state.earlier[last].tutor) : []),
     [last, setsTask, state.earlier],
   );
-  const showPassages = passages.length > 0 && answered(last) && !liveSetsTask;
+  // Once the next reply sets a task the chips are not offered, but their room is kept, so the reply does not jump up.
+  const showPassages = passages.length > 0 && answered(last);
   const blockOver = state.startedMs !== null && now - state.startedMs >= props.blockMinutes * 60_000;
 
   // The first hint asked on a task says what a hint costs, once.
@@ -905,7 +913,11 @@ export function Session(props: {
                   ))}
                 </div>
               )}
-              {carried.map((turn, n) => {
+              {/* One list, keyed by turn: when the live reply settles and the learner
+                  answers, its element stays where it is and becomes an earlier turn,
+                  so nothing already on screen moves when the next reply starts. */}
+              {[
+                ...carried.map((turn, n) => {
                 const index = from + n;
                 // The turn that holds the task in hand is live until the tutor sets another.
                 const open = n === 0 && !liveSetsTask;
@@ -914,18 +926,9 @@ export function Session(props: {
                     {exchange(turn, index, { writing: false })}
                   </div>
                 );
-              })}
-              <div className={liveSetsTask ? "exchange now holds-open" : "exchange now"} ref={liveRef}>
-                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted }, state.earlier.length, { writing: isBusy })}
-                {!live && <p className="hint">Say what you want to work on.</p>}
-                {live && isBusy && state.cards.length === 0 && (
-                  <Thinking since={live.since} status={live.status} doing={live.doing} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
-                )}
-                {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
-                {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
-              </div>
-              {showPassages && (
-                <div className="passages" data-role="passages">
+              }),
+              showPassages && (
+                <div className={liveSetsTask ? "passages gone" : "passages"} data-role="passages" key="passages">
                   <span className="passages-label">Passages from the last reply</span>
                   {passages.slice(0, 4).map((passage) => (
                     <button
@@ -942,7 +945,14 @@ export function Session(props: {
                     </button>
                   ))}
                 </div>
-              )}
+              ),
+              <div className={liveSetsTask ? "exchange now holds-open" : "exchange now"} ref={liveRef} key={state.earlier.length}>
+                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted }, state.earlier.length, { writing: isBusy })}
+                {!live && <p className="hint">Say what you want to work on.</p>}
+                {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
+                {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
+              </div>,
+              ]}
               {state.cards.map((card) =>
                 card.kind === "permission" ? (
                   <PermissionCard key={card.id} card={card} onDecide={props.onDecide} />
@@ -960,14 +970,10 @@ export function Session(props: {
               ))}
             </div>
           </div>
-          <div className="dock">
-            {below && (
-              <button className="more-below" onClick={toEnd}>
-                <Icon name="down" size={14} />
-                More below
-              </button>
-            )}
-            <div className="column">
+          {/* The end sheet, the nudge and a note about material stand above the dock, not in it: the answer box is on the foot of the window and nothing moves it. */}
+          {(stopping || (blockOver && !nudged && !isBusy) || props.material) && (
+            <div className="dock-notes">
+              <div className="column">
               {stopping && (
                 <div
                   className="sheet"
@@ -1020,6 +1026,17 @@ export function Session(props: {
                 </div>
               )}
               {!stopping && props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
+              </div>
+            </div>
+          )}
+          <div className="dock" key={state.cards.length === 0 ? "answer" : "card"}>
+            {below && !stopping && !props.material && !(blockOver && !nudged && !isBusy) && (
+              <button className="more-below" onClick={toEnd}>
+                <Icon name="down" size={14} />
+                More below
+              </button>
+            )}
+            <div className="column">
               {state.cards.length === 0 && (
                 // Kept while the End sheet is up, so what was typed is still there after "Keep going".
                 <div hidden={stopping} {...(covered ? ({ inert: "" } as object) : {})}>
@@ -1030,6 +1047,11 @@ export function Session(props: {
                     onNote={props.onNote}
                     onAddFiles={props.onAddFiles}
                     onPasteText={props.onPasteText}
+                    working={
+                      live && isBusy ? (
+                        <Thinking since={live.since} status={live.status} doing={live.doing} quiet={text !== "" && live.status !== "working"} onInterrupt={props.onInterrupt} />
+                      ) : null
+                    }
                   />
                 </div>
               )}
