@@ -34,6 +34,9 @@ pub struct Facts {
     pub help: Vec<String>,
     /// The names of skills with an open quick check.
     pub open_labels: Vec<String>,
+    /// The course graphs in the study folder, as paths from it. They do not
+    /// change during a conversation, so only the whole state names them.
+    pub graphs: Vec<String>,
 }
 
 /// One quick check, as the tutor needs it. The key is the tutor's, to mark
@@ -116,6 +119,12 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
                 ));
             }
         }
+        lines.extend(
+            facts
+                .graphs
+                .iter()
+                .map(|path| format!("Course graph: {path}")),
+        );
     }
     if !facts.known.is_empty() {
         lines.push(
@@ -246,5 +255,41 @@ mod tests {
             message("Now: x", "hello"),
             "<lesson-state>\nNow: x\n</lesson-state>\n\n<learner>\nhello\n</learner>"
         );
+    }
+
+    #[test]
+    fn the_whole_state_names_a_course_graph_only_when_there_is_one() {
+        let lesson = Lesson::default();
+        let none = text(
+            &lesson,
+            &Facts {
+                full: true,
+                ..Facts::default()
+            },
+        );
+        assert!(!none.contains("Course graph"), "{none}");
+        let graphs = vec!["Study/midterm-1/graph.yaml".to_owned()];
+        let one = text(
+            &lesson,
+            &Facts {
+                full: true,
+                graphs: graphs.clone(),
+                ..Facts::default()
+            },
+        );
+        assert!(
+            one.lines()
+                .any(|line| line == "Course graph: Study/midterm-1/graph.yaml"),
+            "{one}"
+        );
+        // A later state says only what changed, and a graph does not change.
+        let later = text(
+            &lesson,
+            &Facts {
+                graphs,
+                ..Facts::default()
+            },
+        );
+        assert!(!later.contains("Course graph"), "{later}");
     }
 }
