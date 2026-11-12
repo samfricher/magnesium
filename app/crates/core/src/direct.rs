@@ -1016,6 +1016,42 @@ fn redos_due(shared: &Shared) -> u64 {
         .unwrap_or(0)
 }
 
+/// The most course graphs a state names.
+const MAX_GRAPHS: usize = 8;
+
+/// The course graphs in the study root, as paths from it: each
+/// `Study/<plan>/graph.yaml`, where the teaching files look for one. The
+/// tutor reads the one whose tags cover the goal, as a plugin lesson does. A
+/// file is named only when it is a regular file that is still inside the
+/// root once every link on its way is followed, since the model's Read
+/// reaches the root and nothing else.
+fn course_graphs(root: &Path) -> Vec<String> {
+    let Ok(inside) = root.canonicalize() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(root.join("Study")) else {
+        return Vec::new();
+    };
+    let mut plans: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|plan| !plan.starts_with('.') && !plan.chars().any(char::is_control))
+        .filter(|plan| {
+            root.join("Study")
+                .join(plan)
+                .join("graph.yaml")
+                .canonicalize()
+                .is_ok_and(|file| file.starts_with(&inside) && file.is_file())
+        })
+        .collect();
+    plans.sort();
+    plans
+        .into_iter()
+        .take(MAX_GRAPHS)
+        .map(|plan| format!("Study/{plan}/graph.yaml"))
+        .collect()
+}
+
 /// Before the model: capture the learner's words, start or resume the
 /// runtime's lesson when none is active here, and gather the state to send.
 fn prepare(
@@ -1224,6 +1260,9 @@ fn prepare(
     }
     if facts.full || (new_sitting && !shared.resumed) || facts.stopped_at.is_some() {
         facts.redos_due = redos_due(shared);
+    }
+    if facts.full {
+        facts.graphs = course_graphs(&shared.root);
     }
     facts.help = std::mem::take(&mut state.help);
     if state.labels != state.labels_told {
@@ -1826,6 +1865,48 @@ impl Drop for DirectConversation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_course_graph_is_named_only_inside_the_study_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let root = base.join("Course");
+        let study = root.join("Study");
+        assert!(course_graphs(&root).is_empty(), "no Study folder yet");
+        for plan in ["midterm-1", "final", "empty"] {
+            std::fs::create_dir_all(study.join(plan)).unwrap();
+        }
+        std::fs::write(study.join("midterm-1/graph.yaml"), "tags:\n").unwrap();
+        std::fs::write(study.join("final/graph.yaml"), "tags:\n").unwrap();
+        // A graph.yaml that is a folder, and links that lead out of the root.
+        std::fs::create_dir_all(study.join("odd/graph.yaml")).unwrap();
+        let outside = base.join("elsewhere");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("graph.yaml"), "tags:\n").unwrap();
+        std::os::unix::fs::symlink(&outside, study.join("linked")).unwrap();
+        std::fs::create_dir_all(study.join("filelink")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("graph.yaml"),
+            study.join("filelink/graph.yaml"),
+        )
+        .unwrap();
+        // A link that stays inside the root is followed.
+        std::os::unix::fs::symlink(study.join("final"), study.join("alias")).unwrap();
+        assert_eq!(
+            course_graphs(&root),
+            [
+                "Study/alias/graph.yaml",
+                "Study/final/graph.yaml",
+                "Study/midterm-1/graph.yaml"
+            ]
+        );
+        // A Study folder that is itself a link out of the root names nothing.
+        let other = base.join("Other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::os::unix::fs::symlink(&study, other.join("Study")).unwrap();
+        assert!(course_graphs(&other).is_empty());
+    }
 
     #[test]
     fn a_direct_lesson_loads_the_model_and_the_two_search_tools_only() {
