@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Due, Level, PaletteKey, ProofDots, Run, TopBar, Week, agoText, clockText, examWhen, proofShare, skillsProven, splitGoal, useNow } from "../ui/bits";
+import { Due, Level, PaletteKey, Run, TopBar, Week, agoText, clockText, examWhen, proofShare, skillsProven, splitGoal, useNow } from "../ui/bits";
 import type { Activity, Card } from "../types";
 
 /** Today as a day on the calendar, in this Mac's time. */
@@ -71,16 +71,14 @@ function Goal({ goal }: { goal: string }) {
   );
 }
 
-/** The course's proofs in a few words: one mark of a proven skill, and "3 of 11 skills proven". */
+/**
+ * The course's proofs in a few words: "3 of 11 skills proven". Three dots mean
+ * one skill's three proofs everywhere, so a course total is said, not dotted.
+ */
 function ProofSummary({ card }: { card: Card }) {
   const said = skillsProven(card.proofs);
   if (!said || card.state !== "ready") return null;
-  return (
-    <span className="cc-proofs num">
-      <ProofDots earned={card.proofs.proven > 0 ? 3 : 0} label="" />
-      {said}
-    </span>
-  );
+  return <span className="cc-proofs num">{said}</span>;
 }
 
 /**
