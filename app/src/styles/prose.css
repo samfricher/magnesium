@@ -267,45 +267,58 @@
   }
 }
 
-/* The thing to do next. A paragraph the tutor opened with a bold "Task." is
-   set apart, so the question is never lost in the explanation above it. The
-   live task is a soft green box with one straight green bar down its left
-   side, drawn inside it so the rounded corners are left alone. */
+/* The thing to do next, set as a numbered question of the booklet. A paragraph
+   the tutor opened with a bold "Task." is set apart: its number hangs in the
+   margin, right-aligned to the margin rule, and nothing else dresses it. No
+   fill, no card, no corners. The live task's number is green, and the margin
+   rule beside its text turns green and thicker for exactly its height. */
 .prose div.task,
 .prose :not(div.task) > p.task {
   position: relative;
   margin: 1.2em 0 0;
-  padding: var(--s4) var(--s5);
-  border: 1px solid transparent;
-  border-radius: var(--r-card);
-  background: var(--accent-soft);
 }
 
-.prose div.task::before,
-.prose :not(div.task) > p.task::before {
+.prose div.task[data-n]::before,
+.prose :not(div.task) > p.task[data-n]::before {
+  content: attr(data-n);
+  position: absolute;
+  top: -2px;
+  right: calc(100% + var(--gap) + var(--s3));
+  font-family: var(--serif);
+  font-size: var(--fs-card);
+  font-weight: 600;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 21px;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.prose div.task[data-n]::after,
+.prose :not(div.task) > p.task[data-n]::after {
   content: "";
   position: absolute;
-  top: var(--s3);
-  bottom: var(--s3);
-  left: 0;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--gap) - 1px);
   width: 3px;
   background: var(--accent);
+  pointer-events: none;
 }
 
 .prose div.task > :last-child {
   margin-bottom: 0;
 }
 
-/* A task that has been answered is no longer the one to do: no bar, no fill,
-   no green, a full hairline round it. Only the live task is green. */
-.answered .prose div.task,
-.answered .prose :not(div.task) > p.task {
-  border-color: var(--line-2);
-  background: none;
+/* A task that has been answered is no longer the one to do: its number goes
+   quiet and its stretch of the margin rule is just the rule again. */
+.answered .prose div.task[data-n]::before,
+.answered .prose :not(div.task) > p.task[data-n]::before {
+  font-weight: 400;
+  color: var(--muted);
 }
 
-.answered .prose div.task::before,
-.answered .prose :not(div.task) > p.task::before {
+.answered .prose div.task[data-n]::after,
+.answered .prose :not(div.task) > p.task[data-n]::after {
   display: none;
 }
 
