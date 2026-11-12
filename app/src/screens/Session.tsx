@@ -17,7 +17,7 @@ import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState
 import { core } from "../bridge";
 import { HELP, busy, isHelp, isHint, opening, splitConfidence, tutorText, type Card, type SessionState } from "../lesson";
 import { hasMath, hasTask, renderPlain, sourceLinks } from "../render";
-import { marksFor, plainSaid, skillTex, useMarks } from "../marks";
+import { NO_MARK_WHY, NO_MARK_WORD, marksFor, noMarkFor, plainSaid, skillTex, useMarks } from "../marks";
 import { sourceRef, type SourceRef } from "../sources";
 import { Line, Rich } from "../ui/Rich";
 import { MaterialNote } from "../ui/Material";
@@ -26,7 +26,7 @@ import { Icon } from "../ui/icons";
 import { Fault, PaletteKey, TopBar, composing, splitGoal, useNow } from "../ui/bits";
 import type { Answer, Decision, Question, Rail as RailData } from "../types";
 
-/** What "How sure?" is for, said where the short label is shown and on the control. */
+/** What "How sure?" is for: on the label's and the group's titles, and in the group's name. */
 const SURE_FOR = "Optional. Helps choose what to review.";
 
 const CONFIDENCE: [string, string][] = [
@@ -71,31 +71,46 @@ function Said({ text, className }: { text: string; className: string }) {
  * they said they were is a small tag after their words, not part of them.
  *
  * An examiner marks an answer in the margin, beside it. Where the page has a
- * margin, the note there says "Your answer" and, once the runtime's record has
- * a mark for it, a second line under that says the mark; the note is out of
- * the flow, so nothing moves when it arrives. A request for help ("Can I have a
- * hint?") is not an answer: its note says "You asked" and it is never marked.
- * In a narrow window, with no margin, the whole sentence stands under the
- * answer, in the flow, and the page makes up for the room it takes.
+ * margin, the note there says what the learner's words are: "Your answer" (an
+ * answer to the task in hand, or a choice made on a card) or "You asked" (a
+ * request for help, or anything said when no task is live). Once the runtime's
+ * record has a mark for an answer, a second line says it; when the reply has
+ * settled and the record has none, the second line says so ("No mark
+ * recorded"). The note is out of the flow, so nothing moves when it arrives.
+ *
+ * Under the answer, in the flow, one quiet line says what the mark comes to
+ * ("Counts towards a proof of ..."). It arrives only after the reply has
+ * settled, and the page makes up for the room it takes. In a window with no
+ * margin the line carries the verdict as well ("Marked right. Counts towards
+ * ..."). Only the record speaks, never the tutor's words.
  */
-function Turn({ text, since }: { text: string; since: number }) {
+function Turn({ text, since, answers, pick }: { text: string; since: number; /** A task was in hand when this was said. */ answers: boolean; pick?: boolean }) {
   const opener = opening(text);
   const said = useMemo(() => splitConfidence(text), [text]);
   const html = useMemo(() => renderPlain(said.text), [said.text]);
   const help = isHelp(text);
   const marks = help || opener ? [] : marksFor(since);
-  const sentence = marks.map(plainSaid).join(" ");
+  // The record was looked at once the reply settled, and has nothing for an answer to a task.
+  const none = !help && !opener && !pick && answers && marks.length === 0 ? noMarkFor(since) : null;
+  const sentence = marks.length > 0 ? marks.map(plainSaid).join(" ") : none !== null ? `${NO_MARK_WORD}. ${NO_MARK_WHY}` : "";
+  // A mark means it was an answer, whatever else was thought.
+  const asks = help || (!pick && !answers && marks.length === 0);
   if (!opener) {
     return (
-      <div className={help ? "you selectable asked" : "you selectable"}>
+      <div className={asks ? "you selectable asked" : "you selectable"}>
         {/* A note in the margin where the margin is wide; narrower, the indent and the bar say it. */}
-        <span className="lesson-label you-label" aria-hidden="true" title={sentence === "" ? undefined : sentence}>
-          <span className="you-who">{help ? "You asked" : "Your answer"}</span>
+        <span className="lesson-label you-label" aria-hidden="true" title={marks.length > 0 ? sentence : undefined}>
+          <span className="you-who">{asks ? "You asked" : "Your answer"}</span>
           {marks.map((mark, n) => (
             <span className={mark.right ? "you-mark right" : "you-mark"} key={n}>
               {mark.word}
             </span>
           ))}
+          {none !== null && (
+            <span className="you-mark none" title={NO_MARK_WHY}>
+              {NO_MARK_WORD}
+            </span>
+          )}
         </span>
         <span className="you-body" dangerouslySetInnerHTML={{ __html: html }} />
         {said.confidence && (
@@ -103,22 +118,27 @@ function Turn({ text, since }: { text: string; since: number }) {
             {said.confidence}
           </span>
         )}
-        {/* Said once, politely, when the record has its mark. The region is there before the words are. */}
+        {/* Said once, politely, when the record has its mark or has none. The region is there before the words are. */}
         {!help && (
           <span className="sr" role="status" aria-live="polite" data-role="marks" data-state={sentence === "" ? undefined : "said"}>
             {sentence}
           </span>
         )}
-        {/* In a narrow window the sentence is under the answer. Where there is a margin it is not drawn. */}
-        {marks.length > 0 && (
-          <div className="you-verdicts" aria-hidden="true">
+        {(marks.length > 0 || none !== null) && (
+          <div className={marks.length === 0 ? "you-verdicts only-none" : "you-verdicts"} aria-hidden="true">
             {marks.map((mark, n) => (
-              <p className={mark.right ? "you-verdict right" : "you-verdict"} data-added={mark.added} key={n}>
+              <p className="you-verdict" data-added={mark.added} key={n}>
+                <span className="v-word">{mark.word}. </span>
                 {mark.before}
                 {mark.skill && <Line text={skillTex(mark.skill)} />}
                 {mark.after}
               </p>
             ))}
+            {none !== null && (
+              <p className="you-verdict none" data-added={none} title={NO_MARK_WHY}>
+                <span className="v-word">{NO_MARK_WORD}.</span>
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -173,6 +193,7 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
   const { rail, open } = props;
   const left = useMinutesLeft(props.startedMs, props.blockMinutes);
   const time = `Lesson length ${props.blockMinutes} min, ${left < 0 ? `${-left} min over` : `${left} min left`}`;
+  const timeSaid = left < 0 ? `${-left} min over in this lesson` : `${left} min left in this lesson`;
   const holder = useRef<HTMLDivElement>(null);
   const steps = rail?.steps ?? [];
   // The step in hand: the one the tutor marked, else the first not done.
@@ -210,7 +231,7 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
       <button
         className={open ? "track on" : "track"}
         onClick={() => props.onOpen(!open)}
-        title={`${where ? `${where}. ` : ""}${time}. ${steps.length > 0 ? "Show the goal and its steps." : "Show the goal."}`}
+        title={`${where ? `${where}. ` : ""}${timeSaid}. ${steps.length > 0 ? "Show the goal and its steps." : "Show the goal."}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         data-role="track"
@@ -230,10 +251,10 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
         <div className="plan" role="dialog" aria-label="The goal and its steps">
           {rail?.goal && goal ? (
             <div className="plan-goal selectable">
-              {goal.ref && <span className="plan-ref">{goal.ref}</span>}
               <p>
                 <Line text={goal.title} />
               </p>
+              {goal.ref && <span className="plan-ref">{goal.ref}</span>}
             </div>
           ) : (
             <p className="plan-goal dim">The tutor sets the goal in its first reply.</p>
@@ -272,21 +293,24 @@ function useMinutesLeft(startedMs: number | null, blockMinutes: number): number 
   return blockMinutes - used;
 }
 
-/** The last stretch of the lesson, in minutes: only then does the strip count the time. */
+/** The last stretch of the lesson, in minutes: only then does the strip say anything about time. */
 const CLOCK_SHOWN = 10;
+const CLOCK_SOON = 5;
 
 /**
- * The block's clock as plain text. A clock all lesson long is pressure, so the
- * strip is silent about time until the last ten minutes; before then the time
- * is in the step button's popover and its tooltip.
+ * The time left as plain text, and only at the end. A clock all lesson long is
+ * pressure, so the strip is silent about time until ten minutes before the
+ * block's end: then "10 min left", at five "5 min left", and "Time is up" once
+ * the block is over. It does not count down in between. Before then the time
+ * is in the step button's title and in its popover.
  */
 function Clock({ startedMs, blockMinutes }: { startedMs: number | null; blockMinutes: number }) {
   const left = useMinutesLeft(startedMs, blockMinutes);
   if (left > CLOCK_SHOWN) return null;
-  const over = left < 0;
+  const over = left <= 0;
   return (
     <span className={over ? "clock over" : "clock"} title={`Lesson length: ${blockMinutes} min. Change it in the menu (⌘K).`} data-role="clock">
-      {over ? -left : left} {over ? "min over" : "min left"}
+      {over ? "Time is up" : left > CLOCK_SOON ? `${CLOCK_SHOWN} min left` : `${CLOCK_SOON} min left`}
     </span>
   );
 }
@@ -321,17 +345,15 @@ function PermissionCard(props: {
 }
 
 /**
- * The tutor's question, with its options. The field for the learner's own
- * words has the focus when it appears, so typing types: a digit typed there is
- * text (an answer often starts with one), and a single digit that numbers an
- * option is taken for the option only when Return follows it. The options are
- * numbered 1, 2, 3. An up arrow (or, with the field empty, a down arrow) moves
- * from the field into them. Inside them the keys do what a click does: a
- * number sends that option at once, as a click on it does; the arrows move
- * (and choose, in a group of one answer) and Return sends the one moved to. A
- * box that allows several is the exception, for it has no one answer to send:
- * a number ticks, and Return sends the ticked. A letter typed among the options
- * goes back to the field and is typed.
+ * The tutor's question, with its options, numbered 1, 2, 3. The focus is on
+ * the options when the card appears, so a choice is one key: a number sends
+ * that option at once, as a click on it does; the arrows move (and choose, in
+ * a group of one answer) and Return sends the one moved to. Any printable
+ * letter moves the focus to the field for the learner's own words and is typed
+ * there; in that field every key, a digit too, is text (an answer often starts
+ * with one), and Return sends the words. A box that allows several is the
+ * exception, for it has no one answer to send: a number ticks, and Return sends
+ * the ticked.
  */
 function QuestionCard(props: {
   card: Extract<Card, { kind: "question" }>;
@@ -345,15 +367,15 @@ function QuestionCard(props: {
   const root = useRef<HTMLDivElement>(null);
   const single = card.questions.length === 1 && !card.questions[0].multi;
 
+  // The options have the focus, so a number picks and a letter starts the learner's own words.
   useEffect(() => {
-    root.current?.querySelector<HTMLInputElement>("input.field")?.focus();
+    firstOption(0)?.focus({ preventScroll: true });
+    // The whole card is brought into view, as the field's focus used to do: the page's end is where it stands.
+    const page = root.current?.closest<HTMLElement>(".stage");
+    if (page) page.scrollTop = page.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id]);
 
-  const answersFrom = (pick: Record<number, string[]>, words: Record<number, string>): Answer[] =>
-    card.questions.map((q, index) => {
-      const typed = (words[index] ?? "").trim();
-      return { question: q.question, chosen: typed !== "" ? [...(pick[index] ?? []), typed] : (pick[index] ?? []) };
-    });
   const answersNow = (extra?: { index: number; label: string }): Answer[] =>
     card.questions.map((q, index) => {
       const typed = (own[index] ?? "").trim();
@@ -388,31 +410,7 @@ function QuestionCard(props: {
     if (q.multi) return choose(index, q, label);
     choose(index, q, label);
     if (single || complete({ index, label })) props.onAnswer(card.id, answersNow({ index, label }));
-    else field(index + 1)?.focus();
-  };
-
-  /**
-   * Return in the field with one digit in it that numbers an option: the digit
-   * was a choice, not words. The option is chosen and the field emptied; for a
-   * question of one answer that is also the answer, and it is sent once every
-   * question has one. Any other text stays the learner's own words (an answer
-   * such as "1/v" starts with a digit).
-   */
-  const numbered = (index: number, q: Question, typed: string): boolean => {
-    const n = /^[1-9]$/.test(typed) ? Number(typed) - 1 : -1;
-    if (n < 0 || n >= q.options.length) return false;
-    const label = q.options[n].label;
-    const had = chosen[index] ?? [];
-    const next = q.multi ? (had.includes(label) ? had.filter((l) => l !== label) : [...had, label]) : [label];
-    const pick = { ...chosen, [index]: next };
-    const words = { ...own, [index]: "" };
-    setChosen(pick);
-    setOwn(words);
-    const answers = answersFrom(pick, words);
-    // A box that allows several waits for Return on an empty field; one of one answer goes.
-    if (!q.multi && answers.every((a) => a.chosen.length > 0)) props.onAnswer(card.id, answers);
-    else if (!q.multi) field(index + 1)?.focus();
-    return true;
+    else (firstOption(index + 1) ?? field(index + 1))?.focus();
   };
 
   /**
@@ -435,6 +433,7 @@ function QuestionCard(props: {
   }, [props.escape]);
 
   const options = (index: number) => Array.from(root.current?.querySelectorAll<HTMLButtonElement>(`.ask-q[data-q="${index}"] .option`) ?? []);
+  const firstOption = (index: number) => options(index).find((el) => el.tabIndex === 0) ?? options(index)[0] ?? null;
   const field = (index: number) => root.current?.querySelector<HTMLInputElement>(`.ask-q[data-q="${index}"] input.field`) ?? null;
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -557,16 +556,16 @@ function QuestionCard(props: {
               value={own[index] ?? ""}
               onChange={(e) => typeInto(index, e.target.value)}
               onKeyDown={(e) => {
+                // Every key typed here is text, a digit too; Return sends the words.
                 if (e.key !== "Enter" || composing(e)) return;
-                if (numbered(index, q, own[index] ?? "")) e.preventDefault();
-                else if (complete()) props.onAnswer(card.id, answersNow());
+                if (complete()) props.onAnswer(card.id, answersNow());
               }}
             />
           </div>
         );
       })}
       <div className="row">
-        <span className="aside">Click an option, or press ↑ and then its number to send it. Or write it in your own words.</span>
+        <span className="aside">Press an option&apos;s number to send it, or start typing to say it in your own words.</span>
         <button className="btn primary send" disabled={!complete()} title="Send the answer (Return)" onClick={() => props.onAnswer(card.id, answersNow())}>
           Send
         </button>
@@ -637,13 +636,15 @@ const bare = (text: string) => /^[\s$]*$/.test(text);
 /**
  * How sure the learner is: optional, one choice of three, and about the answer.
  * It is sent with the answer, so it cannot be asked after Send without changing
- * what is sent; and it must not appear mid-sentence and change the box while the
- * learner types. So it is always in the box's foot, quiet, and says what it is
- * for. A radio group with one tab stop. The arrows move and choose; Space and
- * Return choose the one in hand and never clear it or move the focus; a click on
- * the chosen one clears it, the only way to. ⌥1, ⌥2 and ⌥3 choose from the answer box.
+ * what is sent; and it must not move the box when it arrives. So it is always in
+ * the box's foot, its room kept from the first render, and it is seen (and
+ * reached) once there are words to be sure of. One quiet line that never wraps:
+ * the short label, and three text choices with no outline round them. A radio
+ * group with one tab stop. The arrows move and choose; Space and Return choose
+ * the one in hand and never clear it or move the focus; a click on the chosen
+ * one clears it, the only way to. ⌥1, ⌥2 and ⌥3 choose from the answer box.
  */
-function Sure(props: { value: string | null; onChange: (value: string | null, fromKey: boolean) => void }) {
+function Sure(props: { value: string | null; shown: boolean; onChange: (value: string | null, fromKey: boolean) => void }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const at = CONFIDENCE.findIndex(([word]) => word === props.value);
   const stop = at >= 0 ? at : 0;
@@ -664,17 +665,11 @@ function Sure(props: { value: string | null; onChange: (value: string | null, fr
     refs.current[next]?.focus();
   };
   return (
-    <span className="sure">
+    <span className="sure" data-shown={props.shown ? "yes" : "no"}>
       <span className="sure-label" aria-hidden="true" title={SURE_FOR}>
-        <span className="sure-long">How sure? (optional, helps choose what to review)</span>
-        <span className="sure-short">How sure?</span>
+        How sure?
       </span>
-      <span
-        className="seg"
-        role="radiogroup"
-        aria-label="How sure are you? Optional."
-        title={`${SURE_FOR} Return sends without it.`}
-      >
+      <span className="seg" role="radiogroup" aria-label={`How sure are you? ${SURE_FOR}`} title={`${SURE_FOR} Return sends without it.`}>
         {CONFIDENCE.map(([word, label], n) => (
           <button
             key={word}
@@ -824,6 +819,9 @@ function Composer(props: {
   const [confidence, setConfidence] = useState<string | null>(saved?.confidence ?? null);
   const [files, setFiles] = useState<string[]>(saved?.files ?? []);
   const [symbols, setSymbols] = useState(false);
+  // The symbol row is one tab stop: the symbol in hand, and the arrows move between them.
+  const [symbolAt, setSymbolAt] = useState(0);
+  const symbolRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Return was pressed while the tutor was writing: the answer goes when it finishes.
   const [queued, setQueued] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -993,7 +991,7 @@ function Composer(props: {
         // ⌥1, ⌥2, ⌥3 say how sure, from the answer box.
         // The key's code is read, for ⌥1 types a character of its own on a Mac.
         const pick = /^Digit([123])$/.exec(e.code);
-        if (pick && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !composing(e)) {
+        if (pick && typed && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !composing(e)) {
           e.preventDefault();
           setConfidence(CONFIDENCE[Number(pick[1]) - 1][0]);
         }
@@ -1011,6 +1009,8 @@ function Composer(props: {
           onChange={(e) => {
             setText(e.target.value);
             setQueued(false);
+            // With nothing left to be sure of, the choice goes with the words.
+            if (bare(e.target.value)) setConfidence(null);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !composing(e)) {
@@ -1060,12 +1060,32 @@ function Composer(props: {
             <Icon name="sigma" size={16} />
           </button>
           {symbols && (
-            <div className="symbols" id="symbol-row" role="toolbar" aria-label="Symbols for mathematics">
-              {SYMBOLS.map((symbol) => (
+            <div
+              className="symbols"
+              id="symbol-row"
+              role="toolbar"
+              aria-label="Symbols for mathematics"
+              aria-orientation="horizontal"
+              onKeyDown={(e) => {
+                if (e.metaKey || e.ctrlKey || e.altKey || composing(e)) return;
+                const last = SYMBOLS.length - 1;
+                const to = e.key === "ArrowRight" ? Math.min(last, symbolAt + 1) : e.key === "ArrowLeft" ? Math.max(0, symbolAt - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+                if (to < 0) return;
+                e.preventDefault();
+                setSymbolAt(to);
+                symbolRefs.current[to]?.focus();
+              }}
+            >
+              {SYMBOLS.map((symbol, n) => (
                 <button
                   key={symbol.name}
+                  ref={(el) => {
+                    symbolRefs.current[n] = el;
+                  }}
                   type="button"
                   className="symbol"
+                  tabIndex={n === symbolAt ? 0 : -1}
+                  onFocus={() => setSymbolAt(n)}
                   title={symbol.hint ?? (symbol.tex ? FRACTION_HINT : symbol.name)}
                   aria-label={symbol.hint ?? (symbol.tex ? FRACTION_HINT : symbol.name)}
                   // The caret stays in the answer box: a click on a symbol never takes it.
@@ -1087,6 +1107,7 @@ function Composer(props: {
           {!queued && (
             <Sure
               value={confidence}
+              shown={typed}
               onChange={(value, fromKey) => {
                 setConfidence(value);
                 if (!fromKey) box.current?.focus();
@@ -1238,7 +1259,7 @@ export function Session(props: {
   const [nudged, setNudged] = useState(false);
   const liveRef = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const stopInput = useRef<HTMLInputElement>(null);
+  const keepGoing = useRef<HTMLButtonElement>(null);
   // Return was pressed down in the End card: the lesson ends when the key comes up, so the key's own press never reaches the screen that follows.
   const endArmed = useRef(false);
   const now = useNow(20_000);
@@ -1260,13 +1281,15 @@ export function Session(props: {
   // Anything that takes the keyboard from the answer box.
   const covered = (props.overlay ?? false) || planOpen || stopping || sheet;
 
-  // The End card is a confirmation: its field has the focus, so Return does
-  // its main action (End lesson) and Esc means "Keep going".
+  // The End card is a confirmation, and the safe answer has the focus: Keep
+  // going. Esc keeps going too, so Esc then Return never ends a lesson; End
+  // lesson is one Tab away (and Return in the line's field ends it, for a
+  // learner who has gone there to edit it).
   const beginStop = () => {
     setPlanOpen(false);
     setLine(props.rail?.next_action ?? "");
     setStopping(true);
-    window.setTimeout(() => stopInput.current?.focus(), 0);
+    window.setTimeout(() => keepGoing.current?.focus(), 0);
   };
 
   // Esc closes the innermost thing first: the symbol row, a popover, a source
@@ -1329,6 +1352,16 @@ export function Session(props: {
   // label ("Task", "Check 1 of 2") and the rule in the margin say which is live.
   const setsTask = useMemo(() => state.earlier.map((turn) => hasTask(turn.tutor)), [state.earlier]);
   const liveSetsTask = text !== "" && hasTask(text);
+  // Whether a task was in hand when exchange `k` was said: the nearest reply above it that set one, with only requests for help between. What answers no task is a request.
+  const answersTask = (k: number): boolean => {
+    for (let j = k - 1; j >= 0; j--) {
+      const turn = state.earlier[j];
+      if (!turn) continue;
+      if (hasTask(turn.tutor)) return true;
+      if (!isHelp(turn.learner)) return false;
+    }
+    return false;
+  };
   const posed = setsTask.filter(Boolean).length + (liveSetsTask ? 1 : 0);
 
   // The task in hand is the last one the tutor set. The turn that holds it is
@@ -1394,11 +1427,11 @@ export function Session(props: {
   }, [state.earlier, setsTask, live]);
 
   /** One exchange of the lesson: what was said, the reply, and what a hint costs. */
-  const exchange = (turn: { learner: string; tutor: string; interrupted: boolean; ms: number }, index: number, opts: { writing: boolean }) => {
+  const exchange = (turn: { learner: string; tutor: string; interrupted: boolean; ms: number; pick?: boolean }, index: number, opts: { writing: boolean }) => {
     const hint = isHint(turn.learner) && turn.tutor !== "";
     return (
       <>
-        {turn.learner && <Turn text={turn.learner} since={turn.ms} />}
+        {turn.learner && <Turn text={turn.learner} since={turn.ms} answers={answersTask(index)} pick={turn.pick} />}
         {hint && <div className="lesson-label help-label">Hint</div>}
         {turn.tutor !== "" && (
           <div className={opts.writing ? "tutor writing" : "tutor"} data-role={index === state.earlier.length ? "tutor" : undefined}>
@@ -1423,6 +1456,12 @@ export function Session(props: {
   const main = useRef<HTMLDivElement>(null);
   const [pin, setPin] = useState<Pin | null>(null);
   const [below, setBelow] = useState(false);
+  const pinned = useRef<HTMLDivElement>(null);
+  // What a Tab or a scroll-to brings into view lands below the strip, not under it.
+  useLayoutEffect(() => {
+    const s = stage.current;
+    if (s) s.style.scrollPaddingTop = pin && pinned.current ? `${pinned.current.offsetHeight}px` : "";
+  }, [pin]);
 
   /** The last task box of the turn that holds the task in hand. */
   const openTask = (): HTMLElement | null => {
@@ -1531,11 +1570,11 @@ export function Session(props: {
     tall.current = s.scrollHeight;
     const task = openTask();
     let next: Pin | null = null;
-    // The strip holds the task whenever it is out of view: scrolled up past the top, or (in a short window) below the foot.
+    // The strip holds the task only once it has scrolled up past the top of the page. It never stands over the top of a transcript that shows its own beginning.
     if (task) {
       const at = task.getBoundingClientRect();
       const view = s.getBoundingClientRect();
-      if (at.bottom < view.top + EDGE || at.top > view.bottom - EDGE) next = summarize(task);
+      if (at.bottom < view.top + EDGE && s.scrollTop > 0) next = summarize(task);
     }
     setPin((old) => (old === next || (old && next && old.html === next.html && old.label === next.label) ? old : next));
     const rest = s.scrollHeight - s.clientHeight - s.scrollTop;
@@ -1696,6 +1735,8 @@ export function Session(props: {
   /** Answering a card, or deciding on one, sends the learner back to the end, where the reply will be. */
   const answer = (id: string, answers: Answer[]) => {
     follow.current = true;
+    // What is picked is said to the tutor as an answer: the record is read first, as for a typed one.
+    arm();
     props.onAnswer(id, answers);
   };
   const decide = (id: string, decision: Decision) => {
@@ -1733,7 +1774,7 @@ export function Session(props: {
       <div className={source ? "session-body with-source" : "session-body"}>
         <div className="session-main" ref={main} data-scrolled="no" {...(sheet ? ({ inert: "" } as object) : {})}>
           {pin && (
-            <div className="task-pin-holder">
+            <div className="task-pin-holder" ref={pinned}>
               <div className="column">
                 <button className="task-pin" onClick={showTask} title="Show the whole task" data-role="task-pin">
                   <span className="task-pin-label">{pin.label}</span>
@@ -1762,7 +1803,7 @@ export function Session(props: {
                 <div className="earlier answered">
                   {state.earlier.slice(0, earlier).map((turn, index) => (
                     <div className="exchange" key={index}>
-                      {turn.learner && <Turn text={turn.learner} since={turn.ms} />}
+                      {turn.learner && <Turn text={turn.learner} since={turn.ms} answers={answersTask(index)} pick={turn.pick} />}
                       <div className="tutor">
                         <Rich text={turn.tutor} final stopped={turn.interrupted} onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} />
                       </div>
@@ -1785,7 +1826,7 @@ export function Session(props: {
                 );
               }),
               <div className={liveSetsTask ? "exchange now holds-open" : "exchange now"} ref={liveRef} key={state.earlier.length}>
-                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted, ms: live.since }, state.earlier.length, { writing: isBusy })}
+                {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted, ms: live.since, pick: live.pick }, state.earlier.length, { writing: isBusy })}
                 {!live && <p className="hint">Say what you want to work on.</p>}
                 {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
                 {live?.error && !isBusy && <LessonFault text={live.error} alert />}
@@ -1830,7 +1871,6 @@ export function Session(props: {
                   </label>
                   <input
                     id="stop-line"
-                    ref={stopInput}
                     className="field"
                     value={line}
                     placeholder="One line: where you are, and what comes next"
@@ -1850,9 +1890,12 @@ export function Session(props: {
                     }}
                   />
                   <div className="row">
+                    <button className="btn" ref={keepGoing} onClick={() => setStopping(false)}>
+                      Keep going
+                    </button>
                     <button
                       className="btn primary"
-                      title="End the lesson and keep this line (Return)"
+                      title="End the lesson and keep this line"
                       onClick={() => stop(line)}
                       onKeyDown={(e) => {
                         // A button clicks on Return's way down: here it waits for the way up.
@@ -1868,9 +1911,6 @@ export function Session(props: {
                       }}
                     >
                       End lesson
-                    </button>
-                    <button className="btn" onClick={() => setStopping(false)}>
-                      Keep going
                     </button>
                   </div>
                 </div>
@@ -1897,20 +1937,20 @@ export function Session(props: {
             {/* A band whose room is always kept, between the transcript and the answer box. It holds the passages the last reply cited and the cue that there is more below, so neither covers the text or moves anything. */}
             <div className="band">
               <div className="column band-row">
-                {showPassages && <span className="lesson-label passages-label">Sources the tutor used</span>}
+                {showPassages && <span className="lesson-label passages-label">Sources</span>}
                 {showPassages && (
                   <div className="passages" data-role="passages">
                     {passages.slice(0, 4).map((passage) => (
                       <button
                         key={passage.href}
-                        className={source?.ref.path === sourceRef(passage.href)?.path ? "passage on" : "passage"}
+                        className={source?.ref.path === sourceRef(passage.href)?.path ? "btn ghost small passage on" : "btn ghost small passage"}
                         data-role="source-chip"
                         onClick={(e) => {
                           const ref = sourceRef(passage.href);
                           if (ref) openSource(ref, e.currentTarget);
                         }}
                       >
-                        <Icon name="paper" size={14} />
+                        <Icon name="paper" size={16} />
                         <span className="passage-text">{passage.text}</span>
                       </button>
                     ))}
