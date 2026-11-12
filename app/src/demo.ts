@@ -54,16 +54,19 @@ let helpAsked = false;
 // The open task in the demo lesson: the y-intercept, then the slope.
 let task: "vmax" | "km" = week ? "km" : "vmax";
 
-const VMAX_TASK = "**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
-const KM_TASK = "**Task.** The slope of the same line is $0.5$ s. What is $K_m$?";
+// Tasks are written in prose, as the tutor on Magnesium writes them; the
+// engine names each one in its record, and says so with open_task.
+const VMAX_TASK = "The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
+const KM_TASK = "The slope of the same line is $0.5$ s. What is $K_m$?";
+const CHECK_TASK = "A line meets the y-axis at $0.2$ s/µM. What is $V_{max}$?";
+const TASKS = [VMAX_TASK, KM_TASK, CHECK_TASK, "A second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?"];
 
 const OPENING =
   "You had the reciprocal form last time:\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}}\\cdot\\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n" +
   "It is a straight line in $\\frac{1}{[S]}$, so each part of the line means something. Where it meets the y-axis, $\\frac{1}{[S]} = 0$, and what is left is $\\frac{1}{V_{max}}$ (see [Week 4 slides, p. 12](Study/materials/Week%204%20slides.pdf#page=2)).\n\n" +
   VMAX_TASK;
 
-const WEEK_OPENING =
-  "Picking up at the slope. The line is the same one: it meets the y-axis at $0.25$ s/µM, so $V_{max} = 4$ µM/s, and its slope is $\\frac{K_m}{V_{max}}$.\n\n" + KM_TASK;
+const WEEK_OPENING = `Quick check 1: ${CHECK_TASK}`;
 
 const RIGHT =
   "Yes. The intercept is $\\frac{1}{V_{max}}$, so $V_{max} = \\frac{1}{0.25} = 4$ µM/s; the units come from taking the reciprocal of s/µM.\n\n" +
@@ -73,7 +76,7 @@ const RIGHT =
 const WRONG =
   "Not quite. The intercept is $\\frac{1}{V_{max}}$, not $V_{max}$ itself, so take the reciprocal: $V_{max} = \\frac{1}{0.25}$.\n\n" + KM_TASK;
 
-const KM_RIGHT = "Yes: $K_m = 0.5 \\times 4 = 2$ µM. You read both constants off one line.\n\n**Task.** A second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?";
+const KM_RIGHT = "Yes: $K_m = 0.5 \\times 4 = 2$ µM. You read both constants off one line.\n\nA second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?";
 
 const HINT = "The slope is $\\frac{K_m}{V_{max}}$, and you have $V_{max}$ already. What do you multiply the slope by?";
 
@@ -112,8 +115,8 @@ function home(): Home {
       : "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
     exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
     last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,
-    checks_due: 2,
-    redos_due: 1,
+    checks_due: week ? 1 : 0,
+    redos_due: 0,
     first_redo: "Diagnostic Q4",
     papers: [paperB, paperA],
     can_resume: true,
@@ -220,7 +223,7 @@ async function reply(text: string, after?: () => void, hold = false) {
   emit({ type: "turn_ended", ok: true, interrupted: false, error: null });
   replying = false;
   // The engine says which task is open, in the tutor's words.
-  const posed = /\*\*Task\.\*\*\s*([\s\S]+)$/.exec(text)?.[1]?.trim() ?? null;
+  const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
   if (posed) openTask = posed;
   emit({ type: "open_task", task: openTask, posed: posed !== null });
   after?.();
@@ -243,7 +246,7 @@ function answerReply(text: string): { words: string; mark: Mark["mark"] | null }
 async function respond(text: string, intent: Intent | undefined) {
   const lower = text.toLowerCase();
   const base = demoBaseReply(text);
-  if (lower.includes("permission")) {
+  if (lower.includes("into my plan")) {
     emit({ type: "turn_started" });
     emit({ type: "permission", id: "p1", title: "Change a file", detail: "Study/midterm-1/plan.md", can_always: true });
     return;
@@ -372,7 +375,14 @@ export function demoCore(): Core {
       stoppedAt = line;
     },
     rail: async () => ({ goal: GOAL, steps: demoPlan().steps, next_action: null }),
-    plan: async () => ({ ...demoPlan(), goal: GOAL }),
+    plan: async () => {
+      // Another course has a plan of its own; this demo keeps only Biochemistry's.
+      if (open !== FOLDER) return { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null };
+      const plan = demoPlan();
+      // The route follows the lesson: the slope is in hand once the intercept is done.
+      const steps = task === "km" ? plan.steps.map((step, at) => ({ ...step, status: at < 3 ? "done" : at === 3 ? "doing" : "todo" })) : plan.steps;
+      return { ...plan, goal: GOAL, steps };
+    },
     progress: async (): Promise<Progress> => ({
       targets: [],
       exam: null,
@@ -500,7 +510,7 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "permission":
       await lesson(actions);
       actions.setLine("talk");
-      await actions.say("PERMISSION", "talk");
+      await actions.say("Can you write the lab report into my plan for Friday?", "talk");
       return;
     case "commands":
       return actions.open("commands");

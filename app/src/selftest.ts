@@ -13,6 +13,7 @@ import { tutorText, type SessionState } from "./lesson";
 import { tinyPdf } from "./demoPdf";
 import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
+import { DEFAULTS, prefsToText, textToPrefs } from "./prefs";
 import { sourceRef } from "./sources";
 import type { Core } from "./types";
 
@@ -75,6 +76,13 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     press("Escape");
     await until("the settings layer to go", () => document.querySelector('[data-layer="Settings"]') === null, 3000);
     steps.layer = true;
+
+    // The settings as text read back as they were, and a line that cannot be read changes nothing.
+    const asText = prefsToText(DEFAULTS);
+    const settingsBack = textToPrefs(`${asText}\nreading-font = Avenir Next\nkey.plan = cmd+shift+p\nnonsense\n`, DEFAULTS);
+    steps.settingsText = { face: settingsBack.prefs.face, plan: settingsBack.prefs.keys.plan, problems: settingsBack.problems.length };
+    if (JSON.stringify(textToPrefs(asText, DEFAULTS).prefs) !== JSON.stringify(DEFAULTS)) throw new Error("the settings did not read back from their text");
+    if (settingsBack.prefs.face !== "Avenir Next" || settingsBack.prefs.keys.plan !== "cmd+shift+p" || settingsBack.problems.length !== 1) throw new Error(`the settings text was not read: ${JSON.stringify(steps.settingsText)}`);
 
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
     const page = document.createElement("div");
