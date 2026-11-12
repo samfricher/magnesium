@@ -28,7 +28,7 @@ const shots = [
   ["s4-return", "s4-return", 400],
   ["s5-week", "s5-week", 300],
   ["s5-week-next", "s5-week-next", 400],
-  ["narrow-lesson", "narrow-lesson", 400, { width: 720, height: 560 }, ["dark"]],
+  ["narrow-lesson", "narrow-lesson", 400, { width: 720, height: 560 }],
   ["settings", "settings", 300],
   // The rest of the window.
   ["plan", "plan", 300],

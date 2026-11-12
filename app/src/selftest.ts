@@ -66,7 +66,7 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     await until("the first screen", () => document.querySelector('[data-drive="start"]') !== null || document.querySelector(".now.rest .next") !== null, 10_000);
     steps.firstScreen = {
       next: document.querySelector(".now.rest .next")?.textContent ?? null,
-      line: document.querySelector('.now.rest [data-drive="talk"]') !== null,
+      line: document.querySelector('.now.rest [data-drive="composer"]') !== null,
     };
     if (!steps.firstScreen || !(steps.firstScreen as { line: boolean }).line) throw new Error("the first screen has no line to write on");
 

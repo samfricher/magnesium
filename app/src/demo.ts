@@ -47,6 +47,7 @@ const marks: Mark[] = [
   { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
   { id: "m2", at: "2026-11-09 18:26", label: "the slope gives $K_m / V_{max}$", mark: "wrong", help: "none", cold: true, paper: null },
   { id: "m3", at: "2026-11-10 17:02", label: "taking reciprocals of the rate equation", mark: "right", help: "hint", cold: false, paper: null },
+  { id: "m4", at: "2026-11-05 18:40", label: "reading $V_{max}$ from the y-intercept", mark: "wrong", help: "none", cold: true, paper: null },
 ];
 let markCount = marks.length;
 let helpAsked = false;
@@ -299,7 +300,7 @@ export function demoCore(): Core {
         "mg.place",
         JSON.stringify({
           course: FOLDER,
-          by: { [FOLDER]: { draft: "", answerDraft: "the intercept is 1/V_max, so V_max =", line: "task", fromFoot: 0, inLesson: true, seenMs: Date.now() - 20 * 60_000 } },
+          by: { [FOLDER]: { draft: "", answerDraft: "the intercept is 1/V_max, so V_max =", line: "task", fromFoot: 0, inLesson: true, task: VMAX_TASK, seenMs: Date.now() - 20 * 60_000 } },
         }),
       );
     } catch {
@@ -387,7 +388,9 @@ export function demoCore(): Core {
       targets: [],
       exam: null,
       confirmed: [],
-      in_progress: [],
+      in_progress: week
+        ? [{ dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: "due today", due: true, next_day: null }]
+        : [],
       untested: [],
       scores: [{ paper: "Paper A", date: "2026-11-07", score: "31/50", sure_right: null, sure_total: null }],
       helped: [],
