@@ -1,0 +1,58 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/commands-dark.png", "shots/open-dark.png", "shots/sidebar-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The page still carries the app's own sentences in the reading column: 'Or write to your tutor', 'Esc to say something else', 'Say anything. Tab goes back to the task.' under every lesson, and 'Changed by the tutor at 16:09. What moved is marked until you have seen it.' set in amber above the plan (shots/s3-after-dark). They can be switched off with hints = off, but by default the app talks on the learner's page. Everything else is strong: tabs named after documents, a status line naming the folder, settings as a plain text file with any font, colours and key bindings, ⌘P/⌘K sheets with no icons, and the window reopens with the split and draft kept (window/s5-week-dark)."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "Opening a lesson at rest still stacks five separate things in the column: title, 'The lesson so far · 1 exchange', the task with its draft, 'Stopped on Tuesday at 16:40.' with the Continue button, and the 'Or write to your tutor' placeholder (shots/s1-cold-dark). After the tutor changes the plan once, the plan pane stays open for good: a week later the window reopens split in two, with the whole five-row schedule beside the lesson (window/s5-week-dark)."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-dark.png", "shots/new-lesson-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "When you continue, the half-done working you were promised turns into raw TeX: shots/s2-start-dark shows '$V_{max} = 1/0.25 =$' in ink, with a grey rendered copy of the same line under it. You face two versions of your own sentence at the exact moment you are meant to just carry on. Otherwise the first step is one key (Continue / Return, the plan's next item already filled in on New lesson), and nothing counts what you owe. The record reads as a log of your own work ('Right, from a blank page', 'Not right yet')."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "When the real tutor goes back to the task, the screen does not follow. On live/s4-return-dark it restates the clinic question as plain prose ('Here it is again.') with no answer place under it; the composer still reads 'Say anything. Tab goes back to the task.', so the learner has to notice the 12 px pinned line and press Tab. Also, on live/s3-after-dark four blocks moved to new days (14→16, 16→20, 18→24, 20→27 Nov) without a change bar, although the note above says 'What moved is marked'. Talk itself works: the tutor asked for the new date and the plan pane opened with the old date struck through. Off-plan talk got no gutter and no mark, and live/attempts.json is empty, matching the screen."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s3-after-light.png", "shots/s2-answer-dark.png", "shots/narrow-lesson-dark.png", "shots/s4-offplan-dark.png", "shots/settings-dark.png", "shots/sidebar-dark.png", "shots/paper-dark.png", "shots/open-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "In the light scheme the change colour fails WCAG AA. #A67A12 on #FAFAF8 measures 3.71:1 (sampled from the full-size PNG), and it is used for 12–13 px text: 'Changed by the tutor at 16:09…', '· moved down · its day is before the one above' and the 'Fri 13 Nov' date (shots/s3-after-light). Every other text token passes, at 5.0:1 or better. The type system is sound: Charter at 17/1.6 on a ~66-character measure, system sans for chrome, mono for files, KaTeX that matches the serif. The pixel faults are mostly at the edges. Scrolled text is sliced under the tab-row hairline (the title's descenders in shots/s2-answer-dark, half a line of body text in shots/narrow-lesson-dark). The tab strip never lines up with the text column: x=92 against 216 in one pane, 92 against 48 and 542 against 568 when split."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["live/s2-answer-dark.png", "live/s4-return-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "With two panes open, the lesson pane does not follow the conversation. In my window turn, after 'change the plan' and again after I handed in 'b = 5', the reply, the ✕ 'Not right yet' mark and the new task were all below the fold. The caret was off-screen, the macOS input-source badge sat on the status line, and the pane showed an exchange from minutes earlier. They only came into view when I joined the panes with ⌘\\. Smaller points: 'No mark' sits directly under the real tutor's 'That's right' (live/s2-answer-dark), which is truthful but contradictory to read, with the reason one key away. '· its day is before the one above' (shots/s3-after-dark) names a problem without saying who fixes it."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 644 ms (main), 690 ms (week) and 957 ms (first launch), and my own measurement gave 821 ms. That is clearly faster than Obsidian but not yet Sublime's sub-500 ms. Keystrokes paint in a median of 17 ms and a p95 of 19 ms (max 20), one frame plus a little. Getting startup under 500 ms would earn the next point."
+    }
+  },
+  "still_dislike": [
+    "With two panes open, the lesson does not scroll to what just happened. After a plan change or a handed-in answer, the reply, the mark and the new task with its caret land below the fold (my window turn). The two-pane layout is this concept's signature state, so this is where it has to be right.",
+    "The edges: text sliced under the tab-row hairline instead of fading (shots/s2-answer-dark, shots/narrow-lesson-dark). The plan's footer is cut through the 'Change it by telling the tutor' link and leaves a dangling '·' (shots/s4-offplan-dark). The tab strip is aligned to the traffic lights rather than to the text column in every layout (shots/s1-cold-dark, shots/s3-after-dark, shots/material-dark).",
+    "The change colour and the inconsistent small text. Light amber is 3.71:1 (shots/s3-after-light). The amber tag wraps and leaves 'above' alone on a line at 12 px (shots/s3-after-dark, window/s3-after-dark). Dates come in four formats: 'Thursday 12 November', 'Fri 13 Nov', 'Last change: 2026-11-12:' and 'Nov 07 2026' in ⌘P (shots/plan-dark, shots/open-dark)."
+  ],
+  "bugs": [
+    "Real window, my turn: in the two-pane layout the lesson pane keeps an old scroll position after the tutor replies. The new reply, the ✕ 'Not right yet' mark and the new task with the focused answer field stay off-screen, and focusing the answer does not scroll it into view (the input-source badge was drawn on the status line). Joining the panes with ⌘\\ shows them, but focus then lands on the body, not the open task.",
+    "live/s4-return-dark: the real tutor's re-posed task is drawn as prose with no answer place, while the stand-in's equivalent is drawn as a task block (window/s4-return-dark). The task block does not come back after off-plan talk.",
+    "live/s3-after-dark: the plan items whose days changed (16, 20, 24, 27 Nov) carry no change bar, but the note says 'What moved is marked until you have seen it'. Only the exam date is marked.",
+    "shots/s2-answer-dark and shots/narrow-lesson-dark: glyph fragments of scrolled text (title descenders, half a line of body text) show under the tab-row hairline.",
+    "shots/s4-offplan-dark and shots/s4-return-dark: the plan footer 'Study/midterm-1/plan.md · The whole file · ⌘E edits it ·' ends on a dangling separator, and its second line ('Change it by telling the tutor') is cut by the status line.",
+    "shots/s3-after-light: change-colour text at 3.71:1 contrast, below AA.",
+    "shots/settings-dark: long comments wrap to column 0 with no hanging indent ('this Mac, by name', 'or a colour such as #2c5e9e'). Comment columns differ between the first block (col 22) and the keys block (col 30).",
+    "shots/sidebar-dark: truncation reads 'Reading Vmax and Km from a ...' (space before the ellipsis) and 'michaelis-menten-derivation....' (four dots). The pinned task line does the same: 'with mean 50 ...' (live/s3-after-dark).",
+    "shots/paper-dark: the PDF page is 648 px wide and overhangs the 624 px text column by 12 px on each side. The bottom fade lays a dark band across the white page.",
+    "shots/record-dark: the right-aligned marks end at x=828 while the column (and the date rules elsewhere) end at x=840."
+  ],
+  "window_turn": "I took the lock at 16:25 and found the window in the light scheme, mid-lesson, after earlier judges' turns. I pressed Esc and wrote 'change the plan' on the page. The plan pane opened beside the lesson: the exam went to Sunday 13 December with 6 December struck through, amber bars marked 'moved up' and 'moved down · its day is before the one above', and the note cleared once seen. But the lesson pane stayed scrolled to an exchange from several minutes earlier, and my message and the reply were off-screen. Tab put the caret back in the open task and scrolled to it. I handed in 'b = 5' with Return: the record marked it 'Not right yet' with a quiet ✕ in the gutter and the stand-in posed a new task, but none of that was visible in the split pane until I joined the panes with ⌘\\. ⌘K opened a clean command sheet with consistent keycaps (Hint ⌘⇧H, Sure ⌥1, and so on), and Esc closed it. Measured latency: startup 821 ms, keystroke median 17 ms, p95 19 ms. I released the lock at 16:27 and did not change any settings."
+}

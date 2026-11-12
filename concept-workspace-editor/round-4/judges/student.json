@@ -1,0 +1,53 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "shots/settings-dark.png", "window/s2-start-dark.png"],
+      "blocks_next_point": "The page is my course and my half-written working (shots/s1-cold-dark), and nothing on it is branding. But the app still talks in its own little notes: 'Esc to say something else', 'Say anything. Tab goes back to the task.', 'No mark', and 'Changed by the tutor at 16:09. What moved is marked until you have seen it.' (shots/s3-after-dark). Those are the app's voice on my page every time, and I have to read them before I get back to the material."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-light.png", "window/s1-cold-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "Opening is almost nothing: a title, one task with my draft in it, and a Continue button (shots/s1-cold-dark). But once the plan has changed, the plan pane stays open next to the lesson for the rest of the session and even after a week away (window/s5-week-dark, live/s5-week-dark). That's a whole column of dates, and one of them is gold, sitting beside the one thing I'm supposed to be doing."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "One Return and I'm in, and nothing tells me what I owe or counts my days. The real window even pre-fills what to work on (window/s1-cold-dark). The snag is the moment right after Continue: my half-done working turns into raw code, '$V_{max} = 1/0.25 =$', with the maths version printed under it (shots/s2-start-dark, s5-week-next-dark). My first thought would be 'did I break it?', and with ADHD that's exactly the second where I bail."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-light.png", "live/attempts.json"],
+      "blocks_next_point": "With the real tutor this really works. It asked for the new date, then the plan opened beside the lesson with the new day and the blocks spread out to match (live/s3-after-dark). The n−1 tangent wasn't marked (live/attempts.json is empty), and the clinic task waited pinned at the top with Tab. What breaks is coming back: after 'OK, back to the task.' the tutor re-asks the clinic question as plain paragraphs with no answer line under it, and the box at the bottom still says 'Say anything. Tab goes back to the task.' (live/s4-return-light). So I've said I'm back, but I'm not actually in the task."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "window/s3-after-dark.png"],
+      "blocks_next_point": "Both schemes are clean and quiet, and the narrow size holds up (shots/narrow-lesson-dark). The plan's small gold notes wrap badly, though: 'moved down · its day is before the one above' breaks so that 'above' sits alone on its own line, and 'until you have seen it.' leaves 'it.' alone (shots/s3-after-dark, window/s3-after-dark). They're the most attention-grabbing text on the screen, and they're the messiest."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["live/s2-answer-dark.png", "shots/s3-after-dark.png", "window/s4-return-dark.png", "live/s4-return-light.png"],
+      "blocks_next_point": "Mixed signals about whether I did OK. In live/s2-answer-dark the tutor says 'That's right' and right under my answer it says 'No mark'. When I typed 'Can I have a hint?' into the answer line it also showed as an answer with 'No mark' in the margin. And the gold 'Fri 13 Nov · its day is before the one above' (shots/s3-after-dark, still there in s4-return) reads like an error, but nothing tells me whether I should fix it or ignore it."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "window/perf-main.json", "window/perf-first.json"],
+      "blocks_next_point": "Reopening takes 644–690 ms (957 ms on the very first open), and typing paints in 17 ms median, 19 ms p95. That feels instant to me, but it's still slower than Sublime's under half a second to open, and a keystroke takes a hair over one frame."
+    }
+  },
+  "still_dislike": [
+    "'No mark' shows up under things that weren't really answers, or that the tutor just called right: my hint request typed in the answer line, and live/s2-answer-dark where the tutor says 'That's right' but the margin says 'No mark'. It reads like I failed, so it should say nothing, or say why, in plain words.",
+    "After a plan change, the gold date and 'its day is before the one above' stay on screen as a warning for the rest of the session and after a week away (shots/s4-return-dark, window/s5-week-dark). It makes my plan look broken and like something I now have to deal with. Either the tutor should fix the order or the window shouldn't shout about it.",
+    "Coming back from a tangent with the real tutor left the task as plain text with no answer line, and I was still in talk mode (live/s4-return-light). 'Back to the task' should put the answer line back with the caret in it, the way it does with the stand-in (window/s4-return-dark)."
+  ],
+  "bugs": [
+    "live/s4-return-light.png: after 'OK, back to the task.' the real tutor re-asks the clinic question, but the window shows it as prose with no answer line. The composer stays 'Say anything. Tab goes back to the task.' and the pinned strip still points up, so the restated task isn't recognised as the open task.",
+    "window/s4-offplan-dark.png, window/s4-return-dark.png, window/s5-week-dark.png, live/s4-return-light.png (and my own turn): once the plan pane is open, the window shows up shifted right in the capture, with a blank band on the left and the right edge clipped. It looks like the window grows or moves when the second pane opens.",
+    "shots/s2-start-dark.png, shots/s5-week-next-dark.png: the restored draft shows as raw LaTeX source ('$V_{max} = 1/0.25 =$') in the answer line, with its rendering underneath, on the first screen after Continue.",
+    "window/s5-week-next-dark.png: Continue after a week re-asks the standard-error question that the record already marked right, and the open margin-of-error task from window/s5-week-dark disappears. live/s5-week-next-dark does this correctly, so this is probably the stand-in tutor, not the window.",
+    "My turn: after the hint reply, the caret went to the talk line instead of back into the task, so I needed an extra Tab to answer."
+  ],
+  "window_turn": "Took the lock. The window opened on 'New lesson – What do you want to work on?' with 'Sampling distributions' already filled in, and one Return started a lesson with the caret in the answer line. I typed 'Can I have a hint?' into the answer line: it was sent as an answer and shown with '–  No mark' in the margin, the hint came back, and the caret dropped to the talk line. Tab took me back into the task. I answered 'b = 5', and the margin showed a grey × 'Not right yet, with a hint', with no red and no fuss. Esc, then 'change the plan, I have not studied in days': the plan opened beside the lesson with the exam moved to Sun 29 Nov (old date struck through) and 'moved up / moved down' notes in gold, and 'Nothing is lost by the days off'. Then 'by the way, what even is a p-value?' got an unmarked answer (the stand-in's canned n−1 text). Then 'back to the task' brought the task block back with the caret in the answer line. I answered 'b = -5', which got 'No mark' because the stand-in said 'Not quite' and the record gave nothing, so the window stayed truthful. Measured typing: median 17 ms, p95 19 ms; startup 821 ms. The window's position shifted in the capture once the plan pane opened. Released the lock after about 2 minutes."
+}

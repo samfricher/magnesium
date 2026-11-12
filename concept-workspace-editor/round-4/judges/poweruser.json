@@ -1,0 +1,54 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 9,
+      "evidence": ["shots/settings-dark.png", "shots/commands-dark.png", "shots/open-dark.png", "shots/plan-edit-dark.png", "shots/sidebar-dark.png", "shots/narrow-lesson-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "⌘K can't take me back to my own defaults. Its Font list has no Charter, the font in use: typing 'charter' gives 'Nothing matches'. Its Scheme list offers light and dark but not system, which is what the settings file says. So the palette and the settings file disagree about what I can set, and the first thing I'd try (set it, then set it back) gets stuck halfway."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "Once the tutor touches the plan, the plan pane stays open from then on. A week later, half the window is still the plan (window/s5-week-dark, live/s5-week-dark) rather than the near-empty page of shots/s5-week-dark, until I think to press ⌘\\."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "shots/new-lesson-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "One Return after Continue, the first thing on screen is my half-written draft twice: raw TeX '$V_{max} = 1/0.25 =$' in the field and a rendered copy underneath (shots/s2-start-dark, shots/s5-week-next-dark). The first moment back in the lesson makes me work out which one is mine instead of just carrying on."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/plan-before.json", "live/plan-after.json", "window/s3-after-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "In the live run the tutor spread out four blocks (Confidence intervals 14→16 Nov, Hypothesis tests 16→20, Tests and intervals 18→24, Practice midterm 20→27). In live/s3-after-dark only the exam date gets a strikethrough and a gutter bar. The four moved days have no mark, under a notice that says 'What moved is marked until you have seen it'."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s3-after-dark.png", "shots/s3-after-light.png", "shots/commands-dark.png", "shots/record-light.png", "shots/narrow-lesson-light.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "The open task shows the draft twice: monospace-looking TeX source in ink with a grey rendered line under it (shots/s2-start-dark/light). Also, the gold change note 'moved down · its day is before the one above' wraps to an orphaned second line in the plan (shots/s3-after-dark). Both break an otherwise very consistent Charter-and-system-sans page."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["live/s2-answer-dark.png", "live/s4-return-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "window/s4-return-dark.png"],
+      "blocks_next_point": "On 'back to the task' with the real tutor (live/s4-return-dark), the question comes back as plain prose ('Here it is again.') with no task block and no answer place. The pinned strip at the top and the prompt 'Say anything. Tab goes back to the task.' are still there. So the same question is on screen twice and it isn't clear that typing below is talk, not my answer."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "window/perf-main.json", "window/perf-first.json", "live/perf.json"],
+      "blocks_next_point": "Startup is 644 to 690 ms warm and 957 ms on first open (1194 ms first open in live). That beats Obsidian but is not Sublime's under half a second. Keystroke-to-paint is 17 ms median and 19 ms p95, one frame or slightly more, never under it. My own check gave the same numbers (17/19/20 ms)."
+    }
+  },
+  "still_dislike": [
+    "The draft in the open task is drawn twice: TeX source in the field and a rendered copy under it (shots/s2-start-dark, shots/s5-week-next-dark). Pick one, and render it in place the way Obsidian's live preview does.",
+    "Plan changes are marked only part of the way. The real tutor's re-spaced days are unmarked (live/s3-after-dark). After the stand-in's reorder, the days run backwards ('Fri 13 Nov' under 'Sat 14 Nov', shots/s3-after-dark; 'Sat 14 Nov' under 'Mon 16 Nov', window/s3-after-dark): the window flags it but leaves the plan reading as nonsense.",
+    "The palette and the settings file don't cover the same ground. ⌘K has no Charter and no 'Scheme: system'. And the settings file opened in a half-width pane wraps every '# comment' onto the next line, so the one document that is meant to be mine reads as the messiest page in the app."
+  ],
+  "bugs": [
+    "live/s3-after-dark.png: the four blocks whose days changed (see live/plan-before.json and live/plan-after.json) have no change mark, even though the notice above says 'What moved is marked until you have seen it'. Only the exam date is struck through.",
+    "shots/s3-after-dark.png and window/s3-after-dark.png: after a reorder, the item days run backwards (13 Nov under 14 Nov; 14 Nov under 16 Nov). The window labels it 'its day is before the one above' but the plan is left inconsistent.",
+    "live/s4-return-dark.png: the re-posed task comes back as prose with no task block or answer place. The composer still says 'Say anything. Tab goes back to the task.' while the same question sits in the pinned strip.",
+    "shots/s2-start-dark.png and shots/s5-week-next-dark.png: the half-written draft shows twice, as raw TeX '$V_{max} = 1/0.25 =$' and as rendered maths.",
+    "Real window, my turn: the ⌘K Font list omits Charter, the current and default font ('charter' gives 'Nothing matches'), and the Scheme entries offer light and dark but not system.",
+    "live/s2-answer-dark.png: 'No mark' sits directly under the tutor's 'That's right'. It is truthful, but no reason is visible on screen, and a learner would read it as a contradiction."
+  ],
+  "window_turn": "About 5 minutes, keyboard only. The window was left in another judge's state: light scheme, lesson and Midterm 2 plan side by side, plan changes marked. ⌘K opened a clean palette with a key shown on every command (Hint ⌘⇧H, Sure ⌥1, Edit the plan as text ⌘E, and so on). Typing 'font' listed eight faces (no Charter), 'scheme' gave light and dark, and 'size' gave Size 14 to 22. ⌘, opened Settings as a plain-text file in a tab. Picking 'Size 21' in ⌘K resized every page at once and rewrote 'size = 21' in the settings file. I set it back to 17. ⌘L returned to the lesson, and Tab scrolled to the open task with the caret in it. I typed TEACH: it was handed in as an answer and shown truthfully as 'No mark', and a task was posed. 'b = -5' then came back 'Right' in the gutter from the record. Esc, then 'by the way, why is the t distribution wider than the normal?' was answered with nothing marked, and Tab put the caret back in the open task. ⌘P with 'plan' found 'Midterm 2 plan · Study/midterm-2/plan.md'. ⌘\\ merged the two panes into tabs, with the tab row listing Sampling distributions, Settings, Record and Midterm 2 plan. ⌘L brought the lesson back with the caret in the task. Typing latency measured 17 ms median and 19 ms p95. I could do everything without the mouse. One caveat: for about a minute capture.sh returned stale frames while the drive's text showed the new content, so I checked those steps by text, not by photo. I left the window on a single pane showing the lesson."
+}

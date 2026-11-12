@@ -1,0 +1,99 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The structure changed, not just the colours. The old first screen was a Library of course cards (baseline library.jpg: an exam countdown, 'Last studied 3 days ago', '3 of 11 skills proven', '5 questions due today', a level bar, Continue plus Course page). Now there is no home screen. The window reopens the last lesson document with the half-written answer under its task and 'Continue (Return)' (shots/s1-cold-dark). The old Library > Course > Lesson > Proofs > Summary chain, with a back link on every page, is gone. Now there are editor tabs, ⌘P for any document, ⌘O for folders, a hidden ⌘B file list and two panes (shots/open-dark, folders-dark, sidebar-dark). Progress used to be levels, proof dots, due counts, 'One proof earned' and a '4 days running' week strip (baseline progress.jpg, summary.jpg). Now it is a dated log of marked answers plus skills described in words (shots/record-dark), and the summary screen is gone. Answers used to go in one docked box labelled 'Your answer', with Hint, I don't know and I'm lost buttons (baseline session.jpg). Now you answer in a writing place inside the task, and you talk by writing anywhere else on the page (Esc and Tab move between them). Talk is never marked, and the task stays pinned while you are away (shots/s4-offplan-dark). The plan used to be a step-counter popover. Now it is the plan file, opened beside the lesson with changed lines marked and old dates struck through (live/s3-after-dark). Settings is a text file. What carried over is the grammar of the lesson column: serif tutor prose, a left rule on the task, the mark beside the answer, and ⌘K. Seen alone, the lesson page could pass for the old session restyled. Everything around it is a different idea: the study folder as a workspace in an editor."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": [
+        "shots/settings-dark.png",
+        "shots/s1-cold-dark.png",
+        "shots/open-dark.png",
+        "shots/commands-dark.png",
+        "window/s5-week-dark.png"
+      ],
+      "blocks_next_point": "The app still talks on every page in body-size serif: 'Esc to say something else', 'Say anything. Tab goes back to the task.', 'Or write to your tutor' (shots/s2-answer-dark, s3-after-dark). These are the loudest words on an otherwise quiet page. They should step back after the first use, or sit in the status line in chrome type."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": [
+        "shots/s1-cold-dark.png",
+        "shots/s5-week-dark.png",
+        "window/s5-week-dark.png",
+        "shots/s4-offplan-dark.png"
+      ],
+      "blocks_next_point": "After a plan change the plan pane never goes away. A week later the reopened window (window/s5-week-dark) still gives half its width to the plan, with an amber 'its day is before the one above' in it, so 'back after a week' opens on a split screen and a warning instead of one page."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": [
+        "shots/s1-cold-dark.png",
+        "shots/s5-week-dark.png",
+        "shots/s5-week-next-dark.png",
+        "window/s1-cold-dark.png",
+        "shots/new-lesson-dark.png",
+        "shots/record-dark.png"
+      ],
+      "blocks_next_point": "The restored draft comes back as raw TeX ('$V_{max} = 1/0.25 =$') above its rendered copy (shots/s2-start-dark, s5-week-next-dark). So the first thing you touch on returning looks like code, and the same half-answer appears twice."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": [
+        "live/s3-after-dark.png",
+        "live/s4-offplan-dark.png",
+        "live/s4-return-dark.png",
+        "live/plan-after.json",
+        "window/s3-after-dark.png"
+      ],
+      "blocks_next_point": "With the real tutor, 'OK, back to the task' does not re-form the task. The restated clinic question is plain prose, and the caret stays in talk under 'Say anything. Tab goes back to the task.' (live/s4-return-dark), so the learner has to know to press Tab up to a strip. With the stand-in the task block comes back with the caret in it (window/s4-return-dark)."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": [
+        "shots/s2-answer-dark.png",
+        "shots/s2-answer-light.png",
+        "shots/s3-after-dark.png",
+        "shots/narrow-lesson-dark.png",
+        "shots/record-light.png",
+        "shots/plan-dark.png"
+      ],
+      "blocks_next_point": "The plan pane is the weak surface. The small amber notes wrap mid-phrase and leave 'above' alone on its own line (shots/s3-after-dark, s4-offplan-dark). One pane gives dates two ways ('Thu 12 Nov' in the rows, '2026-11-12' in 'Last change'). Item days run backwards and the plan only labels them instead of laying them out cleanly."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": [
+        "live/s2-answer-dark.png",
+        "live/s4-return-dark.png",
+        "live/s3-after-dark.png",
+        "window/s4-offplan-dark.png"
+      ],
+      "blocks_next_point": "On live/s2-answer-dark, 'No mark' sits right under the tutor's 'That's right'. The window is truthful (live/attempts.json is empty), but no reason is shown, so the learner cannot tell whether they got it or not. Also, live/s3-after-dark says 'What moved is marked until you have seen it', but only the exam date is marked; the four blocks that were given new days have no marks."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": [
+        "window/perf.json",
+        "live/perf.json",
+        "judge-perf.json"
+      ],
+      "blocks_next_point": "Startup is 644 ms (main) and 690 ms (week), and 957 ms on first open. A keystroke takes 17 ms median and 19 ms p95 to paint, just over one frame. Clearly faster than Obsidian, but to sit with Sublime it needs startup under 0.5 s and keystrokes painted within 16 ms."
+    }
+  },
+  "still_dislike": [
+    "With the real tutor, coming back from off-plan talk leaves the restated question as prose and the caret in talk (live/s4-return-dark). The screen should re-form the task block and move the caret into it, as it does with the stand-in.",
+    "Plan-change marks are incomplete and leave contradictions on screen. Live, only the exam date is marked even though blocks 2 to 5 got new days (live/s3-after-dark). With the stand-in, the reorder leaves the dates out of order with a permanent amber 'its day is before the one above' that is still there a week later (window/s4-offplan-dark, window/s5-week-dark). And the plan pane never closes by itself.",
+    "'No mark' under the tutor's 'That's right' gives no visible reason (live/s2-answer-dark). Also, anything typed into the writing place goes in as an answer: in my turn, an earlier judge's 'Can I have a hint?' sat in the lesson as a handed-in answer with 'No mark'."
+  ],
+  "bugs": [
+    "The window resizes itself. It grows from 2080 to 2354 px wide between window/s3-after-dark.png and window/s4-offplan-dark.png and reopens that size (window/s5-week-dark.png, also in live/), so later photos are off-centre. In my turn it jumped size again between two captures with no resize command.",
+    "On the week-away reopen, the task block includes the tutor's lead-in: 'Back to it. With t* = 2.064 …' sits inside the task frame (window/s5-week-dark.png).",
+    "The restored draft shows twice, once as raw TeX source and once rendered beneath it (shots/s2-start-dark.png, shots/s5-week-next-dark.png).",
+    "The plan header claims 'What moved is marked until you have seen it', but the re-dated blocks (16, 20, 24, 27 Nov) carry no change mark; only the exam date does (live/s3-after-dark.png against live/plan-after.json).",
+    "After the stand-in's reorder, plan item days run backwards: Sat 14 Nov is listed after Mon 16 Nov (window/plan-after.json, window/s4-offplan-dark.png). The window flags it but leaves it unresolved, and the amber note wraps with 'above' orphaned (shots/s3-after-dark.png).",
+    "The same cold lesson shows the half-written answer under the task in shots/s1-cold-dark.png but not in shots/sidebar-dark.png.",
+    "The bold 'Task.' label appears on demo tasks (shots/s2-start-dark.png) but not on real-window tasks (window/s2-start-dark.png, live/s2-start-dark.png)."
+  ],
+  "window_turn": "About 6 minutes. I took the lock after a 30 s wait. Earlier judges had left the window mid-lesson in the light scheme with the Midterm 2 plan pane open. Everything I did was by keyboard. Esc moved the caret out of the task into talk. I asked 'by the way, is a standard error the same as a standard deviation?' and got an unmarked reply: nothing in the gutter, the plan untouched, the task still there. Tab put focus back into the task's writing place, and the hint line flipped to 'Esc to say something else'. ⌘K opened a palette with Hint ⌘⇧H, I'm lost, I don't know, confidence ⌥1 to ⌥3, plan, record and document commands. Typing 'record' and Return opened the Record in a tab. It had one row, '16:17 standard error of a mean, Not right yet, with a hint', which matches the gutter mark an earlier judge's 'b = 5' got. Their 'b = -5' and 'Can I have a hint?' both show 'No mark' and are not in the record, so the screen agreed with the record everywhere I looked. ⌘L took me back to the lesson. I pressed Esc and typed 'change the plan, put confidence intervals back before hypothesis tests'. The plan pane updated in place: the exam moved to Sun 6 Dec with 29 Nov struck through, Confidence intervals was marked 'moved up', Hypothesis tests 'moved down', with amber gutter bars and 'Changed by the tutor at 16:19'. ⌘P listed the lesson, the plan, three material files, Record and Settings. Nothing asked me for anything, and no library, count or level appeared anywhere. One oddity: the window's size and position changed between two captures without any resize from me. I released the lock."
+}
