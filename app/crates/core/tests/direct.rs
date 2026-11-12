@@ -2331,3 +2331,116 @@ fn with_recording_off_no_repair_is_recorded() {
     assert_eq!(gap_rows(&bench)[0].next_redo, "", "it still waits");
     manager.shut_down();
 }
+
+/// Ask for help on the open task, and get the tutor's one-line warning.
+fn warned(bench: &Bench, manager: &Manager, events: &mut Events, words: &str) {
+    manager.send(words).unwrap();
+    assert!(ended_well(&done(manager, events)));
+    let (reply, _) = events.take();
+    assert!(reply.contains("earns no pass"), "{reply}");
+    let _ = bench;
+}
+
+#[test]
+fn a_hint_asked_for_on_a_redo_and_held_back_costs_nothing() {
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    warned(&bench, &manager, &mut events, "Can I have a hint?");
+    // No help was given: the right answer is as unaided as before.
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(
+        (attempts[0]["help"].as_str(), attempts[0]["cold"].as_bool()),
+        (Some("none"), Some(true)),
+        "{attempts:#?}"
+    );
+    assert_eq!(gap_rows(&bench)[0].status, "1 of 3");
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.shut_down();
+}
+
+#[test]
+fn a_hint_given_on_a_redo_after_the_warning_earns_no_pass_and_the_learner_is_told() {
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    warned(&bench, &manager, &mut events, "Can I have a hint?");
+    manager.send("Can I have a hint?").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    events.take();
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts[0]["help"], "hint", "{attempts:#?}");
+    let rows = gap_rows(&bench);
+    assert!(!rows[0].passes.contains("pass"), "{rows:#?}");
+    assert!(
+        all_notices(&mut events)
+            .iter()
+            .any(|text| text.contains("does not pass")),
+        "{:#?}",
+        events.seen
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_hint_asked_for_on_a_due_check_and_held_back_costs_nothing() {
+    let (bench, manager, mut events) = with_a_check_posed();
+    warned(&bench, &manager, &mut events, "Can I have a hint?");
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(
+        (answer["help"].as_str(), answer["cold"].as_bool()),
+        (Some("none"), Some(true)),
+        "{answer:#?}"
+    );
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        last_state(&bench).contains("The record holds the last quick check as a pass."),
+        "{}",
+        last_state(&bench)
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_hint_given_on_a_due_check_after_the_warning_earns_no_pass_and_the_learner_is_told() {
+    let (bench, manager, mut events) = with_a_check_posed();
+    warned(&bench, &manager, &mut events, "Can I have a hint?");
+    manager.send("Can I have a hint?").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    events.take();
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(
+        (answer["help"].as_str(), answer["cold"].as_bool()),
+        (Some("hint"), Some(false)),
+        "{answer:#?}"
+    );
+    assert!(
+        all_notices(&mut events)
+            .iter()
+            .any(|text| text.contains("did not count as a pass for the quick check")),
+        "{:#?}",
+        events.seen
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn i_m_lost_on_a_due_check_with_only_the_warning_records_no_help() {
+    let (bench, manager, mut events) = with_a_check_posed();
+    warned(&bench, &manager, &mut events, "I'm lost");
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(
+        (answer["help"].as_str(), answer["cold"].as_bool()),
+        (Some("none"), Some(true)),
+        "{answer:#?}"
+    );
+    manager.shut_down();
+}

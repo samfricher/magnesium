@@ -42,7 +42,8 @@ A failed paper question leaves the learner's queue until it is repaired, so a re
 
 - **Hint** sends "Can I have a hint?": a question or a pointer, not the step itself, and the task stays open.
 - **I don't know** is a decline, not a wrong answer.
-- **I'm lost** gets the question that finds the cause, and is help on the task in hand: the answer that follows is not cold. On a due quick check or paper redo, say so: the learner may decline it instead, which costs nothing.
+- **I'm lost** gets the question that finds the cause, and is help on the task in hand: the answer that follows is not cold.
+- On a due quick check or paper redo, either button first gets one line, and nothing more: help on this question means no pass today, so ask again for it, or decline the question, which costs nothing. That reply's `help` is none, and the question stays unaided. Give the help only when they ask again, with `help` hint or more.
 - A line such as "Confidence: sure" may end a message. Repair a sure mistake first: it will be repeated without doubt.
 
 ## Sources and the screen

@@ -47,8 +47,9 @@ pub const HINT_WORDS: &str = "Can I have a hint?";
 pub const DONT_KNOW_WORDS: &str = "I don't know";
 /// The words the window's "I'm lost" button sends. The teaching files answer
 /// a lost learner with a question that finds the cause, then teach from
-/// their answer: help on the task in hand, so code records at least a hint
-/// on it, as for the Hint button.
+/// their answer: help on an ordinary task in hand, so code records at least
+/// a hint on it, as for the Hint button. On a due quick check or paper redo
+/// the tutor warns first, and only help a reply gives counts.
 pub const LOST_WORDS: &str = "I'm lost";
 
 /// Passes the reply through as it streams and stops at the record block.
@@ -1176,10 +1177,16 @@ impl Lesson {
         let mut open = self.task.clone();
         // The Hint button asks for help on the task in hand, and so does
         // "I'm lost": the teaching files answer it with a question that
-        // finds the cause, then teach from the answer. Code records at
-        // least a hint whatever the block says; the block may say more.
+        // finds the cause, then teach from the answer. On an ordinary task
+        // code records at least a hint whatever the block says. On a due
+        // quick check or paper redo the tutor first warns that help means
+        // no pass and gives nothing: there the press alone is no help, and
+        // help counts only when a reply's block gives it.
         if message.is(HINT_WORDS) || message.is(LOST_WORDS) {
-            if let Some(task) = open.as_mut() {
+            if let Some(task) = open
+                .as_mut()
+                .filter(|task| task.check.is_none() && task.redo.is_none())
+            {
                 task.help = task.help.max(Help::Hint);
             }
         }
@@ -2615,5 +2622,39 @@ mod tests {
         assert!(lesson.repairs.is_empty());
         let next = lesson.take_waiting(&json!([row("m#1", "m", "km")]), false);
         assert_eq!(next[0].number, 5);
+    }
+    #[test]
+    fn a_button_press_on_due_work_is_no_help_until_a_reply_gives_some() {
+        let press = |redo: bool, words: &str, block: &str| {
+            let mut lesson = with_redos();
+            lesson.checks = vec![DueCheck {
+                number: 1,
+                label: "sign of b".into(),
+                misses: vec![],
+                question: None,
+                key: None,
+            }];
+            let reply = if redo {
+                "Paper redo 2: Write the rate law."
+            } else {
+                "Quick check 1: What is b in x² − 5x?"
+            };
+            pose(&mut lesson, reply, "The task.");
+            lesson.apply(&record(block), &message(words), "A line.", "r-1");
+            lesson.task.unwrap().help
+        };
+        let warning = r#"{"answer": null, "help": "none"}"#;
+        let hint = r#"{"answer": null, "help": "hint"}"#;
+        for redo in [true, false] {
+            for words in [HINT_WORDS, LOST_WORDS] {
+                assert_eq!(press(redo, words, warning), Help::None, "{redo} {words}");
+                assert_eq!(press(redo, words, hint), Help::Hint, "{redo} {words}");
+            }
+        }
+        // On an ordinary task the press is help.
+        let mut lesson = lesson();
+        pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
+        lesson.apply(&record(warning), &message(HINT_WORDS), "A line.", "r-1");
+        assert_eq!(lesson.task.unwrap().help, Help::Hint);
     }
 }
