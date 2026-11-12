@@ -3,6 +3,7 @@
 // Nothing here ships a real course, a real grade or a real learner's words.
 
 import type { Actions } from "./App";
+import { demoAfterTurn, demoBaseReply, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
 import type {
   Added,
@@ -495,6 +496,13 @@ export function demoCore(): Core {
     emit({ type: "ready", session_id: "demo", problems: [], plugin_missing: false });
     const lower = text.toLowerCase();
     await wait(250);
+    // The shared scenarios: a change to the plan, an off-plan question, a return to the task.
+    const shared = demoBaseReply(text);
+    if (shared !== null) {
+      await write(shared);
+      demoAfterTurn(text, emit);
+      return;
+    }
     if (lower.includes("lost")) return write(LOST);
     if (lower.includes("hint")) return write("Look at where the line meets the $1/v$ axis. What is $1/[S]$ there?");
     if (lower.includes("don't know")) {
@@ -631,15 +639,18 @@ export function demoCore(): Core {
       engineChosen = chosen;
       return { chosen: engineChosen, conversation: conversationEngine };
     },
-    send: async (text) => {
-      if (marking) markedToday += 1;
+    send: async (text, intent) => {
+      // Talk is never marked, whatever it says.
+      const markable = demoMayMark(text, intent);
+      if (marking && markable) markedToday += 1;
       void reply(text);
-      const row = markFor(text);
+      const row = markable ? markFor(text) : null;
       // The record is written while the reply is: a moment after it is sent.
       if (row) {
         window.setTimeout(() => {
           demoMarks.push(row);
           if (row.mark === "wrong") slipRecorded = true;
+          demoMarked(row, emit);
         }, 500);
       }
     },
@@ -658,6 +669,10 @@ export function demoCore(): Core {
       sittingsDone += 1;
     },
     rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
+    plan: async () =>
+      variant === "new"
+        ? { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null }
+        : demoPlan(),
     progress: async (target) => progress(target ?? null),
     setBlockMinutes: async (minutes) => {
       blockMinutes = minutes;

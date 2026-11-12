@@ -132,6 +132,10 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       const text = `The tutor's program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
       return { ...ended, notices: addNotice(state.notices, { kind: "other", text }) };
     }
+    // The plan and the record's marks are read by the screens that show them.
+    case "plan_changed":
+    case "marked":
+      return state;
   }
 }
 
