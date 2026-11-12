@@ -1,0 +1,60 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/settings-dark.png", "shots/commands-dark.png", "shots/reopen-dark.png", "shots/plan-dark.png", "window/s5-week-dark.png", "window/s5-week-next-dark.png"],
+      "blocks_next_point": "Customisation is a closed menu. Reading face is one of five presets (Charter, Iowan, New York, System, Mono), ink is one of four, and size is one of 15/17/19/21. I can't name my own font, load my own colours, or rebind a key, and that is what makes Obsidian and Ghostty feel like mine. Second: 'reopens as I left it' fails after a week. window/s5-week-dark promises 'Next: … margin of error', and Return opens the standard-error question I had already answered (window/s5-week-next-dark)."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png", "live/s4-return-dark.png"],
+      "blocks_next_point": "The open task is repeated on screen. Once the tutor restates it, the quiet pinned copy stays at the foot as well, so live/s4-return-dark shows 'The factory wants the averages…' twice, a third time if you count the question further up. shots/s3-after-dark shows the slope task twice. The pinned copy should drop away once the task is on screen and active again."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "shots/work-dark.png", "live/s5-week-dark.png", "live/s5-week-next-dark.png"],
+      "blocks_next_point": "The one-key start doesn't open what it names. live/s5-week-dark says 'Next: The factory wants the averages to vary by only 1 g…', and Return opens a 'Quick check 1: Commute times…' instead (live/s5-week-next-dark). If the tutor is going to start with a check, the rest line should say so."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "window/s4-offplan-dark.png", "window/s4-return-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "With the real tutor, coming back from off-plan talk doesn't put me back in the task. In live/s4-return-dark the tutor re-poses the factory question, but the task's line stays grey and the caret stays on the talk line, so I need an extra keypress. With the stand-in the task becomes active with the caret in it (window/s4-return-dark). Also, the live plan change never finished: the tutor asked for the new date, and plan-before equals plan-after. So there is no live evidence that the plan-change card follows a real Claude Code edit. The screen did stay truthful (no false card), and the off-plan n−1 talk was not marked (live/attempts.json holds only the one 'partly')."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/settings-light.png", "shots/s3-before-dark.png", "live/s2-answer-dark.png", "live/s4-return-dark.png", "live/s5-week-next-dark.png"],
+      "blocks_next_point": "The task block doesn't hold together with real tutor output. In live/s2-answer-dark the new question sits in plain prose and the ink rule wraps only an empty answer line. In live/s5-week-next-dark the rule wraps the two bullets but not 'Which is more likely, and why?'. In live/s4-return-dark one paragraph is outdented about 7 px from the column. While a reply streams, the block cursor drops to its own line under the partial word (shots/s3-before-dark 'Nothing i', window/s3-before-dark 'No'). The three faces, the KaTeX maths and the two schemes are otherwise excellent."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "window/s3-after-dark.png", "shots/s4-offplan-dark.png", "shots/s2-answer-dark.png", "window/s5-week-dark.png", "window/s5-week-next-dark.png", "live/s5-week-next-dark.png"],
+      "blocks_next_point": "After a week away the window says one thing is next and starts another (window/s5-week-dark → window/s5-week-next-dark; live/s5-week-dark → live/s5-week-next-dark). Smaller: in my turn, a retry got the tutor's 'Not quite' and then 'Right:' with no mark line under either. Nothing told me that retries aren't recorded, and ⌘Y still said 'standard error of a mean — Thu 12 Nov, not right yet'."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup is 588–670 ms with the stand-in (615–952 ms live; 795 ms when I measured), not under half a second. Keystroke to paint is 17 ms median and 18–19 ms p95, just over one 60 Hz frame. That is clearly faster than Obsidian but not yet Sublime."
+    }
+  },
+  "still_dislike": [
+    "Reopening isn't exact. The rest line names a next task ('Next: … margin of error', 'Next: The factory wants…'), and Return starts a different one: an already-answered question or a quick check (window/s5-week-next-dark, live/s5-week-next-dark). The rest line should show what Return will really open.",
+    "Customisation is a closed preset list: five reading faces, four inks, four sizes, and no rebindable keys. Let me name any installed font for reading and for my own words, set my own colours, and remap the ⌘ keys.",
+    "With the real tutor, the window doesn't track the open task's question. Going 'back to the task' leaves the answer line grey with the caret on talk (live/s4-return-dark). The ink rule sometimes wraps an empty line or the bullets but not the question (live/s2-answer-dark, live/s5-week-next-dark). The quiet pinned copy repeats the question the tutor just restated."
+  ],
+  "bugs": [
+    "Keyboard focus. Opening Settings from the palette (⌘K, type 'font', ↩) shows the sheet, but focus lands on the page body, and ↑↓←→ change nothing (my turn). Opened with ⌘, it works: arrows switched to Iowan Old Style, 19, Dark live.",
+    "After a week, the rest card promises 'Next: With t* = 2.064 … margin of error', and Return opens the standard-error question that was already marked right (window/s5-week-dark → window/s5-week-next-dark). Live, it promises the factory question and opens 'Quick check 1' (live/s5-week-dark → live/s5-week-next-dark).",
+    "live/s4-return-dark: after the tutor re-poses the task, the window leaves the task line inactive (grey) with the caret on the talk line. With the stand-in it re-activates (window/s4-return-dark).",
+    "live/s4-return-dark: the paragraph '(Bag weights have a standard deviation of 10 g, as before.)' is outdented about 7 px from the text column.",
+    "live/s2-answer-dark and live/s5-week-next-dark: the task's ink rule doesn't enclose the question it belongs to. It wraps only the empty answer line in one shot and only the bullet options in the other.",
+    "shots/s3-before-dark, shots/s3-before-light and window/s3-before-dark: while a reply streams, the block cursor sits on its own line below the partial text instead of after the last character.",
+    "shots/plan-dark: the lesson steps mark 'What the y-intercept gives' as current (●) and the slope as not started. But shots/s2-answer-dark shows the y-intercept task already marked right and the slope task open.",
+    "shots/new-course-dark: the eyebrow says 'Statistics' above a Biochemistry item ('Repair: reading Vmax and Km').",
+    "shots/permission-dark: the learner's line reads 'PERMISSION' (a demo trigger word leaking through), with an orphan block cursor under it.",
+    "shots/upgrade-dark: the heading and the first sentence of the body say the same thing ('An earlier … Magnesium set this folder up').",
+    "shots/setup-no-claude-dark and shots/setup-signed-out-dark: a course eyebrow ('Biochemistry') sits on app-setup screens that are not about a course.",
+    "My turn: a retry answer ('b = 5', then the right standard error) gets the tutor's verdict but no mark line and no hint that retries aren't recorded. Meanwhile ⌘Y shows 'standard error of a mean — Thu 12 Nov, not right yet', so the lesson and the record read differently."
+  ],
+  "window_turn": "I got the lock after about 6 minutes in the queue and spent about 3 minutes in the window, keyboard only. Earlier judges had left it mid-lesson in Intro Statistics. ⌘K then 'font' found Settings (so search matches synonyms), but ↩ left focus on the page body, and the arrow keys did nothing. ⌘, opened Settings properly: ← → and ↑ ↓ switched the face to Iowan Old Style, the size to 19 and the scheme to Dark, all live with no reload. ⌘P opened the plan layer: exam date as a date, moved rows tagged 'moved up' / 'moved down', and a 'Tell the tutor what changed' line. Esc closed it, and ⇧Tab put the caret in the task's answer line, which turned the task's rule to ink. I typed 'b = 5' ↩ (tutor: 'Not quite', no mark line), then Tab to the talk line and 'by the way, do I need to memorise the t table?' (stand-in canned reply, 'nothing here is marked', the task stayed pinned and grey at the foot). Then 'back to the task' (the task re-activated with the caret back in it) and the right answer (tutor 'Right:', again no mark line, since retries aren't first tries). ⌘Y showed the record in words ('standard error of a mean — Thu 12 Nov, not right yet'), and ⌘/ showed 1/2/3 help with ⌥1–3 for confidence. Measured typing: median 17 ms, p95 19 ms, max 20 ms, startup reported 795 ms. Apart from opening Settings from ⌘K, I never needed the mouse. I put the settings back to Charter / 17 / Like the Mac and released the lock."
+}

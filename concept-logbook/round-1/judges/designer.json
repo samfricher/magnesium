@@ -1,0 +1,59 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-answer-light.png", "shots/settings-dark.png", "shots/commands-dark.png", "shots/stop-dark.png"],
+      "blocks_next_point": "The keyboard path breaks where it should be strongest. In my turn, ⌘K opened Commands with focus on the Close button, not on 'Find a command', so typing 'plan' did nothing and Return closed the sheet. Everything else holds up: the page is the learner's day, five faces are offered and each is shown in its own face, plus size, scheme and measure (shots/settings-dark), and face and scheme switched instantly in the real window. A few traces of app voice remain: 'Your earlier days will be here.', and the ⌘E prompt 'Where did you stop? One line for next time.' (shots/stop-dark)."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "window/s3-after-dark.png"],
+      "blocks_next_point": "The open task is printed twice: once in the run of the page, and again as a pinned copy at the foot, set in a smaller size (shots/s3-after-dark: the 'slope … What is Km?' line appears at y≈181 and again at y≈484). In my turn the same standard-error question was on the page six times. The cold page itself is about as calm as it gets: a date, one suggested line with a Return key, one input line, and the previous day's date just showing at the bottom edge."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "window/s5-week-dark.png", "shots/s1-cold-first-dark.png"],
+      "blocks_next_point": "In the real window the pick-up line is vague. After a week away it reads 'Pick up where you stopped on Thursday 5 November / Midterm 2 / Intro Statistics' (window/s5-week-dark): the exam's name, not the step you stopped on. The demo promises the actual line ('Reading Vmax and Km … at what the y-intercept gives'). On first run, 'Make a new folder' and 'Find folders already set up on this Mac' are plain sans text with no button affordance (shots/s1-cold-first-dark). Nothing on the start screen counts or owes."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "shots/s3-after-light.png"],
+      "blocks_next_point": "In the live lesson, the exercise is lifted out of the tutor's bold Markdown and the seams show: an orphan '**' line above the task and a trailing '**' after it (live/s2-answer-dark, live/s4-return-dark). The pinned copy also drops the KaTeX italic on 'n' (live/s3-after-dark). The behaviour itself is right. Asked to change the plan, the real tutor asked for the new date, and the agenda stayed unchanged, which is truthful (live/plan-before.json = plan-after.json). The off-plan n − 1 answer got no margin mark, and the record holds one attempt. With the stand-in, the agenda updated in place with 'Moved from…', 'moved up' and 'moved down', plus a timed 'The plan changed.' line (window/s3-after-dark)."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s3-after-dark.png", "shots/s4-return-dark.png", "shots/s5-week-next-light.png", "shots/course-dark.png", "shots/s2-start-light.png", "shots/paper-dark.png"],
+      "blocks_next_point": "The same element renders differently from state to state. The pinned task is about 8% smaller than the original prompt (same string: 354 px vs 324 px wide at 1x, shots/s3-after-dark). Only in s4-return does a task get a 'Task' label, and its green left rule is split into two segments with a gap of about 12 px (shots/s4-return-dark). Agenda items mix SF Pro with KaTeX serif maths ('Repair: reading Vmax and Km', shots/s2-start-light). Controls come in three unrelated styles: a keycap chip, bare text links, and a filled pill (shots/paper-dark). The base system is strong. Measured contrast: body 9.8 and 10.5:1, margin grey 5.2 and 4.66:1, green 8.0 and 5.9:1. The invitation lines fail AA: 'Or write on the page' is 3.27:1 in dark and 2.68:1 in light, and 'Or write your own first line' is 4.15 and 3.51:1, and these two greys don't match each other. The cold page's column sits left, with an empty right third reserved for an agenda that isn't shown."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s4-return-dark.png", "shots/s3-after-light.png", "shots/s2-answer-dark.png", "window/s4-return-dark.png"],
+      "blocks_next_point": "'Back to the task' in the demo goes back to the wrong task. It says 'You were on step 3' and re-poses the Vmax question, which is already marked 'right / unaided' above, instead of the open Km question (shots/s4-return-dark). The real window got this right (window/s4-return-dark). Also: two text lines are open at once, and the only signal of which one has the caret is a slightly darker underline. The Hint / I'm lost / I don't know row is grey text with no affordance."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup to first content is 628–700 ms in window/perf.json (728–1029 ms in live/perf.json, 827 ms in my turn). That beats Obsidian, but it is not under the half-second native bar. Keystroke to paint is 17 ms median and 19 ms p95, just over one 60 Hz frame."
+    }
+  },
+  "still_dislike": [
+    "The open exercise is copied rather than moved. The original prompt stays in the page, and a second, smaller copy is pinned at the foot after every turn, so the page stacks duplicate questions (shots/s3-after-dark, window/s3-after-dark; in my turn the same question was on the page six times). Keep one exercise at one size, and leave a quiet one-line pointer where it was set.",
+    "Exercise extraction depends on the tutor's bold Markdown and leaks '**' in real lessons (live/s2-answer-dark, live/s4-return-dark). The pinned copy also loses the maths typesetting (live/s3-after-dark: 'which is n' in roman).",
+    "The keyboard and affordance details. ⌘K should land in 'Find a command', not on Close. The invitation lines need to reach 4.5:1, and should share one grey. The action row and first-run choices need some affordance beyond grey text, and controls should settle on one button language instead of keycap, link and pill."
+  ],
+  "bugs": [
+    "Orphan '**' line before the task and a trailing '**' after it, from bold Markdown split at the exercise boundary: live/s2-answer-dark.png, live/s3-before-dark.png, live/s4-return-dark.png, live/s4-return-light.png.",
+    "'Back to the task' re-poses the already-answered Vmax question ('You were on step 3') instead of the open Km one. The task block there has a one-off 'Task' label and a left rule broken into two segments: shots/s4-return-dark.png, shots/s4-return-light.png.",
+    "The pinned copy of the open task is set about 8% smaller than the original, and in live it loses KaTeX italics: shots/s3-after-dark.png, shots/s4-offplan-dark.png, window/s3-after-dark.png, live/s3-after-dark.png.",
+    "Raw LaTeX shown in the course sheet ('Not answered yet: reading $V_{max}$ from the y-intercept'): shots/course-dark.png, shots/course-light.png.",
+    "The ⌘E 'where did you stop' prefill flattens Km into 'What is K m?': shots/stop-dark.png.",
+    "A unit breaks across lines ('0.5 s/' | 'μM'): shots/s5-week-next-dark.png, shots/s5-week-next-light.png. With Iowan in my turn, plain-text maths broke as 'n −' | '1'.",
+    "The en dash is missing in the PDF viewer ('The Lineweaver   Burk plot'): shots/source-dark.png.",
+    "Plan numbering disagrees between the margin and the plan sheet: 'Repair' is 1 in the margin (shots/s2-start-light.png) and 2 in the sheet (shots/plan-light.png).",
+    "Real window: ⌘K opens Commands with focus on Close, so typing does not reach 'Find a command' (drive: 'no text field has focus'), and Return then closed the sheet.",
+    "Real window: the plan sheet's help text gives Biochemistry examples ('move the midterm to the 24th', 'do the redos before Paper B') in the statistics course.",
+    "Real window: the 'no mark' margin note for an unmarked answer appears a beat after the reply. A photo taken right after wait_idle had an empty margin; the note was there a moment later."
+  ],
+  "window_turn": "Took the lock at 14:15 and released it at 14:17. The window was mid-lesson in light scheme, with earlier judges' turns on the page. I typed 'b = -5' into the open exercise: the stand-in replied 'Not quite', a 'no mark' note arrived in the gutter a beat later, and a new copy of the same question was pinned at the foot. Esc moved the caret from the exercise to 'Or write on the page'; the hint flipped to 'Esc: back to the task', and the focused line got a darker underline. I sent 'by the way, why is it called a t distribution?' from the page line: the reply said nothing was marked, no margin mark appeared, and the exercise stayed open below it. ⌘, opened Settings with focus on Close (green 2 px ring). Clicking Iowan Old Style and Dark reflowed the page and switched scheme instantly; a plain-text 'n − 1' then broke across lines. ⌘K opened Commands, but focus was on Close, not the find field: typing 'plan' did nothing, and Return closed the sheet. ⌘P opened the plan sheet; its Sun 6 Dec date matched the agenda. Its help text is Biochemistry copy. I restored Charter and 'As the Mac' before releasing. Measured typing: 17 ms median, 19 ms p95; startup reported as 827 ms."
+}

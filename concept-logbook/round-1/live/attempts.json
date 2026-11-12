@@ -1,0 +1,29 @@
+{
+  "before": {
+    "attempts": []
+  },
+  "after": {
+    "attempts": [
+      {
+        "answered_at": "2026-11-05 13:29",
+        "attempt_id": "a-523a7a87a128f9d3f6c3c8cfd8f6fb56",
+        "cold": true,
+        "confidence": null,
+        "help": "none",
+        "kind": "standard error of a mean",
+        "label": "standard error of a sample mean",
+        "mark": "partly",
+        "marks": null,
+        "no_start": false,
+        "observation_id": "o-9f28cd0f81225351ca3fdf5d073f6ef5",
+        "out_of": null,
+        "paper": null,
+        "paper_question": null,
+        "question": "A coffee machine fills cups with a mean of 200 ml and a standard deviation of 12 ml, cup to cup. You take 36 cups and average their fills. If you repeated that many times, about how much would those averages typically vary from 200 ml: more than 12 ml, exactly 12 ml, or less? Give a number if you can, and say why in a sentence.",
+        "response_event_id": "e-9a7249a86a34848126a4b16c0d3b4245",
+        "seconds": null,
+        "session_id": "s-d84c632f6fd426bef4a2a212870f9fa4"
+      }
+    ]
+  }
+}

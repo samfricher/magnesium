@@ -1,0 +1,54 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-light.png", "shots/settings-dark.png", "shots/reopen-dark.png", "window/s2-answer-dark.png"],
+      "blocks_next_point": "The page is my material and two voices, with no mascot, level or counter. I can set the reading face, size, scheme and ink, and my half-typed answer survives a reopen (shots/reopen-dark.png). What still feels like the app talking at me is the accent-ink line under every answer. On a wrong one it reads \"Not right yet. It comes back another day.\" (my window turn), which is the app quietly adding something to what I owe."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "Opening the app shows three lines, a caret and one hint row. That is the least I have seen, and nothing in it made me want to close the window. Mid-lesson the open question can show twice: live/s4-return-dark.png has the tutor's \"Here it is again: The factory wants…\" in prose and the same question in the greyed task block straight below it, so I am reading the same thing twice."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png", "live/s5-week-next-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "Return starts the lesson, which was already chosen for me. After a week away nothing mentions the week, the days I missed or what is due. My record (⌘Y) is plain sentences with dates, not a score. The miss: live/s5-week-dark.png promises \"Next: The factory wants the averages to vary by only 1 g…\", but pressing Return opens \"Quick check 1: Commute times…\" (live/s5-week-next-dark.png). The window/ pair (window/s5-week-dark.png and window/s5-week-next-dark.png) also opens on a different question from the one promised. So the one thing I agreed to start is not what I get, and \"Quick check 1\" suggests a pile is coming."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "window/s4-return-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "Talk has its own line. The open task waits greyed at the foot, never as owed. In the live run the tutor asked for the new date, the screen correctly showed no plan change, and the n − 1 tangent got no mark (live/attempts.json has only the one answer). With the stand-in tutor, the plan change appears inline as before → after rows (window/s3-after-dark.png), and ⌘P marks what moved up and down. The miss is returning with the real tutor. In live/s4-return-dark.png, after \"OK, back to the task.\" the task block stays greyed and the caret stays on the talk line, while the tutor reposes the question as plain prose. The screen does not follow me back the way it does with the stand-in (window/s4-return-dark.png)."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "live/s2-answer-dark.png", "live/s5-week-next-dark.png", "shots/permission-dark.png"],
+      "blocks_next_point": "One quiet column, nice maths, the same look in both schemes and at the narrow size. The task block is inconsistent, though. The demo labels it \"Task.\" in bold (shots/s2-answer-dark.png), the real window has no label, and with the real tutor the ink rule sometimes wraps only part of the question. In live/s5-week-next-dark.png it wraps the two bullets but not \"Which is more likely, and why?\". In live/s2-answer-dark.png the new question sits outside the rule above an empty answer line."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-start-dark.png", "shots/s4-offplan-dark.png", "shots/s4-return-dark.png", "live/s4-return-dark.png", "live/s5-week-next-dark.png"],
+      "blocks_next_point": "Most of the time I know where my answer goes and what just happened: the answer sits inside the task, talk goes on the › line, and the mark is shown in words. The two places where I lost my footing are both with the real tutor. After returning from the tangent, it is unclear whether I should type in the greyed task or the talk line (live/s4-return-dark.png). After a week away, the promised next question is replaced by a quick check (live/s5-week-dark.png and live/s5-week-next-dark.png)."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup is 588–670 ms in window/ (952 ms on the first live launch). Typing paints at 17 ms median and 18 ms p95, and my own measurement in the window matched (17 / 19 ms). That is well clear of Electron, but above the half-second native open and one frame (16 ms) past the native keystroke."
+    }
+  },
+  "still_dislike": [
+    "After a week away, the cold screen promises one question (\"Next: The factory wants…\", live/s5-week-dark.png) and Return opens a different one, \"Quick check 1: Commute times…\" (live/s5-week-next-dark.png). The thing I agreed to start should be the thing that starts, and a numbered check hints at a queue.",
+    "With the real tutor, \"OK, back to the task.\" leaves the task greyed, keeps the caret on the talk line, and prints the question twice (live/s4-return-dark.png). Going back should put me in the task with the caret in it, as it does with the stand-in tutor (window/s4-return-dark.png).",
+    "The accent-ink line under a wrong answer says \"Not right yet. It comes back another day.\" (seen in my window turn). The second sentence is a small IOU in the middle of my page; \"Not right yet.\" would be enough."
+  ],
+  "bugs": [
+    "shots/permission-dark.png: the learner's line reads \"PERMISSION\", the demo's trigger word leaking onto the page as something I said.",
+    "shots/new-course-dark.png: the course label is \"Statistics\" above a Biochemistry lesson (\"Repair: reading Vmax and Km\").",
+    "live/s4-return-dark.png and live/s4-return-light.png: after \"OK, back to the task.\" the pinned task stays dimmed and focus stays on the talk line. The stand-in run (window/s4-return-dark.png) reactivates the task and moves the caret into it.",
+    "live/s5-week-next-dark.png: the task's ink rule wraps only the two bullet options. The question itself (\"Which is more likely, and why?\") is outside it.",
+    "live/s4-return-dark.png: the line \"(Bag weights have a standard deviation of 10 g, as before.)\" starts about 7 px left of the text column.",
+    "window/s5-week-dark.png vs window/s5-week-next-dark.png: the rest screen says \"Next: With t* = 2.064 … margin of error\", but Return opens the standard-error question again. The \"Next\" line and the lesson disagree (partly the stand-in tutor's restart)."
+  ],
+  "window_turn": "I took the lock and found the window at rest: \"Intro Statistics / Sampling distributions / the standard error of a mean…\", a › line and \"↩ start ⌘K everything else\". I pressed Return and was straight into a task with the caret in its answer line, without deciding anything. ⌘/ opened a three-item help list. Pressing 1 sent \"Can I have a hint?\" as a grey, unmarked line, and the task was posed again under the hint. I typed the wrong answer \"b = 5\". It was marked in small ink words, \"Not right yet. It comes back another day.\", with no red and no cross. Esc stepped me out to the talk line, where I asked an off-plan \"by the way…\" question. The reply said nothing was marked, and ⌘Y then listed only the one wrong answer, so the hint and the tangent stayed off the record. \"ok back to the task\" put the task back in full ink with the caret in it. ⌘P opened the plan layer. I typed \"change the plan, I skipped some days\" there and pressed Return. The layer closed, the tutor's reply appeared, and a \"The plan changed\" block listed Midterm 2 Sun 22 Nov → Sun 29 Nov and Hypothesis tests now before Confidence intervals. Reopening ⌘P showed those rows marked \"moved from / moved up / moved down\", with no due counts and nothing about being behind. Typing latency measured 17 ms median, 19 ms p95. I released the lock after about two minutes."
+}

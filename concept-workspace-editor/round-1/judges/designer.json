@@ -1,0 +1,62 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/sidebar-dark.png", "shots/commands-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The material column still carries the app's own furniture and voice: every open task gets a six-word control row (Hint / I'm lost / I don't know ... sure / unsure / guess, shots/s2-answer-dark.png), and the composer explains the mechanism in serif placeholders ('Esc to say something else', 'Say anything. Tab goes back to the task.') set in the same face as the learner's material. Move that row and the instructions into the status line or behind keys so the page is only tutor, task and learner."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "The plan diff stays on screen long after it means anything. window/s5-week-dark.png, a week later, still gives half the window to last week's struck-through date and amber change bars. On s2-start the same task is printed twice, above and below the 'Thursday 12 November' rule. Clear the change marks once they have been seen, and don't restate a task that is already on the page."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-light.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "The cold open is one key ('Continue Return', with the draft kept under the task), and there are no counts, streaks or congratulations. But the first screen after Return (shots/s2-start-dark.png) shows the learner's own draft as raw source, '$V_{max} = 1/0.25 =$' in ink, with a grey rendered copy underneath. On top of the repeated task, the first step looks like a code editor rather than a sentence they were halfway through."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "In the live run, while the learner is off-plan, the pinned task strip at the top of live/s4-offplan-dark.png (and -light) is empty: a blue rule and a 'Tab' keycap with no question. The strip also has no opaque ground, so the line under it ('Because the deviations are measured...') is sliced through. The mechanism is right (talk unmarked, attempts.json empty, nothing changed on screen when the tutor asked for the date, and the plan pane does open with the change in window/s3-after), but the one thing that tells the learner what Tab returns to is blank with a real tutor."
+    },
+    "craft": {
+      "score": 6,
+      "evidence": ["shots/narrow-lesson-dark.png", "shots/material-dark.png", "shots/plan-dark.png", "shots/s2-start-dark.png", "shots/s3-before-dark.png", "shots/open-light.png", "shots/drop-dark.png", "window/s3-after-dark.png", "shots/settings-dark.png"],
+      "blocks_next_point": "Content scrolls under the tab row and the status line with no ground, hairline or fade, so glyphs are cut in half on nearly every scrolled screen: the top line in narrow-lesson-dark, the formula numerator in material-dark, the last table row in plan-dark and window/s3-after-dark, the last settings row, and the text under the pinned strip in live/s4-offplan-dark. The base system is good: Charter body with system-sans chrome, a 1.2 scale, about 66ch measure, body text at 11.5:1 (dark) and 15.3:1 (light), secondary text at 5.0:1 and 5.1:1. The edges are what keep it below competent."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s3-after-dark.png", "shots/plan-dark.png", "shots/s2-start-dark.png", "live/s4-offplan-dark.png", "shots/s3-before-dark.png"],
+      "blocks_next_point": "The plan diff never says what it is showing. shots/s3-after-dark.png opens the plan pane with amber bars and a struck-through row but no line saying 'changed just now' and no legend. The pane starts mid-document with section 1's heading scrolled off, and the folded headings jump '2. The instructor's words …' to '5. Method …' with no sign that 3 and 4 exist. Instructions the learner needs ('Tab goes back to the task') sit in placeholder text at 2.7:1 (dark) and 2.6:1 (light), below AA."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "window/perf-main.json", "window/perf-week.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 598 to 702 ms in window/perf.json (756 ms on my turn, up to 881 ms first open in live). That is well under Obsidian's 1 to 2 s but over the half-second a native editor opens in. Keystroke-to-paint is median 17 ms, p95 19 ms, max 20 ms: just over one 60 Hz frame, not within it."
+    }
+  },
+  "still_dislike": [
+    "Content slides under the chrome. The tab row, the status line and the pinned task strip have no ground of their own, so scrolled text is sliced mid-glyph at the top and bottom of almost every view (shots/narrow-lesson-dark.png, shots/material-dark.png, shots/plan-dark.png, live/s4-offplan-dark.png). Give the chrome the page colour as an opaque band with a 1px rule or a short fade, and give the pinned strip the same treatment.",
+    "The interaction model is explained on the page in low-contrast app voice: placeholders at 2.6 to 2.7:1 ('Esc to say something else', 'Say anything. Tab goes back to the task.', 'Or write to your tutor') plus the Hint / I'm lost / I don't know / sure / unsure / guess row under every task. When that row is hidden it leaves an empty ~30px band inside the task with the ink rule still running (shots/s3-before-dark.png, live/s3-before-dark.png). Put the keys in the status line, give the row a real show/hide with no reserved space, and lift any instruction text to AA.",
+    "The plan diff is underdesigned. There is no 'changed' label or legend, and it persists across a week (window/s5-week-dark.png). In the narrow pane ISO dates break at the hyphen ('2026-' / '11-12', window/s3-after-dark.png). The change bar pushes the changed row's '#' 20px right of the unchanged rows ('2' against '1'). Folded sections hide numbers 3 and 4 with no indication. The tab also loses its pill style when it becomes a pane header ('Midterm 1 plan' on the right of shots/s3-after-dark.png against the pill tab on the left)."
+  ],
+  "bugs": [
+    "live/s4-offplan-dark.png and live/s4-offplan-light.png: the pinned task strip renders empty (blue rule and 'Tab' keycap, no question text) with the real tutor's bold-question task, and the body line under it is sliced.",
+    "shots/s2-start-dark.png: the open task is printed twice (before and after the 'Thursday 12 November' rule), and the kept draft shows as raw LaTeX '$V_{max} = 1/0.25 =$' with a rendered grey duplicate under the field.",
+    "shots/s2-start-dark.png, shots/new-lesson-dark.png, window/s1-cold-dark.png: the answer-field underline curls up at both ends (a border-radius applied to a bottom border).",
+    "shots/s3-before-dark.png, live/s3-before-dark.png, window/s3-before-dark.png: when the task loses focus, the hidden control row leaves an empty band inside the task block and the ink rule runs on below the input.",
+    "shots/narrow-lesson-dark.png (top line), shots/material-dark.png (formula numerator), shots/plan-dark.png and shots/settings-dark.png (bottom rows), window/s3-after-dark.png (last table row): text cut mid-glyph by the tab row or the status line.",
+    "shots/material-dark.png and shots/material-light.png: a comma is orphaned at the start of a line after inline math ('low [S]' / ', which carry ...'). The document's H1 is the filename slug 'lineweaver-burk' above its own heading 'The Lineweaver–Burk plot'.",
+    "shots/open-light.png, shots/commands-dark.png, shots/folders-dark.png (and the ⌘K menu on my turn): the sheets have no scrim. Body text shows past their left and right edges, and the folders sheet's bottom edge cuts through the line 'That is the line: the slope is ...'.",
+    "shots/drop-dark.png: 'Drop to add to Biochemistry 210's material' sits directly on the dimmed body line ('on the plot follows fr...') with no backing, and the dashed frame runs through the status-line text.",
+    "window/s3-after-dark.png: in the plan table the Day column breaks ISO dates at the hyphen, and the change bar indents the '#' cell of changed rows.",
+    "window/s5-week-dark.png: a week later the plan pane still shows the old date struck through and the amber change bars, as if the change had just happened.",
+    "shots/record-dark.png: under Skills, 'slope and Km' reads 'Answered right alone, from a blank page, on 1 day', but the log above lists only 'Right, with a hint' and 'Not right yet' for that skill. The summary contradicts the log on the one page that is meant to be the record (demo data, but it shows the surface can say this).",
+    "shots/paper-dark.png: the 'Paper B' tab (Study/midterm-1/papers/Paper B.pdf) renders a PDF titled 'Week 4 slides' (demo data).",
+    "shots/plan-edit-dark.png: the textarea shows the browser's resize grip at bottom right, and the header runs the path into the hint with no separator ('plan.md ⌘S saves · Esc ...').",
+    "window/s4-offplan-dark.png is 2354 px wide against 2080 px for the other window photos, and the frame sits offset with an empty margin at the left. The same happened on my turn once the plan pane was open, so the window seems to resize or move itself after the split (could be the capture tool; not confirmed)."
+  ],
+  "window_turn": "I took the lock after a 3.5 min wait and used about 3 minutes. The window was in light scheme (following macOS) with an earlier judge's lesson open. I typed TEACH in the talk line: the stand-in set a task, and it appeared as a ruled block with the answer field under it. I typed 'b = -5', clicked 'sure' and pressed Return. The gutter showed ✓ 'Right, with a hint' with 'Sure' under the answer, read from the record (the hint was one an earlier judge had asked for). ⌘K opened the command sheet: names and keycaps only, but no scrim, so body text showed past both edges. ⌘, opened Settings as a tab. Switching to Atkinson Hyperlegible and Dark applied at once and the column re-measured. I restored Charter and Same as macOS. Settings lists the full key map, and its last row is cut by the status line. ⌘2 went to the Record tab, a quiet log by day with marks in grey. A type-and-Return sent while Record was in front went nowhere, since that page has no writing place. Back in the lesson, 'change the plan' opened the plan in a right pane with the old When struck through, the new one and the swapped block on amber bars, and the tab moved from the title row to the pane header. TEACH, Esc, then 'by the way, why does the sign of b matter so much?' got an unmarked reply, and the talk line read 'Say anything. Tab goes back to the task.'. Tab put the caret back in the answer. 'b = 5' showed ✕ 'Not right yet', with the question quoted in small grey above the answer. A latency check on the window read median 17 ms, p95 19 ms, startup 756 ms. Then I released the lock."
+}

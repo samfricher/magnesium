@@ -1,0 +1,58 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 7,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-answer-light.png", "shots/settings-dark.png", "shots/face-iowan-light.png", "shots/commands-dark.png", "shots/stop-dark.png"],
+      "blocks_next_point": "The ⌘K command menu opens with focus on its Close button instead of 'Find a command', so typing to filter fails. In my turn the driver reported 'no text field has focus' and Return then hit Close. Next to that, the font list is a closed set of five system faces and the Keys list cannot be changed, so I can't bring my own font or keybindings."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png", "window/s2-answer-dark.png"],
+      "blocks_next_point": "Once a lesson starts, every open exercise has three rows under it: a five-link toolbar (Hint, I'm lost, I don't know, Photo, Symbols), a second input ('Or write on the page'), and an Esc hint. On top of that comes filler like 'Your earlier days will be here.' (window/s2-answer-dark). The cold page is almost empty; the lesson page is not."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/s2-answer-dark.png", "shots/course-dark.png"],
+      "blocks_next_point": "The cold page is one line and Return, with no counts. But the course sheet, one key away, still keeps score: 'due today', 'level 3 of 10' (shots/course-dark). The pick-up line names a topic ('Reading Vmax and Km…'), not the exact question I left open."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "window/s3-after-dark.png", "window/s4-offplan-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/plan-after.json"],
+      "blocks_next_point": "Where I type decides what a message is: the exercise line takes answers, the page line takes talk. Talk was never marked: live/attempts.json holds only the one 'partly' for the answer. The agenda reorders in place from the plan file. But in live/ the real tutor asked for the new date and nothing changed, so a real plan edit through this window is still unproven. And after two changes in my turn, the agenda header said 'Moved from Sun 22 Nov' while the page line said 'was Sun 6 Dec'."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/settings-light.png", "live/s2-answer-dark.png", "live/s4-return-dark.png", "shots/course-dark.png", "shots/s4-return-dark.png", "shots/narrow-lesson-dark.png"],
+      "blocks_next_point": "Markdown and LaTeX leak onto the page: stray '**' paragraphs and a trailing '**' in the real lesson (live/s2-answer-dark, live/s4-return-dark), and raw '$V_{max}$' in the course sheet (shots/course-dark). Smaller faults: the 'Task' label sits on a split, two-piece green rule in shots/s4-return-dark, and the exercise has two stacked underlines."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s3-before-dark.png", "shots/s4-return-dark.png", "window/s4-return-dark.png", "live/s4-offplan-dark.png", "shots/stop-dark.png"],
+      "blocks_next_point": "In shots/s4-return-dark, 'Back to the task' brings back the Vmax question I already answered, not the open Km one. In my turn, ⌘N followed by a goal line landed as an answer inside the old exercise, with no sign a new lesson had started. In live/s4-offplan-dark the page line I was typing in was scrolled out of the window."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 628–700 ms in window/ (827 ms in my turn, 1029 ms for live's week run). Keystroke to paint is median 17 ms and p95 19 ms. That is good, but just over one 60 Hz frame, and startup is still above the half second a native editor manages."
+    }
+  },
+  "still_dislike": [
+    "⌘K doesn't put the cursor in its search field (focus lands on Close), and pressing Return on a focused option in Settings didn't apply it. The keyboard-first promise breaks exactly in the sheets.",
+    "The page isn't mine past a short menu: five system faces, light or dark, two line lengths. I can't name my own installed font, load a colour theme, or rebind a key. The Keys list is read-only.",
+    "Tutor Markdown and LaTeX leak as raw text ('**' lines in the real lesson, '$V_{max}$' in the course sheet, 'K m' in the stop line). On a page meant to be my own material, that's the first thing that looks broken."
+  ],
+  "bugs": [
+    "Stray '**' paragraph and trailing '**' where the real tutor's bold spans two paragraphs: live/s2-answer-dark.png, live/s4-return-dark.png.",
+    "Raw LaTeX 'reading $V_{max}$ from the y-intercept' in the course sheet: shots/course-dark.png, shots/course-light.png.",
+    "The ⌘E stop line is prefilled with 'What is K m?', with the LaTeX stripped badly: shots/stop-dark.png.",
+    "After 'Back to the task' the exercise shows the already-answered Vmax question instead of the open Km question: shots/s4-return-dark.png, shots/s4-return-light.png.",
+    "My turn: ⌘K opens Commands with focus on 'Close'; typing 'plan' failed with 'no text field has focus', and Return then closed the sheet.",
+    "My turn: in Settings, Tab to 'Iowan Old Style' then Return did not change the face (Charter stayed selected); focus went back to the answer line.",
+    "My turn: ⌘N then 'TEACH' + Return put the line inside the open exercise as its answer, under the old question, with no new-lesson heading.",
+    "My turn: after a second plan change the agenda says 'Moved from Sun 22 Nov' while the page's timed line says 'was Sun 6 Dec'.",
+    "Real lesson: after the off-plan reply, the page's input line ('Or write on the page') is scrolled below the window bottom: live/s4-offplan-dark.png, live/s4-offplan-light.png.",
+    "Narrow width: no agenda at all in the lesson (no one-line summary visible in the captured view): shots/narrow-lesson-dark.png."
+  ],
+  "window_turn": "I got the lock after a 461 s wait and found the window mid-lesson from earlier judges. I drove it by keyboard only. ⌘N, 'TEACH', Return: the line went in as an answer inside the open standard-error exercise, and the tutor then posed 'What is b in x² − 5x + 6 = 0?'. 'b = 5' + Return: grey 'not right' in the left margin. ⌘⇧H: sent a faint 'Can I have a hint?' and the hint came back. 'b = -5': green 'right / with a hint' beside it. Esc moved to the page line. 'change the plan, I want to do hypothesis tests first': the agenda reordered in place with 'moved up'/'moved down', the date became Sun 13 Dec, and a green timed 'The plan changed…' line was written from the record. 'by the way, what does a p-value of 0.03 really mean?' came back unmarked, and 'back to the task' reopened the exercise with its answer line. ⌘, opened Settings; Tab moved through the options with a clear focus ring, but Return on Iowan did not apply it. ⌘= applied size 19 at once and ⌘− put it back. ⌘K opened Commands with focus on Close, so I couldn't type to filter. ⌘P opened the full plan sheet. Measured typing latency: median 17 ms, p95 19 ms, max 20; startup 827 ms. I released the lock afterwards."
+}

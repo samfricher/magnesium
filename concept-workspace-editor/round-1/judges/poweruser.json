@@ -1,0 +1,58 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/plan-edit-dark.png", "shots/settings-dark.png", "shots/open-dark.png", "shots/commands-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "It bends only as far as a menu. Settings offers six fonts, light or dark, four inks and three widths. The Keys section on the settings page is a read-only list. There is no way to use my own font, a theme file or my own key bindings. Also, the settings page says '↑ ↓ move between lines, ← → choose', but after ⌘, the arrow keys changed nothing in my turn."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "A cold open drops me into a full screen of old tutor text, two old tasks and formulae, and then the Continue line (shots/s1-cold-dark). That is calm, but it is not 'almost nothing'. The half-width plan pane also comes back after a week away, next to the lesson (window/s5-week-dark)."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "Return continues, and ⌘N fills in the plan's next item, so starting is one key. But coming back after a week, the first thing the tutor gives is 'Quick check 1', not the task I stopped on, and my half-written draft 'Vmax = 1/0.25 =' (shots/s5-week-dark) is gone from the screen on shots/s5-week-next-dark."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s2-answer-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "Answers and talk really are separate places (Esc and Tab). With the real Claude Code nothing was marked: the off-target answer, the plan request and the off-plan question all stayed unmarked, and live/attempts.json is empty. But the pinned 'task waiting' bar is empty in the real lesson: live/s4-offplan-dark shows only a blue edge and a 'Tab' chip, with no task text. So while talking off-plan I can't see what is waiting. And I never saw a real plan change land in the window: the tutor asked for the date, and nothing on screen shows that a change is pending."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s1-cold-dark.png", "shots/narrow-lesson-dark.png", "live/s4-offplan-dark.png", "shots/s3-after-dark.png", "shots/plan-edit-dark.png", "shots/material-dark.png"],
+      "blocks_next_point": "Text scrolls under the tab row and the pinned bar with glyphs cut in half and no fade (shots/narrow-lesson-dark top line, live/s4-offplan-dark). Tab names are cut to about 200 px with plenty of room left ('Reading Vmax and Km from a Lin...'). In the half-width plan pane the Day column wraps ('Fri 6 / Nov', '2026- / 11-16'). Editing the plan as text is a bare textarea with a resize handle, not an editor."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-start-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "live/s4-offplan-dark.png", "live/s3-after-dark.png"],
+      "blocks_next_point": "The prompt lines tell me every mode ('Esc to say something else', 'Say anything. Tab goes back to the task.', 'Continue Return'). But in the real lesson the pinned task bar is blank (live/s4-offplan-dark). And the Record tab does not update while it is open, so what it shows can be out of date."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 598–702 ms in window/perf.json (756 ms in judge-perf.json, up to 881 ms live). That is well ahead of Obsidian but not under Sublime's half second. Typing paints in a median of 17 ms (p95 19 ms), which is about one frame but not under it."
+    }
+  },
+  "still_dislike": [
+    "Personalisation is a fixed menu, not a config: six fonts, two schemes, four inks, and a Keys list I can read but not rebind. I can't bring my own font, theme or key bindings. The settings page's own arrow-key navigation didn't respond when I opened it from the keyboard.",
+    "The pinned 'waiting task' is the heart of the off-plan flow, and it renders empty in the real lesson (live/s4-offplan-dark). The page also clips hard under the tab row instead of fading or stopping at an edge.",
+    "The plan is meant to be my file, but ⌘E gives a plain monospace textarea with a resize grip (shots/plan-edit-dark), and the half-width plan pane wraps dates in its tables (shots/s3-after-dark). Some app voice is left too: 'Kept by Magnesium in this folder' on the Record, and the demo tutor saying 'not on the plan, so nothing here is marked' on every off-plan reply."
+  ],
+  "bugs": [
+    "live/s4-offplan-dark.png: the pinned task bar at the top of the pane is empty, with only a blue edge and a 'Tab' chip and no task text. The real tutor's task was a bold question rather than 'Task.'. The reply text slides under the bar and is cut off.",
+    "Real window, my turn: with the Record tab open in another tab, I answered 'b = 5' and the lesson showed ✗ 'Not right yet'. The Record still listed only the 14:11 row. After closing it (⌘W) and reopening it from ⌘K, it showed the new 14:14 'sign of b, Not right yet' row. The Record view goes stale while it is open.",
+    "Real window, my turn: Settings says '↑ ↓ move between lines, ← → choose'. After ⌘, (and after ⌘K → Settings), ↓↓↓ → and ↓ → changed nothing: no focus ring appeared and no value changed, because focus stayed on the page body.",
+    "shots/record-dark.png: under Skills, 'slope and Km' reads 'Answered right alone, from a blank page, on 1 day', but the log above lists only 'Right, with a hint' and 'Not right yet' for that skill. The summary claims more than the record it shows (demo data, but on the record page).",
+    "shots/s3-after-dark.png: the tutor says Paper B now comes after the cold redos, but the plan shows Paper B on Fri 13 Nov below the cold redos on Sat 14 Nov. window/s3-after-dark.png likewise puts block 2, dated 2026-11-16, above block 3, dated 2026-11-14. The order and the dates disagree.",
+    "shots/s5-week-next-dark.png: the draft 'Vmax = 1/0.25 =' kept under the open task in shots/s5-week-dark.png is not shown anywhere after Continue. The quick check's box is empty and the old task has closed.",
+    "shots/material-dark.png: a comma is left at the start of a line after inline maths ('[S]' then ', which carry the largest errors').",
+    "shots/paper-dark.png: 'Paper B.pdf' renders a page titled 'Week 4 slides' (demo data).",
+    "window/s1-cold-first-dark.png: the Welcome page shows two different versions, 'Magnesium 0.2.0' in the checklist and 'Magnesium 0.1.0' at the foot, with nothing saying which is which.",
+    "window/s4-offplan-dark.png, window/s4-return-dark.png and window/s5-week-dark.png: the window is drawn shifted right and down, with the left edge blank and the right edge cut off. This may be a capture artifact rather than the window moving."
+  ],
+  "window_turn": "I drove it keyboard-only, starting from the state the previous judge left: Record and plan panes open, light scheme. ⌘K opened a clean command list with shortcuts. Typing 'set' then Return opened Settings as a tab, with fonts, size, width, scheme, ink and a full read-only key list. Arrow keys did nothing on the Settings page. ⌘1 went to the lesson and ⌘\\ joined the panes into one. Tab put the caret in the open task. I typed 'b = 5', pressed ⌥2 (it labelled the answer 'Unsure') and Return: a quiet ✗ 'Not right yet' appeared beside the answer in the left margin. Esc dropped me to the talk line. 'by the way, why is the t interval wider than the z one?' got an unmarked reply, and the task stayed visible above it. The perf op measured 17 ms median and 19 ms p95. ⌘= ⌘= grew the text live, and ⌘0 reset it. ⌘W closed the lesson. The open Record tab had not picked up my new mark until I closed and reopened it. ⌘P 'sampling' Return reopened the lesson exactly where I stopped: same scroll, my answer, 'Stopped today at 14:14. Continue Return'. Return continued, and ⌘⇧H gave a hint. All of it was reachable without the mouse except the Settings choices. It felt like an editor, not an app wearing a theme."
+}

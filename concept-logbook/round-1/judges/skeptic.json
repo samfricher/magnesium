@@ -1,0 +1,62 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The organising idea is different. The old window was a stack of places: Library (cards with levels, due counts, Continue / Course page), then Course (proof dots), then a Lesson screen with its own top bar (End lesson, Step 3 of 5, plan dropdown, Menu), then Proofs and an end-of-lesson Summary with a week strip (baseline-round9/library.jpg, course.jpg, session-plan.jpg, summary.jpg). This build has one dated page with time as the only axis. The first screen is today's date, one 'Pick up where you stopped' line and a cursor (shots/s1-cold-dark.png). The lesson is written into today's page. Earlier days sit below it and are the progress. Courses, the record, the plan and settings are sheets on keys, not screens. The plan sits as an agenda in the right margin and changes in place, with a dated 'The plan changed' line taken from the plan's diff (shots/s3-after-dark.png). There is no summary, no level, no count and no countdown on any main surface. Answers and talk are routed by where you type: the exercise's own line or the page's line, with no 'Your answer' box. Four of the five structural axes changed: first screen, movement, what is shown, and where progress lives. The fifth, how a task and an answer look, is only half new. The lesson's inner furniture is inherited: the record's mark in a left gutter beside a thin rule, the open task flagged by a green left bar, the same Hint / I'm lost / I don't know row under the input, a serif text column, and ⌘K commands. Put baseline-round9/session-marked.jpg next to shots/s2-answer-dark.png and the mid-lesson screens look like siblings. The outer design is new; the micro-layout inside the lesson is the old one, minus its top bar."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/s2-answer-dark.png", "shots/stop-dark.png", "window/perf.json"],
+      "blocks_next_point": "Keyboard-first breaks in the sheets. ⌘K opens Commands with focus on its Close button, not the 'Find a command' field, so typing a command does nothing until you click. The plan sheet opened from Commands never takes focus: Esc went to the page behind it, and Return then started the lesson underneath the still-open sheet. ⌘E also asks you for something ('Where did you stop? One line for next time.', shots/stop-dark.png)."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s3-after-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "The cold page is almost empty, but mid-lesson the open exercise is printed twice: once in the history and again at the foot. The question 'The slope of the same line is 0.5 s. What is K_m?' appears twice on shots/s3-after-dark.png, and the margin-of-error question appears twice on window/s4-offplan-dark.png. Add two input lines and a five-word tool row, and the lesson is busier than the start promises."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "In the real window the pick-up line names only the goal ('Pick up where you stopped on Thursday 5 November / Midterm 2 / Intro Statistics', window/s5-week-dark.png, live/s5-week-dark.png), not the place you stopped, unlike the demo's 'at what the y-intercept gives'. After ⌘E it swings the other way and prints the whole question as the subtitle."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "window/plan-after.json"],
+      "blocks_next_point": "The model is that where you type decides what the message is, but after every reply the cursor sits in the exercise's answer line, and only a faint underline and the 'Esc: write on the page' hint tell the two lines apart. In my turn a 'by the way' question went into the exercise line, was sent as an answer, and picked up a 'no mark' label in the margin. Live, the screen stayed truthful: the tutor asked for the date, the agenda was left alone and the off-plan answer was not marked. But the page has no way to show that a plan change is waiting on your answer."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s4-return-dark.png", "shots/course-dark.png", "live/s2-answer-dark.png", "live/s3-before-dark.png", "window/s3-after-dark.png"],
+      "blocks_next_point": "The re-posed exercise at the foot is set smaller than the same task in the history and loses its maths ('which is n' in plain text against the italic n above, live/s3-before-dark.png). The demo's return adds an inline 'Task' label and a split green rule seen nowhere else (shots/s4-return-dark.png). Live, stray '**' markers render (live/s2-answer-dark.png), and the record sheet shows raw '$V_{max}$' (shots/course-dark.png)."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s3-after-dark.png", "shots/s4-return-dark.png", "window/s3-after-dark.png", "live/s3-after-dark.png"],
+      "blocks_next_point": "It is not obvious which of the two lines you are typing into. After my second plan change the agenda read 'Moved from Sun 22 Nov' while the page said 'was Sun 29 Nov' (header Sun 6 Dec). The demo's 'Back to the task' brings back the already-answered V_max question instead of the open K_m one (shots/s4-return-dark.png)."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 628–700 ms with the stand-in tutor and 728–1029 ms in the live runs (my measure: 827 ms). Keystroke-to-paint is a median of 17 ms and p95 of 19 ms, a hair over one frame. That is well ahead of Electron editors, but not yet under the half-second open and single-frame keystroke of a native editor."
+    }
+  },
+  "still_dislike": [
+    "Answer and talk are split by which of two lines has the cursor. The cursor lands in the answer line after every reply, and only a faint underline and Esc tell them apart, so off-plan talk is easy to send as an answer. The place that decides the message has to be unmistakable, or the 'no label' idea becomes a hidden mode.",
+    "The open exercise is printed twice, once in the history and again re-set at the foot in a smaller size with flattened maths (window/s3-after-dark.png, live/s3-before-dark.png). That is the main source of mid-lesson clutter and the one place the page stops reading like a log.",
+    "The sheets break keyboard flow. ⌘K lands on Close, not the filter. A sheet opened from Commands does not take focus, so Esc and Return act on the page behind it. The plan sheet's help text is hard-coded Biochemistry ('do the redos before Paper B') even in a Statistics course."
+  ],
+  "bugs": [
+    "shots/course-dark.png: the record sheet shows raw LaTeX: 'Not answered yet: reading $V_{max}$ from the y-intercept.'",
+    "shots/s4-return-dark.png and s4-return-light.png: after 'Back to the task' the demo re-poses the already-answered V_max question (with an inline 'Task' label and a split rule), not the open K_m question that was waiting.",
+    "live/s2-answer-dark.png, live/s3-before-dark.png, live/s4-return-dark.png: bold Markdown that spans a paragraph break renders as a lone '**' line and a trailing 'does.**'.",
+    "live/s3-before-dark.png: the re-posed exercise at the foot drops maths formatting ('which is n' plain; italic n in the original).",
+    "shots/stop-dark.png: the ⌘E 'where did you stop' line is prefilled 'What is K m?', losing the subscript.",
+    "shots/source-dark.png: the PDF page renders 'The Lineweaver   Burk plot' with the en dash missing.",
+    "Real window (my turn): ⌘K opens Commands with focus on the Close button; typing a filter fails ('no text field has focus') until the field is clicked.",
+    "Real window (my turn): the plan sheet opened from Commands did not take focus. Esc did not close it, and Return started the lesson behind the still-open sheet.",
+    "Real window (my turn): the plan sheet's help text says 'move the midterm to the 24th', 'do the redos before Paper B' in an Intro Statistics course that has no Paper B.",
+    "Real window (my turn): after a second plan change the agenda says 'Moved from Sun 22 Nov' while the page's change line says 'was Sun 29 Nov' and the header says Sun 6 Dec."
+  ],
+  "window_turn": "I took the lock and found the window left mid-session by an earlier judge, in light scheme. I opened ⌘K: Commands slid in from the right, but focus sat on Close, so typing 'plan' failed until I clicked the filter field. After that the list filtered to 'The plan ⌘P' and Return opened it. The plan sheet showed the moved exam and the reordered blocks, but its help text used Biochemistry examples ('do the redos before Paper B'). Esc did not close that sheet: focus had stayed in the page's line behind it, and my Return picked up the lesson underneath the open sheet. I closed it with the mouse. I meant to step onto the page with Esc and ask 'by the way, what is a z-score?', but Esc toggled me into the exercise line instead. The question went in as an answer; the record did not mark it, and the margin showed 'no mark'. I then typed 'I missed the weekend, change the plan please' in the page's line. The agenda moved the exam to Sun 6 Dec and swapped two items with 'moved up / moved down', and a green 'The plan changed. … was Sun 29 Nov' line appeared on the page. The agenda's 'Moved from' still said Sun 22 Nov. 'b = -5' in the exercise got the tutor's 'Not quite' and no mark in the margin, so no mark was shown that the record had not given. ⌘I opened the course sheet: material, plus 'The record' in words, with one line about level 1 of 10 at the foot. Esc closed it correctly. Measured typing latency: median 17 ms, p95 19 ms; startup 827 ms. I released the lock after about 3 minutes."
+}

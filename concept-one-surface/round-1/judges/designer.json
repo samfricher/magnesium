@@ -1,0 +1,58 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s4-offplan-light.png", "shots/settings-dark.png", "shots/reopen-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "The surface is the material: a serif for the tutor, your own mono for you, SF at 13 px for the app, and nothing else. Settings cover face, the face for your own words, size, measure, scheme and ink, and they apply live (in my turn, Iowan at 19 in Dark redrew at once). Two things stop a 9. The tutor's own lines carry the app's bookkeeping voice: 'Good question, and not on the plan, so nothing here is marked' on window/s4-offplan-dark and shots/s4-offplan-light. And 'reopens as left' breaks after a week: Return opens a fresh lesson with no trace of where you were (window/s5-week-next-dark)."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "The cold open is three lines and a hint row, sitting a third of the way down, and the lesson is a single column with no chrome. The one leftover is the foot of every lesson. It stacks two inputs (the task's dashed line with '⌘/ help', then '› or say something else') plus a dimmed copy of the task while you talk (shots/s4-offplan-dark). That is three bands of furniture where one would do."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s5-week-dark.png", "window/s5-week-next-dark.png", "live/s5-week-dark.png", "live/s5-week-next-dark.png"],
+      "blocks_next_point": "Return carries on, and there are no counts, streaks or 'you were away' messages. But the rest screen's promise is not kept. live/s5-week says 'Next: The factory wants the averages to vary by only 1 g…', and Return lands on 'Quick check 1: Commute times…' (live/s5-week-next). In window/s5-week, the margin-of-error question is promised and the already-marked standard-error question comes back. The primary hint '↩ carry on' is also the faintest text on the light cold screen (#7f8388 on #fafaf8, 3.65:1)."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "live/attempts.json", "live/plan-after.json"],
+      "blocks_next_point": "Truthful under the real tutor. It asked for the new date, so no 'plan changed' block was drawn and plan-after.json equals plan-before.json. The off-plan n − 1 talk was not marked: the only attempt is the 'partly' on the rice question. With the stand-in, the plan change shows inline as a two-row diff with ⌘P, and ⌘P's own line worked in my turn. What blocks the next point is the return. After 'OK, back to the task.' the real tutor restates the question as prose, but the open task stays dimmed and parked at the foot, and the caret stays on the talk line. The question now appears twice, live and dead, on live/s4-return-dark."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/s2-answer-light.png", "shots/s1-cold-light.png", "shots/s4-offplan-dark.png", "live/s2-answer-dark.png", "live/s5-week-next-dark.png", "live/s4-return-dark.png", "shots/commands-light.png", "shots/permission-dark.png", "shots/setup-no-claude-light.png"],
+      "blocks_next_point": "The type system is the best thing here: Charter 17/1.62 with KaTeX, mono for your voice, a 20 px hanging gutter shared by every ink rule and the ›, one ink, and one layer component. The small greys are where it fails. In light: placeholder #95989d is 2.77:1, '⌘/ help' #8f9296 is 2.99:1, the hint row is 3.65:1, and the answer's dashed rule is 1.49:1 (1.62:1 in dark), which is below the 3:1 a UI boundary needs. Those greys are lighter than the CONCEPT's own 'quiet' token (#6A6E75), so they are off-system. Other faults: the 38 em measure sets 80–85 characters a line at Medium (CONCEPT claims 66), and the task rule wraps different things in different states (only the input on live/s2-answer, only the bullets on live/s5-week-next). The permission card brings the only bordered buttons in the app. The palette's last row is clipped by its footer, and the setup headline breaks at about 620 px over a 830 px body."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s2-start-light.png", "live/s2-answer-dark.png", "live/s4-return-dark.png", "window/s5-week-next-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "'The place is the label' reads well in the demo: Task. block, line under it, › for talk. It goes vague when the tutor is real. The place to answer is a near-invisible dashed rule. On live/s2-answer-dark the question sits outside the task block, so the ink stub beside the empty line is the only clue. After a hint, in my turn, two blocks carried the active ink rule at once. A retry ('b = 5') got no line under it, so nothing says whether it counted. After a week, 'carry on' delivers a different task than the one named."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Measured startup is 588–670 ms with the stand-in (952 ms on the live first open), and keystroke-to-paint has a median of 17 ms and p95 of 18–19 ms (I measured 17/19 in my turn). That is far faster than an Electron editor, but not native. The next point needs first content under 500 ms and p95 inside one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "The answer line is the faintest thing on the lesson screen: a 1.5:1 dashed rule with '⌘/ help' at 3.0:1 in light (shots/s2-start-light, shots/s2-answer-light). The light-scheme placeholder (2.77:1) and the cold-open '↩ carry on' hint (3.65:1) also miss AA, and these greys are off the CONCEPT's own 'quiet' token.",
+    "The task block's ink rule is not tied to one rule of state. With the real tutor it wraps only the input (live/s2-answer-dark) or only the bullet list (live/s5-week-next-dark). It stays parked and dim after 'back to the task' while the same question is reprinted above it (live/s4-return-dark). After a hint, two blocks show the active rule (my window turn). The surface's one structural mark should never be ambiguous.",
+    "The reading measure is 80–85 characters at the default Medium (shots/s4-offplan-dark; the CONCEPT says 66). Separately, the rest screen names a next task that Return does not deliver (live/s5-week → live/s5-week-next; window/s5-week → window/s5-week-next)."
+  ],
+  "bugs": [
+    "live/s2-answer-dark.png: the tutor's next question ('The factory wants…') is set as plain prose; the task's ink rule is only a stub beside the empty answer line.",
+    "live/s5-week-next-dark.png: the task rule starts at the bullet list and leaves out the question 'Which is more likely, and why?'.",
+    "live/s4-return-dark.png: after 'OK, back to the task.' the open task stays dimmed at the foot and is not reactivated; the same question appears twice. The parenthetical paragraph '(Bag weights have…)' hangs about 7 px left of the column edge.",
+    "window/s5-week-dark.png promises 'Next: With t* = 2.064 … margin of error'; Return gives the already-marked standard-error question (window/s5-week-next-dark.png). live/s5-week promises the factory question, and live/s5-week-next poses 'Quick check 1' instead.",
+    "Window turn: after ⌘/ → 1 (a hint), the earlier 'Not quite…' block kept its active ink rule alongside the new task block, and 'Can I have a hint?' was drawn in a grey-ruled answer block, as if it were an attempt.",
+    "shots/new-course-dark.png: the course kicker reads 'Statistics' over the Biochemistry item 'Repair: reading Vmax and Km'.",
+    "shots/plan-dark.png / plan-light.png: 'What the y-intercept gives' is shown as current (●) after it was marked right and the lesson moved to the slope. In the window's plan layer (my turn), the current block 'Sampling distributions' has the same open ○ as every other block.",
+    "shots/commands-dark.png / commands-light.png: the last row, 'Open the plan file', is cut off by the footer, with no fade.",
+    "shots/setup-no-claude-light.png: the headline breaks at about 620 px over a body about 830 px wide and repeats the body's first sentence. shots/upgrade-light.png also repeats its headline as the body's first sentence.",
+    "shots/s3-after-dark.png vs shots/s3-after-light.png: the same state is captured at different scroll positions (the 'The plan changed' block is at y≈300 in dark and y≈390 in light)."
+  ],
+  "window_turn": "I took the lock and found a lesson already open in light, from earlier judges. ⌘, opened settings. Arrow keys moved me to Iowan Old Style, 19 px and Dark, and the surface redrew live with a wider column. I put them back with the keyboard. ⌘P showed the plan layer: the exam date, the blocks in their new order, the steps. The current block was not distinguished, though, with the same ○ as every other block. ⌘K, then typing 'hint', filtered to 'Help with the task ⌘/' and 'Say to the tutor: “hint”'. Clicking the answer line and sending 'b = 5' gave 'Not quite…' and no mark line under the retry. ⌘/ and then 1 asked for a hint. The hint request was drawn as a grey-ruled answer block, and the previous task block kept its active ink rule next to the new one. Typing 'change the plan, the midterm moved again' in ⌘P's own line produced the tutor's reply and an inline 'The plan changed' diff (Sun 29 Nov → Sun 6 Dec, Confidence intervals now before Hypothesis tests). The open task parked, dimmed, at the foot. Typing latency measured median 17 ms, p95 19 ms. I released the lock after about 2.5 minutes."
+}

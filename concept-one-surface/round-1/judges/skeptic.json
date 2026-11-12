@@ -1,0 +1,60 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "On structure, most of it is new. (1) The first screen: the old one was the Library, with a Next card, every course, level bars, '5 questions due today' and two buttons (baseline library.jpg). The new one is three lines and a caret: the course, the next thing, where you stopped, and Return (shots/s1-cold-dark). (2) Moving around: the old design had pages with back links (Library > Course > Lesson > Proofs > Summary). The new one has no pages. Courses, plan, material, past work and settings are each a layer called up by a key over the one surface (shots/courses-dark, plan-dark, material-dark, work-dark, settings-dark), and stopping a lesson drops you back on the three-line start, with no summary screen. (3) What is shown: levels, proof dots, due counts, study days and the '4 days running' streak (baseline summary.jpg, progress.jpg) are gone from every surface. Progress is a plain list of dated marks in the record's words under Cmd-Y (shots/work-dark). (4) Answering: the old single 'Your answer' box, the Hint / I don't know / I'm lost buttons and the 'Step 3 of 5' strip (baseline session.jpg) are replaced by a line to write on inside the task plus a separate, always-present talk line that code sends as talk. This is a real structural answer to the brief's 'fix it properly, not with a label'. A plan change gets its own card, read from the plan file, under the tutor's reply (window/s3-after-dark). What carried over: (a) the lesson pane, where the learner spends most of the time, is the old session with its chrome removed. It is still serif tutor prose, a task marked by a left rule, the learner's answer quoted with a small mark line under it (compare baseline session-marked.jpg with shots/s2-answer-dark). (b) The resume line 'You stopped at step 3, what the y-intercept gives' is lifted from the old course card. (c) Cmd-K existed already and has been promoted to the whole navigation. (d) The help trio survives under Cmd-/. (e) The due 'quick checks' still exist; they have only moved into the tutor's mouth (live/s5-week-next-dark opens on 'Quick check 1'; shots/commands-dark offers 'Start without the quick checks'). So this is a new concept, not a repaint, but the lesson itself is the least changed part."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/settings-light.png", "shots/reopen-dark.png", "shots/commands-dark.png", "window/s1-cold-dark.png"],
+      "blocks_next_point": "It bends, but not all the way. The reading face is one of five presets (no installed font of your own). There is no row for keys, so bindings cannot be changed (shots/settings-dark). The key-hint lines ('↩ carry on ⌘K everything else', '⌘/ help', '⌘P the whole plan') are permanent app voice on every surface and cannot be turned off."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "At rest it is nearly empty. Mid-lesson, though, the foot of the surface collects four quiet devices at once: the 'The plan changed' card, the dimmed parked task, the faint dashed answer line with '⌘/ help', and the '› or say something else' line (shots/s3-after-dark). Each has its own rule or tint."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png", "live/s5-week-next-dark.png", "shots/work-dark.png"],
+      "blocks_next_point": "The start screen's promise is not what Return gives you. live/s5-week-dark says 'Next: The factory wants the averages to vary by only 1 g…', but Return opens on 'Quick check 1: Commute times…' (live/s5-week-next-dark). For someone avoiding starting, a surprise check after a week away is the owed work coming in by the back door."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/s2-answer-dark.png", "window/s3-after-dark.png", "window/plan-after.json", "window/s4-return-dark.png"],
+      "blocks_next_point": "With the real Claude Code, the window has to guess where the task is. It puts the task block on the wrong lines (live/s2-answer-dark rules only the empty answer line; live/s5-week-next-dark rules the bullets but not the question). After 'OK, back to the task' the restated task stays dimmed and parked, with the caret on the talk line (live/s4-return-dark), so the next answer would go in as unmarked talk. Talk itself stayed unmarked: one attempt in live/attempts.json, from the answer only. The screen also stayed truthful when the tutor asked for the new date instead of changing the plan: no false 'plan changed' card. But the plan card has only been seen working with the stand-in tutor (window/s3-after-dark)."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s4-offplan-dark.png", "shots/narrow-lesson-dark.png", "shots/settings-light.png", "live/s4-return-dark.png", "window/s2-answer-dark.png"],
+      "blocks_next_point": "The left-rule system is not consistent. There are four rule treatments to decode: ink for the active task, grey for an answered task, grey for an answer, ink for the plan card (shots/s2-answer-dark). On the real engine the rule lands on the wrong lines (live/s2-answer-dark). A paragraph that starts with '(' sits about 7 px left of the text column (live/s4-return-dark). The learner's words are in widely tracked 15 px mono and read as terminal input louder than the tutor's serif (shots/s4-offplan-dark)."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s3-after-dark.png", "shots/s4-return-dark.png", "shots/help-dark.png", "live/s4-return-dark.png", "live/s5-week-next-dark.png", "window/s2-answer-dark.png"],
+      "blocks_next_point": "In live/s4-return-dark the task appears twice: once restated in prose and once as the dimmed parked block. The caret is on 'or say something else', and nothing tells the learner which line will be marked. The tutor-led opening also contradicts the 'Next:' line it replaced (live/s5-week vs s5-week-next). The answer line itself has no placeholder, only a caret and '⌘/ help' (shots/s2-start-dark)."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 588–670 ms with the stand-in (window/perf.json), 615–952 ms live, and 795 ms on my turn. That is well under Electron's 1–2 s but not native's under 0.5 s. Keystroke latency is 17 ms median and 18–19 ms p95, just over one frame."
+    }
+  },
+  "still_dislike": [
+    "The due-check mechanic from the old design is intact, only hidden. The start screen promises one next thing, and Return opens on a 'Quick check 1' instead (live/s5-week-dark, then live/s5-week-next-dark). Either the start line should name what the tutor will actually pose, or checks should come after the chosen thing, not before it.",
+    "The concept's best idea, 'the place is the label', depends on the window knowing where the task is, and with the real Claude Code it guesses. The task block lands on the wrong lines (live/s2-answer-dark, live/s5-week-next-dark), and after 'back to the task' the task stays parked with the caret on the talk line (live/s4-return-dark). The real engine should report the open task, as the Magnesium engine now does (open_task).",
+    "The lesson pane is the old session with its chrome removed (left-ruled task, quoted answer, small mark line beneath). The learner's own words are now in tracked mono behind a '›' prompt, which swaps the old chalkboard costume for a terminal one (shots/s4-offplan-dark)."
+  ],
+  "bugs": [
+    "shots/new-course-dark.png: the Statistics course's start screen shows 'Repair: reading V_max and K_m / the y-intercept and the slope', a Biochemistry item.",
+    "shots/permission-dark.png: the learner's line reads 'PERMISSION' (the demo's trigger word leaking into the transcript), with an empty streaming cursor block left between it and the permission card.",
+    "live/s2-answer-dark.png: the task's ink rule covers only the empty answer line; the question 'The factory wants… How many bags…' sits outside the task block.",
+    "live/s5-week-next-dark.png: the task rule covers the two bullet options but not the question 'Which is more likely, and why?'.",
+    "live/s4-return-dark.png: the paragraph '(Bag weights have a standard deviation of 10 g, as before.)' is outdented about 7 px left of the text column.",
+    "live/s5-week-dark.png vs live/s5-week-next-dark.png: the start screen says Next is the factory question, but Return opens on an unrelated 'Quick check 1'.",
+    "window/s2-answer-dark.png: the tutor's feedback and the next task are fused into one ruled block ('Right: … Next step. With t* = 2.064 …') with no 'Task.' label. In the demo (shots/s2-answer-dark) explanation and task are separate, so the demo is cleaner than the real window.",
+    "shots/upgrade-dark.png: the heading and the first sentence say the same thing ('An earlier Magnesium set this folder up' / 'An earlier version of Magnesium set this folder up')."
+  ],
+  "window_turn": "I took the lock (waited 71 s) and found the window in light scheme, mid-lesson from an earlier judge. Cmd-P opened the plan layer: the exam read 'Sunday 29 November, moved from Sun 22 Nov', with Hypothesis tests 'moved up' and Confidence intervals 'moved down'. There are no dates on the items and nothing late, so the plan followed the change and shows nothing as behind. Cmd-Y ('Your work') showed one line: 'standard error of a mean — Thu 12 Nov, not right yet'. No level, dots or streak anywhere. Cmd-K listed Help, The plan, Courses, Material and papers, Your work, Settings, Stop here for now, a 'Work on …' row per plan item, and Open the plan file. I typed the retry 'b = -5' in the answer line. The stand-in replied 'Not quite…' and no mark appeared. Per the concept that is correct, because the record only marks first tries, but nothing on screen says why this answer got no mark. The quoted task above my answer was cut to its last sentence. 'Stop here for now' returned straight to the three-line start ('You stopped at: What is the standard error of the mean?', ↩ carry on). There was no end-of-lesson summary, which is the clearest break from the old design. From that start screen I typed an off-plan question on the talk line. The lesson reopened with my question and the tutor's 'nothing here is marked' reply, and the open task sat dimmed at the foot. Typing latency on my turn: median 17 ms, p95 19 ms; startup 795 ms. I released the lock after about 2 minutes. The round grey glyph beside the caret in the window/ and live/ photos is the macOS input-source indicator, not the app, and I did not count it."
+}

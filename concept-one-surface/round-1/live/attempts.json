@@ -1,0 +1,29 @@
+{
+  "before": {
+    "attempts": []
+  },
+  "after": {
+    "attempts": [
+      {
+        "answered_at": "2026-11-05 13:34",
+        "attempt_id": "a-4da6bda37e545108f3d0323fd8b2b3a5",
+        "cold": true,
+        "confidence": null,
+        "help": "none",
+        "kind": "sampling distribution of the mean",
+        "label": "sample means vary less than individual values",
+        "mark": "partly",
+        "marks": null,
+        "no_start": false,
+        "observation_id": "o-24f9b2869b85a26f36f341071a2dd80a",
+        "out_of": null,
+        "paper": null,
+        "paper_question": null,
+        "question": "A machine fills bags of rice: mean 500 g, standard deviation 10 g. A: pick one bag and write down its weight, many times. B: pick 25 bags and write down their average weight, many times. Which list of numbers, A or B, is more spread out, and why?",
+        "response_event_id": "e-8c895e2287130d2aa04c8a1386cf8613",
+        "seconds": null,
+        "session_id": "s-8a93ff93c843a5dcec6fbc7328658ade"
+      }
+    ]
+  }
+}

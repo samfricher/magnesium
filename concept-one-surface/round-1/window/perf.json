@@ -1,0 +1,13 @@
+{
+  "startup_ms": {
+    "first": 670,
+    "main": 588,
+    "week": 607
+  },
+  "input": {
+    "samples": 60,
+    "median_ms": 17,
+    "p95_ms": 18,
+    "max_ms": 19
+  }
+}

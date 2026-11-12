@@ -1,0 +1,54 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s2-answer-dark.png", "shots/settings-dark.png", "window/s2-start-dark.png"],
+      "blocks_next_point": "Every open exercise carries the app's own row of five buttons plus a key hint ('Hint  I'm lost  I don't know  Photo  Symbols ... Esc: write on the page'), and a new course ends with the app's sentence 'Your earlier days will be here.' (window/s2-start-dark.png). That is the app talking on my page, not my material."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "shots/s3-before-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "The cold page is nearly empty: a date, one line, a cursor. The lesson is not. The open question is printed again after every exchange, so the same question is on screen two or three times at once (shots/s3-before-dark.png shows 'The slope of the same line is 0.5 s. What is K_m?' twice; on my turn 'A sample of 25 students...' was on screen three times), and there are two input lines under it."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["window/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "shots/s2-answer-dark.png"],
+      "blocks_next_point": "On the first open ever (shots/s1-cold-first-dark.png) I have to decide something before anything happens: two folder links and a paragraph about Claude Code, signed in, and paid with my plan. The 'Return' key cap sits beside a heading that names no single action."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "Where I type decides whether something counts as an answer, and the cursor starts in the answer line. On my turn I typed 'by the way...' and 'change the plan' wherever the cursor was. Both were sent as answers and filed inside the exercise under the question, with a 'no mark' label. The stand-in didn't mark them, but with a real tutor that is the box that gets marked. In live/ the scripted lines went to the talk line, and everything held: the tutor asked for the new date, the agenda correctly stayed the same, the off-plan question was not marked (one attempt in live/attempts.json), and the task came back."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["live/s2-answer-dark.png", "live/s4-return-dark.png", "shots/course-dark.png", "shots/s4-return-dark.png", "live/s3-after-dark.png"],
+      "blocks_next_point": "The tutor's Markdown leaks onto the page: a lone '**' on its own line and 'does.**' at the end of the question in live/s2-answer-dark.png and live/s4-return-dark.png. Raw '$V_{max}$' shows in the course sheet (shots/course-dark.png). The re-posed task drops to a smaller size and loses its maths italics (live/s3-after-dark.png)."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s4-return-dark.png", "shots/s3-after-dark.png", "window/s3-after-dark.png", "shots/stop-dark.png"],
+      "blocks_next_point": "'Back to the task' in shots/s4-return-dark.png says 'You were on step 3' but brings back the V_max question I already got right (shots/s2-answer-dark.png), not the open K_m one, so I can't tell where I am. After I ended the sitting on my turn, the 'not right / with a hint' mark moved onto my 'Can I have a hint?' line."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup is 628 to 700 ms in window/perf.json, and 1029 ms on the week-away open in live/perf.json, which is over half a second. Keystroke median is 17 ms and p95 19 ms, just over one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "The open question is printed again after every exchange (hint, side question, plan change). On my turn the same question was on screen three times and I lost my place. The task should stay in one spot, not be copied down the page.",
+    "Whether a message is an answer or talk depends on which line the cursor is in, and the cursor starts in the answer line. My side question and 'change the plan' went into the exercise as if they were answers. I only found the second line ('Or write on the page') afterwards.",
+    "After I ended the sitting (⌘E), the 'not right / with a hint' mark jumped from my answer 'b = 5' onto my 'Can I have a hint?' line, so it looks like asking for help was marked wrong."
+  ],
+  "bugs": [
+    "After ⌘E ends the sitting, the page is redrawn and the record's mark 'not right / with a hint' moves from the answer 'b = 5' to the 'Can I have a hint?' exchange. The two 'no mark' labels on my talk lines disappear (my turn: <scratch>/j10.png; before it was beside 'b = 5' in j6.png in the same folder).",
+    "Stray Markdown from the tutor: '**' alone on a line and 'does.**' trailing the question (live/s2-answer-dark.png, live/s4-return-dark.png).",
+    "Raw LaTeX in the course sheet: 'Not answered yet: reading $V_{max}$ from the y-intercept.' (shots/course-dark.png).",
+    "Demo returns to the wrong task: 'Back to it. You were on step 3.' re-opens the already-answered V_max question instead of the open K_m one. Only this state shows a 'Task' label and a split left rule (shots/s4-return-dark.png, shots/s4-return-light.png).",
+    "The re-posed task in the exercise box is set smaller than the thread and loses its maths ('which is n' instead of italic n) (live/s3-after-dark.png). The pre-filled stop line flattens K_m to 'K m' (shots/stop-dark.png).",
+    "The ⌘E 'one line for next time' field has a heavy rounded green focus box, unlike every other field on the page, which are underlined. It is pre-filled with the whole question text, which runs off the left edge (my turn: j7.png in the scratchpad folder above)."
+  ],
+  "window_turn": "Took the lock at 14:09 and released it about 4 minutes later. The cold window showed only 'Thursday 12 November', 'Start on Midterm 2 / Intro Statistics' with a Return cap, an empty line and 'Your other courses: ⌘O'. Nothing about what I owe. I pressed Return on the empty line and was in a lesson at once: the plan was in the right margin and the cursor was in the exercise. I clicked Hint and got a hint, with the question printed again below it. Then I typed 'by the way, what is a p-value actually?' where the cursor was (the exercise line, not the talk line). The tutor answered off-plan, the gutter said 'no mark', and nothing looked like I was behind. I typed 'ugh I skipped like three days, can you change the plan' (again in the exercise line). The agenda changed in place: Sun 29 Nov, 'Moved from Sun 22 Nov', 'moved up' and 'moved down', and a timed green 'The plan changed.' line on the page. 'b = 5' got 'not right / with a hint' in grey in the margin and a gentle 'Try it once more', which didn't feel like a punishment. A second answer got no mark. ⌘E asked 'Where did you stop? One line for next time.' with the line already filled in. Return ended the sitting, and the page offered 'Pick up where you stopped today' with Return again. Scrolling up after ending, the 'not right' mark had moved onto my hint request and the 'no mark' labels were gone. Typing latency measured 17 ms median, 19 ms p95. Startup was 827 ms."
+}

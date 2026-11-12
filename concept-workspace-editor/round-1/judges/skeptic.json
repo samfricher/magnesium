@@ -1,0 +1,60 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The structure is different at every level I compared. First screen: the old design opened on a Library of course cards with levels, proof bars and amber due counts (baseline-round9/library.jpg). This one has no home screen. It restores the last document in the study folder (shots/s1-cold-dark), or shows a one-question 'New lesson' page when there is none (window/s1-cold-dark). Moving around: the old design was a page hierarchy, Library > Course > Lesson > Proofs > Summary, with back links (course.jpg, progress.jpg, summary.jpg). This one is an editor over the folder's files: tabs, two panes (⌘\\), a file sidebar (⌘B), ⌘P quick open and a folder switcher (shots/sidebar-dark, shots/open-dark, shots/folders-dark). Lesson: the old design was a chat column with a docked 'Your answer' composer and a 'Step 3 of 5' header (session.jpg). Here a lesson is one dated page that keeps growing across sittings. Each task is a block with its own answer field inside it, and talk goes on the page outside the task (Esc / Tab), so what decides marking is where you type, not a label (shots/s2-answer-dark, shots/s4-offplan-dark). Plan: the old design had a step dropdown (session-plan.jpg). Here the plan is plan.md itself, shown as a document, editable with ⌘E, and diffed in a side pane when the tutor changes it (shots/s3-after-dark, shots/plan-edit-dark). Progress: levels, proof dots, due counts, '4 days running' and the 'One proof earned' summary are gone. What is left is a Record log of marks by day (shots/record-dark). Carried over: the ⌘K menu, the Hint / I'm lost / I don't know row, the setup checklist (shots/s1-cold-first-dark has much the same layout as setup.jpg), a serif for the tutor's prose and a Continue button beside a 'stopped at' line. Those are details, not the frame. It is close to an Obsidian transplant, but that is what the brief asked for, and it is not the old design repainted."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/sidebar-dark.png", "shots/commands-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "Under every open task the app adds its own furniture: Hint / I'm lost / I don't know on one side and sure / unsure / guess on the other (shots/s2-answer-dark, live/s2-start-dark). That is five small prompts from the app sitting under the learner's work. The first-open page (shots/s1-cold-first-dark) also reads as the app talking about itself: a version, an install path and a build hash."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "window/s3-after-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "After one plan change, the whole plan file opens as a half-window pane and stays open: Facts, Proficiency, Hours available, Blocks. Its change bars and the struck-through old date are still lit a week later (window/s5-week-dark), so a calm single page becomes two dense columns that never settle."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "Coming back after a week, Return lands on 'Quick check 1.' before the step the learner left. Their half-written 'V_max = 1/0.25 =' (shots/s5-week-dark) is gone on shots/s5-week-next-dark. The first thing after starting is a test that implies more to come, not their own unfinished line."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s2-answer-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "With the real tutor, the pinned task strip at the top of live/s4-offplan-dark is empty: a blue bar and a 'Tab' keycap, no task text, and the reply scrolls under it. The one cue that tells the learner where their task went fails during exactly the tangent it exists for. (The split itself holds: live attempts stayed empty, and in my turn a talk line 'b = -5' was not marked even though the tutor replied 'Right'.)"
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["window/s3-after-dark.png", "shots/s3-after-dark.png", "shots/s2-start-dark.png", "shots/s1-cold-light.png", "shots/narrow-lesson-dark.png"],
+      "blocks_next_point": "The plan pane, the centrepiece of scenario 3, is the plan.md tables rendered at half width. ISO dates break across lines ('2026-' / '11-12'), the last row is cut off mid-word ('Fri 13 N' on shots/s3-after-dark), 'Length 90' has no unit, and internal fields like 'Proficiency … read as mixed' show to the learner. The lesson column in both schemes is otherwise disciplined."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s4-offplan-dark.png", "shots/s4-return-dark.png", "window/s3-after-dark.png", "live/s2-answer-dark.png"],
+      "blocks_next_point": "An answer the record did not mark looks the same as one still waiting for a mark: no note in the gutter (live/s2-answer-dark). Meanwhile the tutor's prose says 'That computation is right', so the learner cannot tell from the screen whether it counted. My talk line 'b = -5', answered 'Right: …', looked the same."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup from process start to content is 598–702 ms with the stand-in, 600–881 ms live and 756 ms in my turn. That is above the half-second native bar, though well under Obsidian. Keystroke-to-paint is median 17 ms, p95 19 ms, max 20 ms, just over one 60 Hz frame."
+    }
+  },
+  "still_dislike": [
+    "With real Claude output the pinned task strip renders empty (live/s4-offplan-dark: blue bar plus Tab keycap, no text), and the reply slides under it. 'Your task waits at the top' is the promise that makes tangents safe, and it is broken in the live run.",
+    "The plan pane is the raw plan.md: Facts table, Proficiency, Hours available, ISO dates wrapping, rows cut off. It takes half the window and keeps its change bars a week later (window/s3-after-dark, window/s5-week-dark). A reorder that leaves the Day column running 11-12, 11-16, 11-14 is shown with no comment.",
+    "An answer or talk line that the record did not mark has no visible state (live/s2-answer-dark, and my turn's 'b = -5' answered 'Right:'). The screen tells the truth by leaving something out, which a learner reads as 'maybe it counted'."
+  ],
+  "bugs": [
+    "live/s4-offplan-dark: the pinned task strip is empty (the task text is missing, only the ink bar and a 'Tab' keycap show) and the tutor's text scrolls beneath it, clipped by its rule.",
+    "shots/s5-week-dark to shots/s5-week-next-dark: the draft 'V_max = 1/0.25 =' under the open task disappears after Continue. The task is shown closed and the draft is not carried into the new field.",
+    "shots/record-dark: the Skills line for 'slope and K_m' says 'Answered right alone, from a blank page, on 1 day', but the log above lists that skill only as 'Right, with a hint' and 'Not right yet'. The record page states something the listed marks do not support (demo data, but it breaks the record-only rule on screen). All three skills carry the same sentence.",
+    "shots/s2-start-dark: the same task ('The line meets the y-axis at 0.25 s/µM…') appears twice, closed above the Thursday rule and open below it.",
+    "shots/s3-after-dark: after the reorder, 'Paper B … Fri 13 Nov' sits below 'Cold redos … Sat 14 Nov'. window/s3-after-dark: 'Hypothesis tests 2026-11-16' sits above 'Confidence intervals 2026-11-14'. The diff shows a swap with dates out of order (tutor or fixture content, but nothing on screen flags it).",
+    "shots/paper-dark, shots/paper-running-dark: the 'Paper B' tab shows a PDF headed 'Week 4 slides / Michaelis-Menten kinetics' (demo fixture).",
+    "Real window, my turn: with the sidebar plus two panes at the default size, the Record pane's rows wrap to three lines ('standard / error of a / mean') and the plan's Purpose column wraps word by word.",
+    "Evidence artefact, not the app: window/s4-offplan, s4-return and s5-* are 2354x1450 captures with a white band down the left, so the window is offset in the frame."
+  ],
+  "window_turn": "About 2 minutes with the lock. The window was in light scheme, mid-lesson, with the Midterm 2 plan open in the right pane from earlier judges. (1) I pressed Esc out of the open task and sent 'b = -5' as talk. The stand-in replied 'Right: the sign goes with the number…', yet no mark appeared beside my line, and the Record tab showed no new row (latest 14:18). Talk really is unmarked, whatever it says. (2) The Record tab is a plain log by day ('Not right yet', 'Right, with a hint') plus a per-skill sentence. No level, count or streak anywhere. (3) ⌘K lists New lesson, Hint ⌘⇧H, I'm lost ⌘⇧L, I don't know ⌘⇧D, Open the plan, Edit the plan as text ⌘E, Open the record, ⌘P, ⌘B, One pane ⌘\\. I typed 'progress' into it and found no hidden progress or library screen. (4) ⌘B opened the folder sidebar (Lessons / Plan / Material / Yours). With two panes as well, the columns get cramped. (5) Back in the lesson, ⌘⇧H from the answer field added 'You asked for a hint.' and the hint, as page text. The open answer field stays above the newer text. (6) Settings > Atkinson Hyperlegible restyled both panes at once; I set it back to Charter. (7) perf in my turn: median 17 ms, p95 19 ms, startup 756 ms. Lock released."
+}

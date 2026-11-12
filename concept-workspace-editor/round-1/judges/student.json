@@ -1,0 +1,59 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/settings-dark.png", "window/s1-cold-first-dark.png"],
+      "blocks_next_point": "Opening it shows my own lesson, with my half-written answer still there, and nothing that sounds like the app. The exception is first-ever open (window/s1-cold-first-dark). It is the app's own page: a 'Magnesium' heading, a temp-folder install path, and two different version numbers ('0.2.0' in the checklist, 'Magnesium 0.1.0' below). The gutter words ('Right, from a blank page') are also the app's vocabulary, not mine."
+    },
+    "calm": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "window/s1-cold-dark.png", "shots/s2-answer-dark.png"],
+      "blocks_next_point": "Cold open is my page plus one button, which is good. But every open task carries a permanent row of six small controls: Hint, I'm lost, I don't know, sure, unsure, guess (shots/s2-answer-dark, window/s2-start-dark). The plan pane adds a dense Item/Value table the moment it opens (shots/s3-after-dark)."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "window/s1-cold-dark.png", "live/s1-cold-dark.png", "shots/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "One Return starts the lesson every time: 'Continue' on a stopped lesson, or the plan's next item already chosen on a new one. Nothing counts what I owe. Two things block the next point. After a week, Continue leaves the caret in the talk line ('Say anything. Tab goes back to the task.') instead of in the new task (window/s5-week-next-dark), so I have to find the box. And the demo's return opens with a numbered 'Quick check 1.' (shots/s5-week-next-dark), which hints at a queue."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "Off-plan talk is never marked (live/attempts.json is empty before and after). When the real tutor asked for the new exam date, the screen honestly showed no plan change. 'Back to the task' returns me to the task with the caret in it. But in the real lesson, the pinned task at the top while I was off-plan was empty: just a blue edge and a 'Tab' key, no question (live/s4-offplan-dark). And when the plan does change, the pane opens on the file's metadata, so the reorder I asked for sits below the fold (window/s3-after-dark)."
+    },
+    "craft": {
+      "score": 7,
+      "evidence": ["shots/narrow-lesson-dark.png", "shots/s2-start-dark.png", "live/s3-before-dark.png", "window/s3-after-dark.png", "shots/s3-after-light.png"],
+      "blocks_next_point": "Text scrolls under the tab row with no fade, so the top line is sliced in half on most screens (shots/narrow-lesson-dark, shots/s2-start-dark's fraction, live/s3-before-dark). In the narrow plan pane, dates wrap as '2026-' / '11-12' (window/s3-after-dark)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s4-offplan-dark.png", "shots/s4-return-dark.png", "shots/s2-start-dark.png", "live/s2-answer-dark.png"],
+      "blocks_next_point": "The hints tell me what to do ('Continue Return', 'Esc to say something else', 'Tab goes back to the task'). But shots/s2-start-dark shows the same task twice: the old unanswered block, then a new identical one. My draft shows as raw LaTeX source ('$V_{max} = 1/0.25 =$') above its preview. At a glance I can't tell which one I'm answering."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup is 598 to 702 ms with the stand-in, up to 881 ms live, and 756 ms on my turn: quicker than Obsidian but not under Sublime's half second. Keystroke median is 17 ms and p95 19 ms, just over one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "Changing the plan opens the whole plan file beside me: Item/Value, Exclusions, Proficiency ('read as mixed'), Hours available. The new order I asked for is below the fold (shots/s3-after-dark, window/s3-after-dark). Show me the reordered list first, not the file's metadata. The change bars are also still lit a week later (window/s5-week-dark).",
+    "Six little choices under every task (Hint, I'm lost, I don't know, sure, unsure, guess). Just as I'm trying to start writing, that's six decisions staring at me. Show only the writing place, and the rest on a key.",
+    "Answering and talking are two modes. The caret sits in the answer box by default, so I have to remember Esc before I can say anything else. In the real off-plan moment the pinned task strip was blank (live/s4-offplan-dark), so I couldn't see what Tab would take me back to."
+  ],
+  "bugs": [
+    "live/s4-offplan-dark.png and live/s4-offplan-light.png: the pinned 'open task' strip at the top is empty, just the ink edge and a 'Tab' key with no task text. The demo version shows the text (shots/s4-offplan-dark.png).",
+    "window/s1-cold-first-dark.png: the welcome page shows two versions ('Magnesium 0.2.0, at /var/folders/.../magnesium' and the footer 'Magnesium 0.1.0'). It also prints a long temp-folder path.",
+    "Text scrolls under the title/tab row with no mask, leaving half-cut lines at the top: shots/narrow-lesson-dark.png, shots/s2-start-dark.png (the fraction), live/s3-before-dark.png, window/s3-after-dark.png.",
+    "shots/s2-start-dark.png: the restored draft shows as raw LaTeX source '$V_{max} = 1/0.25 =$' above its rendered preview. The old unanswered task block is repeated verbatim right above the new identical task.",
+    "window/s5-week-dark.png: a week later, the plan pane still shows last week's change bars and the struck-through old date, as if the plan had just changed.",
+    "window/s5-week-next-dark.png: after Continue, the caret is in the talk line, not the new task's answer box. In window/s2-start-dark.png it does land in the answer box.",
+    "shots/record-dark.png: under Skills, 'slope and Km' reads 'Answered right alone, from a blank page, on 1 day'. The log above it shows only 'Not right yet' and 'Right, with a hint' for that skill, so the record page contradicts itself.",
+    "shots/s3-after-dark.png: after the reorder, Paper B (Fri 13 Nov) is listed after Cold redos (Sat 14 Nov), so the days weren't re-spaced. window/s3-after-dark.png also shows Hypothesis tests (2026-11-16) before Confidence intervals (2026-11-14), though there that comes from the stand-in tutor's edit.",
+    "shots/paper-dark.png and shots/paper-running-dark.png: 'Paper B.pdf' shows a page titled 'Week 4 slides'.",
+    "On my window turn, after Hint the hint text appeared below the still-open answer box, so the order read task, answer box, hint. In shots/hint-dark.png the hint is inside the task block instead.",
+    "window/s4-offplan-dark.png, s4-return-dark.png, s5-week-dark.png, s5-week-next-dark.png: the window frame is smaller and shifted right, with an empty margin, compared with window/s3-after-dark.png. This may be the capture rather than the app."
+  ],
+  "window_turn": "About two minutes, keyboard and clicks as a student would. It opened on 'New lesson / What do you want to work on?' with 'Sampling distributions' preselected and a Return key next to it. Return put me straight into a task with the caret in the answer box. Clicking 'Hint' printed 'You asked for a hint.' plus the hint, but below the answer box. A wrong answer ('b = 5') got a quiet ✕ in the gutter and 'Not right yet, with a hint': no red, no score, which didn't sting. Esc, then 'by the way, is this even on the midterm?' got an unmarked reply, and the open task stayed visible above. Tab took me back into the task. I answered '2'. The tutor wrote 'Right', but no mark appeared and the record didn't add one, so the screen stayed truthful even though that confused me for a second. Esc, then 'ugh I am behind, can you change the plan' opened the plan in a right pane with the old date struck through and the new date and moved block marked with gold bars. The moved block was at the very bottom edge, under a table of facts I didn't need. ⌘K, typing 'record', then Return opened the Record in a tab: one line, '14:11 standard error of a mean, Not right yet, with a hint', and 'Not yet answered right alone; asked again Fri 13 Nov.' Neutral, not a scoreboard. The perf op measured median 17 ms, p95 19 ms, startup 756 ms. I released the lock afterwards."
+}
