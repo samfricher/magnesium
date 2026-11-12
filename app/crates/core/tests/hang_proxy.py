@@ -4,8 +4,10 @@
 While the file named by HANG_FLAG exists, the answer to the first
 learning_step that records an answer is held back for HANG_SECONDS. The
 request itself goes through at once, so the record commits and only its
-answer is late: an outcome the engine cannot know. The flag is removed, so
-the server that replaces this one answers at once.
+answer is late: an outcome the engine cannot know. The flag may hold a
+number: that many such answers are held back, one in each server, the
+replays of the same request included. When none is left the flag is
+removed, so the server that replaces this one answers at once.
 
 With DELAY_EACH set, every tool call's answer is held back that many
 seconds instead, as on a machine under load.
@@ -50,7 +52,13 @@ for line in sys.stdin:
         arguments = params.get("arguments") or {}
         if (value.get("method") == "tools/call" and params.get("name") == "learning_step"
                 and arguments.get("observations") and FLAG and os.path.exists(FLAG)):
-            os.remove(FLAG)
+            with open(FLAG, encoding="utf-8") as handle:
+                left = int(handle.read().strip() or "1") - 1
+            if left > 0:
+                with open(FLAG, "w", encoding="utf-8") as handle:
+                    handle.write(str(left))
+            else:
+                os.remove(FLAG)
             held.add(value.get("id"))
     except Exception:
         pass

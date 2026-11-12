@@ -1752,6 +1752,34 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
 }
 
 #[test]
+fn a_save_whose_outcome_stays_unknown_is_read_back_before_the_learner_is_told() {
+    let bench = Bench::new(None, &[]);
+    // The answer to the first save of an answer is held back, and so is
+    // the answer to its replay: the save went through, and the engine
+    // cannot know it from those two calls.
+    fs::write(bench.flags.join("hang"), "2").unwrap();
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    events.seen.clear();
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert!(manager.wait_saved(Duration::from_secs(40)));
+    assert!(!bench.flags.join("hang").exists(), "both hangs happened");
+    // One answer, and no notice that it was not marked.
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    let notices = all_notices(&mut events);
+    assert!(notices.is_empty(), "{notices:#?}");
+    // The next turn goes on as usual.
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(bench.attempts().len(), 2);
+    manager.shut_down();
+}
+
+#[test]
 fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();

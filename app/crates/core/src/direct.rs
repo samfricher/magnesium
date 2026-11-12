@@ -1642,9 +1642,16 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
 const NOT_MARKED: &str =
     "Your last answer was not marked: it could not be saved to your record. The lesson goes on.";
 
+/// The notice for an answer whose save the record could not confirm, even
+/// asked again.
+const NOT_KNOWN: &str = "Your record did not answer in time, so your last answer may not be marked. The lesson goes on.";
+
 /// The most time a turn's record may take after its reply, all calls
 /// together: the next message waits for it.
 const SAVE_BUDGET: Duration = Duration::from_secs(20);
+/// The time, beyond that budget, to ask the record whether a save whose
+/// outcome is unknown went through.
+const READ_BACK: Duration = Duration::from_secs(10);
 
 /// The hidden second request, for a reply whose record block was missing
 /// or could not be read. The learner sees nothing of it.
@@ -1851,7 +1858,9 @@ fn save(
         return;
     }
     // A call whose outcome is unknown is replayed as it was by the host
-    // client. A refusal is answered once, changed.
+    // client. A refusal is answered once, changed. `sent` is the request
+    // whose outcome `outcome` is.
+    let mut sent = request.clone();
     let mut outcome = shared
         .host
         .call_by("learning_step", request.clone(), deadline);
@@ -1931,8 +1940,19 @@ fn save(
                 }
             }
             retry["request_id"] = json!(format!("{request_id}-again"));
+            sent = retry.clone();
             outcome = shared.host.call_by("learning_step", retry, deadline);
         }
+    }
+    // Still unknown: the save may have gone through. Before the learner is
+    // told it did not, the runtime is asked with the same request again. It
+    // answers a request it has kept with its first result, and keeps one it
+    // has not, once: one answer is never two attempts.
+    if outcome.as_ref().is_err_and(|why| host_client::unknown(why)) {
+        shared.note("the save's outcome is unknown: asking the record");
+        outcome = shared
+            .host
+            .call_by("learning_step", sent, Instant::now() + READ_BACK);
     }
     match outcome {
         Ok(result) => {
@@ -2029,6 +2049,17 @@ fn save(
             // It committed: only the session's revision is not known. The
             // next write reads it again if it is refused for it.
             shared.note("the turn was already in the record");
+        }
+        // The record could not say, even asked again: the learner is told
+        // the answer may not be marked.
+        Err(why) if host_client::unknown(&why) => {
+            shared.note(&format!("the save's outcome is still unknown: {why}"));
+            if write.marked {
+                shared.emit(AgentEvent::Notice {
+                    kind: NoticeKind::Other,
+                    text: NOT_KNOWN.into(),
+                });
+            }
         }
         Err(why) => {
             shared.note(&format!("the record was not saved: {why}"));
@@ -2190,7 +2221,9 @@ impl Conversation for DirectConversation {
         // A reply already whole keeps its record before the lesson ends,
         // within the save's budget: the end screen reads the record next.
         if self.shared.phase.load(Ordering::SeqCst) == SAVING
-            && !self.shared.wait_idle(SAVE_BUDGET + Duration::from_secs(2))
+            && !self
+                .shared
+                .wait_idle(SAVE_BUDGET + READ_BACK + Duration::from_secs(2))
         {
             self.shared
                 .note("the lesson ended before its last record was kept");

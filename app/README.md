@@ -211,6 +211,8 @@ open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct
 
 **A new sitting** starts from what is due now: the quick checks and redos the last sitting listed and did not pose are dropped, and so is what it taught. The engine tells a sitting by the wall clock, as the runtime does, so a window left open while the Mac sleeps sees the new sitting.
 
+**A save whose outcome is unknown.** When the runtime does not answer a save, even replayed, the engine asks it once more with the same request, which the runtime answers with its first result if it kept it and keeps once if it did not. Only an answer it still cannot confirm gets a notice, which says the answer may not be marked.
+
 `crates/core/tests/direct.rs` drives it with a stand-in model and the real runtime. `crates/core/tests/live_direct.rs` runs it against the real Claude Code (ignored by default; it starts a model on your subscription).
 
 ## Where things are
