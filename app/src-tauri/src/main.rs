@@ -9,13 +9,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mg_core::activity::Activity;
-use mg_core::agent::{Account, AgentEvent, Answer, Decision, Payment};
+use mg_core::agent::{Account, AgentEvent, Answer, Decision, Intent, Payment};
 use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
 use mg_core::manager::{EngineChoice, Opened, Setup};
 use mg_core::material::{Added, Listed};
+use mg_core::plan::Plan;
 use mg_core::runtime::Mark;
 use mg_core::store::{Engine, PaperSitting};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
@@ -168,9 +169,11 @@ fn open_session(shell: State<'_, Shell>, resume: bool) -> Reply<Opened> {
     plain(shell.manager.open_session(resume))
 }
 
+/// Send the learner's words. `intent` says what they are: "talk" is never
+/// marked, "answer" is. With none, the tutor decides, as before.
 #[tauri::command(async)]
-fn send(shell: State<'_, Shell>, text: String) -> Reply<()> {
-    plain(shell.manager.send(&text))
+fn send(shell: State<'_, Shell>, text: String, intent: Option<Intent>) -> Reply<()> {
+    plain(shell.manager.send_with(&text, intent))
 }
 
 #[tauri::command(async)]
@@ -206,6 +209,13 @@ fn stop(shell: State<'_, Shell>, stopped_at: Option<String>) -> Reply<()> {
 #[tauri::command(async)]
 fn rail(shell: State<'_, Shell>) -> Reply<Rail> {
     plain(shell.manager.rail())
+}
+
+/// The open folder's study plan, read fresh from the runtime and the plan
+/// files.
+#[tauri::command(async)]
+fn plan(shell: State<'_, Shell>) -> Reply<Plan> {
+    plain(shell.manager.plan())
 }
 
 #[tauri::command(async)]
@@ -395,6 +405,7 @@ fn main() {
             answer,
             stop,
             rail,
+            plan,
             progress,
             set_block_minutes,
             attach,

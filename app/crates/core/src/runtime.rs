@@ -8,7 +8,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::paths;
@@ -48,7 +48,7 @@ pub fn attempts(folder: &Path) -> Option<Vec<Value>> {
 
 /// One answer the tutor marked, as the runtime's record has it. The window
 /// shows a mark only from a row like this, never from the tutor's words.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mark {
     /// The record's own id for the answer, which no other answer has.
     pub id: String,

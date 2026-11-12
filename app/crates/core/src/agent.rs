@@ -8,6 +8,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::plan::PlanPart;
+use crate::runtime::Mark;
+
 /// What the window shows. Tool calls, saves, token counts and model names are
 /// deliberately absent: the window shows the tutor's words and nothing else.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +67,25 @@ pub enum AgentEvent {
         expected: bool,
         detail: Option<String>,
     },
+    /// A turn changed the open folder's plan: its exam date, its list of
+    /// what to study, the goal, the goal's steps or the plan file's text.
+    /// Sent after the turn ends; `plan` reads the plan as it now stands.
+    PlanChanged { what: Vec<PlanPart> },
+    /// The runtime's record has a new marked answer for the last message.
+    /// The mark is the record's row, never the tutor's words.
+    Marked { mark: Mark },
+}
+
+/// What the learner's message is. The window says it; the tutor does not
+/// guess it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Intent {
+    /// Conversation: a question, a change to the plan, something off the
+    /// plan. It is never marked, and the open task stays open.
+    Talk,
+    /// An answer to the open task, marked as any answer is.
+    Answer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,6 +209,13 @@ pub trait Conversation: Send {
     /// Send the learner's words. The window sends plain words only, so a
     /// lesson started here can continue in a terminal.
     fn send(&mut self, text: &str) -> AgentResult<()>;
+    /// Send the learner's words, saying what they are. None leaves it to the
+    /// tutor, as `send` does. An engine that cannot hold the tutor to it
+    /// says so in the words it sends.
+    fn send_with(&mut self, text: &str, intent: Option<Intent>) -> AgentResult<()> {
+        let _ = intent;
+        self.send(text)
+    }
     /// Stop the reply being written.
     fn interrupt(&mut self) -> AgentResult<()>;
     fn decide(&mut self, id: &str, decision: Decision) -> AgentResult<()>;

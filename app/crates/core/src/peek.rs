@@ -16,7 +16,7 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 use rusqlite::{Connection, OpenFlags};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 fn open(path: &Path) -> Option<Connection> {
@@ -104,7 +104,7 @@ pub fn checks_due(root: &Path, today: NaiveDate) -> Option<u32> {
     )
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {
     pub step: String,
     /// "todo", "doing" or "done".
