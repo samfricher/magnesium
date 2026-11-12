@@ -265,7 +265,7 @@ export function Library(props: {
       </button>
       <button className="btn ghost" onClick={props.onNew}>
         <Icon name="plus" size={16} />
-        New course
+        New course…
       </button>
       <button className="btn ghost" disabled={props.finding} onClick={props.onFind} title="Looks through your home folder for courses that Magnesium was set up in from a terminal">
         <Icon name="search" size={16} />

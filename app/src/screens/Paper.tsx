@@ -41,9 +41,18 @@ export function Paper(props: {
     const over = leftSeconds < 0;
     return (
       <section className="screen paper running" data-screen="paper">
-        <TopBar center={<span className="bar-title">{sitting.name}</span>} right={<PaletteKey onClick={props.onPalette} />} />
-        <div className="center">
+        <TopBar
+          left={
+            <button className="crumb" onClick={props.onBack} title="The course page; the paper keeps running">
+              <Icon name="back" size={16} />
+              {displayName(home.name)}
+            </button>
+          }
+          right={<PaletteKey onClick={props.onPalette} />}
+        />
+        <div className="center top">
           <div className="paper-col">
+            <h1 className="h-title">{sitting.name}</h1>
             <p className="paper-clock" role="timer" aria-label="Time left">
               <span className={over ? "count over" : "count"} data-role="countdown">
                 {clockText(leftSeconds)}
@@ -136,7 +145,7 @@ export function Paper(props: {
         }
         right={<PaletteKey onClick={props.onPalette} />}
       />
-      <div className="center">
+      <div className="center top">
         <div className="paper-col">
           {home.papers.length === 0 ? (
             <>

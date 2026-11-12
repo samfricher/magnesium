@@ -257,9 +257,6 @@ export function ProofDot({ state }: { state: "on" | "off" | "new" }) {
 
 const TOP_LEVEL = 10;
 
-/** The smallest fill that can be seen, in pixels: any progress at all is at least this tall. */
-const SEEN = 3;
-
 /**
  * The tally's ten strokes: how much of each is filled, and how much of that
  * was earned today. Level N fills strokes 1 to N; the stroke after them is
@@ -304,9 +301,9 @@ export function Tally({ proofs, size = "md", gain = 0, still = false }: { proofs
           style={{
             ["--a" as string]: stroke.a,
             ["--g" as string]: stroke.g,
-            // Any progress at all is drawn at least SEEN pixels tall.
-            ["--ma" as string]: stroke.a > 0 ? `${SEEN}px` : "0px",
-            ["--mg" as string]: stroke.g > 0.001 ? `${SEEN}px` : "0px",
+            // Any progress at all is drawn at least as tall as the size's least (3px; for today's gain on Lesson done, 8px).
+            ["--ma-on" as string]: stroke.a > 0 ? 1 : 0,
+            ["--mg-on" as string]: stroke.g > 0.001 ? 1 : 0,
           }}
         />
       ))}
@@ -461,11 +458,11 @@ export function useReturnForPrimary(): void {
   }, []);
 }
 
-/** A due thing: an amber point and a few words. With a number, "5 questions due today, on 2 skills"; without, "due today". */
+/** A due thing: a small amber clock and a few words (a clock, not a dot, so it is never taken for a proof). With a number, "5 questions due today, on 2 skills"; without, "due today". */
 export function Due({ n, skills }: { n?: number; skills?: number | null }) {
   return (
     <span className="due">
-      <i />
+      <Icon name="clock" size={14} />
       {n === undefined ? "due today" : questionsDue(n, skills)}
     </span>
   );
@@ -523,7 +520,7 @@ export function ThisWeek({ activity }: { activity: Activity }) {
 export function WeekLine({ activity }: { activity: Activity }) {
   return (
     <p className="week-line">
-      <span className="h-label">This week</span>
+      <span className="h-label">Days you studied this week</span>
       <Week days={activity.days} today={activity.today} />
       <Run days={activity.run} />
     </p>

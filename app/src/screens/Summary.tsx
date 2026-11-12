@@ -42,11 +42,21 @@ function earnedHeadline(n: number): string {
   return `${NUMBER_WORDS[n] ?? n} ${n === 1 ? "proof" : "proofs"} earned`;
 }
 
-/** Where the course stands: "Level 5. 3 more proofs to reach level 6." Null when there is no level to show. */
-function levelSentence(proofs: Proofs | null): string | null {
+/**
+ * What the lesson did to the level, and what is left: "Level 5. 1 proof
+ * today. 3 more to reach level 6." The change comes before the remainder, so
+ * the sentence says both. Null when there is no level to show.
+ */
+function levelSentence(proofs: Proofs | null, gained: number): string | null {
   if (!proofs || !proofs.levelled || proofs.total === 0) return null;
-  const next = proofs.to_next > 0 ? ` ${proofs.to_next} more ${proofs.to_next === 1 ? "proof" : "proofs"} to reach level ${proofs.level + 1}.` : "";
-  return `Level ${proofs.level}.${next}`;
+  const change = gained > 0 ? ` ${plural(gained, "proof", "proofs")} today.` : "";
+  const next =
+    proofs.to_next > 0
+      ? gained > 0
+        ? ` ${proofs.to_next} more to reach level ${proofs.level + 1}.`
+        : ` ${plural(proofs.to_next, "more proof", "more proofs")} to reach level ${proofs.level + 1}.`
+      : "";
+  return `Level ${proofs.level}.${change}${next}`;
 }
 
 export type Sitting = {
@@ -90,10 +100,8 @@ export function Summary(props: {
   }, [sitting]);
   // The proofs earned in this lesson.
   const proofs = sitting.earned.reduce((sum, each) => sum + each.proofs, 0);
-  // The mark is a check only when something moved: a proof, or an answer marked.
-  const moved = proofs > 0 || (sitting.marked ?? 0) > 0;
   const unmarked = sitting.sent > 0 && sitting.marked === 0;
-  const level = levelSentence(props.proofs);
+  const level = levelSentence(props.proofs, proofs);
   // With nothing marked, say when the next chance comes. Otherwise today's counts say it.
   const comes = unmarked
     ? sitting.tomorrow > 0
@@ -103,24 +111,31 @@ export function Summary(props: {
         : null
     : null;
   const today = todaySentence(sitting.today, { proofs: proofs === 0, tomorrow: comes === null });
+  // Answers were marked, and not every one is a proof: say why, once.
+  const fewer = !unmarked && Math.max(sitting.marked ?? 0, sitting.today?.answered ?? 0) > proofs;
   const marked = !sitting.today && sitting.marked !== null && sitting.marked > 0 ? `${plural(sitting.marked, "answer", "answers")} marked.` : null;
   const steps = sitting.stepsTotal > 0 ? `${sitting.stepsDone} of ${sitting.stepsTotal} steps done.` : null;
   const tomorrow = sitting.today ? 0 : sitting.tomorrow;
   const nothing = !today && !marked && !steps && !sitting.stoppedAt && tomorrow === 0;
   return (
     <section className="screen summary" data-screen="summary">
-      <TopBar center={<span className="bar-title">{props.courseName}</span>} right={<PaletteKey onClick={props.onPalette} />} />
-      <div className="center">
+      <TopBar
+        left={
+          <button className="crumb" onClick={props.onDone} title="Back to the course (Return)">
+            <Icon name="back" size={16} />
+            {props.courseName}
+          </button>
+        }
+        right={<PaletteKey onClick={props.onPalette} />}
+      />
+      <div className="center top">
         <div className="summary-col">
-          <span className={moved ? "done-mark" : "done-mark quiet"} aria-hidden="true">
-            <Icon name={moved ? "check" : "dash"} size={22} />
-          </span>
           <h1 className="h-title" data-role={unmarked ? "unmarked" : undefined}>
-            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "No proof this time" : "Lesson done"}
+            {proofs > 0 ? earnedHeadline(proofs) : unmarked ? "Lesson saved" : "Lesson done"}
           </h1>
           {unmarked && (
             <p className="summary-why" data-role="why">
-              The tutor didn&apos;t mark an answer in this lesson, so no proof yet. A proof is an answer the tutor marks right, given without help, on its own day.
+              The tutor didn&apos;t mark an answer in this lesson, so there is no proof yet. A proof is an answer the tutor marks right, given without help, on its own day.
               {comes ? ` ${comes}` : ""}
             </p>
           )}
@@ -137,6 +152,8 @@ export function Summary(props: {
             </div>
           )}
 
+          {fewer && <p className="summary-why quiet">A proof needs a right answer without help, on a new day for that skill.</p>}
+
           {level && props.proofs && (
             <p className="level-line" data-role="level">
               <Level
@@ -147,7 +164,7 @@ export function Summary(props: {
                 still={!first}
                 title={`${props.proofs.earned} of ${props.proofs.total} proofs`}
               />
-              <span>{level}</span>
+              <span className="num">{level}</span>
             </p>
           )}
 

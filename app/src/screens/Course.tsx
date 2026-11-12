@@ -198,16 +198,15 @@ export function Course(props: {
   const today = todaySentence(progress?.today ?? null);
   const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
   const buckets = progress && !progress.message ? bucketsSentence(skillBuckets(progress)) : null;
-  // Every skill in play, in the order the Proofs page lists them: due today, in progress, then proven.
+  // Up to five skills in play, in the order the Proofs page lists them: due today first, then the others.
   const inPlay =
     progress && !progress.message
-      ? [
-          ...progress.in_progress.filter((row) => row.due),
-          ...progress.in_progress.filter((row) => !row.due),
-        ].map((row) => ({ name: row.name, earned: proofsOf(row.dots) }))
-          // A proven skill holds all three proofs.
-          .concat(progress.confirmed.map((row) => ({ name: row.name, earned: 3 })))
+      ? [...progress.in_progress.filter((row) => row.due), ...progress.in_progress.filter((row) => !row.due)].map((row) => ({
+          name: row.name,
+          earned: proofsOf(row.dots),
+        }))
       : [];
+  const allSkills = proofs?.skills ?? 0;
 
   return (
     <section className="screen course" data-screen="course">
@@ -264,13 +263,16 @@ export function Course(props: {
                     <span className="index-what">{PROOF_DEFINITION}</span>
                   )}
                   {inPlay.length > 0 && (
-                    <span className="index-marks" aria-hidden="true">
-                      {inPlay.slice(0, 24).map((row, at) => (
-                        <ProofDots key={`${row.name}${at}`} earned={row.earned} label="" />
+                    <span className="index-skills">
+                      {inPlay.slice(0, 5).map((row, at) => (
+                        <span className="index-skill" key={`${row.name}${at}`}>
+                          <ProofDots earned={row.earned} />
+                          <Line text={row.name} className="index-skill-name" />
+                        </span>
                       ))}
-                      {inPlay.length > 24 && <span className="index-more">+{inPlay.length - 24}</span>}
                     </span>
                   )}
+                  {allSkills > 0 && <span className="index-all num">{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</span>}
                 </span>
                 <Icon name="right" size={16} />
               </button>

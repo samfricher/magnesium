@@ -11,6 +11,9 @@ import { Choice, Due, ExamSentence, Level, Tally, PaletteKey, ProofDot, ProofDot
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
+/** The runtime's note for a miss that no lesson has repaired yet. It has no next redo until one does. */
+const FIX_FIRST = "fix it first";
+
 function RowView({ row, tone }: { row: Row; tone: string }) {
   return (
     <div className={`skill ${tone}${row.due ? " is-due" : ""} selectable`}>
@@ -19,7 +22,16 @@ function RowView({ row, tone }: { row: Row; tone: string }) {
         <Line text={row.name} className="skill-name" />
         {row.what && <Line text={plain(row.what)} className="skill-what" />}
       </span>
-      {row.due ? <Due /> : row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>}
+      {row.due ? (
+        <Due />
+      ) : row.note === FIX_FIRST ? (
+        <span className="skill-note fix">
+          <b>Fix it first</b>
+          <span>Repair it in a lesson, then a redo is set.</span>
+        </span>
+      ) : (
+        row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>
+      )}
     </div>
   );
 }
@@ -46,6 +58,9 @@ function Group({ title, count, rows, fold, tone, action }: { title: string; coun
     </section>
   );
 }
+
+/** The runtime's empty-board message. It names a marked paper and a quick check, which a student has not met; the page says the path in plain words instead. */
+const NOTHING_YET = /^Nothing is proved yet/;
 
 const WEEK_NAMES = ["This week", "Last week", "2 weeks ago", "3 weeks ago", "4 weeks ago"];
 
@@ -114,6 +129,7 @@ export function Progress(props: {
   const sure = data.scores.filter((s) => s.sure_total !== null && s.sure_right !== null);
   const skills = skillsProven(proofs);
   const levelShown = !data.level_unknown && proofs.levelled && proofs.total > 0;
+  const waiting = [...due, ...later].some((row) => row.note === FIX_FIRST);
 
   return (
     <section className="screen progress" data-screen="progress">
@@ -124,6 +140,7 @@ export function Progress(props: {
             <div className="board-title">
               <h1 className="h-title">Proofs</h1>
               <p className="board-course">{displayName(props.folderName)}</p>
+              <p className="board-what">Answers you got right on your own, each on its own day.</p>
               {data.targets.length > 1 ? (
                 <div className="board-targets">
                   <Choice
@@ -151,7 +168,23 @@ export function Progress(props: {
           </header>
 
           {data.message ? (
-            <div className="board-empty">{data.message}</div>
+            <div className="board-empty">
+              {NOTHING_YET.test(data.message) ? (
+                <>
+                  <p>Nothing is proved yet.</p>
+                  <p>Answer a task in a lesson without a hint. When the tutor marks it right, that is your first proof.</p>
+                  {props.onStart && (
+                    <div className="row">
+                      <button className="btn primary" onClick={props.onStart}>
+                        Start a lesson
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                data.message
+              )}
+            </div>
           ) : (
             <>
               <Group
@@ -186,10 +219,16 @@ export function Progress(props: {
                     </li>
                     <li>
                       <span className="due" aria-hidden="true">
-                        <i />
+                        <Icon name="clock" size={14} />
                       </span>
                       <span>Due today: you can earn this skill&apos;s next proof today.</span>
                     </li>
+                    {waiting && (
+                      <li>
+                        <b className="legend-word">Fix it first</b>
+                        <span>A miss the tutor has not repaired with you yet. Repair it in a lesson and a redo is set, which can earn its next proof.</span>
+                      </li>
+                    )}
                     {levelShown && (
                       <li>
                         <Tally proofs={proofs} size="sm" />

@@ -3,7 +3,7 @@
    Five rules decide what is here.
    1. Colour is spent only on what you have proved and on the one thing that
       moves you on. Green means a proof, the one primary button on a screen,
-      and the task in hand. Amber means due, and nothing else. Red means a
+      and the task in hand. A filled circle means a proof, and nothing else. Amber means due, and nothing else. Red means a
       fault: every problem that blocks you. Everything else is ink: a link, a
       chip, a study day, a clock, a chosen option, the focus ring. No
       gradients, no glows, no washes.
@@ -17,8 +17,9 @@
       layer that floats over the window (the command palette, a menu, a sheet,
       a popover) has a shadow. A card you can press changes its border and its
       fill on hover; it does not lift.
-   4. One scale. Space comes from --s1 to --s8, shape from three radii (a
-      control, a card, a pill; a dot is a circle), type from seven sizes.
+   4. One scale. Space comes from --s1 to --s8, shape from two radii (a
+      control and a card; a dot is a circle), type from seven sizes and
+      three line heights.
       A value that is not on the scale is a mistake.
    5. Motion only marks a change of place or of state: 120ms for a hover or a
       press, 200ms for a thing that arrives. Nothing moves to be looked at, and
@@ -31,34 +32,34 @@
   color-scheme: dark;
 
   /* Slate: a blackboard's green-grey, with chalk-white writing on it. */
-  --bg: #1a1f1c;
-  --surface: #202622;
-  --raised: #272e2a;
-  --hover: #2e3631;
-  --line: rgba(232, 234, 227, 0.1);
-  --line-2: rgba(232, 234, 227, 0.18);
+  --bg: #232b27;
+  --surface: #29322d;
+  --raised: #303a34;
+  --hover: #37423b;
+  --line: rgba(236, 238, 231, 0.11);
+  --line-2: rgba(236, 238, 231, 0.2);
   /* The border of a field you type in, a choice and an unfilled mark: 3:1 or better on the page, a card and a sheet. */
-  --line-input: #7e877f;
+  --line-input: #87918a;
   /* A control while it is pressed: it sinks one step below its hover fill. */
-  --press: #242a26;
-  --text: #e8eae3;
-  --muted: #b4bab2;
-  --faint: #979e97;
-  --accent: #88c9a1;
+  --press: #2d3631;
+  --text: #eceee7;
+  --muted: #bac1b8;
+  --faint: #a8b0a8;
+  --accent: #8fcfa7;
   --accent-ink: #0f2a1c;
-  --accent-hover: #9dd6b3;
-  --accent-press: #74b38d;
-  --accent-soft: rgba(136, 201, 161, 0.1);
-  --accent-mid: rgba(136, 201, 161, 0.42);
+  --accent-hover: #a6dbbb;
+  --accent-press: #7bba93;
+  --accent-soft: rgba(143, 207, 167, 0.1);
+  --accent-mid: rgba(143, 207, 167, 0.42);
   /* A brighter tint of the proof green: the part of the level earned today. */
-  --accent-bright: #c6f0d7;
-  --amber: #e4b45f;
-  --amber-soft: rgba(228, 180, 95, 0.12);
-  --red: #ef9083;
-  --red-soft: rgba(239, 144, 131, 0.12);
+  --accent-bright: #d6f6e3;
+  --amber: #e8b962;
+  --amber-soft: rgba(232, 185, 98, 0.12);
+  --red: #f29587;
+  --red-soft: rgba(242, 149, 135, 0.12);
   /* The one shadow, for what floats. */
-  --shadow: 0 16px 48px rgba(4, 8, 6, 0.5), 0 2px 8px rgba(4, 8, 6, 0.3);
-  --veil: rgba(14, 18, 15, 0.55);
+  --shadow: 0 16px 48px rgba(8, 12, 10, 0.55), 0 2px 8px rgba(8, 12, 10, 0.35);
+  --veil: rgba(20, 26, 22, 0.55);
   /* The magnesium flare: near-white, for an instant. */
   --flare: #f4fffa;
 
@@ -76,10 +77,16 @@
   --s7: 48px;
   --s8: 64px;
 
-  /* Shape: three radii. A dot is a circle (50%). */
+  /* Shape: a control and a card. Nothing pressable is a pill; --r-pill stays only for the lesson's own small marks (its step dashes). A dot is a circle (50%). */
   --r-control: 8px;
   --r-card: 14px;
   --r-pill: 999px;
+
+  /* Line height, three only: a tight line (a label, a heading), a line of
+     interface text, and a line of reading. */
+  --lh-tight: 1.3;
+  --lh-ui: 1.45;
+  --lh-read: 1.65;
 
   /* Type, in pixels: 12 13.5 15 18 22 30 42. */
   --fs-caption: 12px;
@@ -119,8 +126,8 @@
     --accent-soft: rgba(29, 106, 74, 0.08);
     --accent-mid: rgba(29, 106, 74, 0.4);
     --accent-bright: #4fbf8a;
-    --amber: #995500;
-    --amber-soft: rgba(153, 85, 0, 0.09);
+    --amber: #8f5000;
+    --amber-soft: rgba(143, 80, 0, 0.09);
     --red: #a53527;
     --red-soft: rgba(165, 53, 39, 0.08);
     --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
@@ -144,7 +151,7 @@ body {
   color: var(--text);
   font-family: var(--sans);
   font-size: var(--fs-ui);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
@@ -182,7 +189,7 @@ p {
   font-family: var(--serif);
   font-size: var(--fs-title);
   font-weight: 600;
-  line-height: 1.15;
+  line-height: var(--lh-tight);
   text-wrap: balance;
   overflow-wrap: break-word;
 }
@@ -191,7 +198,7 @@ p {
   font-family: var(--serif);
   font-size: var(--fs-card);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: var(--lh-tight);
   overflow-wrap: break-word;
 }
 
@@ -209,7 +216,7 @@ p {
   font-family: var(--sans);
   font-size: var(--fs-small);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--lh-tight);
   color: var(--muted);
 }
 
@@ -220,7 +227,7 @@ p {
   gap: var(--s2);
   max-width: 100%;
   font-size: var(--fs-small);
-  line-height: 1.4;
+  line-height: var(--lh-tight);
   color: var(--muted);
 }
 
@@ -351,6 +358,17 @@ textarea {
   margin: auto 0;
 }
 
+/* A page that is read down from its title (Lesson done, a paper, setup) is not
+   centred: it starts at the top, like the course page and the proofs, on the
+   same column and the same line under the strip. */
+.screen > .center.top {
+  padding-top: var(--s5);
+}
+
+.screen > .center.top > * {
+  margin: 0;
+}
+
 /* The top strip is also how the window is dragged. The traffic lights sit
    over its left end, so its content starts after them. */
 .bar {
@@ -462,12 +480,14 @@ textarea {
   color: var(--faint);
 }
 
-/* The quiet button: text only, until it is pointed at. */
+/* The quiet button: text only, until it is pointed at. One size, 32px, wherever it stands. */
 .btn.ghost {
+  height: 32px;
   border-color: transparent;
   background: transparent;
   color: var(--muted);
   padding: 0 var(--s3);
+  font-size: var(--fs-small);
 }
 
 .btn.ghost:hover:not(:disabled) {
@@ -720,7 +740,7 @@ textarea::placeholder {
 
 .aside {
   font-size: var(--fs-caption);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--faint);
 }
 
@@ -744,7 +764,7 @@ p.aside {
   background: var(--surface);
   color: var(--muted);
   font-size: var(--fs-small);
-  line-height: 1.45;
+  line-height: var(--lh-ui);
   text-align: left;
 }
 
@@ -778,7 +798,7 @@ button.banner:hover {
   border-color: var(--red);
 }
 
-/* A due thing: an amber point and a few words. */
+/* A due thing: a small amber clock glyph and a few words. */
 .due {
   display: inline-flex;
   align-items: center;
@@ -788,11 +808,8 @@ button.banner:hover {
   color: var(--amber);
 }
 
-.due i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--amber);
+.due .icon {
+  color: var(--amber);
 }
 
 .due em {
@@ -811,7 +828,7 @@ button.banner:hover {
   height: 24px;
   padding: 0 var(--s3);
   border: 1px solid var(--line-input);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-caption);
@@ -834,10 +851,13 @@ button.banner:hover {
 /* ---- the level: a tally of ten strokes ---- */
 
 /* A level is a share of the plan's proofs in tenths, so it is drawn as ten
-   strokes, as a marker counts. Strokes below the level are filled; the stroke
-   in hand is filled from its foot by the share earned towards the next level;
-   those above are empty outlines. One proportion (4 by 16, 3 apart) in three
-   sizes. --a is the filled share of a stroke, --g the share of it earned today. */
+   strokes, as a marker counts. Strokes below the level are solid; the stroke
+   in hand is solid from its foot up to the share earned towards the next
+   level and an outline above that; those above are outlines. The solid part
+   covers the stroke's whole width, so it reads at row size. Three sizes (the
+   small one is 3px by 14px with 3px between, the least that can be read in
+   the real window). --a is the filled share of a stroke, --g the share of it
+   earned today, drawn in a brighter tint at least --min-g tall. */
 .lvl {
   display: inline-flex;
   align-items: center;
@@ -847,32 +867,45 @@ button.banner:hover {
 }
 
 .tally {
-  --u: 1px;
+  --w: 4px;
+  --h: 18px;
+  --gap: 3px;
+  --bw: 1.5px;
+  --min-a: 3px;
+  --min-g: 3px;
   display: inline-flex;
   align-items: flex-end;
   flex: none;
-  gap: calc(var(--u) * 3);
+  gap: var(--gap);
 }
 
 .tally.sm {
-  --u: 0.75px;
+  --w: 3px;
+  --h: 14px;
+  --bw: 1px;
 }
 
+/* The large tally is Lesson done's: today's gain is drawn at least 8px tall. */
 .tally.lg {
-  --u: 1.5px;
+  --w: 6px;
+  --h: 28px;
+  --gap: 4px;
+  --bw: 2px;
+  --min-g: 8px;
 }
 
 .tally i {
   --a: 0;
   --g: 0;
-  /* The least that is drawn of any share above nothing: 3px. */
-  --ma: 0px;
-  --mg: 0px;
+  --ma-on: 0;
+  --mg-on: 0;
+  /* The stroke's outer height, which a share is a share of. */
+  --box: calc(100% + var(--bw) * 2);
   position: relative;
-  width: calc(var(--u) * 4);
-  height: calc(var(--u) * 16);
-  border: max(1px, calc(var(--u) * 1.5)) solid var(--line-input);
-  border-radius: calc(var(--u) * 2);
+  width: var(--w);
+  height: var(--h);
+  border: var(--bw) solid var(--line-input);
+  border-radius: calc(var(--w) / 2);
   overflow: hidden;
 }
 
@@ -884,20 +917,20 @@ button.banner:hover {
 .tally i::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: calc(var(--bw) * -1);
+  right: calc(var(--bw) * -1);
 }
 
 .tally i::before {
-  bottom: 0;
-  height: max(var(--ma), calc(var(--a) * 100%));
+  bottom: calc(var(--bw) * -1);
+  height: max(calc(var(--min-a) * var(--ma-on)), calc(var(--box) * var(--a)));
   background: var(--accent);
 }
 
 /* What was earned today sits on top of the rest, in a brighter tint, and grows once. */
 .tally i::after {
-  bottom: max(var(--ma), calc(var(--a) * 100%));
-  height: max(var(--mg), calc(var(--g) * 100%));
+  bottom: calc(var(--bw) * -1 + max(calc(var(--min-a) * var(--ma-on)), calc(var(--box) * var(--a))));
+  height: max(calc(var(--min-g) * var(--mg-on)), calc(var(--box) * var(--g)));
   background: var(--accent-bright);
   transform-origin: bottom;
 }
@@ -918,7 +951,7 @@ button.banner:hover {
   flex-direction: column;
   gap: var(--s1);
   min-width: 0;
-  line-height: 1.35;
+  line-height: var(--lh-tight);
   color: var(--muted);
   font-size: var(--fs-small);
 }
@@ -1078,7 +1111,7 @@ button.banner:hover {
 .week-day b {
   font-size: var(--fs-caption);
   font-weight: 400;
-  line-height: 16px;
+  line-height: var(--lh-tight);
   color: var(--faint);
 }
 
@@ -1146,8 +1179,6 @@ button.banner:hover {
   align-items: flex-start;
   padding-top: 13vh;
   background: var(--veil);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
 }
 
 .palette {
@@ -1294,6 +1325,10 @@ button.banner:hover {
   text-align: center;
   color: var(--muted);
   font-size: var(--fs-small);
+}
+
+.palette-sub {
+  margin: var(--s3) var(--s4) 0;
 }
 
 .palette-keys {

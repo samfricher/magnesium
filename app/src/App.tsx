@@ -922,15 +922,21 @@ export function App() {
       });
     }
     if (course) {
-      BLOCKS.filter((minutes) => minutes !== course.block_minutes).forEach((minutes) =>
-        list.push({
-          label: `Lesson length: ${minutes} min`,
-          hint: `now ${course.block_minutes} min`,
-          icon: "timer",
-          keywords: "block time length",
-          run: () => void setBlock(minutes),
-        }),
-      );
+      // One item, which opens the choice: a row per length would each say "now 50 min" and read as setting 50.
+      list.push({
+        label: "Lesson length",
+        hint: `now ${course.block_minutes} min`,
+        icon: "timer",
+        keywords: "block time length minutes",
+        choices: BLOCKS.map((minutes) => ({
+          label: `${minutes} min`,
+          hint: minutes === course.block_minutes ? "now" : undefined,
+          run: () => {
+            if (minutes !== course.block_minutes) void setBlock(minutes);
+          },
+        })),
+        run: () => {},
+      });
     }
     list.push({
       label: "Setup",
@@ -960,18 +966,6 @@ export function App() {
     const account = setup?.account;
     if (account && (!account.signed_in || account.problem)) {
       list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", icon: "warn", run: () => openSetup() });
-    }
-    if (!inLesson && setup) {
-      const other: Payment = setup.payment === "plan" ? "api_key" : "plan";
-      list.push({
-        label: other === "plan" ? "Pay for lessons with your Claude plan" : "Pay for lessons with an API key",
-        hint: `now ${account?.detail ?? (setup.payment === "plan" ? "your Claude plan" : "an API key")}`,
-        icon: "gear",
-        run: () => {
-          openSetup();
-          void choosePayment(other);
-        },
-      });
     }
     if (!inLesson) {
       list.push({ label: "Add a course…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });

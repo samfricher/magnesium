@@ -5,7 +5,7 @@
 }
 
 .shelf {
-  padding: var(--s4) var(--edge-r) var(--s8) var(--edge-l);
+  padding: var(--s5) var(--edge-r) var(--s8) var(--edge-l);
 }
 
 .shelf-head {
@@ -70,7 +70,7 @@
   margin-top: var(--s1);
   font-family: var(--serif);
   font-size: var(--fs-ui);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -357,7 +357,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 .week-line .h-label,
 .week-line .run-line {
-  line-height: 12px;
+  line-height: var(--lh-tight);
   margin-top: 0;
 }
 
@@ -442,11 +442,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   min-width: 0;
 }
 
-/* The exam, as one sentence in the quiet ink. */
+/* A screen's subtitle (the exam, the course, what a setup is) is the reading face in the quiet ink, on every screen. */
 .exam-line {
   margin-top: var(--s2);
+  font-family: var(--serif);
   font-size: var(--fs-ui);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
   min-height: 22px;
 }
@@ -492,7 +493,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   margin-top: var(--s3);
   font-family: var(--serif);
   font-size: var(--fs-ui);
-  line-height: 1.6;
+  line-height: var(--lh-read);
   color: var(--muted);
   max-width: 62ch;
 }
@@ -501,7 +502,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   margin-top: var(--s2);
   font-family: var(--sans);
   font-size: var(--fs-small);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
 }
 
 .next-card .field {
@@ -593,7 +594,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   font-family: var(--serif);
   font-size: var(--fs-read);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--lh-tight);
 }
 
 .index-body {
@@ -605,20 +606,35 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 .index-what {
   font-size: var(--fs-ui);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
-.index-marks {
+/* The skills in play: each a row, its three dots and its name in the reading face. */
+.index-skills {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s2) var(--s4);
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s1);
 }
 
-.index-more {
-  font-size: var(--fs-caption);
-  color: var(--muted);
+.index-skill {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s3);
+}
+
+.index-skill-name {
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
+  color: var(--text);
+}
+
+.index-all {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .next-card .katex {
@@ -1708,31 +1724,10 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   max-width: 100%;
 }
 
-/* A check only when something moved. Nothing marked gets a quiet ring and a dash. */
-.done-mark {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--text);
-  color: var(--bg);
-}
-
-.done-mark.quiet {
-  background: transparent;
-  color: var(--muted);
-  box-shadow: inset 0 0 0 1.5px var(--faint);
-}
-
 .summary-col h1,
 .paper-col h1,
 .setup-col h1 {
-  margin-top: var(--s5);
-}
-
-.summary-col h1 {
-  margin-top: var(--s4);
+  margin-top: 0;
 }
 
 /* Why nothing was marked, in plain words, right under the headline. */
@@ -1741,12 +1736,20 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   max-width: 44ch;
   font-family: var(--serif);
   font-size: var(--fs-read);
-  line-height: 1.55;
+  line-height: var(--lh-read);
   color: var(--text);
+}
+
+.summary-why.quiet {
+  max-width: 52ch;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-read);
+  color: var(--muted);
 }
 
 .setup-sub {
   margin-top: var(--s2);
+  font-family: var(--serif);
   color: var(--muted);
 }
 
@@ -1768,7 +1771,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding: var(--s3) 0;
   font-family: var(--serif);
   font-size: var(--fs-card);
-  line-height: 1.3;
+  line-height: var(--lh-tight);
 }
 
 .earned-row + .earned-row {
@@ -1785,7 +1788,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   gap: var(--s4);
   margin-top: var(--s5);
   font-size: var(--fs-ui);
-  line-height: 1.4;
+  line-height: var(--lh-tight);
   text-align: left;
 }
 
@@ -1799,7 +1802,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding-top: var(--s4);
   border-top: 1px solid var(--line);
   font-size: var(--fs-small);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -1822,7 +1825,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 .summary-week .run-line {
-  line-height: 20px;
+  line-height: var(--lh-ui);
 }
 
 .summary-col .row {
@@ -1835,12 +1838,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 /* A short window: the same screen, with less air. */
 @media (max-height: 640px) {
-  .done-mark {
-    width: 40px;
-    height: 40px;
-  }
-
-  .summary-col h1,
   .level-line,
   .summary-facts,
   .summary-week,
@@ -1888,6 +1885,14 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: var(--muted);
 }
 
+/* What a proof is, in one quiet line under the title: "Proofs" alone reads as mathematical proofs. */
+.board-what {
+  margin-top: var(--s1);
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
+  color: var(--muted);
+}
+
 .board-targets {
   margin-top: var(--s3);
 }
@@ -1912,7 +1917,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding: 0;
   list-style: none;
   font-size: var(--fs-small);
-  line-height: 1.4;
+  line-height: var(--lh-tight);
   color: var(--muted);
 }
 
@@ -1922,7 +1927,8 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 
 .legend .dots,
 .legend .due,
-.legend .tally {
+.legend .tally,
+.legend .legend-word {
   justify-self: start;
 }
 
@@ -1994,6 +2000,27 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   white-space: nowrap;
 }
 
+/* A miss that waits for its repair says what to do, in two short lines. */
+.skill-note.fix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 30ch;
+  text-align: right;
+  text-wrap: balance;
+  white-space: normal;
+}
+
+.skill-note.fix b,
+.legend-word {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.legend-word {
+  white-space: nowrap;
+}
+
 .skill.untested .skill-name {
   font-weight: 400;
   color: var(--muted);
@@ -2017,6 +2044,14 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 }
 
 /* Nothing to show yet: the words begin at the title's own left edge. */
+.board-empty p + p {
+  margin-top: var(--s3);
+}
+
+.board-empty .row {
+  margin-top: var(--s5);
+}
+
 .board-empty {
   padding: var(--s5) 0 var(--s7);
   text-align: left;
@@ -2039,17 +2074,17 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .foot-notes p {
   margin-left: 0;
   font-size: var(--fs-small);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
-/* The papers sat: a ruled list, one row each. The name, its day, the score as
-   words, and under the score a thin rule filled in the proof green to the
-   share of the marks. No axes, no columns. */
+/* The papers sat: a ruled list, one row each, as wide as the page's column.
+   The name, its day, the score as words, and under the score a thin rule filled
+   in ink to the share of the marks (a score is not a proof, so it is not green).
+   No axes, no columns. */
 .scores {
   display: flex;
   flex-direction: column;
-  max-width: 520px;
   margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
@@ -2103,7 +2138,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .score-rule i {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--text);
 }
 
 .foot-notes {
@@ -2116,19 +2151,26 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .weeks {
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
   margin: var(--s2) 0 var(--s3);
 }
 
 .weeks-row {
   display: grid;
-  grid-template-columns: 104px auto;
+  grid-template-columns: 104px minmax(0, 1fr);
   align-items: start;
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* The days spread across the row, so the grid ends on the column's right edge as the rows above do. */
+.weeks .week {
+  width: 100%;
+  justify-content: space-between;
 }
 
 .weeks-name {
   font-size: var(--fs-small);
-  line-height: 20px;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -2140,6 +2182,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--s1);
+  margin-top: var(--s5);
 }
 
 .count {
@@ -2159,7 +2202,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-top: var(--s5);
   font-family: var(--serif);
   font-size: var(--fs-read);
-  line-height: 1.55;
+  line-height: var(--lh-read);
   color: var(--muted);
   text-wrap: balance;
 }
@@ -2305,14 +2348,11 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   flex: none;
   width: 24px;
   height: 24px;
-  border-radius: 50%;
-  background: var(--red-soft);
   color: var(--red);
 }
 
 .step.ok .step-mark {
-  background: var(--text);
-  color: var(--bg);
+  color: var(--text);
 }
 
 /* Every problem that blocks you is red, in its mark and in its words. */
@@ -2320,13 +2360,9 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   color: var(--red);
 }
 
-.step.plain .step-mark {
-  background: transparent;
-}
-
-/* A choice is not a fault: a neutral ring and a dash, in ink. */
+/* A choice is not a fault: an empty ring and a dash, in ink. A ring is not a filled circle. */
 .step.choice .step-mark {
-  background: transparent;
+  border-radius: 50%;
   color: var(--muted);
   box-shadow: inset 0 0 0 1.5px var(--faint);
 }
@@ -2353,7 +2389,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .step-body p {
   margin-top: var(--s2);
   font-size: var(--fs-small);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -2781,8 +2817,6 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding: var(--s4);
   pointer-events: none;
   background: var(--veil);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
 }
 
 .drop-veil > div {
@@ -2886,7 +2920,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .engine-why,
 .engine-line {
   font-size: var(--fs-caption);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 
@@ -2904,7 +2938,7 @@ html[data-input="key"] .composer .box[data-ring="key"] {
 .today-line {
   margin-top: var(--s3);
   font-size: var(--fs-small);
-  line-height: 1.5;
+  line-height: var(--lh-ui);
   color: var(--muted);
 }
 

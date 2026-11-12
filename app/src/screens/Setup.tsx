@@ -29,12 +29,12 @@ export function aboutText(about: About | null): string | null {
   return about.commit ? `Magnesium ${about.version} (${about.commit.slice(0, 7)})` : `Magnesium ${about.version}, built from source`;
 }
 
-/** A step is done, a fault to fix (red), or a choice to make (neutral: nothing is wrong). */
+/** A step is done (an ink tick), a fault to fix (a red "!"), or a choice to make (an empty ring: nothing is wrong). None is a filled disc: that is a proof. */
 function Step(props: { ok: boolean; choice?: boolean; title: string; detail: string; children?: ReactNode }) {
   return (
     <div className={props.ok ? "step ok" : props.choice ? "step choice" : "step"}>
       <span className="step-mark" aria-hidden="true">
-        <Icon name={props.ok ? "check" : props.choice ? "dash" : "warn"} size={props.ok ? 13 : 14} />
+        <Icon name={props.ok ? "check" : props.choice ? "dash" : "bang"} size={props.ok ? 20 : props.choice ? 14 : 20} />
       </span>
       <div className="step-body">
         <div className="step-head">
@@ -242,7 +242,7 @@ export function Setup(props: {
         }
         right={ready ? <PaletteKey onClick={props.onPalette} /> : undefined}
       />
-      <div className="center">
+      <div className="center top">
         <div className="setup-col">
           <h1 className="h-title">{title}</h1>
           <p className="setup-sub">{sub}</p>

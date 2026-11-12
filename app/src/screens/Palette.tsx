@@ -18,6 +18,8 @@ export type Command = {
   disabled?: string;
   /** Instead of running, show these keys and what they do. */
   shortcuts?: [string, string][];
+  /** Instead of running, open these as the list: one item for a setting, its values inside. */
+  choices?: { label: string; hint?: string; run: () => void }[];
   run: () => void;
 };
 
@@ -25,6 +27,8 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const [keys, setKeys] = useState<Command | null>(null);
+  // An item that holds a choice, once opened: the list is its values.
+  const [sub, setSub] = useState<Command | null>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -33,11 +37,12 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
 
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return props.commands.filter((command) => {
+    const source: Command[] = sub?.choices ? sub.choices.map((choice) => ({ ...choice, icon: sub.icon })) : props.commands;
+    return source.filter((command) => {
       const text = `${command.label} ${command.hint ?? ""} ${command.keywords ?? ""}`.toLowerCase();
       return words.every((word) => text.includes(word));
     });
-  }, [props.commands, query]);
+  }, [props.commands, query, sub]);
 
   // Whether the list goes on below what is shown: it fades at its foot while it does.
   const [more, setMore] = useState(false);
@@ -73,6 +78,12 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
       setKeys(command);
       return;
     }
+    if (command.choices) {
+      setSub(command);
+      setQuery("");
+      setAt(0);
+      return;
+    }
     props.onClose();
     command.run();
   };
@@ -97,7 +108,10 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
             e.preventDefault();
             e.stopPropagation();
             if (keys) setKeys(null);
-            else props.onClose();
+            else if (sub) {
+              setSub(null);
+              setQuery("");
+            } else props.onClose();
           }
         }}
       >
@@ -151,25 +165,28 @@ export function Palette(props: { commands: Command[]; onClose: () => void }) {
             <p className="palette-keys-back">Press Esc to go back to the list.</p>
           </div>
         ) : (
-          <div className="palette-list" id="palette-list" role="listbox" aria-label="Commands" ref={list} data-more={more ? "yes" : "no"} onScroll={measure}>
-            {shown.map((command, index) => (
-              <div
-                key={`${command.label}${command.hint ?? ""}`}
-                id={`palette-option-${index}`}
-                role="option"
-                aria-selected={index === at}
-                aria-disabled={command.disabled ? true : undefined}
-                className={`${index === at ? "on" : ""}${command.disabled ? " off" : ""}`.trim() || undefined}
-                onMouseEnter={() => setAt(index)}
-                onClick={() => run(command)}
-              >
-                <Icon name={command.icon ?? "right"} size={16} />
-                <span>{command.label}</span>
-                <small>{command.disabled ?? command.hint}</small>
-              </div>
-            ))}
-            {shown.length === 0 && <div className="palette-none">Nothing matches. Try: proofs, new lesson, paper.</div>}
-          </div>
+          <>
+            {sub && <p className="palette-sub h-label">{sub.label}</p>}
+            <div className="palette-list" id="palette-list" role="listbox" aria-label="Commands" ref={list} data-more={more ? "yes" : "no"} onScroll={measure}>
+              {shown.map((command, index) => (
+                <div
+                  key={`${command.label}${command.hint ?? ""}`}
+                  id={`palette-option-${index}`}
+                  role="option"
+                  aria-selected={index === at}
+                  aria-disabled={command.disabled ? true : undefined}
+                  className={`${index === at ? "on" : ""}${command.disabled ? " off" : ""}`.trim() || undefined}
+                  onMouseEnter={() => setAt(index)}
+                  onClick={() => run(command)}
+                >
+                  <Icon name={command.icon ?? "right"} size={16} />
+                  <span>{command.label}</span>
+                  <small>{command.disabled ?? command.hint}</small>
+                </div>
+              ))}
+              {shown.length === 0 && <div className="palette-none">Nothing matches. Try: proofs, new lesson, paper.</div>}
+            </div>
+          </>
         )}
       </div>
     </div>
