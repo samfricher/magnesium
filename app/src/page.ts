@@ -32,6 +32,9 @@ export type Exchange = {
 
 export type Page = { exchanges: Exchange[]; open: number | null };
 
+/** The key an exchange's meta is kept under on this Mac: its words, which a reopened lesson shows again. */
+export const exKey = (learner: string, tutor: string) => `${learner}\u241f${tutor.slice(0, 80)}`;
+
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
 export function dayName(ms: number): string {
@@ -87,12 +90,13 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
     });
     lastDay = day;
     if (!final) return;
-    // A new task opens; an answered task closes; talk and help leave it open.
-    // A new sitting starts with no task open, as the engine does. A stopped
-    // reply leaves its task open.
+    // A new task opens. A task closes when the record marks what was sent
+    // for it: until then the engine keeps it open, whatever the reply said.
+    // Talk and help leave it open. A new sitting starts with no task open,
+    // as the engine does.
     if (split) open = index;
     else if (said === "opening") open = null;
-    else if (said === "answer" && !turn.interrupted) open = null;
+    else if ((kept?.marks.length ?? 0) > 0 && !turn.interrupted) open = null;
   });
   return { exchanges, open };
 }

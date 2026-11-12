@@ -15,7 +15,7 @@ import { SetupDoc, setupReady } from "./docs/Setup";
 import type { WriterHandle } from "./docs/Writer";
 import { ready as harnessReady } from "./harness";
 import { emptySession, HELP, openingWords, reduce, type LessonTurn, type SessionState } from "./lesson";
-import { readPage, type Meta, type Said } from "./page";
+import { exKey, readPage, type Meta, type Said } from "./page";
 import { applyPrefs, readPrefs, savePrefs, SIZE_MAX, SIZE_MIN, type Prefs } from "./prefs";
 import type { SourceRef } from "./sources";
 import { splitTask, taskLine } from "./task";
@@ -76,8 +76,6 @@ export function plainText(text: string): string {
 
 const folderName = (path: string) => path.replace(/\/+$/, "").split("/").pop() ?? path;
 
-/** The persisted meta of an exchange, by its words: what it was, and the record's marks for it. */
-const exKey = (learner: string, tutor: string) => `${learner}␟${tutor.slice(0, 80)}`;
 
 function readKept(folder: string): Record<string, Meta> {
   try {
@@ -794,12 +792,20 @@ export function App() {
         if (event.type === "turn_ended") {
           window.setTimeout(() => {
             keepExchanges();
-            // A reply that set a task puts the writing place inside it, unless the learner is writing elsewhere.
+            // A reply that sets a task puts the writing place inside it; a
+            // reply that sets none leaves it on the page, with the open task
+            // pinned above. After help, it stays in the task. Words already
+            // being written are never moved away from.
             const live = latest.current.session.live;
-            const tutor = live ? [...live.done, live.streaming].join("\n") : "";
-            const talking = (writers.current.talk?.value() ?? "").trim() !== "";
-            if (live && !live.interrupted && splitTask(tutor) && !talking) {
-              setPlaceState("answer");
+            if (!live || live.interrupted) return;
+            const tutor = [...live.done, live.streaming].join("\n");
+            const said = meta.current.get(live.since)?.said;
+            const writing = (place: Place) => (writers.current[place]?.value() ?? "").trim() !== "";
+            let next: Place | null = null;
+            if (splitTask(tutor)) next = writing("talk") ? null : "answer";
+            else if (said !== "help") next = writing("answer") ? null : "talk";
+            if (next && next !== latest.current.place) {
+              setPlaceState(next);
               bumpFocus();
             }
           }, 0);

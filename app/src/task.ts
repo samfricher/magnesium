@@ -40,19 +40,25 @@ function blocks(src: string): string[] {
   return out;
 }
 
-/** The last sentence of a paragraph that ends with a question: where the question begins. */
-function questionStart(paragraph: string): number {
-  const text = paragraph.trimEnd();
-  // The boundary before the question: a full stop, a colon or an exclamation
-  // mark, then a space, then the question's first word.
-  let start = 0;
-  const boundary = /([.!:])\s+(?=[A-Z$\\(*"“])/g;
+/** Words that open a sentence about the last answer or the lesson, not the task itself. */
+const LEAD = /^(?:right|not quite|not yet|correct|good|yes|no|close|exactly|nice|great|back to it|welcome back|next step|next|let's|let us|ok|okay|so|now|that's|that is|almost)\b/i;
+
+/**
+ * Where the task begins in a paragraph that ends with a question: after the
+ * sentences that answer the last message or move the lesson on ("Right: …",
+ * "Next step."), so the task holds the question and what it needs.
+ */
+function taskStart(paragraph: string): number {
+  const boundary = /[.!:]\s+(?=[A-Z$\\(*"“])/g;
+  const starts = [0];
   let found: RegExpExecArray | null;
-  const end = text.length - 1;
-  while ((found = boundary.exec(text)) !== null) {
-    if (found.index < end) start = found.index + found[0].length;
+  while ((found = boundary.exec(paragraph)) !== null) starts.push(found.index + found[0].length);
+  let at = 0;
+  for (let i = 0; i < starts.length - 1; i++) {
+    if (!LEAD.test(paragraph.slice(starts[i]).trimStart())) break;
+    at = starts[i + 1];
   }
-  return start;
+  return at;
 }
 
 const endsWithQuestion = (text: string) => /\?\s*(?:\*\*|\*|_)?\s*$|\?\s*\$\s*$/.test(text.trim());
@@ -74,7 +80,7 @@ export function splitTask(reply: string): Split | null {
   if (!endsWithQuestion(last)) return null;
   // A heading, a list or a quotation that ends in a question is not a task.
   if (/^\s*(#|>|[-*+] |\d+\. )/.test(last) && !/^\s*\d+\. /.test(last)) return null;
-  const at = questionStart(last);
+  const at = taskStart(last);
   const before = [...parts.slice(0, -1), last.slice(0, at).trim()].filter((part) => part !== "").join("\n\n");
   return { before, task: last.slice(at).trim() };
 }

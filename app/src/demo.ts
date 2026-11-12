@@ -1,898 +1,685 @@
-// A stand-in core for a plain browser, with made-up data. It exists so the
-// screens can be worked on and photographed without a window or an agent.
-// Nothing here ships a real course, a real grade or a real learner's words.
+// A stand-in core for a plain browser, with made-up data, so the workspace
+// can be worked on and photographed without a window or an agent. Nothing
+// here is a real course, a real grade, a real institution or a real
+// learner's words.
+//
+// The address picks a state (see STATES below and scripts/shots.mjs): the
+// demo seeds what the window keeps on this Mac before the page opens the
+// folder, then drives the page through `startFromAddress`.
 
 import type { Actions } from "./App";
-import { demoAfterTurn, demoBaseReply, demoMarked, demoMayMark, demoPlan } from "./demoBase";
+import { demoAfterTurn, demoBaseReply, demoMarked, demoMayMark, demoPlan, demoResetPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
+import { exKey, type Meta } from "./page";
 import type {
-  Added,
   Account,
-  Activity,
   AgentEvent,
   Card,
   Core,
   Engine,
   Home,
+  LessonInfo,
   Mark,
-  Opened,
   Paper,
   PaperSitting,
   Payment,
+  Plan,
   Progress,
-  Proofs,
-  Rail,
-  Row,
   RuntimeSetup,
   Setup,
   Source,
+  StudyFiles,
   Turn,
 } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
+const address = () => location.hash.replace(/^#/, "");
 
-const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/PaperB.pdf", minutes: 50, sat: false };
-const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midterm-1/papers/PaperA.pdf", minutes: 50, sat: true };
+const ROOT = "/Users/you/Study";
+const FOLDER = `${ROOT}/Biochemistry 210`;
+const FOLDERS = [FOLDER, `${ROOT}/Statistics 201`, `${ROOT}/Linear Algebra`];
 
-let variant = "ready";
-let sitting: PaperSitting | null = null;
-let blockMinutes = 50;
-// What the library shows: "" for four courses, "empty" for none yet.
-let shelf = "";
-let forgotten: string[] = [];
-let found = false;
-let studiedToday = true;
-// #library:fresh is a window that has never had a study day: the week is all outlines and says so.
-let history = true;
-// A sitting earns a proof when a check or a redo it opened with was passed.
-let sittingsDone = 0;
-let stoppedAt: string | null = "step 3: what the y-intercept gives.";
-// Answers the tutor marked today. Each answer sent in the demo is marked,
-// except at #summary:unmarked, which shows a sitting with none marked.
-let markedToday = 4;
-let marking = true;
-// The record's marked answers in the demo, oldest first. An answer sent in the
-// demo lesson adds a row a moment later, as the runtime would. At
-// #session:nomarks the runtime has no `attempts` command, and says so.
-const demoMarks: Mark[] = [
-  { id: "demo-1", at: "2026-11-09 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
-  { id: "demo-2", at: "2026-11-09 18:26", label: "slope and $K_m$", mark: "wrong", help: "none", cold: true, paper: null },
+const DAY = 24 * 3600 * 1000;
+/** A time `days` ago, at a given hour and minute. */
+function ago(days: number, hour: number, minute: number): number {
+  const date = new Date(Date.now() - days * DAY);
+  date.setHours(hour, minute, 0, 0);
+  return date.getTime();
+}
+const stamp = (ms: number) => {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// --- What the address asks for ------------------------------------------------
+
+const state = address();
+const away = state.startsWith("s5") ? 7 : 2;
+const firstOpen = state === "s1-cold-first";
+const signedOut = state === "setup-signed-out";
+const noClaude = state === "setup-no-claude";
+const replaceRuntime = state === "setup-replace";
+const upgrade = state === "upgrade";
+const newFolder = state === "new-lesson";
+
+// --- The lesson that was stopped ------------------------------------------------
+
+const GOAL = "Reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot";
+const TASK_VMAX = "**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
+const TASK_KM = "**Task.** The same line crosses the x-axis at $-0.5$ µM⁻¹. What is $K_m$?";
+const TASK_CHECK = "**Quick check 1.** Without your notes: in $v = \\frac{V_{max}[S]}{K_m + [S]}$, what is $v$ when $[S] = K_m$?";
+
+const START_TURN_MS = ago(away, 16, 12);
+const STOP_TURN_MS = ago(away, 16, 40);
+
+const earlierTurns: Turn[] = [
+  {
+    session: "demo-current",
+    ms: START_TURN_MS,
+    learner: `Let's work on ${GOAL}.`,
+    tutor:
+      "A Lineweaver–Burk plot turns the Michaelis–Menten curve into a straight line, so you can read both constants off it with a ruler.\n\n" +
+      "Start from the rate equation:\n\n$$v = \\frac{V_{max}[S]}{K_m + [S]}$$\n\n" +
+      "**Task.** Take the reciprocal of both sides and write $\\frac{1}{v}$ as a line in $\\frac{1}{[S]}$. What do you get?",
+    interrupted: false,
+  },
+  {
+    session: "demo-current",
+    ms: STOP_TURN_MS,
+    learner: "$\\frac{1}{v} = \\frac{K_m}{V_{max}} \\cdot \\frac{1}{[S]} + \\frac{1}{V_{max}}$",
+    tutor:
+      "That is the line: the slope is $K_m/V_{max}$ and the y-intercept is $1/V_{max}$. Everything else on the plot follows from those two.\n\n" +
+      "The y-intercept is where $\\frac{1}{[S]} = 0$, an infinitely high substrate concentration, which is exactly when the enzyme runs at $V_{max}$.\n\n" +
+      TASK_VMAX,
+    interrupted: false,
+  },
 ];
-let marksAvailable = true;
-// Set once the demo lesson has recorded a wrong answer: the record brings that skill back tomorrow, not today.
-let slipRecorded = false;
-// A hint asked since the last marked answer: the next answer is given with help.
-let helpAsked = false;
-// Files in the demo course's material folder, newest first, and its answer keys.
-let materialNames = ["week3-confidence-intervals.md", "week2-sampling.md", "Week 4 slides.pdf"];
-let materialKeys = 1;
-// What runs lessons, and the engine the demo course's conversation began on.
-let engineChosen: Engine = "plugin";
-let conversationEngine: Engine | null = "plugin";
+
+const RECIPROCAL_MARK: Mark = { id: "demo-1", at: stamp(STOP_TURN_MS - 60_000), label: "taking reciprocals of the rate equation", mark: "right", help: "none", cold: true, paper: null };
+
+const records: Mark[] = [
+  { id: "demo-0a", at: stamp(ago(7, 18, 20)), label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "demo-0b", at: stamp(ago(7, 18, 26)), label: "slope and $K_m$", mark: "wrong", help: "none", cold: true, paper: null },
+  { id: "demo-0c", at: stamp(ago(5, 9, 4)), label: "slope and $K_m$", mark: "right", help: "hint", cold: false, paper: null },
+  RECIPROCAL_MARK,
+];
+
+// --- What the window keeps on this Mac, seeded before the page opens the folder ----
+
+function seed(): void {
+  try {
+    if (firstOpen) return;
+    const layout = {
+      panes: [{ tabs: ["lesson", "plan"], active: "lesson" }],
+      focus: 0,
+      sidebar: state === "sidebar",
+      scroll: {},
+      pages: {},
+      drafts: { answer: state.startsWith("s1") || state === "s5-week" ? "$V_{max} = 1/0.25 =$" : "" },
+      folds: {},
+    };
+    if (!newFolder) localStorage.setItem(`mg.ws:${FOLDER}`, JSON.stringify(layout));
+    const kept: Record<string, Meta> = {
+      [exKey(earlierTurns[0].learner, earlierTurns[0].tutor)]: { said: "opening", marks: [] },
+      [exKey(earlierTurns[1].learner, earlierTurns[1].tutor)]: { said: "answer", marks: [RECIPROCAL_MARK] },
+    };
+    localStorage.setItem(`mg.ex:${FOLDER}`, JSON.stringify(kept));
+    localStorage.removeItem(`mg.planBase:${FOLDER}`);
+    if (state === "settings") localStorage.setItem("mg.prefs", JSON.stringify({ font: "charter", size: 17, measure: 66, scheme: "system", ink: "blue" }));
+  } catch {
+    // A page with no storage shows the defaults.
+  }
+}
+
+// --- The plan, as the file holds it ---------------------------------------------
+
+const dayName = (iso: string | null) => {
+  if (!iso) return "";
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+};
+
+let changes: string[] = [`${stamp(Date.now() - 6 * DAY).slice(0, 10)}: plan built from the diagnostic paper and the week 4 to 6 slides.`];
+
+function planText(plan: Plan): string {
+  const rows = plan.items.map((item, n) => `| ${n + 1} | ${item.title} | ${item.note ?? ""} | ${item.status} | ${dayName(item.day)} |`).join("\n");
+  return [
+    `# ${plan.title}: study plan`,
+    "",
+    `Folder: \`Study/${plan.target}/\`.`,
+    "",
+    "## 1. Facts",
+    "",
+    "| Item | Value |",
+    "|---|---|",
+    `| Target | ${plan.title} |`,
+    `| When | ${plan.exam_date} (${dayName(plan.exam_date).split(" ")[0]}) 10:00 to 11:30 |`,
+    "| Length | 90 |",
+    "| Aids | a calculator, no notes |",
+    "| Coverage | Weeks 4 to 6: enzyme kinetics, inhibition, the linear plots |",
+    "",
+    "## 2. The instructor's words",
+    "",
+    '- "Expect one question where you read the constants off a plot." (lecture 11)',
+    "",
+    "## 5. Method",
+    "",
+    "1. Sit a paper timed, with the permitted aids only.",
+    "2. Mark it straight after, and log what lost marks.",
+    "3. Redo each gap cold, on three different days.",
+    "",
+    "## 6. Blocks",
+    "",
+    "| # | Block | Purpose | Status | Day |",
+    "|---|---|---|---|---|",
+    rows,
+    "",
+    "Never drop: Paper B, and every cold redo.",
+    "",
+    "## 7. Sessions",
+    "",
+    "- If it is Monday to Friday at 08:30, then I do the due redos at the library before class.",
+    "",
+    "## 14. Changes",
+    "",
+    ...changes.map((line) => `- ${line}`),
+    "",
+  ].join("\n");
+}
+
+let planMs = Date.now() - 6 * DAY;
+function plan(): Plan {
+  const base = demoPlan();
+  const shaped: Plan = { ...base, goal: GOAL, changed_ms: planMs };
+  return { ...shaped, text: planText(shaped) };
+}
+
+// --- Files under Study/ ---------------------------------------------------------
+
+const FILES: StudyFiles = {
+  files: [
+    { path: "Study/midterm-1/plan.md", changed_ms: Date.now() - 6 * DAY },
+    { path: "Study/materials/Week 5 slides.pdf", changed_ms: Date.now() - 8 * DAY },
+    { path: "Study/materials/lineweaver-burk.md", changed_ms: Date.now() - 9 * DAY },
+    { path: "Study/materials/michaelis-menten-derivation.md", changed_ms: Date.now() - 10 * DAY },
+    { path: "Study/materials/inhibition-summary.md", changed_ms: Date.now() - 11 * DAY },
+    { path: "Study/midterm-1/papers/Paper B.pdf", changed_ms: Date.now() - 5 * DAY },
+    { path: "Study/midterm-1/gap-log.md", changed_ms: Date.now() - 6 * DAY },
+    { path: "Study/handed-in/Diagnostic/IMG_0412.jpg", changed_ms: Date.now() - 6 * DAY },
+  ],
+  keys: 1,
+  more: false,
+};
+
+const TEXTS: Record<string, string> = {
+  "Study/materials/lineweaver-burk.md":
+    "# The Lineweaver–Burk plot\n\nPlot $1/v$ against $1/[S]$. The rate equation becomes a line:\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}} \\cdot \\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n" +
+    "- The **y-intercept** is $1/V_{max}$.\n- The **x-intercept** is $-1/K_m$.\n- The **slope** is $K_m/V_{max}$.\n\n" +
+    "## Why it misleads\n\nTaking reciprocals stretches the points measured at low $[S]$, which carry the largest errors, across most of the plot. A fit by eye then leans on the least reliable data.\n",
+  "Study/materials/michaelis-menten-derivation.md":
+    "# Deriving Michaelis–Menten\n\nAssume the enzyme–substrate complex is at steady state: it forms as fast as it breaks down.\n\n$$k_1[E][S] = (k_{-1} + k_2)[ES]$$\n\nWith $[E]_T = [E] + [ES]$ and $K_m = (k_{-1} + k_2)/k_1$, the rate $v = k_2[ES]$ becomes\n\n$$v = \\frac{V_{max}[S]}{K_m + [S]}$$\n",
+  "Study/materials/inhibition-summary.md": "# Inhibition at a glance\n\n| Kind | $V_{max}$ | $K_m$ |\n|---|---|---|\n| Competitive | same | larger |\n| Uncompetitive | smaller | smaller |\n| Mixed | smaller | either |\n",
+  "Study/midterm-1/gap-log.md": "# Midterm 1: gap log\n\n| Paper | Question | Tag | What went wrong |\n|---|---|---|---|\n| Diagnostic | Q4 | slope and $K_m$ | read the slope as $K_m$ |\n",
+};
+
+const PHOTO =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360"><rect width="480" height="360" fill="#f4f2ec"/><g stroke="#3a4a6b" stroke-width="2" fill="none"><path d="M60 300 L60 60 M60 300 L420 300"/><path d="M60 250 L400 90"/></g><text x="70" y="40" font-family="sans-serif" font-size="18" fill="#3a4a6b">1/v against 1/[S], my working</text></svg>',
+  );
+
+function source(path: string): Source {
+  if (/key|solution|answer/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
+  if (path.startsWith("/") || path.includes("..")) throw new Error("That file is outside the study folder.");
+  const name = path.split("/").pop() ?? path;
+  if (path.endsWith(".pdf")) return { name, kind: "pdf", text: null, truncated: false, image: null };
+  if (/\.(jpe?g|png)$/i.test(path)) return { name, kind: "image", text: null, truncated: false, image: PHOTO };
+  const text = TEXTS[path] ?? (path.endsWith("plan.md") ? (plan().text ?? "") : null);
+  if (text === null) throw new Error("That file does not exist.");
+  return { name, kind: "text", text, truncated: false, image: null };
+}
+
+// --- The tutor -----------------------------------------------------------------
+
+let emit: (event: AgentEvent) => void = () => {};
+let open = false;
+let openTask = TASK_VMAX;
+/** For a photograph of a reply being written: it stops part way and stays so. */
+const holdHalfway = state === "s3-before";
+
+async function stream(text: string, doing: string | null = null): Promise<void> {
+  emit({ type: "turn_started" });
+  if (doing) {
+    emit({ type: "working", doing });
+    await wait(260);
+  }
+  const step = 9;
+  const stopAt = holdHalfway && text.includes("Midterm 1 is now") ? Math.floor(text.length * 0.42) : text.length;
+  for (let at = 0; at < stopAt; at += step) {
+    emit({ type: "text_delta", text: text.slice(at, Math.min(at + step, stopAt)) });
+    await wait(5);
+  }
+  if (stopAt < text.length) return;
+  emit({ type: "turn_ended", ok: true, interrupted: false, error: null });
+}
+
+let marked: Mark[] = [];
+
+function replyTo(text: string): { reply: string; mark: Mark | null; doing: string | null } {
+  const lower = text.toLowerCase();
+  if (lower.startsWith("i'm back") || lower.startsWith("let's work on") || lower.startsWith("no checks")) {
+    if (state.startsWith("s5")) {
+      openTask = TASK_CHECK;
+      return {
+        reply: "Welcome back. One quick check first, from before you left; then the intercept, where you stopped.\n\n" + TASK_CHECK,
+        mark: null,
+        doing: "reading your record",
+      };
+    }
+    openTask = TASK_VMAX;
+    return {
+      reply:
+        "You were reading $V_{max}$ off the y-intercept. The intercept is $1/V_{max}$, so $V_{max}$ is its reciprocal, and its units are those of a rate.\n\n" +
+        TASK_VMAX,
+      mark: null,
+      doing: null,
+    };
+  }
+  if (lower.includes("teach me from")) {
+    openTask = TASK_VMAX;
+    return { reply: "Here is the idea of the plot in one line: a curve you cannot read becomes a line you can.\n\n" + TASK_VMAX, mark: null, doing: "reading the file" };
+  }
+  if (lower.includes("back to")) {
+    return { reply: `Back to it.\n\n${openTask}`, mark: null, doing: null };
+  }
+  const shared = demoBaseReply(text);
+  if (shared) return { reply: shared, mark: null, doing: lower.includes("plan") ? "changing your plan" : null };
+  if (text === "Can I have a hint?") return { reply: "Where does the line meet the y-axis, and what is $\\frac{1}{[S]}$ there?", mark: null, doing: null };
+  if (text === "I'm lost") return { reply: "Let's find where. On the plot, what is on each axis?", mark: null, doing: null };
+  if (/\b4\b/.test(text) && openTask === TASK_VMAX) {
+    openTask = TASK_KM;
+    return {
+      reply:
+        "Right: $V_{max} = 1/0.25 = 4$ µM/s. Reading an intercept is always a reciprocal on this plot.\n\nNow the other axis. The x-intercept is where $\\frac{1}{v} = 0$.\n\n" +
+        TASK_KM,
+      mark: { id: `demo-${Date.now()}`, at: stamp(Date.now()), label: "reading $V_{max}$ from the intercept", mark: "right", help: "none", cold: true, paper: null },
+      doing: null,
+    };
+  }
+  if (/\b2\b/.test(text) && openTask === TASK_KM) {
+    return {
+      reply: "Right: $K_m = 2$ µM. With both constants read, you can draw the original curve back from the line.",
+      mark: { id: `demo-${Date.now()}`, at: stamp(Date.now()), label: "reading $K_m$ from the intercept", mark: "right", help: "none", cold: true, paper: null },
+      doing: null,
+    };
+  }
+  return {
+    reply: "Not quite: on this plot the intercept is a reciprocal. Take one over it.",
+    mark: { id: `demo-${Date.now()}`, at: stamp(Date.now()), label: "reading $V_{max}$ from the intercept", mark: "wrong", help: "none", cold: true, paper: null },
+    doing: null,
+  };
+}
+
+async function reply(text: string, markable: boolean): Promise<void> {
+  const { reply: words, mark, doing } = replyTo(text);
+  await wait(120);
+  await stream(words, doing);
+  if (holdHalfway && words.includes("Midterm 1 is now")) return;
+  demoAfterTurn(text, (event) => {
+    if (event.type === "plan_changed") {
+      planMs = Date.now();
+      changes = [...changes, `${stamp(Date.now()).slice(0, 10)}: moved Midterm 1 a week later and put the cold redos before Paper B, because the midterm moved and three days were skipped.`];
+    }
+    emit(event);
+  });
+  if (mark && markable) {
+    await wait(260);
+    marked = [...marked, mark];
+    demoMarked(mark, emit);
+  }
+}
+
+// --- This Mac -------------------------------------------------------------------
+
+let payment: Payment = "plan";
+let engine: Engine = "direct";
+const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
+function runtime(): RuntimeSetup {
+  const bundled = program("0.3.0+4f1c2ad9e0b7");
+  if (replaceRuntime) return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  return { state: "ready", installed: program("0.3.0+4f1c2ad9e0b7"), bundled, installed_now: firstOpen, message: null };
+}
+function account(): Account {
+  if (noClaude) return { name: "Claude Code", installed: false, signed_in: false, paid_with: null, detail: null, problem: "Claude Code is not installed on this Mac.", install_page: "https://code.claude.com/docs/en/setup" };
+  if (signedOut) return { name: "Claude Code", installed: true, signed_in: false, paid_with: null, detail: null, problem: null, install_page: null };
+  return { name: "Claude Code", installed: true, signed_in: true, paid_with: payment, detail: payment === "plan" ? "your Claude plan" : "an API key", problem: null, install_page: null };
+}
+const setup = (): Setup => ({ runtime: runtime(), account: account(), payment });
+
+const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/Paper B.pdf", minutes: 50, sat: false };
+let sitting: PaperSitting | null = state === "paper-running" ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
+let blockMinutes = 50;
 
 function home(): Home {
   const base: Home = {
-    folder: "/Users/you/Study/Demo-Course",
-    name: "Demo-Course",
-    state: "ready",
-    message: null,
-    exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-    last: {
-      days_ago: 3,
-      goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
-      stopped_at: stoppedAt,
-      next_action: "Find Vmax from the intercept 0.25.",
-    },
-    checks_due: 2,
-    redos_due: 3,
-    first_redo: "Diagnostic Q4",
-    papers: [paperB, paperA],
-    can_resume: true,
+    folder: FOLDER,
+    name: "Biochemistry 210",
+    state: upgrade ? "needs_upgrade" : newFolder ? "empty" : "ready",
+    message: upgrade ? "An earlier version of Magnesium set this folder up. Upgrade it to study here; Magnesium keeps a copy of your record in .magnesium/backups first." : null,
+    exam: { target: "midterm-1", title: "Midterm 1", date: demoPlan().exam_date, day: dayName(demoPlan().exam_date), days_left: 5 },
+    last: newFolder ? null : { days_ago: away, goal: GOAL, stopped_at: "What is $V_{max}$, with its units?", next_action: "Read V_max off the intercept." },
+    checks_due: 1,
+    redos_due: 0,
+    first_redo: null,
+    papers: [paperB],
+    can_resume: !newFolder,
     sitting,
     block_minutes: blockMinutes,
   };
-  if (variant === "new") {
-    return { ...base, state: "not_set_up", exam: null, last: null, checks_due: 0, redos_due: 0, first_redo: null, papers: [], can_resume: false };
-  }
-  if (variant === "quiet") return { ...base, checks_due: 0, redos_due: 0, first_redo: null };
-  if (variant === "upgrade") {
-    return {
-      ...base,
-      state: "needs_upgrade",
-      message:
-        "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
-      exam: null,
-      last: null,
-      checks_due: 0,
-      redos_due: 0,
-      first_redo: null,
-      papers: [],
-    };
-  }
-  if (variant === "broken") {
-    return { ...base, state: "no_runtime", message: "The magnesium program is not installed, or the window cannot find it. Install Magnesium, then open the window again." };
-  }
   return base;
 }
 
-// What the setup screen shows, chosen by the address: #welcome:replace,
-// #welcome:signed-out, #welcome:no-claude, #welcome:key or #welcome:first.
-// #setup shows it as opened from the library, with everything ready.
-let setupVariant = "";
-let payment: Payment = "plan";
-let signedIn = true;
-const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
-
-function runtimeSetup(): RuntimeSetup {
-  const bundled = program("0.3.0+4f1c2ad9e0b7");
-  if (setupVariant === "replace") {
-    return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
-  }
-  // Worded as the core words it: install.rs.
-  if (setupVariant === "too-old") {
-    return {
-      state: "too_old",
-      installed: program("0.2.0"),
-      bundled,
-      installed_now: false,
-      message:
-        "The magnesium program on this Mac, version 0.2.0, is older than this window needs. Replace it with the copy inside this app, version 0.3.0. Until then no lesson starts.",
-    };
-  }
-  if (setupVariant === "too-old-source") {
-    return {
-      state: "too_old",
-      installed: program("0.3.0"),
-      bundled: null,
-      installed_now: false,
-      message:
-        "The magnesium program on this Mac, version 0.3.0, is older than this window needs. Ask Claude Code to install the newest Magnesium with the install guide, docs/install.md in the Magnesium repository, then check again. Until then no lesson starts.",
-    };
-  }
-  return { state: "ready", installed: bundled, bundled, installed_now: setupVariant === "first", message: null };
-}
-
-function account(): Account {
-  const base: Account = {
-    name: "Claude Code",
-    installed: true,
-    signed_in: true,
-    paid_with: "plan",
-    detail: "your Claude Max plan",
-    problem: null,
-    install_page: null,
-  };
-  if (setupVariant === "no-claude") {
-    return {
-      ...base,
-      installed: false,
-      signed_in: false,
-      paid_with: null,
-      detail: null,
-      problem: "Claude Code is not on this Mac, or the window cannot find it. Install it, then check again.",
-      install_page: "https://code.claude.com/docs/en/setup",
-    };
-  }
-  if (!signedIn) {
-    return { ...base, signed_in: false, paid_with: null, detail: null, problem: "Claude Code is not signed in. Sign in with your Claude account." };
-  }
-  if (setupVariant === "key" && payment === "plan") {
-    return {
-      ...base,
-      paid_with: "api_key",
-      detail: "an API key set in ANTHROPIC_API_KEY, per use",
-      problem:
-        "Claude Code would pay with an API key set in ANTHROPIC_API_KEY, per use, not your Claude plan. Sign in with your Claude account to use the plan.",
-    };
-  }
-  if (payment === "api_key") return { ...base, paid_with: "api_key", detail: "your Anthropic Console sign-in, per use" };
-  return base;
-}
-
-const demoSetup = (): Setup => ({ runtime: runtimeSetup(), account: account(), payment });
-
-const rail: Rail = {
-  goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
-  steps: [
-    { step: "Write the rate equation", status: "done" },
-    { step: "Take reciprocals of both sides", status: "done" },
-    { step: "What the y-intercept gives", status: "doing" },
-    { step: "What the slope gives", status: "todo" },
-    { step: "Check the units", status: "todo" },
+const progress = (): Progress => ({
+  targets: [home().exam!],
+  exam: home().exam,
+  confirmed: [],
+  in_progress: [
+    { dots: [2, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "next Fri 13 Nov", due: false, next_day: null },
+    { dots: [2, 1, 0], name: "slope and $K_m$", what: "read the slope as $K_m$", note: "due today", due: true, next_day: null },
+    { dots: [2, 0, 0], name: "units of a rate", what: "", note: "next Mon 16 Nov", due: false, next_day: null },
   ],
-  next_action: "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.",
-};
-
-const isoDay = (ahead: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + ahead);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-
-const row = (dots: [number, number, number], name: string, what: string, note: string, ahead: number | null = null): Row => ({
-  dots,
-  name,
-  what,
-  note,
-  due: note.startsWith("due"),
-  next_day: note.startsWith("due") ? isoDay(0) : ahead === null ? null : isoDay(ahead),
+  untested: [],
+  scores: [{ paper: "Diagnostic", date: stamp(Date.now() - 6 * DAY).slice(0, 10), score: "31/50", sure_right: null, sure_total: null }],
+  helped: [],
+  helped_count: 0,
+  unreadable: 0,
+  checks_unknown: false,
+  proofs: { earned: 4, total: 9, proven: 0, skills: 3, level: 2, to_next: 1, levelled: true },
+  level_unknown: false,
+  today: null,
+  message: null,
 });
 
-const proofs = (earned: number, proven: number, skills: number): Proofs => {
-  const total = skills * 3;
-  const level = total === 0 ? 1 : 1 + Math.floor((earned * 9) / total);
-  return { earned, total, proven, skills, level, to_next: total === 0 || level >= 10 ? 0 : Math.ceil((level * total) / 9) - earned, levelled: true };
+const lessonList = (): LessonInfo[] =>
+  newFolder
+    ? []
+    : [
+        { session: "demo-current", first_ms: START_TURN_MS, last_ms: STOP_TURN_MS, turns: 2, opening: `Let's work on ${GOAL}.`, current: true },
+        { session: "demo-mm", first_ms: ago(5, 9, 0), last_ms: ago(5, 9, 40), turns: 6, opening: "Michaelis–Menten from the steady state", current: false },
+        { session: "demo-diag", first_ms: ago(6, 19, 0), last_ms: ago(6, 19, 30), turns: 4, opening: "Mark my Diagnostic. I used 47 of 50 minutes.", current: false },
+      ];
+
+const OLD_TURNS: Record<string, Turn[]> = {
+  "demo-mm": [
+    {
+      session: "demo-mm",
+      ms: ago(5, 9, 5),
+      learner: "Michaelis–Menten from the steady state",
+      tutor: "The steady state says the complex $ES$ forms as fast as it breaks down.\n\n**Task.** Write that balance as an equation in $[E]$, $[S]$ and $[ES]$.",
+      interrupted: false,
+    },
+    { session: "demo-mm", ms: ago(5, 9, 12), learner: "$k_1[E][S] = (k_{-1} + k_2)[ES]$", tutor: "Right. That is the whole derivation's first line.", interrupted: false },
+  ],
+  "demo-diag": [
+    { session: "demo-diag", ms: ago(6, 19, 5), learner: "Mark my Diagnostic. I used 47 of 50 minutes.", tutor: "Marked: 31 of 50. The gap that cost most is reading the slope as $K_m$; it is in the gap log.", interrupted: false },
+  ],
 };
 
-/** A course with no plan: its skills are counted, with no level. */
-const counted = (proven: number, skills: number): Proofs => ({ earned: 0, total: 0, proven, skills, level: 0, to_next: 0, levelled: false });
-
-const card = (name: string, more: Partial<Card>): Card => ({
-  folder: `/Users/you/Study/${name}`,
-  name,
-  state: "ready",
-  exam: null,
-  goal: null,
-  days_ago: null,
-  proofs: proofs(0, 0, 0),
-  due: 0,
-  sitting: null,
-  ...more,
-});
-
-function library(): Card[] {
-  if (shelf === "empty") return [];
-  const now = home();
-  const cards = [
-    card("Demo-Course", {
-      state: now.state,
-      exam: now.exam,
-      goal: now.last?.goal ?? null,
-      days_ago: now.last?.days_ago ?? null,
-      proofs: now.state === "ready" ? proofs(15, 3, 11) : proofs(0, 0, 0),
-      due: now.redos_due + (now.checks_due ?? 0),
-      sitting: now.sitting,
-    }),
-    card("Linear-Algebra", {
-      exam: { target: "final", title: "Final", date: "2026-12-04", day: "Fri 4 Dec", days_left: 23 },
-      goal: "Diagonalising a matrix: when $A = PDP^{-1}$ exists",
-      days_ago: 1,
-      proofs: proofs(31, 8, 18),
-      due: 1,
-    }),
-    card("Probability", {
-      exam: { target: "test-2", title: "Test 2", date: "2026-12-12", day: "Sat 12 Dec", days_left: 31 },
-      goal: "The cdf method for $U = \\sqrt{Y}$, and why a transformation of $Y$ that is not one-to-one needs the sum over every branch of its inverse",
-      days_ago: 6,
-      proofs: proofs(6, 1, 14),
-    }),
-    card("Music-Theory", {
-      goal: "Reading figured bass",
-      days_ago: 3,
-      proofs: counted(2, 5),
-    }),
-    card("Organic-Chemistry", { state: "not_set_up" }),
-  ];
-  if (found) cards.push(card("Thermodynamics", { state: "empty" }));
-  return cards.filter((each) => !forgotten.includes(each.folder));
-}
-
-function activity(): Activity {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const day = (back: number) => {
-    const date = new Date();
-    date.setDate(date.getDate() - back);
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  };
-  // Studied on these days before today, and today once a sitting is done.
-  const before = history ? [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30] : [];
-  const days = before.map((back) => day(back));
-  if (studiedToday) days.push(day(0));
-  days.sort();
-  return { today: day(0), days, run: !history ? 0 : studiedToday ? 4 : 3, studied_today: studiedToday };
-}
-
-function progress(target: string | null = null): Progress {
-  // Each exam is its own plan. The final covers the whole course, so it holds more skills than the midterm: the same proofs earned are a smaller share of it, and its level is lower.
-  const wholeCourse = target === "final";
-  if (variant === "new" || variant === "upgrade" || variant === "broken") {
-    return {
-      targets: [],
-      exam: null,
-      in_progress: [],
-      confirmed: [],
-      untested: [],
-      scores: [],
-      helped: [],
-      helped_count: 0,
-      unreadable: 0,
-      checks_unknown: false,
-      proofs: proofs(0, 0, 0),
-      level_unknown: false,
-      today: null,
-      message: "Nothing is proved yet. Progress fills in after your first marked paper or quick check.",
-    };
-  }
-  return {
-    targets: [
-      { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-      { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 },
-    ],
-    exam:
-      target === "final"
-        ? { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 }
-        : { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-    in_progress: [
-      // After a sitting in the demo, the first skill has earned its second proof.
-      sittingsDone > 0
-        ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
-        : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
-      slipRecorded
-        ? row([0, 0, 0], "slope and $K_m$", "read the slope as $K_m$", "next tomorrow", 1)
-        : row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
-      row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
-      row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
-      row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
-      // Never got wrong: answered right, alone and cold, on two papers.
-      row([2, 2, 0], "substrate concentration", "right, alone, in Paper A Q2", "–"),
-    ],
-    confirmed: [
-      row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),
-      row([2, 2, 2], "initial rates", "used the rate at the end", "confirmed Thu 5 Nov"),
-      row([2, 2, 2], "enzyme units", "mixed up mol and µmol", "confirmed Wed 4 Nov"),
-    ],
-    untested: [
-      row([0, 0, 0], "non-competitive inhibition", "lower Vmax, same Km", "–"),
-      row([0, 0, 0], "pH and activity", "the optimum and its causes", "–"),
-      ...(wholeCourse
-        ? [
-            row([0, 0, 0], "Eadie–Hofstee plot", "the axes swapped", "–"),
-            row([0, 0, 0], "Hanes–Woolf plot", "the intercept on the wrong axis", "–"),
-            row([0, 0, 0], "cooperativity", "$n > 1$ read as inhibition", "–"),
-            row([0, 0, 0], "allosteric enzymes", "a sigmoid curve read as a hyperbola", "–"),
-            row([0, 0, 0], "two-substrate kinetics", "ping-pong against sequential", "–"),
-            row([0, 0, 0], "temperature and rate", "the denaturing drop", "–"),
-            row([0, 0, 0], "enzyme assays", "the blank not subtracted", "–"),
-          ]
-        : []),
-    ],
-    scores: [
-      { paper: "Diagnostic", date: "2026-10-28", score: "15/30", sure_right: null, sure_total: null },
-      { paper: "Paper A", date: "2026-11-04", score: "20/30", sure_right: 8, sure_total: 11 },
-      { paper: "Paper B", date: "2026-11-08", score: "24/30", sure_right: 9, sure_total: 10 },
-    ],
-    helped: ["PS3 Q4 to Q6 model answers"],
-    helped_count: 3,
-    unreadable: 0,
-    checks_unknown: false,
-    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, wholeCourse ? 18 : 11),
-    level_unknown: false,
-    today: { day: isoDay(0), answered: markedToday, started: markedToday > 0 ? 2 : 0, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
-    message: null,
-  };
-}
-
-const earlier: Turn[] = [
-  ["Teach me PS3 Q3.", "Before I explain: what do you think the line's y-intercept stands for?"],
-  ["Vmax?", "Close. Is it Vmax itself, or something made from it? Write the rate equation first."],
-  ["v = Vmax[S]/(Km + [S])", "Yes. Now take the reciprocal of both sides. What do you get?"],
-  ["1/v = Km/(Vmax[S]) + 1/Vmax", "Right. Which part is the slope, and which part is left when $1/[S] = 0$?"],
-  ["the slope is Km/Vmax", "Correct: the slope is $K_m / V_{max}$. Next, what is left when $1/[S] = 0$?"],
-  ["1/Vmax", "Yes, $1/V_{max}$."],
-  [
-    "ok so what is Vmax",
-    "The line meets the y-axis where $1/[S] = 0$, so the intercept is $1/V_{max}$, not $V_{max}$.\n\nThe slide that draws it is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?",
-  ],
-].map(([learner, tutor], index) => ({ session: "demo", ms: Date.now() - (7 - index) * 60_000, learner, tutor, interrupted: false }));
-
-const REPLY =
-  "Right: $V_{max} = 1 / 0.25 = 4$ µM/s. The intercept is the reciprocal of the top speed, because at very high [S] the enzyme runs at $V_{max}$.\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}} \\cdot \\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n**Task.** In one sentence: why does the intercept sit where $1/[S] = 0$?";
-
-const LOST = "One smaller case first. Take the reciprocal of one number.\n\n**Task.** $1 / 0.25 = {?}$";
-
-const DIAGRAM =
-  "Here is the reading as a picture.\n\n```mermaid\ngraph LR\n  A[rate equation] --> B[take reciprocals]\n  B --> C{is 1/S zero?}\n  C -- yes --> D[intercept is 1 over Vmax]\n  C -- no --> E[slope is Km over Vmax]\n  D --> F[Vmax]\n  E --> G[Km]\n  F --> G\n```\n\n| 1/[S] | 1/v |\n|---|---|\n| 0 | 0.25 |\n| 1 | 0.75 |\n| 2 | 1.25 |\n| 4 | 2.25 |\n\n**Task.** Which column would change if the enzyme were twice as fast?";
-
-const SLIDE_LINES = [
-  "Enzymes speed up reactions",
-  "The rate equation",
-  "Michaelis and Menten",
-  "Initial rates",
-  "Saturation",
-  "Vmax and Km",
-  "Fitting a curve by eye",
-  "Why straight lines help",
-  "Taking reciprocals",
-  "Reciprocals of both sides",
-  "The Lineweaver-Burk plot",
-  "1/v against 1/[S]: the intercept is 1/Vmax",
-  "The slope is Km / Vmax",
-  "Worked example",
-];
-const SLIDES = () => tinyPdf(SLIDE_LINES);
-
-/** What the core would say of a cited file, for the demo's made-up course. */
-function demoSource(path: string): Source {
-  const name = path.split("/").pop() ?? path;
-  if (/key|solution|answer/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
-  if (/\.pdf$/i.test(path)) return { name, kind: "pdf", text: null, truncated: false, image: null };
-  if (/\.(md|txt)$/i.test(path)) {
-    return { name, kind: "text", text: "# Week 4\n\nThe intercept of the Lineweaver-Burk line is 1/Vmax.\nThe slope is Km/Vmax.", truncated: false, image: null };
-  }
-  throw new Error("The window shows PDFs, text and images beside a lesson. Other files stay closed.");
-}
-
-/** What adding these made-up files would say, worded as the core words it. */
-function material(paths: string[], pasted = false): Added {
-  const names = paths.map((path) => path.split("/").pop() ?? path);
-  const keys = names.filter((name) => /key|solution|answer/i.test(name) && !/tokens?/i.test(name));
-  const shown = names.filter((name) => !keys.includes(name));
-  const lines: string[] = [];
-  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}". The tutor can quote it.` : `Added "${shown[0]}" to your course material. The tutor can quote it.`);
-  else if (shown.length > 1) lines.push(`Added ${shown.length} files to your course material. The tutor can quote them.`);
-  if (keys.length > 0) lines.push(`${keys.length} ${keys.length === 1 ? "file looks" : "files look"} like an answer ${keys.length === 1 ? "key" : "keys"}. ${keys.length === 1 ? "It is" : "They are"} added, and this window keeps ${keys.length === 1 ? "it" : "them"} closed.`);
-  const trouble = shown.flatMap((name) => {
-    if (/scan/i.test(name)) return [`"${name}" is a scan with no text, so its text cannot be searched.`];
-    if (/tokens?/i.test(name)) return [`Search leaves out "${name}" because its name has the word "tokens". Rename it and add it again.`];
-    if (/\.pptx?$/i.test(name)) return [`Search does not read .pptx files, so "${name}" cannot be searched. A PDF of it can be.`];
-    return [];
-  });
-  lines.push(...trouble);
-  return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
-}
-
-/** Remember what the demo's folder now holds, as the core would find it. */
-function keep(added: Added): void {
-  materialNames = [...added.saved.map((path) => path.replace(/^Study\/materials\//, "")), ...materialNames];
-  materialKeys += added.keys;
-}
-
-/** The row the runtime would write for an answer sent in the demo lesson, or none. */
-function markFor(text: string): Mark | null {
-  const lower = text.toLowerCase();
-  if (/(can i have a hint|i'm lost)/.test(lower)) {
-    helpAsked = true;
-    return null;
-  }
-  if (lower.includes("don't know") || lower.includes("(unmarked)") || !marking) return null;
-  if (/\((source|key|stream|limit|permission|slow)\)|diagram/.test(lower)) return null;
-  const helped = helpAsked;
-  helpAsked = false;
-  const wrong = lower.includes("(wrong)");
-  return {
-    id: `demo-${demoMarks.length + 1}`,
-    // The record's times are local, to the minute.
-    at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
-    // A mark is on a skill, named as the Proofs page names it: a wrong answer on the skill the learner slipped on, a right one on the one the lesson is about.
-    label: wrong ? "slope and $K_m$" : "intercept and $V_{max}$",
-    mark: wrong ? "wrong" : "right",
-    help: helped ? "hint" : "none",
-    cold: !helped,
-    paper: null,
-  };
-}
+// --- The core ---------------------------------------------------------------------
 
 export function demoCore(): Core {
-  const handlers = new Set<(event: AgentEvent) => void>();
-  const emit = (event: AgentEvent) => handlers.forEach((handler) => handler(event));
-  let stopped = false;
-  let waiting: ((value: string) => void) | null = null;
-
-  const write = async (text: string, hold = false) => {
-    emit({ type: "turn_started" });
-    const pieces = text.match(/\S+\s*/g) ?? [];
-    for (const piece of pieces) {
-      if (stopped) break;
-      emit({ type: "text_delta", text: piece });
-      await wait(hold ? 400 : 14);
-    }
-    if (!stopped) emit({ type: "text_done", text });
-    emit({ type: "turn_ended", ok: true, interrupted: stopped, error: null });
-  };
-
-  const reply = async (text: string) => {
-    stopped = false;
-    emit({ type: "ready", session_id: "demo", problems: [], plugin_missing: false });
-    const lower = text.toLowerCase();
-    await wait(250);
-    // The shared scenarios: a change to the plan, an off-plan question, a return to the task.
-    const shared = demoBaseReply(text);
-    if (shared !== null) {
-      await write(shared);
-      demoAfterTurn(text, emit);
-      return;
-    }
-    if (lower.includes("lost")) return write(LOST);
-    if (lower.includes("hint")) return write("Look at where the line meets the $1/v$ axis. What is $1/[S]$ there?");
-    if (lower.includes("don't know")) {
-      emit({ type: "working", doing: null });
-      emit({
-        type: "question",
-        id: "q1",
-        questions: [
-          {
-            question: "Which of these was in your head?",
-            header: null,
-            multi: false,
-            options: [
-              { label: "the intercept is Vmax", description: null },
-              { label: "the intercept is 1/Vmax", description: null },
-              { label: "not sure what the intercept is", description: null },
-            ],
-          },
-        ],
-      });
-      const chosen = await new Promise<string>((done) => (waiting = done));
-      return write(`You said: ${chosen}. A short repair now, and this returns tomorrow as a question.\n\n**Task.** At $1/[S] = 0$, what is $1/v$?`);
-    }
-    if (lower.includes("permission")) {
-      emit({ type: "working", doing: "building the papers" });
-      emit({ type: "permission", id: "p1", title: "Run a command", detail: "tectonic Study/midterm-1/papers/PaperC.tex", can_always: true });
-      const decision = await new Promise<string>((done) => (waiting = done));
-      return write(decision === "refuse" ? "No problem. I'll leave the paper unbuilt for now." : "Paper C is built. Sit it when you are ready.");
-    }
-    if (lower.includes("(source)")) {
-      return write("Right, $V_{max} = 4$ µM/s. Look at the slide again while I set the next step: [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).");
-    }
-    if (lower.includes("(key)")) {
-      return write("The marking guide for this is [the answer key](Study/midterm-1/papers/PaperB-key.pdf).");
-    }
-    if (lower.includes("diagram")) return write(DIAGRAM);
-    if (lower.includes("slow")) {
-      emit({ type: "working", doing: "writing paper 2" });
-      await wait(30_000);
-      emit({ type: "working", doing: "writing paper 3" });
-      await wait(30_000);
-      return write("Done.");
-    }
-    if (lower.includes("stream")) return write(REPLY, true);
-    if (lower.includes("i'm back") || lower.includes("no checks")) {
-      return write(
-        lower.includes("no checks")
-          ? "No checks now; they stay due.\n\nYou stopped at step 3. The line meets the y-axis where $1/[S] = 0$.\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?"
-          : "Welcome back. Two quick checks first, then step 3. The slide behind them is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Check 1 of 2.** A rate doubles when [S] doubles. Is [S] well below or well above Km? One line, with the reason.",
-      );
-    }
-    if (lower.includes("limit")) {
-      emit({ type: "notice", kind: "usage_limit", text: "You reached your Claude usage limit. It resets at 15:00 on Tue 10 Nov." });
-      emit({ type: "turn_ended", ok: false, interrupted: false, error: null });
-      return;
-    }
-    return write(REPLY);
-  };
-
+  seed();
+  demoResetPlan();
+  const known = firstOpen ? [] : [...FOLDERS];
+  const card = (folder: string): Card => ({
+    folder,
+    name: folder.split("/").pop() ?? folder,
+    state: "ready",
+    exam: null,
+    goal: null,
+    days_ago: null,
+    proofs: { earned: 0, total: 0, proven: 0, skills: 0, level: 0, to_next: 0, levelled: false },
+    due: 0,
+    sitting: null,
+  });
   return {
-    // The window opens on the library. Every other address opens the demo course first.
-    initialFolder: async () => (/^#?(library|welcome|setup)?(:|$)/.test(location.hash) ? null : "/Users/you/Study/Demo-Course"),
-    recent: async () => library().map((each) => each.folder),
-    library: async () => {
-      await wait(120);
-      return library();
-    },
+    initialFolder: async () => null,
+    recent: async () => [...known],
+    library: async () => known.map(card),
     forgetFolder: async (path) => {
-      forgotten = [...forgotten, path];
+      known.splice(known.indexOf(path), 1);
     },
     findFolders: async () => {
-      await wait(900);
-      const added = found ? 0 : 1;
-      found = true;
-      return added;
+      await wait(400);
+      return 0;
     },
-    activity: async () => activity(),
-    pickFolder: async () => "/Users/you/Study/Demo-Course",
-    pickFiles: async () => ["/Users/you/Desktop/IMG_0412.heic"],
-    pickMaterial: async () => ["/Users/you/Desktop/Week 4 slides.pdf"],
-    pickNewFolder: async () => "/Users/you/Study/New-Course",
-    openFolder: async (path) => {
-      const name = path.split("/").filter(Boolean).pop() ?? "Demo-Course";
-      if (name === "Demo-Course") return home();
-      const picked = library().find((each) => each.folder === path);
-      if (picked?.state === "not_set_up" || picked?.state === "empty") variant = "new";
-      else variant = "quiet";
-      return { ...home(), folder: path, name, exam: picked?.exam ?? null, papers: [] };
-    },
-    newFolder: async () => {
-      variant = "new";
-      return { ...home(), folder: "/Users/you/Study/New-Course", name: "New-Course" };
-    },
+    activity: async () => ({ today: stamp(Date.now()).slice(0, 10), days: [], run: 0, studied_today: false }),
+    pickFolder: async () => null,
+    pickFiles: async () => ["/Users/you/Desktop/IMG_0420.HEIC"],
+    pickMaterial: async () => [],
+    pickNewFolder: async () => null,
+    openFolder: async () => home(),
+    newFolder: async () => home(),
     home: async () => home(),
-    setUp: async () => {
-      variant = "quiet";
-      return { ...home(), state: "empty", last: null, exam: null, papers: [] };
-    },
-    upgradeFolder: async () => {
-      await wait(600);
-      variant = "ready";
-      return home();
-    },
-    setup: async () => demoSetup(),
-    replaceRuntime: async () => {
-      setupVariant = "";
-      return { ...runtimeSetup(), installed_now: true };
-    },
-    keepRuntime: async () => ({
-      state: "kept",
-      installed: program("0.2.0"),
-      bundled: program("0.3.0+4f1c2ad9e0b7"),
-      installed_now: false,
-      message:
-        "Lessons use the Magnesium already on this Mac, version 0.2.0. They teach with that version's rules, and it cannot open a folder that a newer Magnesium has upgraded.",
-    }),
+    setUp: async () => ({ ...home(), state: "ready" }),
+    upgradeFolder: async () => ({ ...home(), state: "ready", message: null }),
+    setup: async () => setup(),
+    replaceRuntime: async () => ({ ...runtime(), state: "ready" }),
+    keepRuntime: async () => ({ ...runtime(), state: "kept" }),
     account: async () => account(),
     setPayment: async (chosen) => {
       payment = chosen;
       return account();
     },
-    signIn: async () => {
-      window.setTimeout(() => (signedIn = true), 3000);
-    },
-    about: async () => ({ version: "0.3.0-rc.1", commit: "4f1c2ad9e0b7" }),
-    // A conversation stays on the engine it began on. Another pick starts a new one.
-    openSession: async (resume): Promise<Opened> => {
-      const carries = resume && conversationEngine === engineChosen;
-      conversationEngine = engineChosen;
-      return { resumed: carries, turns: carries && variant !== "new" ? earlier : [], engine: engineChosen };
-    },
-    engine: async () => ({ chosen: engineChosen, conversation: conversationEngine }),
+    engine: async () => ({ chosen: engine, conversation: newFolder ? null : "direct" }),
     setEngine: async (chosen) => {
-      engineChosen = chosen;
-      return { chosen: engineChosen, conversation: conversationEngine };
+      engine = chosen;
+      return { chosen, conversation: "direct" };
+    },
+    signIn: async () => {},
+    about: async () => ({ version: "0.3.0", commit: "4f1c2ad9e0b7" }),
+    openSession: async (resume) => {
+      open = true;
+      return { resumed: resume, turns: resume && !newFolder ? earlierTurns : [], engine };
     },
     send: async (text, intent) => {
-      // Talk is never marked, whatever it says.
-      const markable = demoMayMark(text, intent);
-      if (marking && markable) markedToday += 1;
-      void reply(text);
-      const row = markable ? markFor(text) : null;
-      // The record is written while the reply is: a moment after it is sent.
-      if (row) {
-        window.setTimeout(() => {
-          demoMarks.push(row);
-          if (row.mark === "wrong") slipRecorded = true;
-          demoMarked(row, emit);
-        }, 500);
-      }
+      void reply(text, demoMayMark(text, intent));
     },
-    sendNewLesson: async (goal) => void reply(goal),
-    sendShown: async (shown) => void reply(shown),
-    interrupt: async () => {
-      stopped = true;
+    sendNewLesson: async (goal) => {
+      void reply(goal, false);
     },
-    decide: async (_id, decision) => waiting?.(decision),
-    answer: async (_id, answers) => waiting?.(answers[0]?.chosen.join(", ") ?? ""),
-    // A sitting with no answer marked earns no proof and makes no study day.
-    stop: async (line) => {
-      stoppedAt = line;
-      if (!marking) return;
-      studiedToday = true;
-      sittingsDone += 1;
+    sendShown: async (shown) => {
+      void reply(shown, false);
     },
-    rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
-    plan: async () =>
-      variant === "new"
-        ? { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null }
-        : demoPlan(),
-    progress: async (target) => progress(target ?? null),
+    interrupt: async () => {},
+    decide: async () => {},
+    answer: async () => {},
+    stop: async () => {
+      open = false;
+    },
+    rail: async () => ({ goal: GOAL, steps: demoPlan().steps, next_action: null }),
+    plan: async () => plan(),
+    progress: async () => progress(),
     setBlockMinutes: async (minutes) => {
       blockMinutes = minutes;
     },
-    attach: async () => "Study/handed-in/working/2026-11-10/IMG_0412.jpg",
+    attach: async () => "Study/handed-in/2026-11-12/IMG_0420.jpg",
     addMaterial: async (paths) => {
-      await wait(500);
-      const added = material(paths);
-      keep(added);
-      return added;
-    },
-    addPastedText: async () => {
       await wait(300);
-      const added = material(["Pasted text 2026-11-11 14-03-22.txt"], true);
-      keep(added);
-      return added;
+      return { saved: paths, keys: 0, lines: [`Added ${paths.length} ${paths.length === 1 ? "file" : "files"} to Study/materials. The tutor's search reads ${paths.length === 1 ? "it" : "them"}.`] };
     },
-    materialList: async () => (variant === "new" ? { names: [], files: 0, keys: 0 } : { names: materialNames.slice(0, 20), files: materialNames.length, keys: materialKeys }),
-    marks: async () => (marksAvailable ? demoMarks.map((row) => ({ ...row })) : null),
-    onDrop: async (handler, hover) => {
-      // A browser drops a file with a name and no path, which is enough to show the screens.
-      const over = (event: DragEvent) => {
-        if (!event.dataTransfer?.types.includes("Files")) return;
-        event.preventDefault();
-        hover(true);
-      };
-      const leave = () => hover(false);
-      const drop = (event: DragEvent) => {
-        event.preventDefault();
-        hover(false);
-        const names = Array.from(event.dataTransfer?.files ?? []).map((file) => `/Users/you/Desktop/${file.name}`);
-        if (names.length > 0) handler(names);
-      };
-      window.addEventListener("dragover", over);
-      window.addEventListener("dragleave", leave);
-      window.addEventListener("drop", drop);
-      return () => {
-        window.removeEventListener("dragover", over);
-        window.removeEventListener("dragleave", leave);
-        window.removeEventListener("drop", drop);
-      };
+    addPastedText: async () => ({ saved: ["Study/materials/Pasted text 14.02.txt"], keys: 0, lines: ["Saved the pasted text as Study/materials/Pasted text 14.02.txt."] }),
+    materialList: async () => ({ names: FILES.files.filter((f) => f.path.startsWith("Study/materials/")).map((f) => f.path.slice(16)), files: 4, keys: 1 }),
+    marks: async () => [...records, ...marked],
+    lessons: async () => lessonList(),
+    lessonTurns: async (session) => (session === "demo-current" ? (newFolder ? [] : earlierTurns) : (OLD_TURNS[session] ?? [])),
+    studyFiles: async () => FILES,
+    writePlan: async (_path, text) => {
+      planMs = Date.now();
+      void text;
+      return planMs;
     },
-    source: async (path) => demoSource(path),
-    sourcePdf: async () => SLIDES().buffer as ArrayBuffer,
-    openFile: async (path) => {
-      if (/key|solution/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
+    onDrop: async (_handler, hover) => {
+      if (state === "drop") window.setTimeout(() => hover(true), 300);
+      return () => {};
     },
+    source: async (path) => source(path),
+    sourcePdf: async () => tinyPdf(["Michaelis-Menten kinetics", "The Lineweaver-Burk plot", "Reading the intercepts", "Inhibition"]).buffer as ArrayBuffer,
+    openFile: async () => {},
     openUrl: async () => {},
-    image: async () => {
-      throw new Error("the demo has no files");
-    },
+    image: async () => PHOTO,
     paperStart: async (paper, minutes) => {
-      sitting = { target: paper.target, name: paper.name, path: paper.path, minutes, started_ms: Date.now() - (12 * 60 + 48) * 1000 };
+      sitting = { target: paper.target, name: paper.name, path: paper.path, minutes, started_ms: Date.now() };
       return sitting;
     },
-    paperEnd: async (files) => {
-      const name = sitting?.name ?? "the paper";
+    paperEnd: async () => {
       sitting = null;
-      return files.length > 0 ? { shown: `Mark my ${name}. I used 37 of 50 minutes.`, sent: `Mark my ${name}.` } : null;
+      return null;
     },
     onEvent: async (handler) => {
-      handlers.add(handler);
-      return () => handlers.delete(handler);
+      emit = handler;
+      return () => {
+        emit = () => {};
+      };
     },
     selftest: async () => false,
     selftestReport: async () => {},
   };
 }
 
-/** Choose the demo's data before the page first asks for it. */
-export function chooseVariant(): void {
-  const [screen, state] = location.hash.slice(1).split(":");
-  if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
-  if (screen === "library" && state === "empty") shelf = "empty";
-  if (state === "fresh" && screen !== "session") {
-    history = false;
-    studiedToday = false;
-  }
-  // The end of a sitting shows today's day being earned.
-  // Nothing is marked yet today, so no study day is ticked and no count is made: the counts and the week agree.
-  if (screen === "summary") {
-    studiedToday = false;
-    markedToday = 0;
-  }
-  if (screen === "summary" && state === "unmarked") marking = false;
-  // A runtime from before the `attempts` command has no marks to show.
-  if (state === "nomarks") marksAvailable = false;
-  // Magnesium picked, with the demo course's conversation begun on Claude Code.
-  if (state === "magnesium") engineChosen = "direct";
-  if (screen === "welcome" && state) {
-    setupVariant = state;
-    signedIn = state !== "signed-out";
-  }
-  if (location.hash.startsWith("#paper:running")) {
-    sitting = { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - (12 * 60 + 48) * 1000 };
-  }
-}
-chooseVariant();
+// --- Driving the page to the address's state ---------------------------------------
 
-/**
- * Put the page in the state its address names, such as #session:lost or
- * #progress. Used to photograph each screen.
- */
+const CHANGE = "I skipped three days and the midterm moved, change the plan";
+const OFF_PLAN = "By the way, why do people still draw Lineweaver–Burk plots if they stretch the errors?";
+
+async function idle(actions: Actions): Promise<void> {
+  const started = Date.now();
+  await wait(60);
+  while (Date.now() - started < 8000) {
+    const live = actions.session().live;
+    if (!live || live.status === "idle") break;
+    await wait(25);
+  }
+  await wait(320);
+}
+
+/** Every state the shots photograph, by its address. */
+export const STATES = [
+  "s1-cold",
+  "s1-cold-first",
+  "s2-start",
+  "s2-answer",
+  "s3-before",
+  "s3-after",
+  "s4-offplan",
+  "s4-return",
+  "s5-week",
+  "s5-week-next",
+  "settings",
+  "open",
+  "commands",
+  "folders",
+  "sidebar",
+  "material",
+  "paper",
+  "paper-running",
+  "record",
+  "earlier",
+  "plan",
+  "plan-edit",
+  "new-lesson",
+  "hint",
+  "setup-signed-out",
+  "setup-no-claude",
+  "setup-replace",
+  "upgrade",
+  "drop",
+];
+
 export async function startFromAddress(actions: Actions): Promise<void> {
-  const [screen, state] = (location.hash.slice(1) || "library").split(":");
-  const quiet = async () => {
-    for (let n = 0; n < 200 && document.querySelector(".app")?.getAttribute("data-busy") === "yes"; n++) await wait(50);
+  void open;
+  const at = state;
+  const lesson = async (upTo: number) => {
+    await actions.continueLesson();
+    await idle(actions);
+    if (upTo < 1) return;
+    await actions.answer("$V_{max} = 1/0.25 = 4$ µM/s");
+    await idle(actions);
+    if (upTo < 2) return;
+    actions.setPlace("talk");
+    await actions.talk(CHANGE);
+    await idle(actions);
+    if (upTo < 3) return;
+    await actions.talk(OFF_PLAN);
+    await idle(actions);
+    if (upTo < 4) return;
+    await actions.talk("OK, back to the task.");
+    await idle(actions);
   };
-  await wait(50);
-  if (screen === "library" && state === "lesson") {
-    // A lesson open behind the library: the engine choice is disabled.
-    await actions.continueFolder("/Users/you/Study/Demo-Course");
-    await wait(300);
-    await quiet();
-    actions.showLibrary();
-    return;
-  }
-  if (screen === "library" && state === "continue") {
-    // Enter on the main card goes straight into its lesson.
-    await wait(300);
-    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    return;
-  }
-  if (screen === "session" || screen === "summary") {
-    if (state === "fresh") {
-      await actions.newLesson("teach me enzyme kinetics");
-      return;
-    }
-    await actions.continueLesson(false);
-    // Wait for the opening reply to finish before saying anything more.
-    await wait(300);
-    await quiet();
-    if (screen === "summary") {
-      // At #summary:slip the answer is wrong, and the record has the skill coming back tomorrow.
-      await actions.say(state === "slip" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
-      await wait(state === "slip" ? 900 : 300);
-      await quiet();
-      // The lesson is on step 3 of 5, so that is where the next one picks up.
-      await actions.stop("PS3 Q3, step 3: what the y-intercept gives.");
-      return;
-    }
-    const words: Record<string, string> = {
-      lost: "I'm lost",
-      idk: "I don't know",
-      hint: "Can I have a hint?",
-      permission: "please build paper C (permission)",
-      diagram: "show me a diagram",
-      stream: "Vmax is 4 µM/s (stream)",
-      slow: "build my plan (slow)",
-      limit: "one more (limit)",
-      answer: "Vmax is 4 µM/s",
-      source: "Vmax is 4 µM/s (source)",
-      key: "show me the key (key)",
-      math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
-    };
-    // What a learner does in the lesson: the answer is typed in the box and sent with its button, so the page reads the record before it goes.
-    const answerInBox = async (text: string) => {
-      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
-      if (!box) return;
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(box, text);
-      box.dispatchEvent(new Event("input", { bubbles: true }));
-      await wait(60);
-      document.querySelector<HTMLButtonElement>(".composer button.send")?.click();
-    };
-    // Marked right, alone and cold; right with a hint; wrong; and a runtime that cannot say.
-    if (state === "marked" || state === "wrong" || state === "nomarks") {
-      await answerInBox(state === "wrong" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
-      return;
-    }
-    if (state === "helped") {
-      Array.from(document.querySelectorAll<HTMLButtonElement>(".composer button")).find((b) => b.textContent?.trim() === "Hint")?.click();
-      await wait(300);
-      await quiet();
-      await answerInBox("Vmax is 4 µM/s");
-      return;
-    }
-    if (state && words[state]) await actions.say(words[state]);
-    if (state === "source" || state === "key") {
-      await wait(300);
-      await quiet();
-      if (state === "source") document.querySelector<HTMLButtonElement>('[data-role="source-chip"]')?.click();
-      else document.querySelector<HTMLAnchorElement>(".tutor a.source")?.click();
-    }
-    if (state === "material") {
-      await actions.addMaterial(["/Users/you/Desktop/Week 4 slides.pdf", "/Users/you/Desktop/Scanned lecture notes.pdf"]);
-    }
-    if (state === "drop") actions.setDragging(true);
-    if (state === "stop") document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click();
-    if (state === "earlier") document.querySelector<HTMLButtonElement>('[data-role="earlier"]')?.click();
-    if (state === "plan") document.querySelector<HTMLButtonElement>('[data-role="track"]')?.click();
-    if (state === "typing") {
-      // What the answer box looks like with mathematics typed in it.
-      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
-      if (box) {
-        const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-        set?.call(box, "The intercept is $\\frac{1}{V_{max}}$, so $V_{max} = 4$");
-        box.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    }
-  } else if (screen === "progress") {
-    await actions.openProgress(null);
-  } else if (screen === "paper") {
-    actions.openPaper(null);
-  } else if (screen === "course" && state === "ask") {
-    actions.setAsking(true);
-  } else if (screen === "course" && state === "material") {
-    await actions.addMaterial([
-      "/Users/you/Desktop/Week 4 slides.pdf",
-      "/Users/you/Desktop/Scanned lecture notes.pdf",
-      "/Users/you/Desktop/api tokens.md",
-      "/Users/you/Desktop/Week 4 deck.pptx",
-      "/Users/you/Desktop/Midterm answer key.pdf",
-    ]);
-  } else if (screen === "course" && state === "drop") {
-    actions.setDragging(true);
-  } else if (screen === "course" && state === "paste") {
-    actions.pasteText("Bayes' rule: the posterior is proportional to the prior times the likelihood.");
-  } else if (screen === "palette") {
-    actions.setPalette(true);
-  } else if (screen === "setup" || (screen === "welcome" && !state)) {
-    actions.openSetup();
+  switch (at) {
+    case "s2-start":
+    case "s5-week-next":
+      await lesson(0);
+      break;
+    case "s2-answer":
+      await lesson(1);
+      break;
+    case "s3-before":
+      await lesson(1);
+      actions.setPlace("talk");
+      await actions.talk(CHANGE);
+      break;
+    case "s3-after":
+      await lesson(2);
+      break;
+    case "s4-offplan":
+      await lesson(3);
+      break;
+    case "s4-return":
+      await lesson(4);
+      break;
+    case "hint":
+      await lesson(0);
+      await actions.help("hint");
+      await idle(actions);
+      break;
+    case "settings":
+      actions.openDoc("settings");
+      break;
+    case "open":
+      actions.setSheet("open");
+      break;
+    case "commands":
+      actions.setSheet("commands");
+      break;
+    case "folders":
+      actions.setSheet("folders");
+      break;
+    case "material":
+      actions.openDoc("file:Study/materials/lineweaver-burk.md", true);
+      break;
+    case "paper":
+    case "paper-running":
+      actions.openDoc("file:Study/midterm-1/papers/Paper B.pdf");
+      break;
+    case "record":
+      actions.openDoc("record");
+      break;
+    case "earlier":
+      actions.openDoc("lesson:demo-mm");
+      break;
+    case "plan":
+      actions.openDoc("plan");
+      break;
+    case "plan-edit":
+      actions.openDoc("plan");
+      await wait(200);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", metaKey: true }));
+      break;
+    case "drop":
+      actions.setDragging(true);
+      break;
+    default:
+      break;
   }
 }
