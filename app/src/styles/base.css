@@ -54,7 +54,7 @@
   --accent-soft: rgba(143, 207, 167, 0.1);
   --accent-mid: rgba(143, 207, 167, 0.42);
   /* A brighter tint of the proof green: the part of the level earned today. */
-  --accent-bright: #d6f6e3;
+  --accent-bright: #b4efca;
   --amber: #e8b962;
   --amber-soft: rgba(232, 185, 98, 0.12);
   --red: #f29587;
@@ -914,37 +914,39 @@ button.banner:hover {
   --g: 0;
   --ma-on: 0;
   --mg-on: 0;
-  /* The stroke's outer height, which a share is a share of. */
-  --box: calc(100% + var(--bw) * 2);
+  /* The outline is an inset shadow, not a border, so a fill covers the
+     stroke's whole width: a border would leave a fill 2px wide inside it. */
+  --box: 100%;
   position: relative;
   width: var(--w);
   height: var(--h);
-  border: var(--bw) solid var(--line-input);
+  box-shadow: inset 0 0 0 var(--bw) var(--line-input);
   border-radius: calc(var(--w) / 2);
   overflow: hidden;
 }
 
 .tally i.full {
-  border-color: var(--accent);
+  box-shadow: none;
+  background: var(--accent);
 }
 
 .tally i::before,
 .tally i::after {
   content: "";
   position: absolute;
-  left: calc(var(--bw) * -1);
-  right: calc(var(--bw) * -1);
+  left: 0;
+  right: 0;
 }
 
 .tally i::before {
-  bottom: calc(var(--bw) * -1);
+  bottom: 0;
   height: max(calc(var(--min-a) * var(--ma-on)), calc(var(--box) * var(--a)));
   background: var(--accent);
 }
 
 /* What was earned today sits on top of the rest, in a brighter tint, and grows once. */
 .tally i::after {
-  bottom: calc(var(--bw) * -1 + max(calc(var(--min-a) * var(--ma-on)), calc(var(--box) * var(--a))));
+  bottom: max(calc(var(--min-a) * var(--ma-on)), calc(var(--box) * var(--a)));
   height: max(calc(var(--min-g) * var(--mg-on)), calc(var(--box) * var(--g)));
   background: var(--accent-bright);
   transform-origin: bottom;
