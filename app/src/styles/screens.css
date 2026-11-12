@@ -1064,12 +1064,20 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   }
 
   /* The learner's answer: its note hangs in the margin beside its first line,
-     the answer is indented one --s4, so the note reaches that much further. */
+     the answer is indented one --s4, so the note reaches that much further.
+     An examiner marks in the margin, beside the answer: once the record has a
+     mark for it, a second line stands under "Your answer". The note is out of
+     the flow, so the column does not move when the mark arrives. */
   .session .you .you-label {
     display: block;
     position: absolute;
     top: calc(var(--s1) + 0.2em);
     right: calc(100% + var(--s4) + var(--note-x));
+  }
+
+  /* There is a margin: the sentence under the answer is not drawn (the note's title and the status line say it). */
+  .session .you .you-verdicts {
+    display: none;
   }
 
   /* Hint, over the reply it names: a note of no height at the top of the reply,
@@ -1195,36 +1203,49 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   white-space: nowrap;
 }
 
-/* The steps, in ink alone (green in the lesson is the live task's rule in the
-   margin and a proof, nothing else). Done is filled; the step in hand is an
-   outline in ink, 2px; a step ahead is an outline in --line-input, 1.5px, so it
-   holds 3:1 against the strip and is plainly lighter than the one in hand. */
+/* The steps are strokes, as the level is: short vertical marks, 3 by 12px,
+   3px apart, 2px radius. Done is filled ink; the step in hand is filled ink with
+   a 2px underline of ink; a step ahead is an outline in --line-input (3:1 on the
+   strip), the same weight of line as the level's. Ink alone: green in the lesson
+   is the live task's rule in the margin and a proof, nothing else. */
 .pips {
   display: flex;
-  gap: var(--s1);
+  align-items: flex-start;
+  gap: 3px;
   flex: none;
+  height: 16px;
+  padding-top: 1px;
 }
 
 .pips i,
 .plan li i {
-  width: 16px;
-  height: 6px;
-  border-radius: var(--r-pill);
+  position: relative;
+  flex: none;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--line-input);
-  transition: background 0.4s;
+  box-shadow: inset 0 0 0 1px var(--line-input);
 }
 
 .pips i.done,
-.plan li.done i {
-  background: var(--text);
-  box-shadow: inset 0 0 0 1.5px var(--text);
-}
-
+.plan li.done i,
 .pips i.cur,
 .plan li.cur i {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px var(--text);
+  background: var(--text);
+  box-shadow: none;
+}
+
+.pips i.cur::after,
+.plan li.cur i::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: calc(100% + 2px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text);
 }
 
 .plan {
@@ -1248,7 +1269,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: var(--s2);
+  margin-top: 0;
   font-family: var(--serif);
   font-size: var(--fs-read);
   font-weight: 600;
@@ -1282,13 +1303,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   color: var(--muted);
 }
 
-/* The steps here are the strip's capsules, and the same three states: done is
-   filled, the step in hand a heavier outline, a step ahead a lighter one, all in
-   ink. A filled circle is a proof and means nothing else in the lesson. */
+/* The steps here are the strip's strokes, in the same three states. A filled
+   circle is a proof and means nothing else in the lesson. */
 .plan li i {
-  flex: none;
-  /* Centred on the first line of the step (13.5px at 1.4). */
-  margin-top: 7px;
+  /* Centred on the first line of the step (13.5px at 1.4, so 19px). */
+  margin: 3px 2px 0;
 }
 
 .plan li.done {
@@ -1423,6 +1442,55 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   display: none;
 }
 
+.you-who,
+.you-mark {
+  display: block;
+}
+
+/* The mark: the examiner's word in the margin, Literata italic like the note
+   over it. "Marked right" is in ink; the others are quiet. Ink alone: green
+   is for a proof, and a mark of one answer is not that. */
+.you-mark {
+  color: var(--muted);
+  text-wrap: pretty;
+  animation: enter var(--t-move) var(--ease) both;
+}
+
+.you-mark.right {
+  color: var(--text);
+}
+
+/* Narrow, with no margin: the whole sentence stands under the answer, in the
+   flow, once the reply has settled. Same voice as the note: Literata italic,
+   the small size. The page moves its view down by this line's height as it
+   arrives, so what is on screen does not move. */
+.you-verdicts {
+  margin-top: var(--s2);
+}
+
+.you-verdict {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--fs-small);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--muted);
+  text-wrap: pretty;
+  animation: enter var(--t-move) var(--ease) both;
+}
+
+.you-verdict.right {
+  color: var(--text);
+}
+
+.you-verdict .katex {
+  font-size: 1.05em;
+}
+
+.you-verdict + .you-verdict {
+  margin-top: var(--s1);
+}
+
 .you-tag {
   display: inline-block;
   margin-left: var(--s2);
@@ -1436,43 +1504,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   vertical-align: 1px;
   -webkit-user-select: none;
   user-select: none;
-}
-
-/* What the runtime's record says of an answer: one quiet line, at the foot of
-   the tutor's reply to it, drawn once the reply is whole and the record has
-   its mark. It is the last thing in the exchange, so no room is kept for it
-   and nothing moves when it arrives; it comes in by moving (the page's
-   enter), never from nothing. Words only: the filled green circle is for a
-   proof earned, and this line says no more than that the answer counts
-   towards one. */
-.mark-lines {
-  margin: var(--s4) 0 0;
-}
-
-.mark-line {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: var(--fs-ui);
-  line-height: 1.5;
-  color: var(--text);
-  animation: enter var(--t-move) var(--ease) both;
-}
-
-/* Its lead word says what it is about, quietly; the verdict is in ink, so the
-   line reads as part of the page and not as a footnote. */
-.mark-lead {
-  color: var(--muted);
-}
-
-/* In a turn that is no longer the exchange in hand it is quiet throughout. */
-.exchange.answered .mark-line,
-.exchange.carried .mark-line,
-.earlier .mark-line {
-  color: var(--muted);
-}
-
-.mark-line + .mark-line {
-  margin-top: var(--s1);
 }
 
 /* Only the live task is in full ink. What came before it (the learner's
@@ -1495,7 +1526,13 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 }
 
 .exchange.carried .you-tag,
-.earlier .you-tag {
+.earlier .you-tag,
+.exchange.answered .you-mark.right,
+.exchange.carried .you-mark.right,
+.earlier .you-mark.right,
+.exchange.answered .you-verdict.right,
+.exchange.carried .you-verdict.right,
+.earlier .you-verdict.right {
   color: var(--muted);
 }
 
@@ -1614,9 +1651,34 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   color: var(--red);
 }
 
-.session .banner.warn .icon-btn {
+/* The dismiss x is ink on every notice in the lesson. The fault's red is on its
+   "!" alone: the x is a control, not part of the fault. */
+.session .banner .icon-btn,
+.session .banner .icon-btn .icon {
+  color: var(--text);
+}
+
+.session .banner.bad .icon-btn {
   margin-top: -4px;
+}
+
+/* A fault's words: the title in ink 600, the explanation under it in the quiet ink. */
+.fault-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.fault-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fault-why {
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 /* A card in the page: the question, the request for permission, the End
@@ -1799,9 +1861,24 @@ html[data-input="key"] .option:focus-visible {
   border-color: var(--line-input, var(--line-2));
 }
 
+/* Send stands on the right, as it does in the answer box, at the same size; what to do with the options is said to its left. */
+.ask[data-card="question"] .row {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--s4);
+}
+
 .ask .row .aside {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: var(--fs-small);
   color: var(--muted);
+  text-wrap: pretty;
+}
+
+.ask .row .send {
+  flex: none;
+  margin-left: auto;
 }
 
 .dock {
@@ -1896,11 +1973,13 @@ html[data-input="key"] .option:focus-visible {
   transition: border-color var(--t-fast) ease-out;
 }
 
+/* On focus the edge goes to ink, for a click and for the keyboard alike; with
+   the keyboard in use there is also the 2px ring, as on every control. */
 .composer .box:focus-within {
   border-color: var(--text);
 }
 
-html[data-input="key"] .composer .box[data-ring="key"] {
+html[data-input="key"] .composer .box:focus-within {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
@@ -1972,13 +2051,19 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   gap: var(--s2);
 }
 
-.sure.idle {
-  visibility: hidden;
+/* Where room allows, the label says what it is for, on two lines; otherwise
+   the short label stands and the control's title says the rest. */
+.sure-label {
+  max-width: 15.5em;
+  font-size: var(--fs-small);
+  line-height: 1.3;
+  color: var(--muted);
+  text-align: right;
+  text-wrap: balance;
 }
 
-.sure-label {
-  font-size: var(--fs-small);
-  color: var(--muted);
+.sure-short {
+  display: none;
 }
 
 .seg {
@@ -2185,12 +2270,27 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   padding: var(--s2) 0 0;
 }
 
+/* A quiet resting shape, so a newcomer sees buttons: a hairline outline, the
+   control radius, 32px, the quiet ink; lighter than a secondary button's
+   outline. Pointed at, the hover fill and ink. */
 .outs .btn {
   flex: none;
 }
 
-.outs .btn:first-child {
-  margin-left: var(--s1);
+.outs .btn.ghost {
+  border-color: var(--line-2);
+  border-radius: var(--r-control);
+  color: var(--muted);
+}
+
+.outs .btn.ghost:hover:not(:disabled) {
+  border-color: var(--line-2);
+  background: var(--hover);
+  color: var(--text);
+}
+
+.outs {
+  gap: var(--s2);
 }
 
 /* While the tutor writes they are plainly off: the same words at 45%, so they
@@ -2211,7 +2311,17 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   container: composer / inline-size;
 }
 
-@container composer (max-width: 560px) {
+@container composer (max-width: 600px) {
+  .sure-long {
+    display: none;
+  }
+
+  .sure-short {
+    display: inline;
+  }
+}
+
+@container composer (max-width: 440px) {
   .sure-label {
     display: none;
   }

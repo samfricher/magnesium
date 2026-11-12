@@ -231,3 +231,8 @@ export function splitConfidence(text: string): { text: string; confidence: "Sure
 export function isHint(text: string): boolean {
   return text.trim() === HELP.hint;
 }
+
+/** Whether a line the learner sent is a request for help (a hint, "I don't know", "I'm lost"): not an answer, and never marked. */
+export function isHelp(text: string): boolean {
+  return (Object.values(HELP) as string[]).includes(splitConfidence(text).text.trim());
+}

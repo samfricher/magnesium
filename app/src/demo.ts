@@ -462,7 +462,7 @@ function markFor(text: string): Mark | null {
     // The record's times are local, to the minute.
     at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
     // A wrong answer is on the skill the learner slipped on, which the record names; a right one is on the lesson's goal.
-    label: wrong ? "slope and $K_m$" : "reading Vmax from a Lineweaver-Burk plot",
+    label: wrong ? "slope and $K_m$" : "intercept and $V_{max}$",
     mark: wrong ? "wrong" : "right",
     help: helped ? "hint" : "none",
     cold: !helped,
