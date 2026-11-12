@@ -83,13 +83,13 @@ export const DEFAULT_TEXT = `# Your settings. Change a line and the window follo
 # Kept in the window's own storage on this Mac, never in a study folder.
 # A line is "name = value"; a line starting with # is a note.
 
-font = Charter          # the face your documents are set in: any font on this Mac, by name
+font = Charter          # any font on this Mac, by name
 own font = Charter      # the face of your own words
 size = 17               # 14 to 22
 width = 66              # characters to a line
 scheme = system         # system, light or dark
-ink = blue              # your own writing: blue, green, violet, graphite, or a colour such as #2c5e9e
-hints = on              # the short lines that say which key does what
+ink = blue              # blue, green, violet, graphite, or #2c5e9e
+hints = on              # which key does what, in the status line
 
 # Colours, for one scheme or both. Any CSS colour, such as:
 # dark ground = #101214
@@ -184,6 +184,8 @@ export function apply(settings: Settings): void {
   root.style.setProperty("--own-font", stack(settings.ownFont, "var(--doc-font)"));
   root.style.setProperty("--doc-size", `${settings.size}px`);
   root.style.setProperty("--measure", `${settings.width}ch`);
+  // The column's width in pixels, so the tab names can start where the text does.
+  root.style.setProperty("--col-px", `${Math.round(settings.width * settings.size * 0.56)}px`);
   if (settings.scheme !== "system") root.dataset.scheme = settings.scheme;
   else if (root.dataset.schemeFrom === "settings") delete root.dataset.scheme;
   root.dataset.schemeFrom = settings.scheme === "system" ? "" : "settings";

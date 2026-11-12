@@ -310,6 +310,10 @@ def change_plan():
             number_at = header.index("#") if "#" in header else None
             if number_at is not None:
                 first[number_at], second[number_at] = second[number_at], first[number_at]
+            # The days stay in order: each row takes the day of the place it moves to.
+            day_at = header.index("day") if "day" in header else None
+            if day_at is not None:
+                first[day_at], second[day_at] = second[day_at], first[day_at]
             lines[first_at] = "| " + " | ".join(second) + " |"
             lines[second_at] = "| " + " | ".join(first) + " |"
             name_at = header.index("block")

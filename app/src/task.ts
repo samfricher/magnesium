@@ -109,10 +109,41 @@ export function splitAt(reply: string, task: string): Split {
       return { before: parts.slice(0, i).join("\n\n"), task: parts.slice(i).join("\n\n") };
     }
   }
+  // The tutor said it again in other words: the paragraphs at the end that carry most of the task's words.
+  const parts = reply.trim().split(/\n{2,}/);
+  const want2 = contentWords(task);
+  if (want2.size >= 3) {
+    const seen = new Set<string>();
+    for (let i = parts.length - 1; i >= 0; i--) {
+      contentWords(parts[i]).forEach((word) => seen.add(word));
+      if (cover(want2, seen) >= 0.6) {
+        let start = i;
+        while (start < parts.length - 1 && cover(want2, contentWords(parts[start])) === 0) start++;
+        return { before: parts.slice(0, start).join("\n\n"), task: parts.slice(start).join("\n\n") };
+      }
+    }
+  }
   const found = splitTask(reply);
   if (found) return found;
-  const parts = reply.trim().split(/\n{2,}/);
   return { before: parts.slice(0, -1).join("\n\n"), task: parts[parts.length - 1] };
+}
+
+/** The words of four letters or more in a text, lower case, markup and mathematics marks left out. */
+function contentWords(text: string): Set<string> {
+  return new Set(text.replace(/[*$\\{}_^]/g, " ").toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
+}
+
+const cover = (want: Set<string>, have: Set<string>) => {
+  let hit = 0;
+  want.forEach((word) => {
+    if (have.has(word)) hit += 1;
+  });
+  return want.size === 0 ? 0 : hit / want.size;
+};
+
+/** How much of the open task a reply says again, from 0 to 1: a reply to "back to the task" that restates it, in any words. */
+export function restates(reply: string, task: string): number {
+  return cover(contentWords(task), contentWords(reply));
 }
 
 /** The first line of a task, as a short line for the pinned header and the stop line. */

@@ -20,6 +20,8 @@ export type Meta = {
   closed?: boolean;
   /** The record was read after this answer and held no mark for it. */
   unmarked?: boolean;
+  /** The engine kept the same task open after this answer: its record did not take it as the answer. */
+  notAnswer?: boolean;
 };
 
 export type Exchange = {
@@ -41,6 +43,8 @@ export type Exchange = {
   day: string | null;
   /** The record holds no mark for this answer, and it was a first try: said once, quietly. */
   noMark: boolean;
+  /** Why, when the engine said so: the record did not take it as the answer. */
+  notAnswer: boolean;
   /** It begins a sitting: the window's own opening words, or the lesson's first message. */
   sitting: boolean;
 };
@@ -58,7 +62,7 @@ export function keptMeta(kept: Record<string, Meta>, learner: string, tutor: str
   return kept[exKey(learner, tutor)] ?? kept[saidKey(learner)] ?? null;
 }
 
-const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" });
+const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 export function dayName(ms: number): string {
   return DAY.format(new Date(ms));
@@ -118,6 +122,7 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
       about,
       day: day !== lastDay ? dayName(turn.ms) : null,
       noMark: said === "answer" && marks.length === 0 && Boolean(kept?.unmarked) && !retry,
+      notAnswer: Boolean(kept?.notAnswer),
       sitting: said === "opening" || index === 0,
     });
     lastDay = day;

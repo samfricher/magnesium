@@ -72,7 +72,6 @@ export function whenWords(ms: number, now = Date.now()): string {
   const days = Math.round((start(now) - start(ms)) / 86_400_000);
   if (days <= 0) return `today at ${time}`;
   if (days === 1) return `yesterday at ${time}`;
-  if (days < 7) return `on ${dayName(ms).split(" ")[0]} at ${time}`;
   return `on ${dayName(ms)} at ${time}`;
 }
 
@@ -117,8 +116,18 @@ function Marks({ marks }: { marks: Mark[] }) {
 }
 
 /** An answer the record holds no mark for: said once, quietly, with the reason one key away. */
-function NoMark() {
+function NoMark({ notAnswer }: { notAnswer: boolean }) {
   const [why, setWhy] = useState(false);
+  if (notAnswer) {
+    return (
+      <div className="marks" data-role="no-mark">
+        <div className="mark no-mark">
+          <MarkGlyph mark="none" />
+          <span>No mark, not taken as the answer</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="marks" data-role="no-mark">
       <button type="button" className="mark no-mark" aria-expanded={why} onClick={() => setWhy((old) => !old)}>
@@ -323,7 +332,7 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
           {props.aboutTask && !props.aboutIsAbove && <div className="answer-to" dangerouslySetInnerHTML={{ __html: renderInline(props.aboutTask) }} />}
           <Own text={ex.learner} />
           <Marks marks={ex.marks} />
-          {ex.noMark && <NoMark />}
+          {ex.noMark && <NoMark notAnswer={ex.notAnswer} />}
         </div>
       ) : ex.learner.trim() !== "" && !(props.index === 0 && props.title !== null && ex.learner.trim() === props.title.trim()) ? (
         <div className={`said${live?.pick ? " picked" : ""}`} data-role="said">
@@ -648,7 +657,7 @@ export function LessonDoc(props: LessonProps) {
             drive="talk"
             composer={place === "talk"}
             label="Write to your tutor"
-            placeholder={stopped ? "Or write to your tutor" : showAnswer ? (place === "answer" ? "Esc to say something else" : "Say anything. Tab goes back to the task.") : "Write to your tutor"}
+            placeholder=""
             initial={props.drafts.talk ?? ""}
             onDraft={(text) => props.onDraft("talk", text)}
             onKey={onTalkKey}

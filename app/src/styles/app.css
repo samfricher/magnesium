@@ -28,7 +28,7 @@
   --rule: #e4e4e0;
   --rule-strong: #d2d3ce;
   --select: #e6eaef;
-  --change: #a67a12;
+  --change: #8a6510;
   --change-bg: rgba(196, 150, 40, 0.1);
   --ink: #2c5e9e;
   --ink-soft: rgba(44, 94, 158, 0.1);
@@ -142,7 +142,9 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
   overflow: hidden;
   -webkit-user-select: none;
 }
-.tabs.under-lights { padding-left: 84px; }
+/* The tab names start where the text column starts. */
+.tabs { padding-left: max(14px, calc((100% - var(--col-px, 640px) - 96px) / 2 + 48px)); }
+.tabs.under-lights { padding-left: max(84px, calc((100% - var(--col-px, 640px) - 96px) / 2 + 48px)); }
 .tab {
   display: inline-flex;
   align-items: center;
@@ -167,16 +169,16 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
 .doc-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: thin; }
 /* Text never meets the tab row or the status line mid-glyph: a short fade
    at an edge where more of the document lies beyond, none at the start. */
-.doc-scroll[data-above] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px); }
-.doc-scroll[data-below] { -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22px); mask-image: linear-gradient(to top, transparent 0, #000 22px); }
-.doc-scroll[data-above][data-below] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); }
+.doc-scroll[data-above] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px); mask-image: linear-gradient(to bottom, transparent 0, #000 30px); }
+.doc-scroll[data-below] { -webkit-mask-image: linear-gradient(to top, transparent 0, #000 30px); mask-image: linear-gradient(to top, transparent 0, #000 30px); }
+.doc-scroll[data-above][data-below] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%); }
 .tabs { border-bottom: 1px solid transparent; }
 .pane[data-scrolled] .tabs { border-bottom-color: var(--rule); }
 .status { border-top: 1px solid var(--rule); background: var(--ground); }
 .doc-scroll::-webkit-scrollbar { width: 10px; }
 .doc-scroll::-webkit-scrollbar-thumb { background: var(--rule-strong); border: 3px solid var(--ground); border-radius: 6px; }
 .column {
-  max-width: calc(var(--measure) + 96px);
+  max-width: calc(var(--col-px, 640px) + 96px);
   margin: 0 auto;
   padding: 26px 40px 88px 56px;
   font-family: var(--doc-font);
@@ -528,8 +530,8 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 /* --------------------------------------------------------------------------
    Files, the record, settings, this Mac */
 
-.pdf { margin: 0 -12px; }
-.pdf-page { display: block; border-radius: 3px; box-shadow: 0 0 0 1px var(--rule); background: #fff; }
+.pdf { margin: 0; }
+.pdf-page { max-width: 100%; height: auto !important; display: block; border-radius: 3px; box-shadow: 0 0 0 1px var(--rule); background: #fff; }
 .pdf-nav { display: flex; align-items: center; justify-content: center; gap: 18px; font-family: var(--chrome); font-size: 12px; color: var(--quiet); margin: 12px 0; }
 .file-image { max-width: 100%; border-radius: 4px; }
 .file-text { font-family: var(--mono); font-size: 13px; white-space: pre-wrap; line-height: 1.55; }
@@ -685,7 +687,19 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .plan-note { display: block; font-size: 0.86em; color: var(--quiet); }
 .plan-moved, .plan-backwards { font-family: var(--chrome); font-size: 12px; color: var(--change); }
 .plan-last-change { font-size: 0.9em; color: var(--quiet); }
-.settings-file { display: block; width: 100%; min-height: 24em; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text); background: var(--shelf); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow: hidden; -webkit-user-select: text; user-select: text; }
+.settings-file { display: block; width: 100%; min-height: 24em; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text); background: var(--shelf); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow-x: auto; overflow-y: hidden; white-space: pre; overflow-wrap: normal; -webkit-user-select: text; user-select: text; }
 .settings-file:focus { border-color: var(--ink); }
 .settings-problems { font-family: var(--chrome); font-size: 12.5px; color: var(--change); padding-left: 1.2em; }
 @media (max-width: 760px) { .plan-item { grid-template-columns: 5.6em minmax(0, 1fr); } }
+
+/* A kept draft with mathematics, drawn in place until it is edited. */
+.drawn-draft { position: relative; min-height: 1.6em; color: var(--ink); line-height: 1.6; padding: 0 0 3px; font-family: var(--own-font, inherit); }
+.writer:focus-within .drawn-draft::after { content: ""; display: inline-block; width: 2px; height: 1.1em; margin-left: 2px; vertical-align: -0.15em; background: var(--ink); animation: blink 1.1s steps(1) infinite; }
+.writer textarea.masked { position: absolute; inset: 0; height: 100% !important; color: transparent; caret-color: transparent; }
+.answer-space .writer textarea.masked { border-bottom: 1px solid var(--rule-strong); }
+.status .hint { color: var(--quiet); }
+.was-day { display: block; font-size: 12px; color: var(--quiet); }
+.plan-backwards { color: var(--quiet); }
+.plan-foot.second { margin-top: 0.4em; }
+.plan-foot { margin-bottom: 0; }
+.plan.reading { padding-bottom: 2em; }

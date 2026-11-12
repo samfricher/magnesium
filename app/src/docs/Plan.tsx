@@ -206,9 +206,10 @@ function lastChange(text: string | null): string | null {
 function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: string | null; onWhole: () => void; onTalk: () => void }) {
   const { plan, before } = props;
   const time = whenTime(plan.text);
-  const exam = dayOf(plan.exam_date, true);
-  const examWas = before && before.exam_date !== plan.exam_date ? dayOf(before.exam_date, true) : null;
+  const exam = dayOf(plan.exam_date);
+  const examWas = before && before.exam_date !== plan.exam_date ? dayOf(before.exam_date) : null;
   const order = new Map((before?.items ?? []).map((item, n) => [item.id, n]));
+  const daysBefore = new Map((before?.items ?? []).map((item) => [item.id, item.day ? item.day.slice(0, 10) : null]));
   const known = new Set((before?.items ?? []).map((item) => item.id));
   const change = lastChange(plan.text);
   const changed = before !== null;
@@ -216,11 +217,6 @@ function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: stri
   return (
     <article className="plan reading" data-doc="plan" data-changed={changed || undefined}>
       <h1 className="doc-title" dangerouslySetInnerHTML={{ __html: renderInline(plan.title ?? "Plan") }} />
-      {changed && props.changedTime && (
-        <p className="plan-changed" data-role="plan-changed">
-          Changed by the tutor at {props.changedTime}. What moved is marked until you have seen it.
-        </p>
-      )}
       {exam ? (
         <p className={`plan-exam${examWas ? " chg" : ""}`} data-role="plan-exam">
           <span className="plan-exam-day">{exam}</span>
@@ -239,10 +235,13 @@ function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: stri
             const was = order.get(item.id);
             const moved = changed && was !== undefined && was !== n;
             const isNew = changed && !known.has(item.id);
+            const dayWas = changed && known.has(item.id) && daysBefore.get(item.id) !== day ? daysBefore.get(item.id) ?? null : undefined;
+            const redated = dayWas !== undefined;
             return (
-              <li key={item.id} className={`plan-item${moved || isNew ? " chg" : ""}`} data-status={item.status}>
-                <span className={`plan-day${backwards ? " backwards" : ""}`} title={backwards ? "Earlier than the line above" : undefined}>
+              <li key={item.id} className={`plan-item${moved || isNew || redated ? " chg" : ""}`} data-status={item.status}>
+                <span className="plan-day" title={backwards ? "Earlier than the line above" : undefined}>
                   {dayOf(day) ?? ""}
+                  {redated && dayWas && <del className="was-day">{dayOf(dayWas)}</del>}
                 </span>
                 <span className="plan-what">
                   <span dangerouslySetInnerHTML={{ __html: renderInline(item.title) }} />
@@ -250,7 +249,7 @@ function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: stri
                   {item.status === "doing" && <span className="quiet"> · now</span>}
                   {moved && <span className="plan-moved"> · moved {was !== undefined && was > n ? "up" : "down"}</span>}
                   {isNew && <span className="plan-moved"> · new</span>}
-                  {backwards && <span className="plan-backwards"> · its day is before the one above</span>}
+                  {backwards && changed && <span className="plan-backwards"> · before the day above</span>}
                   {item.note && <span className="plan-note" dangerouslySetInnerHTML={{ __html: renderInline(item.note) }} />}
                 </span>
               </li>
@@ -258,14 +257,14 @@ function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: stri
           })}
         </ol>
       )}
-      {change && <p className="plan-last-change">Last change: {change}</p>}
+      {change && <p className="plan-last-change">Last change: {change.replace(/(\d{4}-\d{2}-\d{2})/g, (iso) => dayOf(iso) ?? iso)}</p>}
       <p className="plan-foot">
-        <span className="quiet">{plan.path}</span>
-        <span className="quiet"> · </span>
         <button type="button" className="text-button" onClick={props.onWhole}>
           The whole file
         </button>
-        <span className="quiet"> · ⌘E edits it · </span>
+        <span className="quiet"> {plan.path?.split("/").pop()}, ⌘E to edit</span>
+      </p>
+      <p className="plan-foot second">
         <button type="button" className="text-button" onClick={props.onTalk}>
           Change it by telling the tutor
         </button>

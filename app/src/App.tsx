@@ -15,12 +15,19 @@ import { SetupDoc, setupReady } from "./docs/Setup";
 import type { WriterHandle } from "./docs/Writer";
 import { ready as harnessReady } from "./harness";
 import { emptySession, HELP, openingWords, reduce, type LessonTurn, type SessionState } from "./lesson";
-import { exKey, guessSaid, keptMeta, readPage, saidKey, type Meta, type Said } from "./page";
+import { dayName, exKey, guessSaid, keptMeta, readPage, saidKey, type Meta, type Said } from "./page";
 
 const guessSaidOf = (learner: string): Said => guessSaid(learner, false);
+
+/** Which help a message is, when it is only the help words ("Can I have a hint?"), however it is typed. */
+function helpOf(text: string): HelpKind | null {
+  const plain = text.trim().toLowerCase().replace(/[.?!]+$/, "");
+  const found = (Object.entries(HELP) as [HelpKind, string][]).find(([, words]) => words.toLowerCase().replace(/[.?!]+$/, "") === plain);
+  return found ? found[0] : null;
+}
 import { actionOf, apply as applySettings, FONT_CHOICES, NAMED_INKS, parse as parseSettings, readText as readSettingsText, saveText as saveSettingsText, setLine, type Action } from "./settings";
 import type { SourceRef } from "./sources";
-import { splitTask, taskLine } from "./task";
+import { restates, splitTask, taskLine } from "./task";
 import type {
   About,
   AgentEvent,
@@ -74,6 +81,14 @@ export function plainText(text: string): string {
     .replace(/[$*_`{}^]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Cut a name to `n` characters at a word, with one ellipsis and no space before it. */
+export function clip(text: string, n: number): string {
+  if (text.length <= n) return text;
+  const cut = text.slice(0, n);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > n * 0.6 ? cut.slice(0, at) : cut).replace(/[\s.,;:–-]+$/, "")}…`;
 }
 
 const folderName = (path: string) => path.replace(/\/+$/, "").split("/").pop() ?? path;
@@ -312,7 +327,7 @@ export function App() {
         const folderPath = opened.folder;
         meta.current.clear();
         kept.current = readKept(folderPath);
-        const saved = readLayout(folderPath);
+        let saved = readLayout(folderPath);
         setFolder(folderPath);
         latest.current.folder = folderPath;
         setHome(opened);
@@ -324,15 +339,24 @@ export function App() {
         setTitle(opened.last?.goal ?? null);
         setPlaceState("talk");
         // The plan as it was before a change the learner has not looked at yet.
+        let pending = false;
         try {
           const base = JSON.parse(localStorage.getItem(`mg.planBase:${folderPath}`) ?? "null") as { before: Plan; at: number } | null;
           // A change is marked once, until it is seen; half a day later it is not news.
           if (base && typeof base.before === "object" && Date.now() - base.at < 12 * 3600_000) {
             setPlanBefore(base.before);
             setPlanChangedAt(base.at);
+            pending = true;
           }
         } catch {
           // Nothing kept.
+        }
+        // With no change waiting to be seen, a plan left beside the lesson is put away: the window reopens on one page.
+        if (!pending && saved.panes.length > 1 && saved.panes[1].tabs.length === 1 && saved.panes[1].tabs[0] === "plan") {
+          saved = { ...saved, panes: [saved.panes[0]], focus: 0 };
+          setLayoutState(saved);
+          latest.current.layout = saved;
+          saveLayout(folderPath, saved);
         }
         const [list] = await Promise.all([refreshLessons(), refreshPlan(false)]);
         const current = list.find((lesson) => lesson.current);
@@ -432,6 +456,8 @@ export function App() {
     if (where !== null && latest.current.layout.panes[where].active === "plan") planSeen();
     meta.current.set(at, { said, marks: [] });
     dispatch({ type: "sent", shown, now: at });
+    // What the learner just wrote, and the reply to it, are followed to the end of the page.
+    window.dispatchEvent(new Event("mg:follow"));
     bumpMeta();
     // Kept at once by its words, so a window closed before the reply ends still knows what it was.
     const folder = latest.current.folder;
@@ -514,6 +540,8 @@ export function App() {
   };
 
   const continueLesson = async () => {
+    // A new sitting: whatever the plan last showed has been seen.
+    planSeen();
     const { home, plan, title } = latest.current;
     const words = openingWords(
       { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: plan?.title ?? title ?? "this course" },
@@ -539,6 +567,13 @@ export function App() {
   const answer = async (text: string, confidence: Confidence | null = null, photos: string[] = []): Promise<boolean> => {
     const { api } = latest.current;
     if (!api || (text === "" && photos.length === 0)) return false;
+    // The help words are help wherever they are typed, never an answer.
+    const helpKind = helpOf(text);
+    if (helpKind && photos.length === 0) {
+      await help(helpKind);
+      writers.current.answer?.clear();
+      return true;
+    }
     let words = text;
     if (photos.length > 0) words = `${words}\n\n${photos.length === 1 ? "Photo" : "Photos"} of my working: ${photos.join(", ")}`.trim();
     if (confidence) words = `${words}\n\nConfidence: ${confidence}`;
@@ -557,6 +592,12 @@ export function App() {
   const talk = async (text: string): Promise<boolean> => {
     const { api } = latest.current;
     if (!api || text === "") return false;
+    const helpKind = helpOf(text);
+    if (helpKind) {
+      await help(helpKind);
+      writers.current.talk?.clear();
+      return true;
+    }
     if (!guardReady()) return false;
     try {
       await ensureOpen(api);
@@ -634,6 +675,13 @@ export function App() {
   /** The learner has seen the plan's last change: its marks go. */
   const planSeen = useCallback(() => {
     setPlanBefore(null);
+    // The plan opened beside the lesson for the change; seen, it closes and the lesson is one page again.
+    const layout = latest.current.layout;
+    if (layout.panes.length > 1 && layout.panes[1].tabs.includes("plan")) {
+      const next = closeTab(layout, "plan", 1);
+      latest.current.layout = next;
+      setLayout({ ...next, focus: 0 });
+    }
     const f = latest.current.folder;
     try {
       if (f) localStorage.removeItem(`mg.planBase:${f}`);
@@ -656,15 +704,22 @@ export function App() {
    * pinned line and where the caret goes follow it, not the reply's look.
    */
   const takeOpenTask = useCallback(
-    (task: string | null, posed: boolean) => {
+    (task: string | null, said: boolean) => {
+      let posed = said;
       const live = latest.current.session.live;
       if (!live) return;
       const at = live.since;
       const m = meta.current.get(at) ?? { said: guessSaidOf(live.learner), marks: [] };
       const next: Meta = { ...m };
+      // A reply to talk never poses a task for the engine, but one that says
+      // the open task again (back to the task) shows it: there it is answered.
+      const reply = [...live.done, live.streaming].join("\n");
+      if (task && !posed && (m.said === "talk" || m.said === "opening") && restates(reply, task) >= 0.6) posed = true;
       if (task && posed) next.task = task;
       else next.noTask = true;
       if (!task) next.closed = true;
+      // An answer after which the engine keeps the same task open was not taken as the answer.
+      if (m.said === "answer" && task && !posed) next.notAnswer = true;
       meta.current.set(at, next);
       bumpMeta();
       // The record is kept by now: an answer it gave no mark has none.
@@ -1086,7 +1141,7 @@ export function App() {
     if (doc === "lesson") return showFresh ? "New lesson" : lessonTitle;
     if (doc.startsWith("lesson:")) {
       const info = lessons.find((l) => l.session === doc.slice(7));
-      return info ? plainText(info.opening) || new Date(info.first_ms).toDateString() : "Lesson";
+      return info ? plainText(info.opening) || dayName(info.first_ms) : "Lesson";
     }
     if (doc === "plan") return plan?.title ? `${plan.title} plan` : "Plan";
     if (doc === "record") return "Record";
@@ -1101,7 +1156,7 @@ export function App() {
     items.push({ id: "lesson", label: showFresh ? "New lesson" : lessonTitle, detail: session.open ? "open" : "", group: "Lessons", run: () => openDoc("lesson"), beside: () => openDoc("lesson", true) });
     for (const lesson of lessons.filter((l) => !l.current)) {
       const doc = `lesson:${lesson.session}`;
-      items.push({ id: doc, label: plainText(lesson.opening) || "Lesson", detail: new Date(lesson.last_ms).toDateString().slice(4), group: "Lessons", run: () => openDoc(doc), beside: () => openDoc(doc, true) });
+      items.push({ id: doc, label: plainText(lesson.opening) || "Lesson", detail: dayName(lesson.last_ms), group: "Lessons", run: () => openDoc(doc), beside: () => openDoc(doc, true) });
     }
     if (plan?.path) items.push({ id: "plan", label: docTitle("plan"), detail: plan.path, group: "Plan", run: () => openDoc("plan"), beside: () => openDoc("plan", true) });
     for (const file of files?.files ?? []) {
@@ -1167,13 +1222,14 @@ export function App() {
     add("Larger text", () => setSetting("size", String(Math.min(22, settings.size + 1))), "⌘=");
     add("Smaller text", () => setSetting("size", String(Math.max(14, settings.size - 1))), "⌘−");
     // Every value of every setting is one Return away: "mono", "dark", "iowan", "size 19".
-    for (const font of FONT_CHOICES) if (font !== settings.font) add(`Font: ${font}`, () => setSetting("font", font), undefined, `typeface ${font.toLowerCase()} mono serif sans`);
-    for (let size = 14; size <= 22; size += 1) if (size !== settings.size) add(`Size ${size}`, () => setSetting("size", String(size)), undefined, "text size");
-    for (const [name, width] of [["narrow", 58], ["medium", 66], ["wide", 80]] as const) if (width !== settings.width) add(`Width: ${name}`, () => setSetting("width", String(width)), undefined, "line measure");
-    for (const ink of Object.keys(NAMED_INKS)) if (ink !== settings.ink) add(`Ink: ${ink}`, () => setSetting("ink", ink), undefined, "colour of your writing");
+    const current = (on: boolean) => (on ? " (now)" : "");
+    for (const font of FONT_CHOICES) add(`Font: ${font}${current(font === settings.font)}`, () => setSetting("font", font), undefined, `typeface ${font.toLowerCase()} mono serif sans`);
+    for (let size = 14; size <= 22; size += 1) add(`Size ${size}${current(size === settings.size)}`, () => setSetting("size", String(size)), undefined, "text size");
+    for (const [name, width] of [["narrow", 58], ["medium", 66], ["wide", 80]] as const) add(`Width: ${name}${current(width === settings.width)}`, () => setSetting("width", String(width)), undefined, "line measure");
+    for (const ink of Object.keys(NAMED_INKS)) add(`Ink: ${ink}${current(ink === settings.ink)}`, () => setSetting("ink", ink), undefined, "colour of your writing");
     add(settings.hints ? "Hints: off" : "Hints: on", () => setSetting("hints", settings.hints ? "off" : "on"), undefined, "key hints placeholders");
     for (const scheme of ["light", "dark", "system"] as const) {
-      if (settings.scheme !== scheme) add(scheme === "system" ? "Scheme: same as macOS" : `Scheme: ${scheme}`, () => setSetting("scheme", scheme), undefined, "theme colour dark light");
+      add(`${scheme === "system" ? "Scheme: system, same as macOS" : `Scheme: ${scheme}`}${current(settings.scheme === scheme)}`, () => setSetting("scheme", scheme), undefined, "theme colour dark light system");
     }
     return list;
   };
@@ -1402,6 +1458,15 @@ export function App() {
   const left = sitting ? Math.max(0, Math.ceil((sitting.started_ms + sitting.minutes * 60_000 - now) / 60_000)) : 0;
   const live = session.live;
   const tutorState = live && live.status !== "idle" ? (live.doing ? live.doing : live.status === "writing" ? "The tutor is writing" : "The tutor is thinking") : null;
+  // Which key does what here, in the status line, never in the reading column.
+  const activeDoc = panesShown[focusIndex]?.active;
+  let keyHint: string | null = null;
+  if (settings.hints && folder && activeDoc === "lesson" && !(session.live && session.live.status !== "idle")) {
+    if (!session.open && hasLesson && !showFresh) keyHint = "Return to continue, or write to your tutor";
+    else if (session.open && page.open !== null) keyHint = place === "answer" ? "Esc to say something else" : "Tab: back to the task";
+    else if (session.open) keyHint = "Return sends what you write";
+  }
+
   // Until the folder has been read, the window is its empty ground: no
   // "loading", nothing to read twice.
   if (!booted) return <div className="window" aria-busy="true" />;
@@ -1424,8 +1489,8 @@ export function App() {
               <div key={group} className="sidebar-group">
                 <p className="sidebar-label">{group}</p>
                 {items.map((item) => (
-                  <button key={item.id} className={shownPanes[focusIndex]?.active === item.id ? "sidebar-item here" : "sidebar-item"} onClick={() => item.run()}>
-                    {item.label}
+                  <button key={item.id} title={item.label} className={shownPanes[focusIndex]?.active === item.id ? "sidebar-item here" : "sidebar-item"} onClick={() => item.run()}>
+                    {clip(item.label, 30)}
                   </button>
                 ))}
               </div>
@@ -1447,7 +1512,7 @@ export function App() {
                   title={n < 9 ? `⌘${n + 1}` : undefined}
                 >
                   {doc === "lesson" && session.live && session.live.status !== "idle" && <span className="live-dot" aria-label="The tutor is writing" />}
-                  <span className="tab-name">{noFolder ? (setupReady(setup) ? "Welcome" : "This Mac") : docTitle(doc)}</span>
+                  <span className="tab-name" title={noFolder ? undefined : docTitle(doc)}>{noFolder ? (setupReady(setup) ? "Welcome" : "This Mac") : clip(docTitle(doc), 44)}</span>
                 </button>
               ))}
             </header>
@@ -1478,6 +1543,8 @@ export function App() {
           </span>
         )}
         <span className="status-spacer" />
+        {planBefore && planChangedAt && <span className="status-item">Plan changed at {new Date(planChangedAt).toTimeString().slice(0, 5)}</span>}
+        {keyHint && <span className="status-item hint">{keyHint}</span>}
         {tutorState && <span className="status-item tutor">{tutorState}</span>}
         <button className="status-item keys" onClick={() => setSheet("commands")} title="Every command">
           ⌘K
@@ -1558,7 +1625,16 @@ function DocScroller(props: {
       edges(box);
     });
     watch.observe(content);
-    return () => watch.disconnect();
+    const follow = () => {
+      if (!latest.current.stick) return;
+      atEnd.current = true;
+      box.scrollTop = box.scrollHeight;
+    };
+    window.addEventListener("mg:follow", follow);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener("mg:follow", follow);
+    };
   }, []);
 
   return (

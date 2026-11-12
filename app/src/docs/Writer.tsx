@@ -45,6 +45,9 @@ export const Writer = memo(
     const draftTimer = useRef<number | null>(null);
     const previewTimer = useRef<number | null>(null);
     const [math, setMath] = useState<string | null>(null);
+    // A kept draft with mathematics is drawn in place, once; its source shows
+    // only while it is being edited, as in an editor's live preview.
+    const [editing, setEditing] = useState(false);
     const lastLength = useRef(0);
     const latest = useRef(props);
     latest.current = props;
@@ -65,6 +68,13 @@ export const Writer = memo(
         el.focus({ preventScroll: true });
         const end = el.value.length;
         el.setSelectionRange(end, end);
+        // The caret is never left off screen.
+        const box = el.closest(".doc-scroll");
+        if (box) {
+          const r = el.getBoundingClientRect();
+          const b = box.getBoundingClientRect();
+          if (r.bottom > b.bottom - 24 || r.top < b.top + 24) el.scrollIntoView({ block: "center" });
+        }
       },
       insert: (text: string) => {
         const el = field.current;
@@ -113,6 +123,7 @@ export const Writer = memo(
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const el = event.currentTarget;
+      if (!editing && !["Enter", "Escape", "Tab", "Shift", "Meta", "Alt", "Control"].includes(event.key) && !event.metaKey) setEditing(true);
       if (latest.current.onKey?.(event, el.value)) return;
       if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing) {
         event.preventDefault();
@@ -130,8 +141,14 @@ export const Writer = memo(
 
     return (
       <div className={`writer ${props.className ?? ""}`} data-drive={props.composer ? "composer" : undefined}>
+        {props.preview && !editing && math !== null && (
+          <div className="drawn-draft" aria-hidden="true" onMouseDown={() => setEditing(true)} dangerouslySetInnerHTML={{ __html: renderPlain(math) }} />
+        )}
         <textarea
           ref={field}
+          className={props.preview && !editing && math !== null ? "masked" : undefined}
+          onMouseDown={() => setEditing(true)}
+          onBlur={() => setEditing(false)}
           rows={1}
           spellCheck
           data-drive={props.drive}
@@ -142,6 +159,7 @@ export const Writer = memo(
           onFocus={props.onFocus}
           onInput={(event) => {
             const el = event.currentTarget;
+            if (!editing) setEditing(true);
             // Growing needs no full measure; only a shorter text can shrink the field.
             if (el.value.length < lastLength.current) fit(el);
             else if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight}px`;
@@ -149,7 +167,7 @@ export const Writer = memo(
             schedule(el.value);
           }}
         />
-        {math !== null && <div className="math-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: renderPlain(math) }} />}
+        {editing && math !== null && <div className="math-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: renderPlain(math) }} />}
       </div>
     );
   }),

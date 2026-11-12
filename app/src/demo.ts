@@ -187,7 +187,10 @@ function planText(plan: Plan): string {
 let planMs = Date.now() - 6 * DAY;
 function plan(): Plan {
   const base = demoPlan();
-  const shaped: Plan = { ...base, goal: GOAL, changed_ms: planMs };
+  // As the tutor is told to: after a reorder the days are re-spaced, so they still run forward.
+  const days = base.items.map((item) => item.day).filter((day): day is string => day !== null).sort();
+  const items = base.items.map((item) => (item.day === null ? item : { ...item, day: days.shift() ?? item.day }));
+  const shaped: Plan = { ...base, items, goal: GOAL, changed_ms: planMs };
   return { ...shaped, text: planText(shaped) };
 }
 
