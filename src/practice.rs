@@ -179,6 +179,47 @@ pub(crate) fn due_rows_json(items: &[Item], day: NaiveDate) -> Value {
     )
 }
 
+/// At most this many rows waiting for a repair go out as data.
+const MAX_WAITING_AS_DATA: usize = 24;
+
+/// The gap-log rows waiting for a repair, as data, in plan and row order:
+/// open, not closed, with no next redo. A repair schedules the first redo
+/// of such a row; on any other row it does nothing or moves a redo that is
+/// already set, so a caller records one only for a row listed here. `item`
+/// is the name a practice change takes, as in [`due_rows_json`].
+pub(crate) fn waiting_rows_json(items: &[Item]) -> Value {
+    let mut waiting = items
+        .iter()
+        .filter(|item| {
+            item.facts.origin == Origin::Paper
+                && !item.state.closed()
+                && item.state.next_on.is_none()
+        })
+        .collect::<Vec<_>>();
+    waiting.sort_by_key(|item| (item.facts.plan.clone(), item.facts.row_no));
+    Value::Array(
+        waiting
+            .into_iter()
+            .take(MAX_WAITING_AS_DATA)
+            .map(|item| {
+                let facts = &item.facts;
+                json!({
+                    "item": match (&facts.plan, facts.row_no) {
+                        (Some(_), Some(_)) => item.name(),
+                        _ => facts.item_id.clone(),
+                    },
+                    "plan": facts.plan,
+                    "tag": facts.label,
+                    "type": facts.gap_type.map(|t| t.as_str()),
+                    "what_went_wrong": facts.what_went_wrong,
+                    "paper": facts.paper,
+                    "paper_question": facts.paper_question,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Open quick checks' labels, soonest due first, so a later attempt on the
 /// same skill can reuse one exactly.
 pub(crate) fn open_labels(items: &[Item]) -> Vec<String> {

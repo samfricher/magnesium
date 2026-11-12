@@ -369,6 +369,54 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
 }
 
 #[test]
+fn a_caller_that_runs_the_lesson_reads_the_rows_waiting_for_a_repair_in_its_status() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    // Row 1 is repaired and due; row 2 has no repair and waits for one.
+    let dir = e.workspace.join("Study/midterm-1");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | km | slope read as intercept | K | taught the slope | | open |\n| 2 | 2026-10-20 | Diagnostic | 5 | rate law | order read off the coefficients | K | | | open |\n",
+    )
+    .unwrap();
+    claude_prompt(&e, "p-0", "teach me enzyme kinetics");
+    v2::start(&e, "claude", "conv");
+    let status = tool_with_checks(&e, json!({"schema":"learner-model/v2","action":"status"}));
+    assert_eq!(
+        status["repairs_waiting"],
+        json!([{"item": "midterm-1#2", "plan": "midterm-1", "tag": "rate law", "type": "K",
+            "what_went_wrong": "order read off the coefficients", "paper": "Diagnostic",
+            "paper_question": "5"}]),
+        "{status}"
+    );
+    // A tutor's status is as it was.
+    let tutor = v2::tool(
+        &e,
+        "claude",
+        "conv",
+        "context",
+        json!({"schema":"learner-model/v2","action":"status"}),
+    );
+    assert!(tutor.get("repairs_waiting").is_none(), "{tutor}");
+    // Repaired, the row waits no more: its first redo falls due the next day.
+    let repaired = step(
+        &e,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"repair",
+            "practice":[{"item":"midterm-1#2","repaired":"taught reading the order from rates; two checks",
+                "next":{"question":"Doubling [A] quadruples the rate: the order in A?","answer_key":"2"}}]}),
+    );
+    assert_eq!(repaired["update_status"], "committed", "{repaired}");
+    let status = tool_with_checks(&e, json!({"schema":"learner-model/v2","action":"status"}));
+    assert_eq!(status["repairs_waiting"], json!([]), "{status}");
+}
+
+#[test]
 fn a_caller_that_runs_the_lesson_gets_the_due_paper_redo_as_data_and_its_answer_passes_the_row() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);

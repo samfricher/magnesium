@@ -289,6 +289,8 @@ pub(crate) fn dispatch_with_host(
             request.get("stage").and_then(serde_json::Value::as_str),
             Some("papers" | "papers_loop")
         );
+    let status = operation == "context"
+        && request.get("action").and_then(serde_json::Value::as_str) == Some("status");
     let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
     open_sitting(
         cwd,
@@ -300,7 +302,29 @@ pub(crate) fn dispatch_with_host(
     if let Some(update) = &update {
         add_goal_context(cwd, update, native_host, &mut result);
     }
+    if status {
+        add_repairs_waiting(cwd, &mut result);
+    }
     Ok(result)
+}
+
+/// A `context status` result for a caller that runs the lesson itself (see
+/// [`crate::sittings::CHECKS_ENV`]) carries `repairs_waiting`: the gap-log
+/// rows waiting for a repair, read when it is asked, so that the caller
+/// records a repair only for a row the record says is waiting. A tutor's
+/// results are as they were.
+fn add_repairs_waiting(cwd: &Path, result: &mut serde_json::Value) {
+    if !crate::sittings::checks_wanted() || !result.is_object() || result.get("error").is_some() {
+        return;
+    }
+    let Ok(Some(workspace)) = Workspace::discover(cwd) else {
+        return;
+    };
+    if let Ok(store) = crate::practice::open_store(&workspace)
+        && let Ok(items) = crate::practice::snapshot(&store.conn, workspace.root())
+    {
+        result["repairs_waiting"] = crate::practice::waiting_rows_json(&items);
+    }
 }
 /// A committed session start or resume carries what `context.prepare`
 /// returns for its goal, as `context`. In the live runs of 2026-11-11 the

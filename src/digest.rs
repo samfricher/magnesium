@@ -33,7 +33,9 @@ const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 ///
 /// 1: `progress --json` with `today_counts`.
 /// 2: `sitting_redos`, the due paper redos as data, beside `sitting_checks`.
-pub(crate) const WINDOW_FEATURES: u64 = 2;
+/// 3: `repairs_waiting`, the gap-log rows waiting for a repair, in a
+///    `context status` result.
+pub(crate) const WINDOW_FEATURES: u64 = 3;
 
 /// Every digest says the number, in a study folder or outside one, so the
 /// window can ask without a folder.
