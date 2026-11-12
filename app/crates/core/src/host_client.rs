@@ -34,7 +34,7 @@ const HOOK_LIMIT: Duration = Duration::from_secs(5);
 const CALL_LIMIT: Duration = Duration::from_secs(8);
 /// Set to milliseconds to use another limit per tool call. For tests.
 pub const CALL_LIMIT_ENV: &str = "MAGNESIUM_APP_RUNTIME_CALL_MS";
-/// Asks the tool server for a sitting's quick checks as data.
+/// Asks the tool server for a sitting's quick checks and paper redos as data.
 const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
 /// The start of an error whose outcome is unknown: the call may or may not
 /// have been carried out.
@@ -397,16 +397,6 @@ pub fn current_event(notice: &str) -> Option<String> {
     (id.len() > 2).then_some(id)
 }
 
-/// The quick checks due in this sitting, by the prompt hook's count.
-pub fn checks_due(notice: &str) -> Option<i64> {
-    let start = notice.find("Sitting quick checks: due ")? + "Sitting quick checks: due ".len();
-    let digits: String = notice[start..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
-    digits.parse().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,7 +409,6 @@ mod tests {
         let active = "Magnesium learner-model/v2; generation 0; pending 1; unbound 0; learning true; recording true; current event e-36c4b639. Read context.prepare. Sitting quick checks: due 2, posed 0.";
         assert_eq!(current_event(active).as_deref(), Some("e-36c4b639"));
         assert_eq!(ticket(active), None);
-        assert_eq!(checks_due(active), Some(2));
         assert_eq!(
             current_event("current event unavailable (use labeled reported events)"),
             None

@@ -456,6 +456,7 @@ fn open_sitting(
                 result["sitting_opener"] = opener.text.into();
                 if crate::sittings::checks_wanted() {
                     result["sitting_checks"] = opener.checks;
+                    result["sitting_redos"] = opener.redos;
                 }
             }
             report.merge(synced);
@@ -563,6 +564,7 @@ fn due_checks_first(
         refusal["sitting_opener"] = opener.text.into();
         if crate::sittings::checks_wanted() {
             refusal["sitting_checks"] = opener.checks;
+            refusal["sitting_redos"] = opener.redos;
         }
     }
     if let Some(gap_logs) = synced.to_json() {

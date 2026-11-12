@@ -14,7 +14,15 @@ What a turn does is chosen by words in the learner's message (inside
   NOBLOCK      reply with no record block; the hidden request then gets one
   NEVERBLOCK   reply with no record block, and none when asked again
   SLOW         write slowly, so the reply can be interrupted
-  BACK         ("I'm back") pose quick check 1 when the state lists one
+  BACK         (or the window's "I'm back") pose quick check 1 when the
+               state lists one, or else the first paper redo it lists
+  Km = 2       a right answer to a paper redo: mark it cold, give its next
+               question, and pose the next paper redo the state listed
+  Km = 0.5     a wrong answer to a paper redo
+  OVERTIME     with "Km = 2": mark the answer slow
+  TAUGHT       with "Km = 2": mark the answer not cold
+  REWORD       pose the open paper redo again in other words
+  MENTION      speak of paper redo 2 and pose an ordinary task
   COLD         with "b = -5": mark the answer cold
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
@@ -138,7 +146,19 @@ SECOND = "What is b in x² + 3x − 4 = 0?"
 THIRD = "Solve x² − 5x + 6 = 0 with the formula."
 
 
+def redo_question(number):
+    return f"A Lineweaver-Burk plot crosses the x axis at −{number / 2}: what is Km?"
+
+
+NEXT_REDO = {"question": "A second plot crosses at −0.25: what is Km?", "key": "4"}
+# The numbers of the paper redos the state listed and this model has not posed.
+redos_listed = []
+
+
 def reply_for(learner, state):
+    listed = re.findall(r'^(\d+)\. Tag "', state, re.M)
+    if listed:
+        redos_listed[:] = [int(number) for number in listed]
     if "could not be read" in state:
         delay = float(os.environ.get("STAND_IN_REPAIR_DELAY", "0"))
         time.sleep(delay)
@@ -167,11 +187,31 @@ def reply_for(learner, state):
         return "Let me think about that slowly, one small word after another, for a while." + block(), True
     if "TEACH" in learner:
         return f"Let's start. {FIRST}" + block(note="Lesson start.", task=FIRST, steps=STEPS), False
-    if "BACK" in learner and "Quick check" not in learner:
+    if ("BACK" in learner or learner.startswith("I'm back")) and "Quick check" not in learner:
         match = re.search(r'1\. Skill "([^"]+)"', state)
         if match:
             return "Quick check 1: What is b in 2x² − 7x − 4 = 0?" + block(task="What is b in 2x² − 7x − 4 = 0?"), False
-        return "Welcome back. " + THIRD + block(task=THIRD), False
+        if redos_listed:
+            number = redos_listed.pop(0)
+            return f"Paper redo {number}: {redo_question(number)}" + block(task=redo_question(number)), False
+        if "BACK" in learner:
+            return "Welcome back. " + THIRD + block(task=THIRD), False
+    if "Km = 2" in learner:
+        marked = dict(answer="right", skill="reading Km from a plot", note="Read Km off the x intercept.",
+                      slow="OVERTIME" in learner, next=NEXT_REDO, cold="TAUGHT" not in learner)
+        if redos_listed:
+            number = redos_listed.pop(0)
+            return f"Right: Km is 2. Paper redo {number}: {redo_question(number)}" + block(
+                task=redo_question(number), **marked), False
+        return f"Right: Km is 2. {THIRD}" + block(task=THIRD, **marked), False
+    if "REWORD" in learner:
+        return "Paper redo 1: Read Km off the plot that crosses the x axis at −0.5." + block(
+            task="Read Km off the plot that crosses the x axis at −0.5."), False
+    if "MENTION" in learner:
+        return f"First a warm-up, then paper redo 2. {FIRST}" + block(task=FIRST), False
+    if "Km = 0.5" in learner:
+        return "Not quite: Km is minus one over the intercept. This one comes back after a repair." + block(
+            answer="wrong", skill="reading Km from a plot", note="Took the intercept itself as Km."), False
     if "hint" in learner.lower():
         return "Look at the sign in front of the 5." + block(help="hint"), False
     if "b = -5" in learner or "b = −5" in learner:

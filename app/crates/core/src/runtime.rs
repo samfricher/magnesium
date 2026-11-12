@@ -80,8 +80,10 @@ pub fn upgrade(root: &Path) -> Result<(), String> {
 /// The lowest `window_features` this window works with. A runtime that says
 /// less, or nothing, is refused: its version number cannot tell, because a
 /// build from an older commit can carry the same one. 1 is the first runtime
-/// whose `progress --json` counts what the learner did today.
-pub const WINDOW_FEATURES_NEEDED: u64 = 1;
+/// whose `progress --json` counts what the learner did today. 2 is the first
+/// that lists a sitting's due paper redos as data, which a lesson on the
+/// direct engine poses.
+pub const WINDOW_FEATURES_NEEDED: u64 = 2;
 
 /// The `window_features` number that `magnesium digest` prints: which of the
 /// window's needs this program meets. It is asked at the root of the disk, in

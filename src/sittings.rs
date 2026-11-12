@@ -93,8 +93,9 @@ pub(crate) struct Counts {
 
 /// Set to "1" on a tool server whose caller runs the lesson itself, such as
 /// the study window's direct engine: its results then carry the opener's
-/// quick checks as data, `sitting_checks`. A tutor's results stay as they
-/// were, with the opener's text alone.
+/// quick checks and due paper redos as data, `sitting_checks` and
+/// `sitting_redos`. A tutor's results stay as they were, with the opener's
+/// text alone.
 pub(crate) const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
 
 pub(crate) fn checks_wanted() -> bool {
@@ -102,20 +103,23 @@ pub(crate) fn checks_wanted() -> bool {
 }
 
 /// What a sitting opens with: the opener's text for a tutor, and the same
-/// quick checks as data, `sitting_checks`, for a caller that asks for them
-/// with [`CHECKS_ENV`].
+/// quick checks and due paper redos as data, `sitting_checks` and
+/// `sitting_redos`, for a caller that asks for them with [`CHECKS_ENV`].
 #[derive(Clone, Debug)]
 pub(crate) struct Opener {
     pub(crate) text: String,
     pub(crate) checks: Value,
+    pub(crate) redos: Value,
 }
 
 impl Opener {
-    fn new(checks: &[Check], redos: &[DueRedos]) -> Self {
-        Self {
-            text: opener_text(checks, redos),
+    fn new(checks: &[Check], items: &[Item], today: NaiveDate) -> Option<Self> {
+        let redos = crate::practice::due_redos(items, today);
+        (!checks.is_empty() || !redos.is_empty()).then(|| Self {
+            text: opener_text(checks, &redos),
             checks: checks_json(checks),
-        }
+            redos: crate::practice::due_rows_json(items, today),
+        })
     }
 }
 
@@ -346,11 +350,11 @@ impl Sittings {
             )
             .map_err(error)?;
         tx.commit().map_err(error)?;
-        if claimed == 0 || (checks.is_empty() && redos.is_empty()) {
-            return Ok(None);
+        let opener = Opener::new(&checks, &items, today).filter(|_| claimed > 0);
+        if opener.is_some() {
+            self.write_log();
         }
-        self.write_log();
-        Ok(Some(Opener::new(&checks, &redos)))
+        Ok(opener)
     }
 
     /// The current sitting's opener as it stands, without claiming it.
@@ -363,9 +367,8 @@ impl Sittings {
             return Ok(None);
         };
         let items = items_now(workspace);
-        let redos = crate::practice::due_redos(&items, local_day(now));
         let checks = self.checks(&sitting, &items)?;
-        Ok((!checks.is_empty() || !redos.is_empty()).then(|| Opener::new(&checks, &redos)))
+        Ok(Opener::new(&checks, &items, local_day(now)))
     }
 
     /// The quick checks a sitting took, with what the record holds for each.

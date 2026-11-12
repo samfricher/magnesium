@@ -14,7 +14,8 @@
 //! turns it into the `learning_step` the runtime takes, adding what code
 //! knows better than the model: which task was open, the help given on it
 //! across turns, the Hint button, "I don't know", the confidence line, the
-//! label of a due quick check, and whether the answer was cold.
+//! label of a due quick check, the gap-log rows a paper redo counts for, and
+//! whether the answer was cold.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -34,6 +35,8 @@ const MAX_STEPS: usize = 12;
 pub const TASK_LINE: &str = "Open task, posed to the learner: ";
 pub const HELP_LINE: &str = "Help on it so far: ";
 pub const CHECK_LINE: &str = "It is the quick check ";
+/// Followed by the redo as JSON: its rows, its tag and whether it is timed.
+pub const REDO_LINE: &str = "It is the paper redo ";
 pub const GUESS_LINE: &str = "It asks for a guess before teaching: its answer gets no mark.";
 pub const AGAIN_LINE: &str =
     "It was asked again after its mark: its next answer is not a first try.";
@@ -240,6 +243,19 @@ pub struct Record {
     /// not taught, shown, hinted at or corrected this skill in this sitting.
     pub cold: bool,
     pub control: Option<Control>,
+    /// A right answer to a timed paper redo took longer than allowed.
+    pub slow: bool,
+    /// The next problem for the due quick check or paper redo the message
+    /// answered, with its key.
+    pub next: Option<Next>,
+}
+
+/// The next question the runtime stores for an item, and its key, which the
+/// tutor holds back until the learner has answered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Next {
+    pub question: String,
+    pub key: String,
 }
 
 /// Read a record block. The error says, in a few words, what is wrong, for
@@ -367,6 +383,25 @@ pub fn parse(block: &str) -> Result<Record, String> {
             ))
         }
     };
+    // An optional field never costs the block: a next question with no
+    // question or no key is left out.
+    let next = object
+        .get("next")
+        .and_then(Value::as_object)
+        .and_then(|next| {
+            let text = |keys: &[&str]| {
+                keys.iter()
+                    .find_map(|key| next.get(*key).and_then(Value::as_str))
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .map(|text| clip(text, MAX_QUESTION))
+            };
+            Some(Next {
+                question: text(&["question"])?,
+                // The runtime's own name for the key is taken too.
+                key: text(&["key", "answer_key"])?,
+            })
+        });
     Ok(Record {
         answer,
         help,
@@ -380,6 +415,8 @@ pub fn parse(block: &str) -> Result<Record, String> {
         memory,
         cold: flag("cold")?,
         control,
+        slow: flag("slow")?,
+        next,
     })
 }
 
@@ -418,6 +455,157 @@ pub struct DueCheck {
     pub key: Option<String>,
 }
 
+/// One gap-log row whose redo is due, from the runtime's `sitting_redos`.
+#[derive(Clone, Debug, Default, Deserialize)]
+struct DueRow {
+    item: String,
+    #[serde(default)]
+    plan: Option<String>,
+    tag: String,
+    #[serde(default, rename = "type")]
+    gap_type: Option<String>,
+    #[serde(default)]
+    what_went_wrong: String,
+    #[serde(default)]
+    paper: Option<String>,
+    #[serde(default)]
+    paper_question: Option<String>,
+    #[serde(default)]
+    question: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+}
+
+/// The most paper redos one sitting lists. The rest stay due and open a
+/// later sitting.
+pub const MAX_REDOS: usize = 6;
+/// The most rows one answer may count for, by the runtime's limit.
+const MAX_ROWS: usize = 12;
+/// The most bytes the names of one redo's rows may take: they go into the
+/// checkpoint's plan_text with the task, which the runtime bounds at 4 KiB.
+const MAX_ROW_BYTES: usize = 1200;
+
+/// A paper redo due in this sitting: one question, asked cold, that counts
+/// for the due gap-log rows of one tag in one plan. The runtime takes one
+/// cold answer on a label in a day, so a sitting has one redo for a tag.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DueRedo {
+    pub number: i64,
+    /// The rows it counts for, as `counts_for` names them.
+    pub rows: Vec<String>,
+    pub tag: String,
+    /// A row of type S, lost for slowness, passes only in time.
+    #[serde(default)]
+    pub timed: bool,
+    /// The paper question each row came from, such as "Diagnostic Q3".
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// What went wrong on each row.
+    #[serde(default)]
+    pub misses: Vec<String>,
+    #[serde(default)]
+    pub question: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+/// The sitting's paper redos from the runtime's due rows, which come the
+/// longest due first. The rows of one tag in one plan make one redo. A tag
+/// gets one redo in a sitting: rows of the same tag in another plan, or
+/// beyond what one answer may count for, stay due for a later day, and so
+/// does a tag `answered_today` says was already answered today, because no
+/// answer on it could be cold.
+pub fn redos_from(rows: &Value, answered_today: &dyn Fn(&str) -> bool) -> Vec<DueRedo> {
+    let rows: Vec<DueRow> = rows
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|row| serde_json::from_value(row.clone()).ok())
+        .collect();
+    let mut redos: Vec<(Option<String>, DueRedo)> = Vec::new();
+    for row in rows {
+        let (item, tag) = (row.item.trim(), row.tag.trim());
+        if item.is_empty() || tag.is_empty() || answered_today(tag) {
+            continue;
+        }
+        let key = tag.to_lowercase();
+        let at = match redos
+            .iter()
+            .position(|(_, redo)| redo.tag.to_lowercase() == key)
+        {
+            Some(at) => {
+                let (plan, redo) = &redos[at];
+                let bytes: usize = redo.rows.iter().map(String::len).sum();
+                if *plan != row.plan
+                    || redo.rows.len() >= MAX_ROWS
+                    || bytes + item.len() > MAX_ROW_BYTES
+                {
+                    continue;
+                }
+                at
+            }
+            None => {
+                redos.push((
+                    row.plan.clone(),
+                    DueRedo {
+                        number: 0,
+                        rows: Vec::new(),
+                        tag: tag.to_owned(),
+                        timed: false,
+                        from: Vec::new(),
+                        misses: Vec::new(),
+                        question: None,
+                        key: None,
+                    },
+                ));
+                redos.len() - 1
+            }
+        };
+        let redo = &mut redos[at].1;
+        redo.rows.push(item.to_owned());
+        redo.timed |= row.gap_type.as_deref() == Some("S");
+        let from = [row.paper, row.paper_question]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(" Q");
+        if !from.is_empty() && !redo.from.contains(&from) {
+            redo.from.push(from);
+        }
+        let miss = row.what_went_wrong.trim().to_owned();
+        if !miss.is_empty() && !redo.misses.contains(&miss) {
+            redo.misses.push(miss);
+        }
+        // The first stored question among the rows is the one to pose.
+        if redo.question.is_none() {
+            if let Some(question) = row.question.filter(|q| !q.trim().is_empty()) {
+                redo.question = Some(question);
+                redo.key = row.key.filter(|k| !k.trim().is_empty());
+            }
+        }
+    }
+    redos
+        .into_iter()
+        .take(MAX_REDOS)
+        .zip(1..)
+        .map(|((_, redo), number)| DueRedo { number, ..redo })
+        .collect()
+}
+
+/// The paper redo a task poses: what the answer's `counts_for` and label
+/// need of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Redo {
+    /// Its number in the sitting, by which the tutor names it.
+    #[serde(default)]
+    pub number: i64,
+    pub rows: Vec<String>,
+    pub tag: String,
+    #[serde(default)]
+    pub timed: bool,
+}
+
 /// The task the learner has been set and not yet answered.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenTask {
@@ -428,6 +616,9 @@ pub struct OpenTask {
     pub guess: bool,
     /// The label of the due quick check this task poses, if it poses one.
     pub check: Option<String>,
+    /// The paper redo this task poses, if it poses one.
+    #[serde(default)]
+    pub redo: Option<Redo>,
     /// Asked again after a mark: its next answer is not a first try.
     pub again: bool,
     /// The learner already had no starting move on it. Having none again on
@@ -450,6 +641,9 @@ pub struct Lesson {
     pub steps: Vec<Step>,
     /// The quick checks due in this sitting and not yet posed.
     pub checks: Vec<DueCheck>,
+    /// The paper redos due in this sitting and not yet posed.
+    #[serde(default)]
+    pub redos: Vec<DueRedo>,
     /// Each turn's request gets a new id: the runtime refuses an id used
     /// before anywhere in the study folder.
     pub turns: u64,
@@ -469,6 +663,17 @@ impl Lesson {
         }
     }
 
+    /// Forget the paper redos a reply showed the learner, by the words
+    /// that pose one: a redo seen is never posed again in the sitting. For
+    /// a reply the engine has no record of, such as one cut short.
+    pub fn spend_shown(&mut self, reply: &str) {
+        let shown: Vec<i64> = redo_marks(reply)
+            .into_iter()
+            .map(|(_, number)| number)
+            .collect();
+        self.redos.retain(|due| !shown.contains(&due.number));
+    }
+
     /// Note a skill answered today.
     pub fn answered(&mut self, label: &str) {
         let key = label.trim().to_lowercase();
@@ -477,7 +682,7 @@ impl Lesson {
         }
     }
 
-    fn answered_earlier_today(&self, label: &str) -> bool {
+    pub fn answered_earlier_today(&self, label: &str) -> bool {
         self.answered_today.contains(&label.trim().to_lowercase())
     }
 }
@@ -489,6 +694,10 @@ pub struct Message {
     pub words: String,
     /// The event the runtime captured them as.
     pub event_id: Option<String>,
+    /// The open task is a timed paper redo and no clock ran on it: the
+    /// engine did not see it posed, as after a resume. Its answer cannot
+    /// earn a pass.
+    pub no_clock: bool,
 }
 
 impl Message {
@@ -518,6 +727,32 @@ pub struct Write {
     /// Why the tutor marked the message as an answer and no attempt could
     /// be written: no task known to be open, or the message not captured.
     pub lost: Option<&'static str>,
+    /// The attempt answers a paper redo.
+    pub redo: Option<RedoAnswer>,
+    /// The learner is owed a word: the task this reply sets is no paper
+    /// redo for the record, though it looks like one on screen.
+    pub not_a_redo: Option<NotARedo>,
+}
+
+/// An answer sent for a paper redo: what the engine needs to read the
+/// runtime's verdict back, and to send the answer again if it is refused.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RedoAnswer {
+    /// The tutor marked it right.
+    pub right: bool,
+    /// The label to send when the runtime refuses the rows' tag as one: a
+    /// tag from a gap log written by hand may name a problem.
+    pub other_label: String,
+}
+
+/// Why a task is no paper redo for the record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotARedo {
+    /// The reply poses a paper redo the sitting does not list, or one
+    /// already spent.
+    Unlisted,
+    /// A redo that was open gave way to another task before its answer.
+    SetAside,
 }
 
 /// The open task in the checkpoint's plan_text.
@@ -528,6 +763,9 @@ fn plan_text(task: &OpenTask) -> String {
     ];
     if let Some(check) = &task.check {
         lines.push(format!("{CHECK_LINE}\"{check}\""));
+    }
+    if let Some(redo) = &task.redo {
+        lines.push(format!("{REDO_LINE}{}", json!(redo)));
     }
     if task.guess {
         lines.push(GUESS_LINE.to_owned());
@@ -665,6 +903,43 @@ pub fn posed_check(reply: &str, checks: &[DueCheck]) -> Option<DueCheck> {
         .cloned()
 }
 
+/// Where a reply last names a quick check by its number, in the
+/// lower-cased reply.
+fn check_at(reply: &str, number: i64) -> Option<usize> {
+    let lower = reply.to_lowercase();
+    let needle = format!("quick check {number}");
+    lower
+        .rmatch_indices(&needle)
+        .find(|(start, _)| {
+            !lower[start + needle.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit())
+        })
+        .map(|(start, _)| start)
+}
+
+/// Where a reply poses a paper redo: the words "Paper redo N:", each as
+/// its place in the lower-cased reply and its number. The colon tells a
+/// redo posed from one only spoken of, as in "then paper redo 2"; marks
+/// of emphasis may stand before it.
+pub fn redo_marks(reply: &str) -> Vec<(usize, i64)> {
+    const WORDS: &str = "paper redo ";
+    let lower = reply.to_lowercase();
+    lower
+        .match_indices(WORDS)
+        .filter_map(|(start, _)| {
+            let rest = &lower[start + WORDS.len()..];
+            let digits = rest.chars().take_while(char::is_ascii_digit).count();
+            let number = rest[..digits].parse().ok()?;
+            rest[digits..]
+                .trim_start_matches(['*', '_', ' '])
+                .starts_with(':')
+                .then_some((start, number))
+        })
+        .collect()
+}
+
 impl Lesson {
     /// Apply one turn's record: update what the engine knows and return the
     /// `learning_step` that keeps it. `reply` is the reply as shown, and
@@ -692,29 +967,44 @@ impl Lesson {
             answer = Some(Mark::Declined);
         }
         let mut observations = Vec::new();
+        let mut practice: Vec<Value> = Vec::new();
         let mut marked = false;
         let mut lost = None;
+        let mut redo_answer = None;
+        let mut not_a_redo = None;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
             // The runtime refuses an empty label, so a decline the engine
-            // marks itself always has one: the check's, the answer's, the
-            // task's, or the goal's.
-            let label = clip(
-                &task
-                    .check
-                    .clone()
-                    .or_else(|| Some(record.skill.clone()).filter(|s| !s.trim().is_empty()))
+            // marks itself always has one: the check's, the redo's tag, the
+            // answer's, the task's, or the goal's.
+            let skill = clip(
+                &Some(record.skill.clone())
+                    .filter(|s| !s.trim().is_empty())
                     .or_else(|| Some(task.skill.clone()).filter(|s| !s.trim().is_empty()))
                     .or_else(|| self.goal.clone().filter(|s| !s.trim().is_empty()))
                     .unwrap_or_else(|| "the task in hand".to_owned()),
                 MAX_NAME,
             );
+            let label = clip(
+                &task
+                    .check
+                    .clone()
+                    .or_else(|| task.redo.as_ref().map(|redo| redo.tag.clone()))
+                    .unwrap_or_else(|| skill.clone()),
+                MAX_NAME,
+            );
             // Cold: from a blank page, with no help. A due check is asked
-            // cold. Any other answer is cold when the tutor judges it so and
-            // the runtime would take it: no help, not a decline, and no
-            // earlier answer on its label today.
+            // cold. Any other answer, a paper redo's included, is cold when
+            // the tutor judges it so and the runtime would take it: no
+            // help, not a decline, and no earlier answer on its label
+            // today. A redo comes after the checks and whatever they
+            // taught, so only the tutor knows whether the page was blank.
+            // A timed redo on which no clock ran is never cold: it could
+            // pass whatever time it took.
             let unaided = task.help == Help::None && mark != Mark::Declined;
+            let clocked = !(message.no_clock && task.redo.as_ref().is_some_and(|redo| redo.timed));
             let cold = unaided
+                && clocked
                 && (task.check.is_some() || (record.cold && !self.answered_earlier_today(&label)));
             let mut attempt = json!({
                 "label": label,
@@ -731,6 +1021,38 @@ impl Lesson {
             }
             if let Some(confidence) = message.confidence() {
                 attempt["confidence"] = json!(confidence);
+            }
+            // A paper redo names the gap-log rows it counts for; the runtime
+            // works out each row's pass or fail from the mark.
+            if let Some(redo) = &task.redo {
+                attempt["counts_for"] = json!(redo.rows);
+                if record.slow && redo.timed && mark == Mark::Right {
+                    attempt["slow"] = json!(true);
+                }
+            }
+            // The next question of the one item the answer redoes. An
+            // answer that counts for several rows stores it on each. A
+            // decline changes nothing, the stored question included.
+            if let Some(next) = record.next.as_ref().filter(|_| mark != Mark::Declined) {
+                let stored = json!({"question": next.question, "answer_key": next.key});
+                match &task.redo {
+                    Some(redo) if redo.rows.len() > 1 => {
+                        practice = redo
+                            .rows
+                            .iter()
+                            .map(|row| json!({"item": row, "next": stored}))
+                            .collect();
+                    }
+                    Some(_) => attempt["next"] = stored,
+                    None if task.check.is_some() => attempt["next"] = stored,
+                    None => {}
+                }
+            }
+            if task.redo.is_some() {
+                redo_answer = Some(RedoAnswer {
+                    right: mark == Mark::Right,
+                    other_label: skill,
+                });
             }
             self.answered(&label);
             observations.push(json!({
@@ -771,10 +1093,35 @@ impl Lesson {
         let was_stuck = open
             .as_ref()
             .is_some_and(|task| task.stuck || (record.no_start && marked));
+        // The redo this message answered with a mark, if it did: a reply
+        // that marks it may name it again without posing anything.
+        let marked_redo = open
+            .as_ref()
+            .filter(|_| answered && answer != Some(Mark::Declined))
+            .and_then(|task| task.redo.as_ref())
+            .map(|redo| redo.number);
         if answered {
             open = None;
         }
+        // The task a reply sets is named by the last of these in it: a
+        // listed quick check's words, or the words that pose a paper redo.
+        // A check or redo only spoken of on the way binds nothing.
         let posed = posed_check(reply, &self.checks);
+        let mark = redo_marks(reply).last().copied();
+        let (check, redo_number) = match (
+            posed
+                .as_ref()
+                .and_then(|check| check_at(reply, check.number)),
+            mark,
+        ) {
+            (Some(check_at), Some((mark_at, number))) if mark_at > check_at => (None, Some(number)),
+            (Some(_), _) => (posed.as_ref(), None),
+            (None, mark) => (None, mark.map(|(_, number)| number)),
+        };
+        // The redo still open, which a new task would replace unanswered.
+        let waiting = open
+            .as_ref()
+            .and_then(|task| task.redo.clone().map(|redo| (redo, task.help)));
         match &record.task {
             Some(text) => match open.as_mut() {
                 Some(task) if same_task(&task.text, text) => {
@@ -789,11 +1136,51 @@ impl Lesson {
                             .as_deref()
                             .is_some_and(|before| same_task(before, text));
                     let again = same && answer != Some(Mark::Declined);
+                    let mut help = record.help;
+                    let listed = redo_number
+                        .and_then(|number| self.redos.iter().position(|due| due.number == number));
+                    let redo = match (redo_number, listed, &waiting) {
+                        // A redo the sitting lists: it is posed now, and
+                        // never again in this sitting.
+                        (Some(number), Some(at), _) => {
+                            let due = self.redos.remove(at);
+                            if waiting.is_some() {
+                                not_a_redo = Some(NotARedo::SetAside);
+                            }
+                            Some(Redo {
+                                number,
+                                rows: due.rows,
+                                tag: due.tag,
+                                timed: due.timed,
+                            })
+                        }
+                        // The open redo, posed again in other words: it
+                        // keeps its rows and the help given on it.
+                        (Some(number), None, Some((redo, given))) if redo.number == number => {
+                            help = help.max(*given);
+                            Some(redo.clone())
+                        }
+                        // The reply names the redo it has just marked.
+                        (Some(number), None, _) if marked_redo == Some(number) => None,
+                        // A redo this sitting does not list, or one spent:
+                        // the task is an ordinary one, and the learner is
+                        // told that it counts for no paper question.
+                        (Some(_), None, _) => {
+                            not_a_redo = Some(NotARedo::Unlisted);
+                            None
+                        }
+                        (None, _, Some(_)) => {
+                            not_a_redo = Some(NotARedo::SetAside);
+                            None
+                        }
+                        (None, _, None) => None,
+                    };
                     open = Some(OpenTask {
                         text: text.clone(),
-                        help: record.help,
+                        help,
                         guess: record.guess,
-                        check: posed.as_ref().map(|check| check.label.clone()),
+                        check: check.map(|check| check.label.clone()),
+                        redo,
                         again,
                         stuck: same && was_stuck,
                         skill: record.skill.clone(),
@@ -828,6 +1215,9 @@ impl Lesson {
         if !observations.is_empty() {
             request["observations"] = Value::Array(observations.clone());
         }
+        if !practice.is_empty() {
+            request["practice"] = Value::Array(practice);
+        }
         if let Some(event) = &message.event_id {
             request["event_dispositions"] = json!([{
                 "event_id": event,
@@ -860,6 +1250,8 @@ impl Lesson {
             request,
             marked,
             lost,
+            redo: redo_answer,
+            not_a_redo,
         }
     }
 }
@@ -949,6 +1341,7 @@ mod tests {
         Message {
             words: words.into(),
             event_id: Some("e-1".into()),
+            no_clock: false,
         }
     }
 
@@ -1017,6 +1410,7 @@ mod tests {
             help: Help::None,
             guess: true,
             check: None,
+            redo: None,
             again: false,
             stuck: false,
             skill: String::new(),
@@ -1048,6 +1442,7 @@ mod tests {
             help: Help::None,
             guess: false,
             check: None,
+            redo: None,
             again: false,
             stuck: false,
             skill: String::new(),
@@ -1123,6 +1518,7 @@ mod tests {
                 help: Help::None,
                 guess: false,
                 check: None,
+                redo: None,
                 again: false,
                 stuck: false,
                 skill: String::new(),
@@ -1217,6 +1613,7 @@ mod tests {
             help: Help::None,
             guess: false,
             check: None,
+            redo: None,
             again: false,
             stuck: false,
             skill: String::new(),
@@ -1269,6 +1666,502 @@ mod tests {
         };
         assert!(posed_check("Quick check 12: hi", std::slice::from_ref(&twelve)).is_none());
         assert!(posed_check("QUICK CHECK 1: hi", &[twelve]).is_some());
+    }
+
+    fn redo(number: i64, rows: &[&str], tag: &str, timed: bool) -> DueRedo {
+        DueRedo {
+            number,
+            rows: rows.iter().map(|row| (*row).to_owned()).collect(),
+            tag: tag.into(),
+            timed,
+            from: vec![],
+            misses: vec![],
+            question: None,
+            key: None,
+        }
+    }
+
+    fn none_today(_: &str) -> bool {
+        false
+    }
+
+    /// A lesson whose sitting lists two paper redos.
+    fn with_redos() -> Lesson {
+        let mut lesson = lesson();
+        lesson.redos = vec![
+            redo(1, &["midterm-1#1", "midterm-1#4"], "km", true),
+            redo(2, &["midterm-1#2"], "rate law", false),
+        ];
+        lesson
+    }
+
+    /// Pose a redo: a reply that sets `task` with the given words.
+    fn pose(lesson: &mut Lesson, reply: &str, task: &str) -> Write {
+        lesson.apply(
+            &record(&json!({"answer": null, "skill": "reading a plot", "task": task}).to_string()),
+            &message("I'm back."),
+            reply,
+            "r-pose",
+        )
+    }
+
+    #[test]
+    fn the_due_rows_of_one_tag_make_one_redo_and_a_tag_has_one_redo_in_a_sitting() {
+        let row =
+            |item: &str, plan: Option<&str>, tag: &str, kind: &str, question: Option<&str>| {
+                json!({"item": item, "plan": plan, "tag": tag, "type": kind,
+                "what_went_wrong": format!("miss on {item}"), "paper": "Diagnostic",
+                "paper_question": item.rsplit('#').next(), "question": question,
+                "key": question.map(|_| "the key")})
+            };
+        let redos = redos_from(
+            &json!([
+                row("midterm-1#2", Some("midterm-1"), "km", "K", None),
+                row("final#1", Some("final"), "Km", "K", None),
+                row(
+                    "midterm-1#5",
+                    Some("midterm-1"),
+                    "Km",
+                    "S",
+                    Some("Find Km.")
+                ),
+                row("midterm-1#3", Some("midterm-1"), "rate law", "N", None),
+            ]),
+            &none_today,
+        );
+        assert_eq!(redos.len(), 2, "{redos:#?}");
+        assert_eq!(
+            redos.iter().map(|redo| redo.number).collect::<Vec<_>>(),
+            [1, 2]
+        );
+        let km = &redos[0];
+        assert_eq!(km.rows, ["midterm-1#2", "midterm-1#5"]);
+        assert_eq!(km.tag, "km");
+        assert!(km.timed, "one of its rows was lost for slowness");
+        assert_eq!(km.from, ["Diagnostic Q2", "Diagnostic Q5"]);
+        assert_eq!(km.misses, ["miss on midterm-1#2", "miss on midterm-1#5"]);
+        assert_eq!(km.question.as_deref(), Some("Find Km."));
+        assert_eq!(km.key.as_deref(), Some("the key"));
+        assert!(!redos[1].timed);
+        // The runtime takes one cold answer on a label in a day, so the
+        // same tag in another plan is no second redo: its row waits.
+        assert!(
+            redos
+                .iter()
+                .all(|redo| !redo.rows.contains(&"final#1".to_owned())),
+            "{redos:#?}"
+        );
+        // So do rows beyond the twelve one answer may count for, and rows
+        // whose names would not fit the checkpoint beside the task.
+        let many: Vec<Value> = (1..=14)
+            .map(|n| row(&format!("p#{n}"), Some("p"), "km", "K", None))
+            .collect();
+        let redos = redos_from(&json!(many), &none_today);
+        assert_eq!(redos.len(), 1, "{redos:#?}");
+        assert_eq!(redos[0].rows.len(), 12);
+        let plan = "p".repeat(250);
+        let long: Vec<Value> = (1..=12)
+            .map(|n| row(&format!("{plan}#{n}"), Some(&plan), "km", "K", None))
+            .collect();
+        let redos = redos_from(&json!(long), &none_today);
+        let bytes: usize = redos[0].rows.iter().map(String::len).sum();
+        assert!(bytes <= MAX_ROW_BYTES, "{bytes}");
+        assert!(redos[0].rows.len() >= 4, "{}", redos[0].rows.len());
+        let mut lesson = lesson();
+        lesson.redos = redos_from(&json!(long), &none_today);
+        pose(&mut lesson, "Paper redo 1: What is Km?", &"q".repeat(1000));
+        assert!(
+            plan_text(lesson.task.as_ref().unwrap()).len() <= 4096,
+            "the checkpoint's plan_text is bounded at 4 KiB"
+        );
+        // A tag answered earlier today is left out: its redo could not be
+        // cold today.
+        let redos = redos_from(
+            &json!([
+                row("m#1", Some("m"), "Km", "K", None),
+                row("m#2", Some("m"), "rate law", "K", None)
+            ]),
+            &|tag| tag.eq_ignore_ascii_case("km"),
+        );
+        assert_eq!(redos.len(), 1);
+        assert_eq!((redos[0].number, redos[0].tag.as_str()), (1, "rate law"));
+        // A sitting lists at most six, and a runtime that sends no rows none.
+        let many: Vec<Value> = (1..=9)
+            .map(|n| row(&format!("p#{n}"), Some("p"), &format!("tag {n}"), "K", None))
+            .collect();
+        assert_eq!(redos_from(&json!(many), &none_today).len(), MAX_REDOS);
+        assert!(redos_from(&Value::Null, &none_today).is_empty());
+    }
+
+    #[test]
+    fn a_paper_redo_counts_for_its_rows_under_its_tag() {
+        let mut lesson = with_redos();
+        pose(
+            &mut lesson,
+            "Paper redo 1: The plot crosses at −0.5: what is Km? You have 3 minutes.",
+            "The plot crosses at −0.5: what is Km?",
+        );
+        assert_eq!(lesson.redos.len(), 1, "the redo posed is no longer waiting");
+        assert_eq!(
+            lesson.task.as_ref().unwrap().redo,
+            Some(Redo {
+                number: 1,
+                rows: vec!["midterm-1#1".into(), "midterm-1#4".into()],
+                tag: "km".into(),
+                timed: true
+            })
+        );
+        // Right, cold, but over time, with the next problem: the answer
+        // names both rows under their tag, and each row gets the question.
+        let answer = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "reading a plot", "cold": true, "slow": true,
+                "next": {"question": "A plot crosses at −0.25: what is Km?", "key": "4"},
+                "task": "Write the rate law for A → B, first order."}"#),
+            &message("Km = 2"),
+            "Right, but over the 3 minutes. Paper redo 2: Write the rate law for A → B, first order.",
+            "r-2",
+        );
+        let attempt = &answer.request["observations"][0]["attempt"];
+        assert_eq!(attempt["label"], "km");
+        assert_eq!(attempt["cold"], true);
+        assert_eq!(attempt["slow"], true);
+        assert_eq!(attempt["counts_for"], json!(["midterm-1#1", "midterm-1#4"]));
+        assert!(attempt.get("next").is_none(), "{attempt}");
+        assert_eq!(
+            answer.request["practice"],
+            json!([
+                {"item": "midterm-1#1", "next": {"question": "A plot crosses at −0.25: what is Km?", "answer_key": "4"}},
+                {"item": "midterm-1#4", "next": {"question": "A plot crosses at −0.25: what is Km?", "answer_key": "4"}},
+            ])
+        );
+        assert_eq!(
+            answer.redo,
+            Some(RedoAnswer {
+                right: true,
+                other_label: "reading a plot".into()
+            })
+        );
+        assert_eq!(answer.not_a_redo, None);
+        // The next redo is open, with one row: after a hint its answer is
+        // not cold, slow is not sent for a redo that is not timed, and the
+        // next question goes with the answer.
+        assert_eq!(
+            lesson.task.as_ref().unwrap().redo.as_ref().unwrap().tag,
+            "rate law"
+        );
+        lesson.apply(
+            &record(r#"{"answer": null, "help": "hint", "task": null}"#),
+            &message(HINT_WORDS),
+            "Think of what first order means.",
+            "r-3",
+        );
+        let hinted = lesson.apply(
+            &record(
+                r#"{"answer": "right", "skill": "rate laws", "cold": true, "slow": true,
+                "next": {"question": "And for 2A → B, second order?", "answer_key": "v = k[A]²"}}"#,
+            ),
+            &message("v = k[A]"),
+            "Right.",
+            "r-4",
+        );
+        let attempt = &hinted.request["observations"][0]["attempt"];
+        assert_eq!(attempt["label"], "rate law");
+        assert_eq!(attempt["help"], "hint");
+        assert_eq!(attempt["cold"], false);
+        assert_eq!(attempt["counts_for"], json!(["midterm-1#2"]));
+        assert!(attempt.get("slow").is_none(), "{attempt}");
+        assert_eq!(attempt["next"]["answer_key"], "v = k[A]²");
+        assert!(hinted.request.get("practice").is_none());
+        // The answer to a due quick check stores its next question too, and
+        // an answer to any other task stores none and is no redo.
+        lesson.checks = vec![DueCheck {
+            number: 1,
+            label: "sign of b".into(),
+            misses: vec![],
+            question: None,
+            key: None,
+        }];
+        lesson.apply(
+            &record(r#"{"answer": null, "task": "What is b in x² − 5x?"}"#),
+            &message("go on"),
+            "Quick check 1: What is b in x² − 5x?",
+            "r-5",
+        );
+        let check = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "b", "next": {"question": "What is b in 3x² + x?", "key": "1"}, "task": "Go on: what is c?"}"#),
+            &message("−5"),
+            "Right. Go on: what is c?",
+            "r-6",
+        );
+        assert_eq!(
+            check.request["observations"][0]["attempt"]["next"]["question"],
+            "What is b in 3x² + x?"
+        );
+        assert_eq!(check.redo, None);
+        let plain = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "c", "next": {"question": "x", "key": "y"}}"#),
+            &message("6"),
+            "Right.",
+            "r-7",
+        );
+        assert!(plain.request["observations"][0]["attempt"]
+            .get("next")
+            .is_none());
+    }
+
+    #[test]
+    fn a_redo_is_cold_only_when_the_tutor_says_so_and_its_clock_ran() {
+        let answer = |lesson: &mut Lesson, block: &str, message: &Message| {
+            lesson
+                .apply(&record(block), message, "Right.", "r-answer")
+                .request["observations"][0]["attempt"]["cold"]
+                .clone()
+        };
+        let right = r#"{"answer": "right", "skill": "km", "cold": true}"#;
+        // The tutor taught the skill in this sitting, as after a quick
+        // check on it: its block says not cold, and code does not overrule.
+        let mut lesson = with_redos();
+        pose(
+            &mut lesson,
+            "Paper redo 2: Write the rate law.",
+            "Write the rate law.",
+        );
+        let taught = r#"{"answer": "right", "skill": "rate laws", "cold": false}"#;
+        assert_eq!(answer(&mut lesson, taught, &message("v = k[A]")), false);
+        // The tag was answered earlier today: the runtime would refuse cold.
+        let mut lesson = with_redos();
+        lesson.answered("Rate Law");
+        pose(
+            &mut lesson,
+            "Paper redo 2: Write the rate law.",
+            "Write the rate law.",
+        );
+        assert_eq!(answer(&mut lesson, right, &message("v = k[A]")), false);
+        // A timed redo on which no clock ran, as after a resume, could pass
+        // whatever time it took: it is never sent cold.
+        let mut lesson = with_redos();
+        pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
+        let unclocked = Message {
+            no_clock: true,
+            ..message("2")
+        };
+        assert_eq!(answer(&mut lesson, right, &unclocked), false);
+        // With its clock, and the tutor's word, it is.
+        let mut lesson = with_redos();
+        pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
+        assert_eq!(answer(&mut lesson, right, &message("2")), true);
+        // A redo that is not timed needs no clock.
+        let mut lesson = with_redos();
+        pose(
+            &mut lesson,
+            "Paper redo 2: Write the rate law.",
+            "Write the rate law.",
+        );
+        let unclocked = Message {
+            no_clock: true,
+            ..message("v = k[A]")
+        };
+        assert_eq!(answer(&mut lesson, right, &unclocked), true);
+    }
+
+    #[test]
+    fn a_redo_is_posed_only_by_its_words_with_the_colon_where_the_task_is_set() {
+        // Spoken of beside another task: nothing is bound, nothing spent.
+        let mut lesson = with_redos();
+        let write = pose(
+            &mut lesson,
+            "Here is the fix. Practice: what is the slope here? Then we'll do paper redo 2.",
+            "Practice: what is the slope here?",
+        );
+        assert_eq!(lesson.task.as_ref().unwrap().redo, None);
+        assert_eq!(lesson.redos.len(), 2);
+        assert_eq!(write.not_a_redo, None);
+        // Spoken of in a reply that sets no task: it is still to be posed.
+        lesson.task = None;
+        lesson.apply(
+            &record(r#"{"answer": null, "task": null}"#),
+            &message("ok"),
+            "Next comes Paper redo 1: get ready.",
+            "r-1",
+        );
+        assert_eq!(lesson.redos.len(), 2, "nothing was posed");
+        // The redo posed is the one whose words set the task: the last in
+        // the reply, whatever lower number is spoken of before it.
+        pose(
+            &mut lesson,
+            "We'll come back to paper redo 1. **Paper redo 2:** Write the rate law.",
+            "Write the rate law.",
+        );
+        assert_eq!(
+            lesson.task.as_ref().unwrap().redo.as_ref().unwrap().tag,
+            "rate law"
+        );
+        assert_eq!(lesson.redos[0].number, 1, "redo 1 is still listed");
+        // Emphasis round the words, and "12" is not "1".
+        assert_eq!(redo_marks("**Paper redo 1**: hi"), [(2, 1)]);
+        assert_eq!(redo_marks("PAPER REDO 12: hi"), [(0, 12)]);
+        assert!(redo_marks("paper redo 1 is next; paper redo x: no").is_empty());
+        // A quick check and a redo in one reply: the last one named is the
+        // task.
+        let check = DueCheck {
+            number: 1,
+            label: "sign of b".into(),
+            misses: vec![],
+            question: None,
+            key: None,
+        };
+        let mut lesson = with_redos();
+        lesson.checks = vec![check.clone()];
+        pose(
+            &mut lesson,
+            "Quick check 1 can wait. Paper redo 1: What is Km?",
+            "What is Km?",
+        );
+        let open = lesson.task.as_ref().unwrap();
+        assert_eq!(open.check, None);
+        assert_eq!(open.redo.as_ref().unwrap().number, 1);
+        let mut lesson = with_redos();
+        lesson.checks = vec![check];
+        pose(
+            &mut lesson,
+            "Paper redo 1: comes after this. Quick check 1: What is b in x² − 5x?",
+            "What is b in x² − 5x?",
+        );
+        let open = lesson.task.as_ref().unwrap();
+        assert_eq!(open.check.as_deref(), Some("sign of b"));
+        assert_eq!(open.redo, None);
+        assert_eq!(lesson.redos.len(), 2);
+    }
+
+    #[test]
+    fn a_task_that_only_looks_like_a_redo_is_flagged_for_the_learner() {
+        // The open redo, posed again in other words before its answer: it
+        // keeps its rows and the help given on it.
+        let mut lesson = with_redos();
+        pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
+        lesson.apply(
+            &record(r#"{"answer": null, "help": "hint", "task": null}"#),
+            &message(HINT_WORDS),
+            "Look at the x intercept.",
+            "r-1",
+        );
+        let reworded = pose(
+            &mut lesson,
+            "Paper redo 1: Read Km off the x intercept of the plot.",
+            "Read Km off the x intercept of the plot.",
+        );
+        let open = lesson.task.clone().unwrap();
+        assert_eq!(open.redo.as_ref().unwrap().rows.len(), 2);
+        assert_eq!(open.help, Help::Hint);
+        assert_eq!(reworded.not_a_redo, None);
+        // The open redo gives way to another task before its answer.
+        let aside = pose(&mut lesson, "First: what is a slope?", "What is a slope?");
+        assert_eq!(lesson.task.as_ref().unwrap().redo, None);
+        assert_eq!(aside.not_a_redo, Some(NotARedo::SetAside));
+        // A redo declined, then posed again after a worked example: the
+        // redo was spent, so the task is an ordinary one, and flagged.
+        let mut lesson = with_redos();
+        pose(
+            &mut lesson,
+            "Paper redo 2: Write the rate law.",
+            "Write the rate law.",
+        );
+        let again = lesson.apply(
+            &record(
+                r#"{"answer": "declined", "skill": "rate laws", "task": "Write the rate law."}"#,
+            ),
+            &message(DONT_KNOW_WORDS),
+            "Here is one worked. Paper redo 2: Write the rate law.",
+            "r-2",
+        );
+        assert_eq!(lesson.task.as_ref().unwrap().redo, None);
+        assert_eq!(again.not_a_redo, Some(NotARedo::Unlisted));
+        // So is a redo the sitting never listed.
+        let mut lesson = with_redos();
+        let unknown = pose(&mut lesson, "Paper redo 7: What is Vmax?", "What is Vmax?");
+        assert_eq!(unknown.not_a_redo, Some(NotARedo::Unlisted));
+        // A reply that names the redo it has just marked sets an ordinary
+        // task, and nothing is flagged.
+        let mut lesson = with_redos();
+        pose(
+            &mut lesson,
+            "Paper redo 2: Write the rate law.",
+            "Write the rate law.",
+        );
+        let marked = lesson.apply(
+            &record(r#"{"answer": "right", "skill": "rate laws", "cold": true, "task": "Now solve x² = 4."}"#),
+            &message("v = k[A]"),
+            "Paper redo 2: right. Now solve x² = 4.",
+            "r-3",
+        );
+        assert!(marked.marked);
+        assert_eq!(marked.not_a_redo, None);
+        assert_eq!(lesson.task.as_ref().unwrap().redo, None);
+    }
+
+    #[test]
+    fn a_declined_redo_or_check_stores_no_next_question() {
+        let mut lesson = with_redos();
+        pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
+        let declined = lesson.apply(
+            &record(
+                r#"{"answer": "declined", "skill": "km", "next": {"question": "q", "key": "k"}}"#,
+            ),
+            &message(DONT_KNOW_WORDS),
+            "Fine.",
+            "r-1",
+        );
+        let attempt = &declined.request["observations"][0]["attempt"];
+        assert_eq!(attempt["first_try"], "declined");
+        assert_eq!(attempt["counts_for"], json!(["midterm-1#1", "midterm-1#4"]));
+        assert!(attempt.get("next").is_none(), "{attempt}");
+        assert!(declined.request.get("practice").is_none());
+    }
+
+    #[test]
+    fn a_reply_with_no_record_spends_the_redos_it_showed() {
+        let mut lesson = with_redos();
+        lesson.spend_shown("Right. We will get to paper redo 2 later. Paper redo 1: What is K");
+        assert_eq!(
+            lesson
+                .redos
+                .iter()
+                .map(|due| due.number)
+                .collect::<Vec<_>>(),
+            [2],
+            "the redo it began to pose is spent; the one it spoke of is not"
+        );
+    }
+
+    #[test]
+    fn slow_and_next_are_read_and_a_next_that_cannot_be_stored_costs_nothing() {
+        let record = parse(
+            r#"{"answer": "right", "skill": "km", "slow": true, "next": {"question": " Find Km. ", "key": "2"}}"#,
+        )
+        .unwrap();
+        assert!(record.slow);
+        assert_eq!(
+            record.next,
+            Some(Next {
+                question: "Find Km.".into(),
+                key: "2".into()
+            })
+        );
+        // An optional field never costs the block, and with it the mark.
+        for next in [
+            "null",
+            r#"{"question": "Find Km."}"#,
+            r#"{"question": "Find Km.", "key": ""}"#,
+            r#""later""#,
+            "[]",
+        ] {
+            let record = parse(&format!(
+                r#"{{"answer": "right", "skill": "km", "next": {next}}}"#
+            ))
+            .unwrap();
+            assert_eq!(record.next, None, "{next}");
+            assert_eq!(record.answer, Some(Mark::Right));
+        }
     }
 
     #[test]

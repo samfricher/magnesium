@@ -727,6 +727,590 @@ fn handing_in_a_paper_opens_a_plugin_conversation_whatever_was_picked() {
     manager.shut_down();
 }
 
+/// A plan with a gap log from the template before the runtime kept the
+/// table. Each row is (paper question, tag, what went wrong, type), already
+/// repaired, so the runtime brings it in with its redo due at once.
+fn paper_plan(bench: &Bench, rows: &[(&str, &str, &str, &str)]) {
+    let dir = bench.root.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    let mut log = String::from(
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n",
+    );
+    for (n, (question, tag, what, kind)) in rows.iter().enumerate() {
+        log.push_str(&format!(
+            "| {} | 2026-10-20 | Diagnostic | {question} | {tag} | {what} | {kind} | taught it | | open |\n",
+            n + 1
+        ));
+    }
+    fs::write(dir.join("gap-log.md"), log).unwrap();
+}
+
+/// One row of the Gaps table the runtime writes.
+#[derive(Debug)]
+struct GapRow {
+    passes: String,
+    next_redo: String,
+    status: String,
+}
+
+fn gap_rows(bench: &Bench) -> Vec<GapRow> {
+    let log = fs::read_to_string(bench.root.join("Study/midterm-1/gap-log.md")).unwrap();
+    let header = log
+        .lines()
+        .find(|line| line.starts_with("| # |"))
+        .unwrap_or_else(|| panic!("no Gaps table: {log}"));
+    let cells = |line: &str| -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_owned())
+            .collect()
+    };
+    let column = |name: &str| {
+        cells(header)
+            .iter()
+            .position(|cell| cell == name)
+            .unwrap_or_else(|| panic!("no {name} column: {header}"))
+    };
+    let (passes, next_redo, status) = (column("Passes"), column("Next redo"), column("Status"));
+    log.lines()
+        .filter(|line| line.starts_with("| ") && line.as_bytes()[2].is_ascii_digit())
+        .map(|line| {
+            let row = cells(line);
+            GapRow {
+                passes: row[passes].clone(),
+                next_redo: row[next_redo].clone(),
+                status: row[status].clone(),
+            }
+        })
+        .collect()
+}
+
+fn today() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// What `days` later looks like to the runtime: every answer and change
+/// moves that far back, and the last message was hours ago, so the next one
+/// begins a sitting.
+fn days_pass(bench: &Bench, days: i64) {
+    let back = days * 24 * 60 * 60 * 1000;
+    let store = Connection::open(bench.root.join(".magnesium/state.sqlite")).unwrap();
+    store
+        .execute(
+            "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
+            [back],
+        )
+        .unwrap();
+    store
+        .execute("UPDATE practice_events SET at_ms=at_ms-?1", [back])
+        .unwrap();
+    // The day a row brought in from a gap log first fell due moves with them.
+    store
+        .execute(
+            "UPDATE practice_items SET base_next_on=date(base_next_on, ?1) WHERE base_next_on IS NOT NULL",
+            [format!("-{days} days")],
+        )
+        .unwrap();
+    Connection::open(bench.root.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute("UPDATE meta SET last_learner_ms=last_learner_ms-?1", [back])
+        .unwrap();
+}
+
+/// The state the model was sent with its latest message.
+fn last_state(bench: &Bench) -> String {
+    bench.logged("message").pop().unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+const BACK: &str = "I'm back. Let's continue.";
+const REDO_1: &str = "A Lineweaver-Burk plot crosses the x axis at −0.5: what is Km?";
+
+#[test]
+fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
+    let bench = Bench::new(None, &[]);
+    paper_plan(
+        &bench,
+        &[
+            ("3", "km", "slope read as intercept", "K"),
+            ("5", "km", "sign of the intercept lost", "N"),
+            ("6", "rate law", "right, but twice the time", "S"),
+        ],
+    );
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Paper redo 1: {REDO_1}"));
+    // The two rows on one tag are one redo; the row lost for slowness is
+    // timed. The rows' names are the program's, and stay out of the state.
+    let state = last_state(&bench);
+    for part in [
+        "A new sitting has begun. Paper redos due, one at a time, before new material:",
+        "1. Tag \"km\", from Diagnostic Q3 and Diagnostic Q5. What went wrong: slope read as intercept | sign of the intercept lost. No stored question: make a new one.",
+        "2. Tag \"rate law\", from Diagnostic Q6. What went wrong: right, but twice the time. Timed: it was lost for slowness, so it passes only in time. No stored question: make a new one.",
+    ] {
+        assert!(state.contains(part), "{part}\n{state}");
+    }
+    assert!(!state.contains("midterm-1#"), "{state}");
+
+    // A right answer, cold: one pass for each row of the tag.
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["label"], "km");
+    assert_eq!(attempts[0]["question"], REDO_1);
+    assert_eq!(attempts[0]["mark"], "right");
+    assert_eq!(attempts[0]["cold"], true);
+    let rows = gap_rows(&bench);
+    assert_eq!(rows.len(), 3, "{rows:#?}");
+    for row in &rows[..2] {
+        assert_eq!(row.status, "1 of 3", "{rows:#?}");
+        assert_eq!(row.passes, format!("{} pass", today()), "{rows:#?}");
+    }
+    assert_eq!(rows[2].status, "open");
+    // The next question is kept on both rows, and a redo makes no quick check.
+    let store = bench.store();
+    let stored: Vec<Option<String>> = store
+        .prepare("SELECT next_question FROM practice_items WHERE origin='paper' ORDER BY row_no")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let next = Some("A second plot crosses at −0.25: what is Km?".to_owned());
+    assert_eq!(stored, [next.clone(), next, None]);
+    let checks: i64 = store
+        .query_row(
+            "SELECT count(*) FROM practice_items WHERE origin='chat'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(checks, 0);
+    drop(store);
+
+    // The same reply posed the timed redo. Right, but over the time: the
+    // tutor is told how long the answer took, and the row fails.
+    let (reply, _) = events.take();
+    assert!(reply.contains("Paper redo 2: "), "{reply}");
+    manager.send("Km = 2 OVERTIME").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("The open task is a timed paper redo: this message came "),
+        "{state}"
+    );
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 2, "{attempts:#?}");
+    assert!(attempts.iter().any(|a| a["label"] == "rate law"));
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[2].status, "open", "{rows:#?}");
+    assert_eq!(rows[2].passes, format!("{} fail", today()), "{rows:#?}");
+    assert_eq!(rows[2].next_redo, "", "it waits for a repair: {rows:#?}");
+
+    // Four days on, the two rows are due again, and their stored question
+    // comes with them. The failed row is not listed.
+    manager.stop(None).unwrap();
+    drop(manager);
+    days_pass(&bench, 4);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("1. Tag \"km\", from Diagnostic Q3 and Diagnostic Q5. What went wrong: slope read as intercept | sign of the intercept lost. Stored question: A second plot crosses at −0.25: what is Km? Key, for you alone until they answer: 4"),
+        "{state}"
+    );
+    assert!(!state.contains("rate law"), "{state}");
+    manager.shut_down();
+}
+
+#[test]
+fn a_redo_posed_before_the_lesson_closed_is_marked_on_its_row_after_a_resume() {
+    let bench = Bench::new(None, &[]);
+    paper_plan(&bench, &[("3", "km", "slope read as intercept", "K")]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.stop(None).unwrap();
+    drop(manager);
+
+    // A new process reads the open redo back from the record.
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("Km = 0.5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["label"], "km");
+    assert_eq!(attempts[0]["mark"], "wrong");
+    // A due redo that is not a pass fails the row, which waits for a repair.
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, format!("{} fail", today()), "{rows:#?}");
+    assert_eq!(rows[0].next_redo, "", "{rows:#?}");
+    manager.shut_down();
+}
+
+#[test]
+fn a_declined_redo_stays_due_and_a_skipped_sitting_poses_none() {
+    let bench = Bench::new(None, &[]);
+    paper_plan(&bench, &[("3", "km", "slope read as intercept", "K")]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("I don't know").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["mark"], "declined");
+    assert_eq!(attempts[0]["label"], "km");
+    // A decline is free: no pass, no fail, and the redo is still due.
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, "", "{rows:#?}");
+    assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
+    manager.stop(None).unwrap();
+    drop(manager);
+
+    // The next day the learner goes on without what is due: nothing is
+    // listed, and nothing is posed.
+    days_pass(&bench, 1);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(true).unwrap();
+    manager
+        .send_new_lesson("No checks right now. Let's continue where I stopped.")
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("go on without the quick checks and paper redos for now"),
+        "{state}"
+    );
+    assert!(!state.contains("Tag \"km\""), "{state}");
+    let (reply, _) = events.take();
+    assert!(!reply.contains("Paper redo"), "{reply}");
+    manager.shut_down();
+}
+
+/// The runtime's last learner message was hours ago, so the next one
+/// begins a sitting. The window's own clock is not moved.
+fn hours_pass_for_the_runtime(bench: &Bench) {
+    Connection::open(bench.root.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET last_learner_ms=last_learner_ms-?1",
+            [4 * 60 * 60 * 1000_i64],
+        )
+        .unwrap();
+}
+
+/// A lesson that opened with paper redo 1 posed, for the rows given.
+fn with_a_redo_posed(rows: &[(&str, &str, &str, &str)]) -> (Bench, Manager, Events) {
+    let bench = Bench::new(None, &[]);
+    paper_plan(&bench, rows);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Paper redo 1: {REDO_1}"));
+    (bench, manager, events)
+}
+
+/// The notices sent so far, those after the last turn's end included.
+fn all_notices(events: &mut Events) -> Vec<String> {
+    while let Ok(event) = events.receiver.try_recv() {
+        events.seen.push(event);
+    }
+    notices(events)
+}
+
+const KM_ROW: (&str, &str, &str, &str) = ("3", "km", "slope read as intercept", "K");
+const TIMED_ROW: (&str, &str, &str, &str) = ("6", "rate law", "right, but twice the time", "S");
+
+#[test]
+fn a_timed_redo_is_timed_from_the_reply_that_posed_it_whatever_is_said_in_between() {
+    let (bench, manager, mut events) = with_a_redo_posed(&[TIMED_ROW]);
+    // A question on the way, a good second after the redo was shown, and
+    // then the answer at once: the time is the whole of it.
+    std::thread::sleep(Duration::from_millis(1300));
+    manager.send("Which axis do you mean?").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    let line = state
+        .lines()
+        .find(|line| line.starts_with("The open task is a timed paper redo: this message came "))
+        .unwrap_or_else(|| panic!("{state}"));
+    assert!(
+        !line.contains("came 0 s"),
+        "the clock started again with the reply in between: {line}"
+    );
+    // In time, by the tutor's word: the row passes.
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "1 of 3", "{rows:#?}");
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.shut_down();
+}
+
+#[test]
+fn a_timed_redo_resumed_with_no_clock_earns_no_pass_and_the_learner_is_told() {
+    let (bench, manager, _events) = with_a_redo_posed(&[TIMED_ROW]);
+    manager.stop(None).unwrap();
+    drop(manager);
+    // A new process reads the redo back, and has no time for it.
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("the window did not see it posed, so it has no time for this answer"),
+        "{state}"
+    );
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["mark"], "right");
+    assert_eq!(attempts[0]["cold"], false, "{attempts:#?}");
+    // Right, and not cold: no pass and no fail, and the redo stays due.
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, "", "{rows:#?}");
+    assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
+    let notices = all_notices(&mut events);
+    assert!(
+        notices
+            .iter()
+            .any(|text| text.contains("did not count for the paper question")),
+        "{notices:#?}"
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_redo_the_tutor_taught_in_the_sitting_earns_no_pass_and_the_learner_is_told() {
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    // The tutor marks it right and says the page was not blank.
+    manager.send("Km = 2 TAUGHT").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["cold"], false);
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, "", "{rows:#?}");
+    assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
+    // The reply said "Right": the window says what the record holds.
+    let notices = all_notices(&mut events);
+    assert_eq!(notices.len(), 1, "{notices:#?}");
+    assert!(
+        notices[0].contains("did not count for the paper question"),
+        "{notices:#?}"
+    );
+    // And the tutor is told with the next message.
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("The record did not count the last paper redo: no pass and no fail."),
+        "{state}"
+    );
+    // A pass is told to the tutor too, and raises no notice.
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        last_state(&bench).contains("The record holds the last paper redo as a pass."),
+        "{}",
+        last_state(&bench)
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_reply_stopped_part_way_sets_the_open_redo_aside_for_good() {
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    // The learner answers, and stops the reply after its first words: what
+    // they saw of it may have marked the redo, or given its answer away.
+    manager.send("SLOW Km = 0.5").unwrap();
+    events.until("the first words", |e| {
+        matches!(e, AgentEvent::TextDelta { .. })
+    });
+    manager.interrupt().unwrap();
+    let end = done(&manager, &mut events);
+    assert!(
+        matches!(
+            end,
+            AgentEvent::TurnEnded {
+                interrupted: true,
+                ..
+            }
+        ),
+        "{end:?}"
+    );
+    let notices = all_notices(&mut events);
+    assert!(
+        notices
+            .iter()
+            .any(|text| text.contains("paper redo was set aside")),
+        "{notices:#?}"
+    );
+    // The next answer is not saved for the row: it has no mark, and the
+    // learner is told.
+    events.seen.clear();
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    let notices = all_notices(&mut events);
+    assert!(
+        notices.iter().any(|text| text.contains("not marked")),
+        "{notices:#?}"
+    );
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, "", "{rows:#?}");
+    assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
+    // Nor after a resume: the record's checkpoint no longer names the redo.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // The answer is to the ordinary task the last reply set, and is kept
+    // as one: the row holds no answer at all.
+    let on_the_row: i64 = bench
+        .store()
+        .query_row(
+            "SELECT count(*) FROM practice_events e JOIN practice_items i ON i.item_id=e.item_id
+             WHERE i.origin='paper' AND e.kind='attempt'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(on_the_row, 0);
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "open", "{rows:#?}");
+    assert_eq!(rows[0].passes, "", "{rows:#?}");
+    manager.shut_down();
+}
+
+#[test]
+fn a_redo_whose_tag_or_rows_the_runtime_refuses_keeps_its_mark() {
+    // A tag from a gap log written by hand that names a problem: the
+    // runtime takes no such label, so the answer goes under the skill the
+    // tutor named, and still counts for the row.
+    let (bench, manager, mut events) =
+        with_a_redo_posed(&[("3", "Q3 slope", "slope read as intercept", "K")]);
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["label"], "reading Km from a plot");
+    assert_eq!(attempts[0]["cold"], true);
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].status, "1 of 3", "{rows:#?}");
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.shut_down();
+
+    // A row taken out of the gap log after its redo was posed: the answer
+    // is kept as an ordinary one, and the learner is told it counted for
+    // no paper question.
+    let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
+    Connection::open(bench.root.join(".magnesium/state.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE practice_items SET dropped='logged in error' WHERE origin='paper'",
+            [],
+        )
+        .unwrap();
+    manager.send("Km = 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["mark"], "right");
+    assert_eq!(attempts[0]["cold"], false);
+    let notices = all_notices(&mut events);
+    assert_eq!(notices.len(), 1, "{notices:#?}");
+    assert!(
+        notices[0].contains("did not count for the paper question"),
+        "{notices:#?}"
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_skip_holds_for_its_own_sitting_and_not_for_the_next() {
+    let bench = Bench::new(None, &[]);
+    paper_plan(&bench, &[KM_ROW]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager
+        .send_new_lesson("No checks right now. Let's continue where I stopped.")
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(!last_state(&bench).contains("Tag \"km\""));
+    // Hours later for the runtime, in the same window: a new sitting, whose
+    // redo is listed with the message after the one that began it.
+    hours_pass_for_the_runtime(&bench);
+    manager.send("hello").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    events.take();
+    manager.send("BACK").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(state.contains("1. Tag \"km\""), "{state}");
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Paper redo 1: {REDO_1}"));
+    manager.shut_down();
+}
+
+#[test]
+fn a_tag_already_answered_today_gets_no_redo_today() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // An answer in the lesson, on the skill "sign of b".
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // A marked paper's rows come due, one of them on that skill.
+    paper_plan(&bench, &[("2", "sign of b", "took b as 5", "K"), KM_ROW]);
+    hours_pass_for_the_runtime(&bench);
+    manager.send("hello").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("BACK").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // No answer on it could be cold today, so its redo could only fail:
+    // it is left for a later day, and the other is listed.
+    let state = last_state(&bench);
+    assert!(state.contains("1. Tag \"km\""), "{state}");
+    assert!(!state.contains("Tag \"sign of b\""), "{state}");
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[0].next_redo, today(), "it stays due: {rows:#?}");
+    manager.shut_down();
+}
+
 /// Every event the runtime holds, learner and tutor, and every answer.
 fn record_size(bench: &Bench) -> (i64, usize) {
     bench.size()

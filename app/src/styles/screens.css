@@ -2277,7 +2277,3 @@
 .engine-line.off {
   visibility: hidden;
 }
-
-.today-line + .today-line {
-  margin-top: 2px;
-}

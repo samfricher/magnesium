@@ -204,8 +204,9 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     ] {
         assert!(opener.contains(text), "{text}\n{opener}");
     }
-    // A tutor's result is as it was: the opener's text, and no checks as data.
+    // A tutor's result is as it was: the opener's text, and nothing as data.
     assert!(status.get("sitting_checks").is_none(), "{status}");
+    assert!(status.get("sitting_redos").is_none(), "{status}");
     let again = v2::tool(
         &e,
         "claude",
@@ -336,6 +337,7 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
     assert_eq!(checks[0]["number"], 1);
     assert_eq!(checks[0]["label"], LABEL);
     assert_eq!(checks[0]["misses"], json!([MISS]));
+    assert_eq!(load["sitting_redos"], json!([]), "{load}");
     // The learner answers anyway; a right unaided answer is recorded and passes it.
     let notice = claude_prompt(&e, "p-4", "x is 2 or 5");
     let passed = step(
@@ -356,6 +358,55 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
         passed["practice"]["items"][0]["status"], "1 of 3",
         "{passed}"
     );
+}
+
+#[test]
+fn a_caller_that_runs_the_lesson_gets_the_due_paper_redo_as_data_and_its_answer_passes_the_row() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    old_paper_plan(&e);
+    // The first sitting's opener goes to the lesson's start, which brings
+    // the older gap log in. A later sitting opens with the row still due.
+    claude_prompt(&e, "p-0", "teach me enzyme kinetics");
+    v2::start(&e, "claude", "conv");
+    next_day(&e);
+    claude_prompt(&e, "p-1", "I'm back");
+    // The first tool result of the sitting, for a caller that asks for data.
+    let status = tool_with_checks(&e, json!({"schema":"learner-model/v2","action":"status"}));
+    assert_eq!(status["sitting_checks"], json!([]), "{status}");
+    assert_eq!(
+        status["sitting_redos"],
+        json!([{"item": "midterm-1#1", "plan": "midterm-1", "tag": "km", "type": "K",
+            "what_went_wrong": "slope read as intercept", "paper": "Diagnostic", "paper_question": "3",
+            "question": null, "key": null}]),
+        "{status}"
+    );
+    // A cold, unaided, right answer that names the row passes it, and its
+    // next question is kept for the next redo.
+    let notice = claude_prompt(&e, "p-2", "Km is 2 mM");
+    let passed = step(
+        &e,
+        json!({"schema":"learner-model/v2","action":"update","request_id":"redo",
+            "observations":[{"client_ref":"work","kind":"learner_work","description":"Read Km off the plot.",
+                "events":[{"event_id":current_event(&notice),"role":"learner_response"}],
+                "attempt":{"label":"km","question":"The plot crosses the x axis at −0.5: what is Km?",
+                    "first_try":"right","help":"none","cold":true,"counts_for":["midterm-1#1"],
+                    "next":{"question":"A second plot crosses at −0.25: what is Km?","answer_key":"4 mM"}}}]}),
+    );
+    assert_eq!(passed["update_status"], "committed", "{passed}");
+    assert_eq!(
+        passed["practice"]["attempts"][0]["items"][0]["effect"], "passed",
+        "{passed}"
+    );
+    assert_eq!(
+        passed["practice"]["items"][0]["status"], "1 of 3",
+        "{passed}"
+    );
+    assert_eq!(checks(&e), 0, "a redo makes no quick check");
+    let stored: String = store(&e)
+        .query_row("SELECT next_question FROM practice_items", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, "A second plot crosses at −0.25: what is Km?");
 }
 
 #[test]

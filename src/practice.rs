@@ -136,6 +136,49 @@ pub(crate) fn due_redos(items: &[Item], day: NaiveDate) -> Vec<DueRedos> {
         .collect()
 }
 
+/// At most this many due rows go out as data with a sitting's opener.
+const MAX_ROWS_AS_DATA: usize = 24;
+
+/// The paper redos due on `day` as data, the longest due first: the rows the
+/// opener's text counts and names, whole, for a caller that runs the lesson
+/// itself. `item` is the name `counts_for` takes: "<plan>#<n>", or the item's
+/// ID for a row in no plan.
+pub(crate) fn due_rows_json(items: &[Item], day: NaiveDate) -> Value {
+    let mut due = items
+        .iter()
+        .filter(|item| item.facts.origin == Origin::Paper && item.state.due_on(day))
+        .collect::<Vec<_>>();
+    due.sort_by_key(|item| {
+        (
+            item.state.next_on,
+            item.facts.plan.clone(),
+            item.facts.row_no,
+        )
+    });
+    Value::Array(
+        due.into_iter()
+            .take(MAX_ROWS_AS_DATA)
+            .map(|item| {
+                let facts = &item.facts;
+                json!({
+                    "item": match (&facts.plan, facts.row_no) {
+                        (Some(_), Some(_)) => item.name(),
+                        _ => facts.item_id.clone(),
+                    },
+                    "plan": facts.plan,
+                    "tag": facts.label,
+                    "type": facts.gap_type.map(|t| t.as_str()),
+                    "what_went_wrong": facts.what_went_wrong,
+                    "paper": facts.paper,
+                    "paper_question": facts.paper_question,
+                    "question": facts.next_question,
+                    "key": facts.answer_key,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Open quick checks' labels, soonest due first, so a later attempt on the
 /// same skill can reuse one exactly.
 pub(crate) fn open_labels(items: &[Item]) -> Vec<String> {

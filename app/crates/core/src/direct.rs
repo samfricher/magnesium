@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::Local;
 use serde_json::{json, Value};
@@ -38,7 +38,7 @@ use crate::claude::{self, ClaudeCode};
 use crate::host_client::{self, HostClient};
 use crate::lesson_state::{self, Facts};
 use crate::paths;
-use crate::record::{self, Control, Cutter, DueCheck, Lesson, Message, Record};
+use crate::record::{self, Control, Cutter, DueCheck, Lesson, Message, NotARedo, Record};
 use crate::store::Store;
 
 /// Set this to a file to use its text as the tutor's prompt in place of the
@@ -320,7 +320,6 @@ impl Harness for DirectTutor {
             stdin: Mutex::new(stdin),
             child: Mutex::new(Some(child)),
             host,
-            runtime,
             folder,
             session: session.clone(),
             resumed: resumed.is_some(),
@@ -404,8 +403,8 @@ impl Harness for DirectTutor {
         format!("{LESSON_MARK}{}", goal.trim())
     }
 
-    /// Paper work runs on the plugin engine; these words are never sent to
-    /// a direct lesson.
+    /// A paper is handed in on the plugin engine; these words are never
+    /// sent to a direct lesson.
     fn papers(&self, request: &str) -> String {
         request.trim().to_owned()
     }
@@ -471,8 +470,21 @@ struct State {
     labels: Vec<String>,
     /// When the learner last sent a message, to tell a new sitting.
     last_message: Option<Instant>,
-    /// The runtime was asked for this sitting's checks.
+    /// The runtime was asked for what this sitting opens with.
     checks_asked: bool,
+    /// The turn in which the learner chose to go on without what the
+    /// sitting opens with. It holds for what that turn brings, and for
+    /// nothing a later sitting opens with.
+    skip_turn: Option<u64>,
+    /// What a sitting opens with, when it came with a turn's save, after
+    /// the state had gone to the model: the next turn tells it.
+    late: Option<Due>,
+    /// The timed paper redo that is open, by its rows, and when the window
+    /// showed the reply that posed it whole. The wall clock, so that time
+    /// the Mac sleeps counts.
+    redo_clock: Option<(Vec<String>, SystemTime)>,
+    /// What the record made of the last paper redo, to tell the tutor.
+    redo_outcome: Option<String>,
     /// The learner's memories the tutor has been shown, by the short id it
     /// names them with: ("m1", the runtime's memory id).
     memories: Vec<(String, String)>,
@@ -480,6 +492,29 @@ struct State {
     memories_new: Vec<String>,
     turn: u64,
 }
+
+/// What a sitting opens with: its quick checks, and the gap-log rows whose
+/// redo is due, as the runtime sends them.
+type Due = (Vec<DueCheck>, Value);
+
+impl State {
+    /// A new sitting: what the last one listed and did not pose is gone.
+    /// It is listed again if it is still due.
+    fn begin_sitting(&mut self) {
+        self.checks_asked = false;
+        self.lesson.redos.clear();
+    }
+}
+
+/// The learner's notice for a right answer to a paper redo that the record
+/// did not count: no pass and no fail.
+const REDO_NO_COUNT: &str = "Your answer is saved, but it did not count for the paper question this time. That question stays due.";
+/// The same, for a right answer the record holds as a fail.
+const REDO_FAILED: &str = "Your answer was right, but with help or over the time it does not pass the paper question. That question comes back after a repair.";
+/// For a task the reply calls a paper redo and the window has none for.
+const REDO_UNLISTED: &str = "The tutor called this a paper redo, but the window has none to record it for. Your answer will be saved as an ordinary answer.";
+/// For a paper redo that gave way to something else before its answer.
+const REDO_SET_ASIDE: &str = "The paper redo was set aside before it was answered. It stays due.";
 
 struct Shared {
     store: Option<Arc<Store>>,
@@ -489,7 +524,6 @@ struct Shared {
     stdin: Mutex<Option<ChildStdin>>,
     child: Mutex<Option<Child>>,
     host: HostClient,
-    runtime: PathBuf,
     folder: PathBuf,
     session: String,
     resumed: bool,
@@ -988,32 +1022,27 @@ fn task_from_checkpoint(checkpoint: &Value) -> Option<record::OpenTask> {
         .lines()
         .find_map(|line| line.strip_prefix(record::CHECK_LINE))
         .map(|rest| rest.trim().trim_matches('"').to_owned());
+    let redo = plan
+        .lines()
+        .find_map(|line| line.strip_prefix(record::REDO_LINE))
+        .and_then(|rest| serde_json::from_str(rest.trim()).ok());
     Some(record::OpenTask {
         text,
         help,
         guess: plan.lines().any(|line| line == record::GUESS_LINE),
         check,
+        redo,
         again: plan.lines().any(|line| line == record::AGAIN_LINE),
         stuck: false,
         skill: String::new(),
     })
 }
 
-fn checks_of(result: &Value) -> Option<Vec<DueCheck>> {
-    serde_json::from_value(result.get("sitting_checks")?.clone()).ok()
-}
-
-/// Paper questions due for a redo, from `magnesium progress --json`.
-fn redos_due(shared: &Shared) -> u64 {
-    let mut command = paths::light_command(&shared.runtime);
-    command
-        .current_dir(&shared.folder)
-        .args(["progress", "--json"]);
-    paths::run(command, Duration::from_secs(10))
-        .ok()
-        .and_then(|out| serde_json::from_str::<Value>(&out).ok())
-        .and_then(|value| value["due"]["redos"].as_u64())
-        .unwrap_or(0)
+/// What a sitting opens with, when this result carries it: the runtime's
+/// `sitting_checks`, and the gap-log rows of `sitting_redos` as redos.
+fn due_of(result: &Value) -> Option<Due> {
+    let checks = serde_json::from_value(result.get("sitting_checks")?.clone()).ok()?;
+    Some((checks, result["sitting_redos"].clone()))
 }
 
 /// The most course graphs a state names.
@@ -1052,21 +1081,37 @@ fn course_graphs(root: &Path) -> Vec<String> {
         .collect()
 }
 
+/// What a turn knows before the model writes.
+struct Prepared {
+    /// The event the runtime captured the learner's words as.
+    event: Option<String>,
+    /// The lesson state to send.
+    state: String,
+    /// The open task is a timed paper redo with no clock running.
+    no_clock: bool,
+}
+
+impl Prepared {
+    /// For a turn of which nothing reaches the record.
+    fn unrecorded(state: String) -> Self {
+        Self {
+            event: None,
+            state,
+            no_clock: false,
+        }
+    }
+}
+
 /// Before the model: capture the learner's words, start or resume the
 /// runtime's lesson when none is active here, and gather the state to send.
-fn prepare(
-    shared: &Arc<Shared>,
-    words: &str,
-    from_window: bool,
-    prompt_id: &str,
-) -> (Option<String>, String) {
+fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str) -> Prepared {
     let host = &shared.host;
     let mut state = lock(&shared.state);
     let new_sitting = state
         .last_message
         .is_none_or(|last| last.elapsed() > SITTING_GAP);
     if new_sitting {
-        state.checks_asked = false;
+        state.begin_sitting();
     }
     state.last_message = Some(Instant::now());
     let mut facts = Facts {
@@ -1076,6 +1121,9 @@ fn prepare(
     };
     let opened = from_window.then(|| opening(words)).flatten();
     facts.skip_checks = opened.as_ref().is_some_and(|(skip, _)| *skip);
+    if facts.skip_checks {
+        state.skip_turn = Some(state.turn);
+    }
     state
         .lesson
         .set_today(&Local::now().format("%Y-%m-%d").to_string());
@@ -1089,7 +1137,7 @@ fn prepare(
         // Nothing goes to the runtime: not the words, not the hooks.
         facts.halt = Some(halt.line().to_owned());
         state.told = true;
-        return (None, lesson_state::text(&state.lesson, &facts));
+        return Prepared::unrecorded(lesson_state::text(&state.lesson, &facts));
     }
     let notice = match host.hook(
         "user-prompt-submit",
@@ -1109,10 +1157,13 @@ fn prepare(
         state.halt = Some(Halt::RecordingOff);
         facts.halt = Some(Halt::RecordingOff.line().to_owned());
         state.told = true;
-        return (None, lesson_state::text(&state.lesson, &facts));
+        return Prepared::unrecorded(lesson_state::text(&state.lesson, &facts));
     }
     let mut event = host_client::current_event(&notice);
-    let mut found_checks: Option<Vec<DueCheck>> = None;
+    // What the sitting opens with comes once, with the first result of the
+    // runtime's tools after the sitting's first message.
+    let mut found: Option<Due> = state.late.take();
+    let mut asked = false;
     if let Some(ticket) = host_client::ticket(&notice) {
         // No lesson is active in this conversation: start one, or resume
         // the one the learner comes back to.
@@ -1131,8 +1182,9 @@ fn prepare(
                 json!({"schema": "learner-model/v2", "action": "session_choices", "limit": 3}),
             ) {
                 Ok(choices) => {
-                    if found_checks.is_none() {
-                        found_checks = checks_of(&choices);
+                    asked = true;
+                    if found.is_none() {
+                        found = due_of(&choices);
                     }
                     let known = state.lesson.session_id.clone();
                     let list = choices["session_choices"]
@@ -1173,6 +1225,7 @@ fn prepare(
         }
         match host.call("learning_step", request) {
             Ok(result) => {
+                asked = true;
                 event = result["captured_event_ids"][0].as_str().map(str::to_owned);
                 let session = match &resume {
                     Some((id, _, _)) => Some(id.clone()),
@@ -1191,8 +1244,8 @@ fn prepare(
                         }
                     }
                 }
-                if found_checks.is_none() {
-                    found_checks = checks_of(&result);
+                if found.is_none() {
+                    found = due_of(&result);
                 }
             }
             Err(why) => shared.note(&format!("the lesson could not start in the record: {why}")),
@@ -1206,8 +1259,8 @@ fn prepare(
             ) {
                 adopt(&mut state.lesson, &mut facts, &prepared);
                 facts.known = known(&mut state, &prepared);
-                if found_checks.is_none() {
-                    found_checks = checks_of(&prepared);
+                if found.is_none() {
+                    found = due_of(&prepared);
                 }
             }
         }
@@ -1218,10 +1271,12 @@ fn prepare(
             "context",
             json!({"schema": "learner-model/v2", "action": "status"}),
         ) {
+            asked = true;
             adopt(&mut state.lesson, &mut facts, &status);
-            found_checks = checks_of(&status);
+            if found.is_none() {
+                found = due_of(&status);
+            }
         }
-        state.checks_asked = true;
     }
     // A conversation's first state shows the learner's memories for the
     // goal, each with a short id the tutor names to revise one.
@@ -1231,36 +1286,61 @@ fn prepare(
                 "context",
                 json!({"schema": "learner-model/v2", "action": "prepare", "goal": goal}),
             ) {
+                asked = true;
                 facts.known = known(&mut state, &prepared);
+                if found.is_none() {
+                    found = due_of(&prepared);
+                }
             }
         }
     }
     facts.known.extend(std::mem::take(&mut state.memories_new));
-    // A new sitting's quick checks come once, with the first record call
-    // after its first message. When the calls above made none, one is made.
-    if found_checks.is_none()
-        && !state.checks_asked
-        && host_client::checks_due(&notice).is_some_and(|due| due > 0)
-    {
+    // When the calls above made none, in a sitting not asked about yet, one
+    // is made: the prompt hook's notice counts the quick checks due, and
+    // says nothing of paper redos.
+    if found.is_none() && !asked && !state.checks_asked {
         if let Ok(status) = host.call(
             "context",
             json!({"schema": "learner-model/v2", "action": "status"}),
         ) {
-            found_checks = checks_of(&status);
+            found = due_of(&status);
         }
     }
-    if let Some(checks) = found_checks {
-        state.checks_asked = true;
+    state.checks_asked = true;
+    if let Some((checks, rows)) = found {
         if facts.skip_checks {
             state.lesson.checks.clear();
+            state.lesson.redos.clear();
         } else {
+            // A tag already answered today is left out: no answer on it
+            // could be cold today, so its redo could only fail.
+            let redos = record::redos_from(&rows, &|tag| state.lesson.answered_earlier_today(tag));
             facts.new_checks = checks.clone();
+            facts.new_redos = redos.clone();
             state.lesson.checks = checks;
+            state.lesson.redos = redos;
         }
     }
-    if facts.full || (new_sitting && !shared.resumed) || facts.stopped_at.is_some() {
-        facts.redos_due = redos_due(shared);
+    // The time a timed paper redo took: from the reply that posed it, shown
+    // whole, to this message, whatever was said in between. With no clock
+    // on it, as after a resume, its answer cannot earn a pass.
+    let mut no_clock = false;
+    if let Some(redo) = state
+        .lesson
+        .task
+        .as_ref()
+        .and_then(|task| task.redo.as_ref())
+        .filter(|redo| redo.timed)
+    {
+        facts.took = state
+            .redo_clock
+            .as_ref()
+            .filter(|(rows, _)| *rows == redo.rows)
+            .and_then(|(_, posed)| SystemTime::now().duration_since(*posed).ok());
+        no_clock = facts.took.is_none();
+        facts.no_clock = no_clock;
     }
+    facts.redo_outcome = state.redo_outcome.take();
     if facts.full {
         facts.graphs = course_graphs(&shared.root);
     }
@@ -1271,7 +1351,11 @@ fn prepare(
     }
     state.told = true;
     let text = lesson_state::text(&state.lesson, &facts);
-    (event, text)
+    Prepared {
+        event,
+        state: text,
+        no_clock,
+    }
 }
 
 /// Give a memory a short id the tutor can name, once.
@@ -1344,7 +1428,11 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // Unique across processes too: a resumed conversation counts its turns
     // from one again, and the runtime keeps one capture per turn id.
     let prompt_id = format!("{}-{turn_no}-{}", shared.session, shared.next_id());
-    let (event, state_text) = prepare(shared, &words, from_window, &prompt_id);
+    let Prepared {
+        event,
+        state: state_text,
+        no_clock,
+    } = prepare(shared, &words, from_window, &prompt_id);
     {
         // An interrupt either lands before the message goes, and the turn
         // ends here, or after, and is sent to Claude Code.
@@ -1377,6 +1465,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             text: reply.clone(),
         });
     }
+    let shown = SystemTime::now();
     // The reply ended. It was interrupted only if the interrupt reached
     // Claude Code and the reply did not finish anyway.
     let sent = {
@@ -1405,6 +1494,28 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // a plugin lesson keeps no reply for it either.
     if sent && !finished {
         shared.note("interrupted: no record for this turn");
+        // What was shown before the stop may have marked the open redo, or
+        // posed another: the engine cannot know, so a redo is not kept.
+        if !reply.is_empty() {
+            let bound = lock(&shared.state)
+                .lesson
+                .task
+                .as_ref()
+                .is_some_and(|task| task.redo.is_some());
+            if bound {
+                forget_open_task(
+                    shared,
+                    &reply,
+                    "The reply was stopped part-way, so the paper redo that was open is set aside.",
+                );
+                shared.emit(AgentEvent::Notice {
+                    kind: NoticeKind::Other,
+                    text: REDO_SET_ASIDE.into(),
+                });
+            } else {
+                lock(&shared.state).lesson.spend_shown(&reply);
+            }
+        }
         shared.emit(AgentEvent::TurnEnded {
             ok: true,
             interrupted: true,
@@ -1480,14 +1591,20 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     let message = Message {
         words: words.clone(),
         event_id: event,
+        no_clock,
     };
     match &record {
-        Some(record) => save(shared, record, &message, &reply, deadline),
+        Some(record) => save(shared, record, &message, &reply, deadline, shown),
         None => {
             // The reply may have posed a new task, which the engine cannot
             // know: the task in hand is forgotten, so the next answer is
             // never saved against the wrong question.
-            let open = lock(&shared.state).lesson.task.take().is_some();
+            let open = forget_open_task(
+                shared,
+                &reply,
+                "A reply's record could not be read, so the task that was open is set aside.",
+            )
+            .is_some();
             shared.note("no valid record after asking again: this turn has no mark, and the open task is forgotten");
             if open {
                 shared.emit(AgentEvent::Notice {
@@ -1545,11 +1662,108 @@ fn already_saved(why: &str) -> bool {
     why.contains("events_already_processed") || why.contains("already processed")
 }
 
-/// Keep the turn's record in the runtime, by `deadline`.
-fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, deadline: Instant) {
+/// Forget the open task, because the engine no longer knows what is on
+/// screen: `reply` was shown and has no record. The paper redos it showed
+/// are not posed again in the sitting. When the task was a paper redo, the
+/// record's checkpoint is rewritten without it, so that a conversation
+/// resumed later does not read the redo back and count an answer for rows
+/// the learner has since been taught on. Returns the task that was open.
+fn forget_open_task(shared: &Arc<Shared>, reply: &str, note: &str) -> Option<record::OpenTask> {
+    let mut state = lock(&shared.state);
+    state.lesson.spend_shown(reply);
+    state.redo_clock = None;
+    let task = state.lesson.task.take();
+    if task.as_ref().is_none_or(|task| task.redo.is_none()) {
+        return task;
+    }
+    let cleared = Record {
+        note: note.to_owned(),
+        ..Record::default()
+    };
+    for attempt in 0..2 {
+        let request_id = format!("{}-forget-{}", shared.session, shared.next_id());
+        let write = state
+            .lesson
+            .apply(&cleared, &Message::default(), "", &request_id);
+        if write.request.get("checkpoint").is_none() {
+            break;
+        }
+        match shared.host.call("learning_step", write.request) {
+            Ok(result) => {
+                if let Some(session) = state.lesson.session_id.clone() {
+                    if let Some(revision) = result["revisions"][&session].as_i64() {
+                        state.lesson.revision = Some(revision);
+                    }
+                }
+                break;
+            }
+            // Another conversation moved the lesson on: read its revision
+            // and write once more.
+            Err(why) if attempt == 0 && why.contains("revision") => {
+                if let Ok(status) = shared.host.call(
+                    "context",
+                    json!({"schema": "learner-model/v2", "action": "status"}),
+                ) {
+                    state.lesson.revision = status["session"]["revision"].as_i64();
+                }
+            }
+            Err(why) => {
+                shared.note(&format!(
+                    "the open paper redo is still in the record's checkpoint: {why}"
+                ));
+                break;
+            }
+        }
+    }
+    task
+}
+
+/// Keep the turn's record in the runtime, by `deadline`. `shown` is when
+/// the window showed the reply whole.
+fn save(
+    shared: &Arc<Shared>,
+    record: &Record,
+    message: &Message,
+    reply: &str,
+    deadline: Instant,
+    shown: SystemTime,
+) {
     let mut state = lock(&shared.state);
     let request_id = format!("{}-turn-{}", shared.session, shared.next_id());
     let write = state.lesson.apply(record, message, reply, &request_id);
+    // A timed redo's clock starts with the reply that posed it, and runs
+    // until the redo is no longer the open task.
+    let timed = state
+        .lesson
+        .task
+        .as_ref()
+        .and_then(|task| task.redo.as_ref())
+        .filter(|redo| redo.timed)
+        .map(|redo| redo.rows.clone());
+    match timed {
+        Some(rows) => {
+            if state
+                .redo_clock
+                .as_ref()
+                .is_none_or(|(open, _)| *open != rows)
+            {
+                state.redo_clock = Some((rows, shown));
+            }
+        }
+        None => state.redo_clock = None,
+    }
+    // A task that looks like a paper redo and is none for the record.
+    if let Some(why) = write.not_a_redo {
+        shared.emit(AgentEvent::Notice {
+            kind: NoticeKind::Other,
+            text: match why {
+                NotARedo::Unlisted => REDO_UNLISTED,
+                NotARedo::SetAside => REDO_SET_ASIDE,
+            }
+            .into(),
+        });
+    }
+    let mut redo_answer = write.redo.clone();
     // An answer the record cannot keep is never lost in silence.
     let lost = |why: &str| {
         shared.note(&format!("an answer was not marked: {why}"));
@@ -1602,7 +1816,8 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, d
     }
     let worth = request.get("observations").is_some()
         || request.get("checkpoint").is_some()
-        || request.get("event_dispositions").is_some();
+        || request.get("event_dispositions").is_some()
+        || request.get("practice").is_some();
     if !worth {
         return;
     }
@@ -1627,6 +1842,51 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, d
                 for observation in retry["observations"].as_array_mut().into_iter().flatten() {
                     if observation.get("attempt").is_some() {
                         observation["attempt"]["cold"] = json!(false);
+                    }
+                }
+            }
+            // The runtime names the field it refuses. A next question it
+            // will not store never costs the mark. Nor does a redo: rows it
+            // no longer knows are left out, and the answer is kept as an
+            // ordinary one, not cold; a tag it will not take as a label
+            // gives way to the skill the tutor named.
+            let rows_refused = why.contains(".attempt.counts_for");
+            let next_refused =
+                why.contains(".attempt.next:") || why.contains("practice[") || rows_refused;
+            if next_refused {
+                if let Some(fields) = retry.as_object_mut() {
+                    fields.remove("practice");
+                }
+            }
+            for observation in retry["observations"].as_array_mut().into_iter().flatten() {
+                let Some(attempt) = observation
+                    .get_mut("attempt")
+                    .and_then(Value::as_object_mut)
+                else {
+                    continue;
+                };
+                if next_refused {
+                    attempt.remove("next");
+                }
+                if rows_refused {
+                    attempt.remove("counts_for");
+                    attempt.remove("slow");
+                    attempt.insert("cold".into(), json!(false));
+                }
+                if let (Some(redo), true) = (&redo_answer, why.contains(".attempt.label:")) {
+                    attempt.insert("label".into(), json!(redo.other_label));
+                }
+            }
+            if rows_refused {
+                if let Some(redo) = redo_answer.take() {
+                    shared.note(
+                        "the redo's rows were refused: the answer is kept as an ordinary one",
+                    );
+                    if redo.right {
+                        shared.emit(AgentEvent::Notice {
+                            kind: NoticeKind::Other,
+                            text: REDO_NO_COUNT.into(),
+                        });
                     }
                 }
             }
@@ -1662,8 +1922,48 @@ fn save(shared: &Arc<Shared>, record: &Record, message: &Message, reply: &str, d
                     .map(str::to_owned)
                     .collect();
             }
-            if let Some(checks) = checks_of(&result) {
-                state.lesson.checks = checks;
+            // A sitting that began with this message: the next turn's
+            // state lists what it opens with, unless this is the turn in
+            // which the learner chose to go on without it.
+            if let Some(due) = due_of(&result) {
+                if state.skip_turn != Some(state.turn) {
+                    state.late = Some(due);
+                }
+            }
+            // What the record made of a paper redo's answer. The tutor is
+            // told next turn, and the learner now when the tutor marked it
+            // right and the record holds no pass.
+            if let Some(redo) = &redo_answer {
+                let effects: Vec<&str> = result["practice"]["attempts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|attempt| attempt["observation"] == "answer")
+                    .flat_map(|attempt| attempt["items"].as_array().into_iter().flatten())
+                    .filter_map(|item| item["effect"].as_str())
+                    .collect();
+                let passed = effects.iter().any(|e| matches!(*e, "passed" | "closed"));
+                let failed = effects.contains(&"failed");
+                let declined = effects.contains(&"declined");
+                state.redo_outcome = Some(
+                    if passed {
+                        "The record holds the last paper redo as a pass."
+                    } else if failed {
+                        "The record holds the last paper redo as a fail: its question waits for a repair."
+                    } else if declined {
+                        "The record holds the last paper redo as declined: it stays due."
+                    } else {
+                        "The record did not count the last paper redo: no pass and no fail."
+                    }
+                    .to_owned(),
+                );
+                if redo.right && !passed {
+                    shared.note(&format!("a right redo answer earned no pass: {effects:?}"));
+                    shared.emit(AgentEvent::Notice {
+                        kind: NoticeKind::Other,
+                        text: if failed { REDO_FAILED } else { REDO_NO_COUNT }.into(),
+                    });
+                }
             }
             if let (Some(id), Some(note)) =
                 (result["references"]["memory"].as_str(), &record.memory)
@@ -1970,6 +2270,22 @@ mod tests {
     }
 
     #[test]
+    fn a_new_sitting_drops_the_redos_the_last_one_listed_and_did_not_pose() {
+        let mut state = State {
+            checks_asked: true,
+            ..State::default()
+        };
+        state.lesson.redos =
+            record::redos_from(&json!([{"item": "m#1", "plan": "m", "tag": "km"}]), &|_| {
+                false
+            });
+        assert_eq!(state.lesson.redos.len(), 1);
+        state.begin_sitting();
+        assert!(state.lesson.redos.is_empty());
+        assert!(!state.checks_asked);
+    }
+
+    #[test]
     fn a_new_session_id_is_a_uuid() {
         let id = new_session_id();
         assert_eq!(id.len(), 36);
@@ -2049,6 +2365,7 @@ mod tests {
             help: record::Help::Hint,
             guess: false,
             check: Some("sign of b".into()),
+            redo: None,
             again: false,
             stuck: false,
             skill: String::new(),
@@ -2058,6 +2375,30 @@ mod tests {
             &Message::default(),
             "",
             "r",
+        );
+        let task = task_from_checkpoint(&write.request["checkpoint"]).unwrap();
+        assert_eq!(task, lesson.task.clone().unwrap());
+        // A paper redo comes back with its rows, its tag and its clock.
+        lesson.task = Some(record::OpenTask {
+            text: "The plot crosses at −0.5: what is Km?".into(),
+            help: record::Help::None,
+            guess: false,
+            check: None,
+            redo: Some(record::Redo {
+                number: 2,
+                rows: vec!["midterm-1#1".into(), "plan, with \"marks\"#2".into()],
+                tag: "km".into(),
+                timed: true,
+            }),
+            again: false,
+            stuck: false,
+            skill: String::new(),
+        });
+        let write = lesson.apply(
+            &record::parse(r#"{"answer": null}"#).unwrap(),
+            &Message::default(),
+            "",
+            "r-2",
         );
         let task = task_from_checkpoint(&write.request["checkpoint"]).unwrap();
         assert_eq!(task, lesson.task.unwrap());

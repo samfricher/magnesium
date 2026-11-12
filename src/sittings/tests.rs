@@ -189,6 +189,60 @@ fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
 }
 
 #[test]
+fn the_opener_lists_the_due_paper_redos_as_data_the_longest_due_first() {
+    let (root, workspace) = fixture();
+    let store = crate::practice::open_store(&workspace).unwrap();
+    // Two rows of one plan, a row in no plan, and a row not due yet.
+    for (id, plan, row, next_on, question) in [
+        (
+            "g-1",
+            Some("midterm-1"),
+            Some(1),
+            "2026-01-05",
+            Some("Find Km."),
+        ),
+        ("g-2", Some("midterm-1"), Some(2), "2026-01-03", None),
+        ("g-3", None, None, "2026-01-04", None),
+        ("g-4", Some("midterm-1"), Some(3), "2999-01-01", None),
+    ] {
+        store
+            .conn
+            .execute(
+                "INSERT INTO practice_items(item_id,origin,label,label_key,plan,row_no,paper,paper_question,
+                    logged_on,gap_type,what_went_wrong,next_question,answer_key,base_next_on,created_at_ms,updated_at_ms)
+                 VALUES(?1,'paper','km','km',?2,?3,'Diagnostic','3','2026-01-01','S','slope read as intercept',?4,?5,?6,1,1)",
+                params![id, plan, row, question, question.map(|_| "Km = 2"), next_on],
+            )
+            .unwrap();
+    }
+    drop(store);
+    let mut s = Sittings::open(&workspace).unwrap();
+    let start = now_ms();
+    s.note_learner_message(&workspace, start).unwrap();
+    let mut report = GapLogReport::default();
+    let opener = s
+        .take_opener(&workspace, start, &mut report)
+        .unwrap()
+        .unwrap();
+    assert_eq!(opener.checks, json!([]));
+    let rows = opener.redos.as_array().unwrap();
+    assert_eq!(
+        rows.iter().map(|row| &row["item"]).collect::<Vec<_>>(),
+        ["midterm-1#2", "g-3", "midterm-1#1"],
+        "{rows:#?}"
+    );
+    assert_eq!(
+        rows[2],
+        json!({"item": "midterm-1#1", "plan": "midterm-1", "tag": "km", "type": "S",
+            "what_went_wrong": "slope read as intercept", "paper": "Diagnostic", "paper_question": "3",
+            "question": "Find Km.", "key": "Km = 2"})
+    );
+    assert_eq!(rows[0]["question"], Value::Null);
+    assert_eq!(rows[1]["plan"], Value::Null);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_version_1_store_moves_its_checks_to_the_learner_store_once() {
     let (root, workspace) = fixture();
     let path = workspace.control().join(STORE_FILE);
