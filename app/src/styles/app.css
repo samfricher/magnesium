@@ -168,7 +168,7 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
 .column {
   max-width: calc(var(--measure) + 96px);
   margin: 0 auto;
-  padding: 26px 40px 34vh 56px;
+  padding: 26px 40px 88px 56px;
   font-family: var(--doc-font);
   font-size: var(--doc-size);
   line-height: 1.6;
@@ -296,14 +296,15 @@ button.primary kbd { color: var(--ground); border-color: color-mix(in srgb, var(
 .own-note { font-family: var(--chrome); font-size: 11.5px; color: var(--quiet); margin-top: 0.25em; }
 .tutor { color: var(--text); }
 
-.task {
+.task-block {
   position: relative;
   margin: 1em 0 0.4em;
   padding: 0.1em 0 0.1em 18px;
   border-left: 2px solid var(--rule-strong);
 }
-.task.open { border-left-color: var(--ink); }
-.task .prose > :last-child { margin-bottom: 0.3em; }
+.task-block.open { border-left-color: var(--ink); }
+.task-block .prose > :last-child { margin-bottom: 0.3em; }
+.prose .task, .prose p.task { margin: 0; padding: 0; border: 0; }
 .in-task {
   position: relative;
   padding: 0.15em 0 0.15em 18px;
@@ -361,7 +362,7 @@ button.primary kbd { color: var(--ground); border-color: color-mix(in srgb, var(
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.task:focus-within .task-tools, .task:hover .task-tools { opacity: 1; }
+.task-block:focus-within .task-tools, .task-block:hover .task-tools { opacity: 1; }
 .task-tools button { border: 0; background: none; color: var(--quiet); padding: 2px 6px; border-radius: 5px; }
 .task-tools button:hover { color: var(--text); background: var(--shelf); }
 .task-tools button.chosen { color: var(--ink); background: var(--ink-soft); }
@@ -625,7 +626,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 }
 
 @media (max-width: 760px) {
-  .column { padding: 20px 22px 30vh 42px; }
+  .column { padding: 20px 22px 72px 42px; }
   .mark .glyph { left: -34px; }
   .plan-block.chg::before { left: -22px; }
   .tabs.under-lights { padding-left: 80px; }

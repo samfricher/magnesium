@@ -9,6 +9,15 @@ export type LineDiff = {
   gone: Map<number, string[]>;
 };
 
+/** A line as it reads wherever it stands: a table row without its leading number, spaces closed up. */
+function same(line: string): string {
+  return line
+    .trim()
+    .replace(/^\|\s*\d+\s*\|/, "|")
+    .replace(/^\d+\.\s+/, "")
+    .replace(/\s+/g, " ");
+}
+
 /** A line-by-line diff by longest common subsequence. Plans are short, so the plain table is fine. */
 export function diffLines(before: string, after: string): LineDiff {
   const a = before.split("\n");
@@ -48,5 +57,13 @@ export function diffLines(before: string, after: string): LineDiff {
   b.forEach((line, k) => {
     if (line.trim() === "") changed[k] = false;
   });
+  // A line that only moved, as a reordered row whose number changed with
+  // it, is marked where it now is, and not struck through where it was.
+  const now = new Set(b.filter((_, k) => changed[k]).map(same));
+  for (const [at, lines] of gone) {
+    const kept = lines.filter((line) => !now.has(same(line)));
+    if (kept.length === 0) gone.delete(at);
+    else gone.set(at, kept);
+  }
   return { changed, gone };
 }

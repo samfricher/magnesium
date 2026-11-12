@@ -116,7 +116,7 @@ function seed(): void {
       sidebar: state === "sidebar",
       scroll: {},
       pages: {},
-      drafts: { answer: state.startsWith("s1") || state === "s5-week" ? "$V_{max} = 1/0.25 =$" : "" },
+      drafts: { answer: state.startsWith("s1") || state === "s2-start" || state === "s5-week" ? "$V_{max} = 1/0.25 =$" : "" },
       folds: {},
     };
     if (!newFolder) localStorage.setItem(`mg.ws:${FOLDER}`, JSON.stringify(layout));
@@ -145,8 +145,6 @@ function planText(plan: Plan): string {
   const rows = plan.items.map((item, n) => `| ${n + 1} | ${item.title} | ${item.note ?? ""} | ${item.status} | ${dayName(item.day)} |`).join("\n");
   return [
     `# ${plan.title}: study plan`,
-    "",
-    `Folder: \`Study/${plan.target}/\`.`,
     "",
     "## 1. Facts",
     "",

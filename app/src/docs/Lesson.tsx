@@ -6,10 +6,10 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { HELP, opening, splitConfidence, type Card, type Notice, type SessionState } from "../lesson";
+import { HELP, splitConfidence, type Card, type Notice, type SessionState } from "../lesson";
 import type { Page, Exchange } from "../page";
 import { dayName } from "../page";
-import { renderPlain } from "../render";
+import { renderInline, renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import { taskLine } from "../task";
 import type { Answer, Decision, Mark } from "../types";
@@ -264,7 +264,6 @@ type ExchangeProps = {
 const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
   const { exchange: ex } = props;
   const plain = splitConfidence(ex.learner).text.trim();
-  const opened = ex.said === "opening" ? opening(plain) : null;
   const live = ex.live;
   const writing = live !== null && live.status !== "idle";
   const tutorShown = ex.tutor.trim() !== "";
@@ -276,15 +275,11 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
           <span>{ex.day}</span>
         </div>
       )}
-      {ex.said === "opening" ? (
-        opened?.stoppedAt ? (
-          <p className="quiet-line">Continued from: {opened.stoppedAt}</p>
-        ) : null
-      ) : ex.said === "help" ? (
+      {ex.said === "opening" ? null : ex.said === "help" ? (
         <div className={`in-task help-said${props.aboutIsAbove ? " follows" : ""}`}>{HELP_SAID[plain] ?? plain}</div>
       ) : ex.said === "answer" ? (
         <div className={`in-task answer${props.aboutIsAbove ? " follows" : ""}`} data-role="answer">
-          {props.aboutTask && !props.aboutIsAbove && <div className="answer-to">{props.aboutTask}</div>}
+          {props.aboutTask && !props.aboutIsAbove && <div className="answer-to" dangerouslySetInnerHTML={{ __html: renderInline(props.aboutTask) }} />}
           <Own text={ex.learner} />
           <Marks marks={ex.marks} />
         </div>
@@ -297,10 +292,10 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
         <div className="tutor" data-role="tutor">
           {before.trim() !== "" && <Rich text={before} final={!writing} stopped={ex.interrupted} onSource={props.onSource} onNote={props.onNote} linksOpen={props.linksOpen} />}
           {ex.split && (
-            <div className={`task${props.isOpen ? " open" : ""}`} data-role="task" data-open={props.isOpen || undefined}>
+            <div className={`task-block${props.isOpen ? " open" : ""}`} data-role="task" data-open={props.isOpen || undefined}>
               <Rich text={ex.split.task} final onSource={props.onSource} onNote={props.onNote} linksOpen={false} />
               {props.isOpen && props.answerSpace}
-              {props.isOpen && !props.answerSpace && props.keptDraft && <div className="kept-draft">{props.keptDraft}</div>}
+              {props.isOpen && !props.answerSpace && props.keptDraft && <div className="kept-draft" dangerouslySetInnerHTML={{ __html: renderPlain(props.keptDraft) }} />}
             </div>
           )}
         </div>
@@ -443,7 +438,7 @@ export function LessonDoc(props: LessonProps) {
     if (props.readOnly) return;
     if (place === "answer") answerRef.current?.focus();
     else talk.current?.focus();
-  }, [props.focusTick, place, props.readOnly, showAnswer]);
+  }, [props.focusTick, place, props.readOnly, showAnswer, open]);
 
   // The open task pins to the top of the pane while it is scrolled away.
   useEffect(() => {
@@ -456,7 +451,8 @@ export function LessonDoc(props: LessonProps) {
     }
     const watch = new IntersectionObserver(
       ([entry]) => setPinned(!entry.isIntersecting && entry.boundingClientRect.top < (entry.rootBounds?.top ?? 0) + 40),
-      { root, threshold: 0 },
+      // A task with only its last few pixels showing counts as scrolled away.
+      { root, threshold: 0, rootMargin: "-72px 0px 0px 0px" },
     );
     watch.observe(el);
     return () => watch.disconnect();
@@ -512,7 +508,7 @@ export function LessonDoc(props: LessonProps) {
     <article className="lesson" data-doc="lesson" data-running={props.running || undefined}>
       {pinned && openTask && (
         <button type="button" className="pinned" onClick={jumpToTask} data-role="pinned">
-          <span className="pinned-text">{taskLine(openTask)}</span>
+          <span className="pinned-text" dangerouslySetInnerHTML={{ __html: renderInline(taskLine(openTask)) }} />
           <kbd>Tab</kbd>
         </button>
       )}
@@ -587,7 +583,7 @@ export function LessonDoc(props: LessonProps) {
             drive="talk"
             composer={place === "talk"}
             label="Write to your tutor"
-            placeholder={stopped ? "Or write to your tutor" : showAnswer ? "Say something else. Tab goes back to the task." : "Write to your tutor"}
+            placeholder={stopped ? "Or write to your tutor" : showAnswer ? (place === "answer" ? "Esc to say something else" : "Say anything. Tab goes back to the task.") : "Write to your tutor"}
             initial={props.drafts.talk ?? ""}
             onDraft={(text) => props.onDraft("talk", text)}
             onKey={onTalkKey}
@@ -602,7 +598,6 @@ export function LessonDoc(props: LessonProps) {
               return props.onTalk(words);
             }}
           />
-          {showAnswer && place === "answer" && <p className="hint-line">Esc to say something else</p>}
         </div>
       ) : null}
     </article>

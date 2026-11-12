@@ -320,8 +320,8 @@ export function renderMarkdown(src: string): string {
   html = html.replace(/<table>/g, '<div class="table"><table>').replace(/<\/table>/g, "</table></div>");
   // A diagram is drawn as soon as its code is complete. Until then its place is kept, not its code.
   html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');
-  // The label loses the full stop or colon the tutor closed it with.
-  return setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label.replace(/\s*[.:]\s*<\/strong>$/, "</strong>")}`));
+  // The label keeps the words and the stop the tutor wrote it with.
+  return setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label}`));
 }
 
 /**

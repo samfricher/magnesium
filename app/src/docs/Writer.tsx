@@ -62,7 +62,7 @@ export const Writer = memo(
       focus: () => {
         const el = field.current;
         if (!el) return;
-        el.focus({ preventScroll: false });
+        el.focus({ preventScroll: true });
         const end = el.value.length;
         el.setSelectionRange(end, end);
       },

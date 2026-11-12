@@ -230,6 +230,17 @@ export function PlanDoc(props: PlanProps) {
     if (editing !== null) area.current?.focus();
   }, [editing !== null]);
 
+  // A change the tutor just made is brought into view, once.
+  const article = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!diff || !props.changedAt) return;
+    const first = article.current?.querySelector(".chg, .gone, .gone-lines");
+    if (!first) return;
+    // The first change goes near the top, so the changes after it fit below.
+    first.scrollIntoView({ block: "start" });
+    first.closest(".doc-scroll")?.scrollBy(0, -72);
+  }, [props.changedAt, diff !== null]);
+
   if (!plan || !text || !read) {
     return (
       <article className="plan" data-doc="plan">
@@ -253,7 +264,7 @@ export function PlanDoc(props: PlanProps) {
 
   const changedTime = props.changedAt ? new Date(props.changedAt).toTimeString().slice(0, 5) : null;
   return (
-    <article className="plan" data-doc="plan" data-changed={diff ? true : undefined}>
+    <article className="plan" data-doc="plan" data-changed={diff ? true : undefined} ref={article}>
       <h1 className="doc-title" dangerouslySetInnerHTML={{ __html: renderInline(read.title ?? plan.title ?? "Plan") }} />
       <p className="doc-path">
         {plan.path}

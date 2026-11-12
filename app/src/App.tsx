@@ -518,6 +518,7 @@ export function App() {
     try {
       await ensureOpen(api);
       sent(words, "answer");
+      writers.current.answer?.clear();
       await api.send(words, "answer");
       return true;
     } catch (problem) {
@@ -533,6 +534,7 @@ export function App() {
     try {
       await ensureOpen(api);
       sent(text, "talk");
+      writers.current.talk?.clear();
       await api.send(text, "talk");
       return true;
     } catch (problem) {
@@ -804,7 +806,7 @@ export function App() {
             let next: Place | null = null;
             if (splitTask(tutor)) next = writing("talk") ? null : "answer";
             else if (said !== "help") next = writing("answer") ? null : "talk";
-            if (next && next !== latest.current.place) {
+            if (next) {
               setPlaceState(next);
               bumpFocus();
             }
@@ -1402,6 +1404,9 @@ function DocScroller(props: {
   const el = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
+  // When the learner last scrolled by hand: only their own scrolling decides
+  // whether the page follows its end.
+  const byHand = useRef(0);
   const timer = useRef<number | null>(null);
   const latest = useRef(props);
   latest.current = props;
@@ -1437,9 +1442,14 @@ function DocScroller(props: {
       className="doc-scroll"
       ref={el}
       data-pane={props.pane}
+      onWheel={() => (byHand.current = Date.now())}
+      onTouchMove={() => (byHand.current = Date.now())}
+      onKeyDown={(event) => {
+        if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(event.key) && !(event.target as HTMLElement).closest("textarea, input")) byHand.current = Date.now();
+      }}
       onScroll={(event) => {
         const box = event.currentTarget;
-        atEnd.current = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+        if (Date.now() - byHand.current < 600) atEnd.current = box.scrollTop + box.clientHeight >= box.scrollHeight - 48;
         if (timer.current !== null) window.clearTimeout(timer.current);
         timer.current = window.setTimeout(() => latest.current.onScroll(box.scrollTop), 200);
       }}
