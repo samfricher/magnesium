@@ -6,6 +6,8 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
+import { ready } from "./harness";
+
 import { core, isDemo } from "./bridge";
 import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
 import { Course } from "./screens/Course";
@@ -143,6 +145,10 @@ export function App() {
   const [from, setFrom] = useState<View>("library");
   const [folders, setFolders] = useState<string[]>([]);
   const [cards, setCards] = useState<Card[] | null>(null);
+  // The evidence harness times startup to the first screen with its content.
+  useEffect(() => {
+    if (view !== "loading" && (view !== "library" || cards !== null)) ready();
+  }, [view, cards]);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [home, setHome] = useState<Home | null>(null);
   const [session, dispatch] = useReducer(reduce, emptySession);

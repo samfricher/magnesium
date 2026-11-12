@@ -1000,6 +1000,7 @@ function Composer(props: {
       <div className="box">
         <textarea
           ref={box}
+          data-drive="composer"
           rows={1}
           placeholder="Your answer. ⇧Return starts a new line."
           aria-label="Your answer"
