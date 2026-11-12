@@ -14,9 +14,11 @@ import type { Mark } from "./types";
 
 /**
  * The words for one marked answer, or null when the lesson has nothing to say
- * about it. `word` is what the margin says beside the answer ("Marked right");
- * `before`, `skill` and `after` are the whole sentence, with the skill's name
- * kept apart so the page can typeset it.
+ * about it. `word` is the verdict the margin says beside the answer ("Marked
+ * right"). `before`, `skill` and `after` are what that verdict comes to: the
+ * line under the answer ("Counts towards a proof of ..."), with the skill's name
+ * kept apart so the page can typeset it. Where there is no margin the line
+ * carries the verdict too ("Marked right. Counts towards ...").
  */
 export type MarkSaid = { word: string; right: boolean; before: string; skill: string | null; after: string };
 
@@ -41,15 +43,18 @@ function returns(row: Mark): string {
 }
 
 /**
- * A skill's name as plain words, for a tooltip and a screen reader: the
- * dollar signs and braces of its mathematics are dropped and a subscript is
- * said with its underscore ("intercept and $V_{max}$" is "intercept and V_max").
+ * A skill's name as speech, for a tooltip and a screen reader: the dollar
+ * signs, braces and backslashes of its mathematics are dropped and a subscript
+ * is read as the next word ("intercept and $V_{max}$" is "intercept and V
+ * max"), never as an underscore.
  */
 export function plainSkill(label: string): string {
   return label
     .replace(/\\text\{([^}]*)\}/g, "$1")
-    .replace(/_\{([^}]*)\}/g, "_$1")
-    .replace(/[$\\{}]/g, "")
+    .replace(/_\{([^}]*)\}/g, " $1")
+    .replace(/_([A-Za-z0-9]+)/g, " $1")
+    .replace(/\\([A-Za-z]+)/g, "$1")
+    .replace(/[$\\{}^]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -65,37 +70,50 @@ export function skillTex(label: string): string {
   return label.replace(/(^|[\s(])([A-Za-z][A-Za-z0-9]*_(?:\{[A-Za-z0-9]+\}|[A-Za-z0-9]+))(?=$|[\s.,;:)])/g, "$1$$$2$$");
 }
 
-/** The whole sentence as plain text. */
-export const plainSaid = (said: MarkSaid) => `${said.before}${said.skill ? plainSkill(said.skill) : ""}${said.after}`;
+/** What the verdict comes to, as plain words. */
+const consequence = (said: MarkSaid) => `${said.before}${said.skill ? plainSkill(said.skill) : ""}${said.after}`;
+
+/** The whole sentence, verdict and what it comes to, as speech: for a tooltip and a screen reader. */
+export const plainSaid = (said: MarkSaid) => `${said.word}. ${consequence(said)}`;
+
+/** What a title says of an answer the record has no mark for. */
+export const NO_MARK_WORD = "No mark recorded";
+export const NO_MARK_WHY = "The tutor did not record a mark for this answer, so it does not count towards a proof.";
 
 /**
  * What a row says, in the words of the runtime's rule: an answer counts
  * towards a proof only when it was right, with no help, from a blank page.
  * A partly right answer, a decline and a paper's answer have no line here.
- * The mark is about the answer it sits beside, and says only that the answer
+ * The mark is about the answer it sits beside, and says only whether the answer
  * counts towards a proof: a proof is earned by the runtime on its own day,
  * never by one answer, so no mark of an earned proof is drawn.
  */
 export function markSaid(row: Mark): MarkSaid | null {
   if (row.paper !== null) return null;
   if (row.mark === "right") {
-    if (row.help !== "none") return { word: "Right, with help", right: false, before: "Right, with help. Not counted towards a proof.", skill: null, after: "" };
-    if (!row.cold) return { word: "Marked right", right: true, before: "Marked right. Not counted towards a proof.", skill: null, after: "" };
+    if (row.help !== "none") return { word: "Right, with help", right: false, before: "With help, so it does not count as a proof.", skill: null, after: "" };
+    if (!row.cold) return { word: "Marked right", right: true, before: "Not from a blank page, so it does not count as a proof.", skill: null, after: "" };
     const skill = row.label.trim() === "" ? null : row.label.trim();
     return {
       word: "Marked right",
       right: true,
-      before: skill ? "Marked right. Counts towards a proof of " : "Marked right. Counts towards a proof.",
+      before: skill ? "Counts towards a proof of " : "Counts towards a proof.",
       skill,
       after: skill ? "." : "",
     };
   }
-  if (row.mark === "wrong") return { word: "Not right yet", right: false, before: `Not right yet. ${returns(row)}`, skill: null, after: "" };
+  if (row.mark === "wrong") return { word: "Not right yet", right: false, before: returns(row), skill: null, after: "" };
   return null;
 }
 
 /** Every row shown in this window, by the exchange it belongs to (the time it began). Kept so a lesson left and returned to still shows them. */
 const shown = new Map<number, Mark[]>();
+/**
+ * The exchanges whose reply has settled and whose record, read afterwards, has
+ * no mark for the answer: the version at which that was found. A mark that
+ * turns up on a later look takes the exchange out of this by being shown.
+ */
+const unmarked = new Map<number, number>();
 /** The exchanges whose answer was read before it was sent, so the window is watching the record for their mark. */
 const reserved = new Set<number>();
 
@@ -116,6 +134,15 @@ export function marksFor(since: number): (MarkSaid & { added: number })[] {
     const said = markSaid(row);
     return said ? [{ ...said, added: added.get(row.id) ?? 0 }] : [];
   });
+}
+
+/**
+ * The version at which the record was found to hold no mark for the answer that
+ * began at `since`, or null: it has a mark, or it has not been looked at since
+ * the reply settled, or the runtime cannot say.
+ */
+export function noMarkFor(since: number): number | null {
+  return unmarked.get(since) !== undefined && marksFor(since).length === 0 ? (unmarked.get(since) ?? null) : null;
 }
 
 const ids = (rows: Mark[]) => new Set(rows.map((row) => row.id));
@@ -227,6 +254,12 @@ export function useMarks(since: number | null, settled: boolean): { arm: () => v
           timers.push(window.setTimeout(() => void look(LOOKS.length), 1500));
         }
         return;
+      }
+      // Nothing new yet. The page says so, once; a later look may still find the mark.
+      if (!found && !unmarked.has(since) && (shown.get(since) ?? []).length === 0) {
+        version += 1;
+        unmarked.set(since, version);
+        redraw();
       }
       if (found || n + 1 >= LOOKS.length) return;
       timers.push(window.setTimeout(() => void look(n + 1), LOOKS[n + 1] - LOOKS[n]));

@@ -1082,8 +1082,11 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
     right: calc(100% + var(--s4) + var(--note-x));
   }
 
-  /* There is a margin: the sentence under the answer is not drawn (the note's title and the status line say it). */
-  .session .you .you-verdicts {
+  /* There is a margin, and the margin says the verdict: the line under the
+     answer says only what it comes to. An answer with no mark has nothing
+     under it (the margin and its title say so). */
+  .session .you .v-word,
+  .session .you .you-verdicts.only-none {
     display: none;
   }
 
@@ -1467,27 +1470,23 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   color: var(--text);
 }
 
-/* Narrow, with no margin: the whole sentence stands under the answer, in the
-   flow, once the reply has settled. Same voice as the note: Literata italic,
-   the small size. The page moves its view down by this line's height as it
-   arrives, so what is on screen does not move. */
+/* What the verdict comes to, under the answer, once the reply has settled: one
+   line in the interface face, the small size and the quiet ink. With no margin
+   it opens with the verdict as well ("Marked right. Counts towards ...").
+   The page moves its view down by this line's height as it arrives, so what
+   is on screen does not move. */
 .you-verdicts {
   margin-top: var(--s2);
 }
 
 .you-verdict {
   margin: 0;
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: var(--fs-small);
-  font-style: italic;
   line-height: 1.5;
   color: var(--muted);
   text-wrap: pretty;
   animation: enter var(--t-move) var(--ease) both;
-}
-
-.you-verdict.right {
-  color: var(--text);
 }
 
 .you-verdict .katex {
@@ -1536,10 +1535,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 .earlier .you-tag,
 .exchange.answered .you-mark.right,
 .exchange.carried .you-mark.right,
-.earlier .you-mark.right,
-.exchange.answered .you-verdict.right,
-.exchange.carried .you-verdict.right,
-.earlier .you-verdict.right {
+.earlier .you-mark.right {
   color: var(--muted);
 }
 
@@ -1621,12 +1617,6 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
 
 .thinking .btn {
   flex: none;
-}
-
-/* Stop, once pressed: it stays down and cannot be pressed again. */
-.thinking .btn.stop[aria-pressed="true"] {
-  background: var(--hover);
-  color: var(--muted);
 }
 
 .stopped {
@@ -1730,14 +1720,15 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more,
   transition: background var(--t-fast) ease-out;
 }
 
-/* The hairline between two rows is drawn inside the row, inset from the
-   corners, so the row's hover fill can be rounded like every other row's. */
+/* The hairline between two rows runs the card's full width, from the edge the
+   card's top rule starts at to the edge it ends at; the row's hover fill is
+   rounded like every other row's and the hairline lies over its corners. */
 .option + .option::after {
   content: "";
   position: absolute;
   top: 0;
-  left: var(--s3);
-  right: var(--s3);
+  left: 0;
+  right: 0;
   height: 1px;
   background: var(--line);
   pointer-events: none;
@@ -1927,15 +1918,13 @@ html[data-input="key"] .option:focus-visible {
   transition: border-color var(--t-fast) ease-out;
 }
 
-/* On focus the edge goes to ink, for a click and for the keyboard alike; with
-   the keyboard in use there is also the 2px ring, as on every control. */
-.composer .box:focus-within {
+/* On focus the answer box's own edge goes from 1px to 2px of ink, for a click
+   and for the keyboard alike: the second pixel is drawn inside the box (an
+   inset shadow), so nothing moves. There is no ring round it. The ring is for
+   the buttons a learner Tabs to, in the box's foot or below it. */
+.composer .box:has(textarea:focus) {
   border-color: var(--text);
-}
-
-html[data-input="key"] .composer .box:focus-within {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
 .composer textarea:focus-visible,
@@ -1994,59 +1983,57 @@ html[data-input="key"] .composer .box:focus-within {
 }
 
 /* How sure the learner is: optional, in the answer box's own foot, left of
-   Send, and lighter than Send: a hairline group (32px) in the quiet ink, the
-   chosen one filled with ink. It is about the answer, so it appears once
-   something is typed; until then its room is kept and it is not seen or
-   reached, so nothing moves. The label shows when the box is wide enough. */
+   Send. One quiet line that never wraps: the short label, and three text
+   choices with no outline round them. It is about the answer, so it is seen
+   once there are words to be sure of (a 120ms fade); until then its room is
+   kept and it is hidden, so it is not reached and nothing moves. */
 .sure {
   display: inline-flex;
   align-items: center;
   flex: none;
   gap: var(--s2);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--t-fast) ease-out,
+    visibility 0s linear var(--t-fast);
 }
 
-/* Where room allows, the label says what it is for, on two lines; otherwise
-   the short label stands and the control's title says the rest. */
+.sure[data-shown="yes"] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--t-fast) ease-out,
+    visibility 0s;
+}
+
 .sure-label {
-  max-width: 15.5em;
   font-size: var(--fs-small);
   line-height: 1.3;
   color: var(--muted);
-  text-align: right;
-  text-wrap: balance;
-}
-
-.sure-short {
-  display: none;
 }
 
 .seg {
-  position: relative;
   display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
   height: 32px;
-  border-radius: var(--r-control);
-  overflow: hidden;
 }
 
-/* The group's hairline is drawn over the segments, so each of them is the full 32px to press. */
-.seg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1px solid var(--line-input);
-  border-radius: var(--r-control);
-  pointer-events: none;
-}
-
+/* A choice is a word, quiet at rest. Pointed at, the hover fill. Chosen, the
+   shared selected look: the --selected tint, an ink edge and an ink label. */
 .seg button {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  height: 32px;
   padding: 0 var(--s3);
   border: 0;
+  border-radius: var(--r-control);
   background: transparent;
-  color: var(--muted);
+  color: var(--text);
   font-size: var(--fs-small);
   font-weight: 400;
   transition:
@@ -2054,11 +2041,7 @@ html[data-input="key"] .composer .box:focus-within {
     color var(--t-fast) ease-out;
 }
 
-.seg button + button {
-  border-left: 1px solid var(--line);
-}
-
-/* The chosen word is heavier; its room is kept, so the control keeps its width. */
+/* The chosen word is heavier; its room is kept, so the group keeps its width. */
 .seg button::after {
   content: attr(data-label);
   display: block;
@@ -2079,19 +2062,15 @@ html[data-input="key"] .composer .box:focus-within {
 
 .seg button[aria-checked="true"],
 .seg button[aria-checked="true"]:hover {
-  background: var(--text);
-  color: var(--bg);
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--text);
+  color: var(--text);
   font-weight: 600;
 }
 
+/* The ring is drawn inside the choice, clear of the chosen one's ink edge. */
 .seg button:focus-visible {
-  outline-offset: -2px;
-}
-
-/* The chosen segment is ink, so its ring is the page colour inside it. */
-.seg button[aria-checked="true"]:focus-visible {
-  outline-color: var(--bg);
-  outline-offset: -4px;
+  outline-offset: -3px;
 }
 
 /* The symbols a formula often needs. It floats over the room above the answer
@@ -2110,7 +2089,7 @@ html[data-input="key"] .composer .box:focus-within {
   flex-wrap: wrap;
   gap: var(--s1);
   padding: var(--s2);
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--line-input);
   border-radius: var(--r-control);
   background: var(--raised);
   box-shadow: var(--shadow);
@@ -2189,7 +2168,8 @@ html[data-input="key"] .composer .box:focus-within {
   max-height: calc(4.5em + var(--s4));
   margin: var(--s1) var(--s4) 0;
   padding: var(--s2) 0;
-  border-top: 1px solid var(--line-2);
+  /* The rule between the typed words and their drawing is the box's own edge colour, 3:1 or better. */
+  border-top: 1px solid var(--line-input);
   overflow-y: auto;
   font-family: var(--serif);
   font-size: var(--fs-ui);
@@ -2214,68 +2194,31 @@ html[data-input="key"] .composer .box:focus-within {
   color: var(--faint);
 }
 
-/* The three ways to say you are stuck: quiet text buttons under the answer
-   box, at its left. They have no border until pointed at. The working line has
-   the rest of the row. While the tutor writes they are plainly off. */
+/* The three ways to say you are stuck: quiet text buttons (`btn ghost small`)
+   on one line under the answer box, at its left, with no outline at rest. The
+   working line has the rest of the row. While the tutor writes they take the
+   shared disabled look, and keep their size, so nothing at the foot of the
+   lesson shifts when the tutor starts or stops writing. */
 .outs {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--s1);
+  gap: var(--s2);
+  /* The buttons' text, not their hover fill, stands on the box's left edge. */
+  margin-left: calc(-1 * var(--s3));
   padding: var(--s2) 0 0;
 }
 
-/* A quiet resting shape, so a newcomer sees buttons: a hairline outline, the
-   control radius, 32px, the quiet ink; lighter than a secondary button's
-   outline. Pointed at, the hover fill and ink. */
 .outs .btn {
   flex: none;
 }
 
-.outs .btn.ghost {
-  border-color: var(--line-2);
-  border-radius: var(--r-control);
-  color: var(--muted);
-}
-
-.outs .btn.ghost:hover:not(:disabled) {
-  border-color: var(--line-2);
-  background: var(--hover);
-  color: var(--text);
-}
-
-.outs {
-  gap: var(--s2);
-}
-
-/* While the tutor writes they are plainly off: the same words at 45%, so they
-   read as the same buttons asleep (a disabled control is not held to 4.5:1),
-   no hover, and the cursor says so; the title says when they wake. Weight and
-   width are the enabled ones, so nothing at the foot of the lesson shifts when
-   the tutor starts or stops writing. */
-.outs .btn:disabled,
-.outs .btn:disabled:hover {
-  background: transparent;
-  color: var(--muted);
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* When the box is narrow, the question about how sure goes and the three words stay. */
 .composer {
   container: composer / inline-size;
 }
 
-@container composer (max-width: 600px) {
-  .sure-long {
-    display: none;
-  }
-
-  .sure-short {
-    display: inline;
-  }
-}
-
-@container composer (max-width: 440px) {
+/* When the box is very narrow the label goes; the choices keep their name in the group's. */
+@container composer (max-width: 400px) {
   .sure-label {
     display: none;
   }
@@ -3395,33 +3338,24 @@ html[data-input="key"] .composer .box:focus-within {
   flex: 1 1 0;
   min-width: 0;
   gap: var(--s2);
+  /* The chip's icon, not its hover fill, stands on the column's left edge. The padding keeps its focus ring clear of the clip. */
+  margin-left: calc(-1 * (var(--s3) + var(--s1)));
+  padding: var(--s1);
   overflow: hidden;
 }
 
 .passages-label {
   flex: none;
   margin-right: var(--s1);
-  white-space: nowrap;
 }
 
-/* A source chip: ink on a hairline rectangle. It is a link to a page, not a proof, so it is not green. */
+/* A source chip is a quiet text button (`btn ghost small`) with its document
+   icon: it is a link to a page, not a proof, so it is not green. It takes the
+   room it needs and gives way with an ellipsis; open, it keeps the hover fill. */
 .passage {
-  display: inline-flex;
-  align-items: center;
   flex: 0 1 auto;
-  gap: var(--s2);
   min-width: 0;
-  height: 32px;
-  padding: 0 var(--s3);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-control);
-  background: transparent;
   color: var(--text);
-  font-size: var(--fs-small);
-  font-weight: 400;
-  transition:
-    background var(--t-fast) ease-out,
-    border-color var(--t-fast) ease-out;
 }
 
 .passage-text {
@@ -3431,15 +3365,8 @@ html[data-input="key"] .composer .box:focus-within {
   white-space: nowrap;
 }
 
-.passage:hover,
-.passage.on {
+.passage.on:not(:disabled) {
   background: var(--hover);
-}
-
-.passage:active {
-  background: var(--press, var(--hover));
-  transform: translateY(1px);
-  transition-duration: 80ms;
 }
 
 .passage .icon {
@@ -3727,6 +3654,11 @@ button.file-name:active {
    whatever step of its fade it was on. The caret and the working dash stay at
    full strength. */
 @media (prefers-reduced-motion: reduce) {
+  .sure,
+  .sure[data-shown="yes"] {
+    transition: none;
+  }
+
   .tutor.writing .prose > :last-child::after,
   .working-line {
     animation: none !important;

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { busy, emptySession, openingWords, reduce } from "./lesson";
+import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
 import { Course } from "./screens/Course";
 import { Library, displayName } from "./screens/Library";
 import { Palette, type Command } from "./screens/Palette";
@@ -1161,13 +1161,15 @@ export function App() {
             dispatch({ type: "event", event: { type: "withdrawn", id } });
           })()
         }
-        onAnswer={(id: string, answers: Answer[]) =>
+        onAnswer={(id: string, answers: Answer[]) => {
+          // What was picked stands in the lesson as the learner's note, as a typed answer does.
+          dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
           void guard(async (api) => {
             await api.answer(id, answers);
             sitting.current.answers += 1;
             dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })()
-        }
+          })();
+        }}
         onStop={(line) => void stop(line)}
         onNote={onNote}
         onDismiss={(text) => dispatch({ type: "dismiss", text })}
