@@ -64,6 +64,19 @@ fn perf_file() -> Option<PathBuf> {
     named(PERF_ENV)
 }
 
+/// While the harness drives the window, keep it above other windows. macOS
+/// stops drawing a window that others cover, so a driven window behind the
+/// learner's own work would never paint, and the drive waits for paints.
+/// Without MAGNESIUM_APP_DRIVE this does nothing.
+pub fn keep_in_view(app: &tauri::App) {
+    if drive_dir().is_none() {
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_always_on_top(true);
+    }
+}
+
 /// Write a file whole: to a sibling first, then renamed into place, so a
 /// reader never sees half of it.
 fn write_whole(path: &Path, value: &Value) -> Result<(), String> {

@@ -357,6 +357,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            harness::keep_in_view(app);
             harness::note("setup start");
             mg_core::paths::warm_up();
             let handle = app.handle().clone();
