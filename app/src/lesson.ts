@@ -1,6 +1,7 @@
 // What the session screen holds, and how each event from the tutor changes it.
 
-import type { Answer, AgentEvent, NoticeKind, Question, Turn } from "./types";
+import type { Answer, AgentEvent, Intent, Mark, NoticeKind, Question, Turn } from "./types";
+import type { PlanDiff } from "./words";
 
 export type Card =
   | { kind: "permission"; id: string; title: string; detail: string; canAlways: boolean }
@@ -8,8 +9,29 @@ export type Card =
 
 export type Status = "idle" | "waiting" | "writing" | "working";
 
-/** A turn of the lesson. `pick` is set when what the learner said was a choice made on a card of the tutor's. */
-export type LessonTurn = Turn & { pick?: boolean };
+/**
+ * How the learner's words were sent: as the answer to the open task, as talk,
+ * as one of the window's own help phrases, or as the window's opening words.
+ * A turn read back from an earlier sitting does not know.
+ */
+export type Said = Intent | "help" | "opening";
+
+/**
+ * A turn of the lesson. `pick` is set when what the learner said was a choice
+ * made on a card of the tutor's. `marks` are the record's rows for it, from
+ * the `marked` event; `change` is what the turn changed in the plan, read from
+ * the plan after `plan_changed`.
+ */
+export type LessonTurn = Turn & {
+  pick?: boolean;
+  said?: Said;
+  marks?: Mark[];
+  change?: PlanDiff;
+  /** The task this turn's reply posed, as the engine read it from the tutor's record. */
+  posed?: string;
+  /** For an answer: the task it answered, as it stood when it was sent. */
+  question?: string;
+};
 
 /** The exchange on screen: what the learner said and the tutor's reply to it. */
 export type Live = {
@@ -24,6 +46,11 @@ export type Live = {
   interrupted: boolean;
   /** What the learner said was an option picked on the tutor's card (or words typed on it), not a message they wrote. */
   pick?: boolean;
+  said?: Said;
+  marks?: Mark[];
+  change?: PlanDiff;
+  posed?: string;
+  question?: string;
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -37,6 +64,12 @@ export type SessionState = {
   notices: Notice[];
   /** When this sitting's clock started, or null before the first message. */
   startedMs: number | null;
+  /**
+   * The open task as the engine last said it, or undefined when the engine
+   * has said nothing (Claude Code's does not): the page then finds a task by
+   * its bold opening word.
+   */
+  task?: { text: string | null };
 };
 
 export const emptySession: SessionState = {
@@ -51,7 +84,8 @@ export const emptySession: SessionState = {
 export type Action =
   | { type: "opened"; turns: Turn[] }
   | { type: "reopened" }
-  | { type: "sent"; shown: string; now: number }
+  | { type: "sent"; shown: string; now: number; said?: Said; question?: string }
+  | { type: "planned"; change: PlanDiff }
   | { type: "picked"; shown: string; now: number }
   | { type: "event"; event: AgentEvent }
   | { type: "note"; notice: Notice }
@@ -71,7 +105,19 @@ function blankLive(learner: string, now: number, status: Status): Live {
 function asTurn(live: Live): LessonTurn | null {
   const tutor = tutorText(live);
   if (tutor === "" && live.learner.trim() === "") return null;
-  return { session: "", ms: live.since, learner: live.learner, tutor, interrupted: live.interrupted, ...(live.pick ? { pick: true } : {}) };
+  return {
+    session: "",
+    ms: live.since,
+    learner: live.learner,
+    tutor,
+    interrupted: live.interrupted,
+    ...(live.pick ? { pick: true } : {}),
+    ...(live.said ? { said: live.said } : {}),
+    ...(live.marks ? { marks: live.marks } : {}),
+    ...(live.change ? { change: live.change } : {}),
+    ...(live.posed ? { posed: live.posed } : {}),
+    ...(live.question ? { question: live.question } : {}),
+  };
 }
 
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
@@ -132,10 +178,19 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       const text = `The tutor's program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
       return { ...ended, notices: addNotice(state.notices, { kind: "other", text }) };
     }
-    // The plan and the record's marks are read by the screens that show them.
+    // A mark belongs to the last message the learner sent. The plan is read by the page, which then says what changed.
+    case "marked": {
+      if (!state.live) return state;
+      const marks = [...(state.live.marks ?? []).filter((mark) => mark.id !== event.mark.id), event.mark];
+      return { ...state, live: { ...state.live, marks } };
+    }
     case "plan_changed":
-    case "marked":
       return state;
+    case "open_task": {
+      const task = { text: event.task };
+      if (!event.posed || !event.task || !state.live) return { ...state, task };
+      return { ...state, task, live: { ...state.live, posed: event.task } };
+    }
   }
 }
 
@@ -163,10 +218,24 @@ export function reduce(state: SessionState, action: Action): SessionState {
       return {
         ...state,
         earlier: previous ? [...state.earlier, previous] : state.earlier,
-        live: blankLive(action.shown, action.now, "waiting"),
+        live: {
+          ...blankLive(action.shown, action.now, "waiting"),
+          ...(action.said ? { said: action.said } : {}),
+          ...(action.question ? { question: action.question } : {}),
+        },
         cards: [],
         startedMs: state.startedMs ?? action.now,
       };
+    }
+    case "planned": {
+      if (!state.live) return state;
+      const changes = [...(state.live.change?.changes ?? []), ...action.change.changes];
+      const merged: PlanDiff = {
+        changes,
+        moved: { ...(state.live.change?.moved ?? {}), ...action.change.moved },
+        examFrom: state.live.change?.examFrom ?? action.change.examFrom,
+      };
+      return { ...state, live: { ...state.live, change: merged } };
     }
     case "picked": {
       // An option chosen on a card is what the learner said: it stands in the

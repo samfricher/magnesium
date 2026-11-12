@@ -1,0 +1,602 @@
+/*
+ * One surface. Four neutrals and one ink per scheme; the ink is the only
+ * colour, and it marks only the caret, the `›`, the task being written in,
+ * and the record's lines. Three faces, one per voice, all the Mac's own:
+ * the material and the tutor (reading), the learner (their words), the
+ * window (its few words).
+ */
+
+:root {
+  --ground: #fafaf8;
+  --text: #1e2023;
+  --quiet: #6a6e75;
+  --faint: #cdcfd3;
+  --raised: #ffffff;
+  --edge: rgba(30, 32, 35, 0.11);
+  --tint: rgba(30, 32, 35, 0.055);
+  --scrim: rgba(250, 250, 248, 0.62);
+  --shadow: 0 18px 50px rgba(20, 22, 26, 0.13), 0 2px 6px rgba(20, 22, 26, 0.06);
+
+  --ink-l: #2f3f86;
+  --ink-d: #9aa9ee;
+  --ink: var(--ink-l);
+  --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
+
+  --read: Charter, "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --you: var(--mono);
+  --app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+
+  --size: 17px;
+  --measure: 38em;
+  /* How far the task's rule and the prompt hang left of the column. */
+  --hang: 20px;
+
+  color-scheme: light;
+}
+
+:root[data-ink="green"] { --ink-l: #2e5b4a; --ink-d: #86c2a6; }
+:root[data-ink="violet"] { --ink-l: #4e3c8c; --ink-d: #bdaeef; }
+:root[data-ink="graphite"] { --ink-l: #3b3e44; --ink-d: #c7cad0; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) {
+    --ground: #1c1d20;
+    --text: #e3e3df;
+    --quiet: #9a9da3;
+    --faint: #3d4045;
+    --raised: #26282c;
+    --edge: rgba(255, 255, 255, 0.09);
+    --tint: rgba(255, 255, 255, 0.06);
+    --scrim: rgba(20, 21, 24, 0.6);
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --ink: var(--ink-d);
+    color-scheme: dark;
+  }
+}
+:root[data-scheme="dark"] {
+  --ground: #1c1d20;
+  --text: #e3e3df;
+  --quiet: #9a9da3;
+  --faint: #3d4045;
+  --raised: #26282c;
+  --edge: rgba(255, 255, 255, 0.09);
+  --tint: rgba(255, 255, 255, 0.06);
+  --scrim: rgba(20, 21, 24, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --ink: var(--ink-d);
+  color-scheme: dark;
+}
+
+:root[data-face="iowan"] { --read: "Iowan Old Style", Charter, Georgia, serif; }
+:root[data-face="newyork"] { --read: ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif; }
+:root[data-face="system"] { --read: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+:root[data-face="mono"] { --read: var(--mono); }
+:root[data-voice="reading"] { --you: var(--read); }
+:root[data-measure="narrow"] { --measure: 32em; }
+:root[data-measure="wide"] { --measure: 46em; }
+
+* { box-sizing: border-box; }
+
+html {
+  font-size: var(--size);
+  background: var(--ground);
+}
+
+html,
+body,
+#root,
+.app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--read);
+  font-size: 1rem;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  overflow: hidden;
+}
+
+::selection { background: color-mix(in srgb, var(--ink) 26%, transparent); }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+:focus { outline: none; }
+:root[data-input="key"] button:focus-visible,
+:root[data-input="key"] [tabindex]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* The strip the window is dragged by, over the traffic lights. */
+.drag {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 38px;
+  z-index: 5;
+}
+
+/* ------------------------------------------------------------------ */
+/* The surface                                                         */
+
+.surface {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.column {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin: 0 auto;
+}
+
+/* What comes next, and the lesson under it, fills the window, so the
+   conversation left is above it, out of view, until it is scrolled to. */
+.now {
+  min-height: 100vh;
+  padding: 56px 0 26vh;
+  transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.now.rest { padding-top: 30vh; }
+.now.loading { padding-top: 30vh; }
+
+.head .course {
+  margin: 0 0 0.35rem;
+  font: 400 0.765rem/1.4 var(--app);
+  color: var(--quiet);
+  letter-spacing: 0.01em;
+}
+
+.head .next {
+  display: block;
+  margin: 0;
+  font: 400 1.235rem/1.3 var(--read);
+  color: var(--text);
+  text-wrap: balance;
+  transition: font-size 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.now.rest .head .next { font-size: 1.588rem; line-height: 1.25; }
+.now.lesson .head { margin-bottom: 1.5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--faint); }
+button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
+
+.head .where {
+  margin: 0.45rem 0 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--quiet);
+}
+
+.now > .keys,
+.now > .status {
+  margin: 0.9rem 0 0;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+}
+.now > .status { white-space: normal; max-width: 34em; }
+.now > .keys { opacity: 0.85; }
+
+/* The choices a setup step offers, as Spotlight offers results. */
+.choices-rest {
+  margin: 1.4rem 0 0 calc(-1 * var(--hang));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 26rem;
+}
+.choice-rest {
+  padding: 0.38rem var(--hang);
+  border-radius: 4px;
+  font: 400 0.882rem/1.4 var(--app);
+  color: var(--text);
+}
+.choice-rest:hover { background: var(--tint); }
+.choice-rest:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+:root[data-input="key"] .choice-rest:focus-visible { outline: none; }
+
+/* ------------------------------------------------------------------ */
+/* The line                                                            */
+
+.line {
+  position: relative;
+  margin-top: 1.5rem;
+}
+.now.rest .line { margin-top: 1.6rem; }
+
+.line .field {
+  display: block;
+  width: 100%;
+  min-height: 1.6em;
+  height: 1.6em;
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.882rem/1.6 var(--you);
+}
+.line .field::placeholder { color: var(--quiet); opacity: 0.7; font-family: var(--app); font-size: 0.765rem; }
+
+/* The conversation's line: a prompt hung in the margin. */
+.line.rest::before,
+.line.talk::before,
+.you.talk::before,
+.aside-line .prompt {
+  content: "›";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  top: 0;
+  width: var(--hang);
+  font: 400 0.882rem/1.6 var(--mono);
+  color: var(--ink);
+}
+.aside-line .prompt { position: static; display: inline-block; margin-left: calc(-1 * var(--hang)); }
+
+/* The task's line: inside the task, on its rule, under its question. */
+.task-line {
+  position: relative;
+  margin: 1.2rem 0 0 calc(-1 * var(--hang));
+  padding: 0.45rem 0 0.3rem calc(var(--hang) - 2px);
+  border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
+}
+.task-line.on { border-left-color: var(--ink); }
+.task-line.joined { margin-top: 0; }
+.task-line .line.task { margin: 0; }
+.line.task .field {
+  background-image: linear-gradient(to right, var(--faint) 50%, transparent 0);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+  background-position: 0 calc(100% - 1px);
+}
+.task-line .restated {
+  margin: 0 0 0.4rem;
+  font-size: 0.941rem;
+  line-height: 1.5;
+  color: var(--quiet);
+  cursor: text;
+}
+.task-line.on .restated { color: var(--text); }
+.task-line + .line.talk { margin-top: 1.1rem; }
+
+.line .keyhint {
+  position: absolute;
+  right: 0;
+  bottom: 0.3rem;
+  font: 400 0.706rem/1.6 var(--app);
+  color: var(--quiet);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.line .with {
+  margin: 0.25rem 0 0;
+  display: flex;
+  gap: 0.9rem;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+}
+.said-sure { color: var(--ink); }
+.plain { color: var(--quiet); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; font: inherit; margin-left: 0.4rem; }
+.plain:hover { color: var(--text); }
+
+/* Under the line: the way to the other line. */
+.aside-line {
+  display: block;
+  margin-top: 0.7rem;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+  opacity: 0.85;
+}
+.aside-line:hover { color: var(--text); opacity: 1; }
+.aside-line .keyname { font-family: var(--app); }
+.aside-line.tether .line { color: inherit; }
+
+/* ------------------------------------------------------------------ */
+/* The lesson                                                          */
+
+.turn { margin: 0; }
+.before .turn:first-child { padding-top: 56px; }
+.before { padding-bottom: 2rem; }
+.before .turn { opacity: 0.88; }
+.sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
+
+.you {
+  margin: 1.5rem 0 1.1rem;
+  font: 400 0.882rem/1.6 var(--you);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+.you.pick { color: var(--quiet); }
+
+/* An answer sits inside the task it answers: on the task's rule, under it. */
+.answer {
+  position: relative;
+  margin: 0 0 1.4rem calc(-1 * var(--hang));
+  padding: 0.55rem 0 0.15rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--faint);
+}
+.answer .you { margin: 0; }
+.answer .question { margin: 0 0 0.3rem; font-size: 0.941rem; line-height: 1.5; color: var(--quiet); }
+.answer.help .you { color: var(--quiet); }
+.answer .said-sure {
+  position: absolute;
+  right: 0;
+  top: 0.62rem;
+  font: 400 0.735rem/1.6 var(--app);
+}
+
+/* The record's own lines: a mark, a change to the plan, a notice. */
+.record {
+  margin: 0.3rem 0 0;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--ink);
+}
+.answer .record { margin-top: 0.35rem; }
+.you.talk + .record { margin: -0.6rem 0 1rem; }
+.record.quiet { color: var(--quiet); margin-bottom: 1rem; }
+.record.note {
+  margin: 1rem 0 0 calc(-1 * var(--hang));
+  padding-left: calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+  color: var(--text);
+}
+.notices { margin-top: 1rem; }
+.notices .record.note:first-child { margin-top: 0; }
+
+.record.plan {
+  margin: 1.2rem 0 1.6rem calc(-1 * var(--hang));
+  padding: 0.1rem 0 0.1rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+}
+.record-head { margin: 0 0 0.3rem; font: 600 0.765rem/1.5 var(--app); color: var(--ink); }
+.record.plan dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 1.4rem; row-gap: 0.1rem; }
+.record.plan dl > div { display: contents; }
+.record.plan dt { color: var(--text); font: 400 0.882rem/1.5 var(--read); }
+.record.plan dd { margin: 0; color: var(--quiet); font: 400 0.765rem/1.9 var(--app); }
+.record-keys { margin: 0.35rem 0 0; font: 400 0.706rem/1.5 var(--app); color: var(--quiet); }
+
+/* The tutor is writing: a caret where its words will go. */
+.working {
+  margin: 0.6rem 0 0;
+  min-height: 1.6em;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  background: var(--ink);
+  opacity: 0.7;
+}
+/* Before the first word the caret blinks, as a terminal's does while it waits. */
+.working.waiting .cursor { animation: blink 1.1s steps(1) infinite; }
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* A request from the tutor that waits on the learner. */
+.card {
+  margin: 1.4rem 0 0 calc(-1 * var(--hang));
+  padding: 0.2rem 0 0.2rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+}
+.card-detail { margin: 0 0 0.5rem; font: 400 0.824rem/1.5 var(--mono); color: var(--quiet); overflow-wrap: anywhere; }
+.card-question { margin: 0 0 0.5rem; }
+.card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
+.act {
+  padding: 0.22rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  font: 400 0.765rem/1.5 var(--app);
+  background: var(--raised);
+}
+.act:hover, .act:focus { border-color: var(--ink); }
+
+/* Files over the window. */
+.veil {
+  position: fixed;
+  inset: 10px;
+  border: 1.5px dashed var(--ink);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ground) 80%, transparent);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  pointer-events: none;
+}
+.veil p { font: 400 0.882rem/1.4 var(--app); color: var(--ink); }
+
+/* ------------------------------------------------------------------ */
+/* Layers                                                              */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 20;
+}
+
+.layer {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 32px));
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 21;
+  overflow: hidden;
+  animation: layer-in 120ms ease-out;
+}
+@keyframes layer-in {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+}
+
+.layer-line {
+  position: relative;
+  padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang));
+  border-bottom: 1px solid var(--edge);
+}
+.layer-line::before {
+  content: "›";
+  position: absolute;
+  left: 1.1rem;
+  font: 400 0.882rem/1.6 var(--mono);
+  color: var(--ink);
+}
+.layer-line input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.882rem/1.6 var(--you);
+  padding: 0;
+}
+.layer-line input::placeholder { color: var(--quiet); opacity: 0.75; }
+
+.rows {
+  overflow-y: auto;
+  padding: 0.35rem 0;
+  outline: none;
+}
+.row {
+  display: grid;
+  grid-template-columns: var(--hang) minmax(0, 1fr) minmax(0, max-content);
+  align-items: baseline;
+  column-gap: 0.25rem;
+  padding: 0.36rem 1.1rem;
+  cursor: default;
+}
+.row.on { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+.row-mark {
+  font: 400 0.765rem/1 var(--app);
+  color: var(--quiet);
+  text-align: left;
+}
+.row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.thing .row-label { font: 400 0.941rem/1.45 var(--read); color: var(--text); }
+.row.do .row-label,
+.row.file .row-label { font: 400 0.824rem/1.6 var(--app); color: var(--text); }
+.row.file .row-label { font-family: var(--app); color: var(--text); }
+.row.note { grid-template-columns: var(--hang) minmax(0, 1fr); }
+.row.note .row-label { font: 400 0.765rem/1.55 var(--app); color: var(--quiet); white-space: normal; }
+.row.note:not(:first-child) { margin-top: 0.4rem; }
+.row .done { color: var(--quiet); }
+.row-hint {
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 1rem;
+  font: 400 0.735rem/1.6 var(--app);
+  color: var(--quiet);
+  text-align: right;
+}
+.row.changed .row-hint { color: var(--ink); }
+.row.changed .row-mark { color: var(--ink); }
+.row.changed { animation: changed 2.4s ease-out 1; }
+@keyframes changed {
+  from { background: var(--ink-soft); }
+}
+.row.empty { color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang)); }
+
+.choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.15rem 0.5rem; padding-left: 1rem; }
+.choice {
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+  padding: 0 0.15rem;
+  border-bottom: 1.5px solid transparent;
+}
+.choice:hover { color: var(--text); }
+.choice.chosen { color: var(--ink); border-bottom-color: var(--ink); }
+.row:has(.choices) .row-label { font: 400 0.824rem/1.6 var(--app); }
+
+.layer-keys {
+  margin: 0;
+  padding: 0.55rem 1.1rem 0.6rem calc(1.1rem + var(--hang));
+  border-top: 1px solid var(--edge);
+  font: 400 0.706rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A source, or pasted text: a larger layer. */
+.layer.sheet {
+  top: 6vh;
+  width: min(860px, calc(100vw - 32px));
+  height: 86vh;
+  max-height: none;
+}
+.sheet-name {
+  margin: 0;
+  padding: 0.8rem 1.1rem 0.7rem calc(1.1rem + var(--hang));
+  border-bottom: 1px solid var(--edge);
+  font: 400 0.824rem/1.5 var(--app);
+  color: var(--text);
+}
+.sheet-body { flex: 1; overflow: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
+.sheet-note { padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang)); color: var(--quiet); font: 400 0.824rem/1.5 var(--app); }
+.source-page { background: white; box-shadow: 0 0 0 1px var(--edge); }
+.source-text { margin: 0; width: 100%; white-space: pre-wrap; font: 400 0.824rem/1.6 var(--mono); color: var(--text); }
+.source-image { max-width: 100%; }
+.paste-field {
+  flex: 1;
+  margin: 0;
+  padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang));
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.824rem/1.6 var(--mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now, .head .next { transition: none; }
+  .layer, .row.changed { animation: none; }
+  .cursor { animation: none; }
+}
+
+@media (max-width: 760px) {
+  :root { --hang: 16px; }
+  .now { padding-top: 48px; }
+  .now.rest { padding-top: 24vh; }
+}

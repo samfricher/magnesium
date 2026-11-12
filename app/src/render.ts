@@ -432,3 +432,39 @@ export function setSourcesApart(html: string, open: boolean): string {
   }
   return holder.innerHTML;
 }
+
+const alnum = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/**
+ * Set apart the task a reply ends with when the tutor wrote it with no bold
+ * opening word: `task` is the task as the engine read it from the tutor's
+ * record. The block from the last one that holds the task's words to the end
+ * of the reply is the task. Only a look: nothing reads a mark from it.
+ */
+export function markTask(html: string, task: string): string {
+  if (html.includes('class="task"') || task.trim() === "") return html;
+  // The task's words outside its formulas, longest last run first: a formula
+  // is drawn on the page in another form than its source.
+  const runs = task
+    .split(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/)
+    .map(alnum)
+    .filter((run) => run.length > 0);
+  const probe = [...runs].reverse().find((run) => run.length >= 12) ?? runs.sort((a, b) => b.length - a.length)[0];
+  if (!probe) return html;
+  const needle = probe.slice(-40);
+  const holder = document.createElement("template");
+  holder.innerHTML = html;
+  const blocks = Array.from(holder.content.children);
+  const start = blocks.map((block) => alnum(block.textContent ?? "").includes(needle)).lastIndexOf(true);
+  if (start === -1) return html;
+  const box = document.createElement("div");
+  box.className = "task";
+  holder.content.insertBefore(box, blocks[start]);
+  let node: ChildNode | null = box.nextSibling;
+  while (node) {
+    const next: ChildNode | null = node.nextSibling;
+    box.appendChild(node);
+    node = next;
+  }
+  return holder.innerHTML;
+}

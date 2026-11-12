@@ -1,219 +1,200 @@
-// The window: which screen is up, and the few things that move between them.
+// The window: one surface, and the layers a key brings over it.
 //
-// The way through it is a line: the library of courses, one course, the
-// lesson, and the end of the sitting. Progress, a timed paper and this Mac's
-// setup hang off that line, and each goes back to where it was opened from.
+// At rest the surface holds the one next thing, already chosen, and the line
+// to write on. Return starts it, and the lesson fills the same surface below
+// it. Everything else (courses, the plan, material, past work, settings, all
+// commands) is a layer summoned by a key and put away with Esc. Nothing here
+// is a screen to move between.
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-
-import { ready } from "./harness";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
-import { Course } from "./screens/Course";
-import { Library, displayName } from "./screens/Library";
-import { Palette, type Command } from "./screens/Palette";
-import { Paper } from "./screens/Paper";
-import { Progress } from "./screens/Progress";
-import { Session } from "./screens/Session";
-import { Setup, setupReady } from "./screens/Setup";
-import { Summary, reviewIn, type Sitting } from "./screens/Summary";
-import { EngineControl } from "./ui/Engine";
-import { DropVeil, PasteSheet } from "./ui/Material";
-import type {
-  About,
-  Activity,
-  AgentEvent,
-  Answer,
-  Card,
-  Core,
-  Decision,
-  Engine,
-  EngineChoice,
-  Home,
-  Materials,
-  Paper as PaperInfo,
-  Payment,
-  Progress as ProgressData,
-  Rail,
-  Row,
-  RuntimeSetup,
-  Setup as SetupData,
-  Today,
-} from "./types";
+import { ready } from "./harness";
+import { busy, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "./lesson";
+import { applyPrefs, flushPlaces, keepPlace, lastCourse, loadPrefs, placeOf, savePrefs, SITTING_GAP_MS, SIZES, type Prefs } from "./prefs";
+import { hasTask } from "./render";
+import type { SourceRef } from "./sources";
+import { Composer, type Sending } from "./surface/Composer";
+import { Cards, Notices, Turn, Working } from "./surface/Conversation";
+import { Layers, type LayerKind } from "./surface/Layers";
+import { Line } from "./surface/Rich";
+import { PasteSheet, SourceSheet } from "./surface/Sheets";
+import type { About, AgentEvent, Answer, Card, Core, Decision, Engine, EngineChoice, Home, Paper, Payment, Plan, Setup, Turn as SavedTurn } from "./types";
+import { displayName, firstWords, planDiff, stoppedWords, type PlanDiff } from "./words";
 
-type View = "loading" | "setup" | "library" | "course" | "session" | "summary" | "progress" | "paper";
+type Phase = "loading" | "rest" | "lesson";
 
-const BLOCKS = [25, 50, 90];
+export type Overlay = { kind: LayerKind } | { kind: "source"; source: SourceRef } | { kind: "paste"; text: string } | null;
 
-/** The window's keys, for the entry in the menu that lists them. */
-const SHORTCUTS: Command = {
-  label: "Keyboard shortcuts",
-  icon: "keys",
-  keywords: "help keys shortcuts",
-  shortcuts: [
-    ["⌘K", "Open this menu"],
-    ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
-    ["⌘O", "Open a course folder (in the library and on a course page)"],
-    ["⌘⇧H", "Hint (in a lesson)"],
-    ["⌘⇧D", "I don't know (in a lesson)"],
-    ["⌘⇧L", "I'm lost (in a lesson)"],
-    ["⌘.", "Stop the reply being written"],
-    ["Return", "Send your answer, or do the screen's green button"],
-    ["⇧Return", "Start a new line in your answer"],
-    ["⌥1 ⌥2 ⌥3", "How sure? in a lesson: Sure, Unsure, Guess"],
-    ["PageUp PageDown", "Scroll the lesson from the answer box"],
-    ["⌥↑ ⌥↓", "Scroll the lesson from the answer box, a little at a time"],
-    ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
-    ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
-    ["Esc", "Go back, or close what is open"],
-  ],
-  run: () => {},
+/** Lessons start only when this Mac is set up: the program is usable and Claude Code is signed in. */
+export function setupReady(setup: Setup | null): boolean {
+  if (!setup) return false;
+  const runtime = setup.runtime.state === "ready" || setup.runtime.state === "kept";
+  return runtime && setup.account.installed && setup.account.signed_in;
+}
+
+/** "0.3.0" from "0.3.0+<commit>". */
+const versionNumber = (version: string) => version.split("+")[0] ?? version;
+
+/** The turns of a sitting, from the last time the window's opening words were sent. */
+function sittingStartOf(turns: SavedTurn[]): number {
+  for (let i = turns.length - 1; i >= 0; i--) if (opening(turns[i].learner)) return i;
+  return 0;
+}
+
+/**
+ * Where the open task is: the last reply that set one, unless an answer was
+ * given after it, the reply was stopped part way, or a new sitting began
+ * since. -1 when no task is open.
+ */
+export function openTaskAt(turns: LessonTurn[]): number {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (hasTask(turn.tutor)) return turn.interrupted ? -1 : i;
+    if (turn.said === "answer") return -1;
+    if (turn.said === "opening" || opening(turn.learner)) return -1;
+  }
+  return -1;
+}
+
+/** The open task: its words, and the turn whose reply posed it (-1 when that turn is not in the list). */
+export type OpenTask = { text: string; at: number };
+
+/**
+ * The task open now. An engine that knows it (Magnesium's) says so after each
+ * turn, in the tutor's own words; otherwise a task is found by the bold word
+ * a reply opens it with.
+ */
+export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask | null {
+  if (session.task !== undefined) {
+    const text = session.task.text;
+    if (!text) return null;
+    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].posed === text) return { text, at: i };
+    return { text, at: -1 };
+  }
+  const at = openTaskAt(turns);
+  return at >= 0 ? { text: taskText(turns[at].tutor), at } : null;
+}
+
+/** The task's own words in a reply: from its bold opening word to the end. */
+function taskText(reply: string): string {
+  const found = [...reply.matchAll(/\*\*(?:task|check|quick check|question|your turn|try it|try this|redo|paper redo|now you)\b/gi)].pop();
+  return found?.index !== undefined ? reply.slice(found.index) : reply;
+}
+
+/** One rest line: what the surface offers when no lesson is under way. */
+type Rest = {
+  course: string | null;
+  next: string;
+  where: string | null;
+  status: string | null;
+  /** Typing on the line starts a lesson with those words. */
+  line: boolean;
+  /** What Return does with an empty line, and a click on the next thing. */
+  start: (() => void) | null;
+  choices: { label: string; run: () => void }[];
+  keys: string;
 };
-/** How often the setup screen asks Claude Code whether a sign-in finished, and for how long. */
-const SIGN_IN_POLL_MS = 2000;
-const SIGN_IN_LIMIT_MS = 15 * 60_000;
 
-const stepsDone = (rail: Rail | null) => rail?.steps.filter((step) => step.status === "done").length ?? 0;
-
-const proofsOf = (row: Row) => row.dots.filter((dot) => dot === 2).length;
-
-/** How many proofs each skill holds, by the skill's name. */
-function tally(progress: ProgressData): Map<string, number> {
-  const counts = new Map<string, number>();
-  [...progress.confirmed, ...progress.in_progress].forEach((row) => counts.set(row.name, proofsOf(row)));
-  return counts;
-}
-
-/** Whether a folder's lesson can continue at once: it is set up, current, and no paper is running. */
-const canContinue = (home: Home) => home.state === "ready" && !home.sitting;
-
-/**
- * How many answers the tutor marked in a sitting, from today's counts before
- * and after it, or null when that cannot be told. A sitting that crosses
- * midnight counts the answers marked after midnight, which may be fewer than
- * all, and says nothing when there are none.
- */
-export function markedIn(before: Today | null, after: Today | null): number | null {
-  if (!before || !after) return null;
-  if (before.day === after.day) return Math.max(0, after.answered - before.answered);
-  return after.answered > 0 ? after.answered : null;
-}
-
-/**
- * The skills answered wrong in this lesson, and the day the record brings each
- * back: the marks the lesson recorded (wrong, in a lesson, since it began),
- * each joined to the skill of that name in the record, which holds its next
- * day. A mark with no skill of that name, or a skill with no next day, is
- * left out: the window says no more than the record does.
- */
-export async function slippedIn(api: Core, rows: ProgressData["in_progress"], startedMs: number | null): Promise<{ name: string; next_day: string }[]> {
-  if (startedMs === null) return [];
-  let marks: Awaited<ReturnType<Core["marks"]>> = null;
-  try {
-    marks = await api.marks();
-  } catch {
-    return [];
-  }
-  if (!marks) return [];
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const began = new Date(startedMs);
-  // The record's times are local, "2026-11-12 09:41", to the minute.
-  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
-  const key = (text: string) => text.trim().toLowerCase();
-  const out = new Map<string, { name: string; next_day: string }>();
-  for (const mark of marks) {
-    if (mark.paper !== null || mark.mark !== "wrong" || mark.at < since) continue;
-    const row = rows.find((each) => key(each.name) === key(mark.label));
-    if (row && row.next_day) out.set(key(row.name), { name: row.name, next_day: row.next_day });
-  }
-  return [...out.values()];
-}
-
-/** The day after a day written as "2026-11-10". */
-function dayAfter(day: string): string {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function Choices({ choices }: { choices: Rest["choices"] }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => refs.current[0]?.focus({ preventScroll: true }), [choices.length]);
+  return (
+    <div className="choices-rest" role="group">
+      {choices.map((choice, at) => (
+        <button
+          key={choice.label}
+          ref={(el) => (refs.current[at] = el)}
+          className="choice-rest"
+          data-drive={at === 0 ? "start" : undefined}
+          onClick={choice.run}
+          onKeyDown={(event) => {
+            const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+            if (step === 0) return;
+            event.preventDefault();
+            refs.current[(at + step + choices.length) % choices.length]?.focus();
+          }}
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function App() {
   const [api, setApi] = useState<Core | null>(null);
-  const [view, setView] = useState<View>("loading");
-  // Where Progress and Setup go back to.
-  const [from, setFrom] = useState<View>("library");
-  const [folders, setFolders] = useState<string[]>([]);
-  const [cards, setCards] = useState<Card[] | null>(null);
-  // The evidence harness times startup to the first screen with its content.
-  useEffect(() => {
-    if (view !== "loading" && (view !== "library" || cards !== null)) ready();
-  }, [view, cards]);
-  const [activity, setActivity] = useState<Activity | null>(null);
-  const [home, setHome] = useState<Home | null>(null);
-  const [session, dispatch] = useReducer(reduce, emptySession);
-  const [rail, setRail] = useState<Rail | null>(null);
-  const [progress, setProgress] = useState<ProgressData | null>(null);
-  const [summary, setSummary] = useState<Sitting | null>(null);
-  const [palette, setPalette] = useState(false);
-  const [asking, setAsking] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [finding, setFinding] = useState(false);
-  const [chosenPaper, setChosenPaper] = useState<PaperInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<SetupData | null>(null);
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [setup, setSetup] = useState<Setup | null>(null);
   const [about, setAbout] = useState<About | null>(null);
-  // Which engine runs lessons. null when the core cannot say.
   const [engine, setEngine] = useState<EngineChoice | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
-  // What Claude Code said before the sign-in, to see when its answer changes.
-  const accountBefore = useRef("");
-  const [upgrading, setUpgrading] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  // Adding course material: what it said, whether it is under way, whether
-  // files are being dragged over the window, and the text being pasted.
-  const [material, setMaterial] = useState<string[] | null>(null);
-  // What the course's material folder already holds. null until it has been read, or when it cannot be.
-  const [materials, setMaterials] = useState<Materials | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [home, setHome] = useState<Home | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [cards, setCards] = useState<Card[] | null>(null);
+  const [session, dispatch] = useReducer(reduce, emptySession);
+  // The turns of the conversation left, drawn above the next thing.
+  const [before, setBefore] = useState<SavedTurn[]>([]);
+  // Where this sitting's turns begin in the session's list.
+  const [sittingStart, setSittingStart] = useState(0);
+  const [sittingTitle, setSittingTitle] = useState<string>("");
+  const [line, setLineState] = useState<"task" | "talk">("talk");
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const [notes, setNotes] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [pasting, setPasting] = useState<string | null>(null);
-  // Until the first screen is up, a finished setup opens it.
-  const waitingForSetup = useRef(true);
-  // What this sitting has counted so far, for the screen that ends it:
-  // the messages the learner sent, and today's counts when it began.
-  const sitting = useRef<{ answers: number; alreadyStudied: boolean; todayBefore: Today | null }>({
-    answers: 0,
-    alreadyStudied: false,
-    todayBefore: null,
-  });
-  // The proofs each skill held when the sitting began, or null when they
-  // could not be read. The end of the sitting shows what was earned since.
-  const proofsBefore = useRef<Map<string, number> | null>(null);
-  const opening = useRef(false);
+  const [adding, setAdding] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  // What the tutor changed in the plan in this sitting, for the plan's layer.
+  const [changed, setChanged] = useState<PlanDiff | null>(null);
+  // Photos dropped while the line is in a task, for the line to take.
+  const [incoming, setIncoming] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [answerDraft, setAnswerDraft] = useState("");
+  const surface = useRef<HTMLElement>(null);
+  const nowRef = useRef<HTMLElement>(null);
+  const stuck = useRef(true);
+  const restoring = useRef<number | null>(null);
+  // The look at this Mac under way at startup, for a start that comes before it is done.
+  const setupWait = useRef<Promise<Setup> | null>(null);
+  // The exchange whose finished reply last placed the learner's line.
+  const settled = useRef<number | null>(null);
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, from, home, session, palette, setup, rail, activity, engine });
-  now.current = { api, view, from, home, session, palette, setup, rail, activity, engine };
-  // The newest copies of two handlers, for the listeners that outlive a render.
-  const addMaterialRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
-  const canAddRef = useRef<() => boolean>(() => false);
+  const now = useRef({ api, phase, setup, home, plan, session, overlay, line, engine, prefs, task: null as OpenTask | null });
+  now.current = { api, phase, setup, home, plan, session, overlay, line, engine, prefs, task: now.current?.task ?? null };
 
-  const refreshRail = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setRail(await api.rail());
-    } catch {
-      // The steps are a convenience. A lesson goes on without them.
-    }
+  useLayoutEffect(() => applyPrefs(prefs), [prefs]);
+
+  const changePrefs = useCallback((change: Partial<Prefs>) => {
+    setPrefs((old) => {
+      const next = { ...old, ...change };
+      savePrefs(next);
+      applyPrefs(next, change.scheme !== undefined);
+      return next;
+    });
   }, []);
+
+  const note = useCallback((text: string) => {
+    if (now.current.phase === "lesson") dispatch({ type: "note", notice: { kind: "other", text } });
+    else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
+  }, []);
+
+  const setLine = useCallback((place: "task" | "talk") => {
+    setLineState(place);
+    const folder = now.current.home?.folder;
+    if (folder) keepPlace(folder, { line: place });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Reading
 
   const refreshHome = useCallback(async (): Promise<Home | null> => {
     const { api } = now.current;
     if (!api) return null;
     try {
       const fresh = await api.home();
+      now.current.home = fresh;
       setHome(fresh);
       return fresh;
     } catch (problem) {
@@ -222,163 +203,124 @@ export function App() {
     }
   }, []);
 
-  const refreshActivity = useCallback(async () => {
-    try {
-      const fresh = await now.current.api?.activity();
-      if (fresh) setActivity(fresh);
-    } catch {
-      // The run is a convenience too.
-    }
-  }, []);
-
-  /** Read the proofs for the open course. Quiet on the course page, which only draws a summary of them. */
-  const loadProgress = useCallback(async (target: string | null, loud: boolean) => {
+  const refreshPlan = useCallback(async (): Promise<Plan | null> => {
     const { api } = now.current;
-    if (!api) return;
+    if (!api) return null;
     try {
-      setProgress(await api.progress(target));
-    } catch (problem) {
-      if (loud) setError(String(problem));
-    }
-  }, []);
-
-  /** Read what the open course's material folder holds. A core that cannot say shows nothing: the course page reads as it did. */
-  const loadMaterials = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setMaterials(await api.materialList());
+      const fresh = await api.plan();
+      now.current.plan = fresh;
+      setPlan(fresh);
+      return fresh;
     } catch {
-      setMaterials(null);
+      return null;
     }
   }, []);
 
-  /** Which engine runs lessons, and the one the open folder's conversation began on. */
   const loadEngine = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
     try {
-      const fresh = await api.engine();
-      now.current.engine = fresh;
-      setEngine(fresh);
+      const fresh = await now.current.api?.engine();
+      if (fresh) setEngine(fresh);
     } catch {
-      // A core that cannot say shows no choice. Lessons run as before.
       setEngine(null);
     }
   }, []);
 
   const loadLibrary = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
     try {
-      const [list, fresh] = await Promise.all([api.recent(), api.library()]);
-      setFolders(list);
-      setCards(fresh);
+      setCards((await now.current.api?.library()) ?? []);
     } catch (problem) {
       setError(String(problem));
-      setCards((old) => old ?? []);
     }
-    void refreshActivity();
-  }, [refreshActivity]);
+  }, []);
 
-  const showLibrary = useCallback(() => {
+  /** Open a course on the surface, at rest, or inside the lesson it was left in. */
+  const showCourse = useCallback(async (api: Core, open: () => Promise<Home>, mayReopen: boolean) => {
     setError(null);
-    setNotice(null);
-    setMaterial(null);
-    setAsking(false);
-    setView("library");
-    void loadLibrary();
-  }, [loadLibrary]);
-
-  /**
-   * Open a folder and show its page. With `stay`, the screen stays where it
-   * is when the folder can continue at once, for the caller to start the
-   * lesson. Resolves to the folder, or null when it could not be opened.
-   */
-  const showFolder = useCallback(
-    async (api: Core, open: () => Promise<Home>, stay = false): Promise<Home | null> => {
-      if (opening.current) return null;
-      opening.current = true;
-      setError(null);
-      setNotice(null);
-      setMaterial(null);
-      try {
-        const opened = await open();
-        waitingForSetup.current = false;
-        now.current.home = opened;
-        setHome(opened);
-        dispatch({ type: "reset" });
-        setRail(null);
-        setProgress(null);
-        setMaterials(null);
-        setSummary(null);
-        setAsking(false);
-        if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
-        void loadProgress(null, false);
-        void refreshActivity();
-        void loadEngine();
-        setFolders(await api.recent());
-        return opened;
-      } catch (problem) {
-        setError(String(problem));
-        setView("library");
-        void loadLibrary();
-        return null;
-      } finally {
-        opening.current = false;
+    setNotes([]);
+    try {
+      const opened = await open();
+      now.current.home = opened;
+      setHome(opened);
+      dispatch({ type: "reset" });
+      setChanged(null);
+      const place = placeOf(opened.folder);
+      keepPlace(opened.folder, {});
+      setDraft(place.draft);
+      setAnswerDraft(place.answerDraft);
+      const [turns, fresh] = await Promise.all([api.turns().catch(() => [] as SavedTurn[]), api.plan().catch(() => null)]);
+      now.current.plan = fresh;
+      setPlan(fresh);
+      // Inside the lesson again only when it was left within the runtime's own
+      // sitting gap, and the record agrees the lesson is from today.
+      const recent = Date.now() - place.seenMs < SITTING_GAP_MS && (opened.last?.days_ago ?? 99) === 0;
+      if (mayReopen && place.inLesson && recent && opened.state === "ready" && !opened.sitting && turns.length > 0) {
+        dispatch({ type: "opened", turns });
+        // Where the line was is put back as it was, not worked out again.
+        settled.current = turns[turns.length - 1].ms;
+        // The session is not running: the first message sent starts it again.
+        setBefore([]);
+        const start = sittingStartOf(turns);
+        setSittingStart(start);
+        setSittingTitle(opened.last?.goal ?? displayName(opened.name));
+        setLineState(place.line);
+        restoring.current = place.fromFoot;
+        setPhase("lesson");
+      } else {
+        setBefore(turns);
+        setLineState("talk");
+        setPhase("rest");
+        keepPlace(opened.folder, { inLesson: false });
       }
-    },
-    [loadEngine, loadLibrary, loadProgress, refreshActivity],
-  );
+      void loadEngine();
+    } catch (problem) {
+      setError(String(problem));
+      setHome(null);
+      setPhase("rest");
+    }
+  }, [loadEngine]);
 
-  const openFolder = useCallback((api: Core, path: string) => showFolder(api, () => api.openFolder(path)), [showFolder]);
+  const openFolder = useCallback((api: Core, path: string) => showCourse(api, () => api.openFolder(path), false), [showCourse]);
 
-  /** Take in what the setup check found. The first time it is ready, go to the first screen. */
-  const takeSetup = useCallback(
-    async (api: Core, fresh: SetupData) => {
-      setSetup(fresh);
-      if (!setupReady(fresh)) {
-        if (now.current.view === "loading") setView("setup");
-        return;
-      }
-      if (!waitingForSetup.current) return;
-      waitingForSetup.current = false;
-      const first = await api.initialFolder();
-      if (first) await openFolder(api, first);
-      else showLibrary();
-    },
-    [openFolder, showLibrary],
-  );
+  // ---------------------------------------------------------------------------
+  // Starting up
 
   useEffect(() => {
     let alive = true;
     let unlisten = () => {};
     void (async () => {
       const api = await core();
-      const off = await api.onEvent((event: AgentEvent) => {
-        dispatch({ type: "event", event });
-        if (event.type === "turn_ended") void refreshRail();
-        // Without the plugin this would be a plain chat with no teaching
-        // rules, so the reply is stopped and the notice says what to run.
-        if (event.type === "ready" && event.plugin_missing) void api.interrupt().catch(() => {});
-      });
-      if (!alive) {
-        off();
-        return;
-      }
+      const off = await api.onEvent((event: AgentEvent) => onEventRef.current(event));
+      if (!alive) return off();
       unlisten = off;
-      setApi(api);
       now.current.api = api;
+      setApi(api);
+      // The program is set up, or a question about it answered, while the
+      // course is read: the digest that reads a course never upgrades it.
+      const [initial, recent] = await Promise.all([api.initialFolder(), api.recent().catch(() => [] as string[])]);
+      const remembered = lastCourse();
+      const folder = initial ?? (remembered && recent.includes(remembered) ? remembered : (recent[0] ?? null));
+      // The course is read and drawn while this Mac is looked at: the digest
+      // that reads it never upgrades a record. Nothing starts until the look
+      // is done, and a Mac that needs a step shows that step instead; the
+      // course is read again if the program was only just put in place.
+      const looking = api.setup();
+      setupWait.current = looking;
+      void api.about().then(setAbout, () => {});
+      if (folder) await showCourse(api, () => api.openFolder(folder), true);
+      const fresh = await looking;
+      now.current.setup = fresh;
+      setSetup(fresh);
+      if (!setupReady(fresh)) {
+        dispatch({ type: "reset" });
+        setPhase("rest");
+      } else if (folder && fresh.runtime.installed_now) await showCourse(api, () => api.openFolder(folder), true);
+      else if (!folder) setPhase("rest");
       void loadEngine();
-      setFolders(await api.recent());
-      // The program is installed, or a question about it answered, before
-      // any folder is read: a newer program upgrades a folder's record.
-      const [fresh, built] = await Promise.all([api.setup(), api.about()]);
-      setAbout(built);
-      await takeSetup(api, fresh);
-      if (isDemo) (await import("./demo")).startFromAddress(actions);
+      if (isDemo) {
+        await (await import("./demo")).startFromAddress(actions);
+        document.documentElement.dataset.shot = "ready";
+      }
       else if (await api.selftest()) {
-        // A check that cannot even start says why, instead of saying nothing.
         try {
           await (await import("./selftest")).run(api, actions, () => now.current.session);
         } catch (problem) {
@@ -394,331 +336,167 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While Claude Code's sign-in waits for the browser, look every few
-  // seconds whether it finished.
+  // The first screen is painted with its real content: tell the harness.
+  useEffect(() => {
+    if (phase !== "loading" && (home !== null || setup !== null)) requestAnimationFrame(() => ready());
+  }, [phase, home, setup]);
+
+  // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
   useEffect(() => {
     if (!signingIn) return;
     const started = Date.now();
     const timer = window.setInterval(() => {
       const { api, setup } = now.current;
-      if (!api || !setup) return;
-      if (Date.now() - started > SIGN_IN_LIMIT_MS) {
-        setSigningIn(false);
-        return;
-      }
-      void api.account().then((account) => {
-        // Done when it is signed in as chosen, or says anything new, such as
-        // a sign-in to another kind of account.
-        if (account.signed_in && (!account.problem || JSON.stringify(account) !== accountBefore.current)) setSigningIn(false);
-        void takeSetup(api, { ...(now.current.setup ?? setup), account });
+      if (!api || !setup || Date.now() - started > 15 * 60_000) return setSigningIn(false);
+      void api.account().then(async (account) => {
+        const fresh = { ...setup, account };
+        setSetup(fresh);
+        if (account.signed_in) {
+          setSigningIn(false);
+          await afterSetup(api, fresh);
+        }
       });
-    }, SIGN_IN_POLL_MS);
+    }, 2000);
     return () => window.clearInterval(timer);
-  }, [signingIn, takeSetup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signingIn]);
 
-  // Files dropped on the window are added to the open course, on its page and
-  // in a lesson. Anywhere else a drop does nothing.
-  useEffect(() => {
-    if (!api) return;
-    let off = () => {};
-    let alive = true;
-    void api
-      .onDrop(
-        (paths) => void addMaterialRef.current(paths),
-        (over) => setDragging(over && canAddRef.current()),
-      )
-      .then((stop) => (alive ? (off = stop) : stop()));
-    return () => {
-      alive = false;
-      off();
-    };
-  }, [api]);
-
-  // Text pasted on the course page, with nothing selected to type in, is
-  // offered as course material. Pasting in the answer box is an answer.
-  useEffect(() => {
-    const onPaste = (event: ClipboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable]")) return;
-      if (now.current.view !== "course" || !canAddRef.current()) return;
-      if ((event.clipboardData?.files.length ?? 0) > 0) return;
-      const text = event.clipboardData?.getData("text/plain") ?? "";
-      if (text.trim() === "") return;
-      event.preventDefault();
-      setPasting(text);
-    };
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, []);
+  /** Once this Mac is set up, the course comes up on the surface. */
+  const afterSetup = async (api: Core, fresh: Setup) => {
+    if (!setupReady(fresh) || now.current.home) return;
+    const recent = await api.recent().catch(() => [] as string[]);
+    const folder = lastCourse() ?? recent[0] ?? null;
+    if (folder) await showCourse(api, () => api.openFolder(folder), false);
+  };
 
   const checkAgain = async () => {
     const { api } = now.current;
     if (!api) return;
-    setError(null);
-    await takeSetup(api, await api.setup());
+    const fresh = await api.setup();
+    setSetup(fresh);
+    await afterSetup(api, fresh);
   };
 
-  const answerRuntime = async (work: (api: Core) => Promise<RuntimeSetup>) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setError(null);
-    const runtime = await work(api);
-    await takeSetup(api, { ...setup, runtime });
-  };
+  // ---------------------------------------------------------------------------
+  // The tutor's events
 
-  const signIn = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      accountBefore.current = JSON.stringify(now.current.setup?.account ?? null);
-      await api.signIn();
-      setSigningIn(true);
-    } catch (problem) {
-      setError(String(problem));
+  const onEventRef = useRef<(event: AgentEvent) => void>(() => {});
+  onEventRef.current = (event: AgentEvent) => {
+    dispatch({ type: "event", event });
+    if (event.type === "ready" && event.plugin_missing) void now.current.api?.interrupt().catch(() => {});
+    if (event.type === "turn_ended") void refreshHome();
+    // The engine says which task is open: a task the reply just posed takes
+    // the learner's line; after help with it, the line goes back in; after
+    // anything else it is on the conversation's line.
+    if (event.type === "open_task" && now.current.phase === "lesson") {
+      const said = now.current.session.live?.said;
+      if (event.task && event.posed) setLine("task");
+      else if (event.task && said === "help") setLine("task");
+      else setLine("talk");
+    }
+    if (event.type === "plan_changed") {
+      const was = now.current.plan;
+      void refreshPlan().then((fresh) => {
+        if (!fresh) return;
+        const diff = planDiff(was, fresh);
+        if (diff.changes.length === 0) return;
+        dispatch({ type: "planned", change: diff });
+        setChanged((old) => ({
+          changes: [...(old?.changes ?? []), ...diff.changes],
+          moved: { ...(old?.moved ?? {}), ...diff.moved },
+          examFrom: old?.examFrom ?? diff.examFrom,
+        }));
+      });
     }
   };
 
-  const choosePayment = async (payment: Payment) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setSetup({ ...setup, payment });
-    const account = await api.setPayment(payment);
-    await takeSetup(api, { ...setup, payment, account });
-  };
-
-  /** Pick the engine for the next lesson. Saved at once, and refused while a lesson is open. */
-  const chooseEngine = async (chosen: Engine) => {
-    const { api, engine, session } = now.current;
-    if (!api || !engine || session.open || session.live !== null || engine.chosen === chosen) return;
-    setEngine({ ...engine, chosen });
-    try {
-      const fresh = await api.setEngine(chosen);
-      now.current.engine = fresh;
-      setEngine(fresh);
-    } catch (problem) {
-      setEngine(engine);
-      setError(String(problem));
-    }
-  };
-
-  /** Whether course material can be added now: a course is open, on its page or in a lesson. */
-  const canAdd = () => {
-    const { home, view } = now.current;
-    return Boolean(home) && (view === "course" || view === "session") && ["ready", "empty", "not_set_up"].includes(home?.state ?? "") && !home?.sitting;
-  };
-
-  const addMaterial = async (paths: string[]) => {
-    const { api } = now.current;
-    if (!api || paths.length === 0 || adding || !canAdd()) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addMaterial(paths)).lines);
-      void loadMaterials();
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  addMaterialRef.current = addMaterial;
-  canAddRef.current = canAdd;
-
-  // The course page says what the course already holds, read when it is shown.
-  const courseFolder = view === "course" ? (home?.folder ?? null) : null;
+  // When a reply is whole, the line goes where the next thing is: into the
+  // task the reply set, back into the task after help with it, and otherwise
+  // onto the conversation's line.
   useEffect(() => {
-    if (courseFolder !== null) void loadMaterials();
-  }, [courseFolder, loadMaterials]);
+    const live = session.live;
+    if (!live || live.status !== "idle" || settled.current === live.since || phase !== "lesson" || session.task !== undefined) return;
+    settled.current = live.since;
+    const reply = tutorText(live);
+    if (reply === "" && !live.error) return;
+    const turns = [...session.earlier, liveTurn(session)!];
+    const open = openTaskAt(turns);
+    if (hasTask(reply) && !live.interrupted) setLine("task");
+    else if (live.said === "help" && open >= 0) setLine("task");
+    else setLine("talk");
+  }, [session, phase, setLine]);
 
-  const chooseMaterial = async () => {
-    const { api } = now.current;
-    if (!api || !canAdd()) return;
-    try {
-      await addMaterial(await api.pickMaterial());
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    }
-  };
+  // ---------------------------------------------------------------------------
+  // Lessons
 
-  const savePasted = async (text: string) => {
-    const { api } = now.current;
-    if (!api || adding) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addPastedText(text)).lines);
-      setPasting(null);
-      void loadMaterials();
-    } catch (problem) {
-      setPasting(null);
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const openLink = (url: string) => void now.current.api?.openUrl(url).catch((problem) => setError(String(problem)));
-
-  const upgrade = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    setUpgrading(true);
-    try {
-      setHome(await api.upgradeFolder());
-      setNotice("This course is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
-      void loadProgress(null, false);
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setUpgrading(false);
-    }
-  };
-
-  const pickFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickFolder();
-    if (path) await openFolder(api, path);
-  };
-
-  const newFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickNewFolder();
-    if (path) await showFolder(api, () => api.newFolder(path));
-  };
-
-  const findFolders = async () => {
-    const { api } = now.current;
-    if (!api || finding) return;
-    setError(null);
-    setNotice(null);
-    setFinding(true);
-    try {
-      const added = await api.findFolders();
-      setNotice(added === 0 ? "No other course was found on this Mac." : `${added} ${added === 1 ? "course" : "courses"} added.`);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setFinding(false);
-    }
-  };
-
-  const forgetFolder = async (path: string) => {
-    const { api, home } = now.current;
-    if (!api) return;
-    try {
-      await api.forgetFolder(path);
-      if (home?.folder === path) setHome(null);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  /** Open the setup screen, with a fresh look at this Mac. */
-  const openSetup = () => {
-    const { view } = now.current;
-    if (view !== "setup") setFrom(view === "loading" ? "library" : view);
-    setView("setup");
-    void checkAgain();
-  };
-
-  /**
-   * Open the lesson screen and send the first words of the sitting. No lesson starts while this Mac's setup
-   * needs a look, such as a magnesium program older than the window needs.
-   * Resolves to whether the lesson screen opened.
-   */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
-    const { api } = now.current;
-    if (!api) return false;
-    if (!setupReady(now.current.setup)) {
-      openSetup();
+  /** Fill the surface with a lesson, and send its first words. */
+  const begin = async (resume: boolean, shown: string, said: Said, title: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
+    // Return pressed before the look at this Mac is done waits for it.
+    if (!now.current.setup && setupWait.current) await setupWait.current.catch(() => null);
+    const { api, setup, home } = now.current;
+    if (!api || !home) return false;
+    if (!setupReady(setup)) {
+      setError("This Mac is not set up for lessons yet.");
       return false;
     }
     setError(null);
-    setStarting(true);
-    let shownLesson = false;
+    setNotes([]);
+    setSittingTitle(title);
+    setChanged(null);
+    stuck.current = true;
+    setPhase("lesson");
+    keepPlace(home.folder, { inLesson: true });
     try {
       const opened = await api.openSession(resume);
       dispatch({ type: "opened", turns: opened.turns });
-      sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
-      proofsBefore.current = null;
-      void api
-        .progress(null)
-        .then((before) => {
-          proofsBefore.current = tally(before);
-          sitting.current.todayBefore = before.today ?? null;
-        })
-        .catch(() => {});
-      setView("session");
-      shownLesson = true;
-      dispatch({ type: "sent", shown, now: Date.now() });
+      setBefore([]);
+      setSittingStart(opened.turns.length);
+      dispatch({ type: "sent", shown, now: Date.now(), said });
+      setLineState("talk");
       await send(api);
-      void refreshRail();
       void loadEngine();
+      return true;
     } catch (problem) {
-      if (shownLesson) dispatch({ type: "failed", error: String(problem) });
-      else setError(String(problem));
-    } finally {
-      setStarting(false);
+      dispatch({ type: "failed", error: String(problem) });
+      return false;
     }
-    return shownLesson;
   };
 
-  const continueLesson = (skipChecks: boolean, home: Home | null = now.current.home) => {
-    const words = openingWords(
-      { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
+  /** The one next thing: carry on where the learner stopped, or start what the plan has next. */
+  const start = async (words?: string, skipChecks = false): Promise<boolean> => {
+    const { api, home, plan } = now.current;
+    if (!api || !home) return false;
+    let current = home;
+    if (home.state === "not_set_up") {
+      try {
+        current = await api.setUp();
+        setHome(current);
+      } catch (problem) {
+        setError(String(problem));
+        return false;
+      }
+    }
+    const typed = words?.trim() ?? "";
+    const item = plan?.items.find((each) => each.status === "doing") ?? plan?.items.find((each) => each.status === "todo") ?? null;
+    const title = current.last?.goal ?? item?.title ?? displayName(current.name);
+    if (typed !== "") {
+      // Words typed first are the start: the tutor takes them as the lesson's goal.
+      return begin(current.can_resume, typed, "talk", title, (api) => api.sendNewLesson(typed));
+    }
+    const shown = openingWords(
+      { stoppedAt: current.last?.stopped_at ?? null, studiedBefore: Boolean(current.last), title: current.last ? title : (item?.title ?? displayName(current.name)) },
       skipChecks,
     );
-    // The window wrote these words, so they are not sent as an answer. They go
-    // through the learn skill, as a new lesson's goal does: the window's
-    // tutor has no tool to load a skill by itself.
-    return begin(true, words, (api) => api.sendNewLesson(words));
-  };
-
-  /**
-   * The library's main card: open the folder and continue its lesson at once,
-   * as Continue on the course page does. A folder that cannot continue now,
-   * because it is new, needs an upgrade or has a paper running, shows its
-   * page, which says what comes first.
-   */
-  const continueFolder = async (path: string) => {
-    const { api } = now.current;
-    if (!api) return;
-    if (!setupReady(now.current.setup)) {
-      openSetup();
-      return;
-    }
-    setStarting(true);
-    const opened = await showFolder(api, () => api.openFolder(path), true);
-    if (!opened || !canContinue(opened)) {
-      setStarting(false);
-      return;
-    }
-    // When the lesson could not start, the course page says why.
-    if (!(await continueLesson(false, opened))) setView("course");
+    return begin(current.can_resume, shown, "opening", title, (api) => api.sendNewLesson(shown));
   };
 
   const newLesson = async (goal: string) => {
-    const { api, home } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      if (home?.state === "not_set_up") setHome(await api.setUp());
-    } catch (problem) {
-      setError(String(problem));
-      return;
-    }
-    await begin(false, goal, (api) => api.sendNewLesson(goal));
-    setAsking(false);
+    if (goal.trim() === "") return;
+    await begin(false, goal.trim(), "talk", goal.trim(), (api) => api.sendNewLesson(goal.trim()));
   };
 
-  const say = async (text: string) => {
+  /** Send the learner's words, with what they are. */
+  const say = async (text: string, said: Said = "talk", question?: string) => {
     const { api, session } = now.current;
     if (!api) return;
     try {
@@ -726,208 +504,333 @@ export function App() {
         await api.openSession(true);
         dispatch({ type: "reopened" });
       }
-      sitting.current.answers += 1;
-      dispatch({ type: "sent", shown: text, now: Date.now() });
-      await api.send(text);
+      stuck.current = true;
+      dispatch({ type: "sent", shown: text, now: Date.now(), said, ...(question ? { question } : {}) });
+      const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
+      await api.send(text, intent);
     } catch (problem) {
       dispatch({ type: "failed", error: String(problem) });
     }
   };
 
-  const onNote = useCallback((text: string) => dispatch({ type: "note", notice: { kind: "other", text } }), []);
-
-  const guard = (work: (api: Core) => Promise<unknown>) => async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      await work(api);
-    } catch (problem) {
-      dispatch({ type: "note", notice: { kind: "other", text: String(problem) } });
+  const onSend = useCallback((sending: Sending) => {
+    const { phase } = now.current;
+    if (sending.place === "rest") {
+      if (phase === "rest") void startRef.current(sending.text);
+      return;
     }
+    if (sending.place === "task") void sayRef.current(sending.text, isHelp(sending.text) ? "help" : "answer", now.current.task?.text);
+    else void sayRef.current(sending.text, "talk");
+  }, []);
+  const startRef = useRef(start);
+  startRef.current = start;
+  const sayRef = useRef(say);
+  sayRef.current = say;
+
+  const askHelp = (words: string) => {
+    setOverlay(null);
+    void say(words, "help");
   };
 
-  /** End the sitting: save the line, close the lesson, and show what was done. */
-  const stop = async (line: string) => {
-    const { api, session, rail } = now.current;
+  /** End the sitting where it is. The line saved for next time is the open task's first words. */
+  const stop = async () => {
+    const { api, session } = now.current;
     if (!api) return;
-    const saved = line.trim() === "" ? null : line.trim();
-    const minutes = session.startedMs === null ? 0 : Math.max(1, Math.round((Date.now() - session.startedMs) / 60_000));
-    const done: Sitting = {
-      minutes,
-      sent: sitting.current.answers,
-      marked: null,
-      today: null,
-      stepsDone: stepsDone(rail),
-      stepsTotal: rail?.steps.length ?? 0,
-      stoppedAt: saved,
-      alreadyStudied: sitting.current.alreadyStudied,
-      earned: [],
-      tomorrow: 0,
-      slipped: [],
-      marks: [],
-    };
+    const turns = [...session.earlier, ...(liveTurn(session) ? [liveTurn(session)!] : [])];
+    const open = openTaskOf(session, turns);
+    const line = open ? firstWords(open.text) : null;
     try {
-      await api.stop(saved);
+      await api.stop(line);
     } catch (problem) {
       setError(String(problem));
     }
     dispatch({ type: "stopped" });
-    setRail(null);
-    await Promise.all([refreshHome(), refreshActivity()]);
-    try {
-      // What the runtime's record holds now, set beside what it held when
-      // the sitting began. The window claims no proof the record does not show.
-      const after = await api.progress(null);
-      setProgress(after);
-      done.today = after.today ?? null;
-      done.marked = markedIn(sitting.current.todayBefore, done.today);
-      const before = proofsBefore.current;
-      if (before) {
-        done.earned = [...after.confirmed, ...after.in_progress]
-          .map((row) => ({ row, proofs: proofsOf(row) - (before.get(row.name) ?? 0) }))
-          .filter((each) => each.proofs > 0);
-      }
-      const today = now.current.activity?.today;
-      if (today) {
-        const tomorrow = dayAfter(today);
-        done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
-      }
-      done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
-      done.marks = await reviewIn(api, [...after.in_progress, ...after.confirmed, ...after.untested], session.startedMs);
-    } catch {
-      // Without the record the end screen says what it can.
-    }
-    void loadEngine();
-    // A sitting with nothing sent and nothing marked has nothing to sum up.
-    if (done.sent > 0 || (done.marked ?? 0) > 0) {
-      setSummary(done);
-      setView("summary");
-    } else {
-      setView("course");
-    }
+    setBefore(turns);
+    if (now.current.home) keepPlace(now.current.home.folder, { inLesson: false });
+    await refreshHome();
+    setPhase("rest");
   };
 
-  const openProgress = async (target: string | null) => {
-    const { view } = now.current;
-    if (view !== "progress") setFrom(view === "summary" ? "course" : view);
-    setError(null);
-    setView("progress");
-    await loadProgress(target, true);
+  const interrupt = () => void now.current.api?.interrupt().catch((problem) => note(String(problem)));
+
+  // ---------------------------------------------------------------------------
+  // Courses, material, papers, setup
+
+  const switchCourse = async (path: string) => {
+    const { api } = now.current;
+    if (!api) return;
+    setOverlay(null);
+    await openFolder(api, path);
   };
 
-  const openPaper = (paper: PaperInfo | null) => {
-    setChosenPaper(paper);
-    setError(null);
-    setView("paper");
+  const pickFolder = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setOverlay(null);
+    const path = await api.pickFolder();
+    if (path) await openFolder(api, path);
   };
 
-  const startPaper = async (paper: PaperInfo, minutes: number) => {
+  const newFolder = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setOverlay(null);
+    const path = await api.pickNewFolder();
+    if (path) await showCourse(api, () => api.newFolder(path), false);
+  };
+
+  const findFolders = async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      await api.paperStart(paper, minutes);
-      await refreshHome();
+      const added = await api.findFolders();
+      note(added === 0 ? "No other course was found on this Mac." : `${added} ${added === 1 ? "course" : "courses"} added.`);
+      await loadLibrary();
+    } catch (problem) {
+      note(String(problem));
+    }
+  };
+
+  const forgetFolder = async (path: string) => {
+    const { api, home } = now.current;
+    if (!api) return;
+    await api.forgetFolder(path).catch((problem) => note(String(problem)));
+    if (home?.folder === path) {
+      setHome(null);
+      setPhase("rest");
+    }
+    await loadLibrary();
+  };
+
+  const canAdd = () => {
+    const home = now.current.home;
+    return Boolean(home) && ["ready", "empty", "not_set_up"].includes(home?.state ?? "") && !home?.sitting;
+  };
+
+  const addMaterial = async (paths: string[]) => {
+    const { api } = now.current;
+    if (!api || paths.length === 0 || !canAdd()) return;
+    setAdding(true);
+    try {
+      const added = await api.addMaterial(paths);
+      added.lines.forEach(note);
+    } catch (problem) {
+      note(String(problem));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const chooseMaterial = async () => {
+    const { api } = now.current;
+    if (!api || !canAdd()) return;
+    setOverlay(null);
+    try {
+      await addMaterial(await api.pickMaterial());
+    } catch (problem) {
+      note(String(problem));
+    }
+  };
+
+  const savePasted = async (text: string) => {
+    const { api } = now.current;
+    if (!api) return;
+    setAdding(true);
+    try {
+      const added = await api.addPastedText(text);
+      setOverlay(null);
+      added.lines.forEach(note);
+    } catch (problem) {
+      setOverlay(null);
+      note(String(problem));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  // Files dropped on the window: with the answer when the line is in a task, into the course's material otherwise.
+  const dropRef = useRef<(paths: string[]) => void>(() => {});
+  dropRef.current = (paths: string[]) => {
+    const { api, phase, line, session } = now.current;
+    if (!api) return;
+    const turns = [...session.earlier, ...(liveTurn(session) ? [liveTurn(session)!] : [])];
+    if (phase === "lesson" && line === "task" && openTaskOf(session, turns) !== null) {
+      void (async () => {
+        try {
+          const saved: string[] = [];
+          for (const path of paths) saved.push(await api.attach(path, "working"));
+          setIncoming(saved);
+        } catch (problem) {
+          note(String(problem));
+        }
+      })();
+    } else void addMaterial(paths);
+  };
+  useEffect(() => {
+    if (!api) return;
+    let off = () => {};
+    let alive = true;
+    void api
+      .onDrop(
+        (paths) => dropRef.current(paths),
+        (over) => setDragging(over && canAdd()),
+      )
+      .then((stop) => (alive ? (off = stop) : stop()));
+    return () => {
+      alive = false;
+      off();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
+
+  const upgrade = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    try {
+      setHome(await api.upgradeFolder());
+      note("This course is upgraded. The copy of its record from before is in .magnesium/backups.");
     } catch (problem) {
       setError(String(problem));
+    }
+  };
+
+  const sitPaper = async (paper: Paper) => {
+    const { api, home } = now.current;
+    if (!api || !home) return;
+    setOverlay(null);
+    try {
+      await api.paperStart(paper, paper.minutes ?? home.block_minutes);
+      await refreshHome();
+    } catch (problem) {
+      note(String(problem));
     }
   };
 
   const handIn = async () => {
-    const { api } = now.current;
+    const { api, home } = now.current;
     if (!api) return;
-    setError(null);
     try {
       const files = await api.pickFiles();
       if (files.length === 0) return;
       const words = await api.paperEnd(files);
-      await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
-      else setView("course");
+      const fresh = await refreshHome();
+      if (words && fresh) await begin(true, words.shown, "talk", home?.sitting?.name ?? "The paper", (api) => api.sendShown(words.shown, words.sent));
     } catch (problem) {
-      setError(String(problem));
+      note(String(problem));
     }
   };
 
   const endPaper = async () => {
+    try {
+      await now.current.api?.paperEnd([]);
+    } catch (problem) {
+      note(String(problem));
+    }
+    await refreshHome();
+  };
+
+  const signIn = async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      await api.paperEnd([]);
+      await api.signIn();
+      setSigningIn(true);
     } catch (problem) {
       setError(String(problem));
     }
-    await refreshHome();
-    setView("course");
   };
 
-  /** Where "back" goes: the paper or the lesson if one is running, else the page this one was opened from. */
-  const back = () => {
-    const { home, session, from, view } = now.current;
-    setError(null);
-    if (home?.sitting && view !== "paper") setView("paper");
-    else if (session.open || session.live) setView("session");
-    else if (!home || from === "library" || view === "course") showLibrary();
-    else {
-      void refreshHome();
-      setView("course");
+  const answerRuntime = async (work: (api: Core) => Promise<Setup["runtime"]>) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    const runtime = await work(api);
+    const fresh = { ...setup, runtime };
+    setSetup(fresh);
+    await afterSetup(api, fresh);
+  };
+
+  const choosePayment = async (payment: Payment) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setSetup({ ...setup, payment });
+    const account = await api.setPayment(payment);
+    setSetup({ ...setup, payment, account });
+  };
+
+  /** Pick the engine for the next lesson. Saved at once; refused while a lesson is open. */
+  const chooseEngine = async (chosen: Engine) => {
+    const { api, engine, session } = now.current;
+    if (!api || !engine || session.open || session.live !== null || engine.chosen === chosen) return;
+    setEngine({ ...engine, chosen });
+    try {
+      setEngine(await api.setEngine(chosen));
+    } catch (problem) {
+      setEngine(engine);
+      note(String(problem));
     }
   };
 
-  const setBlock = async (minutes: number) => {
-    await now.current.api?.setBlockMinutes(minutes);
-    setHome((old) => (old ? { ...old, block_minutes: minutes } : old));
-  };
+  const openSource = useCallback((source: SourceRef) => setOverlay({ kind: "source", source }), []);
 
-  const askNewLesson = () => {
-    setView("course");
-    setAsking(true);
-  };
+  // ---------------------------------------------------------------------------
+  // Keys
 
-  // What the demo and the self-check may drive.
-  const actions = {
-    continueLesson,
-    newLesson,
-    say,
-    stop,
-    openProgress,
-    openPaper,
-    startPaper,
-    setPalette,
-    setAsking,
-    openSetup,
-    showLibrary,
-    continueFolder,
-    chooseEngine,
-    setView: (next: string) => setView(next as View),
-    addMaterial,
-    setDragging,
-    pasteText: (text: string) => setPasting(text),
-  };
+  const toggle = useCallback((kind: LayerKind) => {
+    setOverlay((old) => (old && old.kind === kind ? null : { kind }));
+    if (kind === "courses" || kind === "commands") void loadLibrary();
+    if (kind === "plan") void refreshPlan();
+  }, [loadLibrary, refreshPlan]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const { phase, overlay, session, line, prefs } = now.current;
       const command = event.metaKey || event.ctrlKey;
-      const { view, session, home, api, setup } = now.current;
-      const inLesson = session.open || session.live !== null;
       const key = event.key.toLowerCase();
-      if (command && key === "k") {
-        event.preventDefault();
-        if (view !== "loading" && (view !== "setup" || setupReady(setup))) setPalette((open) => !open);
-      } else if (command && event.key === "." && view === "session" && busy(session)) {
-        event.preventDefault();
-        void api?.interrupt();
-      } else if (command && key === "n") {
-        // A new lesson, wherever a course is open and no paper or lesson is running. Elsewhere the key does nothing.
-        event.preventDefault();
-        if (home && !home.sitting && !inLesson && ["course", "progress", "summary", "paper"].includes(view)) askNewLesson();
-      } else if (command && key === "o" && !inLesson && (view === "library" || view === "course")) {
-        event.preventDefault();
-        void pickFolder();
-      } else if (event.key === "Escape" && !event.defaultPrevented && !now.current.palette) {
-        if (view === "progress" || view === "course") back();
-        else if (view === "paper") setView("course");
-        else if (view === "summary") setView("course");
-        else if (view === "setup" && setupReady(setup)) back();
+      if (command && !event.altKey && !event.shiftKey) {
+        const layers: Record<string, LayerKind> = { k: "commands", o: "courses", p: "plan", e: "material", y: "work", ",": "settings" };
+        if (layers[key]) {
+          event.preventDefault();
+          if (now.current.setup && setupReady(now.current.setup)) toggle(layers[key]);
+          else if (key === "," || key === "k") toggle(layers[key]);
+          return;
+        }
+        if (key === "/") {
+          event.preventDefault();
+          if (phase === "lesson") toggle("help");
+          return;
+        }
+        if (key === ".") {
+          event.preventDefault();
+          if (busy(session)) interrupt();
+          return;
+        }
+        if (key === "=" || key === "+" || key === "-" || key === "0") {
+          event.preventDefault();
+          const at = SIZES.indexOf(prefs.size);
+          const size = key === "0" ? 17 : SIZES[Math.max(0, Math.min(SIZES.length - 1, at + (key === "-" ? -1 : 1)))];
+          changePrefs({ size });
+          return;
+        }
+        if (key === "n" && phase === "rest" && now.current.home) {
+          event.preventDefault();
+          setOverlay(null);
+          setNewLesson(true);
+          return;
+        }
+      }
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        if (overlay) {
+          event.preventDefault();
+          setOverlay(null);
+        } else if (busy(session)) {
+          event.preventDefault();
+          interrupt();
+        } else if (phase === "lesson" && line === "task") {
+          event.preventDefault();
+          setLine("talk");
+        } else if (newLessonRef.current) {
+          setNewLesson(false);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -935,330 +838,507 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const commands = (): Command[] => {
-    const list: Command[] = [];
-    const inLesson = session.open || session.live !== null;
-    // A course is open when its page, its lesson or one of its screens is up.
-    const course = home && !home.sitting && (view !== "library" || inLesson) ? home : null;
-    if (home?.sitting) {
-      if (view !== "paper") list.push({ label: "Back to the paper", icon: "paper", run: () => setView("paper") });
-      else
-        list.push({
-          label: "End without handing in",
-          icon: "close",
-          keywords: "quit stop finish",
-          run: () => document.querySelector<HTMLButtonElement>('[data-role="paper-end"]')?.click(),
-        });
-      list.push(SHORTCUTS);
-      return list;
-    }
-    // The same core, in every context.
-    if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
-    list.push({ label: "Library", icon: "list", run: showLibrary });
-    if (course) {
-      list.push({ label: displayName(course.name), icon: "folder", run: () => setView("course") });
-      list.push({
-        label: "Proofs",
-        icon: "proof",
-        keywords: "progress stats score skills level",
-        run: () => void openProgress(null),
-      });
-      const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
-      list.push({
-        label: "Start a timed paper",
-        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : undefined,
-        icon: "paper",
-        keywords: "exam timed practice",
-        run: () => openPaper(null),
-      });
-    }
-    if (inLesson) {
-      list.push({
-        label: "End lesson",
-        icon: "close",
-        keywords: "quit stop finish end",
-        run: () => {
-          setView("session");
-          window.setTimeout(() => document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click(), 60);
-        },
-      });
-    }
-    if (course) {
-      // One item, which opens the choice: a row per length would each say "now 50 min" and read as setting 50.
-      list.push({
-        label: "Lesson length",
-        hint: `now ${course.block_minutes} min`,
-        icon: "timer",
-        keywords: "block time length minutes",
-        choices: BLOCKS.map((minutes) => ({
-          label: `${minutes} min`,
-          hint: minutes === course.block_minutes ? "now" : undefined,
-          run: () => {
-            if (minutes !== course.block_minutes) void setBlock(minutes);
-          },
-        })),
-        run: () => {},
-      });
-    }
-    list.push({
-      label: "Setup",
-      icon: "gear",
-      keywords: "settings preferences account engine lessons run on advanced version",
-      run: () => openSetup(),
-    });
-    list.push(SHORTCUTS);
+  const [newLessonAsked, setNewLesson] = useState(false);
+  const newLessonRef = useRef(false);
+  newLessonRef.current = newLessonAsked;
 
-    // Then what belongs to this context.
-    if (course) {
-      (progress?.targets ?? [])
-        .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
-        .forEach((exam) =>
-          list.push({ label: `Proofs for ${exam.title}`, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
-        );
-      if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
-        list.push({ label: "Add course material…", icon: "clip", run: () => void chooseMaterial() });
-        list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
-      }
-      if (!inLesson && (course.checks_due ?? 0) > 0 && course.state === "ready") {
-        list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
-      }
-      if (!inLesson) list.push({ label: "New lesson", key: "⌘N", icon: "plus", run: askNewLesson });
+  // ---------------------------------------------------------------------------
+  // Scrolling: the lesson keeps its foot in view while it grows, unless the
+  // learner scrolled up to read. Where they were is kept for next time.
+
+  useLayoutEffect(() => {
+    const el = surface.current;
+    const section = nowRef.current;
+    if (!el || !section) return;
+    if (phase === "rest") {
+      el.scrollTop = section.offsetTop;
+      return;
     }
-    const account = setup?.account;
-    if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, icon: "bang", run: () => openSetup() });
+    if (restoring.current !== null) {
+      el.scrollTop = el.scrollHeight - el.clientHeight - restoring.current;
+      restoring.current = null;
     }
-    if (!inLesson) {
-      list.push({ label: "Open a course folder…", key: "⌘O", icon: "folder", run: () => void pickFolder() });
-      list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
-      list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
-      if (home) {
-        const folder = home.folder;
-        list.push({
-          label: `Remove ${displayName(home.name)} from library`,
-          hint: "your files stay on your Mac",
-          icon: "trash",
-          run: () => void forgetFolder(folder).then(showLibrary),
-        });
-      }
-      folders
-        .filter((path) => path !== home?.folder)
-        .slice(0, 6)
-        .forEach((path) =>
-          list.push({
-            label: `Open ${displayName(path.split("/").filter(Boolean).pop() ?? path)}`,
-            hint: path,
-            icon: "folder",
-            run: () => api && void openFolder(api, path),
-          }),
-        );
-    }
-    return list;
+  }, [phase, before.length]);
+
+  useEffect(() => {
+    const el = surface.current;
+    const section = nowRef.current;
+    if (!el || !section || phase !== "lesson") return;
+    const pin = () => {
+      if (stuck.current) el.scrollTop = el.scrollHeight;
+    };
+    const watch = new ResizeObserver(pin);
+    watch.observe(section);
+    pin();
+    return () => watch.disconnect();
+  }, [phase]);
+
+  const onScroll = () => {
+    const el = surface.current;
+    const folder = now.current.home?.folder;
+    if (!el || now.current.phase !== "lesson") return;
+    const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+    stuck.current = fromFoot < 48;
+    if (folder) keepPlace(folder, { fromFoot: Math.round(fromFoot) });
   };
 
-  /** The engine choice, where a screen shows it. Disabled while a lesson is open. */
-  const engineControl = (bare = false) =>
-    engine ? (
-      <EngineControl
-        bare={bare}
-        choice={engine}
-        payment={setup?.payment ?? null}
-        locked={session.open || session.live !== null}
-        onChoose={(chosen) => void chooseEngine(chosen)}
-      />
-    ) : null;
+  useEffect(() => {
+    const save = () => flushPlaces();
+    window.addEventListener("pagehide", save);
+    return () => window.removeEventListener("pagehide", save);
+  }, []);
 
-  let screen: JSX.Element | null = null;
-  if (view === "loading") {
-    screen = (
-      <section className="screen loading">
-        <div className="bar" data-tauri-drag-region />
-        <div className="center">
-          <span className="mark breathing" aria-label="Loading">
-            <i />
-            <i />
-            <i />
-          </span>
-        </div>
-      </section>
-    );
-  } else if (view === "setup") {
-    screen = (
-      <Setup
-        setup={setup}
-        about={about}
-        error={error}
-        signingIn={signingIn}
-        canGoBack={!waitingForSetup.current}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-        onReplace={() => void answerRuntime((api) => api.replaceRuntime())}
-        onKeep={() => void answerRuntime((api) => api.keepRuntime())}
-        onCheck={() => void checkAgain()}
-        onSignIn={() => void signIn()}
-        onPayment={(payment) => void choosePayment(payment)}
-        onLink={openLink}
-        engine={engineControl(true)}
-      />
-    );
-  } else if (view === "library" || !home) {
-    screen = (
-      <Library
-        cards={cards}
-        folders={folders}
-        activity={activity}
-        error={error}
-        notice={notice}
-        finding={finding}
-        ready={setupReady(setup)}
-        starting={starting}
-        onContinue={(path) => void continueFolder(path)}
-        onOpen={(path) => api && void openFolder(api, path)}
-        onPick={() => void pickFolder()}
-        onNew={() => void newFolder()}
-        onFind={() => void findFolders()}
-        onForget={(path) => void forgetFolder(path)}
-        onSetup={openSetup}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "course") {
-    screen = (
-      <Course
-        home={home}
-        progress={progress}
-        asking={asking}
-        error={error}
-        notice={notice}
-        upgrading={upgrading}
-        starting={starting}
-        onUpgrade={() => void upgrade()}
-        onContinue={(skip) => void continueLesson(skip)}
-        onNewLesson={(goal) => void newLesson(goal)}
-        onAsk={setAsking}
-        onPaper={openPaper}
-        onProgress={() => void openProgress(null)}
-        onRetry={() => {
-          setError(null);
-          void refreshHome();
-        }}
-        onLibrary={showLibrary}
-        onPalette={() => setPalette(true)}
-        material={material}
-        adding={adding}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-        onPasteText={() => setPasting("")}
-        materials={materials}
-        dragging={dragging && canAdd()}
-      />
-    );
-  } else if (view === "session") {
-    screen = (
-      <Session
-        state={session}
-        rail={rail}
-        blockMinutes={home.block_minutes}
-        overlay={palette || pasting !== null}
-        onSend={(text) => void say(text)}
-        onInterrupt={() => void guard((api) => api.interrupt())()}
-        onDecide={(id: string, decision: Decision) =>
-          void guard(async (api) => {
-            await api.decide(id, decision);
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })()
-        }
-        onAnswer={(id: string, answers: Answer[]) => {
-          // What was picked stands in the lesson as the learner's note, as a typed answer does.
-          dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
-          void guard(async (api) => {
-            await api.answer(id, answers);
-            sitting.current.answers += 1;
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })();
-        }}
-        onStop={(line) => void stop(line)}
-        onNote={onNote}
-        onDismiss={(text) => dispatch({ type: "dismiss", text })}
-        onPalette={() => setPalette(true)}
-        material={material}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-      />
-    );
-  } else if (view === "summary" && summary) {
-    screen = (
-      <Summary
-        sitting={summary}
-        activity={activity}
-        proofs={progress?.proofs ?? null}
-        onPalette={() => setPalette(true)}
-        courseName={displayName(home.name)}
-        onDone={() => setView("course")}
-        onProgress={() => void openProgress(null)}
-      />
-    );
-  } else if (view === "progress") {
-    const inLesson = session.open || session.live !== null;
-    screen = (
-      <Progress
-        data={progress}
-        activity={activity}
-        error={error}
-        folderName={home.name}
-        backLabel={inLesson ? "Lesson" : displayName(home.name)}
-        onTarget={(target) => void loadProgress(target, true)}
-        questionsDue={home.checks_due === null ? null : home.redos_due + home.checks_due}
-        onStart={!inLesson && !home.sitting && home.state === "ready" ? () => void continueLesson(false) : undefined}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "paper") {
-    screen = (
-      <Paper
-        key={home.sitting ? "running" : "choosing"}
-        home={home}
-        chosen={chosenPaper}
-        error={error}
-        onStart={(paper, minutes) => void startPaper(paper, minutes)}
-        onHandIn={() => void handIn()}
-        onEnd={() => void endPaper()}
-        onOpenPaper={home.sitting?.path ? () => void api?.openFile(home.sitting!.path!).catch(() => {}) : undefined}
-        onBack={() => setView("course")}
-        onPalette={() => setPalette(true)}
-      />
-    );
+  // ---------------------------------------------------------------------------
+  // What the surface shows
+
+  const turns: LessonTurn[] = useMemo(() => {
+    const live = liveTurn(session);
+    return live ? [...session.earlier, live] : session.earlier;
+  }, [session]);
+  const task = useMemo(() => openTaskOf(session, turns), [session, turns]);
+  const openAt = task?.at ?? -1;
+  now.current.task = task;
+  const held = phase === "lesson" && line === "task" && task !== null;
+  // The task's question is said above its line unless the reply just above posed it.
+  const restated = task && openAt !== turns.length - 1 ? firstWords(task.text, 160) : null;
+  const isBusy = busy(session);
+
+  const rest = restView();
+
+  function restView(): Rest | null {
+    if (phase !== "rest") return null;
+    const course = home ? displayName(home.name) : null;
+    const base = { course, status: null, line: false, start: null, choices: [], keys: "" };
+    if (!setup && !home) return { ...base, next: "Looking at this Mac…", where: null };
+    // While this Mac is still being looked at, the course is drawn as it will be.
+    const runtime = setup?.runtime ?? { state: "ready" as const, installed: null, bundled: null, installed_now: false, message: null };
+    const account = setup?.account ?? { name: "Claude Code", installed: true, signed_in: true, paid_with: null, detail: null, problem: null, install_page: null };
+    if (runtime.state === "different" && runtime.installed && runtime.bundled) {
+      return {
+        ...base,
+        next: "Another magnesium program is on this Mac",
+        where: `Version ${versionNumber(runtime.installed.version)} is at ${runtime.installed.shown_path}. This app carries ${versionNumber(runtime.bundled.version)}. A newer program upgrades each study folder's record when it opens it, after keeping a copy.`,
+        choices: [
+          { label: `Use this app's ${versionNumber(runtime.bundled.version)}`, run: () => void answerRuntime((api) => api.replaceRuntime()) },
+          { label: `Keep ${versionNumber(runtime.installed.version)}`, run: () => void answerRuntime((api) => api.keepRuntime()) },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    if (runtime.state === "too_old" || runtime.state === "missing" || runtime.state === "failed") {
+      const guide = "https://github.com/samfricher/magnesium/blob/main/docs/install.md";
+      return {
+        ...base,
+        next: runtime.state === "too_old" ? "The magnesium program on this Mac is too old for this window" : "The magnesium program could not be set up",
+        where: runtime.message,
+        choices: [
+          ...(runtime.bundled && runtime.state === "too_old" ? [{ label: "Replace it with this app's copy", run: () => void answerRuntime((api) => api.replaceRuntime()) }] : []),
+          ...(!runtime.bundled ? [{ label: "Open the install guide", run: () => void api?.openUrl(guide) }] : []),
+          { label: "Check again", run: () => void checkAgain() },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    if (!account.installed) {
+      return {
+        ...base,
+        next: `Magnesium teaches through ${account.name}, which is not on this Mac`,
+        where: `${account.problem ?? ""} It needs a paid Claude plan or an Anthropic Console account.`.trim(),
+        choices: [
+          ...(account.install_page ? [{ label: "Open Anthropic's install page", run: () => void api?.openUrl(account.install_page!) }] : []),
+          { label: "Check again", run: () => void checkAgain() },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    if (!account.signed_in) {
+      return {
+        ...base,
+        next: `Sign in to ${account.name}`,
+        where: signingIn
+          ? "Waiting for the sign-in to finish in your browser."
+          : (account.problem ?? `${account.name}'s own sign-in opens Anthropic's page in your browser. This window never sees your password.`),
+        choices: [
+          { label: "Sign in", run: () => void signIn() },
+          { label: "Check again", run: () => void checkAgain() },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    const paid = account.paid_with === "api_key" ? "an API key" : "your Claude plan";
+    const ready = `${account.name} is signed in. Lessons are paid with ${paid}.`;
+    if (!home) {
+      return {
+        ...base,
+        next: "Open the folder your course is in",
+        where: "Your notes, slides and past papers can be in it already, or be added later.",
+        status: account.problem ?? ready,
+        choices: [
+          { label: "Choose a folder…", run: () => void pickFolder() },
+          { label: "Make a new folder…", run: () => void newFolder() },
+          { label: "Find folders on this Mac", run: () => void findFolders() },
+        ],
+        keys: "↑ ↓ choose   ↩ do it   ⌘, settings",
+      };
+    }
+    if (home.sitting) {
+      const started = new Date(home.sitting.started_ms);
+      const at = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
+      return {
+        ...base,
+        next: home.sitting.name,
+        where: `Started at ${at}, for ${home.sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess.`,
+        choices: [
+          { label: "Hand in your work…", run: () => void handIn() },
+          ...(home.sitting.path ? [{ label: "Open the paper again", run: () => void api?.openFile(home.sitting!.path!) }] : []),
+          { label: "End without handing in", run: () => void endPaper() },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    if (home.state === "needs_upgrade") {
+      return {
+        ...base,
+        next: "An earlier Magnesium set this folder up",
+        where: home.message,
+        choices: [
+          { label: "Upgrade it", run: () => void upgrade() },
+          { label: "Not now", run: () => toggle("courses") },
+        ],
+        keys: "↑ ↓ choose   ↩ do it",
+      };
+    }
+    if (home.state === "no_runtime" || home.state === "unreadable") {
+      return { ...base, next: displayName(home.name), where: home.message, choices: [{ label: "Check again", run: () => void refreshHome() }], keys: "⌘O another course" };
+    }
+    if (newLessonAsked) {
+      return { ...base, next: "A new lesson", where: "Say what it is about. The tutor takes it as the goal.", line: true, keys: "↩ start it   esc not now" };
+    }
+    const item = plan?.items.find((each) => each.status === "doing") ?? plan?.items.find((each) => each.status === "todo") ?? null;
+    if (home.state === "ready" && home.last) {
+      const where = home.last.stopped_at ? stoppedWords(home.last.stopped_at) : home.last.next_action ? `Next: ${home.last.next_action}` : null;
+      return { ...base, next: home.last.goal, where, line: true, start: () => void start(), keys: "↩ carry on   ⌘K everything else" };
+    }
+    if (item) return { ...base, next: item.title, where: item.note, line: true, start: () => void start(), keys: "↩ start   ⌘K everything else" };
+    return {
+      ...base,
+      next: displayName(home.name),
+      where: "Type what you want to work on, or drop your notes and slides on this window.",
+      line: true,
+      keys: "↩ start   ⌘E material   ⌘K everything else",
+    };
   }
 
+  const actions: Actions = {
+    start,
+    newLesson,
+    say,
+    stop,
+    open: (kind) => (kind ? (setOverlay({ kind }), kind === "courses" || kind === "commands" ? void loadLibrary() : undefined) : setOverlay(null)),
+    setLine,
+    switchCourse,
+    addMaterial,
+    pasteText: (text) => setOverlay({ kind: "paste", text }),
+    openSource,
+    chooseEngine,
+    sitPaper,
+    setDragging,
+    askHelp,
+    session: () => now.current.session,
+  };
+
+  /** Return on the rest line: the next thing, or the words typed as the start. */
+  const restSend = (sending: Sending) => {
+    if (newLessonAsked) {
+      setNewLesson(false);
+      void newLesson(sending.text);
+    } else if (sending.text.trim() !== "" || rest?.start) onSend(sending);
+  };
+
+  const onHold = useCallback(() => setLine("task"), [setLine]);
+  const onDismiss = useCallback((text: string) => dispatch({ type: "dismiss", text }), []);
+  const onDecide = useCallback((id: string, decision: Decision) => {
+    void now.current.api?.decide(id, decision).then(
+      () => dispatch({ type: "event", event: { type: "withdrawn", id } }),
+      (problem) => note(String(problem)),
+    );
+  }, [note]);
+  const onAnswer = useCallback((id: string, answers: Answer[]) => {
+    dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
+    void now.current.api?.answer(id, answers).then(
+      () => dispatch({ type: "event", event: { type: "withdrawn", id } }),
+      (problem) => note(String(problem)),
+    );
+  }, [note]);
+
+  const shownBefore: LessonTurn[] = phase === "rest" ? before.slice(-30) : turns.slice(Math.max(0, sittingStart - 30), sittingStart);
+  const sittingTurns = phase === "lesson" ? turns.slice(sittingStart) : [];
+
   return (
-    <div className="app" data-busy={busy(session) ? "yes" : "no"} data-view={view}>
-      <div className="view" key={view}>
-        {screen}
-      </div>
-      {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
-      {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
-      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+    <div className="app" data-phase={phase} data-busy={isBusy ? "yes" : "no"}>
+      <div className="drag" data-tauri-drag-region />
+      <main className="surface" ref={surface} onScroll={onScroll} aria-hidden={overlay !== null ? true : undefined}>
+        <div className="column">
+          {shownBefore.length > 0 && (
+            <div className="before" aria-label="Earlier in this conversation">
+              {shownBefore.map((turn, at) => (
+                <Turn
+                  key={`b${turn.ms}-${at}`}
+                  turn={turn}
+                  open={false}
+                  held={false}
+                  linksOpen
+                  writing={false}
+                  divider={at > 0 && opening(turn.learner) !== null}
+                  showQuestion={at === 0 || !(shownBefore[at - 1].posed === turn.question || hasTask(shownBefore[at - 1].tutor))}
+                  onSource={openSource}
+                  onNote={note}
+                  onHold={onHold}
+                />
+              ))}
+            </div>
+          )}
+          <section className={`now ${phase}`} ref={nowRef}>
+            {phase === "loading" ? null : rest ? (
+              <>
+                <header className="head">
+                  {rest.course && <p className="course">{rest.course}</p>}
+                  {rest.start ? (
+                    <button className="next" data-drive="start" onClick={rest.start}>
+                      <Line text={rest.next} />
+                    </button>
+                  ) : (
+                    <h1 className="next">
+                      <Line text={rest.next} />
+                    </h1>
+                  )}
+                  {rest.where && (
+                    <p className="where">
+                      <Line text={rest.where} />
+                    </p>
+                  )}
+                </header>
+                {rest.line && home && (
+                  <Composer
+                    key={`rest-${home.folder}-${newLessonAsked}`}
+                    place="rest"
+                    folder={home.folder}
+                    initial={draft}
+                    placeholder={rest.start ? "or say what you would rather do" : undefined}
+                    active
+                    busy={false}
+                    paused={overlay !== null}
+                    canAnswer={false}
+                    onSend={restSend}
+                    onMove={() => {}}
+                    onNote={note}
+                  />
+                )}
+                {rest.choices.length > 0 && <Choices choices={rest.choices} />}
+                {rest.status && <p className="status">{rest.status}</p>}
+                {(error || notes.length > 0) && (
+                  <div className="notices">
+                    {error && <p className="record note">{error}</p>}
+                    {notes.map((text) => (
+                      <p key={text} className="record note">
+                        {text}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {rest.keys && <p className="keys">{rest.keys}</p>}
+              </>
+            ) : (
+              <>
+                <header className="head">
+                  {home && <p className="course">{displayName(home.name)}</p>}
+                  <h1 className="next">
+                    <Line text={sittingTitle} />
+                  </h1>
+                </header>
+                {sittingTurns.map((turn, at) => {
+                  const index = sittingStart + at;
+                  const live = index === turns.length - 1 && session.live !== null;
+                  const before = index > 0 ? turns[index - 1] : null;
+                  return (
+                    <Turn
+                      key={`${turn.ms}-${index}`}
+                      turn={turn}
+                      open={index === openAt}
+                      held={index === openAt && held}
+                      linksOpen={index !== openAt}
+                      writing={live && session.live!.status !== "idle"}
+                      divider={false}
+                      task={index === openAt ? task?.text : undefined}
+                      showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor))}
+                      onSource={openSource}
+                      onNote={note}
+                      onHold={onHold}
+                    />
+                  );
+                })}
+                {session.live && <Working live={session.live} />}
+                <Notices notices={session.notices} onDismiss={onDismiss} />
+                <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
+                {home && task && (
+                  <div className={`task-line${held ? " on" : ""}${restated ? "" : " joined"}`}>
+                    {restated && (
+                      <p className="restated" onClick={() => setLine("task")}>
+                        <Line text={restated} />
+                      </p>
+                    )}
+                    <Composer
+                      key={`answer-${home.folder}-${task.text}`}
+                      place="task"
+                      folder={home.folder}
+                      initial={answerDraft}
+                      active={held}
+                      busy={isBusy}
+                      paused={overlay !== null || session.cards.length > 0}
+                      canAnswer
+                      incoming={incoming}
+                      onSend={onSend}
+                      onMove={setLine}
+                      onNote={note}
+                    />
+                  </div>
+                )}
+                {home && (
+                  <Composer
+                    key={`talk-${home.folder}`}
+                    place="talk"
+                    folder={home.folder}
+                    initial={draft}
+                    active={!held}
+                    busy={isBusy}
+                    paused={overlay !== null || session.cards.length > 0}
+                    canAnswer={task !== null}
+                    placeholder={task ? "or say something else" : undefined}
+                    onSend={onSend}
+                    onMove={setLine}
+                    onNote={note}
+                  />
+                )}
+              </>
+            )}
+          </section>
+        </div>
+      </main>
+      {dragging && home && (
+        <div className="veil" aria-hidden="true">
+          <p>{phase === "lesson" && held ? "Drop to hand in with your answer" : `Drop to add to ${displayName(home.name)}'s material`}</p>
+        </div>
+      )}
+      {overlay?.kind === "source" ? (
+        <SourceSheet source={overlay.source} onClose={() => setOverlay(null)} onNote={note} />
+      ) : overlay?.kind === "paste" ? (
+        <PasteSheet initial={overlay.text} saving={adding} onSave={(text) => void savePasted(text)} onClose={() => setOverlay(null)} />
+      ) : overlay ? (
+        <Layers
+          kind={overlay.kind}
+          api={api}
+          home={home}
+          plan={plan}
+          changed={changed}
+          cards={cards}
+          setup={setup}
+          about={about}
+          engine={engine}
+          prefs={prefs}
+          inLesson={phase === "lesson"}
+          lessonOpen={session.open || session.live !== null}
+          taskOpen={task !== null}
+          busy={isBusy}
+          sources={sourcesIn(turns)}
+          onClose={() => setOverlay(null)}
+          open={(kind) => setOverlay({ kind })}
+          prefsChange={changePrefs}
+          act={{
+            start: () => (setOverlay(null), void start()),
+            startSkip: () => (setOverlay(null), void start(undefined, true)),
+            setBlock: (minutes) => {
+              void api?.setBlockMinutes(minutes);
+              setHome((old) => (old ? { ...old, block_minutes: minutes } : old));
+            },
+            say: (text) => {
+              setOverlay(null);
+              if (now.current.phase === "lesson") void say(text, "talk");
+              else void start(text);
+            },
+            sayKeep: (text) => {
+              if (now.current.phase === "lesson") void say(text, "talk");
+              else void start(text);
+            },
+            help: askHelp,
+            stop: () => (setOverlay(null), void stop()),
+            interrupt,
+            newLesson: () => (setOverlay(null), setNewLesson(true)),
+            switchCourse: (path) => void switchCourse(path),
+            pickFolder: () => void pickFolder(),
+            newFolder: () => void newFolder(),
+            findFolders: () => void findFolders(),
+            forgetFolder: (path) => void forgetFolder(path),
+            chooseMaterial: () => void chooseMaterial(),
+            paste: () => setOverlay({ kind: "paste", text: "" }),
+            openFile: (path) => void api?.openFile(path).catch((problem) => note(String(problem))),
+            sitPaper: (paper) => void sitPaper(paper),
+            handIn: () => (setOverlay(null), void handIn()),
+            endPaper: () => (setOverlay(null), void endPaper()),
+            chooseEngine: (chosen) => void chooseEngine(chosen),
+            choosePayment: (payment) => void choosePayment(payment),
+            signIn: () => (setOverlay(null), void signIn()),
+            openSource: (source) => setOverlay({ kind: "source", source }),
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
+/** The exchange on screen as a turn, or null before the first message. */
+function liveTurn(session: SessionState): LessonTurn | null {
+  const live = session.live;
+  if (!live) return null;
+  return {
+    session: "",
+    ms: live.since,
+    learner: live.learner,
+    tutor: tutorText(live),
+    interrupted: live.interrupted,
+    ...(live.pick ? { pick: true } : {}),
+    ...(live.said ? { said: live.said } : {}),
+    ...(live.marks ? { marks: live.marks } : {}),
+    ...(live.change ? { change: live.change } : {}),
+    ...(live.posed ? { posed: live.posed } : {}),
+    ...(live.question ? { question: live.question } : {}),
+  };
+}
+
+/** The sources cited in the lesson's replies, newest first, for ⌘K. */
+function sourcesIn(turns: LessonTurn[]): { text: string; href: string }[] {
+  const found: { text: string; href: string }[] = [];
+  for (const turn of turns.slice(-12).reverse()) {
+    for (const match of turn.tutor.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)) {
+      if (!found.some((each) => each.href === match[2])) found.push({ text: match[1], href: match[2] });
+    }
+  }
+  return found;
+}
+
 export type Actions = {
-  continueLesson: (skipChecks: boolean, home?: Home | null) => Promise<boolean>;
+  start: (words?: string) => Promise<boolean>;
   newLesson: (goal: string) => Promise<void>;
-  say: (text: string) => Promise<void>;
-  stop: (line: string) => Promise<void>;
-  openProgress: (target: string | null) => Promise<void>;
-  openPaper: (paper: PaperInfo | null) => void;
-  startPaper: (paper: PaperInfo, minutes: number) => Promise<void>;
-  setPalette: (open: boolean) => void;
-  setAsking: (asking: boolean) => void;
-  openSetup: () => void;
-  showLibrary: () => void;
-  continueFolder: (path: string) => Promise<void>;
-  chooseEngine: (engine: Engine) => Promise<void>;
-  setView: (view: string) => void;
+  say: (text: string, said?: Said) => Promise<void>;
+  stop: () => Promise<void>;
+  open: (kind: LayerKind | null) => void;
+  setLine: (place: "task" | "talk") => void;
+  switchCourse: (path: string) => Promise<void>;
   addMaterial: (paths: string[]) => Promise<void>;
-  setDragging: (over: boolean) => void;
   pasteText: (text: string) => void;
+  openSource: (source: SourceRef) => void;
+  chooseEngine: (engine: Engine) => Promise<void>;
+  sitPaper: (paper: Paper) => Promise<void>;
+  setDragging: (over: boolean) => void;
+  askHelp: (words: string) => void;
+  session: () => SessionState;
 };
