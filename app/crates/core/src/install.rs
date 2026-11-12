@@ -60,6 +60,9 @@ pub enum RuntimeState {
     Different,
     /// The learner chose to keep another copy.
     Kept,
+    /// The installed copy is older than this window needs. No lesson starts
+    /// until it is replaced, and it cannot be kept.
+    TooOld,
     /// The app's copy could not be installed, or does not run.
     Failed,
 }
@@ -167,8 +170,53 @@ fn look(store: &Store) -> RuntimeSetup {
         }
         (Some(_), Some(_)) => RuntimeState::Different,
     };
+    refuse_too_old(&mut setup);
     setup
 }
+
+/// Refuse an installed program that is older than this window needs, in
+/// place of using it or offering to keep it. The number it reports decides,
+/// not its version: a build from an older commit can carry the same version.
+fn refuse_too_old(setup: &mut RuntimeSetup) {
+    let usable = matches!(
+        setup.state,
+        RuntimeState::Ready | RuntimeState::Kept | RuntimeState::Different
+    );
+    let Some(installed) = setup.installed.as_ref().filter(|_| usable) else {
+        return;
+    };
+    if installed.version.is_empty() || runtime::fits_window(&installed.path) {
+        return;
+    }
+    let this = format!(
+        "The magnesium program on this Mac, version {}, is older than this window needs.",
+        installed.number()
+    );
+    let fix = match &setup.bundled {
+        Some(bundled)
+            if bundled.version != installed.version && runtime::fits_window(&bundled.path) =>
+        {
+            setup.state = RuntimeState::TooOld;
+            format!(
+                "Replace it with the copy inside this app, version {}. Until then no lesson starts.",
+                bundled.number()
+            )
+        }
+        Some(_) => {
+            setup.state = RuntimeState::Failed;
+            "The copy inside this app is too old as well. Download the app again.".to_owned()
+        }
+        None => {
+            setup.state = RuntimeState::TooOld;
+            format!("Ask Claude Code to install the newest Magnesium with {INSTALL_GUIDE}, then check again. Until then no lesson starts.")
+        }
+    };
+    setup.message = Some(format!("{this} {fix}"));
+}
+
+/// The install guide, for a window that carries no program of its own. It is
+/// written for a coding agent to follow.
+pub const INSTALL_GUIDE: &str = "the install guide, docs/install.md in the Magnesium repository";
 
 fn kept_message(installed: &Program) -> String {
     format!(

@@ -16,6 +16,7 @@ import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { Setup, aboutText, setupReady } from "./screens/Setup";
 import { Summary, type Sitting } from "./screens/Summary";
+import { EngineControl, engineName } from "./ui/Engine";
 import { DropVeil, PasteSheet } from "./ui/Material";
 import type {
   About,
@@ -25,6 +26,8 @@ import type {
   Card,
   Core,
   Decision,
+  Engine,
+  EngineChoice,
   Home,
   Paper as PaperInfo,
   Payment,
@@ -33,6 +36,7 @@ import type {
   Row,
   RuntimeSetup,
   Setup as SetupData,
+  Today,
 } from "./types";
 
 type View = "loading" | "setup" | "library" | "course" | "session" | "summary" | "progress" | "paper";
@@ -51,6 +55,21 @@ function tally(progress: ProgressData): Map<string, number> {
   const counts = new Map<string, number>();
   [...progress.confirmed, ...progress.in_progress].forEach((row) => counts.set(row.name, proofsOf(row)));
   return counts;
+}
+
+/** Whether a folder's lesson can continue at once: it is set up, current, and no paper is running. */
+const canContinue = (home: Home) => home.state === "ready" && !home.sitting;
+
+/**
+ * How many answers the tutor marked in a sitting, from today's counts before
+ * and after it, or null when that cannot be told. A sitting that crosses
+ * midnight counts the answers marked after midnight, which may be fewer than
+ * all, and says nothing when there are none.
+ */
+export function markedIn(before: Today | null, after: Today | null): number | null {
+  if (!before || !after) return null;
+  if (before.day === after.day) return Math.max(0, after.answered - before.answered);
+  return after.answered > 0 ? after.answered : null;
 }
 
 /** The day after a day written as "2026-11-10". */
@@ -82,6 +101,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupData | null>(null);
   const [about, setAbout] = useState<About | null>(null);
+  // Which engine runs lessons. null when the core cannot say.
+  const [engine, setEngine] = useState<EngineChoice | null>(null);
+  // The engine of the conversation on the lesson screen.
+  const [lessonEngine, setLessonEngine] = useState<Engine | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   // What Claude Code said before the sign-in, to see when its answer changes.
   const accountBefore = useRef("");
@@ -95,16 +118,21 @@ export function App() {
   const [pasting, setPasting] = useState<string | null>(null);
   // Until the first screen is up, a finished setup opens it.
   const waitingForSetup = useRef(true);
-  // What this sitting has counted so far, for the screen that ends it.
-  const sitting = useRef({ answers: 0, alreadyStudied: false });
+  // What this sitting has counted so far, for the screen that ends it:
+  // the messages the learner sent, and today's counts when it began.
+  const sitting = useRef<{ answers: number; alreadyStudied: boolean; todayBefore: Today | null }>({
+    answers: 0,
+    alreadyStudied: false,
+    todayBefore: null,
+  });
   // The proofs each skill held when the sitting began, or null when they
   // could not be read. The end of the sitting shows what was earned since.
   const proofsBefore = useRef<Map<string, number> | null>(null);
   const opening = useRef(false);
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, from, home, session, palette, setup, rail, activity });
-  now.current = { api, view, from, home, session, palette, setup, rail, activity };
+  const now = useRef({ api, view, from, home, session, palette, setup, rail, activity, engine });
+  now.current = { api, view, from, home, session, palette, setup, rail, activity, engine };
   // The newest copies of two handlers, for the listeners that outlive a render.
   const addMaterialRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
   const canAddRef = useRef<() => boolean>(() => false);
@@ -152,6 +180,20 @@ export function App() {
     }
   }, []);
 
+  /** Which engine runs lessons, and the one the open folder's conversation began on. */
+  const loadEngine = useCallback(async () => {
+    const { api } = now.current;
+    if (!api) return;
+    try {
+      const fresh = await api.engine();
+      now.current.engine = fresh;
+      setEngine(fresh);
+    } catch {
+      // A core that cannot say shows no choice. Lessons run as before.
+      setEngine(null);
+    }
+  }, []);
+
   const loadLibrary = useCallback(async () => {
     const { api } = now.current;
     if (!api) return;
@@ -175,9 +217,14 @@ export function App() {
     void loadLibrary();
   }, [loadLibrary]);
 
+  /**
+   * Open a folder and show its page. With `stay`, the screen stays where it
+   * is when the folder can continue at once, for the caller to start the
+   * lesson. Resolves to the folder, or null when it could not be opened.
+   */
   const showFolder = useCallback(
-    async (api: Core, open: () => Promise<Home>) => {
-      if (opening.current) return;
+    async (api: Core, open: () => Promise<Home>, stay = false): Promise<Home | null> => {
+      if (opening.current) return null;
       opening.current = true;
       setError(null);
       setNotice(null);
@@ -185,25 +232,29 @@ export function App() {
       try {
         const opened = await open();
         waitingForSetup.current = false;
+        now.current.home = opened;
         setHome(opened);
         dispatch({ type: "reset" });
         setRail(null);
         setProgress(null);
         setSummary(null);
         setAsking(false);
-        setView(opened.sitting ? "paper" : "course");
+        if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
         void loadProgress(null, false);
         void refreshActivity();
+        void loadEngine();
         setFolders(await api.recent());
+        return opened;
       } catch (problem) {
         setError(String(problem));
         setView("library");
         void loadLibrary();
+        return null;
       } finally {
         opening.current = false;
       }
     },
-    [loadLibrary, loadProgress, refreshActivity],
+    [loadEngine, loadLibrary, loadProgress, refreshActivity],
   );
 
   const openFolder = useCallback((api: Core, path: string) => showFolder(api, () => api.openFolder(path)), [showFolder]);
@@ -244,6 +295,7 @@ export function App() {
       unlisten = off;
       setApi(api);
       now.current.api = api;
+      void loadEngine();
       setFolders(await api.recent());
       // The program is installed, or a question about it answered, before
       // any folder is read: a newer program upgrades a folder's record.
@@ -359,6 +411,21 @@ export function App() {
     setSetup({ ...setup, payment });
     const account = await api.setPayment(payment);
     await takeSetup(api, { ...setup, payment, account });
+  };
+
+  /** Pick the engine for the next lesson. Saved at once, and refused while a lesson is open. */
+  const chooseEngine = async (chosen: Engine) => {
+    const { api, engine, session } = now.current;
+    if (!api || !engine || session.open || session.live !== null || engine.chosen === chosen) return;
+    setEngine({ ...engine, chosen });
+    try {
+      const fresh = await api.setEngine(chosen);
+      now.current.engine = fresh;
+      setEngine(fresh);
+    } catch (problem) {
+      setEngine(engine);
+      setError(String(problem));
+    }
   };
 
   /** Whether course material can be added now: a course is open, on its page or in a lesson. */
@@ -479,37 +546,51 @@ export function App() {
     void checkAgain();
   };
 
-  /** Open the lesson screen and send the first words of the sitting. */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>) => {
+  /**
+   * Open the lesson screen and send the first words of the sitting. Work on a
+   * paper always runs on Claude Code. No lesson starts while this Mac's setup
+   * needs a look, such as a magnesium program older than the window needs.
+   * Resolves to whether the lesson screen opened.
+   */
+  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>, paper = false): Promise<boolean> => {
     const { api } = now.current;
-    if (!api) return;
+    if (!api) return false;
+    if (!setupReady(now.current.setup)) {
+      openSetup();
+      return false;
+    }
     setError(null);
     setStarting(true);
+    let shownLesson = false;
     try {
       const opened = await api.openSession(resume);
       dispatch({ type: "opened", turns: opened.turns });
-      sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false };
+      setLessonEngine(paper ? "plugin" : (opened.engine ?? null));
+      sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
       proofsBefore.current = null;
       void api
         .progress(null)
         .then((before) => {
           proofsBefore.current = tally(before);
+          sitting.current.todayBefore = before.today ?? null;
         })
         .catch(() => {});
       setView("session");
+      shownLesson = true;
       dispatch({ type: "sent", shown, now: Date.now() });
       await send(api);
       void refreshRail();
+      void loadEngine();
     } catch (problem) {
-      if (now.current.view === "session") dispatch({ type: "failed", error: String(problem) });
+      if (shownLesson) dispatch({ type: "failed", error: String(problem) });
       else setError(String(problem));
     } finally {
       setStarting(false);
     }
+    return shownLesson;
   };
 
-  const continueLesson = (skipChecks: boolean) => {
-    const home = now.current.home;
+  const continueLesson = (skipChecks: boolean, home: Home | null = now.current.home) => {
     const words = openingWords(
       { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
       skipChecks,
@@ -518,6 +599,29 @@ export function App() {
     // through the learn skill, as a new lesson's goal does: the window's
     // tutor has no tool to load a skill by itself.
     return begin(true, words, (api) => api.sendNewLesson(words));
+  };
+
+  /**
+   * The library's main card: open the folder and continue its lesson at once,
+   * as Continue on the course page does. A folder that cannot continue now,
+   * because it is new, needs an upgrade or has a paper running, shows its
+   * page, which says what comes first.
+   */
+  const continueFolder = async (path: string) => {
+    const { api } = now.current;
+    if (!api) return;
+    if (!setupReady(now.current.setup)) {
+      openSetup();
+      return;
+    }
+    setStarting(true);
+    const opened = await showFolder(api, () => api.openFolder(path), true);
+    if (!opened || !canContinue(opened)) {
+      setStarting(false);
+      return;
+    }
+    // When the lesson could not start, the course page says why.
+    if (!(await continueLesson(false, opened))) setView("course");
   };
 
   const newLesson = async (goal: string) => {
@@ -539,7 +643,8 @@ export function App() {
     if (!api) return;
     try {
       if (!session.open) {
-        await api.openSession(true);
+        const opened = await api.openSession(true);
+        if (opened.engine) setLessonEngine((old) => (old === "plugin" ? old : opened.engine));
         dispatch({ type: "reopened" });
       }
       sitting.current.answers += 1;
@@ -570,7 +675,9 @@ export function App() {
     const minutes = session.startedMs === null ? 0 : Math.max(1, Math.round((Date.now() - session.startedMs) / 60_000));
     const done: Sitting = {
       minutes,
-      answers: sitting.current.answers,
+      sent: sitting.current.answers,
+      marked: null,
+      today: null,
       stepsDone: stepsDone(rail),
       stepsTotal: rail?.steps.length ?? 0,
       stoppedAt: saved,
@@ -591,6 +698,8 @@ export function App() {
       // the sitting began. The window claims no proof the record does not show.
       const after = await api.progress(null);
       setProgress(after);
+      done.today = after.today ?? null;
+      done.marked = markedIn(sitting.current.todayBefore, done.today);
       const before = proofsBefore.current;
       if (before) {
         done.earned = [...after.confirmed, ...after.in_progress]
@@ -605,8 +714,9 @@ export function App() {
     } catch {
       // Without the record the end screen says what it can.
     }
-    // A sitting with no answer in it has nothing to sum up.
-    if (done.answers > 0) {
+    void loadEngine();
+    // A sitting with nothing sent and nothing marked has nothing to sum up.
+    if (done.sent > 0 || (done.marked ?? 0) > 0) {
       setSummary(done);
       setView("summary");
     } else {
@@ -648,7 +758,7 @@ export function App() {
       if (files.length === 0) return;
       const words = await api.paperEnd(files);
       await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
+      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent), true);
       else setView("course");
     } catch (problem) {
       setError(String(problem));
@@ -703,6 +813,8 @@ export function App() {
     setAsking,
     openSetup,
     showLibrary,
+    continueFolder,
+    chooseEngine,
     setView: (next: string) => setView(next as View),
     addMaterial,
     setDragging,
@@ -789,6 +901,15 @@ export function App() {
       });
       list.push({ label: "Magnesium and Claude Code on this Mac", hint: aboutText(about) ?? undefined, icon: "gear", run: () => openSetup() });
     }
+    if (!inLesson && engine) {
+      const other: Engine = engine.chosen === "plugin" ? "direct" : "plugin";
+      list.push({
+        label: `Run lessons on ${engineName(other)}`,
+        hint: `now ${engineName(engine.chosen)}`,
+        icon: "gear",
+        run: () => void chooseEngine(other),
+      });
+    }
     if (!inLesson) {
       list.push({ label: "Open a folder…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
       list.push({ label: "New study folder…", icon: "plus", run: () => void newFolder() });
@@ -816,6 +937,18 @@ export function App() {
     }
     return list;
   };
+
+  /** The engine choice, where a screen shows it. Disabled while a lesson is open. */
+  const engineControl = (bare = false) =>
+    engine ? (
+      <EngineControl
+        bare={bare}
+        choice={engine}
+        payment={setup?.payment ?? null}
+        locked={session.open || session.live !== null}
+        onChoose={(chosen) => void chooseEngine(chosen)}
+      />
+    ) : null;
 
   let screen: JSX.Element | null = null;
   if (view === "loading") {
@@ -846,6 +979,7 @@ export function App() {
         onSignIn={() => void signIn()}
         onPayment={(payment) => void choosePayment(payment)}
         onLink={openLink}
+        engine={engineControl(true)}
       />
     );
   } else if (view === "library" || !home) {
@@ -858,6 +992,9 @@ export function App() {
         notice={notice}
         finding={finding}
         ready={setupReady(setup)}
+        starting={starting}
+        engine={engineControl()}
+        onContinue={(path) => void continueFolder(path)}
         onOpen={(path) => api && void openFolder(api, path)}
         onPick={() => void pickFolder()}
         onNew={() => void newFolder()}
@@ -872,6 +1009,7 @@ export function App() {
       <Course
         home={home}
         progress={progress}
+        engine={engine?.chosen ?? null}
         asking={asking}
         error={error}
         notice={notice}
@@ -902,6 +1040,7 @@ export function App() {
         state={session}
         rail={rail}
         blockMinutes={home.block_minutes}
+        engine={lessonEngine ? engineName(lessonEngine) : null}
         onSend={(text) => void say(text)}
         onInterrupt={() => void guard((api) => api.interrupt())()}
         onDecide={(id: string, decision: Decision) =>
@@ -980,7 +1119,7 @@ export function App() {
 }
 
 export type Actions = {
-  continueLesson: (skipChecks: boolean) => Promise<void>;
+  continueLesson: (skipChecks: boolean, home?: Home | null) => Promise<boolean>;
   newLesson: (goal: string) => Promise<void>;
   say: (text: string) => Promise<void>;
   stop: (line: string) => Promise<void>;
@@ -991,6 +1130,8 @@ export type Actions = {
   setAsking: (asking: boolean) => void;
   openSetup: () => void;
   showLibrary: () => void;
+  continueFolder: (path: string) => Promise<void>;
+  chooseEngine: (engine: Engine) => Promise<void>;
   setView: (view: string) => void;
   addMaterial: (paths: string[]) => Promise<void>;
   setDragging: (over: boolean) => void;

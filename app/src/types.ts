@@ -64,7 +64,19 @@ export type Activity = { today: string; days: string[]; run: number; studied_tod
 
 export type Turn = { session: string; ms: number; learner: string; tutor: string; interrupted: boolean };
 
-export type Opened = { resumed: boolean; turns: Turn[] };
+/**
+ * What runs a lesson. "plugin": Claude Code runs it with Magnesium's plugin,
+ * as in a terminal. "direct": Magnesium runs it and asks Claude Code only for
+ * the tutor's words. Both use the learner's own Claude Code sign-in. The
+ * learner sees them as "Claude Code" and "Magnesium".
+ */
+export type Engine = "plugin" | "direct";
+
+/** The learner's pick, and the engine of the open folder's saved conversation, or null when there is none. */
+export type EngineChoice = { chosen: Engine; conversation: Engine | null };
+
+/** `engine` is the engine of the conversation that was opened. */
+export type Opened = { resumed: boolean; turns: Turn[]; engine: Engine };
 
 export type Step = { step: string; status: "todo" | "doing" | "done" | string };
 
@@ -107,8 +119,17 @@ export type Progress = {
   proofs: Proofs;
   /** The runtime could not say how far the course is proved, so no level is shown. */
   level_unknown: boolean;
+  /** What the learner did today in this folder. null when the runtime cannot say. */
+  today: Today | null;
   message: string | null;
 };
+
+/**
+ * Today's counts in one study folder, from the runtime's record: answers the
+ * tutor marked, skills answered for the first time, proofs earned, and quick
+ * checks and redos that come due tomorrow. `day` is "2026-11-11".
+ */
+export type Today = { day: string; answered: number; started: number; proofs: number; due_tomorrow: number };
 
 export type Choice = { label: string; description: string | null };
 
@@ -169,7 +190,8 @@ export type Account = {
 /** A magnesium program, and the version it reports: "0.3.0+<commit>" from the download's build. */
 export type Program = { shown_path: string; version: string };
 
-export type RuntimeState = "ready" | "missing" | "different" | "kept" | "failed";
+/** "too_old": the installed program is older than this window needs. It cannot be kept, and no lesson starts. */
+export type RuntimeState = "ready" | "missing" | "different" | "kept" | "too_old" | "failed";
 
 export type RuntimeSetup = {
   state: RuntimeState;
@@ -210,6 +232,10 @@ export interface Core {
   keepRuntime(): Promise<RuntimeSetup>;
   account(): Promise<Account>;
   setPayment(payment: Payment): Promise<Account>;
+  /** Which engine runs lessons, and which one the open folder's conversation began on. */
+  engine(): Promise<EngineChoice>;
+  /** Pick the engine for the next conversation. It is saved at once. */
+  setEngine(engine: Engine): Promise<EngineChoice>;
   signIn(): Promise<void>;
   about(): Promise<About>;
   openSession(resume: boolean): Promise<Opened>;

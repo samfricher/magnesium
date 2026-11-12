@@ -354,6 +354,11 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_eq!(written.len(), 3, "{written:?}");
     let progress = study::progress(&scratch.folder, None);
     assert_eq!(progress.message, None, "{progress:#?}");
+    // Today's counts reach the page as the runtime counts them, and the
+    // window takes this runtime: its digest meets the window's needs.
+    let counts = progress.today.as_ref().expect("today's counts");
+    assert_eq!(counts.day, study::today().to_string(), "{counts:?}");
+    assert!(mg_core::runtime::fits_window(&scratch.wrapper()));
     let exam = progress.exam.as_ref().expect("the plan's exam");
     assert_eq!(
         (exam.target.as_str(), exam.days_left),

@@ -1,9 +1,10 @@
 // The first screen: every study folder the window knows, the most urgent
 // first. One card is one course. A card shows what decides where to study
 // next and nothing else: the exam and how near it is, how much is proved,
-// and what is due.
+// and what is due. The most urgent card's button, and Enter, go straight
+// into its lesson. Under the title, one quiet choice: what runs lessons.
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
@@ -50,7 +51,12 @@ function CourseCard(props: {
   card: Card;
   hero: boolean;
   focus: boolean;
+  /** The hero's lesson is starting. */
+  starting: boolean;
+  /** The card's main action: the lesson for the hero, else the course page. */
   onOpen: () => void;
+  /** The course page, from the hero, whose main action is the lesson. */
+  onCourse?: () => void;
   onForget: () => void;
   onMove: (by: number) => void;
 }) {
@@ -149,9 +155,22 @@ function CourseCard(props: {
       <div className="cc-foot">
         {props.hero && (
           <span className="btn primary as-label">
-            {sitting ? "Back to the paper" : card.goal ? "Continue" : "Open"}
-            <kbd>&#8629;</kbd>
+            {props.starting ? "Starting…" : sitting ? "Back to the paper" : props.onCourse ? (card.goal ? "Continue" : "Start") : "Open"}
+            {!props.starting && <kbd>&#8629;</kbd>}
           </span>
+        )}
+        {props.onCourse && (
+          <button
+            className="btn ghost small"
+            data-role="course-page"
+            title="This course's page: proofs, papers, a new lesson"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onCourse?.();
+            }}
+          >
+            Course page
+          </button>
         )}
         {card.due > 0 && (
           <span className="due">
@@ -182,6 +201,13 @@ export function Library(props: {
   notice: string | null;
   finding: boolean;
   ready: boolean;
+  /** A lesson is starting from the main card. */
+  starting: boolean;
+  /** The choice of what runs lessons, or null when the core cannot say. */
+  engine: ReactNode;
+  /** Open a folder and continue its lesson at once. */
+  onContinue: (path: string) => void;
+  /** Open a folder's page. */
   onOpen: (path: string) => void;
   onPick: () => void;
   onNew: () => void;
@@ -253,17 +279,30 @@ export function Library(props: {
     body = (
       <>
         <div className="cards">
-          {cards.map((card, index) => (
-            <CourseCard
-              key={card.folder}
-              card={card}
-              hero={index === 0}
-              focus={index === focus}
-              onOpen={() => props.onOpen(card.folder)}
-              onForget={() => props.onForget(card.folder)}
-              onMove={(by) => setFocus(Math.max(0, Math.min(count - 1, index + by)))}
-            />
-          ))}
+          {cards.map((card, index) => {
+            // The main card goes straight into its lesson when it can. A
+            // course that is new, needs an upgrade or has a paper running
+            // opens its page, which says what comes first.
+            const straight = index === 0 && props.ready && card.state === "ready" && !card.sitting;
+            const open = () => {
+              if (props.starting) return;
+              if (straight) props.onContinue(card.folder);
+              else props.onOpen(card.folder);
+            };
+            return (
+              <CourseCard
+                key={card.folder}
+                card={card}
+                hero={index === 0}
+                focus={index === focus}
+                starting={index === 0 && props.starting}
+                onOpen={open}
+                onCourse={straight ? () => props.onOpen(card.folder) : undefined}
+                onForget={() => props.onForget(card.folder)}
+                onMove={(by) => setFocus(Math.max(0, Math.min(count - 1, index + by)))}
+              />
+            );
+          })}
         </div>
         {add}
       </>
@@ -283,7 +322,10 @@ export function Library(props: {
       <div className="scroll">
         <div className="shelf">
           <header className="shelf-head">
-            <h1>Library</h1>
+            <div className="shelf-title">
+              <h1>Library</h1>
+              {props.engine}
+            </div>
             {props.activity && count > 0 && (
               <div className="shelf-week">
                 {props.activity.run > 1 && (

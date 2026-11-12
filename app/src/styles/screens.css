@@ -2163,3 +2163,121 @@
     margin: 0 14px 14px;
   }
 }
+
+/* ---- what runs a lesson, and today's counts ---- */
+
+/* Quiet on purpose: one small choice under the library's title, and beside
+   the payment choice on the setup screen. */
+.engine {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  text-align: left;
+}
+
+.engine-pick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.engine .segmented {
+  margin-top: 0;
+}
+
+.engine .segmented button {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.engine .segmented button:disabled {
+  cursor: default;
+}
+
+.engine.locked .segmented {
+  opacity: 0.55;
+}
+
+.engine-label,
+.engine-why,
+.engine-line {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.step-body .engine {
+  margin-top: 8px;
+}
+
+.step-body .engine p.engine-line {
+  margin-top: 0;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+/* The engine of the conversation on screen, in the lesson's top strip. */
+.engine-tag {
+  font-size: 12px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* Today's counts: one plain line on the course page and at the end of a sitting. */
+.today-line {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.summary-col .today-line {
+  margin-top: 14px;
+}
+
+.summary-col .marks-note {
+  margin-top: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cc-foot .btn.small.ghost {
+  margin-left: -6px;
+}
+
+.shelf-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.engine-line {
+  text-wrap: pretty;
+}
+
+@media (max-width: 760px) {
+  .engine-tag {
+    display: none;
+  }
+}
+
+/* The engine's lines share one cell, so a new pick never changes the height. */
+.engine-lines {
+  display: grid;
+}
+
+.engine-lines > p {
+  grid-area: 1 / 1;
+}
+
+.engine-line.off {
+  visibility: hidden;
+}
+
+.today-line + .today-line {
+  margin-top: 2px;
+}

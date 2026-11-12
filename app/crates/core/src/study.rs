@@ -586,7 +586,41 @@ pub struct Progress {
     /// is shown: it is an earlier version, or it has not read this plan's
     /// gap log into the record yet.
     pub level_unknown: bool,
+    /// What the learner did today in this folder. None when the runtime
+    /// cannot say: it is an earlier version, or the folder needs an upgrade.
+    pub today: Option<Today>,
     pub message: Option<String>,
+}
+
+/// What the learner did today in one study folder, as the runtime counts it
+/// from the record.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Today {
+    /// The day these counts are for, as "2026-11-11".
+    pub day: String,
+    /// Answers the tutor marked today.
+    pub answered: u32,
+    /// Skills answered for the first time today.
+    pub started: u32,
+    /// Proofs earned today. The runtime calls them passes.
+    pub proofs: u32,
+    /// Quick checks and redos that come due tomorrow.
+    pub due_tomorrow: u32,
+}
+
+impl Today {
+    /// `today` and `today_counts` in what `magnesium progress` printed.
+    fn from_record(record: &Value) -> Option<Self> {
+        let counts = record.get("today_counts")?;
+        let number = |name: &str| counts[name].as_u64().map(|n| n as u32);
+        Some(Self {
+            day: record["today"].as_str()?.to_owned(),
+            answered: number("answered")?,
+            started: number("started")?,
+            proofs: number("passes")?,
+            due_tomorrow: number("due_tomorrow")?,
+        })
+    }
 }
 
 fn dots(passes: u8, earlier: u8) -> [u8; 3] {
@@ -928,6 +962,7 @@ pub fn progress(folder: &Path, target: Option<&str>) -> Progress {
     progress.exam = plan.and_then(exam_of);
 
     let record = runtime::progress(folder);
+    progress.today = record.as_ref().and_then(Today::from_record);
     match board(&root, plan, record.as_ref(), today()) {
         Ok(board) => {
             progress.proofs = board.proofs.unwrap_or_default();
@@ -1069,6 +1104,31 @@ mod tests {
             "due": {"redos": 1, "checks": 0},
             "days": ["2026-11-09", "2026-11-10"],
         })
+    }
+
+    #[test]
+    fn todays_counts_are_the_runtimes_and_absent_from_an_earlier_one() {
+        let mut printed = record();
+        assert_eq!(
+            Today::from_record(&printed),
+            None,
+            "an earlier runtime prints no counts"
+        );
+        printed["today_counts"] =
+            json!({"answered": 6, "started": 2, "passes": 1, "due_tomorrow": 3});
+        assert_eq!(
+            Today::from_record(&printed),
+            Some(Today {
+                day: "2026-11-10".into(),
+                answered: 6,
+                started: 2,
+                proofs: 1,
+                due_tomorrow: 3,
+            })
+        );
+        // A count it cannot read gives none, not a zero that is not true.
+        printed["today_counts"]["answered"] = json!("six");
+        assert_eq!(Today::from_record(&printed), None);
     }
 
     fn exam(target: &str) -> Exam {

@@ -12,6 +12,7 @@ import type { About, Account, Payment, RuntimeSetup, Setup as SetupData } from "
 
 /** Whether a lesson can start: the program runs and Claude Code is signed in. */
 export function setupReady(setup: SetupData | null): boolean {
+  // "too_old" is not ready: no lesson starts until the program is replaced.
   if (!setup) return false;
   const runtime = setup.runtime.state === "ready" || setup.runtime.state === "kept";
   return runtime && setup.account.installed && setup.account.signed_in;
@@ -73,6 +74,26 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
       </Step>
     );
   }
+  if (runtime.state === "too_old" && installed) {
+    // Older than the window needs: it cannot be kept, so the only way on is a
+    // newer copy, the app's own when it carries one.
+    return (
+      <Step ok={false} title="Magnesium" detail={`${versionNumber(installed.version)}, too old · ${where}`}>
+        <p className="selectable">{runtime.message}</p>
+        <div className="row">
+          {bundled ? (
+            <button className="btn primary" autoFocus onClick={props.onReplace}>
+              Replace with {versionNumber(bundled.version)} <kbd>&#8629;</kbd>
+            </button>
+          ) : (
+            <button className="btn small" onClick={props.onCheck}>
+              Check again
+            </button>
+          )}
+        </div>
+      </Step>
+    );
+  }
   if (runtime.state === "kept" && installed && bundled) {
     return (
       <Step ok title="Magnesium" detail={`${versionNumber(installed.version)}, kept · ${where}`}>
@@ -86,7 +107,11 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
     );
   }
   return (
-    <Step ok={false} title="Magnesium" detail={runtime.state === "missing" ? "not installed" : "not installed yet"}>
+    <Step
+      ok={false}
+      title="Magnesium"
+      detail={runtime.state === "missing" ? "not installed" : installed ? `${versionNumber(installed.version) || "does not run"} · ${where}` : "not installed yet"}
+    >
       <p className="selectable">{runtime.message}</p>
       <div className="row">
         <button className="btn small" onClick={props.onCheck}>
@@ -170,10 +195,12 @@ export function Setup(props: {
   onSignIn: () => void;
   onPayment: (payment: Payment) => void;
   onLink: (url: string) => void;
+  /** The choice of what runs lessons, or null when the core cannot say. */
+  engine: ReactNode;
 }) {
   const { setup } = props;
   const ready = setupReady(setup);
-  const choosing = setup?.runtime.state === "different";
+  const choosing = setup?.runtime.state === "different" || setup?.runtime.state === "too_old";
   const version = aboutText(props.about);
 
   let title = "Before your first lesson";
@@ -181,6 +208,9 @@ export function Setup(props: {
   if (!setup) {
     title = "One moment";
     sub = "Looking for Magnesium and Claude Code on this Mac.";
+  } else if (setup.runtime.state === "too_old") {
+    title = "Magnesium needs updating";
+    sub = "The program on this Mac is older than this window needs.";
   } else if (ready) {
     title = "This Mac is ready";
     sub = "What lessons run on, and how they are paid for.";
@@ -232,6 +262,17 @@ export function Setup(props: {
                   </div>
                 </div>
               </div>
+              {props.engine && (
+                <div className="step plain">
+                  <span className="step-mark" aria-hidden="true" />
+                  <div className="step-body">
+                    <div className="step-head">
+                      <b>Lessons run on</b>
+                    </div>
+                    {props.engine}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}

@@ -638,3 +638,16 @@ fn long_text_is_clipped_on_a_character_boundary() {
     assert!(clipped.ends_with("..."));
     assert_eq!(clipped.chars().count(), MAX_TEXT_CHARS + 3);
 }
+
+#[test]
+fn every_digest_says_which_window_features_it_supports() {
+    for value in [
+        json!({"active": false, "reason": "workspace_not_initialized"}),
+        json!({"active": true, "upgrade_needed": true}),
+        json!({"active": true, "plans": []}),
+    ] {
+        let said = with_window_features(value.clone());
+        assert_eq!(said["window_features"], json!(WINDOW_FEATURES));
+        assert_eq!(said["active"], value["active"], "the rest is unchanged");
+    }
+}
