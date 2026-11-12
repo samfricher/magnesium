@@ -7,7 +7,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { holdBack, numberTasks, renderInline, renderMarkdown, setSourcesApart } from "../render";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -41,6 +41,21 @@ function keepWordsReadable(holder: HTMLElement) {
   holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1);
 }
 
+/** A diagram's boxes take the window's control radius, not square corners. */
+function roundNodes(svg: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    if (doc.querySelector("parsererror")) return svg;
+    doc.querySelectorAll(".node rect, .cluster rect, rect.actor, rect.note").forEach((rect) => {
+      rect.setAttribute("rx", "8");
+      rect.setAttribute("ry", "8");
+    });
+    return new XMLSerializer().serializeToString(doc.documentElement);
+  } catch {
+    return svg;
+  }
+}
+
 /** Put each diagram already drawn in the place of its placeholder. Returns the ones still to draw. */
 function reuseDiagrams(root: HTMLElement): HTMLElement[] {
   const waiting: HTMLElement[] = [];
@@ -70,11 +85,18 @@ async function drawOne(source: string, room: number) {
     // The diagram library is large, so it is fetched only when a diagram appears.
     const mermaid = (await import("mermaid")).default;
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    // The window's own colours, so a diagram reads as part of the page. The
-    // diagram library works colours out from these, so they are plain hex.
-    const ink = dark
-      ? { box: "#262d39", text: "#e9ebee", edge: "#4b5565", line: "#b3bac5", second: "#2c3441", third: "#1f252f" }
-      : { box: "#ffffff", text: "#1b212b", edge: "#c4c8bf", line: "#475060", second: "#e6e8e2", third: "#fafaf7" };
+    // The window's own colours, read from its tokens so a diagram follows the
+    // scheme. The diagram library works colours out from these, so they are
+    // resolved to plain values here.
+    const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "gray";
+    const ink = {
+      box: token("--raised"),
+      text: token("--text"),
+      edge: token("--line-input"),
+      line: token("--muted"),
+      second: token("--hover"),
+      third: token("--surface"),
+    };
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
@@ -110,7 +132,7 @@ async function drawOne(source: string, room: number) {
         // The first drawing stands.
       }
     }
-    drawn.set(keyOf(source), svg);
+    drawn.set(keyOf(source), roundNodes(svg));
   } catch {
     failed.add(keyOf(source));
     document.querySelectorAll(`#dmg-diagram-${diagrams}`).forEach((leftover) => leftover.remove());
@@ -198,17 +220,20 @@ type Props = {
   onSource?: (source: SourceRef) => void;
   /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
   stopped?: boolean;
+  /** The number of the first task this reply sets, in the order the lesson set them. Drawn in the page's margin. */
+  taskFrom?: number;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false }: Props) {
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, taskFrom }: Props) {
   // A reply still being written, or stopped, never shows the marks of a
   // formula, a bold span or a link it ends inside of. A display formula that
   // is held back keeps a line's room, so what follows does not jump when it closes.
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
   const html = useMemo(() => {
     const drawn = renderMarkdown(held.text);
-    return onSource ? setSourcesApart(drawn, linksOpen) : drawn;
-  }, [held.text, linksOpen, onSource]);
+    const linked = onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+    return taskFrom === undefined ? linked : numberTasks(linked, taskFrom).html;
+  }, [held.text, linksOpen, onSource, taskFrom]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet
