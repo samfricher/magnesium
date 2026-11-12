@@ -205,14 +205,26 @@
   text-align: center;
 }
 
-/* A diagram is fitted to the column, never cropped by it. Its height is kept
-   while it is drawn, so what is below it does not jump. */
+/* A diagram keeps the size it was drawn at, so its words stay readable: it is
+   as tall as it needs to be, and narrows to the column only as far as
+   Rich.tsx allows (its words never fall under 12px). A wider one scrolls
+   sideways inside its own box. Its room while it is drawn is kept below. */
 .prose .diagram svg {
   display: block;
   max-width: 100%;
   height: auto;
-  max-height: 28em;
   margin: 0 auto;
+}
+
+.prose .diagram.wide::after {
+  content: "Scroll sideways to see the rest";
+  display: block;
+  position: sticky;
+  left: 0;
+  margin-top: var(--s2);
+  font-family: var(--sans);
+  font-size: var(--fs-caption);
+  color: var(--muted);
 }
 
 .prose pre.diagram-wait:not(.undrawn) {
@@ -256,38 +268,52 @@
 }
 
 /* The thing to do next. A paragraph the tutor opened with a bold "Task." is
-   set apart, so the question is never lost in the explanation above it. */
+   set apart, so the question is never lost in the explanation above it. The
+   live task is a soft green box with one straight green bar down its left
+   side, drawn inside it so the rounded corners are left alone. */
 .prose div.task,
 .prose :not(div.task) > p.task {
+  position: relative;
   margin: 1.2em 0 0;
   padding: var(--s4) var(--s5);
+  border: 1px solid transparent;
   border-radius: var(--r-card);
   background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.prose div.task::before,
+.prose :not(div.task) > p.task::before {
+  content: "";
+  position: absolute;
+  top: var(--s3);
+  bottom: var(--s3);
+  left: 0;
+  width: 3px;
+  background: var(--accent);
 }
 
 .prose div.task > :last-child {
   margin-bottom: 0;
 }
 
-/* A task that has been answered is no longer the one to do: no fill, no green,
-   a hairline rule. Only the live task is green. */
+/* A task that has been answered is no longer the one to do: no bar, no fill,
+   no green, a full hairline round it. Only the live task is green. */
 .answered .prose div.task,
 .answered .prose :not(div.task) > p.task {
+  border-color: var(--line-2);
   background: none;
-  box-shadow: inset 1px 0 0 var(--line-2);
+}
+
+.answered .prose div.task::before,
+.answered .prose :not(div.task) > p.task::before {
+  display: none;
 }
 
 .prose div.task .katex-display {
   margin: 0.7em 0;
 }
 
-/* The label of a task ("Task", "Check 1 of 2"): Literata italic, quiet. */
+/* The label of a task ("Task", "Check 1 of 2") is the lesson's one label style (see .lesson-label). */
 .prose p.task > strong:first-child {
-  display: block;
   margin-bottom: var(--s1);
-  font-size: var(--fs-ui);
-  font-style: italic;
-  font-weight: 400;
-  color: var(--muted);
 }
