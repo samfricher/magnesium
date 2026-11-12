@@ -773,6 +773,19 @@ fn hand_authored_rankings_cover_identifiers_paths_phrases_prefixes_and_terms() {
         b"The parse_course_code helper is listed in the API reference.\n",
     );
 
+    // Code files are split as plain text now. The identifier tier still
+    // ranks the function pieces an index built by an earlier version holds.
+    fixture.search(request("parse_course_code"));
+    fixture.store_earlier_code_pieces(
+        "src/parser.py",
+        vec![EarlierCodePiece {
+            name: "parse_course_code",
+            lines: (1, 3),
+            body: "def parse_course_code(value):\n    # Parse CS-101 course notation.\n    return value\n",
+            imports: &[],
+            references: &["value"],
+        }],
+    );
     let identifier = fixture.search(request("parse_course_code"));
     assert_eq!(identifier.hits[0].candidate.path, "src/parser.py");
     assert!(identifier.hits[0].signals.exact_identifier);
@@ -824,6 +837,17 @@ fn exact_identifier_tier_matches_names_and_not_definition_kinds() {
         b"# Functions\n\nA function maps each input to one output.\n",
     );
 
+    fixture.search(request("function"));
+    fixture.store_earlier_code_pieces(
+        "src/area.py",
+        vec![EarlierCodePiece {
+            name: "compute_area",
+            lines: (3, 4),
+            body: "def compute_area(width, height):\n    return width * height\n",
+            imports: &[("geometry", "square")],
+            references: &["width", "height"],
+        }],
+    );
     let kind = fixture.search(request("function"));
     assert_eq!(kind.hits[0].candidate.path, "notes/functions.md");
     assert!(
@@ -1653,6 +1677,15 @@ struct Fixture {
     root: PathBuf,
 }
 
+/// One function piece of a Python file, as an earlier index stored it.
+struct EarlierCodePiece {
+    name: &'static str,
+    lines: (u32, u32),
+    body: &'static str,
+    imports: &'static [(&'static str, &'static str)],
+    references: &'static [&'static str],
+}
+
 impl Fixture {
     fn new(name: &str) -> Self {
         let sequence = NEXT_ROOT.fetch_add(1, Ordering::Relaxed);
@@ -1695,6 +1728,70 @@ impl Fixture {
     fn search(&self, request: SourceSearchRequest) -> SourceSearchReport {
         search_workspace_sources(&self.root, &self.index(), Path::new(""), &request, budget())
             .expect("search fixture")
+    }
+
+    /// Replace the indexed pieces of `path` with code pieces of the shape
+    /// earlier versions cut from code files, as an index built then holds.
+    fn store_earlier_code_pieces(&self, path: &str, pieces: Vec<EarlierCodePiece>) {
+        use crate::retrieval::chunking::{
+            ChunkDraft, ChunkKind, SourceImport, SymbolDefinition, SymbolReference,
+        };
+        use crate::retrieval::manifest::{CurrentSource, extract};
+
+        let mut connection = Connection::open(self.index()).unwrap();
+        let source = connection
+            .query_row(
+                "SELECT manifest_id, display_path, source_kind, content_sha256, index_status, source_revision
+                 FROM source_manifest WHERE display_path = ?1",
+                [path],
+                |row| {
+                    Ok(CurrentSource {
+                        manifest_id: row.get(0)?,
+                        display_path: row.get(1)?,
+                        source_kind: row.get(2)?,
+                        content_sha256: row.get(3)?,
+                        index_status: row.get(4)?,
+                        source_revision: row.get(5)?,
+                    })
+                },
+            )
+            .unwrap();
+        let drafts = pieces
+            .into_iter()
+            .map(|piece| ChunkDraft {
+                kind: ChunkKind::Symbol,
+                line_start: piece.lines.0,
+                line_end: piece.lines.1,
+                body: piece.body.to_owned(),
+                structural_path: Some(piece.name.to_owned()),
+                language: Some("python"),
+                definitions: vec![SymbolDefinition {
+                    name: piece.name.to_owned(),
+                    kind: "function".into(),
+                    line_start: piece.lines.0,
+                    line_end: piece.lines.1,
+                }],
+                imports: piece
+                    .imports
+                    .iter()
+                    .map(|(module, name)| SourceImport {
+                        module: (*module).to_owned(),
+                        names: vec![(*name).to_owned()],
+                        line_start: 1,
+                        line_end: 1,
+                    })
+                    .collect(),
+                references: piece
+                    .references
+                    .iter()
+                    .map(|name| SymbolReference {
+                        name: (*name).to_owned(),
+                        line: piece.lines.0,
+                    })
+                    .collect(),
+            })
+            .collect();
+        extract::store_candidates(&mut connection, &self.index(), &source, drafts, None).unwrap();
     }
 
     fn retrieve(&self, request: RetrievalRequest) -> SourceSearchReport {

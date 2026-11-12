@@ -19,24 +19,8 @@ use super::{
 
 const CONTROL_DIRS: &[&str] = &["index", "cache", "scratch", "backups"];
 
-const AGENTS_MD_BEGIN: &str = "<!-- magnesium:begin -->";
-const AGENTS_MD_END: &str = "<!-- magnesium:end -->";
-
-fn agents_md_block(newline: &str) -> String {
-    format!(
-        "{AGENTS_MD_BEGIN}{newline}\
-When the nearest initialized {CONTROL_DIR} workspace is active, read its{newline}\
-{CONTROL_DIR}/INSTRUCTIONS.md and use the Magnesium adapter API rather than editing {CONTROL_DIR}.{newline}\
-{AGENTS_MD_END}{newline}"
-    )
-}
-
-pub(crate) fn run_init(
-    requested_path: Option<&Path>,
-    adapter: Option<&str>,
-    upgrade_instructions: bool,
-) -> ExitCode {
-    match initialize(requested_path, adapter, upgrade_instructions) {
+pub(crate) fn run_init(requested_path: Option<&Path>, upgrade_instructions: bool) -> ExitCode {
+    match initialize(requested_path, upgrade_instructions) {
         Ok(report) => {
             report.print();
             ExitCode::SUCCESS
@@ -49,12 +33,8 @@ pub(crate) fn run_init(
     }
 }
 
-pub(crate) fn run_init_json(
-    requested_path: Option<&Path>,
-    adapter: Option<&str>,
-    upgrade_instructions: bool,
-) -> ExitCode {
-    match init_report_json(requested_path, adapter, upgrade_instructions) {
+pub(crate) fn run_init_json(requested_path: Option<&Path>, upgrade_instructions: bool) -> ExitCode {
+    match init_report_json(requested_path, upgrade_instructions) {
         Ok(mut value) => {
             value["ok"] = json!(true);
             println!(
@@ -74,17 +54,15 @@ pub(crate) fn run_init_json(
 
 pub(crate) fn init_report_json(
     requested_path: Option<&Path>,
-    adapter: Option<&str>,
     upgrade_instructions: bool,
 ) -> Result<Value, String> {
-    initialize(requested_path, adapter, upgrade_instructions)
+    initialize(requested_path, upgrade_instructions)
         .map(|report| report.to_json())
         .map_err(|error| error.to_string())
 }
 
 fn initialize(
     requested_path: Option<&Path>,
-    adapter: Option<&str>,
     upgrade_instructions: bool,
 ) -> Result<InitReport, InitError> {
     let supplied = requested_path.unwrap_or_else(|| Path::new("."));
@@ -99,17 +77,6 @@ fn initialize(
             root.display()
         )));
     }
-    if let Some(adapter_name) = adapter {
-        match adapter_name {
-            "agents-md" => {}
-            other => {
-                return Err(InitError::Invalid(format!(
-                    "unsupported adapter type `{other}`; supported values: `agents-md`"
-                )));
-            }
-        }
-    }
-
     let control = root.join(CONTROL_DIR);
     let mut report = InitReport::new(root.clone());
     ensure_private_dir(&control, &mut report)?;
@@ -263,10 +230,6 @@ fn initialize(
             Change::Modified => report.modified(&exclude_path.path),
             Change::Verified => report.verified(&exclude_path.path),
         }
-    }
-
-    if adapter == Some("agents-md") {
-        apply_agents_md_adapter(&root, &mut report)?;
     }
 
     let claude = setup_claude_plugin(&root, &global_paths.claude_plugin(), &mut report.warnings);
@@ -1176,126 +1139,6 @@ impl ClaudePluginStatus {
     }
 }
 
-fn apply_agents_md_adapter(root: &Path, report: &mut InitReport) -> Result<(), InitError> {
-    let path = root.join("AGENTS.md");
-    match fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            if meta.file_type().is_symlink() {
-                return Err(InitError::Invalid(format!(
-                    "{} is a symlink; refusing to edit symlinked user file",
-                    path.display()
-                )));
-            }
-            if !meta.is_file() {
-                return Err(InitError::Invalid(format!(
-                    "{} is not a regular file; refusing to edit non-regular user file",
-                    path.display()
-                )));
-            }
-        }
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {
-            crate::workspace::write_user_owned_atomic(&path, agents_md_block("\n").as_bytes())
-                .map_err(|source| InitError::Io {
-                    action: "create AGENTS.md",
-                    path: path.clone(),
-                    source,
-                })?;
-            report.created(&path);
-            report.adapter = Some(AdapterKind::AgentsMd);
-            return Ok(());
-        }
-        Err(source) => {
-            return Err(InitError::Io {
-                action: "inspect AGENTS.md",
-                path: path.clone(),
-                source,
-            });
-        }
-    }
-
-    let existing = fs::read_to_string(&path).map_err(|source| InitError::Io {
-        action: "read AGENTS.md",
-        path: path.clone(),
-        source,
-    })?;
-
-    let begin_count = existing.matches(AGENTS_MD_BEGIN).count();
-    let end_count = existing.matches(AGENTS_MD_END).count();
-    if begin_count > 1 || end_count > 1 || begin_count != end_count {
-        return Err(InitError::Invalid(
-            "AGENTS.md contains duplicate or mismatched Magnesium marker blocks; refusing to edit"
-                .to_owned(),
-        ));
-    }
-    if begin_count == 1 {
-        let start = existing.find(AGENTS_MD_BEGIN).unwrap();
-        let end = existing.find(AGENTS_MD_END).unwrap();
-        if start > end {
-            return Err(InitError::Invalid(
-                "AGENTS.md contains malformed Magnesium marker blocks (END precedes BEGIN); refusing to edit"
-                    .to_owned(),
-            ));
-        }
-    }
-
-    let newline = if existing.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let agents_block = agents_md_block(newline);
-
-    if begin_count == 1 {
-        let start = existing.find(AGENTS_MD_BEGIN).unwrap();
-        let end = existing.find(AGENTS_MD_END).unwrap();
-        let end_after = end + AGENTS_MD_END.len();
-        let end_pos = if existing[end_after..].starts_with("\r\n") {
-            end_after + 2
-        } else if existing[end_after..].starts_with('\n') {
-            end_after + 1
-        } else {
-            end_after
-        };
-        let mut updated = String::with_capacity(existing.len() + agents_block.len());
-        updated.push_str(&existing[..start]);
-        updated.push_str(&agents_block);
-        updated.push_str(&existing[end_pos..]);
-        if updated == existing {
-            report.verified(&path);
-        } else {
-            crate::workspace::write_user_owned_atomic(&path, updated.as_bytes()).map_err(
-                |source| InitError::Io {
-                    action: "update AGENTS.md adapter block",
-                    path: path.clone(),
-                    source,
-                },
-            )?;
-            report.modified(&path);
-        }
-        report.adapter = Some(AdapterKind::AgentsMd);
-        return Ok(());
-    }
-
-    let mut updated = existing.clone();
-    if !updated.is_empty() && !updated.ends_with(newline) {
-        updated.push_str(newline);
-    }
-    if !updated.is_empty() {
-        updated.push_str(newline);
-    }
-    updated.push_str(&agents_block);
-    crate::workspace::write_user_owned_atomic(&path, updated.as_bytes()).map_err(|source| {
-        InitError::Io {
-            action: "append AGENTS.md adapter block",
-            path: path.clone(),
-            source,
-        }
-    })?;
-    report.modified(&path);
-    report.adapter = Some(AdapterKind::AgentsMd);
-    Ok(())
-}
-
 #[derive(Debug)]
 enum InitError {
     Io {
@@ -1342,18 +1185,12 @@ enum LearnerState {
     Preserved,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AdapterKind {
-    AgentsMd,
-}
-
 struct InitReport {
     warnings: Vec<String>,
     root: PathBuf,
     created: Vec<PathBuf>,
     modified: Vec<PathBuf>,
     verified: Vec<PathBuf>,
-    adapter: Option<AdapterKind>,
     claude: Option<ClaudePluginStatus>,
     instructions_upgraded_from: Option<String>,
     learner_state: LearnerState,
@@ -1367,7 +1204,6 @@ impl InitReport {
             created: Vec::new(),
             modified: Vec::new(),
             verified: Vec::new(),
-            adapter: None,
             claude: None,
             instructions_upgraded_from: None,
             learner_state: LearnerState::Empty,
@@ -1398,13 +1234,6 @@ impl InitReport {
         for path in self.verified {
             println!("verified: {}", path.display());
         }
-        if let Some(adapter) = self.adapter {
-            match adapter {
-                AdapterKind::AgentsMd => println!(
-                    "adapter: AGENTS.md bootstrap configured (best-effort instruction adapter; requires host lifecycle events or turn attestation for write operations)"
-                ),
-            }
-        }
         if let Some(claude) = &self.claude {
             claude.print();
         }
@@ -1433,9 +1262,6 @@ impl InitReport {
             "created": strings(&self.created),
             "modified": strings(&self.modified),
             "verified": strings(&self.verified),
-            "adapter": self.adapter.map(|adapter| match adapter {
-                AdapterKind::AgentsMd => "agents-md",
-            }),
             "tracking": "enabled_by_default",
             "learner_state": match self.learner_state {
                 LearnerState::Empty => "empty",

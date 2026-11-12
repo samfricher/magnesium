@@ -77,12 +77,6 @@ pub(crate) fn command() -> ClapCommand {
                             .value_parser(value_parser!(PathBuf)),
                     )
                     .arg(
-                        Arg::new("adapter")
-                            .long("adapter")
-                            .value_name("ADAPTER")
-                            .help("Configure optional adapter bootstrap (e.g. agents-md)"),
-                    )
-                    .arg(
                         Arg::new("json")
                             .long("json")
                             .help("Emit stable machine-readable workspace status")

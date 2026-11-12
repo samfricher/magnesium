@@ -34,14 +34,13 @@ pub fn run() -> ExitCode {
     match command().get_matches().subcommand() {
         Some(("init", matches)) => {
             let path = matches.get_one::<PathBuf>("path").map(PathBuf::as_path);
-            let adapter = matches.get_one::<String>("adapter").map(String::as_str);
             let json = matches.get_flag("json");
             let upgrade = matches.get_flag("upgrade-instructions");
             {
                 if json {
-                    workspace::run_init_json(path, adapter, upgrade)
+                    workspace::run_init_json(path, upgrade)
                 } else {
-                    workspace::run_init(path, adapter, upgrade)
+                    workspace::run_init(path, upgrade)
                 }
             }
         }

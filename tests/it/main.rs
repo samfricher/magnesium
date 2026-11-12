@@ -20,7 +20,6 @@ mod fresh_workspace_references;
 mod host_identity;
 mod info;
 mod init;
-mod init_reports;
 mod instruction_bundle_loading;
 mod instruction_bundle_placeholders;
 mod invariants;

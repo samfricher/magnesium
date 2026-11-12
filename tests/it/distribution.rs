@@ -4,26 +4,9 @@ use std::process::{Command, Stdio};
 use crate::support::test_binary;
 use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
 use serde_json::Value;
-use tree_sitter::Parser;
 
 #[test]
 fn selected_native_content_dependencies_work_without_sidecars() {
-    assert_parses(
-        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        "function twice(value: number): number { return value * 2; }",
-        "function_declaration",
-    );
-    assert_parses(
-        tree_sitter_javascript::LANGUAGE.into(),
-        "export const answer = () => 42;",
-        "export_statement",
-    );
-    assert_parses(
-        tree_sitter_python::LANGUAGE.into(),
-        "def twice(value):\n    return value * 2\n",
-        "function_definition",
-    );
-
     let pdf = readable_pdf_fixture();
     let pages = pdf_extract::extract_text_from_mem_by_pages(&pdf)
         .expect("extract readable PDF text by page");
@@ -78,20 +61,6 @@ fn runtime_pdf_pages(pdf: &[u8]) -> Vec<String> {
         .iter()
         .map(|page| page.as_str().expect("PDF page text").to_owned())
         .collect()
-}
-
-fn assert_parses(language: tree_sitter::Language, source: &str, expected_kind: &str) {
-    let mut parser = Parser::new();
-    parser.set_language(&language).expect("load grammar");
-    let tree = parser.parse(source, None).expect("parse source");
-    assert!(!tree.root_node().has_error());
-    assert!(
-        tree.root_node()
-            .named_children(&mut tree.walk())
-            .any(|node| node.kind() == expected_kind),
-        "parse tree omitted {expected_kind}: {}",
-        tree.root_node().to_sexp()
-    );
 }
 
 fn readable_pdf_fixture() -> Vec<u8> {

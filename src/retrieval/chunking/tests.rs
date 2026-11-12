@@ -83,109 +83,22 @@ fn long_lines_keep_overlap_to_a_small_share_of_each_chunk() {
 }
 
 #[test]
-fn python_and_typescript_emit_symbol_import_and_reference_metadata() {
-    let python = "from helpers import normalize\n\ndef clean(value):\n    return normalize(value)\n\nclass Runner:\n    def run(self, value):\n        return clean(value)\n";
-    let python_chunks = chunk_text(Path::new("worker.py"), python);
-    let clean = python_chunks
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("clean"))
-        .expect("Python function chunk");
-    assert_eq!((clean.line_start, clean.line_end), (3, 4));
-    assert!(clean.imports.is_empty());
-    assert!(
-        python_chunks
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .any(|source_import| source_import.module == "helpers")
-    );
-    assert!(
-        clean
-            .references
-            .iter()
-            .any(|reference| reference.name == "normalize")
-    );
-    let runner = python_chunks
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("Runner"))
-        .expect("Python class chunk");
-    assert!(
-        runner
-            .definitions
-            .iter()
-            .any(|definition| definition.name == "run")
-    );
-
-    let typescript = "import { parse } from './parse';\nexport function load(input: string) {\n  return parse(input);\n}\nexport class Store {\n  read() { return load('x'); }\n}\n";
-    let typescript_chunks = chunk_text(Path::new("store.ts"), typescript);
-    let load = typescript_chunks
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("load"))
-        .expect("TypeScript function chunk");
-    assert!(load.imports.is_empty());
-    assert!(
-        typescript_chunks
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .any(|source_import| source_import.module == "./parse")
-    );
-    assert!(
-        load.references
-            .iter()
-            .any(|reference| reference.name == "parse")
-    );
-    assert!(
-        typescript_chunks
-            .iter()
-            .any(|chunk| chunk.structural_path.as_deref() == Some("Store"))
-    );
-
-    let javascript =
-        "import { parse } from './parse.js';\nfunction load(input) {\n  return parse(input);\n}\n";
-    let javascript_chunks = chunk_text(Path::new("loader.js"), javascript);
-    let load = javascript_chunks
-        .iter()
-        .find(|chunk| chunk.structural_path.as_deref() == Some("load"))
-        .expect("JavaScript function chunk");
-    assert_eq!(load.language, Some("javascript"));
-    assert!(
-        javascript_chunks
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .any(|source_import| source_import.module == "./parse.js")
-    );
-
-    let imports_only = chunk_text(Path::new("imports.py"), "from helpers import normalize\n");
-    assert_eq!(imports_only[0].kind, ChunkKind::Module);
-    assert_eq!(imports_only[0].imports[0].module, "helpers");
-
-    let long_name = "x".repeat(1_024);
-    let source = format!(
-        "from helpers import {long_name}\n\ndef alpha():\n    return 1\n\ndef beta():\n    return 2\n"
-    );
-    let chunks = chunk_text(Path::new("bounded.py"), &source);
-    assert_eq!(
-        chunks
-            .iter()
-            .map(|chunk| chunk.imports.len())
-            .sum::<usize>(),
-        1
-    );
-    assert!(
-        chunks
-            .iter()
-            .flat_map(|chunk| &chunk.imports)
-            .flat_map(|import| &import.names)
-            .all(|name| name.len() <= super::MAX_METADATA_TEXT_BYTES)
-    );
-    assert!(chunks.iter().all(|chunk| {
-        chunk
-            .imports
-            .iter()
-            .map(|source_import| {
-                source_import.module.len()
-                    + source_import.names.iter().map(String::len).sum::<usize>()
-            })
-            .sum::<usize>()
-            <= super::MAX_IMPORT_TEXT_BYTES_PER_CHUNK
-    }));
+fn code_files_split_as_plain_text() {
+    let python =
+        "from helpers import normalize\n\ndef clean(value):\n    return normalize(value)\n";
+    for name in ["worker.py", "store.ts", "loader.js", "view.tsx"] {
+        let chunks = chunk_text(Path::new(name), python);
+        assert_eq!(chunks.len(), 1, "{name}");
+        let chunk = &chunks[0];
+        assert_eq!(chunk.kind, ChunkKind::Fallback, "{name}");
+        assert_eq!((chunk.line_start, chunk.line_end), (1, 4), "{name}");
+        assert_eq!(chunk.body, python, "{name}");
+        assert_eq!(chunk.structural_path, None, "{name}");
+        assert_eq!(chunk.language, None, "{name}");
+        assert!(
+            chunk.definitions.is_empty() && chunk.imports.is_empty(),
+            "{name}"
+        );
+        assert!(chunk.references.is_empty(), "{name}");
+    }
 }

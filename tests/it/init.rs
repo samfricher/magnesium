@@ -486,58 +486,6 @@ fn init_rewrites_tampered_instructions() {
 }
 
 #[test]
-fn init_with_adapter_agents_md_creates_and_updates_bounded_block_preserves_external_bytes() {
-    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    let agents_md = environment.workspace.join("AGENTS.md");
-
-    // Case 1: AGENTS.md does not exist -> created with managed block
-    let output1 = environment
-        .command()
-        .args(["init", "--adapter", "agents-md"])
-        .output()
-        .expect("run init --adapter agents-md");
-    assert_success(&output1);
-    let stdout1 = String::from_utf8(output1.stdout).expect("utf8");
-    assert!(stdout1.contains("adapter: AGENTS.md bootstrap configured"));
-    let content1 = fs::read_to_string(&agents_md).expect("read AGENTS.md");
-    assert!(content1.contains("<!-- magnesium:begin -->"));
-    assert!(content1.contains("<!-- magnesium:end -->"));
-    assert!(content1.contains(&format!("{}/INSTRUCTIONS.md", crate::support::CONTROL_DIR)));
-
-    // Case 2: AGENTS.md has other user content -> managed block is updated without modifying user content
-    let custom_prefix = "# User Rules\nDo not break production.\n\n";
-    let custom_suffix = "\n## Other Rules\nKeep tests green.\n";
-    let combined = format!("{custom_prefix}{content1}{custom_suffix}");
-    fs::write(&agents_md, &combined).expect("write user content");
-
-    let output2 = environment
-        .command()
-        .args(["init", "--adapter", "agents-md"])
-        .output()
-        .expect("rerun init --adapter agents-md");
-    assert_success(&output2);
-    let content2 = fs::read_to_string(&agents_md).expect("read updated AGENTS.md");
-    assert!(content2.starts_with(custom_prefix));
-    assert!(content2.ends_with(custom_suffix));
-    assert!(content2.contains("<!-- magnesium:begin -->"));
-    assert!(content2.contains("<!-- magnesium:end -->"));
-
-    // Case 3: AGENTS.md exists with user content and NO managed block -> block is appended
-    let no_block = "# Plain Agents\nSome instructions.\n";
-    fs::write(&agents_md, no_block).expect("write plain content");
-    let output3 = environment
-        .command()
-        .args(["init", "--adapter", "agents-md"])
-        .output()
-        .expect("run init with plain AGENTS.md");
-    assert_success(&output3);
-    let content3 = fs::read_to_string(&agents_md).expect("read appended AGENTS.md");
-    assert!(content3.starts_with(no_block));
-    assert!(content3.contains("<!-- magnesium:begin -->"));
-    assert!(content3.contains("<!-- magnesium:end -->"));
-}
-
-#[test]
 fn init_bundled_plugin_materialization_and_status() {
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
     let output = environment
@@ -581,96 +529,27 @@ fn init_bundled_plugin_materialization_and_status() {
     assert!(body.contains("teaching-policy/v2"));
 }
 
-#[test]
-fn init_with_invalid_adapter_fails_zero_delta() {
-    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    let output = environment
-        .command()
-        .args(["init", "--adapter", "unsupported-adapter-name"])
-        .output()
-        .expect("run init with invalid adapter");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("unsupported adapter type `unsupported-adapter-name`"));
-
-    // Zero-delta invariant: the control directory must not exist.
-    let control = environment.workspace.join(crate::support::CONTROL_DIR);
-    assert!(
-        !control.exists(),
-        "control directory was created despite invalid adapter"
-    );
-}
-
-#[test]
-fn init_agents_md_preserves_permissions_and_newlines() {
-    let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    let agents_md = environment.workspace.join("AGENTS.md");
-    let crlf_content = "# Project Custom Rules\r\n\r\nLine 2 custom rule.\r\n";
-    fs::write(&agents_md, crlf_content).expect("write initial crlf AGENTS.md");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&agents_md, fs::Permissions::from_mode(0o644)).unwrap();
-        fs::set_permissions(&environment.workspace, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    let output = environment
-        .command()
-        .args(["init", "--adapter", "agents-md"])
-        .output()
-        .expect("run init with agents-md adapter");
-    assert_success(&output);
-
-    let updated_content = fs::read_to_string(&agents_md).expect("read updated AGENTS.md");
-    assert!(updated_content.contains("# Project Custom Rules"));
-    assert!(updated_content.contains("<!-- magnesium:begin -->"));
-    assert!(
-        updated_content.contains("\r\n"),
-        "CRLF newlines were not preserved"
-    );
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let file_mode = fs::metadata(&agents_md).unwrap().permissions().mode() & 0o777;
-        assert_eq!(
-            file_mode, 0o644,
-            "AGENTS.md permissions were changed by init"
-        );
-        let dir_mode = fs::metadata(&environment.workspace)
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777;
-        assert_eq!(
-            dir_mode, 0o755,
-            "Workspace directory permissions were changed by init"
-        );
-    }
-}
-
 #[cfg(unix)]
 #[test]
-fn init_creates_a_new_agents_md_with_the_default_file_mode() {
+fn init_creates_new_folder_settings_with_the_default_file_mode() {
     use std::os::unix::fs::PermissionsExt;
     let environment = TestEnvironment::from_fixture("basic").expect("create test environment");
-    let agents_md = environment.workspace.join("AGENTS.md");
-    assert!(!agents_md.exists());
+    let local = environment.workspace.join(".claude/settings.local.json");
+    assert!(!local.exists());
 
     let output = environment
         .command()
-        .args(["init", "--adapter", "agents-md"])
+        .arg("init")
         .output()
-        .expect("run init with agents-md adapter");
+        .expect("run init");
     assert_success(&output);
 
     // The test and the init child share one umask, so an ordinary new file
-    // shows the mode a new AGENTS.md should get.
+    // shows the mode a new user-owned settings file should get.
     let reference = environment.workspace.join("reference.txt");
     fs::write(&reference, "").expect("write reference file");
     let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode(&agents_md), mode(&reference));
+    assert_eq!(mode(&local), mode(&reference));
 }
 
 #[test]
