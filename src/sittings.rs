@@ -91,6 +91,53 @@ pub(crate) struct Counts {
     pub(crate) posed: i64,
 }
 
+/// Set to "1" on a tool server whose caller runs the lesson itself, such as
+/// the study window's direct engine: its results then carry the opener's
+/// quick checks as data, `sitting_checks`. A tutor's results stay as they
+/// were, with the opener's text alone.
+pub(crate) const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
+
+pub(crate) fn checks_wanted() -> bool {
+    std::env::var(CHECKS_ENV).is_ok_and(|value| value == "1")
+}
+
+/// What a sitting opens with: the opener's text for a tutor, and the same
+/// quick checks as data, `sitting_checks`, for a caller that asks for them
+/// with [`CHECKS_ENV`].
+#[derive(Clone, Debug)]
+pub(crate) struct Opener {
+    pub(crate) text: String,
+    pub(crate) checks: Value,
+}
+
+impl Opener {
+    fn new(checks: &[Check], redos: &[DueRedos]) -> Self {
+        Self {
+            text: opener_text(checks, redos),
+            checks: checks_json(checks),
+        }
+    }
+}
+
+/// The quick checks as data, whole: the opener's text may cut the misses and
+/// stored questions to fit, and this list does not.
+fn checks_json(checks: &[Check]) -> Value {
+    Value::Array(
+        checks
+            .iter()
+            .map(|check| {
+                json!({
+                    "number": check.number,
+                    "label": check.label,
+                    "misses": check.misses,
+                    "question": check.question,
+                    "key": check.key,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// One quick check as the opener states it.
 #[derive(Clone, Debug)]
 struct Check {
@@ -276,7 +323,7 @@ impl Sittings {
         workspace: &Workspace,
         now: i64,
         report: &mut GapLogReport,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<Opener>, String> {
         let Some((sitting, delivered)) = self.current()? else {
             return Ok(None);
         };
@@ -303,7 +350,7 @@ impl Sittings {
             return Ok(None);
         }
         self.write_log();
-        Ok(Some(opener_text(&checks, &redos)))
+        Ok(Some(Opener::new(&checks, &redos)))
     }
 
     /// The current sitting's opener as it stands, without claiming it.
@@ -311,14 +358,14 @@ impl Sittings {
         &self,
         workspace: &Workspace,
         now: i64,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<Opener>, String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
         };
         let items = items_now(workspace);
         let redos = crate::practice::due_redos(&items, local_day(now));
         let checks = self.checks(&sitting, &items)?;
-        Ok((!checks.is_empty() || !redos.is_empty()).then(|| opener_text(&checks, &redos)))
+        Ok((!checks.is_empty() || !redos.is_empty()).then(|| Opener::new(&checks, &redos)))
     }
 
     /// The quick checks a sitting took, with what the record holds for each.

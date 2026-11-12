@@ -11,11 +11,12 @@ use std::time::Duration;
 use mg_core::activity::Activity;
 use mg_core::agent::{Account, AgentEvent, Answer, Decision, Payment};
 use mg_core::claude::ClaudeCode;
+use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
-use mg_core::manager::{Opened, Setup};
+use mg_core::manager::{EngineChoice, Opened, Setup};
 use mg_core::material::Added;
-use mg_core::store::PaperSitting;
+use mg_core::store::{Engine, PaperSitting};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
 use serde::Serialize;
@@ -148,6 +149,17 @@ fn about(app: tauri::AppHandle) -> About {
             .filter(|commit| !commit.is_empty())
             .map(str::to_owned),
     }
+}
+
+/// The engine picked for new lessons, and the open folder's conversation's.
+#[tauri::command(async)]
+fn engine(shell: State<'_, Shell>) -> EngineChoice {
+    shell.manager.engine()
+}
+
+#[tauri::command(async)]
+fn set_engine(shell: State<'_, Shell>, engine: Engine) -> EngineChoice {
+    shell.manager.set_engine(engine)
 }
 
 #[tauri::command(async)]
@@ -311,13 +323,15 @@ fn main() {
         .setup(|app| {
             mg_core::paths::warm_up();
             let handle = app.handle().clone();
+            let store = Arc::new(Store::open());
             let manager = Manager::new(
-                Arc::new(Store::open()),
+                Arc::clone(&store),
                 Arc::new(ClaudeCode::new()),
                 Arc::new(move |event: AgentEvent| {
                     let _ = handle.emit("agent", event);
                 }),
-            );
+            )
+            .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
                 // A check that never reports must still end.
@@ -355,6 +369,8 @@ fn main() {
             set_payment,
             sign_in,
             about,
+            engine,
+            set_engine,
             open_session,
             send,
             send_new_lesson,

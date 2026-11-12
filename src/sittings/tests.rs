@@ -164,10 +164,21 @@ fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
         .take_opener(&workspace, start, &mut report)
         .unwrap()
         .unwrap();
-    assert!(opener.contains("1. Label \"skill 1\"."), "{opener}");
-    assert_eq!(
-        s.take_opener(&workspace, start, &mut report).unwrap(),
-        None,
+    assert!(
+        opener.text.contains("1. Label \"skill 1\"."),
+        "{}",
+        opener.text
+    );
+    // The same checks as data, in the order the opener numbers them.
+    let checks = opener.checks.as_array().unwrap();
+    assert_eq!(checks.len(), 3);
+    assert_eq!(checks[0]["number"], 1);
+    assert_eq!(checks[0]["label"], "skill 1");
+    assert!(checks[0]["misses"].is_array());
+    assert!(
+        s.take_opener(&workspace, start, &mut report)
+            .unwrap()
+            .is_none(),
         "once per sitting"
     );
     let log = std::fs::read_to_string(root.join(".magnesium").join(LOG_FILE)).unwrap();

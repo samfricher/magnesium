@@ -150,7 +150,7 @@ pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
 /// the learner's plan, and does not ask. With the plan chosen, it gets none.
 /// Keys Claude Code keeps itself, such as a Console sign-in, stay as they
 /// are: `account` reports them, so the window never claims the plan wrongly.
-fn apply_payment(command: &mut std::process::Command, payment: Payment) {
+pub(crate) fn apply_payment(command: &mut std::process::Command, payment: Payment) {
     if payment == Payment::Plan {
         command.env_remove("ANTHROPIC_API_KEY");
         command.env_remove("ANTHROPIC_AUTH_TOKEN");
@@ -472,7 +472,7 @@ impl Harness for ClaudeCode {
     }
 }
 
-fn is_session_id(id: &str) -> bool {
+pub(crate) fn is_session_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && !id.starts_with('-')
@@ -675,10 +675,10 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
     shared.emit(AgentEvent::Exited { expected, detail });
 }
 
-const SIGN_IN: &str =
+pub(crate) const SIGN_IN: &str =
     "Claude Code is signed out. Press ⌘K and choose Sign in to Claude Code, then send your message again.";
 
-fn looks_signed_out(text: &str) -> bool {
+pub(crate) fn looks_signed_out(text: &str) -> bool {
     let text = text.to_ascii_lowercase();
     text.contains("/login")
         || text.contains("invalid api key")
@@ -687,7 +687,7 @@ fn looks_signed_out(text: &str) -> bool {
         || text.contains("oauth token")
 }
 
-fn looks_like_a_limit(text: &str) -> bool {
+pub(crate) fn looks_like_a_limit(text: &str) -> bool {
     let text = text.to_ascii_lowercase();
     text.contains("usage limit")
         || text.contains("rate limit")
@@ -817,7 +817,7 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
 
 /// A lesson paid another way than the learner chose, in one line. Claude
 /// Code's first report names the key it uses, or "none" for the plan.
-fn payment_notice(payment: Payment, init: &Value) -> Option<String> {
+pub(crate) fn payment_notice(payment: Payment, init: &Value) -> Option<String> {
     let source = init["apiKeySource"].as_str()?;
     let plan = source == "none";
     match payment {
@@ -1304,7 +1304,7 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
 }
 
 /// The words a failed result gives for its failure, for the learner.
-fn what_went_wrong(value: &Value) -> String {
+pub(crate) fn what_went_wrong(value: &Value) -> String {
     value["result"]
         .as_str()
         .map(str::to_owned)
@@ -1463,7 +1463,7 @@ pub fn describe(tool: &str, input: &Value) -> (String, String) {
     }
 }
 
-fn clip(text: &str, chars: usize) -> String {
+pub(crate) fn clip(text: &str, chars: usize) -> String {
     let text = text.trim();
     if text.chars().count() <= chars {
         return text.to_owned();

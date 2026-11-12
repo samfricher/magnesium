@@ -151,6 +151,45 @@ It keeps that one process open for the sitting and writes each of your messages 
 
 **Another agent** would need a second file beside `claude.rs` that implements the same two traits: start a conversation in a folder, send words, stream the reply, surface approvals, interrupt, resume by id. None is written. Magnesium itself is built and tested for Claude Code only.
 
+## Two engines
+
+A lesson runs on one of two engines. Both reach the model through the learner's own Claude Code, so sign-in, account and payment are Claude Code's in both.
+
+- **Plugin** (`Engine::Plugin`, the default; the page calls it "Claude Code"). Claude Code runs the lesson through Magnesium's plugin, as described above: it loads the teaching files, keeps the record with `learning_step`, and replies through the `reply` tool.
+- **Direct** (`Engine::Direct`; the page calls it "Magnesium"). The window runs the lesson (`crates/core/src/direct.rs`). Claude Code is started as the model alone: Magnesium's tutor prompt in place of Claude Code's (`--system-prompt`), no settings files (`--setting-sources ""`), so no plugin, hooks, skills or tool servers of the learner's or the folder's; no CLAUDE.md, no auto memory, no account connectors; the same named model and effort as the plugin engine. Its tools only look things up: Read, allowed only inside the study root (`Read(//<root>/**)`, with `--add-dir` for a root above the open folder; a bare `Read` would approve any path on the disk, and a live check showed it did), and Magnesium's `search_sources` and `sources`. The record tools are disallowed, which takes their definitions out of the model's context: a first turn reads about 4,000 tokens, against about 20,000 with the five tools.
+
+Each direct turn, the window captures the learner's words with the runtime's prompt hook, starts or resumes the runtime's lesson when none is active in the conversation, and sends the words with the lesson state: the goal, its steps, the open task, the quick checks due (the runtime's `sitting_checks`), earlier answers on the goal, what the learner's memories say and the course graphs, all of it at the start of a conversation, then only what changed. The reply streams as it is written. It ends with a record block of the tutor's judgment (the mark, the help it gave, the skill, a note, the task it poses, the goal's steps, a misunderstanding found or cleared), which is never shown: `crates/core/src/record.rs` cuts it from the stream, checks it and turns it into one `learning_step`, adding what code knows better than the model, such as the task that was open, the help given on it across turns, the Hint button and "I don't know". The turn ends for the learner as soon as the reply is whole; the record is kept just after it, within a 20-second budget, and a message sent meanwhile waits for it. The stop hook then records the reply as shown. A tool call that hangs for 8 seconds replaces the runtime's tool server and is sent again exactly as it was, which the runtime answers with its first result. A missing or unreadable block is asked for once more, in a request the learner never sees; a message sent meanwhile waits for it. If the second answer is no better, the window says that one answer was not marked, the trace log (`MAGNESIUM_APP_TRACE`) gets a line, and the lesson goes on. An interrupted reply gets no mark, and its task stays open.
+
+**A conversation keeps its engine.** The window stores the engine the learner picked for new lessons, and the engine that started each folder's conversation beside its id. A conversation resumes only on its own engine. When the learner picks the other engine, the next lesson is a new conversation, and the record carries the progress across: the direct engine resumes the runtime's lesson in it, with its goal, steps and open task.
+
+**Practice papers stay on the plugin engine.** Handing in a paper from the paper screen always opens a plugin conversation to mark it, whatever the learner picked; the lesson after that is on the learner's pick again. Sitting a paper uses no tutor. In a direct lesson the tutor says, in one line, that papers are built and marked, and paper redos done, with the Claude Code tutor, and goes on.
+
+**The tutor's prompt** is `crates/core/prompts/tutor.md`, built into the window. The direct engine teaches from this text, not from the teaching files in `src/workspace/learning/`. It is much shorter than those files and leaves some of their rules out, such as anchors. It does hold the reason for each move, a new explanation when confusion repeats, transfer, a route built from the course graph, self-explanation at a hinge, an answer to each guess, telling a slip from a misunderstanding, and aiming higher after right answers. The first lesson state of a conversation names each course graph in the study root (`Study/<plan>/graph.yaml`, as in the teaching files), and the tutor reads the one whose tags cover the goal when it sets or changes the route. Until one engine is retired, a change to a teaching rule must be made in both places. To try other wording without a rebuild, name a file in `MAGNESIUM_TUTOR_PROMPT`. Claude Code records a conversation's prompt once, when the conversation starts, and keeps it on resume, so a changed file reaches new conversations only.
+
+The page reaches the choice through two commands, `engine` and `set_engine`, and `open_session` says which engine it opened:
+
+```
+engine()                 -> {"chosen": "direct", "conversation": "plugin"}
+set_engine({engine})     -> the same shape; "plugin" or "direct"
+open_session({resume})   -> {"resumed": false, "turns": [...], "engine": "direct"}
+```
+
+`conversation` is the engine of the open folder's conversation, running or remembered, or null when it has none.
+
+**What the direct engine does not do yet:**
+
+- It writes no anchors into the learner's memory; a misunderstanding found or cleared is its only memory edit. That edit keeps one line of its own in the memory's description, rewritten in place, and never changes another line, such as an anchor the plugin engine's tutor wrote. When the description is at the runtime's limit (16 KiB), it makes no edit. The tutor names the memory it revises by the short id the lesson state lists; it sees the memories a `prepare` for the goal returns, at most eight.
+- It stores no next question and answer key for a quick check (`next` in an attempt), which the plugin engine's tutor stores with a miss; the check's opener then asks the tutor to make a new question.
+- It builds and marks no papers, and does no paper redos.
+- It makes no files: no figures, pages or plans. It asks no permission and no multiple-choice question.
+- A paused or stopped lesson goes on only when the learner opens it again from the window (Continue or a new lesson), not from words typed in the same conversation.
+
+**Pause, stop and recording off.** The record block can carry a control the learner asked for in their own words: `pause`, `stop`, `recording_off` or `recording_on`. The engine makes the same `learning_step` control call the plugin engine's tutor makes. After a pause or stop it sends nothing more to the record in that conversation, and the tutor is told to set no task unless the learner asks to go on; opening the lesson again from the window resumes it. After recording off it sends nothing at all, hooks included, in that conversation or any later one in the study folder (the window keeps the choice by study root), and an answer with no mark raises no notice, until the learner asks for recording on. A write the runtime refuses because recording is off or the lesson is inactive stops the engine the same way.
+
+**Cold answers.** An answer is sent cold when it is a due quick check answered with no help, or when the tutor's block says it came from a blank page and the runtime would take it: no help, not a decline, and no answer on that skill earlier the same day as far as the engine knows. If the runtime still refuses it, the answer is sent again as not cold, so the mark is kept.
+
+`crates/core/tests/direct.rs` drives it with a stand-in model and the real runtime. `crates/core/tests/live_direct.rs` runs it against the real Claude Code (ignored by default; it starts a model on your subscription).
+
 ## Where things are
 
 ```
