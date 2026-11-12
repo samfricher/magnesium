@@ -119,8 +119,15 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
   );
 }
 
-export function SourcePanel(props: { source: SourceRef; onClose: () => void; onNote: (note: string) => void }) {
+export function SourcePanel(props: {
+  source: SourceRef;
+  /** The window is too narrow for it beside the lesson: it is a sheet over the lesson, and takes the keyboard. */
+  sheet?: boolean;
+  onClose: () => void;
+  onNote: (note: string) => void;
+}) {
   const { source } = props;
+  const close = useRef<HTMLButtonElement>(null);
   const [shown, setShown] = useState<Source | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -142,6 +149,10 @@ export function SourcePanel(props: { source: SourceRef; onClose: () => void; onN
   }, [source.path]);
 
   useEffect(() => {
+    if (props.sheet) close.current?.focus();
+  }, [props.sheet, source.path]);
+
+  useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented) {
         event.preventDefault();
@@ -155,14 +166,20 @@ export function SourcePanel(props: { source: SourceRef; onClose: () => void; onN
   // A file the window refused is not named: an answer key's name stays out of sight.
   const name = failure ? "Source" : (shown?.name ?? source.path.split("/").pop() ?? source.path);
   return (
-    <aside className="source-panel" data-role="source-panel" aria-label={`Source: ${name}`}>
+    <aside
+      className={props.sheet ? "source-panel as-sheet" : "source-panel"}
+      data-role="source-panel"
+      aria-label={`Source: ${name}`}
+      {...(props.sheet ? { role: "dialog", "aria-modal": true } : {})}
+    >
       <header>
         <Icon name="paper" size={15} />
         <span className="source-name selectable" title={source.path}>
           {name}
         </span>
-        <button className="icon-btn" aria-label="Close the source" title="Close (Esc)" onClick={props.onClose} data-role="source-close">
-          <Icon name="close" size={15} />
+        <button className="btn ghost small" ref={close} aria-label="Close the source" title="Close (Esc)" onClick={props.onClose} data-role="source-close">
+          <Icon name="close" size={14} />
+          Close
         </button>
       </header>
       {failure ? (

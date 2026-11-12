@@ -1040,6 +1040,7 @@ export function App() {
         rail={rail}
         blockMinutes={home.block_minutes}
         engine={lessonEngine ? engineName(lessonEngine) : null}
+        overlay={palette || pasting !== null}
         onSend={(text) => void say(text)}
         onInterrupt={() => void guard((api) => api.interrupt())()}
         onDecide={(id: string, decision: Decision) =>

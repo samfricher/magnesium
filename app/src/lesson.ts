@@ -206,3 +206,15 @@ export function opening(text: string): { stoppedAt: string | null } | null {
   const found = OPENING.exec(text.trim());
   return found ? { stoppedAt: found[1]?.trim() || null } : null;
 }
+
+/**
+ * The plain words the three help buttons send. The tutor gives the smallest
+ * help that lets the learner take the next step, and the runtime asks a skill
+ * got right with a hint again, cold, the next day.
+ */
+export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
+
+/** Whether a line the learner sent is a request for a hint. */
+export function isHint(text: string): boolean {
+  return text.trim() === HELP.hint;
+}
