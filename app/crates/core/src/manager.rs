@@ -4,7 +4,9 @@
 //! plugin. So this sends the learner's plain words and nothing more, and a
 //! button such as "I'm lost" sends those two words.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use std::time::Duration;
@@ -16,14 +18,14 @@ use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
-    Harness, Intent, Payment, StartOptions,
+    Harness, Intent, Payment, SavedWaiter, StartOptions,
 };
 use crate::files;
 use crate::find;
 use crate::install::{self, RuntimeSetup};
 use crate::material::{self, Added};
 use crate::paths;
-use crate::plan::{self, Plan};
+use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
 use crate::store::{Engine, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
@@ -56,6 +58,47 @@ struct Inner {
     papers_next: Option<std::time::Instant>,
 }
 
+/// What the manager watches across one message: the record's marks before
+/// it was sent, so a row that appears after it is that message's mark.
+#[derive(Default)]
+struct Watch {
+    /// Counts messages sent, so a settle stops when the learner writes again.
+    seq: u64,
+    /// The ids of the record's marked answers just before the message, or
+    /// none when the runtime cannot list them.
+    marks_before: Option<HashSet<String>>,
+    intent: Option<Intent>,
+}
+
+/// The last reading of a folder's plan, which the next turn is compared with.
+struct Seen {
+    folder: PathBuf,
+    plan: Plan,
+    /// When the window last saw the goal or its steps change.
+    goal_changed_ms: Option<i64>,
+}
+
+/// What a turn's settle needs, shared between the manager and each sink.
+#[derive(Clone)]
+struct Settling {
+    watch: Arc<Mutex<Watch>>,
+    seen: Arc<Mutex<Option<Seen>>>,
+    /// A message was sent and its reply has not ended.
+    turn_running: Arc<AtomicBool>,
+    /// Settles still reading the record for the last turn.
+    pending: Arc<AtomicUsize>,
+}
+
+/// How long a settle waits for the direct engine to keep a turn's record:
+/// its save budget and the read-back after it, with room to spare.
+const SAVE_WAIT: Duration = Duration::from_secs(35);
+/// When the record is read for a new mark after a reply ends, counted from
+/// the end of the reply (or of its save), as the lesson read it before:
+/// the plugin engine's tutor may write the mark just after the reply.
+const MARK_LOOKS_MS: [u64; 6] = [0, 1_000, 2_500, 5_000, 10_000, 20_000];
+/// Looks after this many no longer keep the window busy for the harness.
+const BUSY_LOOKS: usize = 3;
+
 pub struct Manager {
     store: Arc<Store>,
     harness: Arc<dyn Harness>,
@@ -66,6 +109,7 @@ pub struct Manager {
     /// Counts conversations. A conversation that was closed or replaced
     /// still runs for a while, and its events must not reach the page.
     current: Arc<Mutex<u64>>,
+    settling: Settling,
 }
 
 /// What this Mac has for lessons: the `magnesium` program, the agent and how
@@ -120,6 +164,12 @@ impl Manager {
                 papers_next: None,
             }),
             current: Arc::new(Mutex::new(0)),
+            settling: Settling {
+                watch: Arc::new(Mutex::new(Watch::default())),
+                seen: Arc::new(Mutex::new(None)),
+                turn_running: Arc::new(AtomicBool::new(false)),
+                pending: Arc::new(AtomicUsize::new(0)),
+            },
         }
     }
 
@@ -181,7 +231,15 @@ impl Manager {
         if let Some(mut conversation) = inner.conversation.take() {
             conversation.close();
         }
+        self.settling.turn_running.store(false, Ordering::SeqCst);
         generation
+    }
+
+    /// Whether a message's reply is running, or the record is still being
+    /// read for what it changed. For the evidence harness.
+    pub fn busy(&self) -> bool {
+        self.settling.turn_running.load(Ordering::SeqCst)
+            || self.settling.pending.load(Ordering::SeqCst) > 0
     }
 
     pub fn store(&self) -> &Store {
@@ -268,7 +326,15 @@ impl Manager {
 
     /// The open folder's study plan, read fresh.
     pub fn plan(&self) -> AgentResult<Plan> {
-        Ok(plan::read(&self.need_folder()?))
+        let folder = self.need_folder()?;
+        let mut plan = plan::read(&folder);
+        if let Some(seen) = lock(&self.settling.seen)
+            .as_ref()
+            .filter(|seen| seen.folder == folder)
+        {
+            plan.changed_ms = plan.changed_ms.max(seen.goal_changed_ms);
+        }
+        Ok(plan)
     }
 
     /// The answers the runtime has marked in the open folder, oldest first.
@@ -361,10 +427,12 @@ impl Manager {
         buffer: Arc<Mutex<Buffer>>,
         generation: u64,
         engine: Engine,
+        waiter: Arc<Mutex<Option<SavedWaiter>>>,
     ) -> EventSink {
         let store = Arc::clone(&self.store);
         let out = Arc::clone(&self.sink);
         let current = Arc::clone(&self.current);
+        let settling = self.settling.clone();
         Arc::new(move |event: AgentEvent| {
             // Held to the end, so the conversation cannot be replaced between
             // this check and the event reaching the page.
@@ -387,6 +455,9 @@ impl Manager {
                 // likely asked for a conversation it no longer has. Forget
                 // the id, so the next message starts a new conversation.
                 AgentEvent::Exited { expected, .. } => {
+                    if live {
+                        settling.turn_running.store(false, Ordering::SeqCst);
+                    }
                     let mut buffer = lock(&buffer);
                     buffer.ended = true;
                     if live && !expected && !buffer.ready {
@@ -428,8 +499,23 @@ impl Manager {
                 }
                 _ => {}
             }
+            let ended = matches!(event, AgentEvent::TurnEnded { .. });
             if live {
                 out(event);
+            }
+            // What the turn changed is read once the reply has ended, and
+            // its record has been kept.
+            if live && ended {
+                settling.turn_running.store(false, Ordering::SeqCst);
+                let waiter = lock(&waiter).clone();
+                settle(
+                    settling.clone(),
+                    folder.clone(),
+                    waiter,
+                    Arc::clone(&out),
+                    Arc::clone(&current),
+                    generation,
+                );
             }
         })
     }
@@ -488,14 +574,22 @@ impl Manager {
             session: remembered.clone(),
             ..Buffer::default()
         }));
+        let waiter = Arc::new(Mutex::new(None));
         let conversation = self.harness_for(engine).start(
             StartOptions {
                 folder: folder.clone(),
                 resume: remembered.clone(),
                 payment: self.store.payment(),
             },
-            self.sink_for(folder.clone(), Arc::clone(&buffer), generation, engine),
+            self.sink_for(
+                folder.clone(),
+                Arc::clone(&buffer),
+                generation,
+                engine,
+                Arc::clone(&waiter),
+            ),
         )?;
+        *lock(&waiter) = conversation.saved_waiter();
         inner.conversation = Some(conversation);
         inner.buffer = buffer;
         inner.engine = engine;
@@ -533,13 +627,41 @@ impl Manager {
         typed: bool,
         intent: Option<Intent>,
     ) -> AgentResult<()> {
-        let buffer = Arc::clone(&lock(&self.inner).buffer);
+        let (buffer, folder) = {
+            let inner = lock(&self.inner);
+            (Arc::clone(&inner.buffer), inner.folder.clone())
+        };
         {
             let mut buffer = lock(&buffer);
             buffer.learner = shown.to_owned();
             buffer.typed = typed;
         }
-        self.with_conversation(|conversation| conversation.send_with(sent, intent))
+        // What the record and the plan hold before the message, so the turn
+        // can be compared with them once it has settled.
+        if let Some(folder) = &folder {
+            let before = runtime::marks(folder)
+                .map(|rows| rows.into_iter().map(|row| row.id).collect::<HashSet<_>>());
+            {
+                let mut watch = lock(&self.settling.watch);
+                watch.seq += 1;
+                watch.marks_before = before;
+                watch.intent = intent;
+            }
+            let mut seen = lock(&self.settling.seen);
+            if seen.as_ref().is_none_or(|seen| &seen.folder != folder) {
+                *seen = Some(Seen {
+                    folder: folder.clone(),
+                    plan: plan::read(folder),
+                    goal_changed_ms: None,
+                });
+            }
+        }
+        self.settling.turn_running.store(true, Ordering::SeqCst);
+        let sent = self.with_conversation(|conversation| conversation.send_with(sent, intent));
+        if sent.is_err() {
+            self.settling.turn_running.store(false, Ordering::SeqCst);
+        }
+        sent
     }
 
     /// Send the learner's words exactly as typed, and leave it to the tutor
@@ -745,4 +867,93 @@ impl Manager {
     pub fn shut_down(&self) {
         self.close_conversation(&mut lock(&self.inner));
     }
+}
+
+/// Read what a turn changed, once its record is kept: the plan, compared with
+/// the last reading, and the record's marks, compared with those before the
+/// message. Sends `plan_changed` and `marked` while the conversation is still
+/// the page's. Runs on its own thread, so the page is never held up.
+fn settle(
+    settling: Settling,
+    folder: PathBuf,
+    waiter: Option<SavedWaiter>,
+    out: EventSink,
+    current: Arc<Mutex<u64>>,
+    generation: u64,
+) {
+    let (seq, before, intent) = {
+        let mut watch = lock(&settling.watch);
+        (watch.seq, watch.marks_before.take(), watch.intent)
+    };
+    settling.pending.fetch_add(1, Ordering::SeqCst);
+    std::thread::spawn(move || {
+        let mut counted = true;
+        let release = |counted: &mut bool| {
+            if std::mem::take(counted) {
+                settling.pending.fetch_sub(1, Ordering::SeqCst);
+            }
+        };
+        let live = || *lock(&current) == generation;
+        let kept = waiter.as_ref().map(|wait| wait(SAVE_WAIT));
+        // The plan, against the last reading.
+        let mut after = plan::read(&folder);
+        let what = {
+            let mut seen = lock(&settling.seen);
+            let (what, mut goal_changed_ms) = match seen.as_ref().filter(|s| s.folder == folder) {
+                Some(last) => (plan::changes(&last.plan, &after), last.goal_changed_ms),
+                None => (Vec::new(), None),
+            };
+            if what
+                .iter()
+                .any(|part| matches!(part, PlanPart::Goal | PlanPart::Steps))
+            {
+                goal_changed_ms = Some(Local::now().timestamp_millis());
+            }
+            after.changed_ms = after.changed_ms.max(goal_changed_ms);
+            *seen = Some(Seen {
+                folder: folder.clone(),
+                plan: after,
+                goal_changed_ms,
+            });
+            what
+        };
+        if !what.is_empty() && live() {
+            out(AgentEvent::PlanChanged { what });
+        }
+        // The record's new marks. The direct engine has kept the turn's
+        // record by now, so one reading says it all; the plugin engine's
+        // tutor may write it a little after the reply, so it is read a few
+        // times more. A message sent meanwhile ends the looking.
+        if let Some(before) = before {
+            let once = kept == Some(true) || (intent == Some(Intent::Talk) && kept.is_some());
+            let mut waited = 0;
+            for (look, at) in MARK_LOOKS_MS.iter().enumerate() {
+                if look >= BUSY_LOOKS {
+                    release(&mut counted);
+                }
+                std::thread::sleep(Duration::from_millis(at - waited));
+                waited = *at;
+                if lock(&settling.watch).seq != seq || !live() {
+                    break;
+                }
+                let fresh: Vec<runtime::Mark> = runtime::marks(&folder)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|row| !before.contains(&row.id))
+                    .collect();
+                if !fresh.is_empty() {
+                    if live() {
+                        for mark in fresh {
+                            out(AgentEvent::Marked { mark });
+                        }
+                    }
+                    break;
+                }
+                if once {
+                    break;
+                }
+            }
+        }
+        release(&mut counted);
+    });
 }

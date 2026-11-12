@@ -187,7 +187,7 @@ export function Course(props: {
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={goal.trim() === "" || props.starting} title="Start (Return)" onClick={start}>
+          <button className="btn primary" data-drive="start" disabled={goal.trim() === "" || props.starting} title="Start (Return)" onClick={start}>
             {props.starting ? "Starting…" : home.state === "not_set_up" ? "Start your first lesson" : "Start"}
           </button>
           {!fresh && (
@@ -214,7 +214,7 @@ export function Course(props: {
           <p className="selectable">Up next: <Line text={upNext} /></p>
         ) : null}
         <div className="row">
-          <button className="btn primary" disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
+          <button className="btn primary" data-drive="start" disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
             {props.starting ? "Starting…" : last ? "Continue" : "Start your first lesson"}
           </button>
           {due > 0 && (

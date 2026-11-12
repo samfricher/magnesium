@@ -2719,6 +2719,11 @@ impl Conversation for DirectConversation {
         self.shared.wait_idle(limit)
     }
 
+    fn saved_waiter(&self) -> Option<crate::agent::SavedWaiter> {
+        let shared = Arc::clone(&self.shared);
+        Some(Arc::new(move |limit| shared.wait_idle(limit)))
+    }
+
     fn close(&mut self) {
         if self.shared.closing.swap(true, Ordering::SeqCst) {
             return;
