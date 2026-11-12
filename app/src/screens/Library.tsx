@@ -92,16 +92,16 @@ function CourseCard(props: {
   const [asking, setAsking] = useState(false);
   const open = useRef<HTMLButtonElement>(null);
   const remove = useRef<HTMLButtonElement>(null);
-  const confirm = useRef<HTMLButtonElement>(null);
+  const keep = useRef<HTMLButtonElement>(null);
   const now = useNow(card.sitting ? 1000 : 60_000);
   const detail = useId();
 
   useEffect(() => {
     if (props.focus) open.current?.focus({ preventScroll: false });
   }, [props.focus]);
-  // A confirmation is one pattern everywhere: the action first (ink-filled, as it removes something), then the outlined way out. Return does the action, Esc the way out, and focus starts on the action. Closing it puts focus back on the control that opened it.
+  // A destructive confirmation starts on the safe answer: focus is on Keep, and Esc is Keep. Remove is an outlined button with ink text, and Return on it removes. Closing puts focus back on the control that opened it.
   useEffect(() => {
-    if (asking) confirm.current?.focus();
+    if (asking) keep.current?.focus();
   }, [asking]);
 
   const proofs = card.proofs;
@@ -132,11 +132,11 @@ function CourseCard(props: {
         <h2 className="h-section">Remove {name}?</h2>
         <p className="cc-note">It leaves this list. Your files and your record stay on your Mac.</p>
         <div className="row">
-          <button className="btn danger" ref={confirm} onClick={props.onForget}>
-            Remove
-          </button>
-          <button className="btn" onClick={cancel}>
+          <button className="btn" ref={keep} onClick={cancel}>
             Keep
+          </button>
+          <button className="btn" onClick={props.onForget}>
+            Remove
           </button>
         </div>
       </div>
@@ -177,7 +177,12 @@ function CourseCard(props: {
         <div className="cc-body">
           <div className="cc-text">
             <div className="cc-name">
-              <h2 className="h-section">{name}</h2>
+              <h2 className="h-section">
+                {/* The card is one target for the pointer: this real button is stretched over all of it, behind Continue, Course page and Remove, which stand above it. Continue does the same for the keyboard and a screen reader, so this one is out of both. */}
+                <button className="cc-open" tabIndex={-1} aria-hidden="true" onMouseDown={(event) => event.preventDefault()} onClick={props.onOpen}>
+                  {name}
+                </button>
+              </h2>
               <ExamFact card={card} />
             </div>
             <p className="cc-where">{where}</p>
@@ -189,7 +194,7 @@ function CourseCard(props: {
           </div>
         </div>
         <div className="cc-foot">
-          <button ref={open} className={props.ready ? "btn primary cc-open" : "btn cc-open"} title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
+          <button ref={open} className={props.ready ? "btn primary" : "btn"} title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
             {label}
           </button>
           {props.onCourse && (

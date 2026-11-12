@@ -366,9 +366,11 @@ html[data-input="key"] .index-row:focus-visible .row-chev {
   outline: none;
 }
 
+/* Everything that is pressed on its own stands above the stretched button that makes the rest of the card one target. */
 .cc-side,
 .cc-more,
-.cc-foot .due {
+.cc-foot .due,
+.library-next .cc-foot .btn {
   position: relative;
   z-index: 1;
 }

@@ -31,12 +31,12 @@ export function Paper(props: {
   // Handing in marks the paper and ends the sitting, so it asks first. The confirmation is the window's one pattern: the action first, then the outlined way out; Return does the action, Esc the way out, and focus starts on the action.
   const [confirmIn, setConfirmIn] = useState(false);
   const handIn = useRef<HTMLButtonElement>(null);
-  const endNow = useRef<HTMLButtonElement>(null);
+  const keepGoing = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (confirmIn) handIn.current?.focus();
   }, [confirmIn]);
   useEffect(() => {
-    if (confirmEnd) endNow.current?.focus();
+    if (confirmEnd) keepGoing.current?.focus();
   }, [confirmEnd]);
 
   if (sitting) {
@@ -113,11 +113,11 @@ export function Paper(props: {
                 </button>
                 {confirmEnd ? (
                   <>
-                    <button className="btn danger" ref={endNow} onClick={props.onEnd}>
-                      End the paper
-                    </button>
-                    <button className="btn" onClick={() => setConfirmEnd(false)}>
+                    <button className="btn" ref={keepGoing} onClick={() => setConfirmEnd(false)}>
                       Keep going
+                    </button>
+                    <button className="btn" onClick={props.onEnd}>
+                      End the paper
                     </button>
                   </>
                 ) : (
