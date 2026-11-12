@@ -313,6 +313,11 @@ impl Harness for DirectTutor {
             .store
             .as_ref()
             .is_some_and(|store| store.folder(&root).recording_off);
+        let memo = self
+            .store
+            .as_ref()
+            .and_then(|store| store.folder(&folder).direct)
+            .and_then(|value| serde_json::from_value::<Memo>(value).ok());
         let shared = Arc::new(Shared {
             store: self.store.clone(),
             root,
@@ -338,9 +343,13 @@ impl Harness for DirectTutor {
             interrupts: AtomicU64::new(0),
             counter: AtomicU64::new(0),
             stderr_tail: Mutex::new(String::new()),
-            state: Mutex::new(State {
-                halt: recording_off.then_some(Halt::RecordingOff),
-                ..State::default()
+            state: Mutex::new({
+                let mut state = State {
+                    halt: recording_off.then_some(Halt::RecordingOff),
+                    ..State::default()
+                };
+                state.restore(memo, &session, resumed.is_some());
+                state
             }),
             trace: env::var_os(claude::TRACE_ENV)
                 .filter(|path| !path.is_empty())
@@ -495,6 +504,8 @@ struct State {
     repairs_new: Vec<record::WaitingRepair>,
     /// What the record made of the last repair, to tell the tutor.
     repair_outcome: Option<String>,
+    /// The store showed that the last message was a sitting ago.
+    known_new_sitting: bool,
     /// The learner's memories the tutor has been shown, by the short id it
     /// names them with: ("m1", the runtime's memory id).
     memories: Vec<(String, String)>,
@@ -507,12 +518,105 @@ struct State {
 /// redo is due, as the runtime sends them.
 type Due = (Vec<DueCheck>, Value);
 
+/// What the engine keeps in the window's store about the sitting, so that a
+/// window started again knows it: when the learner last wrote, what the
+/// sitting taught, and, for the same conversation, the repairs, checks and
+/// redos it listed by number. Without it, a restarted window would number
+/// repairs from one again and bind a finished one to the wrong rows.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+struct Memo {
+    session: String,
+    /// The wall clock, in milliseconds.
+    last_message_ms: i64,
+    #[serde(default)]
+    sitting_labels: Vec<String>,
+    #[serde(default)]
+    sitting_unknown: bool,
+    #[serde(default)]
+    today: String,
+    #[serde(default)]
+    answered_today: Vec<String>,
+    #[serde(default)]
+    repairs: Vec<record::WaitingRepair>,
+    #[serde(default)]
+    repair_numbers: i64,
+    #[serde(default)]
+    checks: Vec<DueCheck>,
+    #[serde(default)]
+    posed_checks: Vec<DueCheck>,
+    #[serde(default)]
+    redos: Vec<record::DueRedo>,
+}
+
+fn epoch_ms(time: SystemTime) -> i64 {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
+impl State {
+    /// Take back what the store kept of the sitting. A sitting still under
+    /// way keeps what it taught, in any conversation in the folder, and,
+    /// in the same conversation, what it listed by number. A resumed
+    /// conversation with nothing kept cannot know what its sitting taught,
+    /// and sends nothing cold until a new one begins.
+    fn restore(&mut self, memo: Option<Memo>, session: &str, resumed: bool) {
+        let Some(memo) = memo else {
+            self.lesson.sitting_unknown = resumed;
+            return;
+        };
+        let same = memo.session == session;
+        if same {
+            // A number is never given twice in a conversation.
+            self.lesson.repair_numbers = memo.repair_numbers;
+        }
+        let last = std::time::UNIX_EPOCH
+            + Duration::from_millis(u64::try_from(memo.last_message_ms).unwrap_or(0));
+        let gap = SystemTime::now().duration_since(last).unwrap_or_default();
+        if gap > SITTING_GAP {
+            self.known_new_sitting = true;
+            return;
+        }
+        self.last_message = Some(last);
+        self.lesson.sitting_labels = memo.sitting_labels;
+        self.lesson.sitting_unknown = memo.sitting_unknown || (resumed && !same);
+        self.lesson.today = memo.today;
+        self.lesson.answered_today = memo.answered_today;
+        if same {
+            self.lesson.repairs = memo.repairs;
+            self.lesson.checks = memo.checks;
+            self.lesson.posed_checks = memo.posed_checks;
+            self.lesson.redos = memo.redos;
+            self.checks_asked = true;
+        }
+    }
+
+    fn memo(&self, session: &str) -> Option<Memo> {
+        Some(Memo {
+            session: session.to_owned(),
+            last_message_ms: epoch_ms(self.last_message?),
+            sitting_labels: self.lesson.sitting_labels.clone(),
+            sitting_unknown: self.lesson.sitting_unknown,
+            today: self.lesson.today.clone(),
+            answered_today: self.lesson.answered_today.clone(),
+            repairs: self.lesson.repairs.clone(),
+            repair_numbers: self.lesson.repair_numbers,
+            checks: self.lesson.checks.clone(),
+            posed_checks: self.lesson.posed_checks.clone(),
+            redos: self.lesson.redos.clone(),
+        })
+    }
+}
+
 impl State {
     /// A new sitting: what the last one listed and did not pose is gone.
-    /// It is listed again if it is still due.
-    fn begin_sitting(&mut self) {
+    /// It is listed again if it is still due. Not knowing what the sitting
+    /// taught lasts until a new sitting is known to begin.
+    fn begin_sitting(&mut self, known: bool) {
+        let unknown = self.lesson.sitting_unknown && !known;
         self.checks_asked = false;
         self.lesson.begin_sitting();
+        self.lesson.sitting_unknown = unknown;
     }
 }
 
@@ -530,6 +634,8 @@ const REDO_SET_ASIDE: &str = "The paper redo was set aside before it was answere
 const CHECK_NO_PASS: &str = "Your answer is saved, but it did not count as a pass for the quick check this time. That check stays due.";
 /// What the tutor is told after a reply the learner stopped part-way.
 const STOPPED: &str = "Your last reply was stopped part-way by the learner, and nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
+/// What the tutor is told after recording comes back on.
+const RECORDING_BACK: &str = "Recording is back on. Nothing said while it was off was recorded, so no task is open: pose the task again before you mark an answer to it.";
 /// What the tutor is told after a reply whose record could not be read.
 const UNREAD: &str = "Your last reply's record block was unreadable, so nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
 
@@ -830,6 +936,7 @@ fn work_loop(shared: &Arc<Shared>) {
                     shared.phase.store(PREPARING, Ordering::SeqCst);
                 }
                 let ended = turn(shared, &words);
+                remember(shared);
                 shared.phase.store(IDLE, Ordering::SeqCst);
                 shared.done();
                 if ended {
@@ -843,6 +950,20 @@ fn work_loop(shared: &Arc<Shared>) {
                 return;
             }
         }
+    }
+}
+
+/// Keep what the sitting knows in the window's store, for a window started
+/// again.
+fn remember(shared: &Arc<Shared>) {
+    let Some(store) = &shared.store else {
+        return;
+    };
+    let Some(memo) = lock(&shared.state).memo(&shared.session) else {
+        return;
+    };
+    if let Ok(value) = serde_json::to_value(memo) {
+        store.update(&shared.folder, |folder| folder.direct = Some(value));
     }
 }
 
@@ -1124,13 +1245,17 @@ impl Prepared {
 fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str) -> Prepared {
     let host = &shared.host;
     let mut state = lock(&shared.state);
-    let new_sitting = state.last_message.is_none_or(|last| {
+    let first = state.last_message.is_none();
+    let gap_passed = state.last_message.is_some_and(|last| {
         SystemTime::now()
             .duration_since(last)
             .is_ok_and(|gap| gap > SITTING_GAP)
     });
-    if new_sitting {
-        state.begin_sitting();
+    // A new sitting is known when the learner last wrote a sitting ago, in
+    // this window or, as the store says, before it started.
+    let known_new = gap_passed || std::mem::take(&mut state.known_new_sitting);
+    if first || gap_passed {
+        state.begin_sitting(known_new);
     }
     state.last_message = Some(SystemTime::now());
     let mut facts = Facts {
@@ -1312,6 +1437,14 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
                 }
             }
         }
+    }
+    // A new sitting has no open task: one posed a sitting ago, read back
+    // from the record or kept here, is not what is on screen now. A check
+    // posed and not answered is still due, and the runtime lists it again.
+    // The turn's save writes the checkpoint without it.
+    if known_new && state.lesson.task.take().is_some() {
+        state.redo_clock = None;
+        shared.note("a new sitting: the task open in the last one is set aside");
     }
     facts.known.extend(std::mem::take(&mut state.memories_new));
     // When the calls above made none, in a sitting not asked about yet, one
@@ -1554,6 +1687,21 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                     text: REDO_SET_ASIDE.into(),
                 });
             }
+            // A block cut short that had begun to name a finished repair:
+            // nothing is recorded, and both are told.
+            let block: String = said
+                .cutter
+                .block()
+                .unwrap_or_default()
+                .split_whitespace()
+                .collect();
+            if block.contains("\"repair\":{") {
+                repair_lost(
+                    shared,
+                    "Your last reply was stopped, so the repair its record named was not recorded. Its paper question still waits for a repair.",
+                    REPAIR_NOT_SAVED,
+                );
+            }
         }
         shared.emit(AgentEvent::TurnEnded {
             ok: true,
@@ -1618,6 +1766,22 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // and the turn that asked for it records nothing more.
     if let Some(control) = record.as_ref().and_then(|record| record.control) {
         apply_control(shared, control, &words, event.as_deref());
+        // The turn that asks for a control records nothing more, a repair
+        // included: both are told.
+        if let Some(note) = record.as_ref().and_then(|record| record.repair.as_ref()) {
+            shared.note(&format!(
+                "repair {} not recorded: the block also asked for a control",
+                note.number
+            ));
+            repair_lost(
+                shared,
+                &format!(
+                    "Repair {} was not recorded: the same reply asked to pause, stop or change recording, and records nothing more. Its paper question still waits for a repair.",
+                    note.number
+                ),
+                REPAIR_NOT_SAVED,
+            );
+        }
         return ended;
     }
     if halted {
@@ -1653,14 +1817,16 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                             "Repair {} was not recorded: the record could not keep your last reply. Its paper question still waits for a repair.",
                             note.number
                         ),
-                    );
+        REPAIR_NOT_SAVED,
+    );
                 }
                 (None, _, false) if record.repair_unreadable => {
                     shared.note("the block named a repair that could not be read");
                     repair_lost(
                         shared,
                         "Your block named a repair, but without its number or a line on what was done, so nothing was recorded: its paper question still waits for a repair.",
-                    );
+        REPAIR_NOT_SAVED,
+    );
                 }
                 _ => {}
             }
@@ -1709,13 +1875,17 @@ const REPAIR_NOT_SAVED: &str = "If the tutor finished a repair just now, it was 
 
 /// A repair the tutor finished and the record does not hold: the learner is
 /// told now, and the tutor, with `why`, on the next turn.
-fn repair_lost(shared: &Arc<Shared>, why: &str) {
+fn repair_lost(shared: &Arc<Shared>, why: &str, notice: &str) {
     lock(&shared.state).repair_outcome = Some(why.to_owned());
     shared.emit(AgentEvent::Notice {
         kind: NoticeKind::Other,
-        text: REPAIR_NOT_SAVED.into(),
+        text: notice.into(),
     });
 }
+
+/// The learner's notice for a repair whose save the record could not
+/// confirm, even asked again.
+const REPAIR_NOT_KNOWN: &str = "Your record did not answer in time, so the repair may not be saved. If it was not, that paper question still waits for its repair.";
 
 /// Record the repair the tutor finished, by `deadline`: for each of its rows
 /// the record says, just now, is waiting for one, never another, and then
@@ -1733,10 +1903,14 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
             "the tutor named repair {}, which is not listed",
             note.number
         ));
-        lock(&shared.state).repair_outcome = Some(format!(
-            "No Repair {} is listed, so nothing was recorded. Name a repair only by a number the state lists.",
-            note.number
-        ));
+        repair_lost(
+            shared,
+            &format!(
+                "No Repair {} is listed, so nothing was recorded. Name a repair only by a number the state lists; a repair that still waits is listed again.",
+                note.number
+            ),
+            REPAIR_NOT_SAVED,
+        );
         return;
     };
     // What waits now, as the record says: a repair on a row whose redo is
@@ -1758,7 +1932,8 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
                 "Repair {} was not recorded: the record could not say which rows wait for it. Its paper question still waits for a repair.",
                 note.number
             ),
-        );
+        REPAIR_NOT_SAVED,
+    );
         return;
     };
     let rows: Vec<String> = waiting
@@ -1775,15 +1950,18 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
             "repair {}: no row of it waits any more",
             note.number
         ));
-        let mut state = lock(&shared.state);
-        state
+        lock(&shared.state)
             .lesson
             .repairs
             .retain(|repair| repair.number != note.number);
-        state.repair_outcome = Some(format!(
-            "The record holds no row of Repair {} as waiting any more, so nothing was recorded for it.",
-            note.number
-        ));
+        repair_lost(
+            shared,
+            &format!(
+                "The record holds no row of Repair {} as waiting any more, so nothing was recorded for it.",
+                note.number
+            ),
+            REPAIR_NOT_SAVED,
+        );
         return;
     }
     let change = |next: bool| -> Vec<Value> {
@@ -1832,12 +2010,25 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
                 lock(&shared.state).halt = Some(Halt::RecordingOff);
                 return;
             }
+            // Unknown even asked again: it may have been kept.
+            if host_client::unknown(&why) {
+                repair_lost(
+                    shared,
+                    &format!(
+                        "The record did not answer in time, so Repair {} may not have been recorded. Say nothing of when its question comes back; the state lists it again if it still waits.",
+                        note.number
+                    ),
+                    REPAIR_NOT_KNOWN,
+                );
+                return;
+            }
             repair_lost(
                 shared,
                 &format!(
                     "Repair {} was not recorded: the record refused it. Its paper question still waits for a repair.",
                     note.number
                 ),
+                REPAIR_NOT_SAVED,
             );
             return;
         }
@@ -1849,9 +2040,15 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
         .unwrap_or_default();
     let mut scheduled: Vec<(String, String)> = Vec::new();
     for row in &rows {
+        // The result names a row in a plan as "<plan>#<n>", as it was
+        // sent, and a row in no plan, sent by its id, by its label.
         if let Some(next) = items
             .iter()
-            .find(|item| item["item"].as_str() == Some(row.as_str()))
+            .find(|item| {
+                let name = item["item"].as_str();
+                name == Some(row.as_str())
+                    || (!row.contains('#') && name == Some(waiting.tag.as_str()))
+            })
             .and_then(|item| item["next_redo"].as_str())
         {
             scheduled.push((row.clone(), next.to_owned()));
@@ -2291,22 +2488,39 @@ fn save(
                     }
                     .to_owned(),
                 );
-                // Its failed rows now wait for a repair, as the record holds
-                // them: open, with no next redo.
+                // Its failed rows now wait for a repair. Which wait, the
+                // record says: its list names the rows as `counts_for` did,
+                // a row in no plan by its id, where the save's result names
+                // it by its label.
                 if failed {
-                    let rows: Vec<Value> = result["practice"]["items"]
-                        .as_array()
+                    let waiting = shared
+                        .host
+                        .call_by(
+                            "context",
+                            json!({"schema": "learner-model/v2", "action": "status"}),
+                            deadline,
+                        )
+                        .ok()
+                        .and_then(|status| status.get("repairs_waiting").cloned());
+                    let rows: Vec<Value> = waiting
+                        .as_ref()
+                        .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
-                        .filter(|item| {
-                            item["next_redo"].is_null() && item["status"].as_str() != Some("closed")
+                        .filter(|row| {
+                            row["item"]
+                                .as_str()
+                                .is_some_and(|item| redo.rows.iter().any(|r| r == item))
                         })
-                        .filter_map(|item| {
-                            let name = item["item"].as_str()?;
-                            let plan = name.rsplit_once('#').map(|(plan, _)| plan);
-                            Some(json!({"item": name, "plan": plan, "tag": redo.tag}))
+                        .map(|row| {
+                            let mut row = row.clone();
+                            row["tag"] = json!(redo.tag);
+                            row
                         })
                         .collect();
+                    if rows.is_empty() {
+                        shared.note("a failed redo's rows were not listed as waiting for a repair");
+                    }
                     let made = state.lesson.take_waiting(&json!(rows), true);
                     state.repairs_new.extend(made);
                 }
@@ -2412,6 +2626,16 @@ fn apply_control(shared: &Arc<Shared>, control: Control, words: &str, event: Opt
         }
     }
     drop(state);
+    // While recording was off, replies may have set tasks the engine never
+    // read: when it comes back, no task is open, in the checkpoint too.
+    if control == Control::RecordingOn {
+        forget_open_task(
+            shared,
+            "",
+            "Recording came back on, so the task that was open before it went off is set aside.",
+            RECORDING_BACK,
+        );
+    }
     if outcome.is_err() && control != Control::RecordingOn {
         shared.emit(AgentEvent::Notice {
             kind: NoticeKind::Other,
@@ -2650,7 +2874,7 @@ mod tests {
                 false
             });
         assert_eq!(state.lesson.redos.len(), 1);
-        state.begin_sitting();
+        state.begin_sitting(true);
         assert!(state.lesson.redos.is_empty());
         assert!(!state.checks_asked);
     }
@@ -2683,7 +2907,7 @@ mod tests {
         // Hours later a new sitting begins and brings no list, as when
         // nothing is due or another conversation took the opener. The
         // tutor remembers check 2 and poses it: it binds nothing.
-        state.begin_sitting();
+        state.begin_sitting(true);
         assert!(state.lesson.checks.is_empty());
         state.lesson.apply(
             &record::parse(r#"{"answer": null, "task": "What is a in 3x² + x?"}"#).unwrap(),
@@ -2692,6 +2916,38 @@ mod tests {
             "r-2",
         );
         assert_eq!(state.lesson.task.as_ref().unwrap().check, None);
+    }
+
+    #[test]
+    fn a_resumed_conversation_with_nothing_kept_sends_nothing_cold_until_a_new_sitting() {
+        let mut state = State::default();
+        state.restore(None, "s", true);
+        // The first message of the window is no known new sitting.
+        state.begin_sitting(false);
+        assert!(state.lesson.sitting_unknown);
+        state.lesson.task = Some(record::OpenTask {
+            text: "Solve x² = 4.".into(),
+            help: record::Help::None,
+            guess: false,
+            check: None,
+            redo: None,
+            again: false,
+            stuck: false,
+            skill: String::new(),
+        });
+        let write = state.lesson.apply(
+            &record::parse(r#"{"answer": "right", "skill": "roots", "cold": true}"#).unwrap(),
+            &Message {
+                words: "x = 2 or -2".into(),
+                event_id: Some("e-1".into()),
+                no_clock: false,
+            },
+            "Right.",
+            "r-1",
+        );
+        assert_eq!(write.request["observations"][0]["attempt"]["cold"], false);
+        state.begin_sitting(true);
+        assert!(!state.lesson.sitting_unknown);
     }
 
     #[test]

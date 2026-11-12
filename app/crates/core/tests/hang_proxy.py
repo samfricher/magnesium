@@ -21,6 +21,9 @@ import threading
 import time
 
 FLAG = os.environ.get("HANG_FLAG", "")
+# The same, for a learning_step that changes practice items and records no
+# answer, such as a repair.
+PRACTICE_FLAG = os.environ.get("HANG_PRACTICE_FLAG", "")
 DELAY_EACH = float(os.environ.get("DELAY_EACH", "0"))
 SECONDS = float(os.environ.get("HANG_SECONDS", "4"))
 child = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
@@ -50,15 +53,21 @@ for line in sys.stdin:
         if value.get("method") == "tools/call":
             calls.add(value.get("id"))
         arguments = params.get("arguments") or {}
-        if (value.get("method") == "tools/call" and params.get("name") == "learning_step"
-                and arguments.get("observations") and FLAG and os.path.exists(FLAG)):
-            with open(FLAG, encoding="utf-8") as handle:
+        step = value.get("method") == "tools/call" and params.get("name") == "learning_step"
+        flag = None
+        if step and arguments.get("observations") and FLAG and os.path.exists(FLAG):
+            flag = FLAG
+        elif (step and arguments.get("practice") and not arguments.get("observations")
+              and PRACTICE_FLAG and os.path.exists(PRACTICE_FLAG)):
+            flag = PRACTICE_FLAG
+        if flag:
+            with open(flag, encoding="utf-8") as handle:
                 left = int(handle.read().strip() or "1") - 1
             if left > 0:
-                with open(FLAG, "w", encoding="utf-8") as handle:
+                with open(flag, "w", encoding="utf-8") as handle:
                     handle.write(str(left))
             else:
-                os.remove(FLAG)
+                os.remove(flag)
             held.add(value.get("id"))
     except Exception:
         pass

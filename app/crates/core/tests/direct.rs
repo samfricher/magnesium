@@ -111,6 +111,7 @@ impl Bench {
                 "#!/bin/sh\nexport HOME='{home}'\nexport XDG_CONFIG_HOME='{home}/.config'\nexport XDG_DATA_HOME='{home}/.local/share'\nexport XDG_CACHE_HOME='{home}/.cache'\n\
                  if [ \"$1 $2 $3\" = \"_internal hook user-prompt-submit\" ] && [ -e '{flags}/fail-prompt-hook' ]; then cat >/dev/null; exit 0; fi\n\
                  if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/hang' ]; then HANG_FLAG='{flags}/hang' exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
+                 if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/hang-practice' ]; then HANG_PRACTICE_FLAG='{flags}/hang-practice' exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
                  if [ \"$1 $2\" = \"_internal mcp-server\" ] && [ -e '{flags}/slow' ]; then DELAY_EACH=\"$(cat '{flags}/slow')\" exec python3 '{proxy}' '{bin}' \"$@\"; fi\n\
                  exec '{bin}' \"$@\"\n",
                 bin = runtime_binary().display(),
@@ -1060,6 +1061,19 @@ fn days_pass(bench: &Bench, days: u64) {
         .unwrap();
     let sittings = Connection::open(bench.root.join(".magnesium/sittings.sqlite")).unwrap();
     move_column(&sittings, "meta", "last_learner_ms", days);
+    // The window's own note of when the learner last wrote moves too.
+    let store = Store::at(bench.window.clone());
+    store.update(&bench.folder, |folder| {
+        if let Some(last) = folder
+            .direct
+            .as_mut()
+            .and_then(|memo| memo.get_mut("last_message_ms"))
+        {
+            if let Some(ms) = last.as_i64() {
+                *last = serde_json::json!(days_earlier(ms, days));
+            }
+        }
+    });
 }
 
 /// The state the model was sent with its latest message.
@@ -1181,7 +1195,8 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
         "{state}"
     );
     assert!(
-        state.contains("Repair 1. Tag \"rate law\", from Diagnostic Q6."),
+        state.lines().any(|line| line.starts_with("Repair ")
+            && line.contains(". Tag \"rate law\", from Diagnostic Q6.")),
         "{state}"
     );
     manager.shut_down();
@@ -2101,10 +2116,26 @@ fn repairs_recorded(bench: &Bench) -> i64 {
         .unwrap()
 }
 
-fn tomorrow() -> String {
-    (chrono::Local::now().date_naive() + chrono::Days::new(1))
-        .format("%Y-%m-%d")
-        .to_string()
+/// The day after the last repair on record, when its first redo falls due.
+/// Read from the repair, not the clock, so that a test run across midnight
+/// still holds.
+fn tomorrow(bench: &Bench) -> String {
+    let at: Option<i64> = bench
+        .store()
+        .query_row(
+            "SELECT max(at_ms) FROM practice_events WHERE kind='repair'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    use chrono::TimeZone;
+    let day = at
+        .and_then(|ms| chrono::Local.timestamp_millis_opt(ms).single())
+        .map_or_else(
+            || chrono::Local::now().date_naive(),
+            |time| time.date_naive(),
+        );
+    (day + chrono::Days::new(1)).format("%Y-%m-%d").to_string()
 }
 
 #[test]
@@ -2132,7 +2163,7 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(repairs_recorded(&bench), 1);
     let rows = gap_rows(&bench);
-    assert_eq!(rows[0].next_redo, tomorrow(), "{rows:#?}");
+    assert_eq!(rows[0].next_redo, tomorrow(&bench), "{rows:#?}");
     assert_eq!(rows[0].status, "open", "a repair is no pass: {rows:#?}");
     assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
     // The tutor is told what the record holds with the next message.
@@ -2142,7 +2173,7 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
     assert!(
         state.contains(&format!(
             "The record holds Repair 1 as done: its paper question comes back as a redo on {}.",
-            tomorrow()
+            tomorrow(&bench)
         )),
         "{state}"
     );
@@ -2195,7 +2226,7 @@ fn a_row_that_waited_before_the_lesson_is_listed_and_can_be_repaired() {
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(repairs_recorded(&bench), 1);
     let rows = gap_rows(&bench);
-    assert_eq!(rows[0].next_redo, tomorrow(), "{rows:#?}");
+    assert_eq!(rows[0].next_redo, tomorrow(&bench), "{rows:#?}");
     let stored: Option<String> = bench
         .store()
         .query_row(
@@ -2246,49 +2277,60 @@ fn no_repair_is_recorded_for_a_row_that_is_not_waiting() {
     manager.shut_down();
 }
 
-/// Record a repair as a lesson on Claude Code does, in a conversation of
-/// its own.
-fn plugin_repair(bench: &Bench, item: &str) {
+/// Requests a lesson on Claude Code makes, in a conversation of its own.
+fn plugin_calls(bench: &Bench, requests: &[Value]) -> Vec<Value> {
     use std::io::Write;
-    let call = |request: Value| -> Value {
-        let mut child = Command::new(&bench.runtime)
-            .current_dir(&bench.root)
-            .env("CLAUDE_CODE_SESSION_ID", "plugin-repair")
-            .args([
-                "adapter",
-                "call",
-                "learning_step",
-                "--protocol-version",
-                "2",
-                "--json-input",
-                "-",
-            ])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(request.to_string().as_bytes())
-            .unwrap();
-        let out = child.wait_with_output().unwrap();
-        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
-        assert_eq!(value["update_status"], "committed", "{value}");
-        value
-    };
-    call(
-        serde_json::json!({"schema": "learner-model/v2", "action": "update",
+    requests
+        .iter()
+        .map(|request| {
+            let mut child = Command::new(&bench.runtime)
+                .current_dir(&bench.root)
+                .env("CLAUDE_CODE_SESSION_ID", "plugin-repair")
+                .args([
+                    "adapter",
+                    "call",
+                    "learning_step",
+                    "--protocol-version",
+                    "2",
+                    "--json-input",
+                    "-",
+                ])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(request.to_string().as_bytes())
+                .unwrap();
+            let out = child.wait_with_output().unwrap();
+            let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(value["update_status"], "committed", "{value}");
+            value
+        })
+        .collect()
+}
+
+fn plugin_start() -> Value {
+    serde_json::json!({"schema": "learner-model/v2", "action": "update",
         "request_id": "plugin-repair-start",
         "session": {"operation": "start", "client_ref": "lesson", "goal": "kinetics"},
         "reported_events": [{"external_event_key": "plugin-repair-1", "speaker": "learner",
-            "kind": "message", "text": "repair my Km question"}]}),
-    );
-    call(
-        serde_json::json!({"schema": "learner-model/v2", "action": "update",
-        "request_id": "plugin-repair",
-        "practice": [{"item": item, "repaired": "taught the intercept"}]}),
+            "kind": "message", "text": "Q3: Km is 0.5"}]})
+}
+
+/// Record a repair as a lesson on Claude Code does.
+fn plugin_repair(bench: &Bench, item: &str) {
+    plugin_calls(
+        bench,
+        &[
+            plugin_start(),
+            serde_json::json!({"schema": "learner-model/v2", "action": "update",
+                "request_id": "plugin-repair",
+                "practice": [{"item": item, "repaired": "taught the intercept"}]}),
+        ],
     );
 }
 
@@ -2442,5 +2484,301 @@ fn i_m_lost_on_a_due_check_with_only_the_warning_records_no_help() {
         (Some("none"), Some(true)),
         "{answer:#?}"
     );
+    manager.shut_down();
+}
+
+#[test]
+fn a_failed_redo_on_a_row_in_no_plan_can_be_repaired() {
+    let bench = Bench::new(None, &[]);
+    // A marked paper answer in a folder with no plan makes a row in no plan,
+    // which a lesson on Claude Code repairs.
+    let started = &plugin_calls(&bench, &[plugin_start()])[0];
+    let event = started["captured_event_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    plugin_calls(
+        &bench,
+        &[
+            serde_json::json!({"schema": "learner-model/v2", "action": "update", "request_id": "paper",
+            "observations": [{"client_ref": "w", "kind": "learner_work", "description": "Took the intercept as Km.",
+                "events": [{"event_id": event, "role": "learner_response"}],
+                "attempt": {"label": "km", "question": "Read Km off the plot.", "first_try": "wrong",
+                    "help": "none", "cold": true,
+                    "paper": {"name": "Diagnostic", "question": "3", "marks": 0, "out_of": 2},
+                    "gap": {"type": "K", "what_went_wrong": "took the intercept as Km"}}}]}),
+        ],
+    );
+    let id: String = bench
+        .store()
+        .query_row(
+            "SELECT item_id FROM practice_items WHERE origin='paper' AND plan IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    plugin_repair(&bench, &id);
+    days_pass(&bench, 1);
+    // The redo is posed, answered wrong, and repaired in the lesson.
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert!(reply.starts_with("Paper redo 1: "), "{reply}");
+    manager.send("Km = 0.5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        last_state(&bench).contains("Repair 1. Tag \"km\""),
+        "{}",
+        last_state(&bench)
+    );
+    events.seen.clear();
+    manager.send("REPAIRED").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(repairs_recorded(&bench), 2, "the plugin's and the lesson's");
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.shut_down();
+}
+
+#[test]
+fn a_row_that_failed_here_past_the_first_24_waiting_is_repaired() {
+    let bench = Bench::new(None, &[]);
+    // 29 rows wait for a repair; row 30, repaired and due, comes last.
+    let dir = bench.root.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    let mut log = String::from(
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n",
+    );
+    for n in 1..=29 {
+        log.push_str(&format!(
+            "| {n} | 2026-10-20 | Diagnostic | {n} | rate law | order misread | K |  | | open |\n"
+        ));
+    }
+    log.push_str("| 30 | 2026-10-20 | Diagnostic | 30 | km | slope read as intercept | K | taught it | | open |\n");
+    fs::write(dir.join("gap-log.md"), log).unwrap();
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert!(reply.starts_with("Paper redo 1: "), "{reply}");
+    manager.send("Km = 0.5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    let number = state
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Repair ")
+                .filter(|rest| rest.contains("Tag \"km\""))
+                .and_then(|rest| rest.split('.').next())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| panic!("the failed row is listed: {state}"));
+    manager.send(&format!("REPAIR {number}")).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(repairs_recorded(&bench), 1);
+    assert_eq!(gap_rows(&bench)[29].next_redo, tomorrow(&bench));
+    manager.shut_down();
+}
+
+#[test]
+fn a_finished_repair_that_names_no_listed_repair_tells_the_learner() {
+    let (bench, manager, mut events) = with_a_row_waiting();
+    events.seen.clear();
+    manager.send("REPAIR 7").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(repairs_recorded(&bench), 0);
+    assert!(
+        all_notices(&mut events)
+            .iter()
+            .any(|text| text.contains("it was not saved")),
+        "{:#?}",
+        events.seen
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_block_with_both_a_control_and_a_repair_tells_the_learner_the_repair_was_not_saved() {
+    let (bench, manager, mut events) = with_a_row_waiting();
+    events.seen.clear();
+    manager.send("CONTROLREPAIR").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(repairs_recorded(&bench), 0);
+    assert!(
+        all_notices(&mut events)
+            .iter()
+            .any(|text| text.contains("it was not saved")),
+        "{:#?}",
+        events.seen
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_repair_whose_save_times_out_twice_is_read_back_and_kept_once() {
+    let (bench, manager, mut events) = with_a_row_waiting();
+    fs::write(bench.flags.join("hang-practice"), "2").unwrap();
+    // The flag routes only servers started from now on through the proxy.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events2) = bench.manager();
+    let _ = &mut events;
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("REPAIRED").unwrap();
+    events2.turn_end();
+    assert!(manager.wait_saved(Duration::from_secs(60)));
+    assert!(
+        !bench.flags.join("hang-practice").exists(),
+        "both hangs happened"
+    );
+    assert_eq!(repairs_recorded(&bench), 1);
+    assert_eq!(gap_rows(&bench)[0].next_redo, tomorrow(&bench));
+    assert!(all_notices(&mut events2).is_empty(), "{:#?}", events2.seen);
+    manager.shut_down();
+}
+
+#[test]
+fn an_answer_after_recording_is_turned_back_on_is_not_saved_against_the_old_task() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    manager.send("RECORDING OFF please").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // This reply poses another task, which the engine never reads.
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("RECORDING ON please").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        bench
+            .attempts()
+            .iter()
+            .all(|a| a["question"] != "What is b in x² − 5x + 6 = 0?"),
+        "{:#?}",
+        bench.attempts()
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_check_another_task_replaced_before_its_answer_can_be_posed_again() {
+    let (bench, manager, mut events) = with_a_check_posed();
+    // Another task takes the check's place, then the check is posed again.
+    manager.send("MENTION").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("CHECK AGAIN").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // A right answer, under another skill name, is the check's answer.
+    manager.send("RIGHTCHECK").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(answer["label"], "sign of b", "{answer:#?}");
+    manager.shut_down();
+}
+
+#[test]
+fn a_new_sitting_has_no_open_task() {
+    let (bench, manager, _events) = with_a_check_posed();
+    manager.stop(None).unwrap();
+    drop(manager);
+    days_pass(&bench, 1);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    // An answer typed the next day, before anything is posed, is saved
+    // against no question.
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        bench.attempts().iter().all(|a| a["question"] != CHECK_1),
+        "{:#?}",
+        bench.attempts()
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
+    // Repair 1 waited before the sitting; redo 1 fails, and its repair
+    // waits as another number.
+    let bench = Bench::new(None, &[]);
+    let dir = bench.root.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Cold-redo date | Status |\n|---|---|---|---|---|---|---|---|---|---|\n\
+         | 1 | 2026-10-20 | Diagnostic | 3 | rate law | order misread | K |  | | open |\n\
+         | 2 | 2026-10-20 | Diagnostic | 5 | km | slope read as intercept | K | taught it | | open |\n",
+    )
+    .unwrap();
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("Km = 0.5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    let km = state
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Repair ")
+                .filter(|rest| rest.contains("Tag \"km\""))
+                .and_then(|rest| rest.split('.').next())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| panic!("{state}"));
+    // The window restarts into the same conversation, in the same sitting,
+    // and the tutor finishes the repair it was on, by its number.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send(&format!("REPAIR {km}")).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let rows = gap_rows(&bench);
+    assert_eq!(rows[1].next_redo, tomorrow(&bench), "the km row: {rows:#?}");
+    assert_eq!(rows[0].next_redo, "", "the other still waits: {rows:#?}");
+    manager.shut_down();
+
+    // A skill corrected in the sitting is still known after a restart.
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager
+        .send("MEMORY found Drops the minus sign of b.")
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["cold"], false, "{attempts:#?}");
     manager.shut_down();
 }

@@ -32,6 +32,9 @@ What a turn does is chosen by words in the learner's message (inside
   REPAIRED     finish the first repair the state listed (or REPAIR <n>:
                repair n), with its next question
   BADREPAIR    name a repair with no number
+  CONTROLREPAIR  ask for a pause and finish the first listed repair in one block
+  CHECK AGAIN  pose quick check 1 again
+  RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
   RESTART      stream part of the reply, start the same message again, then
@@ -203,6 +206,15 @@ def reply_for(learner, state):
         return "What do you see in front of the 5?" + block(note="Lost: asked what they see."), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
+    if "CONTROLREPAIR" in learner:
+        number = repairs_listed[0] if repairs_listed else 1
+        return "Paused, and that finishes the repair." + block(control="pause", repair={
+            "number": number, "done": "taught the step", "next": None}), False
+    if "CHECK AGAIN" in learner:
+        return "Quick check 1: What is b in 2x² − 7x − 4 = 0?" + block(task="What is b in 2x² − 7x − 4 = 0?"), False
+    if "RIGHTCHECK" in learner:
+        return f"Right. {THIRD}" + block(answer="right", skill="reading coefficients", cold=True,
+                                         note="Read b with its sign.", task=THIRD), False
     if "BADREPAIR" in learner:
         return "That finishes the repair." + block(repair={"done": "taught the step"}), False
     if "REPAIRED" in learner or re.search(r"REPAIR \d+", learner):

@@ -714,6 +714,11 @@ pub struct Lesson {
     /// conversation, so a tutor that remembers an old one names nothing.
     #[serde(default)]
     pub repair_numbers: i64,
+    /// What this sitting taught before the window last started is not
+    /// known, as after a restart with nothing kept: no answer is sent cold
+    /// until a new sitting begins.
+    #[serde(default)]
+    pub sitting_unknown: bool,
 }
 
 /// A repair waiting to be done: the gap-log rows of one tag in one plan
@@ -949,6 +954,9 @@ pub struct Write {
 pub struct RedoAnswer {
     /// The redo's tag, for the repair its failed rows then wait for.
     pub tag: String,
+    /// Its rows, as `counts_for` named them, which is how the runtime lists
+    /// them as waiting for a repair.
+    pub rows: Vec<String>,
     /// The tutor marked it right.
     pub right: bool,
     /// The label to send when the runtime refuses the rows' tag as one: a
@@ -1243,7 +1251,8 @@ impl Lesson {
             // pass whatever time it took.
             let unaided = task.help == Help::None && mark != Mark::Declined;
             let clocked = !(message.no_clock && task.redo.as_ref().is_some_and(|redo| redo.timed));
-            let seen = self.answered_earlier_today(&label) || self.touched(&label);
+            let seen =
+                self.sitting_unknown || self.answered_earlier_today(&label) || self.touched(&label);
             let cold = unaided && clocked && record.cold && !seen;
             let mut attempt = json!({
                 "label": label,
@@ -1290,6 +1299,7 @@ impl Lesson {
             if let Some(redo) = &task.redo {
                 redo_answer = Some(RedoAnswer {
                     tag: redo.tag.clone(),
+                    rows: redo.rows.clone(),
                     right: mark == Mark::Right,
                     other_label: skill.clone(),
                 });
@@ -1352,6 +1362,18 @@ impl Lesson {
             .map(|redo| redo.number);
         if answered {
             open = None;
+        }
+        // A posed check that another task replaces before its answer is
+        // still due: it goes back on the list, and may be posed again.
+        if let (Some(task), Some(text)) = (open.as_ref(), &record.task) {
+            if let Some(label) = task.check.as_ref().filter(|_| !same_task(&task.text, text)) {
+                if let Some(due) = self.posed_checks.iter().find(|due| &due.label == label) {
+                    if !self.checks.iter().any(|listed| listed.number == due.number) {
+                        self.checks.push(due.clone());
+                        self.checks.sort_by_key(|listed| listed.number);
+                    }
+                }
+            }
         }
         // The task a reply sets is named by the last of these in it: a
         // listed quick check's words, or the words that pose a paper redo.
@@ -2143,6 +2165,7 @@ mod tests {
             answer.redo,
             Some(RedoAnswer {
                 tag: "km".into(),
+                rows: vec!["midterm-1#1".into(), "midterm-1#4".into()],
                 right: true,
                 other_label: "reading a plot".into()
             })
@@ -2656,5 +2679,23 @@ mod tests {
         pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
         lesson.apply(&record(warning), &message(HINT_WORDS), "A line.", "r-1");
         assert_eq!(lesson.task.unwrap().help, Help::Hint);
+    }
+
+    #[test]
+    fn the_next_save_writes_a_checkpoint_without_a_forgotten_task() {
+        let mut lesson = lesson();
+        pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
+        assert!(lesson.task.is_some());
+        lesson.forget_task();
+        // Whatever the next turn's record says, its request carries the whole
+        // checkpoint, and no task in it unless that reply sets one.
+        let write = lesson.apply(
+            &record(r#"{"answer": null}"#),
+            &message("ok"),
+            "Go on.",
+            "r-2",
+        );
+        assert_eq!(write.request["checkpoint"]["plan_text"], Value::Null);
+        assert!(write.request["session"]["operation"] == "use");
     }
 }
