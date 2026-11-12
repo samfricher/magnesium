@@ -79,7 +79,7 @@ async function drawOne(source: string, room: number) {
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
-      fontFamily: '"Atkinson Hyperlegible Next Variable", -apple-system, BlinkMacSystemFont, sans-serif',
+      fontFamily: '"Magnesium Sans", -apple-system, BlinkMacSystemFont, sans-serif',
       // A diagram fits the column; CSS scales it to the width it is given.
       flowchart: { useMaxWidth: false },
       sequence: { useMaxWidth: false },

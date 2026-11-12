@@ -2,8 +2,7 @@ import { createRoot } from "react-dom/client";
 
 import "@fontsource-variable/literata/opsz.css";
 import "@fontsource-variable/literata/opsz-italic.css";
-import "@fontsource-variable/atkinson-hyperlegible-next/wght.css";
-import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
+import "./styles/fonts.css";
 
 import { App } from "./App";
 import "./styles/base.css";
@@ -36,7 +35,8 @@ window.addEventListener("pointerdown", () => (document.documentElement.dataset.i
 // Besides the two text faces, the few that mathematics is set in: a goal or a
 // step with a formula in it is a different width until they are there.
 const FACES = [
-  ...['"Literata Variable"', '"Atkinson Hyperlegible Next Variable"'].flatMap((face) => ["normal", "italic"].map((style) => `${style} 400 1em ${face}`)),
+  ...['"Literata Variable"', '"Magnesium Sans"'].flatMap((face) => ["normal", "italic"].map((style) => `${style} 400 1em ${face}`)),
+  "normal 600 1em \"Magnesium Sans\"",
   "normal 400 1em KaTeX_Main",
   "italic 400 1em KaTeX_Main",
   "normal 700 1em KaTeX_Main",
