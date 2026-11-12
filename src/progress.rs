@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 
 use crate::digest::gap_log_file;
 use crate::learner::label_key;
-use crate::learner::practice::{Effect, Origin, PASSES_TO_CLOSE, local_day, plans};
+use crate::learner::practice::{Effect, EventKind, Origin, PASSES_TO_CLOSE, local_day, plans};
 use crate::learner::store::LearnerStore;
 use crate::practice::{Item, snapshot};
 use crate::readings::{
@@ -43,6 +43,7 @@ const DAYS_IN_TEXT: usize = 14;
 /// One marked answer, as progress sees it.
 #[derive(Clone, Debug)]
 struct Answer {
+    attempt_id: String,
     key: String,
     label: String,
     day: NaiveDate,
@@ -55,7 +56,7 @@ struct Answer {
 
 fn load_answers(conn: &Connection) -> rusqlite::Result<Vec<Answer>> {
     let mut statement = conn.prepare(
-        "SELECT label_key, label, mark, help, cold, slow, answered_at_ms
+        "SELECT label_key, label, mark, help, cold, slow, answered_at_ms, attempt_id
          FROM attempts ORDER BY answered_at_ms, attempt_no",
     )?;
     statement
@@ -65,6 +66,7 @@ fn load_answers(conn: &Connection) -> rusqlite::Result<Vec<Answer>> {
             let cold: bool = r.get(4)?;
             let slow: bool = r.get(5)?;
             Ok(Answer {
+                attempt_id: r.get(7)?,
                 key: r.get(0)?,
                 label: r.get(1)?,
                 day: local_day(r.get(6)?),
@@ -84,6 +86,9 @@ struct Skill {
     passes: i64,
     /// Passes made before the last miss. They are history and do not count.
     earlier_passes: i64,
+    /// The most passes the skill has held at one time, 0 to 3. A plan's
+    /// level counts these, so a miss never lowers it.
+    best_passes: i64,
     /// The plan's reading of the tag, and why. A skill in no plan has none.
     reading: Option<&'static str>,
     why: String,
@@ -111,6 +116,7 @@ impl Skill {
             "skill": self.name,
             "passes": self.passes,
             "earlier_passes": self.earlier_passes,
+            "best_passes": self.best_passes,
             "proven": self.proven(),
             "reading": self.reading,
             "why": self.why,
@@ -163,8 +169,46 @@ fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
     )
 }
 
-/// A skill with practice items is as proved as its weakest item.
-fn from_items(name: &str, items: &[&Item], today: NaiveDate) -> Skill {
+/// The most passes a skill with items has held at one time. Its passes at
+/// any moment are its weakest item's, among the items made by then. So the
+/// items' events are put in one order, by day and then as they were stored,
+/// and the fewest passes is taken after each one.
+fn most_passes_held(items: &[&Item]) -> i64 {
+    let mut steps: Vec<(NaiveDate, i64, usize, i64)> = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let day_of = |event_no: i64| {
+            item.facts
+                .events
+                .iter()
+                .find(|event| event.event_no == event_no)
+                .map_or(item.facts.logged_on, |event| event.day)
+        };
+        // What it was brought in with, before any event of its own.
+        let first_day = item
+            .facts
+            .events
+            .first()
+            .map_or(item.facts.logged_on, |event| event.day);
+        steps.push((first_day, i64::MIN, index, item.facts.base_passes));
+        for (event_no, passes) in &item.state.passes_after {
+            steps.push((day_of(*event_no), *event_no, index, *passes));
+        }
+    }
+    steps.sort_by_key(|(day, event_no, _, _)| (*day, *event_no));
+    let mut held: Vec<Option<i64>> = vec![None; items.len()];
+    let mut most = 0;
+    for (_, _, index, passes) in steps {
+        held[index] = Some(passes.clamp(0, PASSES_TO_CLOSE));
+        let fewest = held.iter().flatten().min().copied().unwrap_or(0);
+        most = most.max(fewest);
+    }
+    most
+}
+
+/// A skill with practice items is as proved as its weakest item. `before`
+/// are its answers from before its first item was made, when its passes
+/// were counted from its answers.
+fn from_items(name: &str, items: &[&Item], before: &[&Answer], today: NaiveDate) -> Skill {
     let weakest = items
         .iter()
         .min_by_key(|item| item.state.passes)
@@ -206,6 +250,9 @@ fn from_items(name: &str, items: &[&Item], today: NaiveDate) -> Skill {
             .map(|item| item.name())
             .collect(),
         quick_check: items.iter().any(|item| item.facts.origin == Origin::Chat),
+        best_passes: most_passes_held(items)
+            .max(from_answers(name, before).best_passes)
+            .max(weakest.state.passes.clamp(0, PASSES_TO_CLOSE)),
         ..Skill::default()
     }
 }
@@ -215,6 +262,7 @@ fn from_items(name: &str, items: &[&Item], today: NaiveDate) -> Skill {
 fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
     let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
     let mut earlier = 0;
+    let mut most = 0;
     let mut restarted_on = None;
     for answer in answers {
         if answer.miss {
@@ -223,12 +271,14 @@ fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
             days.clear();
         } else if answer.clean {
             days.insert(answer.day);
+            most = most.max(days.len().min(PASSES_TO_CLOSE as usize) as i64);
         }
     }
     let passes = days.len().min(PASSES_TO_CLOSE as usize) as i64;
     Skill {
         name: name.to_owned(),
         passes,
+        best_passes: most,
         earlier_passes: if passes == 0 { earlier } else { 0 },
         last_pass_on: days.last().copied(),
         restarted_on: restarted_on.filter(|_| passes == 0),
@@ -250,17 +300,23 @@ fn level(passes: u64, of: u64) -> (u64, u64) {
     (level, to_next)
 }
 
+/// A set of skills' passes, proven skills and level. `passes` is what the
+/// skills hold now. The level counts each skill's most passes held at one
+/// time, `level_passes`, so a failed check never lowers it.
 fn total<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
-    let (mut passes, mut count, mut proven) = (0u64, 0u64, 0u64);
+    let (mut passes, mut held, mut count, mut proven) = (0u64, 0u64, 0u64, 0u64);
     for skill in skills {
-        passes += skill.passes.clamp(0, PASSES_TO_CLOSE) as u64;
+        let now = skill.passes.clamp(0, PASSES_TO_CLOSE);
+        passes += now as u64;
+        held += skill.best_passes.clamp(now, PASSES_TO_CLOSE) as u64;
         count += 1;
         proven += u64::from(skill.proven());
     }
     let of = count * PASSES_TO_CLOSE as u64;
-    let (level, to_next) = level(passes, of);
+    let (level, to_next) = level(held, of);
     json!({
         "passes": passes,
+        "level_passes": held,
         "of": of,
         "proven": proven,
         "skills": count,
@@ -287,12 +343,23 @@ fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
 
 /// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
+    let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
     if items.is_empty() {
-        let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
-        from_answers(name, &own)
-    } else {
-        from_items(name, items, today)
+        return from_answers(name, &own);
     }
+    // The answer that made its first item, and the answers before it.
+    let made_by: BTreeSet<&str> = items
+        .iter()
+        .flat_map(|item| &item.facts.events)
+        .filter(|event| event.kind == EventKind::Made)
+        .filter_map(|event| event.attempt.as_ref())
+        .map(|attempt| attempt.attempt_id.as_str())
+        .collect();
+    let before = own
+        .iter()
+        .position(|answer| made_by.contains(answer.attempt_id.as_str()))
+        .map_or(&own[..0], |first| &own[..first]);
+    from_items(name, items, before, today)
 }
 
 struct Record<'a> {
@@ -399,6 +466,79 @@ fn answered_days(answers: &[Answer]) -> Vec<String> {
         .collect()
 }
 
+/// The days on which a skill with no item earned its passes: each new day
+/// with a clean answer, since its last miss, up to three.
+fn answer_pass_days(answers: &[&Answer]) -> Vec<NaiveDate> {
+    let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
+    let mut earned = Vec::new();
+    for answer in answers {
+        if answer.miss {
+            days.clear();
+        } else if answer.clean && days.insert(answer.day) && days.len() <= PASSES_TO_CLOSE as usize
+        {
+            earned.push(answer.day);
+        }
+    }
+    earned
+}
+
+/// What the learner did today, over the whole study folder: answers given
+/// (a declined question is not one), skills first answered, passes earned,
+/// and checks and redos that first fall due tomorrow.
+fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
+    let given: Vec<&Answer> = answers.iter().filter(|answer| !answer.declined).collect();
+    let answered = given.iter().filter(|answer| answer.day == today).count();
+    let mut first_day: BTreeMap<&str, NaiveDate> = BTreeMap::new();
+    for answer in &given {
+        first_day.entry(answer.key.as_str()).or_insert(answer.day);
+    }
+    let started = first_day.values().filter(|day| **day == today).count();
+    let on_items: BTreeSet<String> = items
+        .iter()
+        .map(|item| label_key(&item.facts.label))
+        .collect();
+    let item_passes: usize = items
+        .iter()
+        .map(|item| {
+            item.state
+                .effects
+                .iter()
+                .filter(|(_, effect)| matches!(effect, Effect::Passed | Effect::Closed))
+                .filter(|(event_no, _)| {
+                    item.facts
+                        .events
+                        .iter()
+                        .any(|event| event.event_no == *event_no && event.day == today)
+                })
+                .count()
+        })
+        .sum();
+    let answer_passes: usize = first_day
+        .keys()
+        .filter(|key| !on_items.contains(**key))
+        .map(|key| {
+            let own: Vec<&Answer> = answers.iter().filter(|a| a.key == *key).collect();
+            answer_pass_days(&own)
+                .into_iter()
+                .filter(|day| *day == today)
+                .count()
+        })
+        .sum();
+    let tomorrow = today.succ_opt();
+    let due_tomorrow = items
+        .iter()
+        .filter(|item| {
+            !item.state.closed() && item.state.next_on.is_some() && item.state.next_on == tomorrow
+        })
+        .count();
+    json!({
+        "answered": answered,
+        "started": started,
+        "passes": item_passes + answer_passes,
+        "due_tomorrow": due_tomorrow,
+    })
+}
+
 fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let today = local_day(now_ms);
     let id = workspace.id().map_err(|e| e.to_string())?;
@@ -478,6 +618,7 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
         },
         "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
         "days": answered_days(&answers),
+        "today_counts": today_counts(&items, &answers, today),
     }))
 }
 
@@ -613,6 +754,7 @@ mod tests {
 
     fn answer(on: &str, mark: &str) -> Answer {
         Answer {
+            attempt_id: format!("{on}-{mark}"),
             key: "units".into(),
             label: "units".into(),
             day: day(on),
@@ -708,6 +850,158 @@ mod tests {
             (Some(30), Some(90))
         );
         assert_eq!(partly["level"], 4);
+    }
+
+    /// A quick check on "units", made by a miss on `made_on`, with a cold
+    /// answer on each of `answers`: right when true, wrong when false.
+    fn check(made_on: &str, answers: &[(&str, bool)]) -> Item {
+        use crate::learner::FirstTry;
+        use crate::learner::practice::{AttemptFacts, EventKind, ItemEvent, ItemFacts, derive};
+        let attempt = |id: String, right: bool| AttemptFacts {
+            attempt_id: id,
+            mark: if right {
+                FirstTry::Right
+            } else {
+                FirstTry::Wrong
+            },
+            help: crate::learner::AttemptHelp::None,
+            cold: true,
+            slow: false,
+            confidence: None,
+            paper: None,
+            paper_question: None,
+            description: String::new(),
+        };
+        let mut events = vec![ItemEvent {
+            event_no: 1,
+            kind: EventKind::Made,
+            day: day(made_on),
+            attempt: Some(attempt(format!("{made_on}-wrong"), false)),
+        }];
+        for (n, (on, right)) in answers.iter().enumerate() {
+            let no = i64::try_from(n).unwrap() + 2;
+            events.push(ItemEvent {
+                event_no: no,
+                kind: EventKind::Attempt,
+                day: day(on),
+                attempt: Some(attempt(format!("a{no}"), *right)),
+            });
+        }
+        let facts = ItemFacts {
+            item_id: "q".into(),
+            origin: Origin::Chat,
+            label: "units".into(),
+            plan: None,
+            row_no: None,
+            paper: None,
+            paper_question: None,
+            logged_on: day(made_on),
+            gap_type: None,
+            what_went_wrong: String::new(),
+            repair: String::new(),
+            confidence: None,
+            next_question: None,
+            answer_key: None,
+            dropped: None,
+            base_passes: 0,
+            base_next_on: None,
+            base_last_pass_on: None,
+            base_history: String::new(),
+            base_misses: Vec::new(),
+            created_at_ms: 0,
+            events,
+        };
+        let state = derive(&facts, None);
+        Item { facts, state }
+    }
+
+    #[test]
+    fn a_failed_check_leaves_the_level_where_the_passes_took_it() {
+        // Two passes on a check, then a due answer that is wrong.
+        let item = check(
+            "2026-11-02",
+            &[
+                ("2026-11-03", true),
+                ("2026-11-06", true),
+                ("2026-11-13", false),
+            ],
+        );
+        let failed = from_items("units", &[&item], &[], day("2026-11-13"));
+        // The dots tell the truth: the passes start again.
+        assert_eq!((failed.passes, failed.earlier_passes), (0, 2));
+        let whole = total(std::iter::once(&failed));
+        assert_eq!(whole["passes"], 0, "{whole}");
+        assert_eq!(whole["proven"], 0, "{whole}");
+        // The level stays where two passes of three took it.
+        assert_eq!(
+            (whole["level"].as_u64(), whole["to_next"].as_u64()),
+            (Some(7), Some(1)),
+            "{whole}"
+        );
+    }
+
+    #[test]
+    fn a_miss_that_makes_a_check_keeps_the_passes_the_answers_held_in_the_level() {
+        // Two days of clean answers, then a miss that makes a check.
+        let answers = [
+            answer("2026-11-02", "clean"),
+            answer("2026-11-05", "clean"),
+            answer("2026-11-08", "wrong"),
+        ];
+        let item = check("2026-11-08", &[]);
+        let skill = skill_of("units", "units", &[&item], &answers, day("2026-11-08"));
+        assert_eq!((skill.passes, skill.best_passes), (0, 2));
+        // A second item on the skill, made after the first earned a pass,
+        // starts at none: the skill now holds none, and the level holds.
+        let first = check("2026-11-02", &[("2026-11-03", true)]);
+        let mut second = check("2026-11-04", &[]);
+        second.facts.item_id = "q2".into();
+        for event in &mut second.facts.events {
+            event.event_no += 10;
+        }
+        second.state = crate::learner::practice::derive(&second.facts, None);
+        let both = from_items("units", &[&first, &second], &[], day("2026-11-04"));
+        assert_eq!((both.passes, both.best_passes), (0, 1));
+    }
+
+    #[test]
+    fn a_miss_after_clean_answers_leaves_the_level_where_they_took_it() {
+        let missed = skill(&[
+            answer("2026-11-02", "clean"),
+            answer("2026-11-05", "clean"),
+            answer("2026-11-08", "wrong"),
+        ]);
+        assert_eq!(missed.passes, 0);
+        let whole = total(std::iter::once(&missed));
+        assert_eq!(
+            (whole["passes"].as_u64(), whole["level"].as_u64()),
+            (Some(0), Some(7)),
+            "{whole}"
+        );
+    }
+
+    #[test]
+    fn a_skill_with_no_item_earns_a_pass_on_each_new_clean_day_up_to_three() {
+        let answers = [
+            answer("2026-11-02", "clean"),
+            answer("2026-11-02", "clean"),
+            answer("2026-11-03", "wrong"),
+            answer("2026-11-04", "clean"),
+            answer("2026-11-05", "helped"),
+            answer("2026-11-06", "clean"),
+            answer("2026-11-07", "clean"),
+            answer("2026-11-08", "clean"),
+        ];
+        let days = answer_pass_days(&answers.iter().collect::<Vec<_>>());
+        assert_eq!(
+            days,
+            [
+                day("2026-11-02"),
+                day("2026-11-04"),
+                day("2026-11-06"),
+                day("2026-11-07")
+            ]
+        );
     }
 
     #[test]

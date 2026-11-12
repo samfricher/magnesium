@@ -102,7 +102,7 @@ Add `--json` for the rows as data. They are also in an export.
 
 ## See how far each skill is proved
 
-`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new; it falls only when you miss a skill you had passes on. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. For example:
+`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new. It counts each skill at the most passes it has held, so it never falls when you miss either. The dots still show the passes you hold now: a miss after a pass starts that skill's passes again. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. For example:
 
 ```text
 midterm-1: level 5 of 10 · 4 of 9 passes · 1 of 3 skills proven
@@ -114,7 +114,7 @@ In no plan: 0 proven, 1 in progress
 Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 ```
 
-Add `--json` for the same facts as data. The study window reads them from there. The command changes nothing in the folder.
+Add `--json` for the same facts as data. The study window reads them from there. The data also counts what you did today: the answers you gave, the skills you answered for the first time, the passes you earned and the checks due tomorrow. The command changes nothing in the folder.
 
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
@@ -122,7 +122,7 @@ The first time this version opens a study folder from an earlier version, it upg
 
 In the study window, drop files on a course or a lesson, or choose them with the paperclip or the button on the course page. You can also paste text. The window copies each file into `Study/materials/` in the study folder, under its own name. Pasted text is saved there as a `.txt` file. The tutor's source search reads that folder like any other. A folder you make in the window offers this as its first step.
 
-After it adds, the window says in a few plain lines what it added and what search cannot read. A PDF with no text, such as a scan, is listed as one whose text cannot be searched. A file whose name has the word key, keys, token, tokens, secret or credential is left out of search, and the window names the word. So is a kind of file search does not read, such as a slide deck. A file that looks like an answer key is added, and the window never names it or opens it.
+After it adds, the window says in a few plain lines what it added and what search cannot read. A PDF with no text, such as a scan, is listed as one whose text cannot be searched. A file whose name has the word key or keys is left out of search, in case it is an answer key or holds a password, and the window names the word. So is a file you type as text, such as Markdown, plain text, a web page or a data or config file, whose name has the word token, tokens, secret, secrets, credential or credentials. Those words do not leave out a file that comes from an export or a publisher, such as a PDF, Word file, slide deck, spreadsheet, EPUB or image, so "Token economies.pdf" is searched. Search still checks every file's text for passwords and keys. So is a kind of file search does not read, such as a slide deck. A file that looks like an answer key is added, and the window never names it or opens it.
 
 From a terminal, `magnesium searchable PATH...` says the same for the files you name, and `--json` prints it as data. It changes nothing, and it works in a folder that is not set up yet.
 

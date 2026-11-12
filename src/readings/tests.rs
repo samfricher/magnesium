@@ -112,6 +112,7 @@ fn row(plan: &str, n: i64, tag: &str, passes: i64, next_on: Option<NaiveDate>) -
             confidence: None,
             misses: Vec::new(),
             effects: Vec::new(),
+            passes_after: Vec::new(),
         },
     }
 }

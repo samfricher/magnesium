@@ -220,22 +220,7 @@ const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax 
 
 #[test]
 fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_something_new() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    let dir = e.workspace.join("Study/midterm-1");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("plan.md"),
-        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | <YYYY-MM-DD> |\n",
-    )
-    .unwrap();
-    fs::write(
-        dir.join("gap-log.md"),
-        include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
-    )
-    .unwrap();
-    fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
-    v2::start(&e, "claude", THREAD);
+    let e = plan_folder();
     let plan_progress = |value: &Value| value["plans"][0]["progress"].clone();
 
     // A chat answer on a skill the graph names, written another way, is
@@ -249,7 +234,7 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
     let before = progress(&e);
     assert_eq!(
         plan_progress(&before),
-        json!({"passes": 1, "of": 6, "proven": 0, "skills": 2, "level": 2, "to_next": 1}),
+        json!({"passes": 1, "level_passes": 1, "of": 6, "proven": 0, "skills": 2, "level": 2, "to_next": 1}),
         "{before}"
     );
     let label: String = store(&e)
@@ -279,6 +264,141 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
         "{after}"
     );
     assert!(after["other"]["progress"].get("level").is_none(), "{after}");
+}
+
+/// A study folder with one plan, `midterm-1`, whose graph has two tags.
+fn plan_folder() -> TestEnvironment {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let dir = e.workspace.join("Study/midterm-1");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | <YYYY-MM-DD> |\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("gap-log.md"),
+        include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
+    )
+    .unwrap();
+    fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
+    v2::start(&e, "claude", THREAD);
+    e
+}
+
+#[test]
+fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
+    let e = plan_folder();
+    let km = |id: &str, first_try: &str| {
+        json!({"label":"lineweaver-burk","question":format!("Read Km from plot {id}."),
+            "first_try":first_try,"help":"none","cold":first_try == "right"})
+    };
+    // A miss makes a check. Two cold passes on its due days follow.
+    answer(&e, "a-1", "Km is the y intercept", km("a-1", "wrong"));
+    days_pass(&e, 1);
+    answer(
+        &e,
+        "b-1",
+        "Km is minus one over the x intercept",
+        km("b-1", "right"),
+    );
+    days_pass(&e, 3);
+    answer(
+        &e,
+        "c-1",
+        "minus one over the x intercept",
+        km("c-1", "right"),
+    );
+    let passed = progress(&e);
+    let level = |value: &Value| value["plans"][0]["progress"].clone();
+    assert_eq!(
+        level(&passed),
+        json!({"passes": 2, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
+        "{passed}"
+    );
+    // The check is due again, and the learner gets it wrong.
+    days_pass(&e, 7);
+    answer(&e, "d-1", "the slope", km("d-1", "wrong"));
+    let failed = progress(&e);
+    let skill = &failed["plans"][0]["skills"][0];
+    assert_eq!(skill["skill"], "lineweaver-burk", "{failed}");
+    // The dots and the counts tell the truth: the passes start again.
+    assert_eq!(
+        (
+            skill["passes"].as_i64(),
+            skill["earlier_passes"].as_i64(),
+            skill["best_passes"].as_i64()
+        ),
+        (Some(0), Some(2), Some(2)),
+        "{skill}"
+    );
+    // The level, and the passes to the next, stay where they were.
+    assert_eq!(
+        level(&failed),
+        json!({"passes": 0, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
+        "{failed}"
+    );
+}
+
+#[test]
+fn progress_counts_what_the_learner_did_today() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    assert_eq!(
+        progress(&e)["today_counts"],
+        json!({"answered": 0, "started": 0, "passes": 0, "due_tomorrow": 0})
+    );
+    // Yesterday: a miss on one skill makes a check, due today.
+    answer(
+        &e,
+        "a-1",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
+    );
+    days_pass(&e, 1);
+    // Today: the check is passed, a new skill is answered right, cold and
+    // alone (a pass, with no check), a paper answer on a third skill earns a
+    // pass, and a question is declined, which is no answer and makes a check
+    // due tomorrow.
+    answer(
+        &e,
+        "b-1",
+        "b is -7",
+        json!({"label":"sign of b","question":"In 3x² − 5x − 2 = 0, what is b?","first_try":"right","help":"none","cold":true}),
+    );
+    answer(
+        &e,
+        "b-2",
+        "µM per second",
+        json!({"label":"units of a rate","question":"Units of Vmax?","first_try":"right","help":"none","cold":true}),
+    );
+    answer(
+        &e,
+        "b-3",
+        "4",
+        json!({"label":"mean","question":"Mean of 2, 4, 6?","first_try":"right","help":"none","cold":true,
+            "paper":{"name":"MockA","question":"1","marks":2,"out_of":2}}),
+    );
+    answer(
+        &e,
+        "b-4",
+        "I don't know",
+        json!({"label":"median","question":"Median of 1, 9, 3?","first_try":"declined","help":"none","cold":false}),
+    );
+    let value = progress(&e);
+    assert_eq!(
+        value["today_counts"],
+        json!({"answered": 3, "started": 2, "passes": 3, "due_tomorrow": 1}),
+        "{value}"
+    );
+    // The date stays where it was.
+    assert_eq!(
+        value["today"],
+        json!(Local::now().date_naive().to_string()),
+        "{value}"
+    );
 }
 
 #[test]
