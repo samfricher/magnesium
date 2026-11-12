@@ -1,17 +1,19 @@
 // A check the window runs on itself when started with MAGNESIUM_APP_SELFTEST.
 //
-// It drives the real page inside the real window, against whatever agent
+// It drives the real surface inside the real window, against whatever agent
 // program the environment names. scripts/selftest.sh names the stand-in, so
 // the check starts no model. It proves the parts that only exist once the
 // window is running: the calls between the page and the shell, the content
-// policy, and that mathematics and a diagram draw.
+// policy, that mathematics, a diagram and a PDF page draw, and that the
+// surface's own structure holds: the next thing on the first screen, the line
+// under it, a layer summoned by a key, talk sent as talk.
 
 import type { Actions } from "./App";
 import { tutorText, type SessionState } from "./lesson";
 import { tinyPdf } from "./demoPdf";
+import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
 import { sourceRef } from "./sources";
-import { drawPage, openPdf } from "./ui/SourcePanel";
 import type { Core } from "./types";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
@@ -27,6 +29,12 @@ async function until(what: string, test: () => boolean, limitMs = 30_000): Promi
 /** A step that never finishes is a failure with a name, not a window that says nothing. */
 function within<T>(what: string, work: Promise<T>, limitMs = 20_000): Promise<T> {
   return Promise.race([work, new Promise<T>((_, no) => window.setTimeout(() => no(new Error(`${what} did not finish in ${limitMs / 1000} s`)), limitMs))]);
+}
+
+/** A key pressed on the page, as the learner would press it. */
+function press(key: string, mods: { meta?: boolean } = {}) {
+  const target = (document.activeElement as HTMLElement | null) ?? document.body;
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, metaKey: Boolean(mods.meta) }));
 }
 
 export async function run(api: Core, actions: Actions, session: () => SessionState): Promise<void> {
@@ -53,6 +61,21 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.about = about;
     if (!about.version) throw new Error("the window did not report its version");
 
+    // The first screen: the next thing, which starts the lesson, and the line under it.
+    await until("the first screen", () => document.querySelector('[data-drive="start"]') !== null || document.querySelector(".now.rest .next") !== null, 10_000);
+    steps.firstScreen = {
+      next: document.querySelector(".now.rest .next")?.textContent ?? null,
+      line: document.querySelector('.now.rest [data-drive="talk"]') !== null,
+    };
+    if (!steps.firstScreen || !(steps.firstScreen as { line: boolean }).line) throw new Error("the first screen has no line to write on");
+
+    // A layer comes with its key and goes with Esc.
+    press(",", { meta: true });
+    await until("the settings layer", () => document.querySelector('[data-layer="Settings"]') !== null, 3000);
+    press("Escape");
+    await until("the settings layer to go", () => document.querySelector('[data-layer="Settings"]') === null, 3000);
+    steps.layer = true;
+
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
     const page = document.createElement("div");
     page.innerHTML = renderMarkdown(
@@ -65,8 +88,8 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (page.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in the text did not draw");
     if (page.querySelectorAll("map, area").length !== 0) throw new Error("an image map was not removed");
 
-    // One line of text anywhere on the page draws its mathematics, and the
-    // learner's own words keep every character that is not mathematics.
+    // One line of text anywhere draws its mathematics, and the learner's own
+    // words keep every character that is not mathematics.
     const line = document.createElement("div");
     line.innerHTML = renderInline("the cdf of $U = \\sqrt{Y}$ <b onclick=x>now</b>");
     const said = document.createElement("div");
@@ -92,31 +115,24 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
       throw new Error(`a half-written formula was not held back: ${JSON.stringify(cut)}`);
     }
 
-    // A task that runs over several blocks is one box, to the end of the reply.
+    // A task that runs over several blocks is one block, to the end of the reply.
     const task = document.createElement("div");
     task.innerHTML = renderMarkdown("An explanation.\n\n**Task.** Find the eigenvalues of\n\n$$A$$\n\nOne line.");
     const box = task.querySelector("div.task");
     steps.task = { boxes: task.querySelectorAll("div.task").length, blocks: box?.children.length ?? 0, before: task.firstElementChild?.tagName };
     if (!box || box.children.length !== 3 || task.firstElementChild?.tagName !== "P" || box.querySelectorAll(".katex-display").length !== 1) {
-      throw new Error(`the task was not set apart as one box: ${task.innerHTML.slice(0, 200)}`);
+      throw new Error(`the task was not set apart as one block: ${task.innerHTML.slice(0, 200)}`);
     }
 
     // A link to a PDF or a text file is a source: shut as plain text until the
-    // task is answered, open as a link after. A web link and an image stay as they are.
+    // task is answered, open as a link after. A web link stays as it is.
     const cited = renderMarkdown("See [Week 4 slides, p. 12](Study/stats/week%204.pdf#page=12) and [the web](https://example.com).\n\n**Task.** Say why.");
     const shut = document.createElement("div");
     shut.innerHTML = setSourcesApart(cited, false);
     const open = document.createElement("div");
     open.innerHTML = setSourcesApart(cited, true);
     const ref = sourceRef("Study/stats/week%204.pdf#page=12");
-    steps.sources = {
-      shutLinks: shut.querySelectorAll("a").length,
-      shutText: shut.querySelectorAll(".source-shut").length,
-      openLinks: open.querySelectorAll("a.source").length,
-      ref,
-      task: hasTask("A line.\n\n**Task.** Say why."),
-      noTask: hasTask("Just a line."),
-    };
+    steps.sources = { shutLinks: shut.querySelectorAll("a").length, openLinks: open.querySelectorAll("a.source").length, ref };
     if (shut.querySelectorAll("a").length !== 1 || shut.querySelectorAll(".source-shut").length !== 1) throw new Error("a source link was not shut as text");
     if (open.querySelectorAll("a.source").length !== 1) throw new Error("a source link did not open once answered");
     if (ref?.path !== "Study/stats/week 4.pdf" || ref.page !== 12) throw new Error(`the page of a source link was not read: ${JSON.stringify(ref)}`);
@@ -133,8 +149,7 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (pdf.numPages !== 3 || ink < 200) throw new Error(`the PDF page did not draw: ${JSON.stringify(steps.pdf)}`);
 
     // Course material through the shell: pasted text is saved as a text file in
-    // the study folder; the core reads it back for the panel, and refuses what
-    // lies outside the folder. Nothing here needs a file on this Mac.
+    // the study folder; the core reads it back, and refuses what lies outside the folder.
     const pasted = await within("saving pasted text", api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood."));
     const savedAs = pasted.saved[0];
     steps.material = { saved: pasted.saved.length, lines: pasted.lines };
@@ -146,22 +161,24 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
       if (refused === null) throw new Error(`a source outside the study folder, or an answer key, opened: ${outside}`);
     }
 
-    // The library and the study days, through the shell. The folder that is
-    // open is in the library, and nothing was studied before this check.
+    // The library, the plan and the saved conversation, through the shell.
     const cards = await api.library();
-    const days = await api.activity();
-    steps.library = { cards: cards.length, first: cards[0]?.name, run: days.run, today: days.today };
+    const plan = await api.plan();
+    const saved = await api.turns();
+    steps.library = { cards: cards.length, first: cards[0]?.name, plan: { items: plan.items.length, path: plan.path }, saved: saved.length };
     if (!cards.some((card) => card.folder === home.folder)) throw new Error("the open folder is not in the library");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(days.today)) throw new Error("the core did not say what day it is");
 
+    // Start: the next thing, as Return on the first screen does.
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
-    await actions.continueLesson(false);
+    await actions.start();
     await until("the first reply", idle);
-    await actions.say(message);
+    if (document.querySelector(".now.lesson") === null) throw new Error("the lesson did not fill the surface");
+    await actions.say(message, "talk");
     await until("the reply to be on screen", () => session().earlier.length >= 1 && idle());
     const reply = tutorText(session().live!);
     steps.reply = reply.slice(0, 120);
     if (!reply.includes("Self-check")) throw new Error(`the reply was not the stand-in's echo: ${reply.slice(0, 80)}`);
+    if (session().live?.said !== "talk") throw new Error("talk was not sent as talk");
 
     await until("the page to draw the reply", () => document.querySelector(".tutor .prose") !== null, 5000);
     await wait(1500);
@@ -170,16 +187,16 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
 
-    await actions.say("PERMISSION");
+    await actions.say("PERMISSION", "talk");
     await until("the permission card", () => session().cards.length > 0);
-    steps.card = document.querySelector(".ask h3")?.textContent ?? null;
+    steps.card = document.querySelector(".card .record-head")?.textContent ?? null;
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 
     // The learner's own line on screen draws its mathematics too.
-    await actions.say("my answer is $x^2$");
+    await actions.say("my answer is $x^2$", "talk");
     await until("the reply to the answer", () => idle() && session().live?.learner.includes("my answer") === true);
-    steps.saidMath = document.querySelectorAll(".exchange.now .you .katex").length;
+    steps.saidMath = document.querySelectorAll(".you .katex").length;
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
 
     const rail = await api.rail();
@@ -187,24 +204,20 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     const progress = await api.progress(null);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 
-    await actions.openProgress(null);
-    await wait(300);
-    steps.progressScreen = document.querySelector('[data-screen="progress"]') !== null;
+    // The plan's layer comes with ⌘P over the lesson.
+    press("p", { meta: true });
+    await until("the plan's layer", () => document.querySelector('[data-layer="The plan"]') !== null, 3000);
+    press("Escape");
+    await until("the plan's layer to go", () => document.querySelector('[data-layer="The plan"]') === null, 3000);
 
-    // Ending the sitting from the page: the lesson is kept and the end
-    // screen shows. A study day is a day with a marked answer, and the
-    // stand-in tutor marks none. So with a runtime that says which days had
-    // one, today is not a study day, however many messages were sent. With
-    // an earlier runtime the window counts the answers sent from it.
-    await actions.stop("self-check stop line");
-    await until("the end of the sitting", () => document.querySelector('[data-screen="summary"]') !== null, 10_000);
+    // Stop here: the lesson is kept for the next sitting, and the surface is at rest again.
+    await actions.stop();
+    await until("the surface at rest", () => document.querySelector(".now.rest") !== null, 10_000);
     const after = await api.home();
-    const studied = await api.activity();
-    const fromRecord = !progress.level_unknown;
-    steps.afterStop = { can_resume: after.can_resume, studied_today: studied.studied_today, run: studied.run, days_from_record: fromRecord };
+    steps.afterStop = { can_resume: after.can_resume, stopped_at: after.last?.stopped_at ?? null };
     if (!after.can_resume) throw new Error("the lesson was not kept for the next sitting");
-    if (fromRecord && (studied.studied_today || studied.run !== 0)) throw new Error("a day with no marked answer was counted as a study day");
-    if (!fromRecord && (!studied.studied_today || studied.run !== 1)) throw new Error("today's answers were not counted as a study day");
+    const kept = await api.turns();
+    if (kept.length === 0) throw new Error("the conversation was not kept to be drawn above the next thing");
   } catch (problem) {
     failure = String(problem);
   }
