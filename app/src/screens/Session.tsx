@@ -1110,7 +1110,6 @@ function Thinking(props: {
   /** Stop was pressed: the line says so at once, before the program answers. */
   stopping: boolean;
   /** The tutor's turn has begun, so there is something to stop. */
-  canStop: boolean;
   onInterrupt: () => void;
 }) {
   const now = useNow(5_000);
@@ -1132,9 +1131,9 @@ function Thinking(props: {
       <button
         className="btn ghost small stop"
         onClick={props.onInterrupt}
-        disabled={props.stopping || !props.canStop}
+        disabled={props.stopping}
         aria-pressed={props.stopping}
-        title={props.canStop ? "Stop this reply (⌘.)" : "Available a moment after the tutor starts"}
+        title="Stop this reply (⌘.)"
       >
         Stop
       </button>
@@ -1184,18 +1183,6 @@ export function Session(props: {
   const isBusy = busy(state);
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
-  // For the first moment of a reply, before the tutor's turn has begun, there is
-  // nothing to stop yet: Stop shows disabled, and ⌘. does nothing, until there is.
-  const [warming, setWarming] = useState(false);
-  useEffect(() => {
-    if (!isBusy) return setWarming(false);
-    setWarming(true);
-    const timer = window.setTimeout(() => setWarming(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [live?.since, isBusy]);
-  const stoppable = !(warming && live?.status === "waiting");
-  const stoppableRef = useRef(stoppable);
-  stoppableRef.current = stoppable;
   const narrow = useNarrow();
   const [showEarlier, setShowEarlier] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -1266,12 +1253,6 @@ export function Session(props: {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key !== "." || !isBusyRef.current) return;
-      if (!stoppableRef.current) {
-        // Nothing to stop yet: the key is taken, so it neither says "Stopping" nor reaches the program.
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
       setInterrupting(true);
     };
     window.addEventListener("keydown", key, true);
@@ -1888,7 +1869,6 @@ export function Session(props: {
                           doing={live.doing}
                           quiet={text !== "" && live.status !== "working"}
                           stopping={interrupting}
-                          canStop={stoppable}
                           onInterrupt={stopReply}
                         />
                       ) : null
