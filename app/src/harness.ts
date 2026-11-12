@@ -107,9 +107,12 @@ function visible(element: Element): boolean {
   return Array.from(rects).some((rect) => rect.width > 0 && rect.height > 0);
 }
 
+/** The field typing is timed in: the composer, or else the field for talk, or else the one for an answer. */
 function composer(): HTMLElement | null {
-  const found = document.querySelector<HTMLElement>('[data-drive="composer"]');
-  if (!found || !visible(found)) return null;
+  const found = ["composer", "talk", "answer"]
+    .map((name) => document.querySelector<HTMLElement>(`[data-drive="${name}"]`))
+    .find((element) => element !== null && visible(element));
+  if (!found) return null;
   const field = editable(found);
   if (!field) return null;
   if ((field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && (field.disabled || field.readOnly)) return null;
