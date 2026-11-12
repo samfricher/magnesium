@@ -66,7 +66,7 @@ export function markWords(mark: Mark): string {
 export type Change = { what: string; detail: string; route?: boolean };
 
 /** How an item moved, for the plan layer. */
-export type Moved = "up" | "down" | "new";
+export type Moved = "up" | "down" | "new" | "day";
 
 export type PlanDiff = {
   changes: Change[];
@@ -112,6 +112,14 @@ export function planDiff(before: Plan | null, after: Plan): PlanDiff {
     const next = kept[kept.indexOf(item) + 1];
     changes.push({ what: item.title, detail: next ? `now before ${next.title}` : "moved up" });
   }
+  // Days the blocks are on: a change that only re-spaces them shows too.
+  const redayed = kept.filter((item) => {
+    const old = before.items.find((each) => each.id === item.id);
+    return old && (old.day ?? "") !== (item.day ?? "") && item.day;
+  });
+  for (const item of redayed) if (!moved[item.id]) moved[item.id] = "day";
+  if (redayed.length >= 3) changes.push({ what: "The blocks", detail: `re-spaced from ${shortDay(redayed[0].day!)}` });
+  else for (const item of redayed) changes.push({ what: item.title, detail: `now on ${shortDay(item.day!)}` });
   for (const item of after.items) {
     if (!was.has(item.id)) {
       moved[item.id] = "new";

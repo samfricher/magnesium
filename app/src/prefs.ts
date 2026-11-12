@@ -321,13 +321,15 @@ export type Place = {
   fromFoot: number;
   /** Whether a lesson was on the surface when the window last saw it. */
   inLesson: boolean;
+  /** The open task's words then, so a reopened lesson has it as a task again. */
+  task: string | null;
   /** When the window last saw this course, ms since the epoch. */
   seenMs: number;
 };
 
 type Places = { course: string | null; by: Record<string, Place> };
 
-const blankPlace: Place = { draft: "", answerDraft: "", line: "talk", fromFoot: 0, inLesson: false, seenMs: 0 };
+const blankPlace: Place = { draft: "", answerDraft: "", line: "talk", fromFoot: 0, inLesson: false, task: null, seenMs: 0 };
 
 let places: Places | null = null;
 

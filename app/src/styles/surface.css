@@ -24,6 +24,8 @@
   --ink: var(--ink-l);
   --raised: color-mix(in srgb, var(--ground), white 70%);
   --quiet: color-mix(in srgb, var(--text) 64%, var(--ground));
+  /* The window's own words: a tier quieter than the material's secondary text, still 4.5:1. */
+  --hint: color-mix(in srgb, var(--text) 60%, var(--ground));
   --line: color-mix(in srgb, var(--text) 50%, var(--ground));
   --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
   --edge: color-mix(in srgb, var(--text) 11%, transparent);
@@ -53,6 +55,7 @@
     --ink: var(--ink-d);
     --raised: color-mix(in srgb, var(--ground), white 6%);
     --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+    --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
@@ -63,6 +66,7 @@
   --ink: var(--ink-d);
   --raised: color-mix(in srgb, var(--ground), white 6%);
   --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+  --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   color-scheme: dark;
 }
@@ -72,7 +76,8 @@
 :root[data-hints="off"] .keyhint,
 :root[data-hints="off"] .record-keys,
 :root[data-hints="off"] .layer-keys,
-:root[data-hints="off"] .foot-keys { display: none; }
+:root[data-hints="off"] .foot-keys,
+:root[data-hints="off"] .line-end { display: none; }
 
 * { box-sizing: border-box; }
 
@@ -150,7 +155,7 @@ button {
    conversation left is above it, out of view, until it is scrolled to. */
 .now {
   min-height: 100vh;
-  padding: 56px 0 26vh;
+  padding: 56px 0 0;
   transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .now.rest { padding-top: 30vh; }
@@ -198,7 +203,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: 26rem;
 }
 .choice-rest {
   padding: 0.38rem var(--hang);
@@ -341,8 +345,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   overflow-wrap: anywhere;
   position: relative;
 }
-.you.pick,
-.you.help { color: var(--quiet); }
+.you.pick { color: var(--quiet); }
 
 /* An answer sits inside the task it answers: on the task's rule, under it. */
 .answer {
@@ -436,7 +439,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--text);
 }
 .act:hover { background: var(--tint); }
-.act:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+.act:focus { background: var(--tint); }
 
 /* Files over the window. */
 .veil {
@@ -485,7 +488,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 .layer-line {
   position: relative;
-  padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang));
+  padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang) + 0.25rem);
   border-bottom: 1px solid var(--edge);
 }
 .layer-line::before {
@@ -570,7 +573,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 .layer-keys {
   margin: 0;
-  padding: 0.55rem 1.1rem 0.6rem calc(1.1rem + var(--hang));
+  padding: 0.55rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem);
   border-top: 1px solid var(--edge);
   font: 400 0.706rem/1.5 var(--app);
   color: var(--quiet);
@@ -622,3 +625,107 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   .now { padding-top: 48px; }
   .now.rest { padding-top: 24vh; }
 }
+
+/* ------------------------------------------------------------------ */
+/* The foot: one band, always in view. The record's latest fact, a task
+   left open (one quiet line), and the one line to write on. */
+
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 1.2rem calc(-1 * var(--hang) - 8px) 0;
+  padding: 0.2rem calc(var(--hang) + 8px) 1.2rem;
+  background: var(--ground);
+}
+/* The lesson fades out above the band rather than being cut by it. */
+.foot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.4rem;
+  height: 1.4rem;
+  background: linear-gradient(to bottom, transparent, var(--ground));
+  pointer-events: none;
+}
+.foot.in-task { margin-top: 0; }
+.now.lesson { padding-bottom: 0; }
+.now.lesson .foot .task-line { margin-top: 0; }
+.fact {
+  margin: 0.55rem 0 0;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--ink);
+}
+.fact.none { color: var(--hint); }
+.parked {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  width: 100%;
+  margin: 0 0 0.7rem calc(-1 * var(--hang));
+  padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
+  border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
+  font: 400 0.941rem/1.5 var(--read);
+  color: var(--quiet);
+  cursor: text;
+}
+.parked:hover { color: var(--text); }
+.task-line.off {
+  border-left-color: transparent;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.line-end {
+  position: absolute;
+  right: 0;
+  bottom: 0.25rem;
+  font: 400 0.706rem/1.6 var(--app);
+  color: var(--hint);
+  background: none;
+  white-space: nowrap;
+}
+.line-end .keys { color: var(--hint); }
+button.line-end:hover { color: var(--text); }
+.line .field { padding-right: 7rem; }
+
+/* At rest the line is the one action: it has an edge, and its end says what Return does. */
+.line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
+.line.rest .field:focus { border-bottom-color: var(--ink); }
+.line.rest .line-end { bottom: 0.35rem; font-size: 0.824rem; color: var(--text); }
+.line.rest .line-end .keys { color: var(--ink); }
+.now > .keys { color: var(--hint); }
+
+/* The top edge of a lesson. */
+.top-edge {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 84px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--ground) 66px, transparent);
+}
+.top-edge .inner {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin: 0 auto;
+  padding-top: 0;
+  height: 54px;
+  align-items: flex-end;
+  display: flex;
+  gap: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 1rem;
+}
+.top-edge .inner > * { font: 400 0.765rem/1.4 var(--app); color: var(--hint); }
+.top-edge .top-name { color: var(--quiet); overflow: hidden; text-overflow: ellipsis; }
+.top-edge .top-step { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) {
+  .top-edge .inner { padding-left: 64px; }
+}
+
+/* Help with the task opens near the line it is about. */
+.layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
+/* Inside the task, the band joins the question above it: nothing fades over the question. */
+.foot.in-task::before { display: none; }

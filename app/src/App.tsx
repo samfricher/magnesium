@@ -20,7 +20,7 @@ import { Layers, type LayerKind } from "./surface/Layers";
 import { Line } from "./surface/Rich";
 import { ConfigSheet, PasteSheet, SourceSheet } from "./surface/Sheets";
 import type { About, AgentEvent, Answer, Card, Core, Decision, Engine, EngineChoice, Home, Paper, Payment, Plan, Setup, Turn as SavedTurn } from "./types";
-import { displayName, firstWords, planDiff, stoppedWords, type PlanDiff } from "./words";
+import { displayName, firstWords, markWords, planDiff, shortDay, stoppedWords, type PlanDiff } from "./words";
 
 type Phase = "loading" | "rest" | "lesson";
 
@@ -82,12 +82,13 @@ export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask
  * Why the record kept no mark for an answer, in the record's terms. Only a
  * first try at a task is marked, so a second answer to the same task is not.
  */
-function unmarkedWhy(session: SessionState, since: number): string {
+function unmarkedWhy(session: SessionState, since: number): string | null {
   const turns = [...session.earlier, ...(session.live ? [session.live] : [])] as { since?: number; ms?: number; said?: Said; question?: string; learner: string }[];
   const at = turns.findIndex((turn) => (turn.since ?? turn.ms) === since);
   const question = at >= 0 ? turns[at].question : undefined;
   const earlier = question !== undefined && turns.slice(0, Math.max(0, at)).some((turn) => turn.said === "answer" && turn.question === question);
-  return earlier ? "Not marked: only a first try at a task is marked, and this was another try." : "Not marked: the record kept no mark for this answer.";
+  // Another try is not a first try, and only a first try is marked: nothing to say.
+  return earlier ? null : "The record kept no mark for this answer. ⌘Y lists what it holds.";
 }
 
 /** The task's own words in a reply: from its bold opening word to the end. */
@@ -165,6 +166,12 @@ export function App() {
   const [incoming, setIncoming] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [painted, setPainted] = useState(false);
+  // The lesson's heading has scrolled away: the top edge names the lesson and its step.
+  const [headGone, setHeadGone] = useState(false);
+  // What the first question from earlier is about, and the day it was last answered, from the record.
+  const [dueTopic, setDueTopic] = useState<string | null>(null);
+  // The record's latest fact (a mark, a change to the plan, no mark), kept in view at the foot until the next message.
+  const [fact, setFact] = useState<{ kind: "mark" | "plan" | "none"; text: string; title?: string } | null>(null);
   const [answerDraft, setAnswerDraft] = useState("");
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
@@ -255,6 +262,8 @@ export function App() {
     try {
       const opened = await open();
       mark("folder");
+      setDueTopic(null);
+      if ((opened.checks_due ?? 0) + opened.redos_due > 0) void readDueTopic(api);
       now.current.home = opened;
       setHome(opened);
       dispatch({ type: "reset" });
@@ -278,6 +287,8 @@ export function App() {
       mark("turns");
       if (reopen && turns.length > 0) {
         dispatch({ type: "opened", turns });
+        // The task that was open is the open task again, with the line in it if it was there.
+        if (place.task) dispatch({ type: "event", event: { type: "open_task", task: place.task, posed: false } });
         // Where the line was is put back as it was, not worked out again.
         settled.current = turns[turns.length - 1].ms;
         // The session is not running: the first message sent starts it again.
@@ -303,6 +314,19 @@ export function App() {
       setPhase("rest");
     }
   }, [loadEngine]);
+
+  /** The skill of the first question due, from the record, and when it was last answered. */
+  const readDueTopic = async (api: Core) => {
+    try {
+      const [progress, marks] = await Promise.all([api.progress(null), api.marks().catch(() => null)]);
+      const row = [...progress.in_progress, ...progress.confirmed].find((each) => each.due);
+      if (!row) return;
+      const last = [...(marks ?? [])].reverse().find((mark) => mark.label.trim() === row.name.trim());
+      setDueTopic(last ? `${row.name}, from ${shortDay(last.at)}` : row.name);
+    } catch {
+      // Without the record the line names no topic.
+    }
+  };
 
   const openFolder = useCallback((api: Core, path: string) => showCourse(api, () => api.openFolder(path), false), [showCourse]);
 
@@ -420,6 +444,7 @@ export function App() {
     dispatch({ type: "event", event });
     if (event.type === "ready" && event.plugin_missing) void now.current.api?.interrupt().catch(() => {});
     if (event.type === "turn_ended") void refreshHome();
+    if (event.type === "marked") setFact({ kind: "mark", text: markWords(event.mark) });
     // The engine says which task is open: a task the reply just posed takes
     // the learner's line; after help with it, the line goes back in; after
     // anything else it is on the conversation's line.
@@ -427,12 +452,19 @@ export function App() {
       const live = now.current.session.live;
       const reply = live ? tutorText(live) : "";
       if (event.task && (event.posed || poses(reply, event.task))) setLine("task");
-      else if (event.task && live?.said === "help") setLine("task");
+      // After help with it, or when a lesson opens with it still open, the task is the live one.
+      else if (event.task && (live?.said === "help" || live?.said === "opening")) setLine("task");
       else setLine("talk");
       // An answer the record kept no mark for says why, once the record has had its moment.
       if (live && live.said === "answer") {
         const since = live.since;
-        window.setTimeout(() => dispatch({ type: "unmarked", since, reason: unmarkedWhy(now.current.session, since) }), 1800);
+        window.setTimeout(() => {
+          const reason = unmarkedWhy(now.current.session, since);
+          if (!reason) return;
+          dispatch({ type: "unmarked", since, reason });
+          const turn = now.current.session.live;
+          if (turn && turn.since === since && (turn.marks ?? []).length === 0) setFact({ kind: "none", text: "no mark", title: reason });
+        }, 1800);
       }
     }
     if (event.type === "plan_changed") {
@@ -442,6 +474,8 @@ export function App() {
         const diff = planDiff(was, fresh);
         if (diff.changes.length === 0) return;
         dispatch({ type: "planned", change: diff });
+        const moved = diff.changes.filter((each) => !each.route);
+        if (moved.length > 0) setFact({ kind: "plan", text: `The plan changed: ${moved.map((each) => `${each.what}, ${each.detail}`).join("; ")}.` });
         setChanged((old) => ({
           changes: [...(old?.changes ?? []), ...diff.changes],
           moved: { ...(old?.moved ?? {}), ...diff.moved },
@@ -546,6 +580,7 @@ export function App() {
         dispatch({ type: "reopened" });
       }
       stuck.current = true;
+      setFact(null);
       dispatch({ type: "sent", shown: text, now: Date.now(), said, ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
@@ -911,6 +946,8 @@ export function App() {
     const folder = now.current.home?.folder;
     if (!el || now.current.phase !== "lesson") return;
     const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+    const head = nowRef.current?.querySelector<HTMLElement>(".head");
+    if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
     stuck.current = fromFoot < 48;
     if (folder) keepPlace(folder, { fromFoot: Math.round(fromFoot) });
   };
@@ -935,10 +972,19 @@ export function App() {
   // The task's question is said above its line unless the reply just above
   // posed it: in full while the learner is in it, else on one quiet line.
   const parked = task !== null && openAt !== turns.length - 1;
+  // The open task is kept with where the learner was, so a reopened window has it as a task.
+  const taskText_ = task?.text ?? null;
+  useEffect(() => {
+    if (phase === "lesson" && home) keepPlace(home.folder, { task: taskText_ });
+  }, [taskText_, phase, home]);
   const restated = parked ? (held ? task.text : firstWords(task.text, 160)) : null;
   const isBusy = busy(session);
 
   const rest = restView();
+  const currentStep = plan?.steps.find((step) => step.status === "doing")?.step ?? null;
+  // The one action is the field's own end, in the text's colour; the window's other keys are one quiet line.
+  const restVerb = rest?.start ? (/^↩ ([a-z]+(?: on)?)/.exec(rest.keys)?.[1] ?? "start") : null;
+  const restOthers = rest ? (rest.start ? rest.keys.replace(/^↩ [a-z]+(?: on)?\s+/, "") : rest.keys) : "";
 
   function restView(): Rest | null {
     if (phase !== "rest") return null;
@@ -1058,10 +1104,11 @@ export function App() {
     const commandsKey = keyName(prefs.keys.commands);
     if (home.state === "ready" && home.last) {
       const stopped = home.last.stopped_at ? stoppedWords(home.last.stopped_at) : null;
-      const where = due ? (stopped ? "A few questions from earlier come first, then where you stopped." : "A few questions from earlier come first, then this.") : stopped;
+      // What is due is named by its material, not counted: the record's skill and the day it was last answered.
+      const where = due ? `First: ${dueTopic ?? "a question from earlier"}.` : stopped;
       return { ...base, next: home.last.goal, where, line: true, start: () => void start(), keys: due ? `↩ carry on   ${commandsKey} start without them, or anything else` : `↩ carry on   ${commandsKey} everything else` };
     }
-    if (item) return { ...base, next: item.title, where: due ? "A few questions from earlier come first, then this." : item.note, line: true, start: () => void start(), keys: `↩ start   ${commandsKey} everything else` };
+    if (item) return { ...base, next: item.title, where: due ? `First: ${dueTopic ?? "a question from earlier"}.` : item.note, line: true, start: () => void start(), keys: `↩ start   ${commandsKey} everything else` };
     return {
       ...base,
       next: displayName(home.name),
@@ -1119,6 +1166,18 @@ export function App() {
   return (
     <div className="app" data-phase={phase} data-busy={isBusy ? "yes" : "no"}>
       <div className="drag" data-tauri-drag-region />
+      {phase === "lesson" && (
+        // A fixed top edge: text fades out before the traffic lights, and once the heading has
+        // scrolled away, the lesson's name and its step are said here, in the window's quiet voice.
+        <div className="top-edge" aria-hidden={!headGone}>
+          {headGone && (
+            <div className="inner">
+              <Line text={sittingTitle} className="top-name" />
+              {currentStep && <Line text={currentStep} className="top-step" />}
+            </div>
+          )}
+        </div>
+      )}
       <main className="surface" ref={surface} onScroll={onScroll} aria-hidden={overlay !== null ? true : undefined}>
         <div className="column">
           {painted && shownBefore.length > 0 && (
@@ -1167,6 +1226,7 @@ export function App() {
                     folder={home.folder}
                     initial={draft}
                     placeholder={rest.start ? "or say what you would rather do" : undefined}
+                    end={restVerb ? { keys: "↩", what: restVerb } : null}
                     active
                     busy={false}
                     paused={overlay !== null}
@@ -1188,7 +1248,7 @@ export function App() {
                     ))}
                   </div>
                 )}
-                {rest.keys && <p className="keys">{rest.keys}</p>}
+                {restOthers && <p className="keys">{restOthers}</p>}
               </>
             ) : (
               <>
@@ -1223,53 +1283,54 @@ export function App() {
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 <Notices notices={session.notices} onDismiss={onDismiss} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
-                {home && task && (
-                  <div className={`task-line${held ? " on" : ""}${restated ? "" : " joined"}${parked && !held ? " parked" : ""}`}>
-                    {restated && (
-                      <p className="restated" onClick={() => setLine("task")}>
-                        <Line text={restated} />
+                {home && (
+                  // The foot: one band that stays in view whatever the scroll.
+                  // The record's latest fact, then the one line, whose role
+                  // follows where it sits: inside the open task it is that
+                  // task's answer, else it is talk.
+                  <div className={`foot${held ? " in-task" : ""}`}>
+                    {task && !held && (
+                      <button
+                        className="parked"
+                        data-drive="answer"
+                        onFocus={() => setLine("task")}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          setLine("task");
+                        }}
+                      >
+                        <Line text={task.text} />
+                      </button>
+                    )}
+                    <div className={`task-line${held ? " on" : " off"}${held && !restated ? " joined" : ""}`}>
+                      {held && restated && (
+                        <p className="restated">
+                          <Line text={restated} />
+                        </p>
+                      )}
+                      <Composer
+                        key={`line-${home.folder}`}
+                        place={held ? "task" : "talk"}
+                        folder={home.folder}
+                        initial={answerDraft || draft}
+                        active
+                        busy={isBusy}
+                        paused={overlay !== null || session.cards.length > 0}
+                        canAnswer={task !== null}
+                        incoming={incoming}
+                        end={task && !held ? { keys: "↑", what: "answer" } : null}
+                        onSend={onSend}
+                        onMove={setLine}
+                        onNote={note}
+                      />
+                    </div>
+                    {fact && (
+                      <p className={`fact ${fact.kind}`} title={fact.title} data-role="fact">
+                        {fact.text}
                       </p>
                     )}
-                    <Composer
-                      key={`answer-${home.folder}-${task.text}`}
-                      place="task"
-                      folder={home.folder}
-                      initial={answerDraft}
-                      active={held}
-                      busy={isBusy}
-                      paused={overlay !== null || session.cards.length > 0}
-                      canAnswer
-                      incoming={incoming}
-                      onSend={onSend}
-                      onMove={setLine}
-                      onNote={note}
-                    />
                   </div>
                 )}
-                {home && (
-                  <Composer
-                    key={`talk-${home.folder}`}
-                    place="talk"
-                    folder={home.folder}
-                    initial={draft}
-                    active={!held}
-                    busy={isBusy}
-                    paused={overlay !== null || session.cards.length > 0}
-                    canAnswer={task !== null}
-                    placeholder={task ? "or say something else" : undefined}
-                    onSend={onSend}
-                    onMove={setLine}
-                    onNote={note}
-                  />
-                )}
-                {/* One quiet line of keys for the foot, which the learner can turn off. */}
-                <p className="foot-keys">
-                  {task === null
-                    ? `↩ say it   ${keyName(prefs.keys.commands)} everything else`
-                    : held
-                      ? `↩ hand in your answer   ${keyName(prefs.keys.help)} help   esc say something else`
-                      : `↑ answer the task   ${keyName(prefs.keys.commands)} everything else`}
-                </p>
               </>
             )}
           </section>

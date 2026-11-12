@@ -47,6 +47,8 @@ type Props = {
   canAnswer: boolean;
   /** Words to show when the line is empty. */
   placeholder?: string;
+  /** The quiet end of the line: the one key worth naming here, and what it does. */
+  end?: { keys: string; what: string } | null;
   /** Photos of work dropped on the window, saved in the study folder, to go with the answer. */
   incoming?: string[];
   onSend: (sending: Sending) => void;
@@ -98,7 +100,7 @@ export const Composer = memo(function Composer(props: Props) {
   const keep = (value: string) => {
     const { folder, place } = latest.current;
     if (!folder) return;
-    keepPlace(folder, place === "task" ? { answerDraft: value } : { draft: value });
+    keepPlace(folder, place === "rest" ? { draft: value } : { answerDraft: value });
   };
 
   const change = (value: string) => {
@@ -191,7 +193,9 @@ export const Composer = memo(function Composer(props: Props) {
       <textarea
         ref={box}
         className="field"
-        data-drive={place === "task" ? "answer" : "talk"}
+        // One field for both, so it is the "composer"; its other role is one
+        // element away: "talk" (its quiet end) under a task, "answer" (the open task) while talking.
+        data-drive="composer"
         aria-label={label}
         rows={1}
         value={text}
@@ -201,6 +205,28 @@ export const Composer = memo(function Composer(props: Props) {
         onKeyDown={onKeyDown}
         onFocus={() => place !== "rest" && !latest.current.active && latest.current.onMove(place)}
       />
+      {/* The one line's quiet end. Under a task it is also the step out to talk
+          (data-drive="talk"), so a harness or a click can say "talk" here. */}
+      {place === "task" ? (
+        <button
+          className="line-end"
+          data-drive="talk"
+          tabIndex={-1}
+          onFocus={() => latest.current.onMove("talk")}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            latest.current.onMove("talk");
+          }}
+        >
+          <span className="keys">esc</span> talk instead
+        </button>
+      ) : (
+        props.end && (
+          <span className="line-end" aria-hidden="true">
+            <span className="keys">{props.end.keys}</span> {props.end.what}
+          </span>
+        )
+      )}
       {(confidence || files.length > 0 || queued) && (
         <p className="with">
           {confidence && <span className="said-sure">{confidence}</span>}

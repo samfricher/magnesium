@@ -30,7 +30,7 @@
 .prose strong { font-weight: 600; }
 .prose a { color: inherit; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
 .prose a:hover { text-decoration-color: var(--ink); }
-.prose a.source { text-decoration-color: var(--ink); text-decoration-thickness: 1px; cursor: pointer; }
+.prose a.source { cursor: pointer; }
 .prose .source-shut { color: inherit; }
 .prose blockquote { margin: 0 0 0.85em; padding-left: 1em; border-left: 1px solid var(--faint); color: var(--quiet); }
 .prose hr { border: 0; border-top: 1px solid var(--faint); margin: 1.4em 0; }

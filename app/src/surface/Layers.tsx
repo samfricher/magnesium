@@ -70,7 +70,7 @@ type Props = {
 };
 
 const STATUS_MARK: Record<string, string> = { done: "✓", doing: "●", todo: "○" };
-const MOVED_WORDS: Record<string, string> = { up: "moved up", down: "moved down", new: "new" };
+const MOVED_WORDS: Record<string, string> = { up: "moved up", down: "moved down", new: "new", day: "day moved" };
 const ENGINE_NAMES: Record<Engine, string> = { plugin: "Claude Code", direct: "Magnesium" };
 
 function stateWords(card: Card): string | null {
@@ -167,7 +167,8 @@ export function Layers(props: Props) {
         mark: item.id === current ? "●" : (STATUS_MARK[item.status] ?? "○"),
         label: <Line text={item.title} className={item.status === "done" ? "done" : undefined} />,
         text: item.title,
-        hint: moved ? MOVED_WORDS[moved] : item.note ? <Line text={item.note} /> : undefined,
+        // Each block's day, as the plan has it, and what moved in this sitting.
+        hint: [moved ? MOVED_WORDS[moved] : null, item.day ? shortDay(item.day) : null].filter(Boolean).join(", ") || (item.note ? <Line text={item.note} /> : undefined),
         changed: Boolean(moved),
         drive: `plan-${item.id}`,
         run: item.status === "done" ? undefined : () => act.say(props.inLesson ? `Can we work on ${item.title} next?` : `Let's work on ${item.title}.`),
@@ -177,7 +178,7 @@ export function Layers(props: Props) {
     if (plan.goal && plan.steps.length > 0) {
       rows.push({ id: "goal", kind: "note", label: <Line text={plan.goal} />, text: plan.goal });
       plan.steps.forEach((step, at) =>
-        rows.push({ id: `step-${at}`, kind: "thing", mark: STATUS_MARK[step.status] ?? "○", label: <Line text={step.step} className={step.status === "done" ? "done" : undefined} />, text: step.step }),
+        rows.push({ id: `step-${at}`, kind: "do", mark: STATUS_MARK[step.status] ?? "○", label: <Line text={step.step} className={step.status === "done" ? "done" : undefined} />, text: step.step }),
       );
     }
     if (plan.items.length === 0 && !plan.exam_date && !(plan.goal && plan.steps.length > 0)) {
@@ -424,6 +425,18 @@ export function Layers(props: Props) {
     { id: "find", label: "Find folders on this Mac", text: "find search folders", run: act.findFolders },
   );
   if (home) rows.push({ id: "forget", label: `Take ${displayName(home.name)} off the list`, text: "remove forget take off", hint: "the folder stays", run: () => act.forgetFolder(home.folder) });
+  // Every setting's values, one Return away once typed for: "mono", "dark", "iowan", "size 19".
+  const setting = (id: string, label: string, text: string, change: Partial<Prefs>, chosen: boolean) =>
+    rows.push({ id: `set-${id}`, label, text, hint: chosen ? "now" : "setting", onlyFound: true, run: () => (props.prefsChange(change), props.onClose()) });
+  const p = props.prefs;
+  FACES.forEach(([value, label]) => setting(`face-${value}`, `Reading face: ${label}`, `reading face font ${value} ${label}`, { face: value }, p.face === value));
+  VOICES.forEach(([value, label]) => setting(`voice-${value}`, `Your words: ${label}`, `your words font ${value} ${label}`, { voice: value }, p.voice === value));
+  SCHEMES.forEach(([value, label]) => setting(`scheme-${value}`, `Scheme: ${label}`, `scheme theme ${value} ${label}`, { scheme: value }, p.scheme === value));
+  [13, 15, 17, 19, 21, 24].forEach((size) => setting(`size-${size}`, `Text size ${size}`, `text size ${size}`, { size }, p.size === size));
+  MEASURES.forEach(([value, label]) => setting(`measure-${value}`, `Line length: ${label}, ${value} characters`, `line length width measure ${label} ${value}`, { measure: value }, p.measure === value));
+  Object.keys(INKS).forEach((ink) => setting(`ink-${ink}`, `Ink: ${ink}`, `ink colour color ${ink}`, { ink, inkDark: ink }, p.ink === ink));
+  setting("hints-off", "Hide the lines that name keys", "hints keys lines hide off quiet", { hints: false }, !p.hints);
+  setting("hints-on", "Show the lines that name keys", "hints keys lines show on", { hints: true }, p.hints);
   rows.push({ id: "config", label: "Edit settings as text…", text: "settings text config font colour keys bindings preferences", hint: "any font, colour or key", run: act.editConfig });
   rows.push({ id: "keys", kind: "note", label: "↩ start or send   Esc steps back   ⌘= ⌘− text size   ⌘U photos of your work", text: "keys shortcuts keyboard help" });
   return (

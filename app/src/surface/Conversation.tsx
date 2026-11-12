@@ -84,7 +84,11 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
         <Said text={words} className="you" />
         {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
         <Marks marks={marks} />
-        {marks.length === 0 && turn.unmarked && <p className="record quiet unmarked">{turn.unmarked}</p>}
+        {marks.length === 0 && turn.unmarked && (
+          <p className="record quiet unmarked" title={turn.unmarked}>
+            no mark
+          </p>
+        )}
       </div>
     );
   }

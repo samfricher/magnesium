@@ -32,6 +32,8 @@ export type Row = {
   /** A setting's choices, changed with ← and →. */
   choices?: Choice[];
   drive?: string;
+  /** Shown only once the line holds words that find it, as a setting's values are. */
+  onlyFound?: boolean;
 };
 
 type Props = {
@@ -67,7 +69,7 @@ export function Layer(props: Props) {
   const list = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(() => {
-    if (props.mode !== "filter" || text.trim() === "") return props.rows;
+    if (props.mode !== "filter" || text.trim() === "") return props.rows.filter((row) => !row.onlyFound);
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     const found = props.rows.filter((row) => matches(row, words));
     const extra = props.fallback?.(text.trim());
