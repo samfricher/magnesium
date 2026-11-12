@@ -4,7 +4,7 @@ Slug: `one-surface`
 
 ## The concept
 
-The window is one surface, and there are no screens to move between. Opened, it shows one line of your own material, the thing to do next, already chosen, with the line you write on under it and the caret blinking there, the way Spotlight or a terminal opens: *Reading V_max and K_m from a Lineweaver–Burk plot*, and under it, quieter, *You stopped at the y-intercept.* Return starts it. Typing starts it too, with your words first. Nothing moves away: that line rises to the top, and the lesson fills the same surface below it, the tutor's words in a reading face and yours in the face you type in. When the tutor sets a task, the line you write on sits inside the task, under its question, the way an answer sits under a question on a worksheet; Return there hands it in as the answer, and the record's mark appears under it when the record has one. Below the task there is always the conversation's own line, marked only by `›`. Whatever you say there is talk, and code never marks talk: ↓ or Esc steps out of the task onto it, ↑ steps back in, and nothing is labelled, because the place is the label. Everything else (other courses, the plan, your material, your past work, settings) is a layer summoned by one key over where you are, ⌘O, ⌘P, ⌘E, ⌘Y, ⌘, or ⌘K for all of it, and Esc puts it away; none is a place you go. When you say "the midterm moved, change the plan", the tutor answers in the conversation and the window writes what changed in the plan right under that answer, read from the plan itself, where you are already looking; ⌘P shows the whole plan with those rows marked. Your past work is the same surface scrolled up, and the record of your answers is ⌘Y. The app never shows a level, a proof dot, a due count, a run of study days, a countdown to an exam, or a word about being behind.
+The window is one surface, and there are no screens to move between. Opened, it shows one line of your own material, the thing to do next, already chosen, with the line you write on under it and the caret blinking there, the way Spotlight or a terminal opens: *Reading V_max and K_m from a Lineweaver–Burk plot*, and under it, quieter, *You stopped at the y-intercept.* Return starts it. Typing starts it too, with your words first. Nothing moves away: that line rises to the top, and the lesson fills the same surface below it, the tutor's words in a reading face and yours in the face you type in. When the tutor sets a task, a line to write on opens inside the task, under its question, the way an answer sits under a question on a worksheet, and the caret is there; Return hands it in as the answer, and the record's mark appears under it when the record has one. Below it there is always the conversation's own line, marked only by `›`. Whatever you say there is talk, and code never marks talk: ↓ or Esc steps out of the task onto it, ↑ steps back in, and nothing is labelled, because the place is the label. While you talk, the open task stays at the foot of the surface, just above the line you are talking on, so it is never lost and never reads as owed. Everything else (other courses, the plan, your material, your past work, settings) is a layer summoned by one key over where you are, ⌘O, ⌘P, ⌘E, ⌘Y, ⌘, or ⌘K for all of it, and Esc puts it away; none is a place you go. When you say "the midterm moved, change the plan", the tutor answers in the conversation and the window writes what changed in the plan right under that answer, read from the plan itself, where you are already looking; ⌘P shows the whole plan with those rows marked. Your past work is the same surface scrolled up, and the record of your answers is ⌘Y. The app never shows a level, a proof dot, a due count, a run of study days, a countdown to an exam, or a word about being behind.
 
 ## Why it meets the four feelings
 
@@ -95,22 +95,24 @@ At rest the block sits a third of the way down; on start it moves to the top in 
             ┃ Midterm 1          Tue 17 Nov → Tue 24 Nov
             ┃ Cold redos         now before Paper B
             ┃ ⌘P the whole plan
+            ┃ Now the slope is 0.5 s. What is Km?      (the open task, quiet)
+            ┃ ·····························
               › ▍
-              ↑ the task: What is Km?
 ```
 
 **4. Off the plan, and back** (`s4-offplan`, `s4-return`)
 ```
               › By the way, why do some courses use a Hanes–Woolf plot?
               Good question, and it is not on this plan … (no mark, ever)
+            ┃ Now the slope is 0.5 s. What is Km?      (still open, at the foot)
+            ┃ ·····························
               › ▍
-              ↑ the task: What is Km?
 ```
 ```
               › back to the task
               Back to it.
             ┃ Task. Now the slope is 0.5 s. What is Km?
-            ┃ ▍
+            ┃ ▍                                      (the caret is back in it)
               ›
 ```
 
@@ -190,6 +192,12 @@ The brief's "the app recedes" also changed the type: my first pick was a bundled
 Calls made alone, with the reason:
 
 - **Reopen.** The draft, the course, the line's place and the lesson's scroll are restored. After three hours away (the runtime's own gap for a new sitting) the surface opens at rest with the lesson directly above, out of view, instead of mid-sentence: a stale screen is a wall to climb when starting is the hard part.
-- **Default place of the line.** When the tutor sets a task, the caret goes into it, because answering is then the next thing. Saying anything else is one key (↓ or Esc).
+- **Default place of the caret.** When the tutor sets a task, the caret goes into it, because answering is then the next thing. Saying anything else is one key (↓ or Esc). After an answer, after talk, or when the tutor sets nothing, the caret is on the conversation's line. A retry after a wrong answer is not a first try, which is the only kind the record marks, so nothing is lost by its going as talk; the task's line is still there for it.
+- **Knowing the open task.** The tutor on Magnesium writes a task in prose, and its record block names it. The window cannot find that in the words, so the engine now says which task is open after each turn (`open_task`, a new event in `crates/core/src/direct.rs`: the task in the tutor's own words, and whether this reply posed it). The window draws the task's line from that. On the Claude Code engine, which sends no such event, a task is found by the bold word it opens with, as before.
+- **Two lines, not one that moves.** My first build had one line that moved between the task and the conversation. Two real fields, both on the surface while a task is open, are plainer: each keeps its own words, the harness and a screen reader see two fields with two names (`data-drive="answer"` and `"talk"`), and the structure can be seen without pressing anything.
 - **Help words** ("Can I have a hint?", "I'm lost", "I don't know") are sent without an intent, exactly as before, because the engine matches those words and records help or a decline from them.
 - **Dropped files** go with the answer as photos of work when the line is in a task, and into the course's material otherwise: the place decides here too.
+
+## One accessory taken off
+
+Looked at in both schemes before finishing, the layers sat on a blurred surface as well as a dimmed one. The blur said nothing the dimming did not, and made the surface look like an effect rather than the learner's page, so it is gone: a layer now sits on the same surface, dimmed.
