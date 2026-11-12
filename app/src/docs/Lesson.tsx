@@ -265,6 +265,8 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
 
 type ExchangeProps = {
   exchange: Exchange;
+  /** The lesson's title: a first message that only says it is not said twice. */
+  title: string | null;
   index: number;
   aboutTask: string | null;
   aboutIsAbove: boolean;
@@ -298,7 +300,7 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
           <Own text={ex.learner} />
           <Marks marks={ex.marks} />
         </div>
-      ) : ex.learner.trim() !== "" ? (
+      ) : ex.learner.trim() !== "" && !(props.index === 0 && props.title !== null && ex.learner.trim() === props.title.trim()) ? (
         <div className={`said${live?.pick ? " picked" : ""}`} data-role="said">
           <Own text={ex.learner} />
         </div>
@@ -534,6 +536,7 @@ export function LessonDoc(props: LessonProps) {
           <ExchangeView
             key={`${ex.key}-${index}`}
             exchange={ex}
+            title={index === 0 ? props.title : null}
             index={index}
             aboutTask={about?.split ? taskLine(about.split.task) : null}
             aboutIsAbove={ex.about !== null && ex.about === index - 1}
