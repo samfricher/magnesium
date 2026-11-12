@@ -105,11 +105,11 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
     <>
       <div className="source-nav">
         <button className="icon-btn" aria-label="Previous page" disabled={!pdf || page <= 1} onClick={() => setPage((n) => Math.max(1, n - 1))}>
-          <Icon name="back" size={15} />
+          <Icon name="back" size={16} />
         </button>
         <span data-role="source-page">{pdf ? `Page ${page} of ${pdf.numPages}` : "Opening…"}</span>
         <button className="icon-btn" aria-label="Next page" disabled={!pdf || page >= pdf.numPages} onClick={() => setPage((n) => (pdf ? Math.min(pdf.numPages, n + 1) : n))}>
-          <Icon name="right" size={15} />
+          <Icon name="right" size={16} />
         </button>
       </div>
       <div className="source-body" ref={holder}>
@@ -175,7 +175,7 @@ export function SourcePanel(props: {
       {...(props.sheet ? { role: "dialog", "aria-modal": true } : {})}
     >
       <header>
-        <Icon name="paper" size={15} />
+        <Icon name="paper" size={16} />
         <span className="source-name selectable" title={source.path}>
           {name}
         </span>

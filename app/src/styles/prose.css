@@ -20,6 +20,13 @@
 
 .prose p {
   margin: 0 0 0.95em;
+  /* No word is left alone on a last line. */
+  text-wrap: pretty;
+}
+
+.prose li,
+.prose blockquote {
+  text-wrap: pretty;
 }
 
 .prose h1,
