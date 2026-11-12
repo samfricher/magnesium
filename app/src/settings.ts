@@ -80,7 +80,7 @@ export type Settings = {
 };
 
 export const DEFAULT_TEXT = `# Your settings. Change a line and the window follows as you type.
-# Kept in the window's own storage on this Mac, never in a study folder.
+# This is a plain file in the window's own folder on this Mac, never in a study folder.
 # A line is "name = value"; a line starting with # is a note.
 
 font = Charter          # any font on this Mac, by name
@@ -167,8 +167,14 @@ export function setLine(text: string, name: string, value: string): string {
     return eq !== -1 && !line.trim().startsWith("#") && line.slice(0, eq).trim().toLowerCase() === name;
   });
   if (at === -1) return `${text.replace(/\n*$/, "\n")}${name} = ${value}\n`;
-  const comment = /\s+#\s.*$/.exec(lines[at])?.[0] ?? "";
-  lines[at] = `${`${name} = ${value}`.padEnd(Math.max(name.length + value.length + 3, lines[at].length - comment.length))}${comment}`.trimEnd();
+  // The note after a value stays in its column, wherever the value ends.
+  const found = /\s+(#\s.*)$/.exec(lines[at]);
+  const head = `${name} = ${value}`;
+  if (!found) lines[at] = head;
+  else {
+    const column = found.index + found[0].length - found[1].length;
+    lines[at] = head.length + 2 <= column ? `${head.padEnd(column)}${found[1]}` : `${head}  ${found[1]}`;
+  }
   return lines.join("\n");
 }
 

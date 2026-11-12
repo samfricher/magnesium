@@ -34,6 +34,7 @@ function Row<T extends string | number>(props: { label: string; choices: Choice<
 
 export type SettingsProps = {
   text: string;
+  path: string | null;
   problems: string[];
   onText: (text: string) => void;
   active: boolean;
@@ -96,7 +97,9 @@ export function SettingsDoc(props: SettingsProps) {
   return (
     <article className="settings" data-doc="settings" onKeyDown={onKeyDown}>
       <h1 className="doc-title">Settings</h1>
-      <p className="doc-path">Your settings file. The window follows each change as you type; ⌘K also reaches every value.</p>
+      <p className="doc-path">
+        {props.path ? props.path.replace(/^\/Users\/[^/]+/, "~") : "Your settings file"}. The window follows each change as you type; ⌘K also reaches every value.
+      </p>
       <textarea
         ref={area}
         className="settings-file"

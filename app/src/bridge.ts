@@ -68,6 +68,8 @@ async function tauriCore(): Promise<Core> {
     lessonTurns: (session) => invoke("lesson_turns", { session }),
     studyFiles: () => invoke("study_files"),
     writePlan: (path, text, expectedMs) => invoke("write_plan", { path, text, expectedMs }),
+    settingsFile: () => invoke("settings_file"),
+    writeSettings: (text) => invoke("write_settings", { text }),
     onDrop: async (handler, hover) => {
       const { getCurrentWebview } = await import("@tauri-apps/api/webview");
       return getCurrentWebview().onDragDropEvent((event) => {

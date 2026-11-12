@@ -7,20 +7,23 @@
 import { Fragment } from "react";
 
 import { dayName } from "../page";
-import type { Mark, Progress, Row } from "../types";
+import type { Mark, Progress } from "../types";
 import { Line } from "../ui/Rich";
 import { markWords } from "./Lesson";
 
 const ms = (at: string) => new Date(at.replace(" ", "T")).getTime();
 
 /** What the record holds of a skill, as a sentence. */
-function skillWords(row: Row, marks: Mark[]): string {
-  // A day counts only when the record has a right answer on it, with no help, from a blank page.
-  const backed = new Set(marks.filter((m) => m.label.trim().toLowerCase() === row.name.trim().toLowerCase() && m.mark === "right" && m.help === "none" && m.cold).map((m) => m.at.slice(0, 10))).size;
-  const counted = Math.min(row.dots.filter((dot) => dot === 2).length, marks.length > 0 ? Math.max(backed, 0) : row.dots.filter((dot) => dot === 2).length);
-  const days = counted === 0 ? "Not yet answered right alone" : `Answered right alone, from a blank page, on ${counted} ${counted === 1 ? "day" : "days"}`;
-  const note = row.note && row.note !== "–" ? row.note.replace(/^due /, "asked again ").replace(/^next /, "asked again ") : "";
-  return note ? `${days}; ${note}.` : `${days}.`;
+/** A skill's own log, past tense, from the record's rows: "Right, from a blank page, on Tue 10 Nov. With a hint on Sat 7 Nov." */
+function skillLog(name: string, marks: Mark[]): string | null {
+  const mine = marks.filter((m) => m.label.trim().toLowerCase() === name.trim().toLowerCase());
+  if (mine.length === 0) return null;
+  const said = (m: Mark) => {
+    const help = m.help && m.help !== "none" ? ` with ${m.help === "hint" ? "a hint" : m.help === "step" ? "a step shown" : "the solution"}` : "";
+    const word = m.mark === "right" ? `Right${help}${!help && m.cold ? ", from a blank page," : ""}` : m.mark === "partly" ? `Partly right${help}` : m.mark === "wrong" ? `Not right${help}` : "Declined";
+    return `${word} on ${dayName(ms(m.at))}`;
+  };
+  return `${[...mine].reverse().map(said).join(". ")}.`;
 }
 
 export function RecordDoc({ marks, progress }: { marks: Mark[] | null; progress: Progress | null }) {
@@ -64,14 +67,17 @@ export function RecordDoc({ marks, progress }: { marks: Mark[] | null; progress:
         <section className="record-skills">
           <h2>Skills</h2>
           <dl>
-            {skills.map((row) => (
-              <Fragment key={row.name}>
-                <dt>
-                  <Line text={row.name} />
-                </dt>
-                <dd>{skillWords(row, marks ?? [])}</dd>
-              </Fragment>
-            ))}
+            {skills.map((row) => {
+              const log = skillLog(row.name, marks ?? []);
+              return log ? (
+                <Fragment key={row.name}>
+                  <dt>
+                    <Line text={row.name} />
+                  </dt>
+                  <dd>{log}</dd>
+                </Fragment>
+              ) : null;
+            })}
           </dl>
         </section>
       )}

@@ -342,6 +342,25 @@ impl Store {
         self.save(&data);
     }
 
+    /// The learner's settings file, in the window's own state folder and never
+    /// in a study folder: plain text the learner may keep in version control.
+    pub fn settings_path(&self) -> PathBuf {
+        self.root.join("settings.conf")
+    }
+
+    /// The settings file's text, or none when there is no file yet.
+    pub fn read_settings(&self) -> Option<String> {
+        fs::read_to_string(self.settings_path()).ok()
+    }
+
+    /// Write the settings file whole, through a temporary file.
+    pub fn write_settings(&self, text: &str) -> std::io::Result<()> {
+        fs::create_dir_all(&self.root)?;
+        let temporary = self.root.join("settings.conf.tmp");
+        fs::write(&temporary, text)?;
+        fs::rename(&temporary, self.settings_path())
+    }
+
     fn transcript(&self, folder: &Path) -> PathBuf {
         self.root.join("transcripts").join(file_name(&key(folder)))
     }

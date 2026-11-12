@@ -142,9 +142,12 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
   overflow: hidden;
   -webkit-user-select: none;
 }
-/* The tab names start where the text column starts. */
-.tabs { padding-left: max(14px, calc((100% - var(--col-px, 640px) - 96px) / 2 + 48px)); }
-.tabs.under-lights { padding-left: max(84px, calc((100% - var(--col-px, 640px) - 96px) / 2 + 48px)); }
+/* The tab names start where the text column starts, in one pane or two, wide or narrow:
+   the first pane's text never starts left of the traffic lights. */
+.pane:first-child .tabs { padding-left: max(84px, calc(max(0px, (100% - var(--col-px, 640px) - 96px) / 2) + 48px)); }
+.pane:first-child .column { padding-left: max(56px, calc(92px - max(0px, (100% - var(--col-px, 640px) - 96px) / 2))); }
+.pane + .pane .tabs { padding-left: calc(max(0px, (100% - var(--col-px, 640px) - 96px) / 2) + 40px); }
+.pane + .pane .column { padding-left: 48px; }
 .tab {
   display: inline-flex;
   align-items: center;
@@ -169,9 +172,9 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
 .doc-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: thin; }
 /* Text never meets the tab row or the status line mid-glyph: a short fade
    at an edge where more of the document lies beyond, none at the start. */
-.doc-scroll[data-above] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px); mask-image: linear-gradient(to bottom, transparent 0, #000 30px); }
-.doc-scroll[data-below] { -webkit-mask-image: linear-gradient(to top, transparent 0, #000 30px); mask-image: linear-gradient(to top, transparent 0, #000 30px); }
-.doc-scroll[data-above][data-below] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%); }
+.doc-scroll[data-above] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, transparent 6px, #000 38px); mask-image: linear-gradient(to bottom, transparent 0, transparent 6px, #000 38px); }
+.doc-scroll[data-below] { -webkit-mask-image: linear-gradient(to top, transparent 0, transparent 6px, #000 38px); mask-image: linear-gradient(to top, transparent 0, transparent 6px, #000 38px); }
+.doc-scroll[data-above][data-below] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, transparent 6px, #000 38px, #000 calc(100% - 30px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, transparent 6px, #000 38px, #000 calc(100% - 30px), transparent 100%); }
 .tabs { border-bottom: 1px solid transparent; }
 .pane[data-scrolled] .tabs { border-bottom-color: var(--rule); }
 .status { border-top: 1px solid var(--rule); background: var(--ground); }
@@ -187,7 +190,7 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
   -webkit-user-select: text;
   user-select: text;
 }
-.window[data-split] .column { padding-left: 48px; padding-right: 32px; }
+.window[data-split] .column { padding-right: 32px; }
 
 .status {
   display: flex;
@@ -512,7 +515,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .gone-item { display: block; color: var(--quiet); }
 .changed-note { color: var(--change); }
 .plan-foot { margin: 3.5em 0 0; font-family: var(--chrome); font-size: 12.5px; }
-.source-edit, .settings-file { resize: none; }
+
 .source-edit {
   width: 100%;
   min-height: 70vh;
@@ -524,7 +527,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
   border: 1px solid var(--rule);
   border-radius: 6px;
   padding: 14px 16px;
-  resize: vertical;
+  resize: none;
 }
 
 /* --------------------------------------------------------------------------
@@ -606,7 +609,8 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .sheet-field::placeholder { color: var(--faint); }
 .sheet-list { list-style: none; margin: 0; padding: 6px; max-height: min(420px, 60vh); overflow-y: auto; }
 .sheet-group { padding: 9px 10px 3px; color: var(--quiet); font-size: 11.5px; }
-.sheet-item { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border-radius: 6px; font-size: 13.5px; }
+.sheet-item { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 10px; border-radius: 6px; font-size: 13.5px; }
+.sheet-item kbd { line-height: 14px; }
 .sheet-item.here { background: var(--select); }
 .sheet-label { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-detail { flex: 1; min-width: 0; color: var(--quiet); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -631,7 +635,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .flash .dismiss { position: absolute; top: 8px; right: 8px; }
 .drop-veil {
   position: fixed;
-  inset: 10px;
+  inset: 10px 10px 36px;
   z-index: 30;
   border: 2px dashed var(--ink);
   border-radius: 12px;
@@ -644,10 +648,10 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .drop-veil p { background: var(--ground); padding: 10px 16px; border-radius: 8px; border: 1px solid var(--rule-strong); margin: 0; }
 
 @media (max-width: 760px) {
-  .column { padding: 20px 22px 72px 42px; }
+  .column { padding-top: 20px; padding-right: 22px; padding-bottom: 72px; }
   .mark .glyph { left: -34px; }
   .plan-block.chg::before { left: -22px; }
-  .tabs.under-lights { padding-left: 80px; }
+
 }
 
 .nobr { white-space: nowrap; }
@@ -687,7 +691,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .plan-note { display: block; font-size: 0.86em; color: var(--quiet); }
 .plan-moved, .plan-backwards { font-family: var(--chrome); font-size: 12px; color: var(--change); }
 .plan-last-change { font-size: 0.9em; color: var(--quiet); }
-.settings-file { display: block; width: 100%; min-height: 24em; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text); background: var(--shelf); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow-x: auto; overflow-y: hidden; white-space: pre; overflow-wrap: normal; -webkit-user-select: text; user-select: text; }
+.settings-file { display: block; width: 100%; min-height: 24em; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text); background: var(--shelf); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; -webkit-user-select: text; user-select: text; }
 .settings-file:focus { border-color: var(--ink); }
 .settings-problems { font-family: var(--chrome); font-size: 12.5px; color: var(--change); padding-left: 1.2em; }
 @media (max-width: 760px) { .plan-item { grid-template-columns: 5.6em minmax(0, 1fr); } }
@@ -703,3 +707,14 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .plan-foot.second { margin-top: 0.4em; }
 .plan-foot { margin-bottom: 0; }
 .plan.reading { padding-bottom: 2em; }
+
+/* Talk has a place on the page while the caret is in it: a quiet rule, nothing louder. */
+.page-end .writer:focus-within textarea { border-bottom: 1px solid var(--rule-strong); padding-bottom: 4px; }
+/* Inline mathematics never breaks inside a formula. */
+.katex { white-space: nowrap; }
+/* What a turn changed in the plan: one quiet line, in place. */
+.plan-note-line { display: block; border: 0; background: none; padding: 0; margin: 0.6em 0 0; font-family: var(--chrome); font-size: 12.5px; color: var(--quiet); text-align: left; }
+.plan-note-line:hover { color: var(--text); }
+.task-block.follows { margin-top: 0.2em; padding-top: 0; }
+.window.with-sidebar .pane:first-child .tabs { padding-left: calc(max(0px, (100% - var(--col-px, 640px) - 96px) / 2) + 48px); }
+.window.with-sidebar .pane:first-child .column { padding-left: 56px; }

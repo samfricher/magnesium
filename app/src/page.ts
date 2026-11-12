@@ -22,6 +22,8 @@ export type Meta = {
   unmarked?: boolean;
   /** The engine kept the same task open after this answer: its record did not take it as the answer. */
   notAnswer?: boolean;
+  /** What this turn changed in the plan, in one line, read from the plan. */
+  planNote?: string;
 };
 
 export type Exchange = {
@@ -45,6 +47,7 @@ export type Exchange = {
   noMark: boolean;
   /** Why, when the engine said so: the record did not take it as the answer. */
   notAnswer: boolean;
+  planNote: string | null;
   /** It begins a sitting: the window's own opening words, or the lesson's first message. */
   sitting: boolean;
 };
@@ -123,6 +126,7 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
       day: day !== lastDay ? dayName(turn.ms) : null,
       noMark: said === "answer" && marks.length === 0 && Boolean(kept?.unmarked) && !retry,
       notAnswer: Boolean(kept?.notAnswer),
+      planNote: kept?.planNote ?? null,
       sitting: said === "opening" || index === 0,
     });
     lastDay = day;

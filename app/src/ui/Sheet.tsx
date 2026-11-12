@@ -26,22 +26,17 @@ export type SheetItem = {
 
 /** How well a query matches a text: letters in order, closer and earlier is better. 0 is no match. */
 export function score(query: string, text: string): number {
-  const q = query.toLowerCase().replace(/\s+/g, "");
+  const q = query.toLowerCase().trim();
   if (q === "") return 1;
   const t = text.toLowerCase();
-  const at = t.indexOf(query.toLowerCase().trim());
-  if (at !== -1) return 1000 - at;
-  let i = 0;
-  let last = -1;
-  let total = 0;
-  for (const ch of q) {
-    const found = t.indexOf(ch, i);
-    if (found === -1) return 0;
-    total += found === last + 1 ? 6 : 1;
-    last = found;
-    i = found + 1;
-  }
-  return total;
+  const at = t.indexOf(q);
+  // A word that starts with the query, else the query inside the text.
+  if (at !== -1) return (at === 0 || /\W/.test(t[at - 1]) ? 2000 : 1000) - at;
+  // Every word of the query starts a word of the text: "size 19", "font mono".
+  const words = t.split(/[^a-z0-9]+/);
+  const parts = q.split(/\s+/);
+  if (parts.every((part) => words.some((word) => word.startsWith(part)))) return 500;
+  return 0;
 }
 
 export function Sheet(props: { placeholder: string; items: SheetItem[]; onClose: () => void; empty?: string; label: string }) {
@@ -59,7 +54,17 @@ export function Sheet(props: { placeholder: string; items: SheetItem[]; onClose:
       .map((each) => each.item);
   }, [query, props.items]);
 
-  useEffect(() => field.current?.focus(), []);
+  // Focus goes back where it was when the list closes, chosen or not.
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    field.current?.focus();
+    return () => {
+      const now = document.activeElement;
+      if (now && now !== document.body && !now.closest(".sheet")) return;
+      if (before && before.isConnected && before !== document.body) before.focus({ preventScroll: true });
+      else window.dispatchEvent(new Event("mg:refocus"));
+    };
+  }, []);
   useEffect(() => setAt(0), [query]);
   useEffect(() => {
     list.current?.querySelector(`[data-at="${at}"]`)?.scrollIntoView({ block: "nearest" });

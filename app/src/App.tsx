@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { core, isDemo } from "./bridge";
 import { FileDoc } from "./docs/FileDoc";
 import { LessonDoc, type Confidence, type HelpKind, type Place } from "./docs/Lesson";
-import { PlanDoc } from "./docs/Plan";
+import { PlanDoc, planSummary } from "./docs/Plan";
 import { RecordDoc } from "./docs/Record";
 import { SettingsDoc } from "./docs/Settings";
 import { SetupDoc, setupReady } from "./docs/Setup";
@@ -19,6 +19,12 @@ import { dayName, exKey, guessSaid, keptMeta, readPage, saidKey, type Meta, type
 
 const guessSaidOf = (learner: string): Said => guessSaid(learner, false);
 
+/** The learner is in this field now, with words in it: the caret is not moved away from them. */
+const typingIn = (writer: WriterHandle | null | undefined) => {
+  const el = writer?.element();
+  return Boolean(el && document.activeElement === el && el.value.trim() !== "");
+};
+
 /** Which help a message is, when it is only the help words ("Can I have a hint?"), however it is typed. */
 function helpOf(text: string): HelpKind | null {
   const plain = text.trim().toLowerCase().replace(/[.?!]+$/, "");
@@ -27,6 +33,7 @@ function helpOf(text: string): HelpKind | null {
 }
 import { actionOf, apply as applySettings, FONT_CHOICES, NAMED_INKS, parse as parseSettings, readText as readSettingsText, saveText as saveSettingsText, setLine, type Action } from "./settings";
 import type { SourceRef } from "./sources";
+import { renderInline } from "./render";
 import { restates, splitTask, taskLine } from "./task";
 import type {
   About,
@@ -89,6 +96,19 @@ export function clip(text: string, n: number): string {
   const cut = text.slice(0, n);
   const at = cut.lastIndexOf(" ");
   return `${(at > n * 0.6 ? cut.slice(0, at) : cut).replace(/[\s.,;:–-]+$/, "")}…`;
+}
+
+/** A lesson's name, from its first words: the goal they name, not the window's own phrasing or a typed command. */
+export function lessonName(opening: string, firstMs: number): string {
+  let words = plainText(opening)
+    .replace(/^Let's work on\s+/i, "")
+    .replace(/^Teach me from\s+/i, "")
+    .replace(/^I'm back\..*$/i, "")
+    .replace(/^Mark my (.+?)\..*$/i, "$1, marked")
+    .replace(/\.$/, "")
+    .trim();
+  if (words === "" || /^[A-Z0-9 _-]+$/.test(words)) words = `Lesson of ${dayName(firstMs)}`;
+  return words;
 }
 
 const folderName = (path: string) => path.replace(/\/+$/, "").split("/").pop() ?? path;
@@ -211,10 +231,14 @@ export function App() {
     if (f) saveLayout(f, next);
   }, []);
 
-  /** The settings file changed: kept, and applied at once. */
+  const [settingsPath, setSettingsPath] = useState<string | null>(null);
+  const settingsTimer = useRef<number | null>(null);
+  /** The settings file changed: applied at once, and written to its file a moment later. */
   const takeSettingsText = useCallback((text: string) => {
     setSettingsText(text);
     saveSettingsText(text);
+    if (settingsTimer.current !== null) window.clearTimeout(settingsTimer.current);
+    settingsTimer.current = window.setTimeout(() => void latest.current.api?.writeSettings(text).catch(() => {}), 300);
   }, []);
   /** One setting changed from ⌘K or a key: written into the file, which is applied. */
   const setSetting = useCallback(
@@ -222,6 +246,11 @@ export function App() {
     [takeSettingsText],
   );
   useLayoutEffect(() => applySettings(settings), [settings]);
+  useEffect(() => {
+    const refocus = () => bumpFocus();
+    window.addEventListener("mg:refocus", refocus);
+    return () => window.removeEventListener("mg:refocus", refocus);
+  }, []);
 
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
@@ -678,9 +707,13 @@ export function App() {
     // The plan opened beside the lesson for the change; seen, it closes and the lesson is one page again.
     const layout = latest.current.layout;
     if (layout.panes.length > 1 && layout.panes[1].tabs.includes("plan")) {
-      const next = closeTab(layout, "plan", 1);
+      const closed = closeTab(layout, "plan", 1);
+      // The plan's tab stays in the tab row, so the change can be found again.
+      const first = closed.panes[0];
+      const tabs = first.tabs.includes("plan") ? first.tabs : [...first.tabs, "plan"];
+      const next = { ...closed, panes: [{ ...first, tabs }, ...closed.panes.slice(1)], focus: 0 };
       latest.current.layout = next;
-      setLayout({ ...next, focus: 0 });
+      setLayout(next);
     }
     const f = latest.current.folder;
     try {
@@ -719,12 +752,13 @@ export function App() {
       else next.noTask = true;
       if (!task) next.closed = true;
       // An answer after which the engine keeps the same task open was not taken as the answer.
-      if (m.said === "answer" && task && !posed) next.notAnswer = true;
+      // On this engine the record is kept by now: an answer it holds no mark for was not taken as the answer.
+      if (m.said === "answer") next.notAnswer = true;
       meta.current.set(at, next);
       bumpMeta();
       // The record is kept by now: an answer it gave no mark has none.
       if (m.said === "answer") window.setTimeout(() => noteUnmarked(at), 1500);
-      const writing = (place: Place) => (writers.current[place]?.value() ?? "").trim() !== "";
+      const writing = (place: Place) => typingIn(writers.current[place]);
       if (task && posed && !writing("talk")) {
         setPlaceState("answer");
         bumpFocus();
@@ -737,10 +771,18 @@ export function App() {
   );
 
   const onPlanChanged = useCallback(async () => {
-    const before = latest.current.plan?.text ?? null;
+    const old = latest.current.plan;
+    const before = old?.text ?? null;
     const fresh = await refreshPlan(true);
     // Only a change to the file itself is shown: the goal and its steps are the record's, not the plan's.
     if (!fresh || fresh.text === null || fresh.text === before) return;
+    // One quiet line in the lesson, where the change happened, read from the plan itself.
+    const live = latest.current.session.live;
+    if (old && live) {
+      const m = meta.current.get(live.since) ?? { said: guessSaidOf(live.learner), marks: [] };
+      meta.current.set(live.since, { ...m, planNote: planSummary(old, fresh) });
+      bumpMeta();
+    }
     const { layout, width } = latest.current;
     const where = findDoc(layout, "plan");
     const visible = where !== null && layout.panes[where].active === "plan" && (layout.panes.length > 1 || where === layout.focus);
@@ -942,7 +984,7 @@ export function App() {
             if (!live || live.interrupted) return;
             const tutor = [...live.done, live.streaming].join("\n");
             const said = meta.current.get(live.since)?.said;
-            const writing = (place: Place) => (writers.current[place]?.value() ?? "").trim() !== "";
+            const writing = (place: Place) => typingIn(writers.current[place]);
             let next: Place | null = null;
             if (splitTask(tutor)) next = writing("talk") ? null : "answer";
             else if (said !== "help") next = writing("answer") ? null : "talk";
@@ -968,6 +1010,17 @@ export function App() {
         return fresh;
       });
       void api.about().then(setAbout, () => {});
+      // The settings file in the window's own folder wins; the page's copy only paints the first frame.
+      void api
+        .settingsFile()
+        .then((file) => {
+          setSettingsPath(file.path);
+          if (file.text !== null) {
+            setSettingsText(file.text);
+            saveSettingsText(file.text);
+          } else void api.writeSettings(latest.current.settingsText).catch(() => {});
+        })
+        .catch(() => {});
       const [list, named] = await Promise.all([api.recent().catch(() => [] as string[]), api.initialFolder().catch(() => null)]);
       setRecent(list);
       const first = named ?? list[0] ?? null;
@@ -1132,7 +1185,12 @@ export function App() {
   // ---------------------------------------------------------------------------
   // What the sheets list
 
-  const lessonTitle = plainText(title ?? plan?.goal ?? home?.last?.goal ?? "") || "Lesson";
+  // The lesson is named after its goal; a typed command ("TEACH") gives way to the plan's item in hand.
+  const rawTitle = title ?? plan?.goal ?? home?.last?.goal ?? "";
+  const commandLike = /^[A-Z0-9 _-]+$/.test(plainText(rawTitle));
+  const doing = plan?.items.find((item) => item.status === "doing") ?? plan?.items.find((item) => item.status !== "done");
+  const lessonTitleTex = (commandLike ? doing?.title ?? "" : rawTitle).trim() || "Lesson";
+  const lessonTitle = plainText(lessonTitleTex) || "Lesson";
   const hasLesson = session.earlier.length > 0 || session.live !== null;
   const showFresh = fresh || (!hasLesson && !session.open);
   const papers = home?.papers ?? [];
@@ -1141,7 +1199,7 @@ export function App() {
     if (doc === "lesson") return showFresh ? "New lesson" : lessonTitle;
     if (doc.startsWith("lesson:")) {
       const info = lessons.find((l) => l.session === doc.slice(7));
-      return info ? plainText(info.opening) || dayName(info.first_ms) : "Lesson";
+      return info ? lessonName(info.opening, info.first_ms) : "Lesson";
     }
     if (doc === "plan") return plan?.title ? `${plan.title} plan` : "Plan";
     if (doc === "record") return "Record";
@@ -1156,7 +1214,7 @@ export function App() {
     items.push({ id: "lesson", label: showFresh ? "New lesson" : lessonTitle, detail: session.open ? "open" : "", group: "Lessons", run: () => openDoc("lesson"), beside: () => openDoc("lesson", true) });
     for (const lesson of lessons.filter((l) => !l.current)) {
       const doc = `lesson:${lesson.session}`;
-      items.push({ id: doc, label: plainText(lesson.opening) || "Lesson", detail: dayName(lesson.last_ms), group: "Lessons", run: () => openDoc(doc), beside: () => openDoc(doc, true) });
+      items.push({ id: doc, label: lessonName(lesson.opening, lesson.first_ms), detail: dayName(lesson.last_ms), group: "Lessons", run: () => openDoc(doc), beside: () => openDoc(doc, true) });
     }
     if (plan?.path) items.push({ id: "plan", label: docTitle("plan"), detail: plan.path, group: "Plan", run: () => openDoc("plan"), beside: () => openDoc("plan", true) });
     for (const file of files?.files ?? []) {
@@ -1315,7 +1373,7 @@ export function App() {
           <LessonDoc
             page={page}
             session={session}
-            title={showFresh ? "New lesson" : lessonTitle}
+            title={showFresh ? "New lesson" : lessonTitleTex}
             running={session.open}
             fresh={showFresh}
             suggestions={suggestions}
@@ -1328,6 +1386,7 @@ export function App() {
             onTalk={talk}
             onHelp={(kind) => void help(kind)}
             onHelpMenu={() => setSheet("commands")}
+            onPlan={() => openDoc("plan", true)}
             hints={settings.hints}
             onContinue={() => void continueLesson()}
             onNewLesson={(goal) => void newLesson(goal)}
@@ -1415,6 +1474,7 @@ export function App() {
       return (
         <SettingsDoc
           text={settingsText}
+          path={settingsPath}
           problems={parsedSettings.problems}
           onText={takeSettingsText}
           active={active && paneIndex === focusIndex}
@@ -1461,8 +1521,9 @@ export function App() {
   // Which key does what here, in the status line, never in the reading column.
   const activeDoc = panesShown[focusIndex]?.active;
   let keyHint: string | null = null;
-  if (settings.hints && folder && activeDoc === "lesson" && !(session.live && session.live.status !== "idle")) {
-    if (!session.open && hasLesson && !showFresh) keyHint = "Return to continue, or write to your tutor";
+  const setupShown = !folder || (setup !== null && !setupReady(setup));
+  if (settings.hints && !setupShown && activeDoc === "lesson" && !(session.live && session.live.status !== "idle")) {
+    if (!session.open && hasLesson && !showFresh) keyHint = null;
     else if (session.open && page.open !== null) keyHint = place === "answer" ? "Esc to say something else" : "Tab: back to the task";
     else if (session.open) keyHint = "Return sends what you write";
   }
@@ -1512,7 +1573,15 @@ export function App() {
                   title={n < 9 ? `⌘${n + 1}` : undefined}
                 >
                   {doc === "lesson" && session.live && session.live.status !== "idle" && <span className="live-dot" aria-label="The tutor is writing" />}
-                  <span className="tab-name" title={noFolder ? undefined : docTitle(doc)}>{noFolder ? (setupReady(setup) ? "Welcome" : "This Mac") : clip(docTitle(doc), 44)}</span>
+                  {noFolder ? (
+                    <span className="tab-name">{setupReady(setup) ? "Welcome" : "This Mac"}</span>
+                  ) : doc === "lesson" && !showFresh && lessonTitleTex.includes("$") ? (
+                    <span className="tab-name" title={docTitle(doc)} dangerouslySetInnerHTML={{ __html: renderInline(lessonTitleTex) }} />
+                  ) : (
+                    <span className="tab-name" title={docTitle(doc)}>
+                      {clip(docTitle(doc), 44)}
+                    </span>
+                  )}
                 </button>
               ))}
             </header>
@@ -1530,7 +1599,7 @@ export function App() {
         ))}
       </main>
       <footer className="status" role="status">
-        {folder ? (
+        {folder && !setupShown ? (
           <button className="status-item folder" onClick={() => setSheet("folders")} title="Another study folder (⌘O)">
             {folderName(folder)}
           </button>

@@ -100,7 +100,7 @@ export function splitAt(reply: string, task: string): Split {
       const at = flat.indexOf(want);
       if (at === -1) continue;
       // Only a short label stands before the task's words ("Task.", "Quick check 1:"): the paragraph is the task.
-      const label = at > 0 && at <= 24 && /^[A-Za-z0-9 ]+[.:]?\s*$/.test(flat.slice(0, at));
+      const label = at > 0 && at <= 24 && /^(?:task|question|check|quick check|paper redo|redo|repair|exercise)(?:\s*\d+)?\s*[.:]?\s*$/i.test(flat.slice(0, at));
       if (at === 0 || label) return { before: parts.slice(0, i).join("\n\n"), task: parts.slice(i).join("\n\n") };
       // The task starts part way through this paragraph: split it at the same words.
       const words = want.split(" ").slice(0, 3).join(" ");
@@ -119,7 +119,10 @@ export function splitAt(reply: string, task: string): Split {
       if (cover(want2, seen) >= 0.6) {
         let start = i;
         while (start < parts.length - 1 && cover(want2, contentWords(parts[start])) === 0) start++;
-        return { before: parts.slice(0, start).join("\n\n"), task: parts.slice(start).join("\n\n") };
+        // The task starts at the question, not at the tutor's lead-in ("Back to it.").
+        const lead = taskStart(parts[start]);
+        const before = [...parts.slice(0, start), parts[start].slice(0, lead).trim()].filter(Boolean).join("\n\n");
+        return { before, task: [parts[start].slice(lead), ...parts.slice(start + 1)].join("\n\n").trim() };
       }
     }
   }

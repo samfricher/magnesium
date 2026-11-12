@@ -273,6 +273,37 @@ function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: stri
   );
 }
 
+/** What a change did to the plan, in one line: "Plan: exam Sun 22 → Sun 29 Nov; 2 blocks moved; 4 re-dated". */
+export function planSummary(before: Plan, after: Plan): string {
+  const parts: string[] = [];
+  if (before.exam_date !== after.exam_date) {
+    const was = dayOf(before.exam_date) ?? "no date";
+    const now = dayOf(after.exam_date) ?? "no date";
+    const [wasDay, wasNum, wasMonth] = was.split(" ");
+    const sameMonth = wasMonth && now.endsWith(` ${wasMonth}`);
+    parts.push(`exam ${sameMonth ? `${wasDay} ${wasNum}` : was} → ${now}`);
+  }
+  const order = new Map(before.items.map((item, n) => [item.id, n]));
+  const days = new Map(before.items.map((item) => [item.id, item.day]));
+  let moved = 0;
+  let redated = 0;
+  let added = 0;
+  after.items.forEach((item, n) => {
+    if (!order.has(item.id)) added += 1;
+    else {
+      if (order.get(item.id) !== n) moved += 1;
+      if ((days.get(item.id) ?? null) !== item.day) redated += 1;
+    }
+  });
+  const dropped = before.items.filter((item) => !after.items.some((other) => other.id === item.id)).length;
+  const count = (n: number, what: string) => `${n} ${n === 1 ? "block" : "blocks"} ${what}`;
+  if (moved) parts.push(count(moved, "moved"));
+  if (redated) parts.push(count(redated, "re‑dated"));
+  if (added) parts.push(count(added, "added"));
+  if (dropped) parts.push(count(dropped, "dropped"));
+  return `Plan: ${parts.length > 0 ? parts.join("; ") : "changed"}`;
+}
+
 export type PlanProps = {
   plan: Plan | null;
   /** The plan as it was before the tutor's last change, until the learner has seen it. */

@@ -440,6 +440,21 @@ impl Manager {
         Ok(workspace::files(&study::root(&folder)))
     }
 
+    /// The learner's settings file: where it is, and its text when there is one.
+    pub fn settings_file(&self) -> (String, Option<String>) {
+        (
+            self.store.settings_path().to_string_lossy().into_owned(),
+            self.store.read_settings(),
+        )
+    }
+
+    /// Keep the learner's settings file.
+    pub fn write_settings(&self, text: &str) -> AgentResult<()> {
+        self.store
+            .write_settings(text)
+            .map_err(|e| AgentError(format!("The settings file could not be saved: {e}")))
+    }
+
     /// Save the learner's own edit of a plan file, if it has not changed
     /// since they read it.
     pub fn write_plan(&self, path: &str, text: &str, expected_ms: i64) -> AgentResult<i64> {

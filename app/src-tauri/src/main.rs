@@ -288,6 +288,24 @@ fn study_files(shell: State<'_, Shell>) -> Reply<Files> {
     plain(shell.manager.study_files())
 }
 
+/// The learner's settings file, in the window's own state folder.
+#[derive(Serialize)]
+struct SettingsFile {
+    path: String,
+    text: Option<String>,
+}
+
+#[tauri::command(async)]
+fn settings_file(shell: State<'_, Shell>) -> SettingsFile {
+    let (path, text) = shell.manager.settings_file();
+    SettingsFile { path, text }
+}
+
+#[tauri::command(async)]
+fn write_settings(shell: State<'_, Shell>, text: String) -> Reply<()> {
+    plain(shell.manager.write_settings(&text))
+}
+
 /// The learner's own edit of a plan file, refused if the file changed since
 /// they read it.
 #[tauri::command(async)]
@@ -456,6 +474,8 @@ fn main() {
             lesson_turns,
             study_files,
             write_plan,
+            settings_file,
+            write_settings,
             source,
             source_pdf,
             open_file,

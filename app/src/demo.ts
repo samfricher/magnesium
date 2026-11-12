@@ -517,6 +517,8 @@ export function demoCore(): Core {
     marks: async () => [...records, ...marked],
     lessons: async () => lessonList(),
     turns: async () => (newFolder ? [] : earlierTurns),
+    settingsFile: async () => ({ path: "~/Library/Application Support/dev.magnesium.window/settings.conf", text: null }),
+    writeSettings: async () => {},
     lessonTurns: async (session) => (session === "demo-current" ? (newFolder ? [] : earlierTurns) : (OLD_TURNS[session] ?? [])),
     studyFiles: async () => FILES,
     writePlan: async (_path, text) => {

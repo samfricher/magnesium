@@ -43,6 +43,8 @@ export type LessonProps = {
   onHelp: (kind: HelpKind) => void;
   /** Open the commands, with the task's own first: help and how sure you are. */
   onHelpMenu: () => void;
+  /** Open the plan. */
+  onPlan?: () => void;
   /** The learner's setting: the short lines that say which key does what. */
   hints: boolean;
   onContinue: () => void;
@@ -213,6 +215,11 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
       latest.current.setPlace("talk");
       return true;
     }
+    // Tab never carries the answer away: the task is where it is written.
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return true;
+    }
     if (event.altKey && !command && ["1", "2", "3"].includes(event.code.replace("Digit", ""))) {
       event.preventDefault();
       const pick = (["sure", "unsure", "guess"] as Confidence[])[Number(event.code.replace("Digit", "")) - 1];
@@ -296,6 +303,10 @@ type ExchangeProps = {
   onNote: (text: string) => void;
   /** Only the task, with its answer line: the page of a lesson at rest. */
   taskOnly?: boolean;
+  /** Open the plan, from the line that says what changed in it. */
+  onPlan?: () => void;
+  /** The answer place, after the latest help on the open task. */
+  answerAfter?: React.ReactNode;
 };
 
 const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
@@ -350,6 +361,12 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
             </div>
           )}
         </div>
+      )}
+      {props.answerAfter && <div className="task-block open follows">{props.answerAfter}</div>}
+      {ex.planNote && (
+        <button type="button" className="plan-note-line" data-role="plan-note" onClick={props.onPlan}>
+          {ex.planNote}
+        </button>
       )}
       {ex.interrupted && <p className="quiet-line">Stopped.</p>}
       {live?.error && !live.interrupted && <p className="quiet-line problem">{live.error}</p>}
@@ -564,6 +581,11 @@ export function LessonDoc(props: LessonProps) {
     if (ex.sitting) lastSitting = index;
   });
   const atRest = !props.running && !props.fresh;
+  // Help on the open task comes before its answer place: the place moves down under the latest help.
+  let answerAt = open;
+  if (open !== null) {
+    for (let i = open + 1; i < count && page.exchanges[i].said === "help" && page.exchanges[i].final; i++) answerAt = i;
+  }
   const from = whole || props.readOnly ? 0 : atRest ? (open !== null ? count : Math.max(0, count - 1)) : lastSitting;
   const hidden = Math.max(0, from - (atRest && open !== null && open < from ? 1 : 0));
   const stopped = !props.running && !props.fresh && lastMs !== null;
@@ -577,19 +599,21 @@ export function LessonDoc(props: LessonProps) {
           <kbd>Tab</kbd>
         </button>
       )}
-      <h1 className="doc-title">{props.title}</h1>
+      <h1 className="doc-title" dangerouslySetInnerHTML={{ __html: renderInline(props.title) }} />
       {hidden > 0 && (
         <button type="button" className="fold-line" onClick={() => setWhole(true)} data-role="fold">
-          {props.running ? "Earlier in this lesson" : "The lesson so far"} <span className="quiet">{hidden === 1 ? "1 exchange" : `${hidden} exchanges`}</span>
+          {props.running ? "Earlier in this lesson" : "The lesson so far"}
         </button>
       )}
       {page.exchanges.map((ex, index) => {
         const taskOnly = index < from && index === open && !props.readOnly;
+        const answerHere = open === index && answerAt === index;
         if (index < from && !taskOnly) return null;
         const about = ex.about !== null ? page.exchanges[ex.about] : null;
         return (
           <ExchangeView
             taskOnly={taskOnly}
+            onPlan={props.onPlan}
             key={`${ex.key}-${index}`}
             exchange={ex}
             title={index === 0 ? props.title : null}
@@ -597,7 +621,8 @@ export function LessonDoc(props: LessonProps) {
             aboutTask={about?.split ? taskLine(about.split.task) : null}
             aboutIsAbove={ex.about !== null && ex.about === index - 1}
             isOpen={open === index && !props.readOnly}
-            answerSpace={open === index ? answerSpace : null}
+            answerSpace={answerHere ? answerSpace : null}
+            answerAfter={answerAt === index && open !== index ? answerSpace : null}
             keptDraft={open === index && !showAnswer ? (props.drafts.answer ?? "").trim() || null : null}
             linksOpen={open !== index}
             onSource={props.onSource}
@@ -621,8 +646,8 @@ export function LessonDoc(props: LessonProps) {
             composer
             label="What to work on"
             placeholder={props.suggestions[0]?.replace(/[$\\{}_^]/g, "") ?? "A topic, a chapter, a question from your course"}
-            initial={props.drafts.talk ?? ""}
-            onDraft={(text) => props.onDraft("talk", text)}
+            initial={props.drafts.goal ?? ""}
+            onDraft={(text) => props.onDraft("goal", text)}
             onKey={onTalkKey}
             onSubmit={(text) => {
               props.onNewLesson(text.trim() || props.suggestions[0] || "");

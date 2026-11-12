@@ -369,6 +369,10 @@ export interface Core {
   lessonTurns(session: string): Promise<Turn[]>;
   /** What the open folder's `Study/` holds. */
   studyFiles(): Promise<StudyFiles>;
+  /** The learner's settings file, in the window's own state folder: its path, and its text when there is one. */
+  settingsFile(): Promise<{ path: string; text: string | null }>;
+  /** Keep the learner's settings file. */
+  writeSettings(text: string): Promise<void>;
   /** Save the learner's edit of a plan file; refused when it changed since `expectedMs`. Resolves to its new time. */
   writePlan(path: string, text: string, expectedMs: number): Promise<number>;
   /** The answers the runtime has marked, oldest first, or null when this runtime has no `attempts` command. */
