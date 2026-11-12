@@ -618,8 +618,10 @@ export function App() {
   }, [keepExchanges]);
 
   const onPlanChanged = useCallback(async () => {
+    const before = latest.current.plan?.text ?? null;
     const fresh = await refreshPlan(true);
-    if (!fresh) return;
+    // Only a change to the file itself is shown: the goal and its steps are the record's, not the plan's.
+    if (!fresh || fresh.text === null || fresh.text === before) return;
     const { layout, width } = latest.current;
     const where = findDoc(layout, "plan");
     const visible = where !== null && layout.panes[where].active === "plan" && (layout.panes.length > 1 || where === layout.focus);
