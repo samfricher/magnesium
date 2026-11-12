@@ -372,3 +372,281 @@ fn a_direct_lesson_reads_inside_the_study_root_only() {
     );
     manager.shut_down();
 }
+
+/// A small course graph in the plugin's format: one plan, a goal tag with
+/// its needs and one key_need, and a tag beyond the goal.
+const GRAPH: &str = "# Course graph: quiz-1\n\
+#\n\
+# Agent-owned. Course structure only.\n\
+\n\
+tags:\n\
+  EV:\n\
+    covers: expected value of a discrete random variable\n\
+    pages: notes.pdf pages 4-6\n\
+    kind: course\n\
+    needs: [PROBSUM, WAVG]\n\
+    key_need: [WAVG]\n\
+    contains: [WAVG]\n\
+    touches: [FRAC]\n\
+  WAVG:\n\
+    covers: weighted average of a list of numbers\n\
+    pages: notes.pdf pages 2-3\n\
+    kind: course\n\
+    needs: [FRAC]\n\
+    key_need: [FRAC]\n\
+    contains: [FRAC]\n\
+    touches: []\n\
+  PROBSUM:\n\
+    covers: the probabilities of all outcomes add up to 1\n\
+    pages: notes.pdf page 1\n\
+    kind: course\n\
+    needs: [FRAC]\n\
+    key_need: []\n\
+    contains: []\n\
+    touches: [FRAC]\n\
+  VAR:\n\
+    covers: variance of a discrete random variable\n\
+    pages: notes.pdf pages 7-9\n\
+    kind: course\n\
+    needs: [EV]\n\
+    key_need: [EV]\n\
+    contains: [EV]\n\
+    touches: []\n\
+  FRAC:\n\
+    covers: multiplying and adding fractions\n\
+    kind: foundation\n\
+    needs: []\n\
+    key_need: []\n\
+    contains: []\n\
+    touches: []\n";
+
+/// One turn as the graph test sees it: the reply, the pieces shown, and
+/// the order of the first word and any tool call.
+#[derive(Debug, Default)]
+struct Seen {
+    reply: String,
+    shown: String,
+    first_word_ms: Option<u128>,
+    total_ms: u128,
+    working_before_first_word: Vec<String>,
+    ok: bool,
+}
+
+fn seen_turn(manager: &Manager, events: &Receiver<AgentEvent>) -> Seen {
+    let started = Instant::now();
+    let mut seen = Seen::default();
+    loop {
+        let event = events
+            .recv_timeout(Duration::from_secs(300))
+            .expect("the turn ends within five minutes");
+        match event {
+            AgentEvent::TextDelta { text } => {
+                seen.first_word_ms
+                    .get_or_insert(started.elapsed().as_millis());
+                seen.shown.push_str(&text);
+            }
+            // Thinking is not a tool call.
+            AgentEvent::Working { doing }
+                if seen.first_word_ms.is_none() && doing.as_deref() != Some("thinking") =>
+            {
+                seen.working_before_first_word
+                    .push(doing.unwrap_or_else(|| "a tool".into()))
+            }
+            AgentEvent::TextDone { text } => seen.reply = text,
+            AgentEvent::TurnEnded { ok, error, .. } => {
+                assert!(error.is_none(), "{error:?}");
+                seen.ok = ok;
+                seen.total_ms = started.elapsed().as_millis();
+                assert!(
+                    manager.wait_saved(Duration::from_secs(60)),
+                    "the record was not kept within a minute"
+                );
+                return seen;
+            }
+            AgentEvent::Exited { detail, .. } => panic!("Claude Code ended: {detail:?}"),
+            _ => {}
+        }
+    }
+}
+
+/// What the trace holds from one line on: the tool calls the model made,
+/// as (tool, file path), the record blocks it wrote, and the engine's notes.
+#[derive(Debug, Default)]
+struct Traced {
+    end: usize,
+    tools: Vec<(String, String)>,
+    blocks: Vec<String>,
+    notes: Vec<String>,
+}
+
+fn traced(trace: &Path, from: usize) -> Traced {
+    let text = fs::read_to_string(trace).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Traced {
+        end: lines.len(),
+        ..Traced::default()
+    };
+    let mut seen = std::collections::HashSet::new();
+    for line in lines.iter().skip(from) {
+        let mut parts = line.splitn(3, ' ');
+        let (Some(direction), Some(_ms), Some(rest)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        match direction {
+            "#" => found.notes.push(rest.to_owned()),
+            "<" => {
+                let Ok(value) = serde_json::from_str::<Value>(rest) else {
+                    continue;
+                };
+                if value["type"] != "assistant" {
+                    continue;
+                }
+                for block in value["message"]["content"].as_array().into_iter().flatten() {
+                    match block["type"].as_str() {
+                        // Claude Code may send a block more than once:
+                        // each counts once.
+                        Some("tool_use") => {
+                            let call = (
+                                block["name"].as_str().unwrap_or_default().to_owned(),
+                                block["input"]["file_path"]
+                                    .as_str()
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                            );
+                            let id = block["id"].as_str().unwrap_or_default().to_owned();
+                            if seen.insert(id) {
+                                found.tools.push(call);
+                            }
+                        }
+                        Some("text") => {
+                            let text = block["text"].as_str().unwrap_or_default();
+                            if let Some(at) = text.find("<record>") {
+                                let block = text[at..].to_owned();
+                                if seen.insert(block.clone()) {
+                                    found.blocks.push(block);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// The course-graph rule, live: a new goal that one tag covers, then
+/// scripted answers until the tutor sets a route. The graph is read at a
+/// turn that sets or changes the route, never before the first question.
+#[test]
+#[ignore = "starts a model on your own subscription"]
+fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
+    let scratch = Scratch::new();
+    let plan = scratch.folder.join("Study/quiz-1");
+    fs::create_dir_all(&plan).unwrap();
+    fs::write(plan.join("graph.yaml"), GRAPH).unwrap();
+    let trace = scratch.folder.parent().unwrap().join("trace.log");
+    std::env::set_var(mg_core::claude::TRACE_ENV, &trace);
+    let (manager, events) = scratch.manager();
+    manager.open_session(false).unwrap();
+
+    let script = [
+        "I don't know",
+        "Can you show me how it works?",
+        "I think you multiply each value by how likely it is, then add them up.",
+        "I'm not sure.",
+        "I don't know",
+    ];
+    let mut at = 0;
+    let mut steps_before = Vec::new();
+    let mut shown = Vec::new();
+    let mut read_turns = Vec::new();
+    let mut route_turns = Vec::new();
+    for n in 0..6 {
+        if n == 0 {
+            manager
+                .send_new_lesson("Teach me to find the expected value of a loaded die")
+                .unwrap();
+        } else {
+            manager.send(script[n - 1]).unwrap();
+        }
+        let seen = seen_turn(&manager, &events);
+        let Traced {
+            end,
+            tools,
+            blocks,
+            notes,
+        } = traced(&trace, at);
+        at = end;
+        let steps: Vec<String> = peek::goal_steps(&scratch.folder)
+            .iter()
+            .map(|s| format!("{} ({})", s.step, s.status))
+            .collect();
+        let route_changed = steps != steps_before;
+        let graph_read = tools
+            .iter()
+            .any(|(tool, path)| tool == "Read" && path.ends_with("Study/quiz-1/graph.yaml"));
+        println!(
+            "turn {}: first word {:?} ms, whole {} ms, tool before first word: {:?}, tools: {tools:?}, route changed: {route_changed}, steps: {steps:?}",
+            n + 1,
+            seen.first_word_ms,
+            seen.total_ms,
+            seen.working_before_first_word
+        );
+        println!("  reply: {}", seen.reply.replace('\n', " / "));
+        assert!(seen.ok, "turn {} ended badly", n + 1);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "turn {}: one record block: {blocks:?}",
+            n + 1
+        );
+        assert!(
+            !notes
+                .iter()
+                .any(|note| note.contains("record block invalid")),
+            "turn {}: {notes:?}",
+            n + 1
+        );
+        if n == 0 {
+            assert!(
+                seen.working_before_first_word.is_empty() && tools.is_empty(),
+                "a tool call came with the first question: {:?} {tools:?}",
+                seen.working_before_first_word
+            );
+        }
+        if graph_read {
+            read_turns.push(n + 1);
+            // The reply after the read is shown whole, and kept once.
+            assert_eq!(seen.shown.trim(), seen.reply, "turn {}", n + 1);
+        }
+        if route_changed && !steps.is_empty() {
+            route_turns.push(n + 1);
+        }
+        shown.push(seen.reply.clone());
+        steps_before = steps;
+        if !read_turns.is_empty() && !route_turns.is_empty() {
+            break;
+        }
+    }
+    let kept = scratch.deliveries();
+    for reply in &shown {
+        assert_eq!(kept.iter().filter(|k| *k == reply).count(), 1, "{reply}");
+    }
+    println!("graph: EV needs [PROBSUM, WAVG], key_need [WAVG]; WAVG needs [FRAC]; VAR needs [EV]");
+    println!("turns that read the graph: {read_turns:?}; turns that set or changed the route: {route_turns:?}");
+    manager.shut_down();
+    println!("study folder: {}", scratch.folder.display());
+    assert!(
+        !read_turns.is_empty(),
+        "the tutor never read the course graph"
+    );
+    assert!(
+        read_turns.iter().all(|n| route_turns.contains(n)),
+        "the graph was read at a turn that did not set the route"
+    );
+    std::mem::forget(scratch);
+}
