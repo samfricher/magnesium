@@ -93,7 +93,22 @@ async function drawOne(source: string, room: number) {
     // The window's own colours, read from its tokens so a diagram follows the
     // scheme. The diagram library works colours out from these, so they are
     // resolved to plain values here.
-    const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "gray";
+    // A token can be a mix of others (color-mix), which the diagram library
+    // cannot read: each is resolved to a plain hex colour first.
+    const token = (name: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${name})`;
+      document.body.appendChild(probe);
+      const computed = getComputedStyle(probe).color;
+      probe.remove();
+      const numbers = (computed.match(/[\d.]+/g) ?? []).map(Number);
+      if (numbers.length < 3) return "gray";
+      const scale = computed.startsWith("color(") ? 255 : 1;
+      return `#${numbers
+        .slice(0, 3)
+        .map((n) => Math.round(Math.min(255, Math.max(0, n * scale))).toString(16).padStart(2, "0"))
+        .join("")}`;
+    };
     const ink = {
       box: token("--raised"),
       text: token("--text"),
