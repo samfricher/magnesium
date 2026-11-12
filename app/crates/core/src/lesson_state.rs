@@ -29,6 +29,11 @@ pub struct Facts {
     /// How long the learner took to answer the open task, when it is a
     /// timed paper redo and the window saw it posed.
     pub took: Option<std::time::Duration>,
+    /// The open task is a timed paper redo the window did not see posed,
+    /// as after a resume: no clock ran on it.
+    pub no_clock: bool,
+    /// What the record made of the last paper redo's answer.
+    pub redo_outcome: Option<String>,
     /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
     /// What the record knows about the learner on this goal: one line each.
@@ -206,11 +211,19 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
             lines.extend(facts.new_redos.iter().map(redo_line));
         }
     }
+    if let Some(outcome) = &facts.redo_outcome {
+        lines.push(outcome.clone());
+    }
     if let Some(took) = facts.took {
         lines.push(format!(
             "The open task is a timed paper redo: this message came {} after the window showed it.",
             minutes(took)
         ));
+    } else if facts.no_clock {
+        lines.push(
+            "The open task is a timed paper redo, and the window did not see it posed, so it has no time for this answer: a right answer cannot count this time, and the redo stays due. Say so."
+                .to_owned(),
+        );
     }
     if !facts.help.is_empty() {
         lines.push("Help each kind of problem needs now:".to_owned());
@@ -353,6 +366,25 @@ mod tests {
         assert!(
             redos_only.contains("this message came 4 min 10 s after the window showed it"),
             "{redos_only}"
+        );
+        // A timed redo the window did not see posed, and the record's
+        // verdict on the last redo.
+        let unclocked = text(
+            &lesson,
+            &Facts {
+                no_clock: true,
+                redo_outcome: Some("The record holds the last paper redo as a pass.".into()),
+                ..Facts::default()
+            },
+        );
+        assert!(
+            unclocked
+                .contains("it has no time for this answer: a right answer cannot count this time"),
+            "{unclocked}"
+        );
+        assert!(
+            unclocked.contains("The record holds the last paper redo as a pass."),
+            "{unclocked}"
         );
         let skipped = text(
             &lesson,

@@ -16,10 +16,13 @@ What a turn does is chosen by words in the learner's message (inside
   SLOW         write slowly, so the reply can be interrupted
   BACK         (or the window's "I'm back") pose quick check 1 when the
                state lists one, or else the first paper redo it lists
-  Km = 2       a right answer to a paper redo: mark it, give its next
+  Km = 2       a right answer to a paper redo: mark it cold, give its next
                question, and pose the next paper redo the state listed
   Km = 0.5     a wrong answer to a paper redo
   OVERTIME     with "Km = 2": mark the answer slow
+  TAUGHT       with "Km = 2": mark the answer not cold
+  REWORD       pose the open paper redo again in other words
+  MENTION      speak of paper redo 2 and pose an ordinary task
   COLD         with "b = -5": mark the answer cold
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
@@ -195,12 +198,17 @@ def reply_for(learner, state):
             return "Welcome back. " + THIRD + block(task=THIRD), False
     if "Km = 2" in learner:
         marked = dict(answer="right", skill="reading Km from a plot", note="Read Km off the x intercept.",
-                      slow="OVERTIME" in learner, next=NEXT_REDO)
+                      slow="OVERTIME" in learner, next=NEXT_REDO, cold="TAUGHT" not in learner)
         if redos_listed:
             number = redos_listed.pop(0)
             return f"Right: Km is 2. Paper redo {number}: {redo_question(number)}" + block(
                 task=redo_question(number), **marked), False
         return f"Right: Km is 2. {THIRD}" + block(task=THIRD, **marked), False
+    if "REWORD" in learner:
+        return "Paper redo 1: Read Km off the plot that crosses the x axis at −0.5." + block(
+            task="Read Km off the plot that crosses the x axis at −0.5."), False
+    if "MENTION" in learner:
+        return f"First a warm-up, then paper redo 2. {FIRST}" + block(task=FIRST), False
     if "Km = 0.5" in learner:
         return "Not quite: Km is minus one over the intercept. This one comes back after a repair." + block(
             answer="wrong", skill="reading Km from a plot", note="Took the intercept itself as Km."), False
