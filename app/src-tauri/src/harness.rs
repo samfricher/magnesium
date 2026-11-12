@@ -74,6 +74,8 @@ pub fn keep_in_view(app: &tauri::App) {
     }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_always_on_top(true);
+        // On every desktop, so a switch of Space does not hide it either.
+        let _ = window.set_visible_on_all_workspaces(true);
     }
 }
 
