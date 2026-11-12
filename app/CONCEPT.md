@@ -2,7 +2,7 @@
 
 ## The concept
 
-The window is one long page: your logbook. Today is at the top under its date, and earlier days run down below it, each under its own date. Opening the app shows today's page with one line on it, the thing you stopped on ("Pick up where you stopped on Tuesday: reading Vmax and Km from a Lineweaver–Burk plot"), and the cursor under it. Press Return and that line becomes the first line of today; the tutor's first words are written in under it, and you are in the lesson. Or type your own first line and start there. A lesson is written into today's page as it happens. The tutor's words run as plain text. Each task it sets is set apart as an exercise, and the cursor sits inside it: what you write there is your answer, and the record's mark appears beside it in the left margin, the way a teacher marks a margin. Press Esc and the cursor steps out of the exercise onto the page: what you write on the page is talk (a question, "change the plan", something off the plan), which the record never marks, and the exercise waits, open, until you step back in with Esc. The plan is a short agenda in the right margin of today's page: the exam's date and the next few things, in order. Ask the tutor to change it and the agenda changes in place, with a timed line on today's page saying what moved. Your past work is the pages below: what you were asked, what you wrote, how the record marked it. After a week away, the page under today is simply the last day you worked. The app never shows a level, a count of proofs or of things due, a run of days, a countdown, or a greeting.
+The window is one long page: your logbook. Today is at the top under its date, and earlier days run down below it, each under its own date. Opening the app shows today's page with one line on it, the thing you stopped on ("Pick up where you stopped on Tuesday: reading Vmax and Km from a Lineweaver–Burk plot"), and the cursor under it. Press Return and that line becomes the first line of today; the tutor's first words are written in under it, and you are in the lesson. Or type your own first line and start there. A lesson is written into today's page as it happens. The tutor's words run as plain text. Each task it sets is set apart as an exercise, with its own answer line inside it, and the cursor waits there: what you write in the exercise is your answer, and the record's mark appears beside it in the left margin, the way a teacher marks a margin. Under the exercise the page keeps its own line ("Or write on the page"): what you write there is talk (a question, "change the plan", something off the plan), which the record never marks, and the exercise waits, open, at the foot of the page until you answer it. Esc moves the cursor between the two lines. The plan is a short agenda in the right margin of today's page: the exam's date and the next few things, in order. Ask the tutor to change it and the agenda changes in place, with a timed line on today's page saying what moved. Your past work is the pages below: what you were asked, what you wrote, how the record marked it. After a week away, the page under today is simply the last day you worked. The app never shows a level, a count of proofs or of things due, a run of days, a countdown, or a greeting.
 
 Slug: `logbook`.
 
@@ -14,7 +14,7 @@ Slug: `logbook`.
 
 **Easy to start.** The next action is the line on the page, and Return does it. The app picks it the way you would: the lesson you last worked in, at the line you stopped at, worded as your own work ("where you stopped on Tuesday"), never as a debt ("3 due", "6 days left", "you missed a week"). Due quick checks and redos are the tutor's business once you are in; they are not shown before. Progress is the pages under today: a list of what you did, each answer with the record's mark, not a score anywhere.
 
-**Flexible.** Where you write decides what a message is, so you never label one: inside the open exercise is an answer; on the page is talk, sent as `talk`, which the core makes impossible to mark. One key moves between them, and the exercise stays open while you talk. The agenda is the plan file as the runtime reads it, refreshed on every `plan_changed`, and each change is written into today's page from the difference between the plan before and after, never from the tutor's words. Being off the plan has no picture at all: the agenda has no "today" column, no overdue colour, no count of items behind; if today's page is about something else, that is what today's page is about.
+**Flexible.** Where you write decides what a message is, so you never label one: the line inside the open exercise takes answers; the page's line takes talk, sent as `talk`, which the core makes impossible to mark. Both lines are in sight whenever a task is open, Esc moves between them, and the exercise stays open while you talk. The agenda is the plan file as the runtime reads it, refreshed on every `plan_changed`, and each change is written into today's page from the difference between the plan before and after, never from the tutor's words. Being off the plan has no picture at all: the agenda has no "today" column, no overdue colour, no count of items behind; if today's page is about something else, that is what today's page is about.
 
 ## Design plan
 
@@ -80,8 +80,10 @@ Below 860 px the agenda leaves the margin: it becomes one line under today's dat
 │                                                                    y-intercept │
 │          ┃ The line meets the y-axis at 0.25 s/µM. What is        slope        │
 │          ┃ Vmax, with its units?                                 Paper B       │
-│          ┃ ▏                                                     Cold redos    │
-│          ┃ Hint   I'm lost   I don't know       Esc: talk        Paper C       │
+│          ┃ ▏______________________________________               Cold redos    │
+│          ┃ Hint   I'm lost   I don't know                        Paper C       │
+│                                                                                │
+│            Or write on the page___________________________                     │
 ```
 
 After an answer, the mark sits in the gutter beside it, in green ink, from the record's row:
@@ -151,7 +153,7 @@ After an answer, the mark sits in the gutter beside it, in green ink, from the r
 
 1. **Time is the only axis.** There are no screens to move between: everything you did is on a page under a date, and everything you can do happens on today's.
 2. **Your ink is the darkest.** Your lines are in Ink, the tutor's in Text, the app's own words in Margin at a smaller size. The app never speaks louder than you.
-3. **The place decides the message.** An exercise holds answers; the page holds talk. Nothing is labelled "your answer".
+3. **The place decides the message.** An exercise's line holds answers; the page's line holds talk. Both are in sight. Nothing is labelled "your answer".
 4. **The record writes in the margin.** A mark appears only from the record's row, beside the answer it belongs to, in green ink, worded plainly ("right", "with a hint"). The tutor's words never make a mark.
 5. **Nothing is counted.** No number on screen describes the learner: not days, not proofs, not items due, not days left.
 6. **Everything is kept as left.** Face, size, scheme, scroll, draft, the open sheet, the cursor's place in or out of the exercise.
@@ -180,7 +182,13 @@ My first plan had six defaults I would have produced for any study app. I change
 - **A "today" summary at the top of the page** (answered 4, first answers 2). It is a scorecard wearing a diary's clothes. Removed: the page itself is what you did.
 - **Warm cream paper, a high-contrast serif and a terracotta accent**, the reflex for "notebook". Replaced by a cool white page, a sturdy text face the learner can swap, and one functional colour, the green of a marking pen, used only by the record.
 - **Monospace timestamps.** A tell, and it makes the margin noisier than the text. Replaced by the system sans with tabular figures.
-- **An Answer / Talk switch on the box.** That is the label the brief rules out. Replaced by place: inside an exercise or on the page, with Esc between them, so the structure decides and the exercise stays visibly open while you talk.
+- **An Answer / Talk switch on the box.** That is the label the brief rules out. Replaced by place: the exercise's own line or the page's line, both in sight, with Esc between them, so the structure decides and the exercise stays visibly open while you talk. (A first build had one cursor that stepped in and out of the exercise; it hid the page's line until Esc was pressed, so a learner could not see where talk goes. Two visible lines fixed that.)
 - **The exam as a countdown in the agenda.** Replaced by the date. A date is a fact about the exam; a countdown is a fact about you.
 
-The accessory removed before leaving the house: a coloured dot that marked which course a sitting belonged to. The course's name in the sitting's first line says it without a legend.
+The accessory removed before leaving the house: a coloured dot that marked which course a sitting belonged to. The course's name in the sitting's first line says it without a legend. A second one went after the first screenshots: a "Return picks it up" line under the cold page's box, which repeated the Return key already drawn on the line it picks up.
+
+## What was decided alone
+
+- **Global log, per-course plan.** The pages span every course (a sitting names its course); the agenda is the plan of the course being worked in, and is not shown before a lesson starts, so the cold page stays one line.
+- **The task comes from the record.** On Magnesium the window reads the open task from the record's checkpoint after each reply (`rail().task`), so it knows when a task is open without guessing from the tutor's words. With Claude Code, where the record keeps no such line, a task set apart in bold is one; any other reply gets an answer line too, sent with no intent, so the tutor decides as before. That gap is the plugin engine's, written up by the base branch.
+- **Past pages are built from what the window kept and the record.** The window's own copy of each turn, and `attempts --json` (now with each answer's question), read for every course after the first paint; a mark is matched to the turn that answered its question.
