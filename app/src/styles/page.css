@@ -456,3 +456,21 @@ code { font-family: var(--mono); font-size: 0.86em; }
 .composer.in-task textarea { padding-top: 0.25rem; min-height: calc(var(--lead) * 1rem + 0.6rem); }
 /* A hint about Esc is for the line being written on. */
 .composer:not(:focus-within) .hint { visibility: hidden; }
+
+/* The line that ends a sitting. */
+.row.stopping { margin-top: 1rem; }
+.row.stopping label { display: flex; flex-direction: column; gap: 0.2rem; }
+.row.stopping .quiet { font: 400 0.8rem/1.5 var(--ui); }
+.row.stopping input {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--margin);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--green);
+  padding: 0.2rem 0 0.35rem;
+  font: inherit;
+  outline: none;
+}

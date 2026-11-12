@@ -14,6 +14,7 @@ import { clock, dayOf, daysBefore, longDay, today, whenSaid } from "./days";
 import * as harness from "./harness";
 import { busy, emptySession, HELP, isHelp, openingWords, pickedWords, reduce, tutorText, type SessionState } from "./lesson";
 import { courseName, pagesFrom } from "./log";
+import { plainSkill } from "./marks";
 import { applyPrefs, flushLeft, keepLeft, loadLeft, loadPrefs, SIZES, type Prefs } from "./prefs";
 import { taskText } from "./render";
 import type { SourceRef } from "./sources";
@@ -618,7 +619,7 @@ export function App() {
   const beginStop = () => {
     const { session, openTask, home } = now.current;
     if (!session.open && !session.live) return;
-    setStopping(openTask ?? home?.last?.next_action ?? "");
+    setStopping(plainSkill(openTask ?? home?.last?.next_action ?? ""));
   };
 
   const stop = async (line: string) => {
@@ -1007,6 +1008,8 @@ export function App() {
   }, [todayPage, kept, sitting, session.earlier, session.live, meta]);
 
   const lesson = Boolean(session.open || session.live);
+  // What moved is said beside the agenda only while today's page shows the change.
+  const changedToday = items.some((item) => (item.meta.plan?.length ?? 0) > 0);
   const writing = busy(session);
   // The open task's own line: there while a task is open (or a reply might have set one).
   const answerOpen = lesson && !starting && stopping === null && session.cards.length === 0 && (openTask !== null || (replyOpen && !writing));
@@ -1306,7 +1309,7 @@ export function App() {
 
           {!narrow && lesson && (
             <aside className="margin">
-              <Agenda plan={plan} moved={moved} examWas={examWas} onOpen={() => openSheet("plan")} />
+              <Agenda plan={plan} moved={changedToday ? moved : {}} examWas={changedToday ? examWas : null} onOpen={() => openSheet("plan")} />
             </aside>
           )}
 
