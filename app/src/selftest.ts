@@ -9,6 +9,7 @@
 
 import type { Actions } from "./App";
 import { tinyPdf } from "./demoPdf";
+import { opening } from "./lesson";
 import { readPage } from "./page";
 import { renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
 import { sourceRef } from "./sources";
@@ -218,7 +219,13 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.turns = turns.length;
     if (turns.length < 2) throw new Error("the lesson's turns were not kept");
     await actions.continueLesson();
-    await until("the reply after resuming", () => idle() && (actions.session().live?.learner.startsWith("I'm back") ?? false));
+    try {
+      // The window's own opening words: "I'm back…", or "Let's work on…" when the record holds no lesson yet.
+      await until("the reply after resuming", () => idle() && opening(actions.session().live?.learner ?? "") !== null);
+    } catch (problem) {
+      const s = actions.session();
+      throw new Error(`${String(problem)}: ${JSON.stringify({ open: s.open, live: s.live, notices: s.notices })}`);
+    }
     steps.resumed = true;
   } catch (problem) {
     failure = String(problem);
