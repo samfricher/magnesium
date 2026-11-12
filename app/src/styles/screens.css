@@ -656,10 +656,18 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   /* 56px at 1040 wide, 40px at 720. */
   --margin: clamp(40px, calc(40px + (100vw - 720px) * 0.05), 56px);
   --gap: var(--s5);
+  /* The room left of the text column, and what a margin note may take of it:
+     the note's right edge stands one --s3 left of the rule, and a --s4 of the
+     window's edge is kept clear. (cqw is the lesson's width: these are read
+     where they are used, inside .session-main.) */
+  --offset: calc((100cqw - var(--text-width)) / 2);
+  --note-x: calc(var(--gap) + var(--s3));
+  --note-w: clamp(64px, calc(var(--offset) - var(--note-x) - var(--s4)), 9.5rem);
 }
 
 .session.has-source {
   --margin: 40px;
+  --offset: calc(var(--margin) + var(--gap) + (100cqw - var(--margin) - var(--gap) - var(--s6) - var(--text-width)) / 2);
 }
 
 @media (max-width: 900px) {
@@ -694,8 +702,12 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 /* The top strip is solid page colour and the transcript starts under it, so
-   nothing scrolls beneath it and no letter is cut by it. There is no fade: a
-   hairline marks the edge once the page has been scrolled. */
+   nothing scrolls beneath the strip. A line that scrolls up to the transcript's
+   own top edge dissolves into the page over 28px, so it is not shown cut
+   through its letters. The dissolve is a veil of page colour laid over the top
+   of the page, not a mask on the scroller: a mask on a scrolling box is what
+   WebKit drew as a hard cut. A hairline marks the edge once the page has been
+   scrolled. */
 .session .bar {
   position: relative;
   z-index: 4;
@@ -719,6 +731,27 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   opacity: 1;
 }
 
+.session-main::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 28px;
+  /* Eased: page colour all but whole for the first 8px, so a line's tops are
+     gone before its middle shows, and clear at one line (about 30px) down. */
+  background: linear-gradient(
+    to bottom,
+    var(--bg) 0,
+    var(--bg) 6px,
+    color-mix(in srgb, var(--bg) 78%, transparent) 12px,
+    color-mix(in srgb, var(--bg) 40%, transparent) 19px,
+    color-mix(in srgb, var(--bg) 0%, transparent) 28px
+  );
+  pointer-events: none;
+}
+
 /* The transcript fills the room above the answer box, and the answer box stays
    on the foot of the window: it never moves while the tutor writes. The room
    kept under the last thing is more than the fade at the foot, so the fade
@@ -726,10 +759,9 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 .session .stage {
   flex: 1 1 0;
   padding: 0 var(--s6);
-  /* A short fade at the top edge, so a line that scrolls up under the strip
-     fades out and is not cut through. */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - var(--s5)), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - var(--s5)), transparent 100%);
+  /* The fade at the foot only (the top's is the veil above). WebKit needs the prefixed property. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s5)), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s5)), transparent 100%);
 }
 
 /* The lesson's --col is the text's own width, so End stands on the text's left
@@ -775,7 +807,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 /* One label for what names a block: Task, Check 1 of 2, Hint, Goal, The tutor
-   asks to. Literata italic, quiet, sentence case. */
+   asks to. Literata italic, quiet, sentence case. In a narrow window it stands
+   above its block. */
 .lesson-label,
 .prose p.task > strong:first-child {
   display: block;
@@ -785,6 +818,110 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   font-weight: 400;
   line-height: 1.4;
   color: var(--muted);
+}
+
+/* The lesson is the container the margin is measured in: its own width, not
+   the window's, since a source open beside it takes room from it. */
+.session-main {
+  container: lesson / inline-size;
+}
+
+/* ---- the margin notes ----
+   The page is ruled like an answer booklet, and a booklet's margin is where
+   the examiner writes. When the room left of the text is 120px or more (the
+   lesson is 852px wide, or 820px with a source open; both are read as 852),
+   each block's label leaves the line above it and hangs in the margin as a
+   note: Literata italic, one step smaller, right-aligned a --s3 from the rule,
+   its first line on the first line of the block it names (baseline to
+   baseline, so the two read as one line across the rule). A note that does
+   not fit on a line takes a second ("Check / 1 of 2"). The live task's note
+   is ink; every other is the quiet ink. Nothing is added to the page: what
+   stood above a block and cost it a line now costs it nothing. */
+@container lesson (min-width: 852px) {
+  .session .lesson-label,
+  .session .prose p.task > strong:first-child {
+    width: var(--note-w);
+    margin: 0;
+    font-size: var(--fs-small);
+    line-height: 1.4;
+    text-align: right;
+    text-wrap: balance;
+  }
+
+  /* A task: its note hangs beside the task's first line. The task box is the
+     containing block, so the note is out of the flow and the text begins on
+     the box's first line. */
+  .session .prose p.task > strong:first-child {
+    position: absolute;
+    top: 0.55em;
+    right: calc(100% + var(--note-x));
+    color: var(--text);
+  }
+
+  .session .answered .prose p.task > strong:first-child {
+    color: var(--muted);
+  }
+
+  /* Hint, over the reply it names: a note of no height at the top of the reply,
+     its words hanging down from it. */
+  .session .help-label {
+    position: relative;
+    top: 0.55em;
+    height: 0;
+    margin-left: calc(-1 * (var(--note-w) + var(--note-x)));
+    overflow: visible;
+  }
+
+  /* The cards. Their notes hang outside the card, in the same margin, beside
+     the heading they name. */
+  .session .ask[data-card="permission"] {
+    position: relative;
+  }
+
+  .session .ask[data-card="permission"] > .lesson-label {
+    position: absolute;
+    top: calc(var(--s4) + 1px + 0.05em);
+    right: calc(100% + var(--note-x));
+  }
+
+  .session .ask-q {
+    position: relative;
+  }
+
+  .session .ask-q > .lesson-label {
+    position: absolute;
+    top: 0.05em;
+    right: calc(100% + var(--note-x) + var(--s5) + 1px);
+  }
+
+  .session .ask .lesson-label + h3 {
+    margin-top: 0;
+  }
+
+  /* Passages from the last reply: beside the chips, whose first line is the text of a chip. */
+  .session .band-row {
+    position: relative;
+  }
+
+  .session .band-row > .passages-label {
+    position: absolute;
+    top: calc(var(--s1) + 0.385em);
+    right: calc(100% + var(--note-x));
+    margin: 0;
+  }
+
+  /* The task held at the top of the page: its note stands where the task's does. */
+  .session .task-pin-label {
+    position: absolute;
+    top: calc(var(--s3) + 0.13em);
+    right: calc(100% - var(--s3) + var(--note-x));
+    width: var(--note-w);
+    font-size: var(--fs-small);
+    line-height: 1.4;
+    text-align: right;
+    text-wrap: balance;
+    color: var(--text);
+  }
 }
 
 .track-holder {
@@ -800,7 +937,9 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   font-variant-numeric: lining-nums tabular-nums;
 }
 
-/* The goal's steps: a button, so it has a boundary, a hover fill and a pressed state. */
+/* The goal's steps: a quiet text button. It has no outline of its own (it is
+   the least of the strip's three things, and a box round it made it the
+   heaviest); a hover fill and a pressed state say that it presses. */
 .track {
   display: flex;
   align-items: center;
@@ -808,7 +947,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   max-width: min(440px, 40vw);
   height: 32px;
   padding: 0 var(--s2) 0 var(--s3);
-  border: 1px solid var(--line-2);
+  border: 0;
   border-radius: var(--r-control);
   background: transparent;
   color: var(--muted);
@@ -846,9 +985,10 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   white-space: nowrap;
 }
 
-/* The steps. One not yet reached is a ring in --faint, as a proof not yet
-   earned is, so it holds 3:1 against the strip. Done is filled in ink; the
-   step in hand is green, the same green as the live task's mark in the margin. */
+/* The steps, in ink alone (green in the lesson is the live task's rule in the
+   margin and a proof, nothing else). Done is filled; the step in hand is an
+   outline in ink, 2px; a step ahead is an outline in --line-input, 1.5px, so it
+   holds 3:1 against the strip and is plainly lighter than the one in hand. */
 .pips {
   display: flex;
   gap: var(--s1);
@@ -861,7 +1001,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   height: 6px;
   border-radius: var(--r-pill);
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--faint);
+  box-shadow: inset 0 0 0 1.5px var(--line-input);
   transition: background 0.4s;
 }
 
@@ -873,8 +1013,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 
 .pips i.cur,
 .plan li.cur i {
-  background: var(--accent);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--text);
 }
 
 .plan {
@@ -933,8 +1073,8 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 /* The steps here are the strip's capsules, and the same three states: done is
-   ink, the step in hand is green, a step ahead is an outline. A filled circle
-   is a proof and means nothing else in the lesson. */
+   filled, the step in hand a heavier outline, a step ahead a lighter one, all in
+   ink. A filled circle is a proof and means nothing else in the lesson. */
 .plan li i {
   flex: none;
   /* Centred on the first line of the step (13.5px at 1.4). */
@@ -1248,6 +1388,19 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   margin-top: var(--s3);
 }
 
+/* What the field is for, in plain words over it. */
+.sheet .sheet-note {
+  display: block;
+  margin-top: var(--s2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.sheet .sheet-note + .field {
+  margin-top: var(--s2);
+}
+
 .ask .row,
 .sheet .row {
   margin-top: var(--s4);
@@ -1293,6 +1446,15 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
   background: var(--press, var(--hover));
   transform: translateY(1px);
   transition-duration: 80ms;
+}
+
+/* The ring of a row is rounded and drawn inside it, clear of the row's hairlines
+   (1px, then a gap) and of the chosen row's bar (3px at the edge, then a gap),
+   so the three never lie on one another. */
+html[data-input="key"] .option:focus-visible {
+  border-radius: var(--r-control);
+  outline: 2px solid var(--text);
+  outline-offset: -5px;
 }
 
 /* The row chosen: a step of ink in the card's own fill, in the direction of the
@@ -1447,7 +1609,7 @@ html[data-input="key"] .ledger-row:has(:focus-visible) .cc-more {
 }
 
 .composer .box:focus-within {
-  border-color: var(--faint);
+  border-color: var(--text);
 }
 
 html[data-input="key"] .composer .box[data-ring="key"] {
@@ -1743,13 +1905,16 @@ html[data-input="key"] .composer .box[data-ring="key"] {
   margin-left: var(--s1);
 }
 
-/* While the tutor writes they are plainly off: the faintest ink, no hover,
-   and the cursor says so. Weight and width are the enabled ones, so nothing
-   at the foot of the lesson shifts when the tutor starts or stops writing. */
+/* While the tutor writes they are plainly off: the same words at 45%, so they
+   read as the same buttons asleep (a disabled control is not held to 4.5:1),
+   no hover, and the cursor says so; the title says when they wake. Weight and
+   width are the enabled ones, so nothing at the foot of the lesson shifts when
+   the tutor starts or stops writing. */
 .outs .btn:disabled,
 .outs .btn:disabled:hover {
   background: transparent;
-  color: var(--faint);
+  color: var(--muted);
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
