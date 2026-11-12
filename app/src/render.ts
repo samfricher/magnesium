@@ -48,11 +48,16 @@ const INLINE_LIMIT = 200;
  * where a formula starts that the text ends inside of: a reply that is still
  * being written stops in the middle of one.
  */
-export function liftMath(src: string): { text: string; math: Math[]; open: number | null } {
+export function liftMath(src: string): { text: string; math: Math[]; open: number | null; hold: number | null } {
   const math: Math[] = [];
   let out = "";
   let i = 0;
   let open: number | null = null;
+  // Where a bold span or a link the text ends inside of began. Their marks are
+  // not read as Markdown until they close, so they are held back like a formula.
+  let boldAt: number | null = null;
+  let linkAt: number | null = null;
+  let inUrl = false;
   const unclosed = (at: number) => {
     open ??= at;
   };
@@ -150,11 +155,40 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
       // price than a formula, and is left as it is.
       if (ranOut && src.length - i <= INLINE_LIMIT) unclosed(i);
     }
+    if (c === "*" && src[i + 1] === "*") {
+      boldAt = boldAt === null ? i : null;
+      out += "**";
+      i += 2;
+      continue;
+    }
+    if (c === "[" && linkAt === null) {
+      linkAt = src[i - 1] === "!" ? i - 1 : i;
+      inUrl = false;
+    } else if (c === "]" && linkAt !== null && !inUrl) {
+      if (src[i + 1] === "(") {
+        inUrl = true;
+      } else if (i + 1 < src.length) {
+        // A bracket that is not a link, such as [S], is text.
+        linkAt = null;
+      }
+    } else if (c === ")" && inUrl) {
+      linkAt = null;
+      inUrl = false;
+    } else if (c === "\n" && src[i + 1] === "\n") {
+      boldAt = null;
+      linkAt = null;
+      inUrl = false;
+    }
     out += c;
     i++;
   }
-  return { text: out, math, open };
+  // A stray mark far from the end is text, not a span still being written.
+  const near = (at: number | null) => (at !== null && src.length - at <= HOLD_LIMIT ? at : null);
+  const holds = [near(boldAt), near(linkAt)].filter((at): at is number => at !== null);
+  return { text: out, math, open, hold: holds.length > 0 ? Math.min(...holds) : null };
 }
+
+const HOLD_LIMIT = 400;
 
 /**
  * While a reply is still being written, its last formula can be half there.
@@ -166,11 +200,43 @@ export function withoutOpenMath(src: string): string {
   return open === null ? src : src.slice(0, open).trimEnd();
 }
 
+/**
+ * What to show of a reply that is not finished, or that was stopped: the text
+ * cut before a formula, a bold span or a link it ends inside of, so none of
+ * their marks is ever on screen. `wait` is true when what is held back is a
+ * display formula, which will take a line or more of height when it closes.
+ */
+export function holdBack(src: string): { text: string; wait: boolean } {
+  const { open, hold } = liftMath(src);
+  const cuts = [open, hold].filter((at): at is number => at !== null);
+  if (cuts.length === 0) return { text: src, wait: false };
+  const at = Math.min(...cuts);
+  const wait = open !== null && /^(?:\$\$|\\\[|\\begin)/.test(src.slice(open, open + 8));
+  return { text: src.slice(0, at).trimEnd(), wait };
+}
+
 const rendered = new Map<string, string>();
 
 const escape = (text: string) => text.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch);
 
-function renderMath({ tex, display }: Math): string {
+/**
+ * A subscript that is a word names a thing, and a word is upright: V_{max}
+ * and V_max both become V_{\text{max}}. Only this short list of words: a
+ * single letter or an index (x_{ij}, K_m) stays italic, as it is a variable.
+ */
+const WORDS = "max|min|eq|tot|avg|obs|exp|crit|cat|sys|rel|net|in|out|ref";
+const BRACED = new RegExp(`(^|[^\\\\])_\\{\\s*(${WORDS})\\s*\\}`, "g");
+const BARE = new RegExp(`(^|[^\\\\])_(${WORDS})(?![A-Za-z])`, "g");
+
+export function uprightWords(tex: string): string {
+  if (!tex.includes("_")) return tex;
+  // Twice: two subscripts side by side share the character between them.
+  const once = (text: string) => text.replace(BRACED, "$1_{\\text{$2}}").replace(BARE, "$1_{\\text{$2}}");
+  return once(once(tex));
+}
+
+function renderMath({ tex: source, display }: Math): string {
+  const tex = uprightWords(source);
   const key = (display ? "D" : "I") + tex;
   let html = rendered.get(key);
   if (html === undefined) {
@@ -252,6 +318,8 @@ export function renderMarkdown(src: string): string {
   }
   // Tables scroll inside their own box, so a wide one never widens the page.
   html = html.replace(/<table>/g, '<div class="table"><table>').replace(/<\/table>/g, "</table></div>");
+  // A diagram is drawn as soon as its code is complete. Until then its place is kept, not its code.
+  html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');
   // The label loses the full stop or colon the tutor closed it with.
   return setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label.replace(/\s*[.:]\s*<\/strong>$/, "</strong>")}`));
 }

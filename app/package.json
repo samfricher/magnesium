@@ -12,6 +12,7 @@
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/literata": "^5.3.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "dompurify": "^3.2.0",

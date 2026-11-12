@@ -1,12 +1,15 @@
 // What the session screen holds, and how each event from the tutor changes it.
 
-import type { AgentEvent, NoticeKind, Question, Turn } from "./types";
+import type { Answer, AgentEvent, NoticeKind, Question, Turn } from "./types";
 
 export type Card =
   | { kind: "permission"; id: string; title: string; detail: string; canAlways: boolean }
   | { kind: "question"; id: string; questions: Question[] };
 
 export type Status = "idle" | "waiting" | "writing" | "working";
+
+/** A turn of the lesson. `pick` is set when what the learner said was a choice made on a card of the tutor's. */
+export type LessonTurn = Turn & { pick?: boolean };
 
 /** The exchange on screen: what the learner said and the tutor's reply to it. */
 export type Live = {
@@ -19,6 +22,8 @@ export type Live = {
   since: number;
   error: string | null;
   interrupted: boolean;
+  /** What the learner said was an option picked on the tutor's card (or words typed on it), not a message they wrote. */
+  pick?: boolean;
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -26,7 +31,7 @@ export type Notice = { kind: NoticeKind; text: string };
 export type SessionState = {
   /** Whether an agent process is running for this folder. */
   open: boolean;
-  earlier: Turn[];
+  earlier: LessonTurn[];
   live: Live | null;
   cards: Card[];
   notices: Notice[];
@@ -47,6 +52,7 @@ export type Action =
   | { type: "opened"; turns: Turn[] }
   | { type: "reopened" }
   | { type: "sent"; shown: string; now: number }
+  | { type: "picked"; shown: string; now: number }
   | { type: "event"; event: AgentEvent }
   | { type: "note"; notice: Notice }
   | { type: "dismiss"; text: string }
@@ -55,17 +61,17 @@ export type Action =
   | { type: "reset" };
 
 export function tutorText(live: Live): string {
-  return [...live.done, live.streaming].filter((part) => part.trim() !== "").join("\n\n");
+  return [...live.done, live.streaming].filter((part) => part.trim() !== "").join("\n");
 }
 
 function blankLive(learner: string, now: number, status: Status): Live {
   return { learner, done: [], streaming: "", status, doing: null, since: now, error: null, interrupted: false };
 }
 
-function asTurn(live: Live): Turn | null {
+function asTurn(live: Live): LessonTurn | null {
   const tutor = tutorText(live);
   if (tutor === "" && live.learner.trim() === "") return null;
-  return { session: "", ms: live.since, learner: live.learner, tutor, interrupted: live.interrupted };
+  return { session: "", ms: live.since, learner: live.learner, tutor, interrupted: live.interrupted, ...(live.pick ? { pick: true } : {}) };
 }
 
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
@@ -158,6 +164,18 @@ export function reduce(state: SessionState, action: Action): SessionState {
         startedMs: state.startedMs ?? action.now,
       };
     }
+    case "picked": {
+      // An option chosen on a card is what the learner said: it stands in the
+      // transcript as their note, and the tutor's reply to it is the exchange
+      // that follows. The card itself is taken away by the tutor's own event.
+      const previous = state.live ? asTurn(state.live) : null;
+      return {
+        ...state,
+        earlier: previous ? [...state.earlier, previous] : state.earlier,
+        live: { ...blankLive(action.shown, action.now, "waiting"), pick: true },
+        startedMs: state.startedMs ?? action.now,
+      };
+    }
     case "event":
       return onEvent(state, action.event);
     case "note":
@@ -182,7 +200,7 @@ export function busy(state: SessionState): boolean {
 }
 
 /**
- * The words the window sends for the learner when a sitting opens. They are
+ * The words the window sends for the learner when a lesson opens. They are
  * plain words, as a learner would type them in a terminal. The runtime opens
  * the sitting with what is due, so the window does not ask for it. Only the
  * learner's own saved line is quoted back: the tutor's note of what comes
@@ -205,4 +223,45 @@ const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No
 export function opening(text: string): { stoppedAt: string | null } | null {
   const found = OPENING.exec(text.trim());
   return found ? { stoppedAt: found[1]?.trim() || null } : null;
+}
+
+/**
+ * The plain words the three help buttons send. The tutor gives the smallest
+ * help that lets the learner take the next step, and the runtime asks a skill
+ * got right with a hint again, cold, the next day.
+ */
+export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
+
+/**
+ * What the learner said, apart from how sure they said they were. The window
+ * sends the answer, then "Confidence: sure" (or unsure, or guess) as a line of
+ * its own; the lesson shows that as a tag, not as words the learner wrote.
+ */
+export function splitConfidence(text: string): { text: string; confidence: "Sure" | "Unsure" | "Guess" | null } {
+  const found = /(?:^|\n\n)Confidence: (sure|unsure|guess)(?=\n\n|$)/i.exec(text);
+  if (!found) return { text, confidence: null };
+  const word = found[1].toLowerCase();
+  const rest = `${text.slice(0, found.index)}${text.slice(found.index + found[0].length)}`.trim();
+  return { text: rest, confidence: word === "sure" ? "Sure" : word === "unsure" ? "Unsure" : "Guess" };
+}
+
+/** Whether a line the learner sent is a request for a hint. */
+export function isHint(text: string): boolean {
+  return text.trim() === HELP.hint;
+}
+
+/** Whether a line the learner sent is a request for help (a hint, "I don't know", "I'm lost"): not an answer, and never marked. */
+export function isHelp(text: string): boolean {
+  return (Object.values(HELP) as string[]).includes(splitConfidence(text).text.trim());
+}
+
+/**
+ * What an answer given on a card says, as the transcript shows it: the options
+ * chosen and the words typed, one line for each question.
+ */
+export function pickedWords(answers: Answer[]): string {
+  return answers
+    .map((answer) => answer.chosen.join(", "))
+    .filter((line) => line.trim() !== "")
+    .join("\n");
 }

@@ -7,34 +7,51 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Dots, PaletteKey, RUN_HINT, Ring, TopBar, Weeks, daysLeftText, proofShare, skillCounts, urgency } from "../ui/bits";
+import { Choice, Due, ExamLine, Fault, Level, Tally, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, dueCounts, plain, proofsOf, skillsProven, useReturnForPrimary } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
+/** The runtime's note for a miss that no lesson has repaired yet. It has no next redo until one does. */
+const FIX_FIRST = "fix it first";
+
+/** What a skill's note says of its last answer, worded as what it is: a slip is named a slip, a right answer a right answer, and a skill not tested yet has no last answer at all. */
+function lastLine(row: Row, tone: string): string | null {
+  if (!row.what || tone === "untested") return null;
+  return /^right\b/i.test(row.what.trim()) ? `Last answer: ${plain(row.what)}` : `Last slip: ${plain(row.what)}`;
+}
+
 function RowView({ row, tone }: { row: Row; tone: string }) {
+  const last = lastLine(row, tone);
   return (
     <div className={`skill ${tone}${row.due ? " is-due" : ""} selectable`}>
-      <Dots dots={row.dots} />
+      <ProofDots earned={proofsOf(row.dots)} />
       <span className="skill-text">
         <Line text={row.name} className="skill-name" />
-        {row.what && <Line text={row.what} className="skill-what" />}
+        {last && <Line text={last} className="skill-what" />}
       </span>
-      {row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>}
+      {row.due ? (
+        // The section this row stands in says "to prove today"; the row keeps the amber clock that says it too.
+        <Due bare />
+      ) : row.note === FIX_FIRST ? (
+        <span className="skill-note">needs a fix first</span>
+      ) : (
+        row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>
+      )}
     </div>
   );
 }
 
-function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]; fold: number; tone: string; action?: JSX.Element | null }) {
+function Group({ title, count, rows, fold, tone, action }: { title: string; count: string; rows: Row[]; fold: number; tone: string; action?: JSX.Element | null }) {
   const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const shown = all ? rows : rows.slice(0, fold);
   return (
     <section className="group">
-      <h3>
-        {title}
-        <span>{rows.length}</span>
+      <h2 className="sec-name">{title}</h2>
+      <div className="group-head">
+        <span className="h-count">{count}</span>
         {action}
-      </h3>
+      </div>
       {shown.map((row, index) => (
         <RowView key={`${row.name}-${index}`} row={row} tone={tone} />
       ))}
@@ -47,12 +64,29 @@ function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]
   );
 }
 
+/** The runtime's empty-board message. It names a marked paper and a quick check, which a student has not met; the page says the path in plain words instead. */
+const NOTHING_YET = /^Nothing is proved yet/;
+
+const WEEK_NAMES = ["This week", "Last week", "2 weeks ago", "3 weeks ago", "4 weeks ago"];
+
 /** A paper's score as a share, from "24/30". */
 function scoreShare(score: string): number | null {
   const parts = /^\s*([\d.]+)\s*\/\s*([\d.]+)/.exec(score);
   if (!parts) return null;
   const total = Number(parts[2]);
   return total > 0 ? Math.min(1, Number(parts[1]) / total) : null;
+}
+
+/** "24/30" said as "24 of 30"; any other form as it was written. */
+function scoreText(score: string): string {
+  const parts = /^\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/.exec(score);
+  return parts ? `${parts[1]} of ${parts[2]}` : score;
+}
+
+/** "2026-11-08" as "Sun 8 Nov"; any other form as it was written. */
+function dayText(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
 }
 
 export function Progress(props: {
@@ -62,16 +96,20 @@ export function Progress(props: {
   folderName: string;
   backLabel: string;
   onTarget: (target: string) => void;
-  /** Start a sitting, which opens with what is due. Absent while a lesson or a paper is running. */
+  /** Continue the lesson, which opens with what is due. Absent while a lesson or a paper is running. */
   onStart?: () => void;
+  /** The quick checks and paper redos due today, or null when the window cannot tell. */
+  questionsDue: number | null;
   onBack: () => void;
   onPalette: () => void;
 }) {
   const { data, activity } = props;
+  // Return does Continue, the one green button, when nothing has focus; the arrow, Space and Page keys scroll the page.
+  useReturnForPrimary(data !== null);
   const bar = (
     <TopBar
       left={
-        <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+        <button className="crumb" onClick={props.onBack} title={`${props.backLabel} (Esc)`}>
           <Icon name="back" size={16} />
           {props.backLabel}
         </button>
@@ -84,7 +122,7 @@ export function Progress(props: {
       <section className="screen progress" data-screen="progress">
         {bar}
         <div className="scroll">
-          <div className="board">{props.error && <div className="banner bad selectable">{props.error}</div>}</div>
+          <div className="board">{props.error && <Fault>{props.error}</Fault>}</div>
         </div>
       </section>
     );
@@ -94,7 +132,9 @@ export function Progress(props: {
   const due = data.in_progress.filter((row) => row.due);
   const later = data.in_progress.filter((row) => !row.due);
   const sure = data.scores.filter((s) => s.sure_total !== null && s.sure_right !== null);
-  const left = daysLeftText(exam?.days_left);
+  const skills = skillsProven(proofs);
+  const levelShown = !data.level_unknown && proofs.levelled && proofs.total > 0;
+  const waiting = [...due, ...later].some((row) => row.note === FIX_FIRST);
 
   return (
     <section className="screen progress" data-screen="progress">
@@ -102,134 +142,157 @@ export function Progress(props: {
       <div className="scroll">
         <div className="board">
           <header className="board-head">
-            {!data.level_unknown && proofs.levelled && (
-              <Ring share={proofShare(proofs)} size={104} stroke={8} label={`Level ${proofs.level}`}>
-                <b>{proofs.level}</b>
-                <small>level</small>
-              </Ring>
-            )}
             <div className="board-title">
-              <h1>{displayName(props.folderName)}</h1>
+              <h1 className="h-title">Proofs</h1>
+              <p className="board-course">{displayName(props.folderName)}</p>
               {data.targets.length > 1 ? (
-                <div className="targets">
-                  {data.targets.map((target) => (
-                    <button key={target.target} className={target.target === exam?.target ? "on" : undefined} onClick={() => props.onTarget(target.target)}>
-                      <Line text={target.title} />
-                    </button>
-                  ))}
+                <div className="board-targets">
+                  <Choice
+                    label="Exam"
+                    value={exam?.target ?? null}
+                    options={data.targets.map((target) => ({ value: target.target, label: <Line text={target.title} /> }))}
+                    onChange={props.onTarget}
+                  />
                 </div>
               ) : (
                 exam && (
-                  <div className={`exam-line ${urgency(exam)}`}>
-                    <Icon name="flag" size={15} />
-                    <Line text={exam.title} />
-                    {left && <b>{left}</b>}
-                  </div>
+                  <p className="exam-line">
+                    <ExamLine exam={exam} />
+                  </p>
                 )
               )}
-              {skillCounts(proofs) && <p className="board-sum">{skillCounts(proofs)}. A course with no plan has no level.</p>}
-              {proofs.levelled && proofs.total > 0 && (
-                <p className="board-sum">
-                  <b>{proofs.earned}</b> of {proofs.total} proofs · <b>{proofs.proven}</b> of {proofs.skills} skills proven
-                  {proofs.to_next > 0 && (
-                    <span>
-                      {" "}
-                      · {proofs.to_next} more for level {proofs.level + 1}
-                    </span>
-                  )}
-                </p>
-              )}
             </div>
-            {activity && (
-              <div className="board-days" title={RUN_HINT}>
-                <Weeks activity={activity} />
-                <span className="run-line">
-                  {activity.run > 0 ? (
-                    <>
-                      <b>{activity.run}</b> {activity.run === 1 ? "day" : "days"} running
-                    </>
-                  ) : (
-                    "One answer starts a run"
-                  )}
-                </span>
-              </div>
-            )}
           </header>
 
+          {skills && (
+            // The student's own count leads, in one line: the level and its next step, and the proofs earned for the exam they are counted for.
+            <div className="board-level">
+              {levelShown && <Level proofs={proofs} size="lg" title={`${proofs.earned} of ${proofs.total} proofs`} />}
+              <p className="board-sum num">
+                {proofs.levelled && proofs.total > 0 ? (
+                  <>
+                    {proofs.earned} of {proofs.total} proofs earned for {exam ? <Line text={exam.title} /> : "this course"}.
+                  </>
+                ) : (
+                  <>
+                    {skills}. A course with no plan has no level.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
           {data.message ? (
-            <div className="board-empty">{data.message}</div>
+            <div className="board-empty">
+              {NOTHING_YET.test(data.message) ? (
+                <>
+                  <p>Nothing is proved yet.</p>
+                  <p>Answer a task in a lesson without a hint. When the tutor marks it right, that is your first proof.</p>
+                  {props.onStart && (
+                    <div className="row">
+                      <button className="btn primary" title="Start a lesson (Return)" onClick={props.onStart}>
+                        Start a lesson
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                data.message
+              )}
+            </div>
           ) : (
             <>
-              <p className="legend">
-                <Dots dots={[2, 2, 0]} />
-                One dot is one answer you gave alone, on its own day. Three prove the skill.
-              </p>
               <Group
-                title="Prove today"
+                title="To prove today"
+                count={dueCounts(due.length, props.questionsDue)}
                 rows={due}
                 fold={12}
                 tone="open"
                 action={
                   props.onStart ? (
-                    <button className="btn small primary" onClick={props.onStart}>
-                      Start
+                    <button className="btn primary" title="Continue (Return)" onClick={props.onStart}>
+                      Continue
                     </button>
                   ) : null
                 }
               />
-              <Group title="In progress" rows={later} fold={10} tone="open" />
-              <Group title="Proven" rows={data.confirmed} fold={6} tone="proven" />
-              <Group title="Not tested yet" rows={data.untested} fold={6} tone="untested" />
+              <Group title="In progress" count={dueCounts(later.length, null)} rows={later} fold={10} tone="open" />
+              <Group title="Proven" count={dueCounts(data.confirmed.length, null)} rows={data.confirmed} fold={6} tone="proven" />
+              <Group title="Not tested yet" count={dueCounts(data.untested.length, null)} rows={data.untested} fold={6} tone="untested" />
 
-              {(data.scores.length > 0 || data.helped_count > 0 || data.checks_unknown || data.level_unknown || data.unreadable > 0) && (
-                <footer className="board-foot selectable">
-                  {data.scores.length > 0 && (
-                    <div className="papers">
-                      <h3>Papers</h3>
-                      <div className="scores">
-                        {data.scores.map((score) => {
-                          const share = scoreShare(score.score);
-                          return (
-                            <div className="score" key={`${score.paper}${score.date}`}>
-                              <span className="score-bar">
-                                <i style={{ height: `${Math.round((share ?? 0) * 100)}%` }} />
+              <footer className="board-foot selectable">
+                {data.scores.length > 0 && (
+                  <section className="foot-section">
+                    <h2 className="sec-name">Papers</h2>
+                    <ol className="scores">
+                      {data.scores.map((score) => {
+                        const share = scoreShare(score.score);
+                        return (
+                          <li className="score" key={`${score.paper}${score.date}`}>
+                            <span className="score-name">{score.paper}</span>
+                            <span className="score-date">{dayText(score.date)}</span>
+                            <b className="score-num num">{scoreText(score.score)}</b>
+                            {share !== null && (
+                              <span className="score-rule" aria-hidden="true">
+                                <i style={{ width: `${Math.max(2, Math.round(share * 100))}%` }} />
                               </span>
-                              <b>{score.score}</b>
-                              <span>{score.paper}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </section>
+                )}
+                {sure.length > 0 && (
+                  <section className="foot-section">
+                    <h2 className="sec-name">Sure but wrong</h2>
+                    <p>
+                      {sure
+                        .map((score) => `${(score.sure_total ?? 0) - (score.sure_right ?? 0)} of ${score.sure_total} on ${score.paper}`)
+                        .join(", then ")}
+                      .
+                    </p>
+                  </section>
+                )}
+                {data.helped_count > 0 && (
+                  <section className="foot-section">
+                    <h2 className="sec-name">With help</h2>
+                    <p>
+                      {data.helped_count === 1 ? "1 answer" : `${data.helped_count} answers`}
+                      {data.helped.length > 0 ? `: ${data.helped.join(", ")}` : ""}. {data.helped_count === 1 ? "It returns" : "They return"} as{" "}
+                      {data.helped_count === 1 ? "a question" : "questions"}.
+                    </p>
+                  </section>
+                )}
+                {activity && (
+                  <section className="foot-section" title={RUN_HINT}>
+                    <h2 className="sec-name">Days you studied</h2>
+                    <p className="foot-run">
+                      <Run days={activity.run} invite />
+                    </p>
+                    <div className="weeks">
+                      {WEEK_NAMES.map((name, back) => (
+                        <div className="weeks-row" key={name}>
+                          <span className="weeks-name">{name}</span>
+                          <Week days={activity.days} today={activity.today} back={back} letters={back === 0} />
+                        </div>
+                      ))}
                     </div>
-                  )}
+                    <p className="foot-key">A filled square is a day with an answer marked. Every other day is an outline. The rule under a square is today.</p>
+                  </section>
+                )}
+                {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (
                   <div className="foot-notes">
-                    {sure.length > 0 && (
-                      <p>
-                        <b>Sure but wrong</b>{" "}
-                        {sure.map((score, index) => (
-                          <span key={`${score.paper}${score.date}`}>
-                            {index > 0 && ", then "}
-                            {(score.sure_total ?? 0) - (score.sure_right ?? 0)} of {score.sure_total} on {score.paper}
-                          </span>
-                        ))}
-                      </p>
-                    )}
-                    {data.helped_count > 0 && (
-                      <p>
-                        <b>With help, not counted</b> {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
-                        {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
-                      </p>
-                    )}
                     {data.level_unknown && (
                       <p>
-                        <b>No level</b> is shown. This version of Magnesium cannot tell the window how far each skill is proved, or it has
-                        not read this plan&apos;s gap log into your record yet. Update Magnesium, or mark one more answer with the tutor.
+                        No level is shown. This version of Magnesium cannot tell the window how far each skill is proved, or it has not read this
+                        plan&apos;s gap log into your record yet. Update Magnesium, or mark one more answer with the tutor.
                       </p>
                     )}
                     {data.checks_unknown && (
                       <p>
-                        <b>Quick checks</b> are not shown. This version of Magnesium keeps them where the window cannot read them yet. The tutor
-                        still asks them as each sitting opens.
+                        Quick checks are not shown. This version of Magnesium keeps them where the window cannot read them yet. The tutor still
+                        asks them as each lesson opens.
                       </p>
                     )}
                     {data.unreadable > 0 && (
@@ -239,11 +302,49 @@ export function Progress(props: {
                       </p>
                     )}
                   </div>
-                </footer>
-              )}
+                )}
+                <details className="legend-sec">
+                  <summary>
+                    <Icon name="right" size={14} />
+                    What the marks mean
+                  </summary>
+                  <ul className="legend">
+                    <li>
+                      <ProofDot state="on" />
+                      <span>A proof: one right answer you gave alone, on its own day. Three proofs prove a skill, and each proof moves your level.</span>
+                    </li>
+                    <li>
+                      <ProofDot state="off" />
+                      <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
+                    </li>
+                    <li>
+                      <span className="due" aria-hidden="true">
+                        <Icon name="clock" size={14} />
+                      </span>
+                      <span>To prove today: you can earn this skill&apos;s next proof today.</span>
+                    </li>
+                    {waiting && (
+                      <li>
+                        <b className="legend-word">needs a fix first</b>
+                        <span>A slip you have not gone over yet. Go over it with help in a lesson, then answer it again on another day, which can earn its next proof.</span>
+                      </li>
+                    )}
+                    {levelShown && (
+                      <li>
+                        <Tally proofs={proofs} size="sm" />
+                        <span>
+                          {proofs.level >= 10
+                            ? "The level is ten strokes, and all ten are full."
+                            : `The level is ten strokes. Level ${proofs.level} fills ${proofs.level} of them, and the next fills as you earn the proofs for level ${proofs.level + 1}.`}
+                        </span>
+                      </li>
+                    )}
+                  </ul>
+                </details>
+              </footer>
             </>
           )}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
         </div>
       </div>
     </section>

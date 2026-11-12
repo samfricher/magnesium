@@ -1,42 +1,22 @@
 // One course. The page answers one question, "what do I do now?", with one
-// card and one button. Under it, three quiet tiles lead to everything else
-// about the course: the proofs, a timed paper, a new lesson.
+// card and one button. Under it, a ruled index of three rows leads to
+// everything else about the course: the proofs, a timed paper, a new lesson.
 
 import { useEffect, useRef, useState } from "react";
 
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
-import type { Home, Paper, Progress, Row } from "../types";
+import { Due, ExamLine, Fault, GoalText, Level, MarginNote, PROOF_HINT, PaletteKey, ProofDots, TopBar, agoText, clockText, composing, proofsOf, sentence, skillBuckets, skillsProven, useNow, useReturnForPrimary } from "../ui/bits";
+import type { Home, Materials, Paper, Progress } from "../types";
 import { displayName } from "./Library";
-import { todayParts } from "./Summary";
+import { todaySentence } from "./Summary";
 
-/** How far one skill is, as a word the styles colour. */
-function skillState(row: Row, group: "confirmed" | "in_progress" | "untested"): string {
-  if (group === "confirmed") return "p3";
-  if (group === "untested") return "p0";
-  const earned = row.dots.filter((dot) => dot === 2).length;
-  return `p${earned}${row.due ? " due" : ""}`;
-}
+/** What was typed under "What do you want to learn?", by course, kept while the window is open: leaving for the library and coming back does not lose it. */
+const drafts = new Map<string, string>();
 
-/** Every skill of the course as one small mark: the whole proof at a glance. */
-export function SkillMarks({ progress, limit }: { progress: Progress; limit: number }) {
-  const marks = [
-    ...progress.confirmed.map((row) => skillState(row, "confirmed")),
-    ...progress.in_progress.map((row) => skillState(row, "in_progress")),
-    ...progress.untested.map((row) => skillState(row, "untested")),
-  ];
-  const shown = marks.slice(0, limit);
-  return (
-    <span className="marks" aria-hidden="true">
-      {shown.map((state, index) => (
-        <i key={index} className={state} />
-      ))}
-      {marks.length > shown.length && <b>+{marks.length - shown.length}</b>}
-    </span>
-  );
-}
+/** What a proof is, for a course that has none yet. */
+const PROOF_DEFINITION = "A proof is a right answer with no help, on its own day. Three prove a skill.";
 
 export function Course(props: {
   home: Home;
@@ -63,31 +43,50 @@ export function Course(props: {
   onDismissMaterial: () => void;
   onAddFiles: () => void;
   onPasteText: () => void;
+  /** The files already in the course's material folder, or null while they are being read or cannot be. */
+  materials: Materials | null;
+  /** Files are being dragged over the window: the material strip is where they drop. */
+  dragging?: boolean;
 }) {
   const { home, progress } = props;
-  const [goal, setGoal] = useState("");
+  const [goal, setGoalNow] = useState(() => drafts.get(home.folder) ?? "");
+  const setGoal = (text: string) => {
+    if (text === "") drafts.delete(home.folder);
+    else drafts.set(home.folder, text);
+    setGoalNow(text);
+  };
   // "Not now" to the upgrade, for this folder while it stays open.
   const [declined, setDeclined] = useState(false);
-  // "Skip" on the first step of a new folder, for this folder while it stays open.
-  const [skipped, setSkipped] = useState(false);
   useEffect(() => {
     setDeclined(false);
-    setSkipped(false);
+    setGoalNow(drafts.get(home.folder) ?? "");
   }, [home.folder]);
+  useReturnForPrimary(home.state);
   const now = useNow(home.sitting ? 1000 : 60_000);
   const input = useRef<HTMLInputElement>(null);
   const fresh = home.state === "empty" || home.state === "not_set_up";
-  // A folder with nothing in it starts with its material: slides, notes, papers.
-  // Once something is added, or the step is skipped, it asks what to learn.
-  const gathering = fresh && !skipped && props.material === null && !props.asking;
-  const asking = !gathering && (fresh || props.asking);
+  // A new course leads with what to learn. Adding material is a quiet row under it, never a step to get past.
+  const asking = fresh || props.asking;
 
+  // When the question that asks what to learn closes (Esc, or Back), focus goes back to the control that opened it, else to the screen's green button: never to the page.
+  const wasAsking = useRef(false);
   useEffect(() => {
     if (asking) input.current?.focus();
+    else if (wasAsking.current) {
+      // Only the row that opened it: no other control is given focus by the window itself, so a Space that scrolls never presses one.
+      document.querySelector<HTMLElement>('.index-row[data-role="new-lesson"]')?.focus({ preventScroll: true });
+    }
+    wasAsking.current = asking;
   }, [asking]);
 
+  /** "Start from this" on a file's row: the card asks what to learn, with a lesson from that file already written in. */
+  const teachFrom = (name: string) => {
+    setGoal(`Teach me from ${name}`);
+    props.onAsk(true);
+    input.current?.focus();
+  };
+
   const exam = home.exam;
-  const left = daysLeftText(exam?.days_left);
   const nextPaper = home.papers.find((paper) => !paper.sat) ?? null;
   const checks = home.checks_due ?? 0;
   // One number for what is due, the same one the library shows.
@@ -96,32 +95,33 @@ export function Course(props: {
     checks > 0 ? `${checks} quick ${checks === 1 ? "check" : "checks"} first` : null,
     home.redos_due > 0 ? `${home.redos_due} paper ${home.redos_due === 1 ? "question" : "questions"} to redo` : null,
   ].filter(Boolean);
+  const dueSentence = dueParts.length > 0 ? `${dueParts.join(", then ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const sitting = home.sitting;
   const proofs = progress?.proofs ?? null;
+  // The skills those questions are for, when the runtime has said which skills are due.
+  const dueSkills = progress && !progress.message ? progress.in_progress.filter((row) => row.due).length : null;
   const usable = home.state === "ready" || home.state === "empty" || home.state === "not_set_up";
 
   let card: JSX.Element;
   if (home.state === "no_runtime" || home.state === "unreadable") {
     card = (
-      <>
-        <span className="eyebrow bad">
-          <Icon name="warn" size={14} /> Something to fix first
-        </span>
-        <h2>{home.state === "no_runtime" ? "Magnesium is not installed" : "This folder could not be read"}</h2>
-        <p className="selectable">{home.message}</p>
-        <div className="row">
-          <button className="btn primary" autoFocus onClick={props.onRetry}>
-            Try again <kbd>&#8629;</kbd>
+      <Fault
+        framed={false}
+        title={home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}
+        action={
+          <button className="btn primary" title="Try again (Return)" onClick={props.onRetry}>
+            Try again
           </button>
-        </div>
-      </>
+        }
+      >
+        {home.message}
+      </Fault>
     );
   } else if (home.state === "needs_upgrade") {
     card = declined ? (
       <>
-        <span className="eyebrow">Not upgraded</span>
-        <h2>This folder stays as it was</h2>
-        <p>A lesson cannot start here until the folder is upgraded. Nothing in it was changed.</p>
+        <h2 className="h-section">This course stays as it was</h2>
+        <p className="say">A lesson cannot start here until the course is upgraded. Nothing in it was changed.</p>
         <div className="row">
           <button className="btn" disabled={props.upgrading} onClick={props.onUpgrade}>
             Upgrade
@@ -130,15 +130,14 @@ export function Course(props: {
       </>
     ) : (
       <>
-        <span className="eyebrow">One step first</span>
-        <h2>Upgrade this folder?</h2>
-        <p className="selectable">{home.message}</p>
+        <h2 className="h-section">Upgrade this course?</h2>
+        <p className="say selectable">{home.message}</p>
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.upgrading} onClick={props.onUpgrade}>
-            {props.upgrading ? "Upgrading…" : "Upgrade"} {!props.upgrading && <kbd>&#8629;</kbd>}
+          <button className="btn primary" disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
+            {props.upgrading ? "Upgrading…" : "Upgrade"}
           </button>
           {!props.upgrading && (
-            <button className="btn ghost" onClick={() => setDeclined(true)}>
+            <button className="btn" onClick={() => setDeclined(true)}>
               Not now
             </button>
           )}
@@ -149,51 +148,32 @@ export function Course(props: {
     const leftSeconds = Math.round((sitting.started_ms + sitting.minutes * 60_000 - now) / 1000);
     card = (
       <>
-        <span className="eyebrow now">A paper is running</span>
-        <h2>
-          {sitting.name} · <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
+        <h2 className="h-section">
+          {sitting.name}, <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
         </h2>
-        <p>The tutor is off until you hand in.</p>
+        <p className="say">A paper is running. The tutor is off until you hand in.</p>
         <div className="row">
-          <button className="btn primary" autoFocus onClick={() => props.onPaper(null)}>
-            Back to the paper <kbd>&#8629;</kbd>
-          </button>
-        </div>
-      </>
-    );
-  } else if (gathering) {
-    card = (
-      <>
-        <span className="eyebrow">First step</span>
-        <h2>Add your course material</h2>
-        <p>
-          Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
-        </p>
-        <div className="row">
-          <button className="btn primary" autoFocus disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
-            {props.adding ? "Adding…" : "Choose files"} {!props.adding && <kbd>&#8629;</kbd>}
-          </button>
-          <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
-            Paste text
-          </button>
-          <span className="grow" />
-          <button className="btn ghost" disabled={props.adding} onClick={() => setSkipped(true)} data-role="skip-material">
-            Skip for now
+          <button className="btn primary" title="Back to the paper (Return)" onClick={() => props.onPaper(null)}>
+            Back to the paper
           </button>
         </div>
       </>
     );
   } else if (asking) {
-    const start = () => goal.trim() !== "" && !props.starting && props.onNewLesson(goal.trim());
+    const start = () => {
+      if (goal.trim() === "" || props.starting) return;
+      // The topic is on its way to the lesson; it is not a draft any more.
+      drafts.delete(home.folder);
+      props.onNewLesson(goal.trim());
+    };
     card = (
       <>
-        <span className="eyebrow">{fresh ? "First lesson" : "New lesson"}</span>
-        <h2>What do you want to learn?</h2>
+        <h2 className="h-section">What do you want to learn?</h2>
         <input
           ref={input}
-          className="field big"
+          className="field"
           type="text"
-          placeholder="A topic, a file in this folder, or an exam and its date"
+          placeholder="A topic, a file in this course, or an exam and its date"
           autoComplete="off"
           spellCheck={false}
           value={goal}
@@ -207,49 +187,40 @@ export function Course(props: {
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={goal.trim() === "" || props.starting} onClick={start}>
-            {props.starting ? "Starting…" : "Start"} {!props.starting && <kbd>&#8629;</kbd>}
+          <button className="btn primary" disabled={goal.trim() === "" || props.starting} title="Start (Return)" onClick={start}>
+            {props.starting ? "Starting…" : home.state === "not_set_up" ? "Start your first lesson" : "Start"}
           </button>
           {!fresh && (
-            <button className="btn ghost" onClick={() => props.onAsk(false)}>
+            <button className="btn" onClick={() => props.onAsk(false)}>
               Back
             </button>
           )}
-          {home.state === "not_set_up" && <span className="aside">Start sets this folder up for Magnesium.</span>}
         </div>
       </>
     );
   } else {
     const last = home.last;
+    const stopped = last?.stopped_at ? sentence(last.stopped_at) : null;
+    const upNext = last?.next_action ? sentence(last.next_action) : null;
     card = (
       <>
-        <span className="eyebrow">
-          {last ? "Next" : "Ready"}
-          {last && last.days_ago !== null && <i>last studied {agoText(last.days_ago)}</i>}
-        </span>
-        <h2 className="selectable">
-          <Line text={last ? last.goal : `Start on ${exam?.title ?? displayName(home.name)}`} />
+        <h2 className="h-section selectable">
+          {last ? <GoalText goal={last.goal} /> : <Line text={`Start on ${exam?.title ?? displayName(home.name)}`} />}
         </h2>
-        {last?.stopped_at ? (
-          <p className="selectable">
-            <b>You stopped at</b> <Line text={last.stopped_at} />
-          </p>
-        ) : last?.next_action ? (
-          <p className="selectable">
-            <b>Up next</b> <Line text={last.next_action} />
-          </p>
+        {last && last.days_ago !== null && <p className="next-meta">Last studied {agoText(last.days_ago)}</p>}
+        {stopped ? (
+          <p className="selectable">You stopped at <Line text={stopped} /></p>
+        ) : upNext ? (
+          <p className="selectable">Up next: <Line text={upNext} /></p>
         ) : null}
         <div className="row">
-          <button className="btn primary" autoFocus disabled={props.starting} onClick={() => props.onContinue(false)}>
-            {props.starting ? "Starting…" : last ? "Continue" : "Start"} {!props.starting && <kbd>&#8629;</kbd>}
+          <button className="btn primary" disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
+            {props.starting ? "Starting…" : last ? "Continue" : "Start your first lesson"}
           </button>
           {due > 0 && (
             <span className="dues">
-              <span className="due">
-                <i />
-                {due} due today
-              </span>
-              <span className="dues-what">{dueParts.join(", then ")}</span>
+              <Due n={due} skills={dueSkills} />
+              {dueSentence && <span className="dues-what">{dueSentence}</span>}
             </span>
           )}
         </div>
@@ -257,14 +228,36 @@ export function Course(props: {
     );
   }
 
-  const inProgress = progress?.in_progress.length ?? 0;
-  const today = todayParts(progress?.today ?? null);
+  // Two short sentences: what was done today, and what comes tomorrow.
+  const today = todaySentence(progress?.today ?? null, { split: true });
+  const skills = proofs && !proofs.levelled ? skillsProven(proofs) : null;
+  // The skills, as one short sentence and a list of what is still to do: the words, then the number.
+  const buckets = progress && !progress.message ? skillBuckets(progress) : null;
+  const counts = buckets
+    ? ([
+        [`${buckets.today} to prove today`, buckets.today],
+        [`${buckets.later} in progress`, buckets.later],
+        [`${buckets.untested} not tested yet`, buckets.untested],
+      ] as const)
+        .filter(([, n]) => n > 0)
+        .map(([said]) => said)
+    : [];
+  // Up to five skills in play, in the order the Proofs page lists them: due today first, then the others.
+  const inPlay =
+    progress && !progress.message
+      ? [...progress.in_progress.filter((row) => row.due), ...progress.in_progress.filter((row) => !row.due)].map((row) => ({
+          name: row.name,
+          earned: proofsOf(row.dots),
+        }))
+      : [];
+  const allSkills = proofs?.skills ?? 0;
+  const held = props.materials !== null && props.materials.files + props.materials.keys > 0;
 
   return (
     <section className="screen course" data-screen="course">
       <TopBar
         left={
-          <button className="crumb" onClick={props.onLibrary} title="All courses (Esc)">
+          <button className="crumb" onClick={props.onLibrary} title="Library (Esc)">
             <Icon name="back" size={16} />
             Library
           </button>
@@ -275,116 +268,159 @@ export function Course(props: {
         <div className="course-col">
           <header className="course-head">
             <div className="course-title">
-              <h1>{displayName(home.name)}</h1>
-              {exam ? (
-                <div className={`exam-line ${urgency(exam)}`}>
-                  <Icon name="flag" size={15} />
-                  <Line text={exam.title} />
-                  {exam.day && <span>{exam.day}</span>}
-                  {left && <b>{left}</b>}
-                </div>
-              ) : (
-                <div className="exam-line none">{usable && home.state === "ready" ? "No exam set" : " "}</div>
-              )}
+              <h1 className="h-title">{displayName(home.name)}</h1>
+              <p className="exam-line">
+                {exam ? <ExamLine exam={exam} /> : usable && home.state === "ready" ? <span className="exam">No exam set.</span> : " "}
+              </p>
             </div>
-            {proofs && skillCounts(proofs) && (
+            {skills && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <span>
-                  <b>Skills</b>
-                  <small>{skillCounts(proofs)}</small>
-                </span>
+                <span className="lvl-text">{skills}</span>
               </button>
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Ring share={proofShare(proofs)} size={64} label={`Level ${proofs.level}`}>
-                  <b>{proofs.level}</b>
-                </Ring>
-                <span>
-                  <b>Level {proofs.level}</b>
-                  <small>
-                    {proofs.earned} of {proofs.total} proofs
-                  </small>
-                </span>
+                <Level proofs={proofs} size="md" />
               </button>
             )}
           </header>
 
-          <div className="next-card" data-card="next">
-            {card}
-          </div>
-          {usable && !sitting && today.length > 0 && (
+          <section className="sec" aria-label="Next">
+            <div className="next-card" data-card="next">
+              {card}
+            </div>
+          </section>
+          {usable && !sitting && today && (
             <p className="today-line" data-role="today">
-              {today.join(" · ")}
+              {today}
             </p>
           )}
           {props.notice && <div className="banner selectable">{props.notice}</div>}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
+          {props.error && <Fault>{props.error}</Fault>}
           {props.material && <MaterialNote lines={props.material} onDismiss={props.onDismissMaterial} />}
 
           {usable && !sitting && (
-            <div className="tiles">
-              <button className="tile" onClick={props.onProgress} title={PROOF_HINT}>
-                <span className="tile-head">
-                  <Icon name="chart" size={16} />
-                  Proofs
-                </span>
-                {progress && proofs && proofs.total > 0 ? (
-                  <>
-                    <SkillMarks progress={progress} limit={44} />
-                    <span className="tile-foot">
-                      {proofs.proven} of {proofs.skills} skills proven{inProgress > 0 ? ` · ${inProgress} in progress` : ""}
+            <div className="index">
+              <button className="index-row" onClick={props.onProgress} title={PROOF_HINT}>
+                <span className="index-name h-section">Proofs</span>
+                <span className="index-body">
+                  <span className="index-what num">
+                    {progress && proofs && proofs.total > 0 ? (skillsProven(proofs) ?? "") : PROOF_DEFINITION}
+                  </span>
+                  {inPlay.length > 0 && (
+                    <span className="index-skills">
+                      {inPlay.slice(0, 5).map((row, at) => (
+                        <span className="index-skill" key={`${row.name}${at}`}>
+                          <ProofDots earned={row.earned} />
+                          <Line text={row.name} className="index-skill-name" />
+                        </span>
+                      ))}
                     </span>
-                  </>
-                ) : (
-                  <span className="tile-foot">Fills in after your first marked answer</span>
-                )}
-              </button>
-              <button className="tile" onClick={() => props.onPaper(nextPaper)}>
-                <span className="tile-head">
-                  <Icon name="paper" size={16} />
-                  Timed paper
+                  )}
+                  {allSkills > 0 && (
+                    <span className="index-all num">
+                      <b>{allSkills > 1 ? `All ${allSkills} skills` : "Open Proofs"}</b>
+                      {counts.length > 0 && progress && proofs && proofs.total > 0 ? `: ${listWords(counts)}.` : ""}
+                    </span>
+                  )}
                 </span>
-                {nextPaper ? (
-                  <>
-                    <span className="tile-main">{nextPaper.name}</span>
-                    <span className="tile-foot">{nextPaper.minutes ? `${nextPaper.minutes} min` : "Sit it cold"}</span>
-                  </>
-                ) : (
-                  <span className="tile-foot">{home.papers.length > 0 ? "All papers sat" : "None yet"}</span>
-                )}
+                <span className="row-chev" aria-hidden="true">
+                  <Icon name="right" size={14} />
+                </span>
+              </button>
+              <button className="index-row" onClick={() => props.onPaper(nextPaper)}>
+                <span className="index-name h-section">Timed paper</span>
+                <span className="index-body">
+                  <span className="index-what">
+                    {nextPaper
+                      ? `${nextPaper.name}${nextPaper.minutes ? `, ${nextPaper.minutes} minutes` : ""}. A practice exam from your past papers.`
+                      : home.papers.length > 0
+                        ? "All papers sat. Choose one to sit again, timed."
+                        : "None yet. Ask the tutor for one in a lesson: name the exam and say you want a paper."}
+                  </span>
+                </span>
+                <span className="row-chev" aria-hidden="true">
+                  <Icon name="right" size={14} />
+                </span>
               </button>
               {!fresh && (
-                <button className="tile" onClick={() => props.onAsk(true)}>
-                  <span className="tile-head">
-                    <Icon name="plus" size={16} />
-                    New lesson
+                <button className="index-row" data-role="new-lesson" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
+                  <span className="index-name h-section">New lesson</span>
+                  <span className="index-body">
+                    <span className="index-what">Another topic: pick what to learn next.</span>
                   </span>
-                  <span className="tile-foot">
-                    Another topic <kbd>&#8984;N</kbd>
+                  <span className="row-chev" aria-hidden="true">
+                    <Icon name="right" size={14} />
                   </span>
                 </button>
               )}
             </div>
           )}
-          {usable && !sitting && !gathering && (
-            <div className="material-strip" data-role="material-strip">
-              <Icon name="clip" size={16} />
-              <span>
-                <b>Course material</b>
-                <small>Drop files here, or</small>
-              </span>
-              <span className="grow" />
-              <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
-                {props.adding ? "Adding…" : "Choose files"}
-              </button>
-              <button className="btn small" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
-                Paste text
-              </button>
+          {usable && !sitting && (
+            <div className="sec">
+              <MarginNote>Material</MarginNote>
+              <div className="material-strip" data-role="material-strip" data-over={props.dragging ? "yes" : undefined}>
+                <div className="material-head">
+                  <Icon name="clip" size={16} />
+                  {held ? <MaterialHeld listed={props.materials!} /> : <span className="material-held">Add course material: drop files here, or choose them</span>}
+                  <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
+                    {props.adding ? "Adding…" : "Choose files"}
+                  </button>
+                  <button className="btn small" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
+                    Paste text
+                  </button>
+                </div>
+                {held && <MaterialFiles listed={props.materials!} onStart={teachFrom} />}
+              </div>
             </div>
           )}
         </div>
       </div>
     </section>
+  );
+}
+
+/** "a", "a and b", "a, b and c". */
+function listWords(items: readonly string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** What the course's material folder holds, in a line: how many files, and how many answer keys, which are counted and never named. */
+function MaterialHeld({ listed }: { listed: Materials }) {
+  const files = listed.files === 1 ? "1 file" : `${listed.files} files`;
+  const keys = listed.keys === 1 ? "1 answer key" : `${listed.keys} answer keys`;
+  return (
+    <span className="material-held" data-role="material-held">
+      {listed.files > 0 && (listed.keys > 0 ? `${files} and ${keys}` : files)}
+      {listed.files === 0 && `${keys}, kept closed`}
+    </span>
+  );
+}
+
+/**
+ * The newest files, each on its own row. A file's name is plain text. To ask
+ * for a lesson from a file there is a labelled quiet button on its row,
+ * always shown and reached by Tab.
+ */
+function MaterialFiles({ listed, onStart }: { listed: Materials; onStart: (name: string) => void }) {
+  const names = listed.names.slice(0, 2);
+  const more = listed.files - names.length;
+  if (names.length === 0) return null;
+  return (
+    <>
+      <ul className="material-files">
+        {names.map((each) => (
+          <li key={each}>
+            <span className="file-name" title={each}>
+              {each}
+            </span>
+            <button className="btn ghost small" title={`Ask for a lesson from ${each}`} onClick={() => onStart(each)} data-role="material-file">
+              Start from this
+            </button>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && <span className="material-more">and {more} more</span>}
+    </>
   );
 }

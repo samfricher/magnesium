@@ -7,16 +7,16 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { busy, emptySession, openingWords, reduce } from "./lesson";
+import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
 import { Course } from "./screens/Course";
 import { Library, displayName } from "./screens/Library";
 import { Palette, type Command } from "./screens/Palette";
 import { Paper } from "./screens/Paper";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
-import { Setup, aboutText, setupReady } from "./screens/Setup";
-import { Summary, type Sitting } from "./screens/Summary";
-import { EngineControl, engineName } from "./ui/Engine";
+import { Setup, setupReady } from "./screens/Setup";
+import { Summary, reviewIn, type Sitting } from "./screens/Summary";
+import { EngineControl } from "./ui/Engine";
 import { DropVeil, PasteSheet } from "./ui/Material";
 import type {
   About,
@@ -29,6 +29,7 @@ import type {
   Engine,
   EngineChoice,
   Home,
+  Materials,
   Paper as PaperInfo,
   Payment,
   Progress as ProgressData,
@@ -42,6 +43,31 @@ import type {
 type View = "loading" | "setup" | "library" | "course" | "session" | "summary" | "progress" | "paper";
 
 const BLOCKS = [25, 50, 90];
+
+/** The window's keys, for the entry in the menu that lists them. */
+const SHORTCUTS: Command = {
+  label: "Keyboard shortcuts",
+  icon: "keys",
+  keywords: "help keys shortcuts",
+  shortcuts: [
+    ["⌘K", "Open this menu"],
+    ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
+    ["⌘O", "Open a course folder (in the library and on a course page)"],
+    ["⌘⇧H", "Hint (in a lesson)"],
+    ["⌘⇧D", "I don't know (in a lesson)"],
+    ["⌘⇧L", "I'm lost (in a lesson)"],
+    ["⌘.", "Stop the reply being written"],
+    ["Return", "Send your answer, or do the screen's green button"],
+    ["⇧Return", "Start a new line in your answer"],
+    ["⌥1 ⌥2 ⌥3", "How sure? in a lesson: Sure, Unsure, Guess"],
+    ["PageUp PageDown", "Scroll the lesson from the answer box"],
+    ["⌥↑ ⌥↓", "Scroll the lesson from the answer box, a little at a time"],
+    ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
+    ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
+    ["Esc", "Go back, or close what is open"],
+  ],
+  run: () => {},
+};
 /** How often the setup screen asks Claude Code whether a sign-in finished, and for how long. */
 const SIGN_IN_POLL_MS = 2000;
 const SIGN_IN_LIMIT_MS = 15 * 60_000;
@@ -70,6 +96,36 @@ export function markedIn(before: Today | null, after: Today | null): number | nu
   if (!before || !after) return null;
   if (before.day === after.day) return Math.max(0, after.answered - before.answered);
   return after.answered > 0 ? after.answered : null;
+}
+
+/**
+ * The skills answered wrong in this lesson, and the day the record brings each
+ * back: the marks the lesson recorded (wrong, in a lesson, since it began),
+ * each joined to the skill of that name in the record, which holds its next
+ * day. A mark with no skill of that name, or a skill with no next day, is
+ * left out: the window says no more than the record does.
+ */
+export async function slippedIn(api: Core, rows: ProgressData["in_progress"], startedMs: number | null): Promise<{ name: string; next_day: string }[]> {
+  if (startedMs === null) return [];
+  let marks: Awaited<ReturnType<Core["marks"]>> = null;
+  try {
+    marks = await api.marks();
+  } catch {
+    return [];
+  }
+  if (!marks) return [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const began = new Date(startedMs);
+  // The record's times are local, "2026-11-12 09:41", to the minute.
+  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
+  const key = (text: string) => text.trim().toLowerCase();
+  const out = new Map<string, { name: string; next_day: string }>();
+  for (const mark of marks) {
+    if (mark.paper !== null || mark.mark !== "wrong" || mark.at < since) continue;
+    const row = rows.find((each) => key(each.name) === key(mark.label));
+    if (row && row.next_day) out.set(key(row.name), { name: row.name, next_day: row.next_day });
+  }
+  return [...out.values()];
 }
 
 /** The day after a day written as "2026-11-10". */
@@ -103,8 +159,6 @@ export function App() {
   const [about, setAbout] = useState<About | null>(null);
   // Which engine runs lessons. null when the core cannot say.
   const [engine, setEngine] = useState<EngineChoice | null>(null);
-  // The engine of the conversation on the lesson screen.
-  const [lessonEngine, setLessonEngine] = useState<Engine | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   // What Claude Code said before the sign-in, to see when its answer changes.
   const accountBefore = useRef("");
@@ -113,6 +167,8 @@ export function App() {
   // Adding course material: what it said, whether it is under way, whether
   // files are being dragged over the window, and the text being pasted.
   const [material, setMaterial] = useState<string[] | null>(null);
+  // What the course's material folder already holds. null until it has been read, or when it cannot be.
+  const [materials, setMaterials] = useState<Materials | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [pasting, setPasting] = useState<string | null>(null);
@@ -180,6 +236,17 @@ export function App() {
     }
   }, []);
 
+  /** Read what the open course's material folder holds. A core that cannot say shows nothing: the course page reads as it did. */
+  const loadMaterials = useCallback(async () => {
+    const { api } = now.current;
+    if (!api) return;
+    try {
+      setMaterials(await api.materialList());
+    } catch {
+      setMaterials(null);
+    }
+  }, []);
+
   /** Which engine runs lessons, and the one the open folder's conversation began on. */
   const loadEngine = useCallback(async () => {
     const { api } = now.current;
@@ -237,6 +304,7 @@ export function App() {
         dispatch({ type: "reset" });
         setRail(null);
         setProgress(null);
+        setMaterials(null);
         setSummary(null);
         setAsking(false);
         if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
@@ -441,6 +509,7 @@ export function App() {
     setMaterial(null);
     try {
       setMaterial((await api.addMaterial(paths)).lines);
+      void loadMaterials();
     } catch (problem) {
       setMaterial([String(problem)]);
     } finally {
@@ -450,6 +519,12 @@ export function App() {
 
   addMaterialRef.current = addMaterial;
   canAddRef.current = canAdd;
+
+  // The course page says what the course already holds, read when it is shown.
+  const courseFolder = view === "course" ? (home?.folder ?? null) : null;
+  useEffect(() => {
+    if (courseFolder !== null) void loadMaterials();
+  }, [courseFolder, loadMaterials]);
 
   const chooseMaterial = async () => {
     const { api } = now.current;
@@ -469,6 +544,7 @@ export function App() {
     try {
       setMaterial((await api.addPastedText(text)).lines);
       setPasting(null);
+      void loadMaterials();
     } catch (problem) {
       setPasting(null);
       setMaterial([String(problem)]);
@@ -486,7 +562,7 @@ export function App() {
     setUpgrading(true);
     try {
       setHome(await api.upgradeFolder());
-      setNotice("This folder is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
+      setNotice("This course is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
       void loadProgress(null, false);
     } catch (problem) {
       setError(String(problem));
@@ -517,7 +593,7 @@ export function App() {
     setFinding(true);
     try {
       const added = await api.findFolders();
-      setNotice(added === 0 ? "No other study folder was found on this Mac." : `${added} study ${added === 1 ? "folder" : "folders"} added.`);
+      setNotice(added === 0 ? "No other course was found on this Mac." : `${added} ${added === 1 ? "course" : "courses"} added.`);
       await loadLibrary();
     } catch (problem) {
       setError(String(problem));
@@ -547,12 +623,11 @@ export function App() {
   };
 
   /**
-   * Open the lesson screen and send the first words of the sitting. Work on a
-   * paper always runs on Claude Code. No lesson starts while this Mac's setup
+   * Open the lesson screen and send the first words of the sitting. No lesson starts while this Mac's setup
    * needs a look, such as a magnesium program older than the window needs.
    * Resolves to whether the lesson screen opened.
    */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>, paper = false): Promise<boolean> => {
+  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
     const { api } = now.current;
     if (!api) return false;
     if (!setupReady(now.current.setup)) {
@@ -565,7 +640,6 @@ export function App() {
     try {
       const opened = await api.openSession(resume);
       dispatch({ type: "opened", turns: opened.turns });
-      setLessonEngine(paper ? "plugin" : (opened.engine ?? null));
       sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
       proofsBefore.current = null;
       void api
@@ -643,8 +717,7 @@ export function App() {
     if (!api) return;
     try {
       if (!session.open) {
-        const opened = await api.openSession(true);
-        if (opened.engine) setLessonEngine((old) => (old === "plugin" ? old : opened.engine));
+        await api.openSession(true);
         dispatch({ type: "reopened" });
       }
       sitting.current.answers += 1;
@@ -684,6 +757,8 @@ export function App() {
       alreadyStudied: sitting.current.alreadyStudied,
       earned: [],
       tomorrow: 0,
+      slipped: [],
+      marks: [],
     };
     try {
       await api.stop(saved);
@@ -711,6 +786,8 @@ export function App() {
         const tomorrow = dayAfter(today);
         done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
       }
+      done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
+      done.marks = await reviewIn(api, [...after.in_progress, ...after.confirmed, ...after.untested], session.startedMs);
     } catch {
       // Without the record the end screen says what it can.
     }
@@ -758,7 +835,7 @@ export function App() {
       if (files.length === 0) return;
       const words = await api.paperEnd(files);
       await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent), true);
+      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
       else setView("course");
     } catch (problem) {
       setError(String(problem));
@@ -833,15 +910,16 @@ export function App() {
       } else if (command && event.key === "." && view === "session" && busy(session)) {
         event.preventDefault();
         void api?.interrupt();
-      } else if (command && key === "n" && home && !home.sitting && !inLesson && view !== "setup") {
+      } else if (command && key === "n") {
+        // A new lesson, wherever a course is open and no paper or lesson is running. Elsewhere the key does nothing.
         event.preventDefault();
-        askNewLesson();
+        if (home && !home.sitting && !inLesson && ["course", "progress", "summary", "paper"].includes(view)) askNewLesson();
       } else if (command && key === "o" && !inLesson && (view === "library" || view === "course")) {
         event.preventDefault();
         void pickFolder();
       } else if (event.key === "Escape" && !event.defaultPrevented && !now.current.palette) {
         if (view === "progress" || view === "course") back();
-        else if (view === "paper" && !home?.sitting) setView("course");
+        else if (view === "paper") setView("course");
         else if (view === "summary") setView("course");
         else if (view === "setup" && setupReady(setup)) back();
       }
@@ -853,73 +931,107 @@ export function App() {
 
   const commands = (): Command[] => {
     const list: Command[] = [];
-    if (home?.sitting) return [{ label: "Back to the paper", hint: home.sitting.name, icon: "paper", run: () => setView("paper") }];
     const inLesson = session.open || session.live !== null;
+    // A course is open when its page, its lesson or one of its screens is up.
+    const course = home && !home.sitting && (view !== "library" || inLesson) ? home : null;
+    if (home?.sitting) {
+      if (view !== "paper") list.push({ label: "Back to the paper", icon: "paper", run: () => setView("paper") });
+      else
+        list.push({
+          label: "End without handing in",
+          icon: "close",
+          keywords: "quit stop finish",
+          run: () => document.querySelector<HTMLButtonElement>('[data-role="paper-end"]')?.click(),
+        });
+      list.push(SHORTCUTS);
+      return list;
+    }
+    // The same core, in every context.
     if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
-    if (!inLesson && view !== "library") list.push({ label: "Library", hint: "all courses", icon: "list", run: showLibrary });
-    if (home) {
-      if (!inLesson && view !== "course") list.push({ label: displayName(home.name), hint: "this course", icon: "back", run: () => setView("course") });
-      list.push({ label: "Proofs", hint: "what you have proved", icon: "chart", run: () => void openProgress(null) });
+    list.push({ label: "Library", icon: "list", run: showLibrary });
+    if (course) {
+      list.push({ label: displayName(course.name), icon: "folder", run: () => setView("course") });
+      list.push({
+        label: "Proofs",
+        icon: "proof",
+        keywords: "progress stats score skills level",
+        run: () => void openProgress(null),
+      });
+      const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
+      list.push({
+        label: "Start a timed paper",
+        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : undefined,
+        icon: "paper",
+        keywords: "exam timed practice",
+        run: () => openPaper(null),
+      });
+    }
+    if (inLesson) {
+      list.push({
+        label: "End lesson",
+        icon: "close",
+        keywords: "quit stop finish end",
+        run: () => {
+          setView("session");
+          window.setTimeout(() => document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click(), 60);
+        },
+      });
+    }
+    if (course) {
+      // One item, which opens the choice: a row per length would each say "now 50 min" and read as setting 50.
+      list.push({
+        label: "Lesson length",
+        hint: `now ${course.block_minutes} min`,
+        icon: "timer",
+        keywords: "block time length minutes",
+        choices: BLOCKS.map((minutes) => ({
+          label: `${minutes} min`,
+          hint: minutes === course.block_minutes ? "now" : undefined,
+          run: () => {
+            if (minutes !== course.block_minutes) void setBlock(minutes);
+          },
+        })),
+        run: () => {},
+      });
+    }
+    list.push({
+      label: "Setup",
+      icon: "gear",
+      keywords: "settings preferences account engine lessons run on advanced version",
+      run: () => openSetup(),
+    });
+    list.push(SHORTCUTS);
+
+    // Then what belongs to this context.
+    if (course) {
       (progress?.targets ?? [])
-        .filter((exam) => exam.target !== (progress?.exam?.target ?? home.exam?.target))
-        .forEach((exam) => list.push({ label: `Proofs: ${exam.title}`, hint: exam.day ?? undefined, icon: "chart", run: () => void openProgress(exam.target) }));
-      if (["ready", "empty", "not_set_up"].includes(home.state) && !home.sitting && (view === "course" || view === "session")) {
-        list.push({ label: "Add course material…", hint: "or drop files on the window", icon: "clip", run: () => void chooseMaterial() });
+        .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
+        .forEach((exam) =>
+          list.push({ label: `Proofs for ${exam.title}`, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
+        );
+      if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
+        list.push({ label: "Add course material…", icon: "clip", run: () => void chooseMaterial() });
         list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
       }
-      if (!inLesson && (home.checks_due ?? 0) > 0 && home.state === "ready") {
+      if (!inLesson && (course.checks_due ?? 0) > 0 && course.state === "ready") {
         list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
       }
-      if (!inLesson) {
-        const next = home.papers.find((paper) => !paper.sat) ?? home.papers[0];
-        list.push({
-          label: "Sit a paper",
-          hint: next ? `${next.name}${next.minutes ? ` · ${next.minutes} min` : ""}` : undefined,
-          icon: "paper",
-          run: () => openPaper(null),
-        });
-        list.push({ label: "New lesson", hint: "⌘N", icon: "plus", run: askNewLesson });
-      }
-      BLOCKS.filter((minutes) => minutes !== home.block_minutes).forEach((minutes) =>
-        list.push({ label: `Block length: ${minutes} min`, hint: `now ${home.block_minutes}`, icon: "history", run: () => void setBlock(minutes) }),
-      );
+      if (!inLesson) list.push({ label: "New lesson", key: "⌘N", icon: "plus", run: askNewLesson });
     }
     const account = setup?.account;
     if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, hint: account.detail ?? "signed out", icon: "warn", run: () => openSetup() });
-    }
-    if (!inLesson && setup) {
-      const other: Payment = setup.payment === "plan" ? "api_key" : "plan";
-      list.push({
-        label: other === "plan" ? "Pay for lessons with your Claude plan" : "Pay for lessons with an API key",
-        hint: `now ${account?.detail ?? (setup.payment === "plan" ? "your Claude plan" : "an API key")}`,
-        icon: "gear",
-        run: () => {
-          openSetup();
-          void choosePayment(other);
-        },
-      });
-      list.push({ label: "Magnesium and Claude Code on this Mac", hint: aboutText(about) ?? undefined, icon: "gear", run: () => openSetup() });
-    }
-    if (!inLesson && engine) {
-      const other: Engine = engine.chosen === "plugin" ? "direct" : "plugin";
-      list.push({
-        label: `Run lessons on ${engineName(other)}`,
-        hint: `now ${engineName(engine.chosen)}`,
-        icon: "gear",
-        run: () => void chooseEngine(other),
-      });
+      list.push({ label: `Sign in to ${account.name}`, icon: "bang", run: () => openSetup() });
     }
     if (!inLesson) {
-      list.push({ label: "Open a folder…", hint: "⌘O", icon: "folder", run: () => void pickFolder() });
-      list.push({ label: "New study folder…", icon: "plus", run: () => void newFolder() });
-      list.push({ label: "Find courses on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
+      list.push({ label: "Open a course folder…", key: "⌘O", icon: "folder", run: () => void pickFolder() });
+      list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
+      list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
       if (home) {
         const folder = home.folder;
         list.push({
-          label: `Remove ${displayName(home.name)} from the library`,
-          hint: "the folder stays on your Mac",
-          icon: "close",
+          label: `Remove ${displayName(home.name)} from library`,
+          hint: "your files stay on your Mac",
+          icon: "trash",
           run: () => void forgetFolder(folder).then(showLibrary),
         });
       }
@@ -973,6 +1085,7 @@ export function App() {
         signingIn={signingIn}
         canGoBack={!waitingForSetup.current}
         onBack={back}
+        onPalette={() => setPalette(true)}
         onReplace={() => void answerRuntime((api) => api.replaceRuntime())}
         onKeep={() => void answerRuntime((api) => api.keepRuntime())}
         onCheck={() => void checkAgain()}
@@ -993,7 +1106,6 @@ export function App() {
         finding={finding}
         ready={setupReady(setup)}
         starting={starting}
-        engine={engineControl()}
         onContinue={(path) => void continueFolder(path)}
         onOpen={(path) => api && void openFolder(api, path)}
         onPick={() => void pickFolder()}
@@ -1031,6 +1143,8 @@ export function App() {
         onDismissMaterial={() => setMaterial(null)}
         onAddFiles={() => void chooseMaterial()}
         onPasteText={() => setPasting("")}
+        materials={materials}
+        dragging={dragging && canAdd()}
       />
     );
   } else if (view === "session") {
@@ -1039,7 +1153,7 @@ export function App() {
         state={session}
         rail={rail}
         blockMinutes={home.block_minutes}
-        engine={lessonEngine ? engineName(lessonEngine) : null}
+        overlay={palette || pasting !== null}
         onSend={(text) => void say(text)}
         onInterrupt={() => void guard((api) => api.interrupt())()}
         onDecide={(id: string, decision: Decision) =>
@@ -1048,13 +1162,15 @@ export function App() {
             dispatch({ type: "event", event: { type: "withdrawn", id } });
           })()
         }
-        onAnswer={(id: string, answers: Answer[]) =>
+        onAnswer={(id: string, answers: Answer[]) => {
+          // What was picked stands in the lesson as the learner's note, as a typed answer does.
+          dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
           void guard(async (api) => {
             await api.answer(id, answers);
             sitting.current.answers += 1;
             dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })()
-        }
+          })();
+        }}
         onStop={(line) => void stop(line)}
         onNote={onNote}
         onDismiss={(text) => dispatch({ type: "dismiss", text })}
@@ -1062,7 +1178,6 @@ export function App() {
         material={material}
         onDismissMaterial={() => setMaterial(null)}
         onAddFiles={() => void chooseMaterial()}
-        onPasteText={() => setPasting("")}
       />
     );
   } else if (view === "summary" && summary) {
@@ -1070,6 +1185,8 @@ export function App() {
       <Summary
         sitting={summary}
         activity={activity}
+        proofs={progress?.proofs ?? null}
+        onPalette={() => setPalette(true)}
         courseName={displayName(home.name)}
         onDone={() => setView("course")}
         onProgress={() => void openProgress(null)}
@@ -1085,6 +1202,7 @@ export function App() {
         folderName={home.name}
         backLabel={inLesson ? "Lesson" : displayName(home.name)}
         onTarget={(target) => void loadProgress(target, true)}
+        questionsDue={home.checks_due === null ? null : home.redos_due + home.checks_due}
         onStart={!inLesson && !home.sitting && home.state === "ready" ? () => void continueLesson(false) : undefined}
         onBack={back}
         onPalette={() => setPalette(true)}
@@ -1100,7 +1218,9 @@ export function App() {
         onStart={(paper, minutes) => void startPaper(paper, minutes)}
         onHandIn={() => void handIn()}
         onEnd={() => void endPaper()}
+        onOpenPaper={home.sitting?.path ? () => void api?.openFile(home.sitting!.path!).catch(() => {}) : undefined}
         onBack={() => setView("course")}
+        onPalette={() => setPalette(true)}
       />
     );
   }
@@ -1112,7 +1232,7 @@ export function App() {
       </div>
       {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
       {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
-      {palette && <Palette commands={commands()} footer={aboutText(about)} onClose={() => setPalette(false)} />}
+      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
     </div>
   );
 }

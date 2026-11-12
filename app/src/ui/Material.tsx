@@ -28,6 +28,14 @@ export function MaterialNote({ lines, onDismiss }: { lines: string[]; onDismiss:
 export function PasteSheet(props: { initial: string; saving: boolean; onSave: (text: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(props.initial);
   const ready = text.trim() !== "" && !props.saving;
+  // When the sheet closes, focus goes back to the control that opened it.
+  const opener = useRef<Element | null>(document.activeElement);
+  useEffect(() => {
+    const before = opener.current;
+    return () => {
+      if (before instanceof HTMLElement && document.contains(before)) before.focus();
+    };
+  }, []);
   return (
     <div
       className="palette-veil"
@@ -35,8 +43,24 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
         if (event.target === event.currentTarget) props.onCancel();
       }}
     >
-      <div className="palette paste" role="dialog" aria-label="Paste text" data-role="paste-sheet">
-        <span className="eyebrow">Paste text</span>
+      <div
+        className="palette paste"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paste text"
+        data-role="paste-sheet"
+        onKeyDown={(event) => {
+          // Tab goes round the sheet and never out of it.
+          if (event.key !== "Tab") return;
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("textarea, button:not(:disabled)"));
+          const at = items.indexOf(document.activeElement as HTMLElement);
+          if (items.length === 0) return;
+          const to = (at + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+          event.preventDefault();
+          items[to]?.focus();
+        }}
+      >
+        <h2 className="h-section">Paste text</h2>
         <textarea
           className="field paste-box"
           autoFocus
@@ -54,10 +78,10 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           }}
         />
         <div className="row">
-          <button className="btn primary" disabled={!ready} onClick={() => props.onSave(text)}>
-            {props.saving ? "Saving…" : "Save as a text file"} {!props.saving && <kbd>&#8984;&#8629;</kbd>}
+          <button className="btn primary" disabled={!ready} title="Save as a text file (⌘Return)" onClick={() => props.onSave(text)}>
+            {props.saving ? "Saving…" : "Save as a text file"}
           </button>
-          <button className="btn ghost" onClick={props.onCancel}>
+          <button className="btn" onClick={props.onCancel}>
             Cancel
           </button>
           <span className="aside">Kept in your course material, where the tutor can search it.</span>
@@ -72,7 +96,7 @@ export function DropVeil({ course }: { course: string }) {
   return (
     <div className="drop-veil" data-role="drop-veil" aria-hidden="true">
       <div>
-        <Icon name="plus" size={26} />
+        <Icon name="plus" size={16} />
         <b>Drop to add to {course}</b>
         <span>Slides, notes, papers. The tutor can search what it can read.</span>
       </div>
@@ -80,60 +104,3 @@ export function DropVeil({ course }: { course: string }) {
   );
 }
 
-/** The paperclip in the answer box: pick files, or paste text. */
-export function AddMenu(props: { disabled: boolean; onFiles: () => void; onPaste: () => void }) {
-  const [open, setOpen] = useState(false);
-  const holder = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!holder.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", key);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
-  return (
-    <span className="add-menu" ref={holder}>
-      <button
-        className={open ? "icon-btn on" : "icon-btn"}
-        title="Add course material"
-        aria-label="Add course material"
-        aria-expanded={open}
-        disabled={props.disabled}
-        data-role="add-material"
-        onClick={() => setOpen(!open)}
-      >
-        <Icon name="clip" size={17} />
-      </button>
-      {open && (
-        <span className="menu" role="menu">
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              props.onFiles();
-            }}
-          >
-            Choose files…
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              props.onPaste();
-            }}
-          >
-            Paste text…
-          </button>
-        </span>
-      )}
-    </span>
-  );
-}

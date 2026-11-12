@@ -13,6 +13,7 @@ import type {
   Core,
   Engine,
   Home,
+  Mark,
   Opened,
   Paper,
   PaperSitting,
@@ -40,13 +41,30 @@ let shelf = "";
 let forgotten: string[] = [];
 let found = false;
 let studiedToday = true;
+// #library:fresh is a window that has never had a study day: the week is all outlines and says so.
+let history = true;
 // A sitting earns a proof when a check or a redo it opened with was passed.
 let sittingsDone = 0;
-let stoppedAt: string | null = "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.";
+let stoppedAt: string | null = "step 3: what the y-intercept gives.";
 // Answers the tutor marked today. Each answer sent in the demo is marked,
 // except at #summary:unmarked, which shows a sitting with none marked.
 let markedToday = 4;
 let marking = true;
+// The record's marked answers in the demo, oldest first. An answer sent in the
+// demo lesson adds a row a moment later, as the runtime would. At
+// #session:nomarks the runtime has no `attempts` command, and says so.
+const demoMarks: Mark[] = [
+  { id: "demo-1", at: "2026-11-09 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "demo-2", at: "2026-11-09 18:26", label: "slope and $K_m$", mark: "wrong", help: "none", cold: true, paper: null },
+];
+let marksAvailable = true;
+// Set once the demo lesson has recorded a wrong answer: the record brings that skill back tomorrow, not today.
+let slipRecorded = false;
+// A hint asked since the last marked answer: the next answer is given with help.
+let helpAsked = false;
+// Files in the demo course's material folder, newest first, and its answer keys.
+let materialNames = ["week3-confidence-intervals.md", "week2-sampling.md", "Week 4 slides.pdf"];
+let materialKeys = 1;
 // What runs lessons, and the engine the demo course's conversation began on.
 let engineChosen: Engine = "plugin";
 let conversationEngine: Engine | null = "plugin";
@@ -60,7 +78,7 @@ function home(): Home {
     exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
     last: {
       days_ago: 3,
-      goal: "PS3 Q3 · reading Vmax and Km from a Lineweaver-Burk plot",
+      goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
       stopped_at: stoppedAt,
       next_action: "Find Vmax from the intercept 0.25.",
     },
@@ -173,7 +191,7 @@ function account(): Account {
 const demoSetup = (): Setup => ({ runtime: runtimeSetup(), account: account(), payment });
 
 const rail: Rail = {
-  goal: "PS3 Q3 · reading Vmax and Km from a Lineweaver-Burk plot",
+  goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
   steps: [
     { step: "Write the rate equation", status: "done" },
     { step: "Take reciprocals of both sides", status: "done" },
@@ -244,7 +262,7 @@ function library(): Card[] {
     }),
     card("Probability", {
       exam: { target: "test-2", title: "Test 2", date: "2026-12-12", day: "Sat 12 Dec", days_left: 31 },
-      goal: "The cdf method for $U = \\sqrt{Y}$",
+      goal: "The cdf method for $U = \\sqrt{Y}$, and why a transformation of $Y$ that is not one-to-one needs the sum over every branch of its inverse",
       days_ago: 6,
       proofs: proofs(6, 1, 14),
     }),
@@ -267,14 +285,16 @@ function activity(): Activity {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   };
   // Studied on these days before today, and today once a sitting is done.
-  const before = [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30];
+  const before = history ? [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30] : [];
   const days = before.map((back) => day(back));
   if (studiedToday) days.push(day(0));
   days.sort();
-  return { today: day(0), days, run: studiedToday ? 4 : 3, studied_today: studiedToday };
+  return { today: day(0), days, run: !history ? 0 : studiedToday ? 4 : 3, studied_today: studiedToday };
 }
 
-function progress(): Progress {
+function progress(target: string | null = null): Progress {
+  // Each exam is its own plan. The final covers the whole course, so it holds more skills than the midterm: the same proofs earned are a smaller share of it, and its level is lower.
+  const wholeCourse = target === "final";
   if (variant === "new" || variant === "upgrade" || variant === "broken") {
     return {
       targets: [],
@@ -298,18 +318,23 @@ function progress(): Progress {
       { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
       { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 },
     ],
-    exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
+    exam:
+      target === "final"
+        ? { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 }
+        : { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
     in_progress: [
       // After a sitting in the demo, the first skill has earned its second proof.
       sittingsDone > 0
         ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
         : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
-      row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$ · found before the exam, restarted 3 days ago", "due today"),
+      slipRecorded
+        ? row([0, 0, 0], "slope and $K_m$", "read the slope as $K_m$", "next tomorrow", 1)
+        : row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
       row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
       row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
       row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
       // Never got wrong: answered right, alone and cold, on two papers.
-      row([2, 2, 0], "substrate concentration", "cold in Paper A Q2", "–"),
+      row([2, 2, 0], "substrate concentration", "right, alone, in Paper A Q2", "–"),
     ],
     confirmed: [
       row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),
@@ -319,6 +344,17 @@ function progress(): Progress {
     untested: [
       row([0, 0, 0], "non-competitive inhibition", "lower Vmax, same Km", "–"),
       row([0, 0, 0], "pH and activity", "the optimum and its causes", "–"),
+      ...(wholeCourse
+        ? [
+            row([0, 0, 0], "Eadie–Hofstee plot", "the axes swapped", "–"),
+            row([0, 0, 0], "Hanes–Woolf plot", "the intercept on the wrong axis", "–"),
+            row([0, 0, 0], "cooperativity", "$n > 1$ read as inhibition", "–"),
+            row([0, 0, 0], "allosteric enzymes", "a sigmoid curve read as a hyperbola", "–"),
+            row([0, 0, 0], "two-substrate kinetics", "ping-pong against sequential", "–"),
+            row([0, 0, 0], "temperature and rate", "the denaturing drop", "–"),
+            row([0, 0, 0], "enzyme assays", "the blank not subtracted", "–"),
+          ]
+        : []),
     ],
     scores: [
       { paper: "Diagnostic", date: "2026-10-28", score: "15/30", sure_right: null, sure_total: null },
@@ -329,9 +365,9 @@ function progress(): Progress {
     helped_count: 3,
     unreadable: 0,
     checks_unknown: false,
-    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
+    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, wholeCourse ? 18 : 11),
     level_unknown: false,
-    today: { day: isoDay(0), answered: markedToday, started: 2, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
+    today: { day: isoDay(0), answered: markedToday, started: markedToday > 0 ? 2 : 0, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
     message: null,
   };
 }
@@ -392,8 +428,8 @@ function material(paths: string[], pasted = false): Added {
   const keys = names.filter((name) => /key|solution|answer/i.test(name) && !/tokens?/i.test(name));
   const shown = names.filter((name) => !keys.includes(name));
   const lines: string[] = [];
-  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}".` : `Added "${shown[0]}" to Study/materials.`);
-  else if (shown.length > 1) lines.push(`Added ${shown.length} files to Study/materials.`);
+  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}". The tutor can quote it.` : `Added "${shown[0]}" to your course material. The tutor can quote it.`);
+  else if (shown.length > 1) lines.push(`Added ${shown.length} files to your course material. The tutor can quote them.`);
   if (keys.length > 0) lines.push(`${keys.length} ${keys.length === 1 ? "file looks" : "files look"} like an answer ${keys.length === 1 ? "key" : "keys"}. ${keys.length === 1 ? "It is" : "They are"} added, and this window keeps ${keys.length === 1 ? "it" : "them"} closed.`);
   const trouble = shown.flatMap((name) => {
     if (/scan/i.test(name)) return [`"${name}" is a scan with no text, so its text cannot be searched.`];
@@ -401,8 +437,39 @@ function material(paths: string[], pasted = false): Added {
     if (/\.pptx?$/i.test(name)) return [`Search does not read .pptx files, so "${name}" cannot be searched. A PDF of it can be.`];
     return [];
   });
-  if (shown.length > 0) lines.push(...(trouble.length > 0 ? trouble : [shown.length === 1 ? "Search can read it." : "Search can read all of it."]));
+  lines.push(...trouble);
   return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
+}
+
+/** Remember what the demo's folder now holds, as the core would find it. */
+function keep(added: Added): void {
+  materialNames = [...added.saved.map((path) => path.replace(/^Study\/materials\//, "")), ...materialNames];
+  materialKeys += added.keys;
+}
+
+/** The row the runtime would write for an answer sent in the demo lesson, or none. */
+function markFor(text: string): Mark | null {
+  const lower = text.toLowerCase();
+  if (/(can i have a hint|i'm lost)/.test(lower)) {
+    helpAsked = true;
+    return null;
+  }
+  if (lower.includes("don't know") || lower.includes("(unmarked)") || !marking) return null;
+  if (/\((source|key|stream|limit|permission|slow)\)|diagram/.test(lower)) return null;
+  const helped = helpAsked;
+  helpAsked = false;
+  const wrong = lower.includes("(wrong)");
+  return {
+    id: `demo-${demoMarks.length + 1}`,
+    // The record's times are local, to the minute.
+    at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
+    // A mark is on a skill, named as the Proofs page names it: a wrong answer on the skill the learner slipped on, a right one on the one the lesson is about.
+    label: wrong ? "slope and $K_m$" : "intercept and $V_{max}$",
+    mark: wrong ? "wrong" : "right",
+    help: helped ? "hint" : "none",
+    cold: !helped,
+    paper: null,
+  };
 }
 
 export function demoCore(): Core {
@@ -567,6 +634,14 @@ export function demoCore(): Core {
     send: async (text) => {
       if (marking) markedToday += 1;
       void reply(text);
+      const row = markFor(text);
+      // The record is written while the reply is: a moment after it is sent.
+      if (row) {
+        window.setTimeout(() => {
+          demoMarks.push(row);
+          if (row.mark === "wrong") slipRecorded = true;
+        }, 500);
+      }
     },
     sendNewLesson: async (goal) => void reply(goal),
     sendShown: async (shown) => void reply(shown),
@@ -583,19 +658,25 @@ export function demoCore(): Core {
       sittingsDone += 1;
     },
     rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
-    progress: async () => progress(),
+    progress: async (target) => progress(target ?? null),
     setBlockMinutes: async (minutes) => {
       blockMinutes = minutes;
     },
     attach: async () => "Study/handed-in/working/2026-11-10/IMG_0412.jpg",
     addMaterial: async (paths) => {
       await wait(500);
-      return material(paths);
+      const added = material(paths);
+      keep(added);
+      return added;
     },
     addPastedText: async () => {
       await wait(300);
-      return material(["Pasted text 2026-11-11 14-03-22.txt"], true);
+      const added = material(["Pasted text 2026-11-11 14-03-22.txt"], true);
+      keep(added);
+      return added;
     },
+    materialList: async () => (variant === "new" ? { names: [], files: 0, keys: 0 } : { names: materialNames.slice(0, 20), files: materialNames.length, keys: materialKeys }),
+    marks: async () => (marksAvailable ? demoMarks.map((row) => ({ ...row })) : null),
     onDrop: async (handler, hover) => {
       // A browser drops a file with a name and no path, which is enough to show the screens.
       const over = (event: DragEvent) => {
@@ -651,9 +732,19 @@ export function chooseVariant(): void {
   const [screen, state] = location.hash.slice(1).split(":");
   if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
   if (screen === "library" && state === "empty") shelf = "empty";
+  if (state === "fresh" && screen !== "session") {
+    history = false;
+    studiedToday = false;
+  }
   // The end of a sitting shows today's day being earned.
-  if (screen === "summary") studiedToday = false;
+  // Nothing is marked yet today, so no study day is ticked and no count is made: the counts and the week agree.
+  if (screen === "summary") {
+    studiedToday = false;
+    markedToday = 0;
+  }
   if (screen === "summary" && state === "unmarked") marking = false;
+  // A runtime from before the `attempts` command has no marks to show.
+  if (state === "nomarks") marksAvailable = false;
   // Magnesium picked, with the demo course's conversation begun on Claude Code.
   if (state === "magnesium") engineChosen = "direct";
   if (screen === "welcome" && state) {
@@ -700,10 +791,12 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     await wait(300);
     await quiet();
     if (screen === "summary") {
-      await actions.say("Vmax is 4 µM/s");
-      await wait(300);
+      // At #summary:slip the answer is wrong, and the record has the skill coming back tomorrow.
+      await actions.say(state === "slip" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
+      await wait(state === "slip" ? 900 : 300);
       await quiet();
-      await actions.stop("PS3 Q3, step 4: what the slope gives.");
+      // The lesson is on step 3 of 5, so that is where the next one picks up.
+      await actions.stop("PS3 Q3, step 3: what the y-intercept gives.");
       return;
     }
     const words: Record<string, string> = {
@@ -720,6 +813,27 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       key: "show me the key (key)",
       math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
     };
+    // What a learner does in the lesson: the answer is typed in the box and sent with its button, so the page reads the record before it goes.
+    const answerInBox = async (text: string) => {
+      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
+      if (!box) return;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(box, text);
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await wait(60);
+      document.querySelector<HTMLButtonElement>(".composer button.send")?.click();
+    };
+    // Marked right, alone and cold; right with a hint; wrong; and a runtime that cannot say.
+    if (state === "marked" || state === "wrong" || state === "nomarks") {
+      await answerInBox(state === "wrong" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
+      return;
+    }
+    if (state === "helped") {
+      Array.from(document.querySelectorAll<HTMLButtonElement>(".composer button")).find((b) => b.textContent?.trim() === "Hint")?.click();
+      await wait(300);
+      await quiet();
+      await answerInBox("Vmax is 4 µM/s");
+      return;
+    }
     if (state && words[state]) await actions.say(words[state]);
     if (state === "source" || state === "key") {
       await wait(300);

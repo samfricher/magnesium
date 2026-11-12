@@ -326,6 +326,87 @@ fn search_line(saved: &Saved, verdict: &Value) -> Option<String> {
     Some(line)
 }
 
+/// How many names a listing carries. The count of files is always whole.
+const NAMES_LISTED: usize = 20;
+/// The most entries a listing looks at, so a huge folder cannot hold it up.
+const MAX_LOOKED_AT: usize = 5000;
+
+/// What the course's material folder holds, as the course page says it.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct Listed {
+    /// The names of the most recent files, newest first, answer keys left
+    /// out. A file in a folder is named from the material folder, as
+    /// "Week 3/slides.pdf".
+    pub names: Vec<String>,
+    /// How many files there are that are not answer keys.
+    pub files: usize,
+    /// How many files look like answer keys. They are counted and never named.
+    pub keys: usize,
+}
+
+fn walk(
+    dir: &Path,
+    below: &Path,
+    found: &mut Vec<(std::time::SystemTime, PathBuf)>,
+    looked: &mut usize,
+) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if *looked >= MAX_LOOKED_AT {
+            return;
+        }
+        *looked += 1;
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
+            walk(&path, below, found, looked);
+        } else if kind.is_file() {
+            let when = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            found.push((
+                when,
+                path.strip_prefix(below).unwrap_or(&path).to_path_buf(),
+            ));
+        }
+    }
+}
+
+/// The files in the course's material folder (`Study/materials`, where the
+/// window puts what it adds), the most recent first. The window's one rule for
+/// answer keys decides which are counted and not named: [`looks_like_a_key`],
+/// asked of the path from the study root, as it is when a source is opened.
+/// Hidden files and links are not listed, as when a folder is dropped.
+pub fn list(root: &Path) -> Listed {
+    let below = root.join(MATERIALS);
+    let mut found = Vec::new();
+    walk(&below, &below, &mut found, &mut 0);
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut listed = Listed::default();
+    for (_, inside) in found {
+        if looks_like_a_key(&Path::new(MATERIALS).join(&inside)) {
+            listed.keys += 1;
+            continue;
+        }
+        listed.files += 1;
+        if listed.names.len() < NAMES_LISTED {
+            listed.names.push(inside.to_string_lossy().into_owned());
+        }
+    }
+    listed
+}
+
 /// Word what was done. `search` is the runtime's answer for each saved file
 /// that is not an answer key, in order, or `None` when it could not say.
 pub fn report(
@@ -449,6 +530,102 @@ mod tests {
         assert!(!said.contains("answer key.pdf"), "{said}");
         assert!(said.contains("1 file looks like an answer key"), "{said}");
         assert!(said.contains("Slides.pdf"), "{said}");
+    }
+
+    fn put(root: &Path, relative: &str, minutes_ago: u64) {
+        let path = root.join(MATERIALS).join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"x").unwrap();
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(minutes_ago * 60);
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+
+    #[test]
+    fn the_listing_names_files_newest_first_and_counts_an_answer_key_without_naming_it() {
+        let root = root();
+        put(root.path(), "week2-sampling.md", 300);
+        put(root.path(), "week3-confidence-intervals.md", 5);
+        put(root.path(), "Midterm answer key.pdf", 1);
+        put(root.path(), "week1-intro.pdf", 900);
+        put(root.path(), "Week 4/slides.pdf", 60);
+        // The key rule asks the folder names too, as when a source is opened.
+        put(root.path(), "Solutions/PS1.pdf", 2);
+        let listed = list(root.path());
+        assert_eq!(
+            listed.names,
+            [
+                "week3-confidence-intervals.md",
+                "Week 4/slides.pdf",
+                "week2-sampling.md",
+                "week1-intro.pdf",
+            ]
+        );
+        assert_eq!(listed.files, 4);
+        assert_eq!(listed.keys, 2);
+        let said = format!("{listed:?}");
+        assert!(!said.contains("answer key"), "{said}");
+        assert!(!said.contains("PS1"), "{said}");
+    }
+
+    #[test]
+    fn the_listing_leaves_out_hidden_files_and_links_and_says_none_for_no_folder() {
+        let root = root();
+        assert_eq!(list(root.path()), Listed::default());
+        put(root.path(), "notes.txt", 3);
+        put(root.path(), ".DS_Store", 1);
+        put(root.path(), ".hidden/inside.txt", 1);
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("elsewhere.txt"), b"x").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                outside.path().join("elsewhere.txt"),
+                root.path().join(MATERIALS).join("linked.txt"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(outside.path(), root.path().join(MATERIALS).join("door"))
+                .unwrap();
+        }
+        let listed = list(root.path());
+        assert_eq!(listed.names, ["notes.txt"]);
+        assert_eq!((listed.files, listed.keys), (1, 0));
+    }
+
+    #[test]
+    fn a_long_listing_names_the_newest_and_counts_them_all() {
+        let root = root();
+        for n in 0..30 {
+            put(root.path(), &format!("part{n:02}.txt"), n + 1);
+        }
+        let listed = list(root.path());
+        assert_eq!(listed.files, 30);
+        assert_eq!(listed.names.len(), NAMES_LISTED);
+        assert_eq!(listed.names[0], "part00.txt");
+    }
+
+    #[test]
+    fn what_the_window_adds_is_what_the_listing_shows() {
+        let root = root();
+        let outside = tempfile::tempdir().unwrap();
+        for name in ["Slides.pdf", "Midterm answer key.pdf"] {
+            fs::write(outside.path().join(name), b"x").unwrap();
+        }
+        let (saved, _) = copy_in(
+            root.path(),
+            &[
+                outside.path().join("Slides.pdf"),
+                outside.path().join("Midterm answer key.pdf"),
+            ],
+        );
+        assert_eq!(saved.len(), 2);
+        let listed = list(root.path());
+        assert_eq!(listed.names, ["Slides.pdf"]);
+        assert_eq!(listed.keys, 1);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../ui/icons";
-import { TopBar } from "../ui/bits";
+import { Choice, Fault, PaletteKey, TopBar, useReturnForPrimary } from "../ui/bits";
 import type { About, Account, Payment, RuntimeSetup, Setup as SetupData } from "../types";
 
 /** Whether a lesson can start: the program runs and Claude Code is signed in. */
@@ -26,159 +26,180 @@ export function versionNumber(version: string): string {
 /** The window's version and the first characters of its commit. */
 export function aboutText(about: About | null): string | null {
   if (!about) return null;
-  return about.commit ? `Magnesium ${about.version} · ${about.commit.slice(0, 7)}` : `Magnesium ${about.version} · built from source`;
+  return about.commit ? `Magnesium ${about.version} (${about.commit.slice(0, 7)})` : `Magnesium ${about.version}, built from source`;
 }
 
-function Step(props: { ok: boolean; title: string; detail: string; children?: ReactNode }) {
+/**
+ * A step is done (an ink tick), a fault to fix (the window's fault, a red "!"
+ * and its words), or a choice to make (a plain dash: nothing is wrong). None
+ * is a filled disc: that is a proof. `what` is what it means, `actions` what to
+ * do about it: for a fault the one primary button, then any other.
+ */
+function Step(props: { kind: "ok" | "fault" | "choice"; title: string; detail: string; what?: ReactNode; actions?: ReactNode }) {
+  if (props.kind === "fault") {
+    return (
+      <div className="step">
+        <Fault framed={false} title={props.title} detail={props.detail} action={props.actions}>
+          {props.what}
+        </Fault>
+      </div>
+    );
+  }
   return (
-    <div className={props.ok ? "step ok" : "step"}>
+    <div className={props.kind === "ok" ? "step ok" : "step choice"}>
       <span className="step-mark" aria-hidden="true">
-        <Icon name={props.ok ? "check" : "warn"} size={props.ok ? 13 : 14} />
+        <Icon name={props.kind === "ok" ? "check" : "dash"} size={16} />
       </span>
       <div className="step-body">
         <div className="step-head">
-          <b>{props.title}</b>
-          <span className="selectable">{props.detail}</span>
+          <b className="step-name">{props.title}</b>
+          <span className="step-detail selectable">{props.detail}</span>
         </div>
-        {props.children}
+        {props.what ? <p className="selectable">{props.what}</p> : null}
+        {props.actions ? <div className="row">{props.actions}</div> : null}
       </div>
     </div>
   );
 }
 
-function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKeep: () => void; onCheck: () => void }) {
+/** Whether the program is what stops a lesson, so that its step holds the screen's one green button. */
+function runtimeBlocks(runtime: RuntimeSetup): boolean {
+  return runtime.state !== "ready" && runtime.state !== "kept";
+}
+
+/**
+ * The program's step. `lead` is true when this step holds up the lesson and is
+ * the first that does: its action is the screen's one primary button.
+ */
+function RuntimeStep(props: { runtime: RuntimeSetup; lead: boolean; onReplace: () => void; onKeep: () => void; onCheck: () => void }) {
   const { runtime } = props;
   const installed = runtime.installed;
   const bundled = runtime.bundled;
   const where = installed ? installed.shown_path : "";
   if (runtime.state === "ready" && installed) {
-    return <Step ok title="Magnesium" detail={`${versionNumber(installed.version)} · ${where}${runtime.installed_now ? " · installed just now" : ""}`} />;
+    return <Step kind="ok" title="Magnesium" detail={`${versionNumber(installed.version)} at ${where}${runtime.installed_now ? ", installed just now" : ""}`} />;
   }
   if (runtime.state === "different" && installed && bundled) {
     const theirs = installed.version ? `version ${versionNumber(installed.version)}` : "a copy that does not run";
     return (
-      <Step ok={false} title="Magnesium" detail={`another copy · ${where}`}>
-        <p className="selectable">
-          This Mac has Magnesium {theirs}. This app came with {versionNumber(bundled.version)}. Replace it? The window, Claude Code and a terminal
-          all use the one copy. The newer one upgrades a study folder&apos;s record when it opens the folder, after asking you, and keeps a copy of
-          it first.
-        </p>
-        <div className="row">
-          <button className="btn primary" autoFocus onClick={props.onReplace}>
-            Replace <kbd>&#8629;</kbd>
-          </button>
-          <button className="btn ghost" onClick={props.onKeep}>
-            Keep {installed.version ? versionNumber(installed.version) : "it"}
-          </button>
-        </div>
-      </Step>
+      <Step
+        kind="choice"
+        title="Magnesium"
+        detail={`another copy at ${where}`}
+        what={`This Mac has Magnesium ${theirs}. This app came with ${versionNumber(bundled.version)}. Replace it? The window, Claude Code and a terminal all use the one copy. The newer one upgrades a course's record when it opens the course, after asking you, and keeps a copy of it first.`}
+        actions={
+          <>
+            <button className="btn primary" title="Replace (Return)" onClick={props.onReplace}>
+              Replace
+            </button>
+            <button className="btn" onClick={props.onKeep}>
+              Keep {installed.version ? versionNumber(installed.version) : "it"}
+            </button>
+          </>
+        }
+      />
     );
   }
   if (runtime.state === "too_old" && installed) {
     // Older than the window needs: it cannot be kept, so the only way on is a
     // newer copy, the app's own when it carries one.
     return (
-      <Step ok={false} title="Magnesium" detail={`${versionNumber(installed.version)}, too old · ${where}`}>
-        <p className="selectable">{runtime.message}</p>
-        <div className="row">
-          {bundled ? (
-            <button className="btn primary" autoFocus onClick={props.onReplace}>
-              Replace with {versionNumber(bundled.version)} <kbd>&#8629;</kbd>
-            </button>
-          ) : (
-            <button className="btn small" onClick={props.onCheck}>
+      <Step
+        kind="fault"
+        title="Magnesium"
+        detail={`${versionNumber(installed.version)}, too old, at ${where}`}
+        what={runtime.message}
+        actions={
+          <>
+            {bundled && (
+              <button className="btn primary" title="Replace (Return)" onClick={props.onReplace}>
+                Replace with {versionNumber(bundled.version)}
+              </button>
+            )}
+            <button className={bundled ? "btn" : !props.lead ? "btn small" : "btn primary"} onClick={props.onCheck}>
               Check again
             </button>
-          )}
-        </div>
-      </Step>
+          </>
+        }
+      />
     );
   }
   if (runtime.state === "kept" && installed && bundled) {
     return (
-      <Step ok title="Magnesium" detail={`${versionNumber(installed.version)}, kept · ${where}`}>
-        <p className="selectable">{runtime.message}</p>
-        <div className="row">
+      <Step
+        kind="ok"
+        title="Magnesium"
+        detail={`${versionNumber(installed.version)}, kept, at ${where}`}
+        what={runtime.message}
+        actions={
           <button className="btn small" onClick={props.onReplace}>
             Replace with {versionNumber(bundled.version)}
           </button>
-        </div>
-      </Step>
+        }
+      />
     );
   }
   return (
     <Step
-      ok={false}
+      kind="fault"
       title="Magnesium"
-      detail={runtime.state === "missing" ? "not installed" : installed ? `${versionNumber(installed.version) || "does not run"} · ${where}` : "not installed yet"}
-    >
-      <p className="selectable">{runtime.message}</p>
-      <div className="row">
-        <button className="btn small" onClick={props.onCheck}>
+      detail={runtime.state === "missing" ? "not installed" : installed ? `${versionNumber(installed.version) || "does not run"} at ${where}` : "not installed yet"}
+      what={runtime.message}
+      actions={
+        <button className={props.lead ? "btn primary" : "btn small"} onClick={props.onCheck}>
           Try again
         </button>
-      </div>
-    </Step>
+      }
+    />
   );
 }
 
-function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: () => void; onCheck: () => void; onLink: (url: string) => void }) {
+/** `lead` is true when nothing before this step holds up the lesson: its action is the screen's one primary button. */
+function AccountStep(props: { account: Account; lead: boolean; signingIn: boolean; onSignIn: () => void; onCheck: () => void; onLink: (url: string) => void }) {
   const { account } = props;
   const name = account.name || "Claude Code";
   if (!account.installed) {
     return (
-      <Step ok={false} title={name} detail="not found">
-        <p className="selectable">
-          {account.problem} Magnesium teaches through {name}, which needs a paid Claude plan or an Anthropic Console account.
-        </p>
-        <div className="row">
-          {account.install_page && (
-            <button className="btn small" onClick={() => props.onLink(account.install_page!)}>
-              Anthropic&apos;s install page <Icon name="external" size={14} />
+      <Step
+        kind="fault"
+        title={name}
+        detail="not found"
+        what={`${account.problem ?? ""} Magnesium teaches through ${name}, which needs a paid Claude plan or an Anthropic Console account.`.trim()}
+        actions={
+          <>
+            {account.install_page && (
+              <button className={props.lead ? "btn primary" : "btn small"} onClick={() => props.onLink(account.install_page!)}>
+                Anthropic&apos;s install page
+                {!props.lead && <Icon name="external" size={14} />}
+              </button>
+            )}
+            <button className={props.lead && !account.install_page ? "btn primary" : props.lead ? "btn" : "btn small"} onClick={props.onCheck}>
+              Check again
             </button>
-          )}
-          <button className="btn ghost small" onClick={props.onCheck}>
-            Check again
-          </button>
-        </div>
-      </Step>
+          </>
+        }
+      />
     );
   }
   const signIn = (
-    <div className="row">
-      <button className="btn small" disabled={props.signingIn} onClick={props.onSignIn}>
+    <>
+      <button className={props.lead ? "btn primary" : "btn small"} disabled={props.signingIn} onClick={props.onSignIn}>
         {props.signingIn ? "Waiting for the browser…" : "Sign in"}
       </button>
-      <button className="btn ghost small" onClick={props.onCheck}>
+      <button className={props.lead ? "btn" : "btn small"} onClick={props.onCheck}>
         Check again
       </button>
-    </div>
+    </>
   );
   const waiting = props.signingIn ? " Finish signing in on Anthropic's page in your browser. This screen moves on by itself." : "";
   if (!account.signed_in) {
-    return (
-      <Step ok={false} title={name} detail="signed out">
-        <p className="selectable">
-          {account.problem}
-          {waiting}
-        </p>
-        {signIn}
-      </Step>
-    );
+    return <Step kind="fault" title={name} detail="signed out" what={`${account.problem ?? ""}${waiting}`.trim()} actions={signIn} />;
   }
-  const detail = `signed in · pays with ${account.detail ?? "your account"}`;
+  const detail = `signed in, pays with ${account.detail ?? "your account"}`;
   if (account.problem) {
-    return (
-      <Step ok={false} title={name} detail={detail}>
-        <p className="selectable">
-          {account.problem}
-          {waiting}
-        </p>
-        {signIn}
-      </Step>
-    );
+    return <Step kind="fault" title={name} detail={detail} what={`${account.problem ?? ""}${waiting}`.trim()} actions={signIn} />;
   }
-  return <Step ok title={name} detail={detail} />;
+  return <Step kind="ok" title={name} detail={detail} />;
 }
 
 export function Setup(props: {
@@ -189,6 +210,7 @@ export function Setup(props: {
   /** The library is behind this screen, so there is somewhere to go back to. */
   canGoBack: boolean;
   onBack: () => void;
+  onPalette: () => void;
   onReplace: () => void;
   onKeep: () => void;
   onCheck: () => void;
@@ -199,9 +221,11 @@ export function Setup(props: {
   engine: ReactNode;
 }) {
   const { setup } = props;
+  useReturnForPrimary(setup !== null);
   const ready = setupReady(setup);
-  const choosing = setup?.runtime.state === "different" || setup?.runtime.state === "too_old";
   const version = aboutText(props.about);
+  // The one green button is the action that unblocks setup: the program's if that is what is wrong, else Claude Code's. Once setup is ready it is Done.
+  const programFirst = setup ? runtimeBlocks(setup.runtime) : false;
 
   let title = "Before your first lesson";
   let sub = "Magnesium runs on this Mac and teaches through Claude Code.";
@@ -212,8 +236,8 @@ export function Setup(props: {
     title = "Magnesium needs updating";
     sub = "The program on this Mac is older than this window needs.";
   } else if (ready) {
-    title = "This Mac is ready";
-    sub = "What lessons run on, and how they are paid for.";
+    title = "Ready";
+    sub = setup.payment === "api_key" ? "Lessons are paid for with your API key, per use." : "Lessons use your Claude plan.";
   }
 
   return (
@@ -221,74 +245,98 @@ export function Setup(props: {
       <TopBar
         left={
           props.canGoBack ? (
-            <button className="crumb" onClick={props.onBack} title="Back (Esc)">
+            <button className="crumb" onClick={props.onBack} title="Library (Esc)">
               <Icon name="back" size={16} />
               Library
             </button>
           ) : undefined
         }
+        right={ready ? <PaletteKey onClick={props.onPalette} /> : undefined}
       />
-      <div className="center">
+      <div className="center top">
         <div className="setup-col">
-          <span className="mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <h1>{title}</h1>
+          <h1 className="h-title">{title}</h1>
           <p className="setup-sub">{sub}</p>
-          {setup && (
+          {setup && !ready && (
             <div className="steps">
-              <RuntimeStep runtime={setup.runtime} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
-              <AccountStep account={setup.account} signingIn={props.signingIn} onSignIn={props.onSignIn} onCheck={props.onCheck} onLink={props.onLink} />
-              <div className="step plain">
-                <span className="step-mark" aria-hidden="true" />
-                <div className="step-body">
-                  <div className="step-head">
-                    <b>Pay for lessons with</b>
-                  </div>
-                  <div className="segmented" role="radiogroup" aria-label="Pay for lessons with">
-                    <button role="radio" aria-checked={setup.payment === "plan"} className={setup.payment === "plan" ? "on" : undefined} onClick={() => props.onPayment("plan")}>
-                      Your Claude plan
-                    </button>
-                    <button
-                      role="radio"
-                      aria-checked={setup.payment === "api_key"}
-                      className={setup.payment === "api_key" ? "on" : undefined}
-                      onClick={() => props.onPayment("api_key")}
-                    >
-                      An API key, per use
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {props.engine && (
+              <RuntimeStep runtime={setup.runtime} lead={programFirst} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
+              <AccountStep
+                account={setup.account}
+                lead={!programFirst}
+                signingIn={props.signingIn}
+                onSignIn={props.onSignIn}
+                onCheck={props.onCheck}
+                onLink={props.onLink}
+              />
+            </div>
+          )}
+          {setup && (
+            <details className="advanced">
+              <summary>
+                <Icon name="right" size={14} />
+                Advanced
+              </summary>
+              <div className="steps">
+                {ready && (
+                  <>
+                    <RuntimeStep runtime={setup.runtime} lead={false} onReplace={props.onReplace} onKeep={props.onKeep} onCheck={props.onCheck} />
+                    <AccountStep
+                      account={setup.account}
+                      lead={false}
+                      signingIn={props.signingIn}
+                      onSignIn={props.onSignIn}
+                      onCheck={props.onCheck}
+                      onLink={props.onLink}
+                    />
+                  </>
+                )}
                 <div className="step plain">
                   <span className="step-mark" aria-hidden="true" />
                   <div className="step-body">
                     <div className="step-head">
-                      <b>Lessons run on</b>
+                      <span className="h-label">Pay for lessons with</span>
                     </div>
-                    {props.engine}
+                    <Choice
+                      label="Pay for lessons with"
+                      value={setup.payment}
+                      options={[
+                        { value: "plan", label: "Your Claude plan" },
+                        { value: "api_key", label: "An API key, per use" },
+                      ]}
+                      onChange={props.onPayment}
+                    />
                   </div>
                 </div>
-              )}
+                {props.engine && (
+                  <div className="step plain">
+                    <span className="step-mark" aria-hidden="true" />
+                    <div className="step-body">
+                      <div className="step-head">
+                        <span className="h-label">Lessons run on</span>
+                      </div>
+                      {props.engine}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {version && <p className="aside version selectable">{version}</p>}
+              <p className="aside selectable">
+                Setting a course up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
+                Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
+              </p>
+            </details>
+          )}
+          {props.error && <Fault>{props.error}</Fault>}
+          {/* While a step above is open, its own action is the one green button; the way out is said in words, never as a button that cannot be pressed. */}
+          {ready ? (
+            <div className="row center">
+              <button className="btn primary" title="Done (Return)" onClick={props.onBack} data-role="setup-done">
+                {props.canGoBack ? "Done" : "Go to your library"}
+              </button>
             </div>
+          ) : (
+            setup && <p className="aside">{props.canGoBack ? "Once these steps are done, Done takes you back to the library." : "Once these steps are done, you can go to your library."}</p>
           )}
-          {props.error && <div className="banner bad selectable">{props.error}</div>}
-          <div className="row center">
-            <button className="btn primary" autoFocus={ready && !choosing} disabled={!ready} onClick={props.onBack} data-role="setup-done">
-              {props.canGoBack ? "Done" : "Go to your library"} <kbd>&#8629;</kbd>
-            </button>
-            {setup && !ready && <span className="aside">Finish the steps above first.</span>}
-          </div>
-          {setup && (
-            <p className="aside selectable">
-              Setting a study folder up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
-              Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
-            </p>
-          )}
-          {version && <p className="aside version selectable">{version}</p>}
         </div>
       </div>
     </section>
