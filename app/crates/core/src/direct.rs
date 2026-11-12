@@ -488,6 +488,9 @@ struct State {
     /// What the record made of the last paper redo or due quick check, to
     /// tell the tutor.
     outcome: Option<String>,
+    /// Why no task is open although the last reply may have set one, to
+    /// tell the tutor with the next message.
+    no_task: Option<String>,
     /// The learner's memories the tutor has been shown, by the short id it
     /// names them with: ("m1", the runtime's memory id).
     memories: Vec<(String, String)>,
@@ -521,6 +524,10 @@ const REDO_SET_ASIDE: &str = "The paper redo was set aside before it was answere
 /// The learner's notice for a right answer to a due quick check that the
 /// record holds no pass for.
 const CHECK_NO_PASS: &str = "Your answer is saved, but it did not count as a pass for the quick check this time. That check stays due.";
+/// What the tutor is told after a reply the learner stopped part-way.
+const STOPPED: &str = "Your last reply was stopped part-way by the learner, and nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
+/// What the tutor is told after a reply whose record could not be read.
+const UNREAD: &str = "Your last reply's record block was unreadable, so nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
 
 struct Shared {
     store: Option<Arc<Store>>,
@@ -1349,6 +1356,7 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
         facts.no_clock = no_clock;
     }
     facts.outcome = state.outcome.take();
+    facts.no_task = state.no_task.take();
     if facts.full {
         facts.graphs = course_graphs(&shared.root);
     }
@@ -1502,26 +1510,22 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // a plugin lesson keeps no reply for it either.
     if sent && !finished {
         shared.note("interrupted: no record for this turn");
-        // What was shown before the stop may have marked the open redo, or
-        // posed another: the engine cannot know, so a redo is not kept.
+        // What was shown before the stop may have marked the open task, or
+        // posed another: the engine cannot know, so no task is kept, and
+        // the next answer is never saved against the old question. A stop
+        // before the first word showed nothing new, and keeps the task.
         if !reply.is_empty() {
-            let bound = lock(&shared.state)
-                .lesson
-                .task
-                .as_ref()
-                .is_some_and(|task| task.redo.is_some());
-            if bound {
-                forget_open_task(
-                    shared,
-                    &reply,
-                    "The reply was stopped part-way, so the paper redo that was open is set aside.",
-                );
+            let forgot = forget_open_task(
+                shared,
+                &reply,
+                "The reply was stopped part-way, so the task that was open is set aside.",
+                STOPPED,
+            );
+            if forgot.is_some_and(|task| task.redo.is_some()) {
                 shared.emit(AgentEvent::Notice {
                     kind: NoticeKind::Other,
                     text: REDO_SET_ASIDE.into(),
                 });
-            } else {
-                lock(&shared.state).lesson.spend_shown(&reply);
             }
         }
         shared.emit(AgentEvent::TurnEnded {
@@ -1611,6 +1615,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                 shared,
                 &reply,
                 "A reply's record could not be read, so the task that was open is set aside.",
+                UNREAD,
             )
             .is_some();
             shared.note("no valid record after asking again: this turn has no mark, and the open task is forgotten");
@@ -1672,16 +1677,32 @@ fn already_saved(why: &str) -> bool {
 
 /// Forget the open task, because the engine no longer knows what is on
 /// screen: `reply` was shown and has no record. The paper redos it showed
-/// are not posed again in the sitting. When the task was a paper redo, the
-/// record's checkpoint is rewritten without it, so that a conversation
-/// resumed later does not read the redo back and count an answer for rows
-/// the learner has since been taught on. Returns the task that was open.
-fn forget_open_task(shared: &Arc<Shared>, reply: &str, note: &str) -> Option<record::OpenTask> {
+/// are not posed again in the sitting; a quick check that was open goes
+/// back on the list, since it is still due. The tutor is told `why` with
+/// the next message. When a task was open, the record's checkpoint is
+/// rewritten without it, so that a conversation resumed later does not
+/// read it back and save an answer against it. Returns the task that was
+/// open.
+fn forget_open_task(
+    shared: &Arc<Shared>,
+    reply: &str,
+    note: &str,
+    why: &str,
+) -> Option<record::OpenTask> {
     let mut state = lock(&shared.state);
     state.lesson.spend_shown(reply);
     state.redo_clock = None;
-    let task = state.lesson.task.take();
-    if task.as_ref().is_none_or(|task| task.redo.is_none()) {
+    let (task, back) = state.lesson.forget_task();
+    state.no_task = Some(match &back {
+        Some(check) => format!(
+            "{why} Quick check {} is still due and was not marked: pose it again, as \"Quick check {}:\", when you go on.",
+            check.number, check.number
+        ),
+        None => why.to_owned(),
+    });
+    // With recording off, or the lesson paused or stopped, nothing goes to
+    // the record, the checkpoint included.
+    if task.is_none() || state.halt.is_some() {
         return task;
     }
     let cleared = Record {
@@ -1717,7 +1738,7 @@ fn forget_open_task(shared: &Arc<Shared>, reply: &str, note: &str) -> Option<rec
             }
             Err(why) => {
                 shared.note(&format!(
-                    "the open paper redo is still in the record's checkpoint: {why}"
+                    "the open task is still in the record's checkpoint: {why}"
                 ));
                 break;
             }

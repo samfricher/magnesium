@@ -514,19 +514,14 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
     manager.shut_down();
 }
 
-#[test]
-fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
-    let bench = Bench::new(None, &[]);
-    let (manager, mut events) = bench.manager();
-    manager.open_session(false).unwrap();
-    manager.send_new_lesson("TEACH me").unwrap();
-    done(&manager, &mut events);
-    manager.send("SLOW b = 5").unwrap();
+/// Send `words`, and stop the reply once its first words are on screen.
+fn stop_part_way(manager: &Manager, events: &mut Events, words: &str) {
+    manager.send(words).unwrap();
     events.until("the first words", |e| {
         matches!(e, AgentEvent::TextDelta { .. })
     });
     manager.interrupt().unwrap();
-    let end = done(&manager, &mut events);
+    let end = done(manager, events);
     assert!(
         matches!(
             end,
@@ -537,15 +532,53 @@ fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
         ),
         "{end:?}"
     );
+}
+
+#[test]
+fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    // The reply to this answer may have marked it and posed another task:
+    // what the learner saw of it is not known.
+    stop_part_way(&manager, &mut events, "SLOW b = 5");
     assert!(bench.attempts().is_empty());
-    // The open task is still the first one: the next answer is marked on it.
+    // The next answer, to whatever was on screen, is never saved against
+    // the first task: it has no mark, and the learner is told.
+    events.seen.clear();
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    let notices = all_notices(&mut events);
+    assert!(
+        notices.iter().any(|text| text.contains("not marked")),
+        "{notices:#?}"
+    );
+    // The tutor was told with that message.
+    let state = last_state(&bench);
+    assert!(
+        state.contains("Your last reply was stopped part-way") && state.contains("no task is open"),
+        "{state}"
+    );
+    // Nor does a resumed conversation read the first task back.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
-    assert_eq!(attempts.len(), 1);
-    assert_eq!(attempts[0]["question"], "What is b in x² − 5x + 6 = 0?");
+    assert!(
+        attempts
+            .iter()
+            .all(|a| a["question"] != "What is b in x² − 5x + 6 = 0?"),
+        "{attempts:#?}"
+    );
     manager.shut_down();
 }
+
 /// The question the stand-in model poses as quick check 1.
 const CHECK_1: &str = "What is b in 2x² − 7x − 4 = 0?";
 
@@ -628,6 +661,59 @@ fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pa
         last_state(&bench).contains("The record holds the last quick check as a pass."),
         "{}",
         last_state(&bench)
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_check_whose_answer_s_reply_was_stopped_stays_due_and_is_posed_again() {
+    let (bench, manager, mut events) = with_a_check_posed();
+    // The learner answers the check, and stops the reply that marks it.
+    stop_part_way(&manager, &mut events, "SLOW b = -5");
+    events.take();
+    assert!(bench.attempts().iter().all(|a| a["question"] != CHECK_1));
+    // The tutor is told no task is open, and that the check is still due.
+    manager.send("BACK").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(state.contains("no task is open"), "{state}");
+    assert!(state.contains("Quick check 1 is still due"), "{state}");
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Quick check 1: {CHECK_1}"));
+    // Posed again, it is answered once. The learner already answered it
+    // in this sitting and may have seen the reply's correction, so the
+    // answer is not cold, whatever the tutor's block says.
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(answer["label"], "sign of b");
+    assert_eq!(answer["cold"], false, "{answer:#?}");
+    manager.shut_down();
+}
+
+#[test]
+fn after_an_unreadable_record_a_resumed_conversation_does_not_read_the_old_task_back() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    // This reply may have posed a new task; its record cannot be read.
+    manager.send("NEVERBLOCK b = 5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // The lesson is closed before another save, and a new process resumes.
+    manager.stop(None).unwrap();
+    drop(manager);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    events.seen.clear();
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    let notices = all_notices(&mut events);
+    assert!(
+        notices.iter().any(|text| text.contains("not marked")),
+        "{notices:#?}"
     );
     manager.shut_down();
 }

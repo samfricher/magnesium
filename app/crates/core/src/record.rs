@@ -659,6 +659,10 @@ pub struct Lesson {
     /// them is cold for the rest of the sitting.
     #[serde(default)]
     pub sitting_labels: Vec<String>,
+    /// The quick checks posed in this sitting, so that one whose answer
+    /// was never marked can go back on the list.
+    #[serde(default)]
+    pub posed_checks: Vec<DueCheck>,
 }
 
 impl Lesson {
@@ -668,6 +672,7 @@ impl Lesson {
         self.checks.clear();
         self.redos.clear();
         self.sitting_labels.clear();
+        self.posed_checks.clear();
     }
 
     /// Note that this sitting answered, helped on or corrected `label`.
@@ -688,6 +693,31 @@ impl Lesson {
         for label in task_labels(task) {
             self.touch(&label);
         }
+    }
+
+    /// Forget the open task, because what is on screen is no longer known:
+    /// a reply was shown and has no record. What the learner may have seen
+    /// of it counts as an answer or a correction on the task's skill in this
+    /// sitting. A quick check goes back on the list: it is still due and
+    /// may be posed again. Returns the task, and the check put back.
+    pub fn forget_task(&mut self) -> (Option<OpenTask>, Option<DueCheck>) {
+        let Some(task) = self.task.take() else {
+            return (None, None);
+        };
+        self.touch_task(&task);
+        let back = task.check.as_ref().and_then(|label| {
+            let due = self
+                .posed_checks
+                .iter()
+                .find(|due| &due.label == label)
+                .cloned()?;
+            if !self.checks.iter().any(|listed| listed.number == due.number) {
+                self.checks.push(due.clone());
+                self.checks.sort_by_key(|listed| listed.number);
+            }
+            Some(due)
+        });
+        (Some(task), back)
     }
 
     /// Start a new day's list of answered skills when the day has changed.
@@ -1265,6 +1295,9 @@ impl Lesson {
         }
         if let Some(check) = &posed {
             self.checks.retain(|due| due.number != check.number);
+            if !self.posed_checks.iter().any(|due| due.label == check.label) {
+                self.posed_checks.push(check.clone());
+            }
         }
         // Help this reply gives on the task it leaves open, on the skill it
         // names, rules out a cold answer on them in the rest of the sitting.

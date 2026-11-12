@@ -35,6 +35,9 @@ pub struct Facts {
     /// What the record made of the last answer to a paper redo or a due
     /// quick check.
     pub outcome: Option<String>,
+    /// Why no task is open, after a reply the learner stopped or one whose
+    /// record could not be read.
+    pub no_task: Option<String>,
     /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
     /// What the record knows about the learner on this goal: one line each.
@@ -211,6 +214,9 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
             );
             lines.extend(facts.new_redos.iter().map(redo_line));
         }
+    }
+    if let Some(no_task) = &facts.no_task {
+        lines.push(no_task.clone());
     }
     if let Some(outcome) = &facts.outcome {
         lines.push(outcome.clone());

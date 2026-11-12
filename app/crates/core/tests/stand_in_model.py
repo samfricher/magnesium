@@ -15,7 +15,8 @@ What a turn does is chosen by words in the learner's message (inside
   NEVERBLOCK   reply with no record block, and none when asked again
   SLOW         write slowly, so the reply can be interrupted
   BACK         (or the window's "I'm back") pose quick check 1 when the
-               state lists one, or else the first paper redo it lists
+               state lists one or says it is still due, or else the first
+               paper redo it lists
   I'm lost     ask a question that finds the cause, and leave the task open
   Km = 2       a right answer to a paper redo: mark it cold, give its next
                question, and pose the next paper redo the state listed
@@ -191,8 +192,7 @@ def reply_for(learner, state):
     if "TEACH" in learner:
         return f"Let's start. {FIRST}" + block(note="Lesson start.", task=FIRST, steps=STEPS), False
     if ("BACK" in learner or learner.startswith("I'm back")) and "Quick check" not in learner:
-        match = re.search(r'1\. Skill "([^"]+)"', state)
-        if match:
+        if re.search(r'1\. Skill "([^"]+)"', state) or "Quick check 1 is still due" in state:
             return "Quick check 1: What is b in 2x² − 7x − 4 = 0?" + block(task="What is b in 2x² − 7x − 4 = 0?"), False
         if redos_listed:
             number = redos_listed.pop(0)
