@@ -988,21 +988,60 @@ fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// What `days` later looks like to the runtime: every answer and change
-/// moves that far back, and the last message was hours ago, so the next one
-/// begins a sitting.
-fn days_pass(bench: &Bench, days: i64) {
-    let back = days * 24 * 60 * 60 * 1000;
-    let store = Connection::open(bench.root.join(".magnesium/state.sqlite")).unwrap();
-    store
-        .execute(
-            "UPDATE attempts SET answered_at_ms=answered_at_ms-?1",
-            [back],
+/// `ms` moved back `days` local calendar days, at the same wall-clock time.
+/// The runtime counts days on the local calendar, and a day is not always
+/// 24 hours: moved back by multiples of 24 hours across a clock change, a
+/// time in the last hour of a day lands on the next local day. A wall time
+/// the clocks skip becomes the first time after the gap; one they repeat,
+/// the first of the two.
+fn days_earlier(ms: i64, days: u64) -> i64 {
+    use chrono::{Days, Local, LocalResult, TimeDelta, TimeZone};
+    let wall = Local
+        .timestamp_millis_opt(ms)
+        .single()
+        .expect("a stored time is one instant")
+        .naive_local()
+        .checked_sub_days(Days::new(days))
+        .expect("a date in range");
+    let mut later = wall;
+    loop {
+        match Local.from_local_datetime(&later) {
+            LocalResult::Single(time) | LocalResult::Ambiguous(time, _) => {
+                return time.timestamp_millis()
+            }
+            LocalResult::None => {
+                assert!(later - wall <= TimeDelta::hours(2), "no gap is this long");
+                later += TimeDelta::minutes(1);
+            }
+        }
+    }
+}
+
+/// Move every `column` of `table` back `days` local calendar days.
+fn move_column(conn: &Connection, table: &str, column: &str, days: u64) {
+    let rows: Vec<(i64, i64)> = conn
+        .prepare(&format!("SELECT rowid, {column} FROM {table}"))
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    for (rowid, ms) in rows {
+        conn.execute(
+            &format!("UPDATE {table} SET {column}=?1 WHERE rowid=?2"),
+            rusqlite::params![days_earlier(ms, days), rowid],
         )
         .unwrap();
-    store
-        .execute("UPDATE practice_events SET at_ms=at_ms-?1", [back])
-        .unwrap();
+    }
+}
+
+/// What `days` later looks like to the runtime: every answer and change
+/// moves that many local days back, and the last message was hours ago, so
+/// the next one begins a sitting.
+fn days_pass(bench: &Bench, days: u64) {
+    let store = Connection::open(bench.root.join(".magnesium/state.sqlite")).unwrap();
+    move_column(&store, "attempts", "answered_at_ms", days);
+    move_column(&store, "practice_events", "at_ms", days);
     // The day a row brought in from a gap log first fell due moves with them.
     store
         .execute(
@@ -1010,10 +1049,8 @@ fn days_pass(bench: &Bench, days: i64) {
             [format!("-{days} days")],
         )
         .unwrap();
-    Connection::open(bench.root.join(".magnesium/sittings.sqlite"))
-        .unwrap()
-        .execute("UPDATE meta SET last_learner_ms=last_learner_ms-?1", [back])
-        .unwrap();
+    let sittings = Connection::open(bench.root.join(".magnesium/sittings.sqlite")).unwrap();
+    move_column(&sittings, "meta", "last_learner_ms", days);
 }
 
 /// The state the model was sent with its latest message.
