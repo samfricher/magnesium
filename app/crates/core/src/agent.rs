@@ -74,6 +74,11 @@ pub enum AgentEvent {
     /// The runtime's record has a new marked answer for the last message.
     /// The mark is the record's row, never the tutor's words.
     Marked { mark: Mark },
+    /// The task open after a turn, in the tutor's own words as its record
+    /// block wrote it, or none; `posed` when this turn's reply asked for it.
+    /// The window puts the field for an answer inside it. Sent by an engine
+    /// that knows its open task (Magnesium's); never a mark.
+    OpenTask { task: Option<String>, posed: bool },
 }
 
 /// What the learner's message is. The window says it; the tutor does not

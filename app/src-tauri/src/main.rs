@@ -214,6 +214,13 @@ fn rail(shell: State<'_, Shell>) -> Reply<Rail> {
     plain(shell.manager.rail())
 }
 
+/// The open folder's saved conversation, as the window showed it, without
+/// starting it.
+#[tauri::command(async)]
+fn turns(shell: State<'_, Shell>) -> Reply<Vec<Turn>> {
+    plain(shell.manager.saved_turns())
+}
+
 /// The open folder's study plan, read fresh from the runtime and the plan
 /// files.
 #[tauri::command(async)]
@@ -435,6 +442,7 @@ fn main() {
             answer,
             stop,
             rail,
+            turns,
             plan,
             progress,
             set_block_minutes,

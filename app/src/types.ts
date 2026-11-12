@@ -205,7 +205,13 @@ export type AgentEvent =
   /** Sent after a turn that changed the plan, the goal, its steps or the exam date. Read `plan()` for how it stands. */
   | { type: "plan_changed"; what: PlanPart[] }
   /** The record has a new mark for the last message, so no screen polls `marks`. */
-  | { type: "marked"; mark: Mark };
+  | { type: "marked"; mark: Mark }
+  /**
+   * The task open after a turn, in the tutor's own words, or null; `posed`
+   * when this turn's reply asked for it. Sent by an engine that knows its
+   * open task (Magnesium's). The window puts the field for an answer inside it.
+   */
+  | { type: "open_task"; task: string | null; posed: boolean };
 
 export type Words = { shown: string; sent: string };
 
@@ -334,6 +340,8 @@ export interface Core {
   setEngine(engine: Engine): Promise<EngineChoice>;
   signIn(): Promise<void>;
   about(): Promise<About>;
+  /** The open folder's saved conversation, as the window showed it, read without starting it. */
+  turns(): Promise<Turn[]>;
   openSession(resume: boolean): Promise<Opened>;
   /** Send the learner's words. `intent` says what they are; omitted, the tutor decides. */
   send(text: string, intent?: Intent): Promise<void>;

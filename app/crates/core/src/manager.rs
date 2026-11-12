@@ -325,6 +325,20 @@ impl Manager {
         Ok(study::rail(&self.need_folder()?))
     }
 
+    /// The turns of the open folder's saved conversation, as the window
+    /// showed them, read from the window's own copy without starting the
+    /// conversation. The lesson the learner left is drawn above what comes
+    /// next; nothing is sent until they write.
+    pub fn saved_turns(&self) -> AgentResult<Vec<Turn>> {
+        let folder = self.need_folder()?;
+        Ok(self
+            .store
+            .folder(&folder)
+            .session_id
+            .map(|id| self.store.turns(&folder, &id))
+            .unwrap_or_default())
+    }
+
     /// The open folder's study plan, read fresh.
     pub fn plan(&self) -> AgentResult<Plan> {
         let folder = self.need_folder()?;
