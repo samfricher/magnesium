@@ -1,7 +1,5 @@
 # Contributing to Magnesium
 
-Start with the [architecture](docs/architecture/learner-model.md) for the main components and the [API reference](docs/architecture/learner-model-contracts.md) for tool behavior.
-
 ## Build and test
 
 Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11+.
@@ -105,7 +103,7 @@ The study window ships as a disk image for Apple Silicon Macs, with the `magnesi
 
 1. On GitHub, open Actions, then Mac download, then Run workflow, on `main`. Give a release-candidate tag such as `v0.3.0-rc.1`. Its version must be the `version` in `Cargo.toml`.
 2. The workflow builds the window and the program from that commit, passes the commit to both builds, signs the app ad hoc, checks that the program reports the commit and that no file holds a home folder path, and uploads `Magnesium-0.3.0-rc.1-arm64.dmg` to a draft pre-release.
-3. Check a copy downloaded with a browser, as the app README describes. A copy built on your own Mac carries no download flag, so it shows nothing of what first open does.
+3. Check a copy downloaded with a browser, as [Download](README.md#download) in the README describes. A copy built on your own Mac carries no download flag, so it shows nothing of what first open does.
 4. Publish the draft yourself. The workflow never does. As a pre-release, it does not change what `gh release view` prints, so the install guide still finds the newest release.
 
 `app/scripts/package.sh` is the build the workflow runs.
