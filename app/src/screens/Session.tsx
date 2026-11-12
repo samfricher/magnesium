@@ -74,6 +74,10 @@ function Turn({ text }: { text: string }) {
   if (!opener) {
     return (
       <div className="you selectable">
+        {/* A note in the margin where the margin is wide; narrower, the indent and the bar say it. */}
+        <span className="lesson-label you-label" aria-hidden="true">
+          Your answer
+        </span>
         <span className="you-body" dangerouslySetInnerHTML={{ __html: html }} />
         {said.confidence && (
           <span className="you-tag" title="How sure you said you were">
@@ -256,7 +260,7 @@ function PermissionCard(props: {
           Refuse
         </button>
         {card.canAlways && (
-          <button className="btn ghost" onClick={() => props.onDecide(card.id, "allow_always")}>
+          <button className="btn" onClick={() => props.onDecide(card.id, "allow_always")}>
             Always allow this
           </button>
         )}
@@ -267,11 +271,16 @@ function PermissionCard(props: {
 
 /**
  * The tutor's question, with its options. The field for the learner's own
- * words has the focus when it appears, so typing types. The options are
- * numbered 1, 2, 3. With the field empty, a digit chooses that option and an
- * up arrow moves into them. Inside them the arrows move and choose, and Return
- * sends the one chosen. A letter typed there goes back to the field and is
- * typed. Nothing is sent by a key that only chooses.
+ * words has the focus when it appears, so typing types: a digit typed there is
+ * text (an answer often starts with one), and a single digit that numbers an
+ * option is taken for the option only when Return follows it. The options are
+ * numbered 1, 2, 3. An up arrow (or, with the field empty, a down arrow) moves
+ * from the field into them. Inside them the keys do what a click does: a
+ * number sends that option at once, as a click on it does; the arrows move
+ * (and choose, in a group of one answer) and Return sends the one moved to. A
+ * box that allows several is the exception, for it has no one answer to send:
+ * a number ticks, and Return sends the ticked. A letter typed among the options
+ * goes back to the field and is typed.
  */
 function QuestionCard(props: {
   card: Extract<Card, { kind: "question" }>;
@@ -317,10 +326,18 @@ function QuestionCard(props: {
     if (value !== "") setChosen((old) => (old[index]?.length ? { ...old, [index]: [] } : old));
   };
 
-  /** A click on an option is a plain choice: for a single question it is also the answer. */
-  const click = (index: number, q: Question, label: string) => {
-    if (single) props.onAnswer(card.id, answersNow({ index, label }));
-    else choose(index, q, label);
+  /**
+   * An option picked by a click or by its number inside the options: for a
+   * single question it is also the answer, and sent at once. With several
+   * questions it is that question's answer, and the answer goes once every
+   * question has one; until then the focus moves on to the next. A box that
+   * allows several only ticks it.
+   */
+  const pick = (index: number, q: Question, label: string) => {
+    if (q.multi) return choose(index, q, label);
+    choose(index, q, label);
+    if (single || complete({ index, label })) props.onAnswer(card.id, answersNow({ index, label }));
+    else field(index + 1)?.focus();
   };
 
   /**
@@ -417,16 +434,15 @@ function QuestionCard(props: {
         return;
       }
       if (event.key === " ") return choose(index, q, label);
-      choose(index, q, label);
-      if (single || complete({ index, label })) props.onAnswer(card.id, answersNow({ index, label }));
-      else field(index + 1)?.focus();
+      pick(index, q, label);
       return;
     }
 
+    // A number among the options does what a click on that option does.
     if (digit >= 0 && digit < q.options.length) {
       event.preventDefault();
-      choose(index, q, q.options[digit].label);
       list[digit]?.focus();
+      pick(index, q, q.options[digit].label);
       return;
     }
 
@@ -463,8 +479,8 @@ function QuestionCard(props: {
                     aria-checked={on}
                     tabIndex={n === stop ? 0 : -1}
                     aria-keyshortcuts={String(n + 1)}
-                    title={`${n + 1} chooses it. Return sends it.`}
-                    onClick={() => click(index, q, option.label)}
+                    title={q.multi ? `${n + 1} ticks it. Return sends the ticked ones.` : `${n + 1} sends it. Return sends the one moved to.`}
+                    onClick={() => pick(index, q, option.label)}
                     // A space on a button clicks it when the key comes up; here it only highlights.
                     onKeyUp={(e) => {
                       if (e.key === " ") e.preventDefault();
@@ -1093,6 +1109,8 @@ function Thinking(props: {
   quiet: boolean;
   /** Stop was pressed: the line says so at once, before the program answers. */
   stopping: boolean;
+  /** The tutor's turn has begun, so there is something to stop. */
+  canStop: boolean;
   onInterrupt: () => void;
 }) {
   const now = useNow(5_000);
@@ -1114,9 +1132,9 @@ function Thinking(props: {
       <button
         className="btn ghost small stop"
         onClick={props.onInterrupt}
-        disabled={props.stopping}
+        disabled={props.stopping || !props.canStop}
         aria-pressed={props.stopping}
-        title="Stop this reply (⌘.)"
+        title={props.canStop ? "Stop this reply (⌘.)" : "Available a moment after the tutor starts"}
       >
         Stop
       </button>
@@ -1166,6 +1184,18 @@ export function Session(props: {
   const isBusy = busy(state);
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
+  // For the first moment of a reply, before the tutor's turn has begun, there is
+  // nothing to stop yet: Stop shows disabled, and ⌘. does nothing, until there is.
+  const [warming, setWarming] = useState(false);
+  useEffect(() => {
+    if (!isBusy) return setWarming(false);
+    setWarming(true);
+    const timer = window.setTimeout(() => setWarming(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [live?.since, isBusy]);
+  const stoppable = !(warming && live?.status === "waiting");
+  const stoppableRef = useRef(stoppable);
+  stoppableRef.current = stoppable;
   const narrow = useNarrow();
   const [showEarlier, setShowEarlier] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -1178,7 +1208,8 @@ export function Session(props: {
   const liveRef = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const stopInput = useRef<HTMLInputElement>(null);
-  const keepGoing = useRef<HTMLButtonElement>(null);
+  // Return was pressed down in the End card: the lesson ends when the key comes up, so the key's own press never reaches the screen that follows.
+  const endArmed = useRef(false);
   const now = useNow(20_000);
   const cardEscape = useRef<(() => void) | null>(null);
   // What the runtime's record says of each answer sent here: read before it is sent, and again once the reply is whole.
@@ -1198,31 +1229,33 @@ export function Session(props: {
   // Anything that takes the keyboard from the answer box.
   const covered = (props.overlay ?? false) || planOpen || stopping || sheet;
 
-  const beginStop = (keep = false) => {
+  // The End card is a confirmation: its field has the focus, so Return does
+  // its main action (End lesson) and Esc means "Keep going".
+  const beginStop = () => {
     setPlanOpen(false);
     setLine(props.rail?.next_action ?? "");
     setStopping(true);
-    window.setTimeout(() => (keep ? keepGoing.current : stopInput.current)?.focus(), 0);
+    window.setTimeout(() => stopInput.current?.focus(), 0);
   };
 
   // Esc closes the innermost thing first: the symbol row, a popover, a source
   // (each takes the key and says so). With a card on screen (a question, or a
   // request for permission) it never opens the End sheet: a question takes back
   // its choice, then moves the focus to its field. Only with nothing open does
-  // it open the End sheet, with "Keep going" in hand, so a second Esc or a
-  // Return goes back to the lesson. It does this the same way whether or not
-  // the answer box holds a draft: the draft is kept. It never ends a lesson by
-  // itself.
+  // it open the End sheet, with its field in hand: Return there ends the lesson
+  // (the sheet is a confirmation, and Return does its main action) and Esc
+  // keeps going. It does this the same way whether or not the answer box holds
+  // a draft: the draft is kept. It never ends a lesson on Esc.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
       if (covered || document.querySelector(".add-menu .menu")) return;
       event.preventDefault();
       // A source beside the lesson, or over it, is shut before anything else is.
-      if (source) setSource(null);
+      if (source) closeSource(true);
       // A card on screen takes the key: it never opens the End sheet beside it.
       else if (state.cards.length > 0) cardEscape.current?.();
-      else beginStop(true);
+      else beginStop();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -1232,10 +1265,17 @@ export function Session(props: {
   // "Stopping" in the same frame, not when the program has answered.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "." && isBusyRef.current) setInterrupting(true);
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "." || !isBusyRef.current) return;
+      if (!stoppableRef.current) {
+        // Nothing to stop yet: the key is taken, so it neither says "Stopping" nor reaches the program.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      setInterrupting(true);
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
   }, []);
   // A new reply, or the end of this one, ends "Stopping". If the program never
   // answers, Stop comes back after a few seconds rather than staying dead.
@@ -1283,7 +1323,25 @@ export function Session(props: {
   useEffect(() => {
     if (source && posed > source.posed) setSource(null);
   }, [posed, source]);
-  const openSource = (ref: SourceRef) => setSource({ ref, posed });
+  // What opened the source, so closing it gives the focus back there.
+  const opener = useRef<{ el: HTMLElement | null; href: string | null } | null>(null);
+  const openSource = (ref: SourceRef, from?: HTMLElement | null) => {
+    opener.current = { el: from ?? null, href: from?.getAttribute("href") ?? null };
+    setSource({ ref, posed });
+  };
+  /** Shut the source. When the learner shut it, the focus goes back to the link or chip that opened it, else to the answer box. */
+  const closeSource = (restore: boolean) => {
+    setSource(null);
+    if (!restore) return;
+    const from = opener.current;
+    window.requestAnimationFrame(() => {
+      let el = from?.el && from.el.isConnected ? from.el : null;
+      // The reply was drawn again and the link with it: find the same link by where it points.
+      if (!el && from?.href) el = Array.from(document.querySelectorAll<HTMLElement>("a.source")).find((a) => a.getAttribute("href") === from.href) ?? null;
+      if (!el) el = document.querySelector<HTMLElement>('[data-role="source-chip"]');
+      (el ?? document.querySelector<HTMLTextAreaElement>(".composer textarea"))?.focus();
+    });
+  };
   // The passages of the reply just answered, in reach while the next one is written.
   const last = state.earlier.length - 1;
   const passages = useMemo(
@@ -1316,7 +1374,6 @@ export function Session(props: {
     return (
       <>
         {turn.learner && <Turn text={turn.learner} />}
-        {turn.learner && <MarkLines since={turn.ms} replying={turn.tutor !== ""} />}
         {hint && <div className="lesson-label help-label">Hint</div>}
         {turn.tutor !== "" && (
           <div className={opts.writing ? "tutor writing" : "tutor"} data-role={index === state.earlier.length ? "tutor" : undefined}>
@@ -1330,6 +1387,8 @@ export function Session(props: {
             />
           </div>
         )}
+        {/* What the record made of the answer, at the foot of the reply to it, once the reply is whole. */}
+        {turn.learner && !opts.writing && <MarkLines since={turn.ms} />}
         {hint && firstHints.has(index) && <p className="help-note">With a hint, this answer won&apos;t count as a proof today. It comes back later, to answer without help.</p>}
       </>
     );
@@ -1357,7 +1416,9 @@ export function Session(props: {
     const s = stage.current;
     if (!s) return null;
     const top = contentTop(task);
-    const bottom = top + task.offsetHeight;
+    // The foot of the reply is the task's end, or the line about the answer when the record has made one: it too is kept clear of the fade.
+    const marks = task.closest(".exchange")?.querySelector<HTMLElement>(".mark-lines");
+    const bottom = Math.max(top + task.offsetHeight, marks ? contentTop(marks) + marks.offsetHeight : 0);
     const max = Math.max(0, s.scrollHeight - s.clientHeight);
     // A task taller than the view shows its start.
     const want = Math.min(max, Math.max(0, Math.min(bottom + GAP - s.clientHeight, top - EDGE)));
@@ -1388,10 +1449,37 @@ export function Session(props: {
     mine.current = s.scrollTop;
   };
 
+  // A card arriving takes the view to the end by a short glide, not in one frame.
+  const gliding = useRef(false);
+  const glide = () => {
+    const s = stage.current;
+    if (!s) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return setTop(s.scrollHeight);
+    const from = s.scrollTop;
+    const began = performance.now();
+    gliding.current = true;
+    const step = (at: number) => {
+      const el = stage.current;
+      // The learner took the view, or the page went: the glide is over.
+      if (!el || !follow.current) {
+        gliding.current = false;
+        return;
+      }
+      const t = Math.min(1, (at - began) / 200);
+      const eased = 1 - (1 - t) ** 3;
+      // The end is read each frame: the box under the card is leaving as the card arrives.
+      const max = Math.max(0, el.scrollHeight - el.clientHeight);
+      setTop(from + (max - from) * eased);
+      if (t < 1) window.requestAnimationFrame(step);
+      else gliding.current = false;
+    };
+    window.requestAnimationFrame(step);
+  };
+
   const place = (kind: "start" | "grow" | "settle") => {
     const s = stage.current;
     const now = liveRef.current;
-    if (!s || !now) return;
+    if (!s || !now || gliding.current) return;
     const max = Math.max(0, s.scrollHeight - s.clientHeight);
     if (kind === "settle") {
       const task = openTask();
@@ -1450,6 +1538,14 @@ export function Session(props: {
     place("start");
     measure();
   }, [live?.since]);
+
+  // A card arrives (a question, a request for permission): the view glides to it.
+  const cardCount = useRef(state.cards.length);
+  useLayoutEffect(() => {
+    const before = cardCount.current;
+    cardCount.current = state.cards.length;
+    if (state.cards.length > before && follow.current) glide();
+  }, [state.cards.length]);
 
   // The reply settles: the task is brought clear of the answer box.
   useLayoutEffect(() => {
@@ -1590,9 +1686,9 @@ export function Session(props: {
           >
             <div className="column">
               {earlier > 0 && (
-                <button className="earlier-toggle" onClick={() => setShowEarlier(!showEarlier)} data-role="earlier">
+                <button className="earlier-toggle" onClick={() => setShowEarlier(!showEarlier)} aria-expanded={showEarlier} data-role="earlier">
                   <Icon name="history" size={14} />
-                  {showEarlier ? "Hide" : "Show"} {earlier} earlier {earlier === 1 ? "turn" : "turns"}
+                  {showEarlier ? "Hide the earlier part" : `Earlier in this lesson (${earlier})`}
                 </button>
               )}
               {showEarlier && (
@@ -1600,10 +1696,10 @@ export function Session(props: {
                   {state.earlier.slice(0, earlier).map((turn, index) => (
                     <div className="exchange" key={index}>
                       {turn.learner && <Turn text={turn.learner} />}
-                      {turn.learner && <MarkLines since={turn.ms} replying={false} />}
                       <div className="tutor">
                         <Rich text={turn.tutor} final stopped={turn.interrupted} onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} />
                       </div>
+                      {turn.learner && <MarkLines since={turn.ms} />}
                     </div>
                   ))}
                 </div>
@@ -1626,7 +1722,12 @@ export function Session(props: {
                 {live && exchange({ learner: live.learner, tutor: text, interrupted: live.interrupted, ms: live.since }, state.earlier.length, { writing: isBusy })}
                 {!live && <p className="hint">Say what you want to work on.</p>}
                 {live?.interrupted && !isBusy && <div className="stopped">Stopped by you</div>}
-                {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
+                {live?.error && !isBusy && (
+                  <div className="banner bad selectable" role="alert">
+                    <Icon name="bang" size={16} />
+                    <span>{live.error}</span>
+                  </div>
+                )}
               </div>,
               ]}
               {/* One card at a time: while the End sheet stands, a card waits, whole, behind it. */}
@@ -1641,6 +1742,7 @@ export function Session(props: {
               ))}
               {state.notices.map((notice) => (
                 <div className="banner warn selectable" key={notice.text}>
+                  <Icon name="bang" size={16} />
                   <span>{notice.text}</span>
                   <button className="icon-btn" aria-label="Dismiss" onClick={() => props.onDismiss(notice.text)}>
                     <Icon name="close" size={14} />
@@ -1678,15 +1780,41 @@ export function Session(props: {
                     value={line}
                     placeholder="One line: where you are, and what comes next"
                     onChange={(e) => setLine(e.target.value)}
+                    // Return takes the key on the way down and ends the lesson on the way up, so
+                    // no keydown of it reaches the screen that follows.
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !composing(e)) stop(line);
+                      if (e.key !== "Enter" || composing(e)) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!e.repeat) endArmed.current = true;
+                    }}
+                    onKeyUp={(e) => {
+                      if (e.key !== "Enter" || !endArmed.current) return;
+                      endArmed.current = false;
+                      stop(line);
                     }}
                   />
                   <div className="row">
-                    <button className="btn primary" title="End the lesson and keep this line (Return)" onClick={() => stop(line)}>
+                    <button
+                      className="btn primary"
+                      title="End the lesson and keep this line (Return)"
+                      onClick={() => stop(line)}
+                      onKeyDown={(e) => {
+                        // A button clicks on Return's way down: here it waits for the way up.
+                        if (e.key !== "Enter" || composing(e)) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!e.repeat) endArmed.current = true;
+                      }}
+                      onKeyUp={(e) => {
+                        if (e.key !== "Enter" || !endArmed.current) return;
+                        endArmed.current = false;
+                        stop(line);
+                      }}
+                    >
                       End lesson
                     </button>
-                    <button className="btn ghost" ref={keepGoing} onClick={() => setStopping(false)}>
+                    <button className="btn" onClick={() => setStopping(false)}>
                       Keep going
                     </button>
                   </div>
@@ -1714,7 +1842,7 @@ export function Session(props: {
             {/* A band whose room is always kept, between the transcript and the answer box. It holds the passages the last reply cited and the cue that there is more below, so neither covers the text or moves anything. */}
             <div className="band">
               <div className="column band-row">
-                {showPassages && <span className="lesson-label passages-label">Passages from the last reply</span>}
+                {showPassages && <span className="lesson-label passages-label">Sources the tutor used</span>}
                 {showPassages && (
                   <div className="passages" data-role="passages">
                     {passages.slice(0, 4).map((passage) => (
@@ -1722,9 +1850,9 @@ export function Session(props: {
                         key={passage.href}
                         className={source?.ref.path === sourceRef(passage.href)?.path ? "passage on" : "passage"}
                         data-role="source-chip"
-                        onClick={() => {
+                        onClick={(e) => {
                           const ref = sourceRef(passage.href);
-                          if (ref) openSource(ref);
+                          if (ref) openSource(ref, e.currentTarget);
                         }}
                       >
                         <Icon name="paper" size={13} />
@@ -1760,6 +1888,7 @@ export function Session(props: {
                           doing={live.doing}
                           quiet={text !== "" && live.status !== "working"}
                           stopping={interrupting}
+                          canStop={stoppable}
                           onInterrupt={stopReply}
                         />
                       ) : null
@@ -1770,7 +1899,7 @@ export function Session(props: {
             </div>
           </div>
         </div>
-        {source && <SourcePanel source={source.ref} sheet={narrow} onClose={() => setSource(null)} onNote={props.onNote} />}
+        {source && <SourcePanel source={source.ref} sheet={narrow} onClose={() => closeSource(true)} onNote={props.onNote} />}
       </div>
     </section>
   );

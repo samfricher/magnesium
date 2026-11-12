@@ -148,8 +148,10 @@ export function SourcePanel(props: {
     };
   }, [source.path]);
 
+  // Opened, beside the lesson or over it, the panel takes the focus (its Close
+  // button), and closing it gives the focus back to what opened it.
   useEffect(() => {
-    if (props.sheet) close.current?.focus();
+    close.current?.focus();
   }, [props.sheet, source.path]);
 
   useEffect(() => {
