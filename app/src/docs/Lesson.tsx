@@ -122,7 +122,7 @@ const HELP_SAID: Record<string, string> = {
 };
 
 type AnswerSpaceProps = Pick<LessonProps, "drafts" | "onDraft" | "onAnswer" | "onHelp" | "setPlace" | "onPhotos" | "registerWriter" | "onNote"> & {
-  drive: string;
+  composer: boolean;
   busy: boolean;
 };
 
@@ -188,7 +188,8 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
     <div className="answer-space" data-role="answer-space">
       <Writer
         ref={bind}
-        drive={props.drive}
+        drive="answer"
+        composer={props.composer}
         label="Your answer to the task"
         placeholder="Write your answer"
         initial={props.drafts.answer ?? ""}
@@ -465,7 +466,7 @@ export function LessonDoc(props: LessonProps) {
     () =>
       showAnswer ? (
         <AnswerSpace
-          drive={place === "answer" ? "composer" : "answer"}
+          composer={place === "answer"}
           busy={busy}
           drafts={props.drafts}
           onDraft={props.onDraft}
@@ -546,7 +547,8 @@ export function LessonDoc(props: LessonProps) {
           <p className="ask">What do you want to work on?</p>
           <Writer
             ref={bindTalk}
-            drive="composer"
+            drive="talk"
+            composer
             label="What to work on"
             placeholder={props.suggestions[0] ?? "A topic, a chapter, a question from your course"}
             initial={props.drafts.talk ?? ""}
@@ -582,7 +584,8 @@ export function LessonDoc(props: LessonProps) {
           )}
           <Writer
             ref={bindTalk}
-            drive={place === "talk" ? "composer" : "talk"}
+            drive="talk"
+            composer={place === "talk"}
             label="Write to your tutor"
             placeholder={stopped ? "Or write to your tutor" : showAnswer ? "Say something else. Tab goes back to the task." : "Write to your tutor"}
             initial={props.drafts.talk ?? ""}

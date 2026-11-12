@@ -15,7 +15,10 @@ export type WriterHandle = {
 };
 
 type Props = {
+  /** The field's name for the harness: "answer" or "talk". */
   drive: string;
+  /** This is where the learner writes now: the harness's "composer". */
+  composer?: boolean;
   placeholder: string;
   initial: string;
   /** Called with the words when Return is pressed. Return true when they were taken, and the field empties. */
@@ -126,7 +129,7 @@ export const Writer = memo(
     };
 
     return (
-      <div className={`writer ${props.className ?? ""}`}>
+      <div className={`writer ${props.className ?? ""}`} data-drive={props.composer ? "composer" : undefined}>
         <textarea
           ref={field}
           rows={1}
