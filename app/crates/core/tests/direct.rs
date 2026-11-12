@@ -548,6 +548,42 @@ fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
 }
 
 #[test]
+fn the_first_state_names_the_course_graph_when_the_study_folder_has_one() {
+    let first_two_states = |bench: &Bench| -> Vec<String> {
+        let (manager, mut events) = bench.manager();
+        manager.open_session(false).unwrap();
+        manager.send_new_lesson("TEACH me").unwrap();
+        assert!(ended_well(&done(&manager, &mut events)));
+        manager.send("b = 5").unwrap();
+        assert!(ended_well(&done(&manager, &mut events)));
+        manager.shut_down();
+        bench
+            .logged("message")
+            .iter()
+            .map(|message| message["state"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    // A lesson opened below the root still names the graph from the root.
+    let bench = Bench::new(Some("stats/week1"), &[]);
+    let plan = bench.root.join("Study/midterm-1");
+    fs::create_dir_all(&plan).unwrap();
+    fs::write(plan.join("graph.yaml"), "tags:\n  KM:\n    needs: []\n").unwrap();
+    let states = first_two_states(&bench);
+    assert!(
+        states[0]
+            .lines()
+            .any(|line| line == "Course graph: Study/midterm-1/graph.yaml"),
+        "{}",
+        states[0]
+    );
+    assert!(!states[1].contains("Course graph"), "{}", states[1]);
+
+    let bench = Bench::new(None, &[]);
+    let states = first_two_states(&bench);
+    assert!(states.iter().all(|state| !state.contains("Course graph")));
+}
+
+#[test]
 fn a_lesson_in_a_folder_below_the_study_root_reads_the_root_and_keeps_its_record() {
     let bench = Bench::new(Some("stats/week1"), &[]);
     let (manager, mut events) = bench.manager();
