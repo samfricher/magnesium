@@ -546,6 +546,113 @@ fn an_interrupted_reply_gets_no_mark_and_the_task_stays_open() {
     assert_eq!(attempts[0]["question"], "What is b in x² − 5x + 6 = 0?");
     manager.shut_down();
 }
+/// The question the stand-in model poses as quick check 1.
+const CHECK_1: &str = "What is b in 2x² − 7x − 4 = 0?";
+
+/// A lesson in a new sitting that opened with quick check 1 posed, on
+/// "sign of b", which the learner got wrong the day before.
+fn with_a_check_posed() -> (Bench, Manager, Events) {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.send("b = 5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    manager.stop(None).unwrap();
+    drop(manager);
+    days_pass(&bench, 1);
+    let (manager, mut events) = bench.manager();
+    assert!(manager.open_session(true).unwrap().resumed);
+    manager.send_new_lesson(BACK).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        last_state(&bench).contains("1. Skill \"sign of b\""),
+        "{}",
+        last_state(&bench)
+    );
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Quick check 1: {CHECK_1}"));
+    (bench, manager, events)
+}
+
+/// The answer on record to quick check 1.
+fn check_answer(bench: &Bench) -> Value {
+    let attempts = bench.attempts();
+    let mut on_it = attempts.iter().filter(|a| a["question"] == CHECK_1);
+    let answer = on_it
+        .next()
+        .unwrap_or_else(|| panic!("no answer to the check: {attempts:#?}"))
+        .clone();
+    assert!(on_it.next().is_none(), "one answer: {attempts:#?}");
+    answer
+}
+
+#[test]
+fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pass_is_told() {
+    // Right, and the tutor's block says the page was not blank: the answer
+    // is not sent cold, so the check earns no pass and stays due.
+    let (bench, manager, mut events) = with_a_check_posed();
+    manager.send("b = -5").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let answer = check_answer(&bench);
+    assert_eq!(answer["label"], "sign of b");
+    assert_eq!(answer["mark"], "right");
+    assert_eq!(answer["cold"], false, "{answer:#?}");
+    // The reply said "Right": the window says what the record holds.
+    let notices = all_notices(&mut events);
+    assert_eq!(notices.len(), 1, "{notices:#?}");
+    assert!(
+        notices[0].contains("did not count as a pass for the quick check"),
+        "{notices:#?}"
+    );
+    // And the tutor is told with the next message.
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = last_state(&bench);
+    assert!(
+        state.contains("The record did not count the last quick check: no pass and no fail."),
+        "{state}"
+    );
+    manager.shut_down();
+
+    // Cold by the tutor's word: a pass, told to the tutor, and no notice.
+    let (bench, manager, mut events) = with_a_check_posed();
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(check_answer(&bench)["cold"], true);
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
+    manager.send("ok").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert!(
+        last_state(&bench).contains("The record holds the last quick check as a pass."),
+        "{}",
+        last_state(&bench)
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn i_m_lost_counts_as_help_on_the_task_in_hand() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    // The tutor asks what the learner sees, and its block gives no help.
+    manager.send("I'm lost").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // The answer that follows says it came from a blank page; code knows
+    // the learner asked for help on this task.
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["question"], "What is b in x² − 5x + 6 = 0?");
+    assert_eq!(attempts[0]["help"], "hint", "{attempts:#?}");
+    assert_eq!(attempts[0]["cold"], false, "{attempts:#?}");
+    manager.shut_down();
+}
 
 #[test]
 fn the_first_state_names_the_course_graph_when_the_study_folder_has_one() {

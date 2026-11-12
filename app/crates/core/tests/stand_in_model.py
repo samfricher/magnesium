@@ -16,6 +16,7 @@ What a turn does is chosen by words in the learner's message (inside
   SLOW         write slowly, so the reply can be interrupted
   BACK         (or the window's "I'm back") pose quick check 1 when the
                state lists one, or else the first paper redo it lists
+  I'm lost     ask a question that finds the cause, and leave the task open
   Km = 2       a right answer to a paper redo: mark it cold, give its next
                question, and pose the next paper redo the state listed
   Km = 0.5     a wrong answer to a paper redo
@@ -179,6 +180,8 @@ def reply_for(learner, state):
         return "Recording is on again." + block(control="recording_on"), False
     if "PAUSE" in learner:
         return "Paused." + block(control="pause"), False
+    if learner == "I'm lost":
+        return "What do you see in front of the 5?" + block(note="Lost: asked what they see."), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
     if "VERYSLOW" in learner:

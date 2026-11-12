@@ -485,8 +485,9 @@ struct State {
     /// showed the reply that posed it whole. The wall clock, so that time
     /// the Mac sleeps counts.
     redo_clock: Option<(Vec<String>, SystemTime)>,
-    /// What the record made of the last paper redo, to tell the tutor.
-    redo_outcome: Option<String>,
+    /// What the record made of the last paper redo or due quick check, to
+    /// tell the tutor.
+    outcome: Option<String>,
     /// The learner's memories the tutor has been shown, by the short id it
     /// names them with: ("m1", the runtime's memory id).
     memories: Vec<(String, String)>,
@@ -517,6 +518,9 @@ const REDO_FAILED: &str = "Your answer was right, but with help or over the time
 const REDO_UNLISTED: &str = "The tutor called this a paper redo, but the window has none to record it for. Your answer will be saved as an ordinary answer.";
 /// For a paper redo that gave way to something else before its answer.
 const REDO_SET_ASIDE: &str = "The paper redo was set aside before it was answered. It stays due.";
+/// The learner's notice for a right answer to a due quick check that the
+/// record holds no pass for.
+const CHECK_NO_PASS: &str = "Your answer is saved, but it did not count as a pass for the quick check this time. That check stays due.";
 
 struct Shared {
     store: Option<Arc<Store>>,
@@ -1344,7 +1348,7 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
         no_clock = facts.took.is_none();
         facts.no_clock = no_clock;
     }
-    facts.redo_outcome = state.redo_outcome.take();
+    facts.outcome = state.outcome.take();
     if facts.full {
         facts.graphs = course_graphs(&shared.root);
     }
@@ -1934,22 +1938,45 @@ fn save(
                     state.late = Some(due);
                 }
             }
-            // What the record made of a paper redo's answer. The tutor is
-            // told next turn, and the learner now when the tutor marked it
-            // right and the record holds no pass.
+            // What the record made of the answer to a paper redo or a due
+            // quick check. The tutor is told next turn, and the learner now
+            // when the tutor marked it right and the record holds no pass.
+            let effects: Vec<&str> = result["practice"]["attempts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|attempt| attempt["observation"] == "answer")
+                .flat_map(|attempt| attempt["items"].as_array().into_iter().flatten())
+                .filter_map(|item| item["effect"].as_str())
+                .collect();
+            let passed = effects.iter().any(|e| matches!(*e, "passed" | "closed"));
+            let failed = effects.contains(&"failed");
+            let declined = effects.contains(&"declined");
+            if let Some(right) = write.check {
+                state.outcome = Some(
+                    if passed {
+                        "The record holds the last quick check as a pass."
+                    } else if failed {
+                        "The record holds the last quick check as a miss: it comes back the next day."
+                    } else if declined {
+                        "The record holds the last quick check as declined: it stays due."
+                    } else if effects.contains(&"helped") {
+                        "The record holds the last quick check as answered with help: no pass, and it stays due."
+                    } else {
+                        "The record did not count the last quick check: no pass and no fail."
+                    }
+                    .to_owned(),
+                );
+                if right && !passed {
+                    shared.note(&format!("a right check answer earned no pass: {effects:?}"));
+                    shared.emit(AgentEvent::Notice {
+                        kind: NoticeKind::Other,
+                        text: CHECK_NO_PASS.into(),
+                    });
+                }
+            }
             if let Some(redo) = &redo_answer {
-                let effects: Vec<&str> = result["practice"]["attempts"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|attempt| attempt["observation"] == "answer")
-                    .flat_map(|attempt| attempt["items"].as_array().into_iter().flatten())
-                    .filter_map(|item| item["effect"].as_str())
-                    .collect();
-                let passed = effects.iter().any(|e| matches!(*e, "passed" | "closed"));
-                let failed = effects.contains(&"failed");
-                let declined = effects.contains(&"declined");
-                state.redo_outcome = Some(
+                state.outcome = Some(
                     if passed {
                         "The record holds the last paper redo as a pass."
                     } else if failed {
