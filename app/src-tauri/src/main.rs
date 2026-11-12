@@ -18,7 +18,7 @@ use mg_core::manager::{EngineChoice, Opened, Setup};
 use mg_core::material::{Added, Listed};
 use mg_core::plan::Plan;
 use mg_core::runtime::Mark;
-use mg_core::store::{Engine, PaperSitting};
+use mg_core::store::{Engine, PaperSitting, Turn};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::{Manager, Store};
 use serde::Serialize;
@@ -211,6 +211,13 @@ fn stop(shell: State<'_, Shell>, stopped_at: Option<String>) -> Reply<()> {
 #[tauri::command(async)]
 fn rail(shell: State<'_, Shell>) -> Reply<Rail> {
     plain(shell.manager.rail())
+}
+
+/// The open folder's saved conversation, as the window showed it, without
+/// starting it.
+#[tauri::command(async)]
+fn turns(shell: State<'_, Shell>) -> Reply<Vec<Turn>> {
+    plain(shell.manager.saved_turns())
 }
 
 /// The open folder's study plan, read fresh from the runtime and the plan
@@ -409,6 +416,7 @@ fn main() {
             answer,
             stop,
             rail,
+            turns,
             plan,
             progress,
             set_block_minutes,

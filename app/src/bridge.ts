@@ -46,6 +46,7 @@ async function tauriCore(): Promise<Core> {
     setEngine: (engine) => invoke("set_engine", { engine }),
     signIn: () => invoke("sign_in"),
     about: () => invoke("about"),
+    turns: () => invoke("turns"),
     openSession: (resume) => invoke("open_session", { resume }),
     send: (text, intent) => invoke("send", { text, intent: intent ?? null }),
     sendNewLesson: (goal) => invoke("send_new_lesson", { goal }),

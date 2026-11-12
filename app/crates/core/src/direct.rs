@@ -1800,6 +1800,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                 );
             }
         }
+        tell_task(shared, false);
         shared.emit(AgentEvent::TurnEnded {
             ok: true,
             interrupted: true,
@@ -1863,6 +1864,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // and the turn that asked for it records nothing more.
     if let Some(control) = record.as_ref().and_then(|record| record.control) {
         apply_control(shared, control, &words, event.as_deref());
+        tell_task(shared, false);
         // The turn that asks for a control records nothing more, a repair
         // included: both are told.
         if let Some(note) = record.as_ref().and_then(|record| record.repair.as_ref()) {
@@ -1886,6 +1888,10 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         // mark is what the learner asked for.
         shared
             .note("recording is off, or the lesson is paused or stopped: no record for this turn");
+        tell_task(
+            shared,
+            record.as_ref().is_some_and(|record| record.task.is_some()),
+        );
         return ended;
     }
     let message = Message {
@@ -1956,6 +1962,10 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             }
         }
     }
+    tell_task(
+        shared,
+        record.as_ref().is_some_and(|record| record.task.is_some()),
+    );
     // The reply as the learner saw it, for the record.
     if let Err(why) = shared.host.hook(
         "stop",
@@ -1965,6 +1975,18 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         shared.note(&format!("stop hook failed: {why}"));
     }
     ended
+}
+
+/// Tell the window which task is open now, and whether this turn's reply
+/// posed it, so the field for an answer can sit inside it. The words are the
+/// tutor's own, from its record block; nothing here marks anything.
+fn tell_task(shared: &Arc<Shared>, posed: bool) {
+    let task = lock(&shared.state)
+        .lesson
+        .task
+        .as_ref()
+        .map(|task| task.text.clone());
+    shared.emit(AgentEvent::OpenTask { task, posed });
 }
 
 /// The learner's notice for a repair that may have been finished and was
@@ -3090,7 +3112,7 @@ mod tests {
     fn the_engine_knows_the_words_the_page_sends() {
         let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let read = |name: &str| std::fs::read_to_string(pages.join(name)).unwrap();
-        let session = read("screens/Session.tsx");
+        let session = read("surface/Layers.tsx");
         let lesson = read("lesson.ts");
         let strings: Vec<String> = quoted(&session)
             .into_iter()
