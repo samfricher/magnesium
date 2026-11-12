@@ -57,6 +57,21 @@ export type LessonProps = {
 const MARK_WORD: Record<string, string> = { right: "Right", partly: "Partly right", wrong: "Not right yet", declined: "Declined" };
 const HELP_WORD: Record<string, string> = { hint: "with a hint", step: "with a step shown", solution: "after the solution" };
 
+/** When something happened, as a day a person would say: "today at 16:40", "on Tuesday at 16:40", "on Thursday 5 November at 13:12". Never a count of days. */
+export function whenWords(ms: number, now = Date.now()): string {
+  const time = new Date(ms).toTimeString().slice(0, 5);
+  const start = (t: number) => {
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const days = Math.round((start(now) - start(ms)) / 86_400_000);
+  if (days <= 0) return `today at ${time}`;
+  if (days === 1) return `yesterday at ${time}`;
+  if (days < 7) return `on ${dayName(ms).split(" ")[0]} at ${time}`;
+  return `on ${dayName(ms)} at ${time}`;
+}
+
 /** What the gutter says of one row of the record: four words or fewer. */
 export function markWords(mark: Mark): string {
   const word = MARK_WORD[mark.mark] ?? mark.mark;
@@ -502,7 +517,7 @@ export function LessonDoc(props: LessonProps) {
 
   const lastMs = page.exchanges.length > 0 ? page.exchanges[page.exchanges.length - 1].key : null;
   const stopped = !props.running && !props.fresh && lastMs !== null;
-  const stoppedOn = lastMs !== null ? `${dayName(lastMs).split(" ")[0]} at ${new Date(lastMs).toTimeString().slice(0, 5)}` : "";
+  const stoppedOn = lastMs !== null ? whenWords(lastMs) : "";
 
   return (
     <article className="lesson" data-doc="lesson" data-running={props.running || undefined}>
@@ -572,7 +587,7 @@ export function LessonDoc(props: LessonProps) {
         <div className={`page-end${place === "talk" ? " here" : ""}`} data-role="page-end">
           {stopped && (
             <p className="stopped-line">
-              Stopped on {stoppedOn}.
+              Stopped {stoppedOn}.
               <button type="button" className="continue" data-drive="start" onClick={props.onContinue}>
                 Continue <kbd>Return</kbd>
               </button>

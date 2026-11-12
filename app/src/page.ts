@@ -33,7 +33,15 @@ export type Exchange = {
 export type Page = { exchanges: Exchange[]; open: number | null };
 
 /** The key an exchange's meta is kept under on this Mac: its words, which a reopened lesson shows again. */
-export const exKey = (learner: string, tutor: string) => `${learner}\u241f${tutor.slice(0, 80)}`;
+export const exKey = (learner: string, tutor: string) => `${learner.trim()}\u241f${tutor.replace(/\s+/g, " ").trim().slice(0, 60)}`;
+
+/** The key of what a message was, by its words alone: kept when it is sent, before any reply. */
+export const saidKey = (learner: string) => `said\u241f${learner.trim()}`;
+
+/** What the window kept of an exchange: by its words and its reply, else by its words alone. */
+export function keptMeta(kept: Record<string, Meta>, learner: string, tutor: string): Meta | null {
+  return kept[exKey(learner, tutor)] ?? kept[saidKey(learner)] ?? null;
+}
 
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" });
 

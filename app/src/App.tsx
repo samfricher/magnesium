@@ -15,7 +15,7 @@ import { SetupDoc, setupReady } from "./docs/Setup";
 import type { WriterHandle } from "./docs/Writer";
 import { ready as harnessReady } from "./harness";
 import { emptySession, HELP, openingWords, reduce, type LessonTurn, type SessionState } from "./lesson";
-import { exKey, readPage, type Meta, type Said } from "./page";
+import { exKey, keptMeta, readPage, saidKey, type Meta, type Said } from "./page";
 import { applyPrefs, readPrefs, savePrefs, SIZE_MAX, SIZE_MIN, type Prefs } from "./prefs";
 import type { SourceRef } from "./sources";
 import { splitTask, taskLine } from "./task";
@@ -421,6 +421,12 @@ export function App() {
     meta.current.set(at, { said, marks: [] });
     dispatch({ type: "sent", shown, now: at });
     bumpMeta();
+    // Kept at once by its words, so a window closed before the reply ends still knows what it was.
+    const folder = latest.current.folder;
+    if (folder) {
+      kept.current[saidKey(shown)] = { said, marks: [] };
+      writeKept(folder, kept.current);
+    }
   };
 
   /** Keep what each finished exchange was, by its words, so it reads the same when the folder opens again. */
@@ -444,6 +450,15 @@ export function App() {
     }
     if (changed) writeKept(folder, kept.current);
   }, []);
+
+  // Each finished exchange, and each mark, is kept as soon as it is on the page.
+  useEffect(() => {
+    if (!session.live || session.live.status === "idle") keepExchanges();
+  }, [session, metaVersion, keepExchanges]);
+  useEffect(() => {
+    window.addEventListener("pagehide", keepExchanges);
+    return () => window.removeEventListener("pagehide", keepExchanges);
+  }, [keepExchanges]);
 
   const ensureOpen = async (api: Core) => {
     if (latest.current.session.open) return;
@@ -561,7 +576,7 @@ export function App() {
       readPage(session, (turn) => {
         const m = meta.current.get(turn.ms);
         if (m) return m;
-        return kept.current[exKey(turn.learner, turn.tutor)] ?? null;
+        return keptMeta(kept.current, turn.learner, turn.tutor);
       }),
     // metaVersion: a mark or a kind was noted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1177,7 +1192,7 @@ export function App() {
     if (doc.startsWith("lesson:")) {
       const turns = earlier[doc.slice(7)] ?? [];
       const old: SessionState = { ...emptySession, earlier: turns };
-      const oldPage = readPage(old, (turn) => kept.current[exKey(turn.learner, turn.tutor)] ?? null);
+      const oldPage = readPage(old, (turn) => keptMeta(kept.current, turn.learner, turn.tutor));
       return (
         <LessonDoc
           page={oldPage}
