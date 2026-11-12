@@ -2,7 +2,7 @@
 // Nothing here is a real course: each page holds one made-up line.
 
 /** A PDF with one page for each line. Standard fonts only, ASCII text only. */
-export function tinyPdf(lines: string[]): Uint8Array {
+export function tinyPdf(lines: string[], title = "Week 4 slides"): Uint8Array {
   const escape = (text: string) => text.replace(/[\\()]/g, (c) => `\\${c}`);
   const pages = lines.length;
   // 1 catalog, 2 pages, 3 font, then a page and its content for each line.
@@ -13,7 +13,7 @@ export function tinyPdf(lines: string[]): Uint8Array {
   ];
   lines.forEach((line, n) => {
     const content = [
-      "BT /F1 30 Tf 60 700 Td (Week 4 slides) Tj ET",
+      `BT /F1 30 Tf 60 700 Td (${escape(title)}) Tj ET`,
       `BT /F1 22 Tf 60 640 Td (${escape(line)}) Tj ET`,
       `BT /F1 14 Tf 60 60 Td (p. ${n + 1}) Tj ET`,
       "0.2 0.5 0.4 rg 60 560 300 6 re f",

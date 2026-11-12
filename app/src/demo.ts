@@ -68,7 +68,6 @@ const newFolder = state === "new-lesson";
 const GOAL = "Reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot";
 const TASK_VMAX = "**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
 const TASK_KM = "**Task.** The same line crosses the x-axis at $-0.5$ µM⁻¹. What is $K_m$?";
-const TASK_CHECK = "**Quick check 1.** Without your notes: in $v = \\frac{V_{max}[S]}{K_m + [S]}$, what is $v$ when $[S] = K_m$?";
 
 const START_TURN_MS = ago(away, 16, 12);
 const STOP_TURN_MS = ago(away, 16, 40);
@@ -116,7 +115,7 @@ function seed(): void {
       sidebar: state === "sidebar",
       scroll: {},
       pages: {},
-      drafts: { answer: state.startsWith("s1") || state === "s2-start" || state === "s5-week" ? "$V_{max} = 1/0.25 =$" : "" },
+      drafts: { answer: state.startsWith("s1") || state === "s2-start" || state.startsWith("s5") ? "$V_{max} = 1/0.25 =$" : "" },
       folds: {},
     };
     if (!newFolder) localStorage.setItem(`mg.ws:${FOLDER}`, JSON.stringify(layout));
@@ -126,7 +125,7 @@ function seed(): void {
     };
     localStorage.setItem(`mg.ex:${FOLDER}`, JSON.stringify(kept));
     localStorage.removeItem(`mg.planBase:${FOLDER}`);
-    if (state === "settings") localStorage.setItem("mg.prefs", JSON.stringify({ font: "charter", size: 17, measure: 66, scheme: "system", ink: "blue" }));
+    if (state === "settings") localStorage.removeItem("mg.settings");
   } catch {
     // A page with no storage shows the defaults.
   }
@@ -267,9 +266,10 @@ function replyTo(text: string): { reply: string; mark: Mark | null; doing: strin
   const lower = text.toLowerCase();
   if (lower.startsWith("i'm back") || lower.startsWith("let's work on") || lower.startsWith("no checks")) {
     if (state.startsWith("s5")) {
-      openTask = TASK_CHECK;
+      // Back after a week: the tutor picks up exactly where the screen said, with the draft still under the task.
+      openTask = TASK_VMAX;
       return {
-        reply: "Welcome back. One quick check first, from before you left; then the intercept, where you stopped.\n\n" + TASK_CHECK,
+        reply: "Welcome back. You stopped on reading $V_{max}$ off the y-intercept, with your working half done. Finish it:\n\n" + TASK_VMAX,
         mark: null,
         doing: "reading your record",
       };
@@ -323,6 +323,9 @@ async function reply(text: string, markable: boolean): Promise<void> {
   await wait(120);
   await stream(words, doing);
   if (holdHalfway && words.includes("Midterm 1 is now")) return;
+  // As the Magnesium engine does: which task is open now, in the tutor's own words, and whether this reply posed it.
+  const posed = words.includes(openTask);
+  emit({ type: "open_task", task: openTask.replace(/^\*\*[^*]+\*\*\s*/, ""), posed });
   demoAfterTurn(text, (event) => {
     if (event.type === "plan_changed") {
       planMs = Date.now();
@@ -383,7 +386,7 @@ const progress = (): Progress => ({
   confirmed: [],
   in_progress: [
     { dots: [2, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "next Fri 13 Nov", due: false, next_day: null },
-    { dots: [2, 1, 0], name: "slope and $K_m$", what: "read the slope as $K_m$", note: "due today", due: true, next_day: null },
+    { dots: [0, 1, 0], name: "slope and $K_m$", what: "read the slope as $K_m$", note: "due today", due: true, next_day: null },
     { dots: [2, 0, 0], name: "units of a rate", what: "", note: "next Mon 16 Nov", due: false, next_day: null },
   ],
   untested: [],
@@ -510,6 +513,7 @@ export function demoCore(): Core {
     materialList: async () => ({ names: FILES.files.filter((f) => f.path.startsWith("Study/materials/")).map((f) => f.path.slice(16)), files: 4, keys: 1 }),
     marks: async () => [...records, ...marked],
     lessons: async () => lessonList(),
+    turns: async () => (newFolder ? [] : earlierTurns),
     lessonTurns: async (session) => (session === "demo-current" ? (newFolder ? [] : earlierTurns) : (OLD_TURNS[session] ?? [])),
     studyFiles: async () => FILES,
     writePlan: async (_path, text) => {
@@ -522,7 +526,11 @@ export function demoCore(): Core {
       return () => {};
     },
     source: async (path) => source(path),
-    sourcePdf: async () => tinyPdf(["Michaelis-Menten kinetics", "The Lineweaver-Burk plot", "Reading the intercepts", "Inhibition"]).buffer as ArrayBuffer,
+    sourcePdf: async (path) =>
+      (path.includes("Paper B")
+        ? tinyPdf(["1. Read Vmax and Km from the plot.", "2. A competitive inhibitor: what moves?", "3. Units of kcat."], "Paper B, 50 minutes")
+        : tinyPdf(["Michaelis-Menten kinetics", "The Lineweaver-Burk plot", "Reading the intercepts", "Inhibition"], "Week 5 slides")
+      ).buffer as ArrayBuffer,
     openFile: async () => {},
     openUrl: async () => {},
     image: async () => PHOTO,

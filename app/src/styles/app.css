@@ -147,7 +147,9 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
+  max-width: 340px;
+  min-width: 0;
+  flex-shrink: 1;
   padding: 4px 8px;
   border: 0;
   border-radius: 6px;
@@ -163,6 +165,14 @@ textarea:focus, textarea:focus-visible, input:focus, input:focus-visible { outli
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); flex: none; }
 
 .doc-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: thin; }
+/* Text never meets the tab row or the status line mid-glyph: a short fade
+   at an edge where more of the document lies beyond, none at the start. */
+.doc-scroll[data-above] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px); }
+.doc-scroll[data-below] { -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22px); mask-image: linear-gradient(to top, transparent 0, #000 22px); }
+.doc-scroll[data-above][data-below] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); }
+.tabs { border-bottom: 1px solid transparent; }
+.pane[data-scrolled] .tabs { border-bottom-color: var(--rule); }
+.status { border-top: 1px solid var(--rule); background: var(--ground); }
 .doc-scroll::-webkit-scrollbar { width: 10px; }
 .doc-scroll::-webkit-scrollbar-thumb { background: var(--rule-strong); border: 3px solid var(--ground); border-radius: 6px; }
 .column {
@@ -347,7 +357,10 @@ button.primary kbd { color: var(--ground); border-color: color-mix(in srgb, var(
   -webkit-user-select: text;
   user-select: text;
 }
-.writer textarea::placeholder { color: var(--faint); }
+.writer textarea::placeholder { color: var(--quiet); }
+:root[data-hints="off"] .writer textarea::placeholder { color: transparent; }
+:root[data-hints="off"] .hint-only { display: none; }
+.writer textarea { border-radius: 0; }
 .answer-space .writer textarea { border-bottom: 1px solid var(--rule-strong); }
 .answer-space .writer textarea:focus { border-bottom-color: var(--ink); }
 .math-preview { font-size: 0.95em; color: var(--quiet); padding: 4px 0 0; }
@@ -395,6 +408,7 @@ button.primary kbd { color: var(--ground); border-color: color-mix(in srgb, var(
 .continue kbd { color: var(--ground); border-color: color-mix(in srgb, var(--ground) 45%, transparent); }
 
 .pinned {
+  box-shadow: 0 10px 12px -8px var(--ground);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -496,6 +510,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 .gone-item { display: block; color: var(--quiet); }
 .changed-note { color: var(--change); }
 .plan-foot { margin: 3.5em 0 0; font-family: var(--chrome); font-size: 12.5px; }
+.source-edit, .settings-file { resize: none; }
 .source-edit {
   width: 100%;
   min-height: 70vh;
@@ -563,7 +578,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
 /* --------------------------------------------------------------------------
    The one list that ever covers a document, and two notes */
 
-.sheet-veil { position: fixed; inset: 0; z-index: 20; }
+.sheet-veil { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--ground) 62%, transparent); }
 .sheet {
   position: absolute;
   top: 58px;
@@ -624,6 +639,7 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
   font-size: 15px;
   color: var(--text);
 }
+.drop-veil p { background: var(--ground); padding: 10px 16px; border-radius: 8px; border: 1px solid var(--rule-strong); margin: 0; }
 
 @media (max-width: 760px) {
   .column { padding: 20px 22px 72px 42px; }
@@ -631,3 +647,45 @@ del { text-decoration-color: var(--quiet); text-decoration-thickness: 1px; }
   .plan-block.chg::before { left: -22px; }
   .tabs.under-lights { padding-left: 80px; }
 }
+
+.nobr { white-space: nowrap; }
+
+/* Under the open task: the place to write, and one quiet key for the rest. */
+.task-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 6px; font-family: var(--chrome); font-size: 12px; min-height: 20px; }
+.task-foot .confidence { color: var(--ink); margin-right: auto; }
+.task-block:not(:focus-within) .task-foot:not(:has(.confidence)) { display: none; }
+.help-key { border: 0; background: none; color: var(--quiet); padding: 1px 4px; opacity: 0; }
+.task-block:focus-within .help-key, .task-block:hover .help-key { opacity: 1; }
+:root[data-hints="off"] .help-key { display: none; }
+.help-key kbd { margin-left: 5px; }
+.writer textarea { font-family: var(--own-font, inherit); }
+.answer .own-text, .said .own-text { font-family: var(--own-font, inherit); }
+
+/* A lesson at rest: what came before is one quiet line. */
+.fold-line { display: flex; gap: 10px; align-items: baseline; border: 0; background: none; padding: 0; margin: 0 0 1.4em; font-family: var(--chrome); font-size: 12.5px; color: var(--quiet); }
+.fold-line:hover { color: var(--text); }
+.exchange.at-rest .task-block { margin-top: 0.4em; }
+
+.no-mark { border: 0; background: none; padding: 0; color: var(--quiet); gap: 6px; }
+.no-mark-why { font-family: var(--chrome); font-size: 12px; color: var(--quiet); margin: 0.3em 0 0; max-width: 46ch; line-height: 1.5; }
+
+/* The plan as the learner reads it. */
+.plan-changed { font-family: var(--chrome); font-size: 12.5px; color: var(--change); margin: -0.6em 0 1.2em; }
+.plan-exam { font-size: 1.15em; margin: 0 0 1.4em; position: relative; }
+.plan-exam-day { font-weight: 700; }
+.plan-exam .was { display: block; font-size: 0.8em; color: var(--quiet); }
+.plan-exam.chg::before, .plan-item.chg::before { content: ""; position: absolute; left: -30px; top: 0.3em; bottom: 0.3em; width: 3px; border-radius: 2px; background: var(--change); }
+.plan-items { list-style: none; padding: 0; margin: 0 0 1.6em; }
+.plan-item { position: relative; display: grid; grid-template-columns: 7.2em minmax(0, 1fr); column-gap: 14px; padding: 0.45em 0; border-top: 1px solid var(--rule); }
+.plan-item:last-child { border-bottom: 1px solid var(--rule); }
+.plan-item[data-status="done"] .plan-what { color: var(--quiet); }
+.plan-day { font-family: var(--chrome); font-size: 13px; color: var(--quiet); white-space: nowrap; padding-top: 0.2em; font-variant-numeric: tabular-nums; }
+.plan-day.backwards { color: var(--change); font-weight: 600; }
+.plan-what { min-width: 0; }
+.plan-note { display: block; font-size: 0.86em; color: var(--quiet); }
+.plan-moved, .plan-backwards { font-family: var(--chrome); font-size: 12px; color: var(--change); }
+.plan-last-change { font-size: 0.9em; color: var(--quiet); }
+.settings-file { display: block; width: 100%; min-height: 24em; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text); background: var(--shelf); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow: hidden; -webkit-user-select: text; user-select: text; }
+.settings-file:focus { border-color: var(--ink); }
+.settings-problems { font-family: var(--chrome); font-size: 12.5px; color: var(--change); padding-left: 1.2em; }
+@media (max-width: 760px) { .plan-item { grid-template-columns: 5.6em minmax(0, 1fr); } }

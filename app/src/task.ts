@@ -85,10 +85,42 @@ export function splitTask(reply: string): Split | null {
   return { before, task: last.slice(at).trim() };
 }
 
+/**
+ * Split a reply at the task the record names, in the tutor's own words. A
+ * reply that holds them puts the task block where they begin; one that does
+ * not ends with the task as the window reads it, else its last paragraph.
+ */
+export function splitAt(reply: string, task: string): Split {
+  const squash = (text: string) => text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  const want = squash(task).slice(0, 48);
+  if (want.length >= 8) {
+    const parts = reply.split(/\n{2,}/);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const flat = squash(parts[i]);
+      const at = flat.indexOf(want);
+      if (at === -1) continue;
+      // Only a short label stands before the task's words ("Task.", "Quick check 1:"): the paragraph is the task.
+      const label = at > 0 && at <= 24 && /^[A-Za-z0-9 ]+[.:]?\s*$/.test(flat.slice(0, at));
+      if (at === 0 || label) return { before: parts.slice(0, i).join("\n\n"), task: parts.slice(i).join("\n\n") };
+      // The task starts part way through this paragraph: split it at the same words.
+      const words = want.split(" ").slice(0, 3).join(" ");
+      const raw = parts[i].indexOf(words);
+      if (raw > 0) return { before: [...parts.slice(0, i), parts[i].slice(0, raw).trim()].filter(Boolean).join("\n\n"), task: [parts[i].slice(raw), ...parts.slice(i + 1)].join("\n\n").trim() };
+      return { before: parts.slice(0, i).join("\n\n"), task: parts.slice(i).join("\n\n") };
+    }
+  }
+  const found = splitTask(reply);
+  if (found) return found;
+  const parts = reply.trim().split(/\n{2,}/);
+  return { before: parts.slice(0, -1).join("\n\n"), task: parts[parts.length - 1] };
+}
+
 /** The first line of a task, as a short line for the pinned header and the stop line. */
 export function taskLine(task: string): string {
+  // Only a short label such as "**Task.**" goes; a whole question in bold stays, unbolded.
   const plain = task
-    .replace(/^\s*\*\*([^*]+)\*\*\s*/, "")
+    .replace(/^\s*\*\*[^*]{1,24}?[.:]\s*\*\*\s*/, "")
+    .replace(/\*\*/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return plain.length > 140 ? `${plain.slice(0, 137).trimEnd()}…` : plain;

@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
 import "./harness";
-import { applyPrefs, readPrefs } from "./prefs";
+import { apply, parse, readText } from "./settings";
 import "./styles/app.css";
 
 // Anything that goes wrong on the page is kept, so the self-check can report it.
@@ -54,5 +54,5 @@ new MutationObserver((changes) => {
 // The learner's settings are on the page before its first paint. Every face
 // is one this Mac already has (or, for one choice, ships inside the app), so
 // nothing is waited for.
-applyPrefs(readPrefs());
+apply(parse(readText()).settings);
 createRoot(document.getElementById("root")!).render(<App />);

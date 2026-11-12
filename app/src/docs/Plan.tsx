@@ -173,10 +173,111 @@ const BlockView = memo(function BlockView({ block, diff }: { block: Block; diff:
   );
 });
 
+const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const LONG = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" });
+const dayOf = (iso: string | null, long = false) => {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return null;
+  return (long ? LONG : DAY).format(new Date(`${iso.slice(0, 10)}T12:00:00`));
+};
+
+/** The When cell of the plan's Facts, after its date: "10:00 to 11:15". */
+function whenTime(text: string | null): string | null {
+  const cell = text ? /^\|\s*When\s*\|([^|\n]+)\|/m.exec(text)?.[1] ?? null : null;
+  if (!cell) return null;
+  const rest = cell.replace(/\d{4}-\d{2}-\d{2}/, "").replace(/\([A-Za-z]{2,4}\)/, "").trim();
+  return rest === "" ? null : rest;
+}
+
+/** The last line the tutor logged under Changes. */
+function lastChange(text: string | null): string | null {
+  if (!text) return null;
+  const at = text.search(/^##\s*(?:\d+\.\s*)?Changes\s*$/m);
+  if (at === -1) return null;
+  const lines = text.slice(at).split("\n").slice(1).filter((line) => /^\s*[-*]\s+/.test(line));
+  const last = lines[lines.length - 1];
+  return last ? last.replace(/^\s*[-*]\s+/, "").replace(/<[^>]*>/g, "").trim() || null : null;
+}
+
+/**
+ * The plan as the learner reads it: the exam and its day, then what to study
+ * in order, each on its day. What the tutor just changed is marked once, until
+ * it is seen; a list whose days now run backwards says so where they do.
+ */
+function PlanReading(props: { plan: Plan; before: Plan | null; changedTime: string | null; onWhole: () => void; onTalk: () => void }) {
+  const { plan, before } = props;
+  const time = whenTime(plan.text);
+  const exam = dayOf(plan.exam_date, true);
+  const examWas = before && before.exam_date !== plan.exam_date ? dayOf(before.exam_date, true) : null;
+  const order = new Map((before?.items ?? []).map((item, n) => [item.id, n]));
+  const known = new Set((before?.items ?? []).map((item) => item.id));
+  const change = lastChange(plan.text);
+  const changed = before !== null;
+  let lastDay: string | null = null;
+  return (
+    <article className="plan reading" data-doc="plan" data-changed={changed || undefined}>
+      <h1 className="doc-title" dangerouslySetInnerHTML={{ __html: renderInline(plan.title ?? "Plan") }} />
+      {changed && props.changedTime && (
+        <p className="plan-changed" data-role="plan-changed">
+          Changed by the tutor at {props.changedTime}. What moved is marked until you have seen it.
+        </p>
+      )}
+      {exam ? (
+        <p className={`plan-exam${examWas ? " chg" : ""}`} data-role="plan-exam">
+          <span className="plan-exam-day">{exam}</span>
+          {time && <span className="quiet">, {time}</span>}
+          {examWas && <del className="was"> {examWas}</del>}
+        </p>
+      ) : (
+        <p className="plan-exam quiet">No date in the plan.</p>
+      )}
+      {plan.items.length > 0 && (
+        <ol className="plan-items" data-role="plan-items">
+          {plan.items.map((item, n) => {
+            const day = item.day ? item.day.slice(0, 10) : null;
+            const backwards = day !== null && lastDay !== null && day < lastDay;
+            if (day) lastDay = day;
+            const was = order.get(item.id);
+            const moved = changed && was !== undefined && was !== n;
+            const isNew = changed && !known.has(item.id);
+            return (
+              <li key={item.id} className={`plan-item${moved || isNew ? " chg" : ""}`} data-status={item.status}>
+                <span className={`plan-day${backwards ? " backwards" : ""}`} title={backwards ? "Earlier than the line above" : undefined}>
+                  {dayOf(day) ?? ""}
+                </span>
+                <span className="plan-what">
+                  <span dangerouslySetInnerHTML={{ __html: renderInline(item.title) }} />
+                  {item.status === "done" && <span className="quiet"> · done</span>}
+                  {item.status === "doing" && <span className="quiet"> · now</span>}
+                  {moved && <span className="plan-moved"> · moved {was !== undefined && was > n ? "up" : "down"}</span>}
+                  {isNew && <span className="plan-moved"> · new</span>}
+                  {backwards && <span className="plan-backwards"> · its day is before the one above</span>}
+                  {item.note && <span className="plan-note" dangerouslySetInnerHTML={{ __html: renderInline(item.note) }} />}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {change && <p className="plan-last-change">Last change: {change}</p>}
+      <p className="plan-foot">
+        <span className="quiet">{plan.path}</span>
+        <span className="quiet"> · </span>
+        <button type="button" className="text-button" onClick={props.onWhole}>
+          The whole file
+        </button>
+        <span className="quiet"> · ⌘E edits it · </span>
+        <button type="button" className="text-button" onClick={props.onTalk}>
+          Change it by telling the tutor
+        </button>
+      </p>
+    </article>
+  );
+}
+
 export type PlanProps = {
   plan: Plan | null;
-  /** The plan as it was before the tutor's last change, while its marks are shown. */
-  before: string | null;
+  /** The plan as it was before the tutor's last change, until the learner has seen it. */
+  before: Plan | null;
   changedAt: number | null;
   active: boolean;
   folds: Record<string, boolean>;
@@ -190,7 +291,10 @@ export function PlanDoc(props: PlanProps) {
   const { plan } = props;
   const text = plan?.text ?? null;
   const read = useMemo(() => (text ? sections(text) : null), [text]);
-  const diff = useMemo(() => (text && props.before !== null && props.before !== text ? diffLines(props.before, text) : null), [text, props.before]);
+  const beforeText = props.before?.text ?? null;
+  const diff = useMemo(() => (text && beforeText !== null && beforeText !== text ? diffLines(beforeText, text) : null), [text, beforeText]);
+  // The plan as the learner reads it comes first; the whole file is one key away.
+  const [whole, setWhole] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -263,6 +367,7 @@ export function PlanDoc(props: PlanProps) {
   }
 
   const changedTime = props.changedAt ? new Date(props.changedAt).toTimeString().slice(0, 5) : null;
+  if (!whole) return <PlanReading plan={plan} before={props.before} changedTime={changedTime} onWhole={() => setWhole(true)} onTalk={props.onTalk} />;
   return (
     <article className="plan" data-doc="plan" data-changed={diff ? true : undefined} ref={article}>
       <h1 className="doc-title" dangerouslySetInnerHTML={{ __html: renderInline(read.title ?? plan.title ?? "Plan") }} />
@@ -291,6 +396,10 @@ export function PlanDoc(props: PlanProps) {
         );
       })}
       <p className="plan-foot">
+        <button type="button" className="text-button" onClick={() => setWhole(false)}>
+          The plan as you read it
+        </button>
+        <span className="quiet"> · </span>
         <button type="button" className="text-button" onClick={props.onTalk}>
           Change it by telling the tutor
         </button>

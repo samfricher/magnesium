@@ -139,6 +139,7 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     // The plan and the record's marks are read by the screens that show them.
     case "plan_changed":
     case "marked":
+    case "open_task":
       return state;
   }
 }

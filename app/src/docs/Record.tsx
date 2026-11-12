@@ -14,8 +14,10 @@ import { markWords } from "./Lesson";
 const ms = (at: string) => new Date(at.replace(" ", "T")).getTime();
 
 /** What the record holds of a skill, as a sentence. */
-function skillWords(row: Row): string {
-  const counted = row.dots.filter((dot) => dot === 2).length;
+function skillWords(row: Row, marks: Mark[]): string {
+  // A day counts only when the record has a right answer on it, with no help, from a blank page.
+  const backed = new Set(marks.filter((m) => m.label.trim().toLowerCase() === row.name.trim().toLowerCase() && m.mark === "right" && m.help === "none" && m.cold).map((m) => m.at.slice(0, 10))).size;
+  const counted = Math.min(row.dots.filter((dot) => dot === 2).length, marks.length > 0 ? Math.max(backed, 0) : row.dots.filter((dot) => dot === 2).length);
   const days = counted === 0 ? "Not yet answered right alone" : `Answered right alone, from a blank page, on ${counted} ${counted === 1 ? "day" : "days"}`;
   const note = row.note && row.note !== "–" ? row.note.replace(/^due /, "asked again ").replace(/^next /, "asked again ") : "";
   return note ? `${days}; ${note}.` : `${days}.`;
@@ -32,7 +34,7 @@ export function RecordDoc({ marks, progress }: { marks: Mark[] | null; progress:
   return (
     <article className="record" data-doc="record">
       <h1 className="doc-title">Record</h1>
-      <p className="doc-path">Every answer the record marked, newest first. Kept by Magnesium in this folder.</p>
+      <p className="doc-path">Every answer the record marked, newest first.</p>
       {marks === null ? (
         <p className="quiet-para">This version of Magnesium keeps no list of marked answers.</p>
       ) : rows.length === 0 ? (
@@ -67,7 +69,7 @@ export function RecordDoc({ marks, progress }: { marks: Mark[] | null; progress:
                 <dt>
                   <Line text={row.name} />
                 </dt>
-                <dd>{skillWords(row)}</dd>
+                <dd>{skillWords(row, marks ?? [])}</dd>
               </Fragment>
             ))}
           </dl>

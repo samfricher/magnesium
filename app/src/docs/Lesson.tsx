@@ -41,6 +41,10 @@ export type LessonProps = {
   onAnswer: (text: string, confidence: Confidence | null, photos: string[]) => Promise<boolean>;
   onTalk: (text: string) => Promise<boolean>;
   onHelp: (kind: HelpKind) => void;
+  /** Open the commands, with the task's own first: help and how sure you are. */
+  onHelpMenu: () => void;
+  /** The learner's setting: the short lines that say which key does what. */
+  hints: boolean;
   onContinue: () => void;
   onNewLesson: (goal: string) => void;
   onSource: (source: SourceRef) => void;
@@ -88,7 +92,9 @@ function MarkGlyph({ mark }: { mark: string }) {
         ? "M4.5 4.5l7 7M11.5 4.5l-7 7"
         : mark === "partly"
           ? "M3.5 9.5c1.5-2 3-2 4.5 0s3 2 4.5 0"
-          : "M4 8h8";
+          : mark === "none"
+            ? "M5 8h6"
+            : "M4 8h8";
   return (
     <svg className="glyph" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
       <path d={path} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -106,6 +112,20 @@ function Marks({ marks }: { marks: Mark[] }) {
           <span>{markWords(mark)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** An answer the record holds no mark for: said once, quietly, with the reason one key away. */
+function NoMark() {
+  const [why, setWhy] = useState(false);
+  return (
+    <div className="marks" data-role="no-mark">
+      <button type="button" className="mark no-mark" aria-expanded={why} onClick={() => setWhy((old) => !old)}>
+        <MarkGlyph mark="none" />
+        <span>No mark</span>
+      </button>
+      {why && <p className="no-mark-why">The record holds no mark for this answer, so it counts for nothing either way. The tutor may have read it as a question or a comment rather than an answer.</p>}
     </div>
   );
 }
@@ -136,7 +156,7 @@ const HELP_SAID: Record<string, string> = {
   [HELP.unknown]: "You said you don't know.",
 };
 
-type AnswerSpaceProps = Pick<LessonProps, "drafts" | "onDraft" | "onAnswer" | "onHelp" | "setPlace" | "onPhotos" | "registerWriter" | "onNote"> & {
+type AnswerSpaceProps = Pick<LessonProps, "drafts" | "onDraft" | "onAnswer" | "onHelp" | "onHelpMenu" | "setPlace" | "onPhotos" | "registerWriter" | "onNote" | "hints"> & {
   composer: boolean;
   busy: boolean;
 };
@@ -164,8 +184,16 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
 
   useEffect(() => {
     const onPhotoKey = () => void addPhotos();
+    const onSure = (event: Event) => {
+      const pick = (event as CustomEvent<Confidence>).detail;
+      setConfidence((old) => (old === pick ? null : pick));
+    };
     window.addEventListener("mg:photos", onPhotoKey);
-    return () => window.removeEventListener("mg:photos", onPhotoKey);
+    window.addEventListener("mg:confidence", onSure);
+    return () => {
+      window.removeEventListener("mg:photos", onPhotoKey);
+      window.removeEventListener("mg:confidence", onSure);
+    };
   }, [addPhotos]);
 
   const onKey = (event: React.KeyboardEvent<HTMLTextAreaElement>, text: string): boolean => {
@@ -206,7 +234,7 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
         drive="answer"
         composer={props.composer}
         label="Your answer to the task"
-        placeholder="Write your answer"
+        placeholder={props.hints ? "Your answer" : ""}
         initial={props.drafts.answer ?? ""}
         preview
         onDraft={(text) => props.onDraft("answer", text)}
@@ -234,30 +262,11 @@ const AnswerSpace = memo(function AnswerSpace(props: AnswerSpaceProps) {
           ))}
         </div>
       )}
-      <div className="task-tools">
-        <button type="button" tabIndex={-1} onClick={() => props.onHelp("hint")} title="⌘⇧H">
-          Hint
+      <div className="task-foot">
+        {confidence && <span className="confidence">{confidence}</span>}
+        <button type="button" tabIndex={-1} className="help-key" onClick={props.onHelpMenu} title="Hint, I'm lost, I don't know, how sure you are, photos of your working">
+          Help <kbd>⌘K</kbd>
         </button>
-        <button type="button" tabIndex={-1} onClick={() => props.onHelp("lost")} title="⌘⇧L">
-          I'm lost
-        </button>
-        <button type="button" tabIndex={-1} onClick={() => props.onHelp("unknown")} title="⌘⇧D">
-          I don't know
-        </button>
-        <span className="spacer" />
-        {(["sure", "unsure", "guess"] as Confidence[]).map((word, n) => (
-          <button
-            key={word}
-            type="button"
-            tabIndex={-1}
-            className={confidence === word ? "chosen" : undefined}
-            aria-pressed={confidence === word}
-            title={`⌥${n + 1}`}
-            onClick={() => setConfidence((old) => (old === word ? null : word))}
-          >
-            {word}
-          </button>
-        ))}
       </div>
     </div>
   );
@@ -276,10 +285,25 @@ type ExchangeProps = {
   linksOpen: boolean;
   onSource: (source: SourceRef) => void;
   onNote: (text: string) => void;
+  /** Only the task, with its answer line: the page of a lesson at rest. */
+  taskOnly?: boolean;
 };
 
 const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
   const { exchange: ex } = props;
+  if (props.taskOnly && ex.split) {
+    return (
+      <section className="exchange at-rest" data-said={ex.said} data-index={props.index}>
+        <div className="tutor" data-role="tutor">
+          <div className={`task-block${props.isOpen ? " open" : ""}`} data-role="task" data-open={props.isOpen || undefined}>
+            <Rich text={ex.split.task} final onSource={props.onSource} onNote={props.onNote} linksOpen={false} />
+            {props.isOpen && props.answerSpace}
+            {props.isOpen && !props.answerSpace && props.keptDraft && <div className="kept-draft" dangerouslySetInnerHTML={{ __html: renderPlain(props.keptDraft) }} />}
+          </div>
+        </div>
+      </section>
+    );
+  }
   const plain = splitConfidence(ex.learner).text.trim();
   const live = ex.live;
   const writing = live !== null && live.status !== "idle";
@@ -299,6 +323,7 @@ const ExchangeView = memo(function ExchangeView(props: ExchangeProps) {
           {props.aboutTask && !props.aboutIsAbove && <div className="answer-to" dangerouslySetInnerHTML={{ __html: renderInline(props.aboutTask) }} />}
           <Own text={ex.learner} />
           <Marks marks={ex.marks} />
+          {ex.noMark && <NoMark />}
         </div>
       ) : ex.learner.trim() !== "" && !(props.index === 0 && props.title !== null && ex.learner.trim() === props.title.trim()) ? (
         <div className={`said${live?.pick ? " picked" : ""}`} data-role="said">
@@ -485,6 +510,8 @@ export function LessonDoc(props: LessonProps) {
           onDraft={props.onDraft}
           onAnswer={props.onAnswer}
           onHelp={props.onHelp}
+          onHelpMenu={props.onHelpMenu}
+          hints={props.hints}
           setPlace={props.setPlace}
           onPhotos={props.onPhotos}
           onNote={props.onNote}
@@ -518,6 +545,18 @@ export function LessonDoc(props: LessonProps) {
   };
 
   const lastMs = page.exchanges.length > 0 ? page.exchanges[page.exchanges.length - 1].key : null;
+
+  // A lesson at rest shows its open task and nothing above it; a running one
+  // shows this sitting. What came before is folded behind one quiet line.
+  const [whole, setWhole] = useState(false);
+  const count = page.exchanges.length;
+  let lastSitting = 0;
+  page.exchanges.forEach((ex, index) => {
+    if (ex.sitting) lastSitting = index;
+  });
+  const atRest = !props.running && !props.fresh;
+  const from = whole || props.readOnly ? 0 : atRest ? (open !== null ? count : Math.max(0, count - 1)) : lastSitting;
+  const hidden = Math.max(0, from - (atRest && open !== null && open < from ? 1 : 0));
   const stopped = !props.running && !props.fresh && lastMs !== null;
   const stoppedOn = lastMs !== null ? whenWords(lastMs) : "";
 
@@ -530,10 +569,18 @@ export function LessonDoc(props: LessonProps) {
         </button>
       )}
       <h1 className="doc-title">{props.title}</h1>
+      {hidden > 0 && (
+        <button type="button" className="fold-line" onClick={() => setWhole(true)} data-role="fold">
+          {props.running ? "Earlier in this lesson" : "The lesson so far"} <span className="quiet">{hidden === 1 ? "1 exchange" : `${hidden} exchanges`}</span>
+        </button>
+      )}
       {page.exchanges.map((ex, index) => {
+        const taskOnly = index < from && index === open && !props.readOnly;
+        if (index < from && !taskOnly) return null;
         const about = ex.about !== null ? page.exchanges[ex.about] : null;
         return (
           <ExchangeView
+            taskOnly={taskOnly}
             key={`${ex.key}-${index}`}
             exchange={ex}
             title={index === 0 ? props.title : null}

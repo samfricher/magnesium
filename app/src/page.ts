@@ -3,13 +3,24 @@
 // Pure, so the page and the self-check read it the same way.
 
 import { HELP, opening, splitConfidence, type LessonTurn, type Live, type SessionState } from "./lesson";
-import { splitTask, type Split } from "./task";
+import { splitAt, splitTask, type Split } from "./task";
 import type { Mark } from "./types";
 
 /** What a message was, by where it was written. "opening" is the window's own words that start or continue a lesson. */
 export type Said = "answer" | "talk" | "help" | "opening";
 
-export type Meta = { said: Said; marks: Mark[] };
+export type Meta = {
+  said: Said;
+  marks: Mark[];
+  /** The task the engine's record says this reply posed, in the tutor's own words. */
+  task?: string;
+  /** The engine said this reply posed no task, whatever its words look like. */
+  noTask?: boolean;
+  /** The engine said no task is open after this reply. */
+  closed?: boolean;
+  /** The record was read after this answer and held no mark for it. */
+  unmarked?: boolean;
+};
 
 export type Exchange = {
   /** The time it began: the key of its meta while the window is open. */
@@ -28,6 +39,10 @@ export type Exchange = {
   about: number | null;
   /** The day it happened, when it differs from the exchange before: "Thursday 12 November". */
   day: string | null;
+  /** The record holds no mark for this answer, and it was a first try: said once, quietly. */
+  noMark: boolean;
+  /** It begins a sitting: the window's own opening words, or the lesson's first message. */
+  sitting: boolean;
 };
 
 export type Page = { exchanges: Exchange[]; open: number | null };
@@ -76,12 +91,19 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
   const exchanges: Exchange[] = [];
   let open: number | null = null;
   let lastDay: string | null = null;
+  // Tasks that already have a marked answer: a later answer to one is a retry, which the record does not mark.
+  const markedTasks = new Set<number>();
   turns.forEach(({ turn, live }, index) => {
     const final = live === null || live.status === "idle";
     const kept = metaOf(turn, index);
     const said = kept?.said ?? guessSaid(turn.learner, open !== null);
-    const split = final && turn.tutor.trim() !== "" ? splitTask(turn.tutor) : null;
+    const tutorThere = final && turn.tutor.trim() !== "";
+    // The engine's record says which task a reply posed, when it can; the words are read only when it cannot.
+    const split = !tutorThere || kept?.noTask ? null : kept?.task ? splitAt(turn.tutor, kept.task) : splitTask(turn.tutor);
     const about = said === "answer" || said === "help" ? open : null;
+    const marks = kept?.marks ?? [];
+    const retry = about !== null && markedTasks.has(about);
+    if (about !== null && marks.length > 0) markedTasks.add(about);
     const day = dayKey(turn.ms);
     exchanges.push({
       key: turn.ms,
@@ -91,10 +113,12 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
       interrupted: turn.interrupted,
       live,
       said,
-      marks: kept?.marks ?? [],
+      marks,
       split,
       about,
       day: day !== lastDay ? dayName(turn.ms) : null,
+      noMark: said === "answer" && marks.length === 0 && Boolean(kept?.unmarked) && !retry,
+      sitting: said === "opening" || index === 0,
     });
     lastDay = day;
     if (!final) return;
@@ -103,8 +127,8 @@ export function readPage(session: SessionState, metaOf: (turn: LessonTurn, index
     // Talk and help leave it open. A new sitting starts with no task open,
     // as the engine does.
     if (split) open = index;
-    else if (said === "opening") open = null;
-    else if ((kept?.marks.length ?? 0) > 0 && !turn.interrupted) open = null;
+    else if (said === "opening" || kept?.closed) open = null;
+    else if (marks.length > 0 && !turn.interrupted) open = null;
   });
   return { exchanges, open };
 }

@@ -293,7 +293,11 @@ function clean(html: string, math: Math[]): string {
 }
 
 function putMathBack(html: string, math: Math[], display: boolean): string {
+  // A date never breaks at its hyphens, whatever the column's width.
+  html = html.replace(/(\d{4}-\d{2}-\d{2})(?![^<]*>)/g, '<span class="nobr">$1</span>');
   if (math.length === 0) return html;
+  // Punctuation right after a formula stays on its line: no comma starts a line.
+  html = html.replace(/(MGMATH\d+ENDMG)([,.;:!?)]+)/g, '<span class="nobr">$1$2</span>');
   return html.replace(/MGMATH(\d+)ENDMG/g, (whole, index: string) => {
     const item = math[Number(index)];
     return item ? renderMath(display ? item : { ...item, display: false }) : whole;

@@ -15,8 +15,10 @@ import { SetupDoc, setupReady } from "./docs/Setup";
 import type { WriterHandle } from "./docs/Writer";
 import { ready as harnessReady } from "./harness";
 import { emptySession, HELP, openingWords, reduce, type LessonTurn, type SessionState } from "./lesson";
-import { exKey, keptMeta, readPage, saidKey, type Meta, type Said } from "./page";
-import { applyPrefs, readPrefs, savePrefs, SIZE_MAX, SIZE_MIN, type Prefs } from "./prefs";
+import { exKey, guessSaid, keptMeta, readPage, saidKey, type Meta, type Said } from "./page";
+
+const guessSaidOf = (learner: string): Said => guessSaid(learner, false);
+import { actionOf, apply as applySettings, FONT_CHOICES, NAMED_INKS, parse as parseSettings, readText as readSettingsText, saveText as saveSettingsText, setLine, type Action } from "./settings";
 import type { SourceRef } from "./sources";
 import { splitTask, taskLine } from "./task";
 import type {
@@ -127,7 +129,7 @@ export type Actions = {
   sitPaper: (paper: Paper) => Promise<void>;
   addMaterial: (paths: string[]) => Promise<void>;
   setDragging: (over: boolean) => void;
-  setPrefs: (prefs: Prefs) => void;
+  setSetting: (name: string, value: string) => void;
   freshLesson: () => void;
   session: () => SessionState;
 };
@@ -141,11 +143,14 @@ export function App() {
   const [folder, setFolder] = useState<string | null>(null);
   const [home, setHome] = useState<Home | null>(null);
   const [layout, setLayoutState] = useState<Layout>(freshLayout);
-  const [prefs, setPrefsState] = useState<Prefs>(readPrefs);
+  const [settingsText, setSettingsText] = useState(readSettingsText);
+  const parsedSettings = useMemo(() => parseSettings(settingsText), [settingsText]);
+  const settings = parsedSettings.settings;
   const [session, dispatch] = useReducer(reduce, emptySession);
   const [metaVersion, bumpMeta] = useReducer((n: number) => n + 1, 0);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [planBefore, setPlanBefore] = useState<string | null>(null);
+  /** The plan as it was before the tutor's last change, until the learner has seen the change. */
+  const [planBefore, setPlanBefore] = useState<Plan | null>(null);
   const [planChangedAt, setPlanChangedAt] = useState<number | null>(null);
   const [lessons, setLessons] = useState<LessonInfo[]>([]);
   const [files, setFiles] = useState<StudyFiles | null>(null);
@@ -174,8 +179,8 @@ export function App() {
   const accountBefore = useRef("");
 
   // The newest values, for handlers that outlive a render.
-  const latest = useRef({ api, setup, folder, home, layout, session, plan, place, engine, prefs, title, sheet, fresh, width });
-  latest.current = { api, setup, folder, home, layout, session, plan, place, engine, prefs, title, sheet, fresh, width };
+  const latest = useRef({ api, setup, folder, home, layout, session, plan, place, engine, settings, settingsText, title, sheet, fresh, width });
+  latest.current = { api, setup, folder, home, layout, session, plan, place, engine, settings, settingsText, title, sheet, fresh, width };
 
   const setLayout = useCallback((next: Layout) => {
     setLayoutState(next);
@@ -191,15 +196,17 @@ export function App() {
     if (f) saveLayout(f, next);
   }, []);
 
-  const setPrefs = useCallback((next: Prefs) => {
-    setPrefsState((old) => {
-      applyPrefs(next, old);
-      return next;
-    });
-    savePrefs(next);
+  /** The settings file changed: kept, and applied at once. */
+  const takeSettingsText = useCallback((text: string) => {
+    setSettingsText(text);
+    saveSettingsText(text);
   }, []);
-
-  useLayoutEffect(() => applyPrefs(prefs), []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** One setting changed from ⌘K or a key: written into the file, which is applied. */
+  const setSetting = useCallback(
+    (name: string, value: string) => takeSettingsText(setLine(latest.current.settingsText, name, value)),
+    [takeSettingsText],
+  );
+  useLayoutEffect(() => applySettings(settings), [settings]);
 
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
@@ -221,15 +228,16 @@ export function App() {
     const { api } = latest.current;
     if (!api) return;
     try {
-      const before = latest.current.plan?.text ?? null;
+      const old = latest.current.plan;
+      const before = old?.text ?? null;
       const fresh = await api.plan();
       setPlan(fresh);
-      if (changed && before !== null && fresh.text !== null && fresh.text !== before) {
-        setPlanBefore(before);
+      if (changed && old && before !== null && fresh.text !== null && fresh.text !== before) {
+        setPlanBefore(old);
         setPlanChangedAt(Date.now());
         const f = latest.current.folder;
         try {
-          if (f) localStorage.setItem(`mg.planBase:${f}`, JSON.stringify({ before, at: Date.now(), after: fresh.changed_ms }));
+          if (f) localStorage.setItem(`mg.planBase:${f}`, JSON.stringify({ before: old, at: Date.now() }));
         } catch {
           // Not kept.
         }
@@ -317,8 +325,9 @@ export function App() {
         setPlaceState("talk");
         // The plan as it was before a change the learner has not looked at yet.
         try {
-          const base = JSON.parse(localStorage.getItem(`mg.planBase:${folderPath}`) ?? "null") as { before: string; at: number } | null;
-          if (base) {
+          const base = JSON.parse(localStorage.getItem(`mg.planBase:${folderPath}`) ?? "null") as { before: Plan; at: number } | null;
+          // A change is marked once, until it is seen; half a day later it is not news.
+          if (base && typeof base.before === "object" && Date.now() - base.at < 12 * 3600_000) {
             setPlanBefore(base.before);
             setPlanChangedAt(base.at);
           }
@@ -418,6 +427,9 @@ export function App() {
   /** Note what a message was before it is sent, so the page sets it where it belongs. */
   const sent = (shown: string, said: Said) => {
     const at = Date.now();
+    // A plan change on screen when the learner writes again has been seen.
+    const where = findDoc(latest.current.layout, "plan");
+    if (where !== null && latest.current.layout.panes[where].active === "plan") planSeen();
     meta.current.set(at, { said, marks: [] });
     dispatch({ type: "sent", shown, now: at });
     bumpMeta();
@@ -614,8 +626,60 @@ export function App() {
     if (m.marks.some((row) => row.id === mark.id)) return;
     meta.current.set(target, { ...m, marks: [...m.marks, mark] });
     bumpMeta();
+    // The record, if it is open, shows the new row at once.
+    if (findDoc(latest.current.layout, "record") !== null) void refreshRecord();
     window.setTimeout(keepExchanges, 0);
-  }, [keepExchanges]);
+  }, [keepExchanges, refreshRecord]);
+
+  /** The learner has seen the plan's last change: its marks go. */
+  const planSeen = useCallback(() => {
+    setPlanBefore(null);
+    const f = latest.current.folder;
+    try {
+      if (f) localStorage.removeItem(`mg.planBase:${f}`);
+    } catch {
+      // Nothing kept.
+    }
+  }, []);
+
+  /** The record was read after this answer and held no mark for it: the page says so, once. */
+  const noteUnmarked = useCallback((at: number) => {
+    const m = meta.current.get(at);
+    if (!m || m.said !== "answer" || m.marks.length > 0 || m.unmarked) return;
+    meta.current.set(at, { ...m, unmarked: true });
+    bumpMeta();
+  }, []);
+
+  /**
+   * The engine's record says which task is open after the turn, in the
+   * tutor's own words, and whether this reply posed it. The task block, the
+   * pinned line and where the caret goes follow it, not the reply's look.
+   */
+  const takeOpenTask = useCallback(
+    (task: string | null, posed: boolean) => {
+      const live = latest.current.session.live;
+      if (!live) return;
+      const at = live.since;
+      const m = meta.current.get(at) ?? { said: guessSaidOf(live.learner), marks: [] };
+      const next: Meta = { ...m };
+      if (task && posed) next.task = task;
+      else next.noTask = true;
+      if (!task) next.closed = true;
+      meta.current.set(at, next);
+      bumpMeta();
+      // The record is kept by now: an answer it gave no mark has none.
+      if (m.said === "answer") window.setTimeout(() => noteUnmarked(at), 1500);
+      const writing = (place: Place) => (writers.current[place]?.value() ?? "").trim() !== "";
+      if (task && posed && !writing("talk")) {
+        setPlaceState("answer");
+        bumpFocus();
+      } else if (!posed && m.said !== "help" && !writing("answer")) {
+        setPlaceState("talk");
+        bumpFocus();
+      }
+    },
+    [noteUnmarked],
+  );
 
   const onPlanChanged = useCallback(async () => {
     const before = latest.current.plan?.text ?? null;
@@ -807,6 +871,10 @@ export function App() {
           void onPlanChanged();
           return;
         }
+        if (event.type === "open_task") {
+          takeOpenTask(event.task, event.posed);
+          return;
+        }
         dispatch({ type: "event", event });
         if (event.type === "turn_ended") {
           window.setTimeout(() => {
@@ -827,6 +895,9 @@ export function App() {
               setPlaceState(next);
               bumpFocus();
             }
+            // An engine that cannot say when its record is kept gets a while; then an answer with no mark is said to have none.
+            const at = live.since;
+            if (said === "answer") window.setTimeout(() => noteUnmarked(at), 25_000);
           }, 0);
         }
         if (event.type === "ready" && event.plugin_missing) void api.interrupt().catch(() => {});
@@ -933,24 +1004,35 @@ export function App() {
         event.preventDefault();
         work();
       };
-      if (command && !event.shiftKey && key === "p") run(() => folder && setSheet("open"));
-      else if ((command && !event.shiftKey && key === "k") || (command && event.shiftKey && key === "p")) run(() => setSheet("commands"));
-      else if (command && key === "o") run(() => setSheet("folders"));
-      else if (command && key === ",") run(() => openDoc("settings"));
-      else if (command && event.shiftKey && key === "m") run(() => setSheet("symbols"));
-      else if (command && event.shiftKey && key === "a") run(() => window.dispatchEvent(new Event("mg:photos")));
-      else if (command && event.shiftKey && (key === "h" || key === "l" || key === "d")) run(() => void help(key === "h" ? "hint" : key === "l" ? "lost" : "unknown"));
-      else if (command && key === "n" && folder) run(() => freshLesson());
-      else if (command && key === "w") run(() => closeDoc(pane.active, Math.min(layout.focus, layout.panes.length - 1)));
-      else if (command && key === "." && session.live && session.live.status !== "idle") run(() => void latest.current.api?.interrupt());
-      else if (command && key === "\\") run(() => setLayout(toggleSplit(layout, pane.active === "plan" ? "lesson" : "plan")));
-      else if (command && key === "b" && folder) run(() => setLayout({ ...layout, sidebar: !layout.sidebar }));
-      else if (command && key === "l" && folder) run(() => showLesson());
+      const size = latest.current.settings.size;
+      const bound: Action | null = actionOf(latest.current.settings, event);
+      const actions: Record<Action, () => void> = {
+        open: () => folder && setSheet("open"),
+        commands: () => setSheet("commands"),
+        folders: () => setSheet("folders"),
+        settings: () => openDoc("settings"),
+        symbols: () => setSheet("symbols"),
+        photos: () => window.dispatchEvent(new Event("mg:photos")),
+        hint: () => void help("hint"),
+        lost: () => void help("lost"),
+        unknown: () => void help("unknown"),
+        sure: () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "sure" })),
+        unsure: () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "unsure" })),
+        guess: () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "guess" })),
+        "new-lesson": () => folder && freshLesson(),
+        close: () => closeDoc(pane.active, Math.min(layout.focus, layout.panes.length - 1)),
+        "stop-reply": () => session.live && session.live.status !== "idle" && void latest.current.api?.interrupt(),
+        split: () => setLayout(toggleSplit(layout, pane.active === "plan" ? "lesson" : "plan")),
+        sidebar: () => folder && setLayout({ ...layout, sidebar: !layout.sidebar }),
+        lesson: () => folder && showLesson(),
+        bigger: () => setSetting("size", String(Math.min(22, size + 1))),
+        smaller: () => setSetting("size", String(Math.max(14, size - 1))),
+        "reset-size": () => setSetting("size", "17"),
+      };
+      if (bound) run(actions[bound]);
+      else if (command && event.shiftKey && key === "p") run(() => setSheet("commands"));
       else if (command && event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight") && layout.panes.length > 1)
         run(() => setLayout({ ...layout, focus: event.key === "ArrowLeft" ? 0 : 1 }));
-      else if (command && (key === "=" || key === "+")) run(() => setPrefs({ ...latest.current.prefs, size: Math.min(SIZE_MAX, latest.current.prefs.size + 1) }));
-      else if (command && key === "-") run(() => setPrefs({ ...latest.current.prefs, size: Math.max(SIZE_MIN, latest.current.prefs.size - 1) }));
-      else if (command && key === "0") run(() => setPrefs({ ...latest.current.prefs, size: 17 }));
       else if (command && /^[1-9]$/.test(key)) {
         const tab = pane.tabs[Number(key) - 1];
         if (tab) run(() => openDoc(tab));
@@ -965,7 +1047,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openDoc, setLayout, setPrefs]);
+  }, [openDoc, setLayout, setSetting]);
 
   const freshLesson = () => {
     setFresh(true);
@@ -987,7 +1069,7 @@ export function App() {
     sitPaper,
     addMaterial,
     setDragging,
-    setPrefs,
+    setSetting,
     freshLesson,
     session: () => latest.current.session,
   };
@@ -1050,6 +1132,9 @@ export function App() {
         add("I'm lost", () => void help("lost"), "⌘⇧L");
         add("I don't know", () => void help("unknown"), "⌘⇧D");
         add("Photos of my working", () => window.dispatchEvent(new Event("mg:photos")), "⌘⇧A", "attach image pdf");
+        add("Sure", () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "sure" })), "⌥1", "confidence how sure");
+        add("Unsure", () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "unsure" })), "⌥2", "confidence how sure");
+        add("A guess", () => window.dispatchEvent(new CustomEvent("mg:confidence", { detail: "guess" })), "⌥3", "confidence how sure");
       }
       add("Maths symbols", () => setSheet("symbols"), "⌘⇧M", "insert");
       add("Open the plan", () => openDoc("plan"), undefined, "plan");
@@ -1079,10 +1164,16 @@ export function App() {
     if (setup && !setup.account.signed_in) add("Sign in to Claude Code", () => void signIn());
     add("This Mac", () => openDoc("setup"), undefined, "setup program version");
     add("Settings", () => openDoc("settings"), "⌘,", "font theme scheme size keys");
-    add("Larger text", () => setPrefs({ ...prefs, size: Math.min(SIZE_MAX, prefs.size + 1) }), "⌘=");
-    add("Smaller text", () => setPrefs({ ...prefs, size: Math.max(SIZE_MIN, prefs.size - 1) }), "⌘−");
+    add("Larger text", () => setSetting("size", String(Math.min(22, settings.size + 1))), "⌘=");
+    add("Smaller text", () => setSetting("size", String(Math.max(14, settings.size - 1))), "⌘−");
+    // Every value of every setting is one Return away: "mono", "dark", "iowan", "size 19".
+    for (const font of FONT_CHOICES) if (font !== settings.font) add(`Font: ${font}`, () => setSetting("font", font), undefined, `typeface ${font.toLowerCase()} mono serif sans`);
+    for (let size = 14; size <= 22; size += 1) if (size !== settings.size) add(`Size ${size}`, () => setSetting("size", String(size)), undefined, "text size");
+    for (const [name, width] of [["narrow", 58], ["medium", 66], ["wide", 80]] as const) if (width !== settings.width) add(`Width: ${name}`, () => setSetting("width", String(width)), undefined, "line measure");
+    for (const ink of Object.keys(NAMED_INKS)) if (ink !== settings.ink) add(`Ink: ${ink}`, () => setSetting("ink", ink), undefined, "colour of your writing");
+    add(settings.hints ? "Hints: off" : "Hints: on", () => setSetting("hints", settings.hints ? "off" : "on"), undefined, "key hints placeholders");
     for (const scheme of ["light", "dark", "system"] as const) {
-      if (prefs.scheme !== scheme) add(scheme === "system" ? "Scheme: same as macOS" : `Scheme: ${scheme}`, () => setPrefs({ ...prefs, scheme }), undefined, "theme colour");
+      if (settings.scheme !== scheme) add(scheme === "system" ? "Scheme: same as macOS" : `Scheme: ${scheme}`, () => setSetting("scheme", scheme), undefined, "theme colour dark light");
     }
     return list;
   };
@@ -1180,6 +1271,8 @@ export function App() {
             onAnswer={(text, confidence, pics) => answer(text, confidence, pics)}
             onTalk={talk}
             onHelp={(kind) => void help(kind)}
+            onHelpMenu={() => setSheet("commands")}
+            hints={settings.hints}
             onContinue={() => void continueLesson()}
             onNewLesson={(goal) => void newLesson(goal)}
             onSource={onSource}
@@ -1218,6 +1311,8 @@ export function App() {
           onAnswer={async () => false}
           onTalk={async () => false}
           onHelp={() => {}}
+          onHelpMenu={() => {}}
+          hints={false}
           onContinue={() => {}}
           onNewLesson={() => {}}
           onSource={onSource}
@@ -1240,14 +1335,7 @@ export function App() {
           active={active && paneIndex === focusIndex}
           folds={layout.folds}
           onFold={(heading, open) => setLayout({ ...layout, folds: { ...layout.folds, [heading]: open } })}
-          onSeen={() => {
-            setPlanBefore(null);
-            try {
-              if (folder) localStorage.removeItem(`mg.planBase:${folder}`);
-            } catch {
-              // Nothing kept.
-            }
-          }}
+          onSeen={planSeen}
           onSave={async (text) => {
             if (!api || !plan?.path || plan.changed_ms === null) return "This plan cannot be saved from here.";
             try {
@@ -1270,8 +1358,10 @@ export function App() {
     if (doc === "settings") {
       return (
         <SettingsDoc
-          prefs={prefs}
-          setPrefs={setPrefs}
+          text={settingsText}
+          problems={parsedSettings.problems}
+          onText={takeSettingsText}
+          active={active && paneIndex === focusIndex}
           engine={engine}
           lessonOpen={session.open}
           onEngine={(e) => void chooseEngine(e)}
@@ -1432,6 +1522,14 @@ function DocScroller(props: {
   // When the learner last scrolled by hand: only their own scrolling decides
   // whether the page follows its end.
   const byHand = useRef(0);
+  /** Mark the edges where more of the document lies beyond, for the fades and the tab row's hairline. */
+  const edges = (box: HTMLElement) => {
+    const above = box.scrollTop > 2;
+    const below = box.scrollTop + box.clientHeight < box.scrollHeight - 2;
+    box.toggleAttribute("data-above", above);
+    box.toggleAttribute("data-below", below);
+    box.closest(".pane")?.toggleAttribute("data-scrolled", above);
+  };
   const timer = useRef<number | null>(null);
   const latest = useRef(props);
   latest.current = props;
@@ -1457,6 +1555,7 @@ function DocScroller(props: {
     if (!box || !content) return;
     const watch = new ResizeObserver(() => {
       if (latest.current.stick && atEnd.current) box.scrollTop = box.scrollHeight;
+      edges(box);
     });
     watch.observe(content);
     return () => watch.disconnect();
@@ -1474,6 +1573,7 @@ function DocScroller(props: {
       }}
       onScroll={(event) => {
         const box = event.currentTarget;
+        edges(box);
         if (Date.now() - byHand.current < 600) atEnd.current = box.scrollTop + box.clientHeight >= box.scrollHeight - 48;
         if (timer.current !== null) window.clearTimeout(timer.current);
         timer.current = window.setTimeout(() => latest.current.onScroll(box.scrollTop), 200);

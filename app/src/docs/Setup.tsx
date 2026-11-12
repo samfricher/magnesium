@@ -20,7 +20,7 @@ function runtimeLine(runtime: RuntimeSetup, act: SetupProps): Line {
   const bundled = runtime.bundled;
   const where = installed?.shown_path ?? "";
   if (runtime.state === "ready" && installed) {
-    return { ok: true, what: "Magnesium", detail: `${versionNumber(installed.version)}, at ${where}${runtime.installed_now ? ", installed just now" : ""}` };
+    return { ok: true, what: "Magnesium", detail: runtime.installed_now ? "installed just now" : "ready" };
   }
   if (runtime.state === "kept" && installed) {
     return {
@@ -195,12 +195,7 @@ export function SetupDoc(props: SetupProps) {
           </li>
         </ul>
       )}
-      {props.about && (
-        <p className="doc-path foot">
-          Magnesium {versionNumber(props.about.version)}
-          {props.about.commit ? `, built from ${props.about.commit.slice(0, 12)}` : ""}
-        </p>
-      )}
+
     </article>
   );
 }

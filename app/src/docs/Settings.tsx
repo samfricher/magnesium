@@ -1,41 +1,16 @@
-// Settings are a document, opened in a tab with ⌘, the way an editor opens
-// its own. Each line is one choice; ↑ ↓ move between lines and ← → choose.
-// The learner's choices of face, size, width, scheme and ink are kept on
-// this Mac; how lessons run and are paid for are the core's own settings.
+// Settings are a document: a plain-text file the window applies as it is
+// typed, the way an editor treats its own settings. How lessons run and are
+// paid for are the core's settings, and sit under the file as choices.
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
-import { FONTS, INKS, MEASURES, SCHEMES, SIZE_MAX, SIZE_MIN, type Prefs } from "../prefs";
-import type { About, EngineChoice, Engine, Payment, Setup } from "../types";
+import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
 
-export const KEYS: [string, string][] = [
-  ["Return", "Hand in your answer, or send what you wrote. On a stopped lesson, continue"],
-  ["⇧Return", "A new line"],
-  ["Esc", "Leave the task and say something else; close a list"],
-  ["Tab, ⌘↑", "Back into the open task"],
-  ["⌘⇧H  ⌘⇧L  ⌘⇧D", "Hint, I'm lost, I don't know"],
-  ["⌥1  ⌥2  ⌥3", "Sure, unsure, guess, on your answer"],
-  ["⌘⇧A", "Photos or a PDF of your working"],
-  ["⌘⇧M", "Maths symbols"],
-  ["⌘.", "Stop the reply"],
-  ["⌘P", "Open any document"],
-  ["⌘K", "Every command"],
-  ["⌘O", "Another study folder"],
-  ["⌘N", "New lesson"],
-  ["⌘W", "Close the tab. Closing the lesson keeps where you stopped"],
-  ["⌘1 to ⌘9, ⌃Tab", "Go to a tab"],
-  ["⌘\\", "Two panes, or one; ⌘⌥← ⌘⌥→ move between them"],
-  ["⌘B", "The folder's files"],
-  ["⌘E, ⌘S", "Edit the plan as text, and save it"],
-  ["⌘,", "Settings"],
-  ["⌘=  ⌘−  ⌘0", "Text size"],
-];
-
-type Choice<T> = { id: T; name: string; style?: React.CSSProperties };
+type Choice<T> = { id: T; name: string };
 
 function Row<T extends string | number>(props: { label: string; choices: Choice<T>[]; value: T | null; onPick: (value: T) => void; disabled?: boolean; note?: string }) {
   return (
-    <div className="setting" role="radiogroup" aria-label={props.label} data-setting={props.label}>
+    <div className="setting" role="radiogroup" aria-label={props.label}>
       <span className="setting-label">{props.label}</span>
       <span className="setting-choices">
         {props.choices.map((choice) => (
@@ -44,9 +19,7 @@ function Row<T extends string | number>(props: { label: string; choices: Choice<
             type="button"
             role="radio"
             aria-checked={props.value === choice.id}
-            tabIndex={props.value === choice.id || (props.value === null && choice === props.choices[0]) ? 0 : -1}
             className={props.value === choice.id ? "chosen" : undefined}
-            style={choice.style}
             disabled={props.disabled}
             onClick={() => props.onPick(choice.id)}
           >
@@ -60,8 +33,10 @@ function Row<T extends string | number>(props: { label: string; choices: Choice<
 }
 
 export type SettingsProps = {
-  prefs: Prefs;
-  setPrefs: (prefs: Prefs) => void;
+  text: string;
+  problems: string[];
+  onText: (text: string) => void;
+  active: boolean;
   engine: EngineChoice | null;
   lessonOpen: boolean;
   onEngine: (engine: Engine) => void;
@@ -74,17 +49,36 @@ export type SettingsProps = {
 };
 
 export function SettingsDoc(props: SettingsProps) {
-  const { prefs, setPrefs } = props;
-  const root = useRef<HTMLElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const timer = useRef<number | null>(null);
 
-  // ↑ ↓ between lines, ← → along a line, choosing as it goes.
+  // The file takes the keyboard when the document opens.
+  useEffect(() => {
+    if (props.active) area.current?.focus({ preventScroll: true });
+  }, [props.active]);
+
+  // A change made elsewhere (⌘K, ⌘=) shows in the file at once.
+  useEffect(() => {
+    const el = area.current;
+    if (el && el.value !== props.text && document.activeElement !== el) el.value = props.text;
+  }, [props.text]);
+
+  const fit = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  };
+  useEffect(() => {
+    if (area.current) fit(area.current);
+  }, [props.text]);
+
+  // ↑ ↓ and ← → move through the choices under the file.
   const onKeyDown = (event: React.KeyboardEvent) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="radio"]');
-    if (!button || !root.current) return;
+    if (!button) return;
     const row = button.closest('[role="radiogroup"]');
+    const all = Array.from(document.querySelectorAll<HTMLElement>('.settings [role="radiogroup"]'));
     if (!row) return;
     const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)'));
-    const rows = Array.from(root.current.querySelectorAll('[role="radiogroup"]'));
     const at = buttons.indexOf(button);
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
@@ -93,38 +87,37 @@ export function SettingsDoc(props: SettingsProps) {
       next?.focus();
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      const r = rows.indexOf(row);
-      const target = rows[r + (event.key === "ArrowDown" ? 1 : -1)];
+      const target = all[all.indexOf(row as HTMLElement) + (event.key === "ArrowDown" ? 1 : -1)];
       (target?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? target?.querySelector<HTMLButtonElement>('[role="radio"]'))?.focus();
     }
   };
 
-  const sizes: Choice<number>[] = [];
-  for (let s = SIZE_MIN; s <= SIZE_MAX; s += 1) sizes.push({ id: s, name: String(s) });
   const account = props.setup?.account ?? null;
   return (
-    <article className="settings" data-doc="settings" ref={root} onKeyDown={onKeyDown}>
+    <article className="settings" data-doc="settings" onKeyDown={onKeyDown}>
       <h1 className="doc-title">Settings</h1>
-      <p className="doc-path">Kept on this Mac. ↑ ↓ move between lines, ← → choose.</p>
-      <section>
-        <h2>Reading</h2>
-        <Row
-          label="Text"
-          choices={FONTS.map((font) => ({ id: font.id, name: font.name, style: { fontFamily: font.stack } }))}
-          value={prefs.font}
-          onPick={(font) => setPrefs({ ...prefs, font })}
-        />
-        <Row label="Size" choices={sizes} value={prefs.size} onPick={(size) => setPrefs({ ...prefs, size })} />
-        <Row label="Width" choices={MEASURES} value={prefs.measure} onPick={(measure) => setPrefs({ ...prefs, measure })} />
-        <Row label="Scheme" choices={SCHEMES} value={prefs.scheme} onPick={(scheme) => setPrefs({ ...prefs, scheme })} />
-        <Row
-          label="Your ink"
-          choices={INKS.map((ink) => ({ id: ink.id, name: ink.name }))}
-          value={prefs.ink}
-          onPick={(ink) => setPrefs({ ...prefs, ink })}
-          note="The colour of what you write"
-        />
-      </section>
+      <p className="doc-path">Your settings file. The window follows each change as you type; ⌘K also reaches every value.</p>
+      <textarea
+        ref={area}
+        className="settings-file"
+        defaultValue={props.text}
+        spellCheck={false}
+        aria-label="Your settings file"
+        data-drive="settings-file"
+        onInput={(event) => {
+          const el = event.currentTarget;
+          fit(el);
+          if (timer.current !== null) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => props.onText(el.value), 200);
+        }}
+      />
+      {props.problems.length > 0 && (
+        <ul className="settings-problems">
+          {props.problems.map((problem) => (
+            <li key={problem}>{problem}</li>
+          ))}
+        </ul>
+      )}
       <section>
         <h2>Lessons</h2>
         <Row
@@ -160,13 +153,7 @@ export function SettingsDoc(props: SettingsProps) {
         <div className="setting">
           <span className="setting-label">Claude Code</span>
           <span className="setting-value">
-            {!account
-              ? "Checking…"
-              : !account.installed
-                ? "Not installed on this Mac"
-                : account.signed_in
-                  ? `Signed in${account.detail ? `, ${account.detail}` : ""}`
-                  : "Signed out"}
+            {!account ? "Checking…" : !account.installed ? "Not installed on this Mac" : account.signed_in ? `Signed in${account.detail ? `, ${account.detail}` : ""}` : "Signed out"}
             {account && account.installed && !account.signed_in && (
               <button type="button" className="text-button" onClick={props.onSignIn}>
                 Sign in
@@ -175,26 +162,10 @@ export function SettingsDoc(props: SettingsProps) {
           </span>
         </div>
       </section>
-      <section>
-        <h2>Keys</h2>
-        <table className="keys">
-          <tbody>
-            {KEYS.map(([key, what]) => (
-              <tr key={key}>
-                <td>
-                  <kbd>{key}</kbd>
-                </td>
-                <td>{what}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
       {props.about && (
         <p className="doc-path">
-          Magnesium {props.about.version}
-          {props.about.commit ? `, built from ${props.about.commit.slice(0, 12)}` : ""}. Runtime{" "}
-          {props.setup?.runtime.installed?.version ?? "unknown"}.
+          Magnesium {props.about.version.split("+")[0]}
+          {props.about.commit ? `, built from ${props.about.commit.slice(0, 12)}` : ""}.
         </p>
       )}
     </article>
