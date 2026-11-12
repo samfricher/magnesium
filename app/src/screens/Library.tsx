@@ -185,7 +185,7 @@ function CourseCard(props: {
           </div>
         </div>
         <div className="cc-foot">
-          <button ref={open} className={props.ready ? "btn primary" : "btn"} title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
+          <button ref={open} data-drive={props.ready ? "start" : undefined} className={props.ready ? "btn primary" : "btn"} title={sitting ? "Back to the paper (Return)" : `${label} (Return)`} onClick={props.onOpen}>
             {label}
           </button>
           {props.onCourse && (

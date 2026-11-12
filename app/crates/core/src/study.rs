@@ -125,7 +125,7 @@ fn exam_of(plan: &Value) -> Option<Exam> {
 
 /// The plan whose date is nearest and not past. A plan with no date is a
 /// topic, not an exam, and is chosen only when no dated plan is left.
-fn nearest_plan(plans: &[Value]) -> Option<&Value> {
+pub(crate) fn nearest_plan(plans: &[Value]) -> Option<&Value> {
     plans
         .iter()
         .filter(|plan| plan["days_left"].as_i64().is_some_and(|days| days >= 0))
@@ -135,7 +135,7 @@ fn nearest_plan(plans: &[Value]) -> Option<&Value> {
 }
 
 /// The root the runtime resolved for this folder, which may be a parent.
-fn root_of(digest: &Value, folder: &Path) -> PathBuf {
+pub(crate) fn root_of(digest: &Value, folder: &Path) -> PathBuf {
     text(&digest["study_folder"])
         .map(PathBuf::from)
         .filter(|root| root.is_dir())

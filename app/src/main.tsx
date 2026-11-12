@@ -5,6 +5,7 @@ import "@fontsource-variable/literata/opsz-italic.css";
 import "./styles/fonts.css";
 
 import { App } from "./App";
+import "./harness";
 import "./styles/base.css";
 import "./styles/prose.css";
 import "./styles/screens.css";
