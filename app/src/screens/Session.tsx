@@ -109,6 +109,9 @@ function useNarrow(): boolean {
   return narrow;
 }
 
+/** Whether the learner is using the keyboard (the window marks it as the focus rings do). */
+const byKeyboard = () => document.documentElement.dataset.input === "key";
+
 /** The goal's steps as a row of marks, and the step in hand in words. A click shows them all. */
 function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boolean) => void; startedMs: number | null; blockMinutes: number }) {
   const { rail, open } = props;
@@ -128,7 +131,10 @@ function Track(props: { rail: RailData | null; open: boolean; onOpen: (open: boo
       if (!holder.current?.contains(event.target as Node)) props.onOpen(false);
     };
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") props.onOpen(false);
+      if (event.key !== "Escape") return;
+      props.onOpen(false);
+      // The step button opened it, and a keyboard learner is still on it: it keeps the focus.
+      holder.current?.querySelector<HTMLButtonElement>("button.track")?.focus();
     };
     window.addEventListener("mousedown", close);
     window.addEventListener("keydown", key);
@@ -278,12 +284,16 @@ function QuestionCard(props: {
   const [own, setOwn] = useState<Record<number, string>>({});
   const root = useRef<HTMLDivElement>(null);
   const single = card.questions.length === 1 && !card.questions[0].multi;
-  const most = Math.min(9, Math.max(1, ...card.questions.map((q) => q.options.length)));
 
   useEffect(() => {
     root.current?.querySelector<HTMLInputElement>("input.field")?.focus();
   }, [card.id]);
 
+  const answersFrom = (pick: Record<number, string[]>, words: Record<number, string>): Answer[] =>
+    card.questions.map((q, index) => {
+      const typed = (words[index] ?? "").trim();
+      return { question: q.question, chosen: typed !== "" ? [...(pick[index] ?? []), typed] : (pick[index] ?? []) };
+    });
   const answersNow = (extra?: { index: number; label: string }): Answer[] =>
     card.questions.map((q, index) => {
       const typed = (own[index] ?? "").trim();
@@ -311,6 +321,30 @@ function QuestionCard(props: {
   const click = (index: number, q: Question, label: string) => {
     if (single) props.onAnswer(card.id, answersNow({ index, label }));
     else choose(index, q, label);
+  };
+
+  /**
+   * Return in the field with one digit in it that numbers an option: the digit
+   * was a choice, not words. The option is chosen and the field emptied; for a
+   * question of one answer that is also the answer, and it is sent once every
+   * question has one. Any other text stays the learner's own words (an answer
+   * such as "1/v" starts with a digit).
+   */
+  const numbered = (index: number, q: Question, typed: string): boolean => {
+    const n = /^[1-9]$/.test(typed) ? Number(typed) - 1 : -1;
+    if (n < 0 || n >= q.options.length) return false;
+    const label = q.options[n].label;
+    const had = chosen[index] ?? [];
+    const next = q.multi ? (had.includes(label) ? had.filter((l) => l !== label) : [...had, label]) : [label];
+    const pick = { ...chosen, [index]: next };
+    const words = { ...own, [index]: "" };
+    setChosen(pick);
+    setOwn(words);
+    const answers = answersFrom(pick, words);
+    // A box that allows several waits for Return on an empty field; one of one answer goes.
+    if (!q.multi && answers.every((a) => a.chosen.length > 0)) props.onAnswer(card.id, answers);
+    else if (!q.multi) field(index + 1)?.focus();
+    return true;
   };
 
   /**
@@ -456,7 +490,9 @@ function QuestionCard(props: {
               value={own[index] ?? ""}
               onChange={(e) => typeInto(index, e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !composing(e) && complete()) props.onAnswer(card.id, answersNow());
+                if (e.key !== "Enter" || composing(e)) return;
+                if (numbered(index, q, own[index] ?? "")) e.preventDefault();
+                else if (complete()) props.onAnswer(card.id, answersNow());
               }}
             />
           </div>
@@ -467,7 +503,7 @@ function QuestionCard(props: {
           Send
         </button>
         <span className="aside">
-          ↑ to choose an option, then {Array.from({ length: most }, (_, n) => n + 1).join(" ")} or ↑ ↓ and Return; or write your own.
+          Click an option, or press ↑ and then its number. Or write it in your own words.
         </span>
       </div>
     </div>
@@ -622,6 +658,9 @@ function Attach(props: { onPhoto: () => void; onMaterial: () => void }) {
 
   const choose = (run: () => void) => {
     setOpen(false);
+    // The menu is gone: the focus goes back to its button for a keyboard learner, to the answer box for a mouse.
+    if (byKeyboard()) button.current?.focus();
+    else document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
     run();
   };
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -778,7 +817,9 @@ function Composer(props: {
     }
     const active = document.activeElement;
     const free = !active || active === document.body;
-    const back = wasPaused.current && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement);
+    // A keyboard learner who opened the steps from their button is still on it, and keeps it.
+    const onOpener = byKeyboard() && active instanceof HTMLButtonElement;
+    const back = wasPaused.current && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && !onOpener;
     wasPaused.current = false;
     if (free || back) box.current?.focus();
   }, [props.paused, props.disabled]);
@@ -918,7 +959,7 @@ function Composer(props: {
         <textarea
           ref={box}
           rows={1}
-          placeholder="Your answer. Shift+Return starts a new line."
+          placeholder="Your answer. ⇧Return starts a new line."
           aria-label="Your answer"
           value={text}
           autoFocus
@@ -963,7 +1004,12 @@ function Composer(props: {
             aria-expanded={symbols}
             aria-controls="symbol-row"
             onClick={() => {
-              if (symbols) return closeSymbols();
+              if (symbols) {
+                // Closed from its own button: a keyboard learner stays on it.
+                if (byKeyboard()) setSymbols(false);
+                else closeSymbols();
+                return;
+              }
               setSymbols(true);
               box.current?.focus();
             }}
@@ -976,14 +1022,17 @@ function Composer(props: {
               Sends when the tutor finishes
             </span>
           )}
-          <Sure
-            value={confidence}
-            shown={typed}
-            onChange={(value, fromKey) => {
-              setConfidence(value);
-              if (!fromKey) box.current?.focus();
-            }}
-          />
+          {/* While an answer waits for the tutor, its note has the row, whole; the question returns after. */}
+          {!queued && (
+            <Sure
+              value={confidence}
+              shown={typed}
+              onChange={(value, fromKey) => {
+                setConfidence(value);
+                if (!fromKey) box.current?.focus();
+              }}
+            />
+          )}
           <button
             className="btn primary send"
             disabled={!content}
@@ -1069,7 +1118,7 @@ function Thinking(props: {
         aria-pressed={props.stopping}
         title="Stop this reply (⌘.)"
       >
-        <Icon name="stop" size={13} fill /> Stop
+        Stop
       </button>
     </div>
   );
@@ -1328,6 +1377,10 @@ export function Session(props: {
   // Chrome. The position written is remembered, so a scroll event that goes
   // above it is the learner's, and the page's own writes never read as theirs.
   const mine = useRef(0);
+  // How tall the page was at the last look. A page that gets shorter (a card
+  // answered and gone) pulls the view up with it: that is not the learner
+  // scrolling up, so it must not stop the view following the reply.
+  const tall = useRef(0);
   const setTop = (top: number) => {
     const s = stage.current;
     if (!s) return;
@@ -1365,6 +1418,8 @@ export function Session(props: {
   const measure = () => {
     const s = stage.current;
     if (!s) return;
+    if (s.scrollHeight < tall.current) mine.current = Math.min(mine.current, s.scrollTop);
+    tall.current = s.scrollHeight;
     const task = openTask();
     let next: Pin | null = null;
     if (task && task.getBoundingClientRect().bottom < s.getBoundingClientRect().top + EDGE) next = summarize(task);
@@ -1454,6 +1509,27 @@ export function Session(props: {
     measure();
   };
 
+  /**
+   * Reading without leaving the answer box: from a text field, Page Up and
+   * Page Down move the transcript a page, ⌥↑ and ⌥↓ a few lines. Plain writes
+   * of scrollTop, like every other move of the view; a move up is the
+   * learner's, so the view stops following the reply.
+   */
+  const scrollFromField = (event: React.KeyboardEvent) => {
+    const s = stage.current;
+    const target = event.target;
+    if (!s || event.defaultPrevented || composing(event) || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    if (!(target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement)) return;
+    let by = 0;
+    if (!event.altKey && event.key === "PageDown") by = s.clientHeight * 0.9;
+    else if (!event.altKey && event.key === "PageUp") by = -s.clientHeight * 0.9;
+    else if (event.altKey && event.key === "ArrowDown") by = 90;
+    else if (event.altKey && event.key === "ArrowUp") by = -90;
+    if (by === 0) return;
+    event.preventDefault();
+    s.scrollTop += by;
+  };
+
   /** Answering a card, or deciding on one, sends the learner back to the end, where the reply will be. */
   const answer = (id: string, answers: Answer[]) => {
     follow.current = true;
@@ -1473,6 +1549,7 @@ export function Session(props: {
       className={source && !narrow ? "screen session has-source" : "screen session"}
       data-screen="session"
       data-stopping={interrupting ? "yes" : undefined}
+      onKeyDown={scrollFromField}
       {...(props.overlay ? ({ inert: "" } as object) : {})}
     >
       <TopBar
@@ -1505,6 +1582,9 @@ export function Session(props: {
           <div
             className="scroll stage"
             ref={stage}
+            role="region"
+            aria-label="The lesson"
+            tabIndex={-1}
             onScroll={scrolled}
             onPointerDown={(e) => e.target === stage.current && held()}
           >
@@ -1587,12 +1667,15 @@ export function Session(props: {
                     }
                   }}
                 >
-                  <h3>Where did you stop?</h3>
+                  <h3>End this lesson?</h3>
+                  <label className="sheet-note" htmlFor="stop-line">
+                    Your next lesson starts from here (you can edit it)
+                  </label>
                   <input
+                    id="stop-line"
                     ref={stopInput}
                     className="field"
                     value={line}
-                    aria-label="Where did you stop?"
                     placeholder="One line: where you are, and what comes next"
                     onChange={(e) => setLine(e.target.value)}
                     onKeyDown={(e) => {
@@ -1600,13 +1683,12 @@ export function Session(props: {
                     }}
                   />
                   <div className="row">
-                    <button className="btn primary" title="Save and end the lesson (Return)" onClick={() => stop(line)}>
-                      Save and end the lesson
+                    <button className="btn primary" title="End the lesson and keep this line (Return)" onClick={() => stop(line)}>
+                      End lesson
                     </button>
                     <button className="btn ghost" ref={keepGoing} onClick={() => setStopping(false)}>
                       Keep going
                     </button>
-                    <span className="aside">Your next lesson opens on this line.</span>
                   </div>
                 </div>
               )}
@@ -1632,9 +1714,9 @@ export function Session(props: {
             {/* A band whose room is always kept, between the transcript and the answer box. It holds the passages the last reply cited and the cue that there is more below, so neither covers the text or moves anything. */}
             <div className="band">
               <div className="column band-row">
+                {showPassages && <span className="lesson-label passages-label">Passages from the last reply</span>}
                 {showPassages && (
                   <div className="passages" data-role="passages">
-                    <span className="lesson-label passages-label">Passages from the last reply</span>
                     {passages.slice(0, 4).map((passage) => (
                       <button
                         key={passage.href}
