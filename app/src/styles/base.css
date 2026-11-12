@@ -53,6 +53,9 @@
   /* The one shadow, for what floats. */
   --shadow: 0 16px 48px rgba(5, 8, 12, 0.5), 0 2px 8px rgba(5, 8, 12, 0.3);
   --veil: rgba(14, 18, 24, 0.55);
+  /* The magnesium flare: near-white light, and its glow. */
+  --flare: #f4fffa;
+  --flare-glow: rgba(244, 255, 250, 0.8);
 
   --serif: "Literata Variable", Literata, ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   --sans: "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -114,6 +117,7 @@
     --red-soft: rgba(174, 59, 47, 0.08);
     --shadow: 0 16px 48px rgba(27, 33, 43, 0.14), 0 2px 8px rgba(27, 33, 43, 0.08);
     --veil: rgba(241, 242, 238, 0.6);
+    --flare-glow: rgba(29, 106, 74, 0.5);
   }
 }
 
@@ -256,13 +260,19 @@ textarea {
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
 }
 
-.center {
+/* Centred when it fits. When it does not, it starts at the top and scrolls:
+   a margin of auto, unlike centring the grid, never pushes the top out of reach. */
+.screen > .center {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  place-items: center;
-  padding: var(--s2) var(--s6) var(--s8);
+  display: flex;
+  flex-direction: column;
+  padding: var(--s2) var(--s6) var(--s7);
+}
+
+.screen > .center > * {
+  margin: auto;
 }
 
 /* The top strip is also how the window is dragged. The traffic lights sit
@@ -655,22 +665,18 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-.chip .line {
+.chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.chip b {
-  font-weight: 600;
-  color: var(--text);
-}
 
 .chip.bad {
   background: var(--red-soft);
   color: var(--red);
 }
 
-/* ---- the proof ring ---- */
+/* ---- the lesson's clock ring (goes when the clock there is plain text) ---- */
 
 .ring {
   position: relative;
@@ -690,18 +696,38 @@ button.banner:hover {
 
 .ring-fill {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--muted);
   stroke-linecap: round;
   transition: stroke-dashoffset 0.9s var(--ease);
 }
 
-/* A clock is not a proof, and being over time is not being due, so its ring is ink. */
-.ring.amber .ring-fill,
-.ring.ink .ring-fill {
-  stroke: var(--muted);
+/* ---- the level: the one ring ---- */
+
+.level-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
 }
 
-.ring-mid {
+.level-ring svg {
+  display: block;
+}
+
+/* The track is a hairline in --faint, 3:1 or better on every surface. The arc is the share of proofs earned. */
+.level-track {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+
+.level-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+
+.level-mid {
   position: absolute;
   inset: 0;
   display: flex;
@@ -711,70 +737,107 @@ button.banner:hover {
   line-height: 1;
 }
 
-.ring-mid b {
+.level-mid b {
+  color: var(--text);
+  font-family: var(--serif);
   font-weight: 600;
-  font-size: 1.05em;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
-.ring-mid small {
-  margin-top: var(--s1);
-  font-family: var(--sans);
+.level-mid small {
+  margin-top: 2px;
   font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--faint);
+  color: var(--muted);
 }
 
-/* ---- three proof dots ---- */
+.level-ring.sm b {
+  font-size: var(--fs-read);
+}
+
+.level-ring.md b {
+  font-size: var(--fs-card);
+}
+
+.level-ring.lg b {
+  font-size: var(--fs-title);
+}
+
+/* ---- the proof mark: three dots ---- */
 
 .dots {
   display: inline-flex;
+  align-items: center;
   gap: var(--s1);
   flex: none;
 }
 
+/* A proof still to earn is a ring in --faint, 3:1 on every surface. */
 .dots i {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--faint);
   border-radius: 50%;
-  border: 1.5px solid var(--line-2);
 }
 
-.dots i.full {
+.dots i.on {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-/* Earned before a later miss: kept as history, and no longer counted. */
-.dots i.past {
-  border-color: transparent;
-  background: var(--faint);
-  opacity: 0.5;
+/* Earned today: the same dot with a soft halo. */
+.dots i.new {
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* The mark: three dots, one proved, one on its way, one still to prove. */
+/* The magnesium flare: the new proof burns white for an instant and settles
+   into proof green. It happens once, on Sitting done, and is the only
+   celebration in the window. */
+@keyframes flare {
+  0% {
+    background: var(--flare);
+    box-shadow:
+      0 0 0 0 var(--flare-glow),
+      0 0 0 0 var(--accent-soft);
+  }
+  14% {
+    background: var(--flare);
+    box-shadow:
+      0 0 14px 6px var(--flare-glow),
+      0 0 0 4px var(--accent-mid);
+  }
+  100% {
+    background: var(--accent);
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 3px var(--accent-soft);
+  }
+}
+
+.dots i.flare {
+  animation: flare 700ms var(--ease) 260ms both;
+}
+
+/* The three-dot mark on the loading screen and the empty library: ink, a
+   mark of the app and not of a proof. */
 .mark {
   display: inline-flex;
   gap: var(--s2);
 }
 
 .mark i {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
+  border: 1.5px solid var(--text);
 }
 
 .mark i:nth-child(1) {
-  background: var(--accent);
+  background: var(--text);
 }
 
 .mark i:nth-child(2) {
-  background: var(--accent-mid);
-  border-color: transparent;
-}
-
-.mark i:nth-child(3) {
-  border-color: var(--line-2);
+  background: var(--faint);
+  border-color: var(--faint);
 }
 
 .mark.breathing i {
@@ -807,14 +870,10 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-.run-line b {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
+/* Seven days, Monday to Sunday. A day studied is filled, today is ringed, any other day is an empty ring. */
 .week {
   display: inline-flex;
+  align-items: flex-start;
   gap: var(--s2);
 }
 
@@ -826,18 +885,16 @@ button.banner:hover {
 }
 
 .week-day i {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--faint);
   border-radius: 50%;
-  border: 1.5px solid var(--line-2);
-  color: var(--bg);
 }
 
 .week-day b {
   font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: 16px;
   color: var(--faint);
 }
 
@@ -846,55 +903,17 @@ button.banner:hover {
   background: var(--text);
 }
 
-.week-day.ahead i {
-  border-style: dashed;
-  opacity: 0.6;
+.week-day.today i {
+  border-color: var(--text);
+}
+
+.week-day.today.done i {
+  outline: 1.5px solid var(--text);
+  outline-offset: 2px;
 }
 
 .week-day.today b {
   color: var(--text);
-}
-
-.week-day.today:not(.done) i {
-  border-color: var(--muted);
-}
-
-.week-day.pop i {
-  animation: pop 0.7s var(--ease) var(--t-move) both;
-}
-
-@keyframes pop {
-  0% {
-    transform: scale(0.5);
-  }
-  60% {
-    transform: scale(1.2);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.weeks {
-  display: grid;
-  grid-template-columns: repeat(7, 11px);
-  gap: var(--s1);
-}
-
-.weeks i {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--line);
-}
-
-.weeks i.done {
-  background: var(--muted);
-}
-
-.weeks i.ahead {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 /* ---- commands, behind ⌘K ---- */
@@ -914,7 +933,6 @@ button.banner:hover {
 
 .palette {
   width: min(580px, calc(100vw - 48px));
-  max-height: 66vh;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line-2);
@@ -948,31 +966,45 @@ button.banner:hover {
   font-size: var(--fs-ui);
 }
 
-.palette-list {
-  overflow-y: auto;
-  padding: var(--s2);
+.palette-in input::placeholder {
+  color: var(--faint);
+  opacity: 1;
 }
 
-.palette-list button {
+.palette-in input:focus {
+  outline: none;
+}
+
+/* The list is sized to whole rows (40px each), so no row is ever cut in half. */
+.palette-list {
+  --row: 40px;
+  max-height: calc(var(--row) * 8 + var(--s2) * 2);
+  overflow-y: auto;
+  padding: var(--s2);
+  scroll-snap-type: y proximity;
+  scroll-padding: var(--s2);
+}
+
+.palette-list [role="option"] {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  width: 100%;
-  padding: var(--s2) var(--s3);
-  border: 0;
+  height: var(--row);
+  padding: 0 var(--s3);
   border-radius: var(--r-control);
-  background: transparent;
   color: var(--muted);
   font-size: var(--fs-ui);
-  text-align: left;
+  scroll-snap-align: start;
+  cursor: pointer;
+  transition: background var(--t-fast) ease-out;
 }
 
-.palette-list button span {
+.palette-list [role="option"] span {
   color: var(--text);
   white-space: nowrap;
 }
 
-.palette-list button small {
+.palette-list [role="option"] small {
   margin-left: auto;
   padding-left: var(--s4);
   font-size: var(--fs-caption);
@@ -982,33 +1014,87 @@ button.banner:hover {
   white-space: nowrap;
 }
 
-.palette-list button:focus-visible {
-  outline-offset: -2px;
-}
-
-.palette-list button.on {
+.palette-list [role="option"].on {
   background: var(--hover);
 }
 
-.palette-list button.on .icon {
+.palette-list [role="option"].on small {
+  color: var(--muted);
+}
+
+.palette-list [role="option"].on .icon {
   color: var(--text);
+}
+
+.palette-list [role="option"]:active {
+  background: var(--line-2);
+  transition-duration: 80ms;
+}
+
+.palette-list [role="option"].off {
+  cursor: default;
+}
+
+.palette-list [role="option"].off span {
+  color: var(--faint);
 }
 
 .palette-none {
   padding: var(--s4);
   text-align: center;
-  color: var(--faint);
+  color: var(--muted);
   font-size: var(--fs-small);
+}
+
+.palette-keys {
+  padding: var(--s3) var(--s4) var(--s4);
+}
+
+.palette-keys-title {
+  margin-bottom: var(--s2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.palette-key {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  min-height: 36px;
+  font-size: var(--fs-ui);
+}
+
+.palette-key kbd {
+  min-width: 96px;
+  justify-content: center;
+}
+
+.palette-keys-back {
+  margin-top: var(--s2);
+  font-size: var(--fs-caption);
+  color: var(--faint);
 }
 
 .palette-foot {
   padding: var(--s2) var(--s4);
   border-top: 1px solid var(--line);
   font-size: var(--fs-caption);
+  line-height: 1.4;
   color: var(--faint);
 }
 
+@media (max-height: 560px) {
+  .palette-list {
+    max-height: calc(40px * 6 + var(--s2) * 2);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .dots i.flare {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {

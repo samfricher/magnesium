@@ -7,36 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialNote } from "../ui/Material";
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { PROOF_HINT, PaletteKey, Ring, TopBar, agoText, clockText, composing, daysLeftText, proofShare, skillCounts, urgency, useNow } from "../ui/bits";
-import type { Home, Paper, Progress, Row } from "../types";
+import { Due, ExamSentence, Level, PROOF_HINT, PaletteKey, TopBar, agoText, clockText, composing, proofShare, sentence, skillCounts, splitGoal, useNow } from "../ui/bits";
+import type { Home, Paper, Progress } from "../types";
 import { displayName } from "./Library";
-import { todayParts } from "./Summary";
+import { todaySentence } from "./Summary";
 
-/** How far one skill is, as a word the styles colour. */
-function skillState(row: Row, group: "confirmed" | "in_progress" | "untested"): string {
-  if (group === "confirmed") return "p3";
-  if (group === "untested") return "p0";
-  const earned = row.dots.filter((dot) => dot === 2).length;
-  return `p${earned}${row.due ? " due" : ""}`;
-}
-
-/** Every skill of the course as one small mark: the whole proof at a glance. */
-export function SkillMarks({ progress, limit }: { progress: Progress; limit: number }) {
-  const marks = [
-    ...progress.confirmed.map((row) => skillState(row, "confirmed")),
-    ...progress.in_progress.map((row) => skillState(row, "in_progress")),
-    ...progress.untested.map((row) => skillState(row, "untested")),
-  ];
-  const shown = marks.slice(0, limit);
-  return (
-    <span className="marks" aria-hidden="true">
-      {shown.map((state, index) => (
-        <i key={index} className={state} />
-      ))}
-      {marks.length > shown.length && <b>+{marks.length - shown.length}</b>}
-    </span>
-  );
-}
+/** What a proof is, for a course that has none yet. */
+const PROOF_DEFINITION = "A proof is a right answer with no help, on its own day. Three prove a skill.";
 
 export function Course(props: {
   home: Home;
@@ -87,7 +64,6 @@ export function Course(props: {
   }, [asking]);
 
   const exam = home.exam;
-  const left = daysLeftText(exam?.days_left);
   const nextPaper = home.papers.find((paper) => !paper.sat) ?? null;
   const checks = home.checks_due ?? 0;
   // One number for what is due, the same one the library shows.
@@ -96,6 +72,7 @@ export function Course(props: {
     checks > 0 ? `${checks} quick ${checks === 1 ? "check" : "checks"} first` : null,
     home.redos_due > 0 ? `${home.redos_due} paper ${home.redos_due === 1 ? "question" : "questions"} to redo` : null,
   ].filter(Boolean);
+  const dueSentence = dueParts.length > 0 ? `${dueParts.join(", then ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const sitting = home.sitting;
   const proofs = progress?.proofs ?? null;
   const usable = home.state === "ready" || home.state === "empty" || home.state === "not_set_up";
@@ -107,7 +84,7 @@ export function Course(props: {
         <span className="eyebrow bad">
           <Icon name="warn" size={14} /> Something to fix first
         </span>
-        <h2>{home.state === "no_runtime" ? "Magnesium is not installed" : "This folder could not be read"}</h2>
+        <h2>{home.state === "no_runtime" ? "Magnesium is not installed" : "This course could not be read"}</h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
           <button className="btn primary" autoFocus title="Try again (Return)" onClick={props.onRetry}>
@@ -119,9 +96,8 @@ export function Course(props: {
   } else if (home.state === "needs_upgrade") {
     card = declined ? (
       <>
-        <span className="eyebrow">Not upgraded</span>
-        <h2>This folder stays as it was</h2>
-        <p>A lesson cannot start here until the folder is upgraded. Nothing in it was changed.</p>
+        <h2>This course stays as it was</h2>
+        <p>A lesson cannot start here until the course is upgraded. Nothing in it was changed.</p>
         <div className="row">
           <button className="btn" disabled={props.upgrading} onClick={props.onUpgrade}>
             Upgrade
@@ -130,8 +106,7 @@ export function Course(props: {
       </>
     ) : (
       <>
-        <span className="eyebrow">One step first</span>
-        <h2>Upgrade this folder?</h2>
+        <h2>Upgrade this course?</h2>
         <p className="selectable">{home.message}</p>
         <div className="row">
           <button className="btn primary" autoFocus disabled={props.upgrading} title="Upgrade (Return)" onClick={props.onUpgrade}>
@@ -149,9 +124,9 @@ export function Course(props: {
     const leftSeconds = Math.round((sitting.started_ms + sitting.minutes * 60_000 - now) / 1000);
     card = (
       <>
-        <span className="eyebrow now">A paper is running</span>
+        <p className="next-ref">A paper is running</p>
         <h2>
-          {sitting.name} · <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
+          {sitting.name}, <span className="num">{clockText(leftSeconds)}</span> {leftSeconds >= 0 ? "left" : "over"}
         </h2>
         <p>The tutor is off until you hand in.</p>
         <div className="row">
@@ -164,7 +139,6 @@ export function Course(props: {
   } else if (gathering) {
     card = (
       <>
-        <span className="eyebrow">First step</span>
         <h2>Add your course material</h2>
         <p>
           Slides, notes, past papers. Drop them anywhere in this window. The tutor can search what it can read, and cites it by page.
@@ -176,7 +150,6 @@ export function Course(props: {
           <button className="btn" disabled={props.adding} onClick={props.onPasteText} data-role="paste-text">
             Paste text
           </button>
-          <span className="grow" />
           <button className="btn ghost" disabled={props.adding} onClick={() => setSkipped(true)} data-role="skip-material">
             Skip for now
           </button>
@@ -187,13 +160,12 @@ export function Course(props: {
     const start = () => goal.trim() !== "" && !props.starting && props.onNewLesson(goal.trim());
     card = (
       <>
-        <span className="eyebrow">{fresh ? "First lesson" : "New lesson"}</span>
         <h2>What do you want to learn?</h2>
         <input
           ref={input}
           className="field big"
           type="text"
-          placeholder="A topic, a file in this folder, or an exam and its date"
+          placeholder="A topic, a file in this course, or an exam and its date"
           autoComplete="off"
           spellCheck={false}
           value={goal}
@@ -215,29 +187,30 @@ export function Course(props: {
               Back
             </button>
           )}
-          {home.state === "not_set_up" && <span className="aside">Start sets this folder up for Magnesium.</span>}
+          {home.state === "not_set_up" && <span className="aside">Start sets this course up for Magnesium.</span>}
         </div>
       </>
     );
   } else {
     const last = home.last;
+    const goal = last ? splitGoal(last.goal) : null;
+    const stopped = last?.stopped_at ? sentence(last.stopped_at) : null;
+    const upNext = last?.next_action ? sentence(last.next_action) : null;
     card = (
       <>
-        <span className="eyebrow">
-          {last ? "Next" : "Ready"}
-          {last && last.days_ago !== null && <i>last studied {agoText(last.days_ago)}</i>}
-        </span>
+        {last && (
+          <p className="next-ref">
+            <span>{goal?.ref ?? ""}</span>
+            {last.days_ago !== null && <span>Last studied {agoText(last.days_ago)}</span>}
+          </p>
+        )}
         <h2 className="selectable">
-          <Line text={last ? last.goal : `Start on ${exam?.title ?? displayName(home.name)}`} />
+          {goal ? <Line text={goal.title} /> : <Line text={`Start on ${exam?.title ?? displayName(home.name)}`} />}
         </h2>
-        {last?.stopped_at ? (
-          <p className="selectable">
-            <b>You stopped at</b> <Line text={last.stopped_at} />
-          </p>
-        ) : last?.next_action ? (
-          <p className="selectable">
-            <b>Up next</b> <Line text={last.next_action} />
-          </p>
+        {stopped ? (
+          <p className="selectable">You stopped at <Line text={stopped} /></p>
+        ) : upNext ? (
+          <p className="selectable">Up next: <Line text={upNext} /></p>
         ) : null}
         <div className="row">
           <button className="btn primary" autoFocus disabled={props.starting} title={last ? "Continue (Return)" : "Start (Return)"} onClick={() => props.onContinue(false)}>
@@ -245,11 +218,8 @@ export function Course(props: {
           </button>
           {due > 0 && (
             <span className="dues">
-              <span className="due">
-                <i />
-                {due} due today
-              </span>
-              <span className="dues-what">{dueParts.join(", then ")}</span>
+              <Due n={due} />
+              {dueSentence && <span className="dues-what">{dueSentence}</span>}
             </span>
           )}
         </div>
@@ -257,8 +227,8 @@ export function Course(props: {
     );
   }
 
-  const inProgress = progress?.in_progress.length ?? 0;
-  const today = todayParts(progress?.today ?? null);
+  const today = todaySentence(progress?.today ?? null);
+  const skills = proofs ? skillCounts(proofs) : null;
 
   return (
     <section className="screen course" data-screen="course">
@@ -276,35 +246,20 @@ export function Course(props: {
           <header className="course-head">
             <div className="course-title">
               <h1>{displayName(home.name)}</h1>
-              {exam ? (
-                <div className={`exam-line ${urgency(exam)}`}>
-                  <Icon name="flag" size={15} />
-                  <Line text={exam.title} />
-                  {exam.day && <span>{exam.day}</span>}
-                  {left && <b>{left}</b>}
-                </div>
-              ) : (
-                <div className="exam-line none">{usable && home.state === "ready" ? "No exam set" : " "}</div>
-              )}
+              <p className="exam-line">
+                {exam ? <ExamSentence exam={exam} /> : usable && home.state === "ready" ? "No exam set." : " "}
+              </p>
             </div>
-            {proofs && skillCounts(proofs) && (
+            {skills && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <span>
-                  <b>Skills</b>
-                  <small>{skillCounts(proofs)}</small>
-                </span>
+                <span>{skills}</span>
               </button>
             )}
             {proofs && proofs.levelled && proofs.total > 0 && (
               <button className="level" onClick={props.onProgress} title={PROOF_HINT}>
-                <Ring share={proofShare(proofs)} size={64} label={`Level ${proofs.level}`}>
-                  <b>{proofs.level}</b>
-                </Ring>
-                <span>
-                  <b>Level {proofs.level}</b>
-                  <small>
-                    {proofs.earned} of {proofs.total} proofs
-                  </small>
+                <Level value={proofs.level} size="md" share={proofShare(proofs)} />
+                <span className="num">
+                  {proofs.earned} of {proofs.total} proofs
                 </span>
               </button>
             )}
@@ -313,9 +268,9 @@ export function Course(props: {
           <div className="next-card" data-card="next">
             {card}
           </div>
-          {usable && !sitting && today.length > 0 && (
+          {usable && !sitting && today && (
             <p className="today-line" data-role="today">
-              {today.join(" · ")}
+              {today}
             </p>
           )}
           {props.notice && <div className="banner selectable">{props.notice}</div>}
@@ -331,13 +286,13 @@ export function Course(props: {
                 </span>
                 {progress && proofs && proofs.total > 0 ? (
                   <>
-                    <SkillMarks progress={progress} limit={44} />
-                    <span className="tile-foot">
-                      {proofs.proven} of {proofs.skills} skills proven{inProgress > 0 ? ` · ${inProgress} in progress` : ""}
+                    <span className="tile-main">
+                      {proofs.proven} of {proofs.skills} skills proven
                     </span>
+                    <span className="tile-foot">{progress.in_progress.length} in progress.</span>
                   </>
                 ) : (
-                  <span className="tile-foot">Fills in after your first marked answer</span>
+                  <span className="tile-foot">{PROOF_DEFINITION}</span>
                 )}
               </button>
               <button className="tile" onClick={() => props.onPaper(nextPaper)}>
@@ -348,21 +303,26 @@ export function Course(props: {
                 {nextPaper ? (
                   <>
                     <span className="tile-main">{nextPaper.name}</span>
-                    <span className="tile-foot">{nextPaper.minutes ? `${nextPaper.minutes} min` : "Sit it cold"}</span>
+                    <span className="tile-foot">
+                      A timed practice exam from your past papers{nextPaper.minutes ? `, ${nextPaper.minutes} minutes` : ""}.
+                    </span>
                   </>
                 ) : (
-                  <span className="tile-foot">{home.papers.length > 0 ? "All papers sat" : "None yet"}</span>
+                  <span className="tile-foot">
+                    {home.papers.length > 0
+                      ? "All papers sat. A timed practice exam from your past papers."
+                      : "None yet: the tutor writes one when you ask."}
+                  </span>
                 )}
               </button>
               {!fresh && (
-                <button className="tile" title="Another topic (Command-N)" onClick={() => props.onAsk(true)}>
+                <button className="tile" title="Another topic (⌘N)" onClick={() => props.onAsk(true)}>
                   <span className="tile-head">
                     <Icon name="plus" size={16} />
                     New lesson
                   </span>
-                  <span className="tile-foot">
-                    Another topic
-                  </span>
+                  <span className="tile-main">Another topic</span>
+                  <span className="tile-foot">Pick what to learn next.</span>
                 </button>
               )}
             </div>
@@ -370,11 +330,7 @@ export function Course(props: {
           {usable && !sitting && !gathering && (
             <div className="material-strip" data-role="material-strip">
               <Icon name="clip" size={16} />
-              <span>
-                <b>Course material</b>
-                <small>Drop files here, or</small>
-              </span>
-              <span className="grow" />
+              <span>Drop files here, or choose them</span>
               <button className="btn small" disabled={props.adding} onClick={props.onAddFiles} data-role="add-files">
                 {props.adding ? "Adding…" : "Choose files"}
               </button>

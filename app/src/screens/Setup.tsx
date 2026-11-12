@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../ui/icons";
-import { TopBar } from "../ui/bits";
+import { PaletteKey, TopBar } from "../ui/bits";
 import type { About, Account, Payment, RuntimeSetup, Setup as SetupData } from "../types";
 
 /** Whether a lesson can start: the program runs and Claude Code is signed in. */
@@ -26,7 +26,7 @@ export function versionNumber(version: string): string {
 /** The window's version and the first characters of its commit. */
 export function aboutText(about: About | null): string | null {
   if (!about) return null;
-  return about.commit ? `Magnesium ${about.version} · ${about.commit.slice(0, 7)}` : `Magnesium ${about.version} · built from source`;
+  return about.commit ? `Magnesium ${about.version} (${about.commit.slice(0, 7)})` : `Magnesium ${about.version}, built from source`;
 }
 
 function Step(props: { ok: boolean; title: string; detail: string; children?: ReactNode }) {
@@ -52,15 +52,15 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
   const bundled = runtime.bundled;
   const where = installed ? installed.shown_path : "";
   if (runtime.state === "ready" && installed) {
-    return <Step ok title="Magnesium" detail={`${versionNumber(installed.version)} · ${where}${runtime.installed_now ? " · installed just now" : ""}`} />;
+    return <Step ok title="Magnesium" detail={`${versionNumber(installed.version)} at ${where}${runtime.installed_now ? ", installed just now" : ""}`} />;
   }
   if (runtime.state === "different" && installed && bundled) {
     const theirs = installed.version ? `version ${versionNumber(installed.version)}` : "a copy that does not run";
     return (
-      <Step ok={false} title="Magnesium" detail={`another copy · ${where}`}>
+      <Step ok={false} title="Magnesium" detail={`another copy at ${where}`}>
         <p className="selectable">
           This Mac has Magnesium {theirs}. This app came with {versionNumber(bundled.version)}. Replace it? The window, Claude Code and a terminal
-          all use the one copy. The newer one upgrades a study folder&apos;s record when it opens the folder, after asking you, and keeps a copy of
+          all use the one copy. The newer one upgrades a course&apos;s record when it opens the course, after asking you, and keeps a copy of
           it first.
         </p>
         <div className="row">
@@ -78,25 +78,24 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
     // Older than the window needs: it cannot be kept, so the only way on is a
     // newer copy, the app's own when it carries one.
     return (
-      <Step ok={false} title="Magnesium" detail={`${versionNumber(installed.version)}, too old · ${where}`}>
+      <Step ok={false} title="Magnesium" detail={`${versionNumber(installed.version)}, too old, at ${where}`}>
         <p className="selectable">{runtime.message}</p>
         <div className="row">
-          {bundled ? (
+          {bundled && (
             <button className="btn primary" autoFocus title="Replace (Return)" onClick={props.onReplace}>
               Replace with {versionNumber(bundled.version)}
             </button>
-          ) : (
-            <button className="btn small" onClick={props.onCheck}>
-              Check again
-            </button>
           )}
+          <button className="btn small" onClick={props.onCheck}>
+            Check again
+          </button>
         </div>
       </Step>
     );
   }
   if (runtime.state === "kept" && installed && bundled) {
     return (
-      <Step ok title="Magnesium" detail={`${versionNumber(installed.version)}, kept · ${where}`}>
+      <Step ok title="Magnesium" detail={`${versionNumber(installed.version)}, kept, at ${where}`}>
         <p className="selectable">{runtime.message}</p>
         <div className="row">
           <button className="btn small" onClick={props.onReplace}>
@@ -110,7 +109,7 @@ function RuntimeStep(props: { runtime: RuntimeSetup; onReplace: () => void; onKe
     <Step
       ok={false}
       title="Magnesium"
-      detail={runtime.state === "missing" ? "not installed" : installed ? `${versionNumber(installed.version) || "does not run"} · ${where}` : "not installed yet"}
+      detail={runtime.state === "missing" ? "not installed" : installed ? `${versionNumber(installed.version) || "does not run"} at ${where}` : "not installed yet"}
     >
       <p className="selectable">{runtime.message}</p>
       <div className="row">
@@ -137,7 +136,7 @@ function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: ()
               Anthropic&apos;s install page <Icon name="external" size={14} />
             </button>
           )}
-          <button className="btn ghost small" onClick={props.onCheck}>
+          <button className="btn small" onClick={props.onCheck}>
             Check again
           </button>
         </div>
@@ -149,7 +148,7 @@ function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: ()
       <button className="btn small" disabled={props.signingIn} onClick={props.onSignIn}>
         {props.signingIn ? "Waiting for the browser…" : "Sign in"}
       </button>
-      <button className="btn ghost small" onClick={props.onCheck}>
+      <button className="btn small" onClick={props.onCheck}>
         Check again
       </button>
     </div>
@@ -166,7 +165,7 @@ function AccountStep(props: { account: Account; signingIn: boolean; onSignIn: ()
       </Step>
     );
   }
-  const detail = `signed in · pays with ${account.detail ?? "your account"}`;
+  const detail = `signed in, pays with ${account.detail ?? "your account"}`;
   if (account.problem) {
     return (
       <Step ok={false} title={name} detail={detail}>
@@ -189,6 +188,7 @@ export function Setup(props: {
   /** The library is behind this screen, so there is somewhere to go back to. */
   canGoBack: boolean;
   onBack: () => void;
+  onPalette: () => void;
   onReplace: () => void;
   onKeep: () => void;
   onCheck: () => void;
@@ -227,14 +227,10 @@ export function Setup(props: {
             </button>
           ) : undefined
         }
+        right={ready ? <PaletteKey onClick={props.onPalette} /> : undefined}
       />
       <div className="center">
         <div className="setup-col">
-          <span className="mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
           <h1>{title}</h1>
           <p className="setup-sub">{sub}</p>
           {setup && (
@@ -284,7 +280,7 @@ export function Setup(props: {
           </div>
           {setup && (
             <p className="aside selectable">
-              Setting a study folder up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
+              Setting a course up also writes two things outside it: Magnesium&apos;s plugin for Claude Code, in ~/Library/Application
               Support/magnesium, and one entry in Claude Code&apos;s settings that names it.
             </p>
           )}

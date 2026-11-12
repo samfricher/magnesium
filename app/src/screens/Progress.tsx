@@ -7,19 +7,19 @@ import { useState } from "react";
 
 import { Line } from "../ui/Rich";
 import { Icon } from "../ui/icons";
-import { Dots, PaletteKey, RUN_HINT, Ring, TopBar, Weeks, daysLeftText, proofShare, skillCounts, urgency } from "../ui/bits";
+import { Due, Level, PaletteKey, ProofDot, ProofDots, RUN_HINT, Run, TopBar, Week, ExamSentence, plain, proofShare, proofsOf, skillCounts } from "../ui/bits";
 import type { Activity, Progress as ProgressData, Row } from "../types";
 import { displayName } from "./Library";
 
 function RowView({ row, tone }: { row: Row; tone: string }) {
   return (
     <div className={`skill ${tone}${row.due ? " is-due" : ""} selectable`}>
-      <Dots dots={row.dots} />
+      <ProofDots earned={proofsOf(row.dots)} />
       <span className="skill-text">
         <Line text={row.name} className="skill-name" />
-        {row.what && <Line text={row.what} className="skill-what" />}
+        {row.what && <Line text={plain(row.what)} className="skill-what" />}
       </span>
-      {row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>}
+      {row.due ? <Due /> : row.note && row.note !== "–" && <span className="skill-note">{row.note}</span>}
     </div>
   );
 }
@@ -31,8 +31,7 @@ function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]
   return (
     <section className="group">
       <h3>
-        {title}
-        <span>{rows.length}</span>
+        {title} <span>({rows.length})</span>
         {action}
       </h3>
       {shown.map((row, index) => (
@@ -46,6 +45,8 @@ function Group({ title, rows, fold, tone, action }: { title: string; rows: Row[]
     </section>
   );
 }
+
+const WEEK_NAMES = ["This week", "Last week", "2 weeks ago", "3 weeks ago", "4 weeks ago"];
 
 /** A paper's score as a share, from "24/30". */
 function scoreShare(score: string): number | null {
@@ -94,7 +95,8 @@ export function Progress(props: {
   const due = data.in_progress.filter((row) => row.due);
   const later = data.in_progress.filter((row) => !row.due);
   const sure = data.scores.filter((s) => s.sure_total !== null && s.sure_right !== null);
-  const left = daysLeftText(exam?.days_left);
+  const skills = skillCounts(proofs);
+  const levelShown = !data.level_unknown && proofs.levelled;
 
   return (
     <section className="screen progress" data-screen="progress">
@@ -102,68 +104,63 @@ export function Progress(props: {
       <div className="scroll">
         <div className="board">
           <header className="board-head">
-            {!data.level_unknown && proofs.levelled && (
-              <Ring share={proofShare(proofs)} size={104} stroke={8} label={`Level ${proofs.level}`}>
-                <b>{proofs.level}</b>
-                <small>level</small>
-              </Ring>
-            )}
+            {levelShown && <Level value={proofs.level} size="md" share={proofShare(proofs)} title={`${proofs.earned} of ${proofs.total} proofs`} />}
             <div className="board-title">
               <h1>{displayName(props.folderName)}</h1>
               {data.targets.length > 1 ? (
-                <div className="targets">
+                <div className="targets" role="group" aria-label="Exam">
                   {data.targets.map((target) => (
-                    <button key={target.target} className={target.target === exam?.target ? "on" : undefined} onClick={() => props.onTarget(target.target)}>
+                    <button key={target.target} className={target.target === exam?.target ? "on" : undefined} aria-pressed={target.target === exam?.target} onClick={() => props.onTarget(target.target)}>
                       <Line text={target.title} />
                     </button>
                   ))}
                 </div>
               ) : (
                 exam && (
-                  <div className={`exam-line ${urgency(exam)}`}>
-                    <Icon name="flag" size={15} />
-                    <Line text={exam.title} />
-                    {left && <b>{left}</b>}
-                  </div>
+                  <p className="exam-line">
+                    <ExamSentence exam={exam} />
+                  </p>
                 )
               )}
-              {skillCounts(proofs) && <p className="board-sum">{skillCounts(proofs)}. A course with no plan has no level.</p>}
+              {skills && <p className="board-sum">{skills}. A course with no plan has no level.</p>}
               {proofs.levelled && proofs.total > 0 && (
-                <p className="board-sum">
-                  <b>{proofs.earned}</b> of {proofs.total} proofs · <b>{proofs.proven}</b> of {proofs.skills} skills proven
+                <>
+                  <p className="board-sum num">
+                    {proofs.earned} of {proofs.total} proofs. {proofs.proven} of {proofs.skills} skills proven.
+                  </p>
                   {proofs.to_next > 0 && (
-                    <span>
-                      {" "}
-                      · {proofs.to_next} more for level {proofs.level + 1}
-                    </span>
+                    <p className="board-next num">
+                      {proofs.to_next} more {proofs.to_next === 1 ? "proof" : "proofs"} to reach level {proofs.level + 1}.
+                    </p>
                   )}
-                </p>
+                </>
               )}
             </div>
-            {activity && (
-              <div className="board-days" title={RUN_HINT}>
-                <Weeks activity={activity} />
-                <span className="run-line">
-                  {activity.run > 0 ? (
-                    <>
-                      <b>{activity.run}</b> {activity.run === 1 ? "day" : "days"} running
-                    </>
-                  ) : (
-                    "One answer starts a run"
-                  )}
-                </span>
-              </div>
-            )}
           </header>
 
           {data.message ? (
             <div className="board-empty">{data.message}</div>
           ) : (
             <>
-              <p className="legend">
-                <Dots dots={[2, 2, 0]} />
-                One dot is one answer you gave alone, on its own day. Three prove the skill.
-              </p>
+              <ul className="legend" aria-label="What the marks mean">
+                <li>
+                  <ProofDot state="on" />
+                  <span>A proof: one right answer you gave alone, on its own day. Three prove a skill.</span>
+                </li>
+                <li>
+                  <ProofDot state="off" />
+                  <span>A proof still to earn. A skill that was restarted shows empty dots and says so.</span>
+                </li>
+                <li>
+                  <Due />
+                  <span>You can earn this skill&apos;s next proof today.</span>
+                </li>
+                {levelShown && (
+                  <li>
+                    <span className="legend-text">The level&apos;s ring fills as you earn proofs.</span>
+                  </li>
+                )}
+              </ul>
               <Group
                 title="Prove today"
                 rows={due}
@@ -171,7 +168,7 @@ export function Progress(props: {
                 tone="open"
                 action={
                   props.onStart ? (
-                    <button className="btn small primary" onClick={props.onStart}>
+                    <button className="btn primary" onClick={props.onStart}>
                       Start
                     </button>
                   ) : null
@@ -181,55 +178,78 @@ export function Progress(props: {
               <Group title="Proven" rows={data.confirmed} fold={6} tone="proven" />
               <Group title="Not tested yet" rows={data.untested} fold={6} tone="untested" />
 
-              {(data.scores.length > 0 || data.helped_count > 0 || data.checks_unknown || data.level_unknown || data.unreadable > 0) && (
-                <footer className="board-foot selectable">
-                  {data.scores.length > 0 && (
-                    <div className="papers">
-                      <h3>Papers</h3>
-                      <div className="scores">
-                        {data.scores.map((score) => {
-                          const share = scoreShare(score.score);
-                          return (
-                            <div className="score" key={`${score.paper}${score.date}`}>
-                              <span className="score-bar">
-                                <i style={{ height: `${Math.round((share ?? 0) * 100)}%` }} />
-                              </span>
-                              <b>{score.score}</b>
-                              <span>{score.paper}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+              <footer className="board-foot selectable">
+                {data.scores.length > 0 && (
+                  <section className="foot-section">
+                    <h3>
+                      Papers <span>({data.scores.length})</span>
+                    </h3>
+                    <div className="scores">
+                      {data.scores.map((score) => {
+                        const share = scoreShare(score.score);
+                        return (
+                          <div className="score" key={`${score.paper}${score.date}`}>
+                            <span className="score-bar">
+                              <i style={{ height: `${Math.round((share ?? 0) * 100)}%` }} />
+                            </span>
+                            <b className="num">{score.score}</b>
+                            <span>{score.paper}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
+                  </section>
+                )}
+                {sure.length > 0 && (
+                  <section className="foot-section">
+                    <h3>Sure but wrong</h3>
+                    <p>
+                      {sure
+                        .map((score) => `${(score.sure_total ?? 0) - (score.sure_right ?? 0)} of ${score.sure_total} on ${score.paper}`)
+                        .join(", then ")}
+                      .
+                    </p>
+                  </section>
+                )}
+                {data.helped_count > 0 && (
+                  <section className="foot-section">
+                    <h3>
+                      With help, not counted <span>({data.helped_count})</span>
+                    </h3>
+                    <p>
+                      {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
+                      {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
+                    </p>
+                  </section>
+                )}
+                {activity && (
+                  <section className="foot-section" title={RUN_HINT}>
+                    <h3>
+                      Days you studied <Run days={activity.run} invite />
+                    </h3>
+                    <div className="weeks">
+                      {WEEK_NAMES.map((name, back) => (
+                        <div className="weeks-row" key={name}>
+                          <span className="weeks-name">{name}</span>
+                          <Week days={activity.days} today={activity.today} back={back} letters={back === 0} />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="foot-key">A filled circle is a day with an answer marked. The ringed circle is today.</p>
+                  </section>
+                )}
+                {(data.level_unknown || data.checks_unknown || data.unreadable > 0) && (
                   <div className="foot-notes">
-                    {sure.length > 0 && (
-                      <p>
-                        <b>Sure but wrong</b>{" "}
-                        {sure.map((score, index) => (
-                          <span key={`${score.paper}${score.date}`}>
-                            {index > 0 && ", then "}
-                            {(score.sure_total ?? 0) - (score.sure_right ?? 0)} of {score.sure_total} on {score.paper}
-                          </span>
-                        ))}
-                      </p>
-                    )}
-                    {data.helped_count > 0 && (
-                      <p>
-                        <b>With help, not counted</b> {data.helped_count} {data.helped_count === 1 ? "answer" : "answers"}
-                        {data.helped.length > 0 && ` (${data.helped.join(", ")})`}. They return as questions.
-                      </p>
-                    )}
                     {data.level_unknown && (
                       <p>
-                        <b>No level</b> is shown. This version of Magnesium cannot tell the window how far each skill is proved, or it has
-                        not read this plan&apos;s gap log into your record yet. Update Magnesium, or mark one more answer with the tutor.
+                        No level is shown. This version of Magnesium cannot tell the window how far each skill is proved, or it has not read this
+                        plan&apos;s gap log into your record yet. Update Magnesium, or mark one more answer with the tutor.
                       </p>
                     )}
                     {data.checks_unknown && (
                       <p>
-                        <b>Quick checks</b> are not shown. This version of Magnesium keeps them where the window cannot read them yet. The tutor
-                        still asks them as each sitting opens.
+                        Quick checks are not shown. This version of Magnesium keeps them where the window cannot read them yet. The tutor still
+                        asks them as each sitting opens.
                       </p>
                     )}
                     {data.unreadable > 0 && (
@@ -239,8 +259,8 @@ export function Progress(props: {
                       </p>
                     )}
                   </div>
-                </footer>
-              )}
+                )}
+              </footer>
             </>
           )}
           {props.error && <div className="banner bad selectable">{props.error}</div>}

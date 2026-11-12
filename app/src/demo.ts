@@ -42,7 +42,7 @@ let found = false;
 let studiedToday = true;
 // A sitting earns a proof when a check or a redo it opened with was passed.
 let sittingsDone = 0;
-let stoppedAt: string | null = "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.";
+let stoppedAt: string | null = "step 3: what the y-intercept gives.";
 // Answers the tutor marked today. Each answer sent in the demo is marked,
 // except at #summary:unmarked, which shows a sitting with none marked.
 let markedToday = 4;
@@ -60,7 +60,7 @@ function home(): Home {
     exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
     last: {
       days_ago: 3,
-      goal: "PS3 Q3 · reading Vmax and Km from a Lineweaver-Burk plot",
+      goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
       stopped_at: stoppedAt,
       next_action: "Find Vmax from the intercept 0.25.",
     },
@@ -173,7 +173,7 @@ function account(): Account {
 const demoSetup = (): Setup => ({ runtime: runtimeSetup(), account: account(), payment });
 
 const rail: Rail = {
-  goal: "PS3 Q3 · reading Vmax and Km from a Lineweaver-Burk plot",
+  goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
   steps: [
     { step: "Write the rate equation", status: "done" },
     { step: "Take reciprocals of both sides", status: "done" },
@@ -304,7 +304,7 @@ function progress(): Progress {
       sittingsDone > 0
         ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
         : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
-      row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$ · found before the exam, restarted 3 days ago", "due today"),
+      row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
       row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
       row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
       row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
@@ -331,7 +331,7 @@ function progress(): Progress {
     checks_unknown: false,
     proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, 11),
     level_unknown: false,
-    today: { day: isoDay(0), answered: markedToday, started: 2, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
+    today: { day: isoDay(0), answered: markedToday, started: markedToday > 0 ? 2 : 0, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
     message: null,
   };
 }
@@ -392,8 +392,8 @@ function material(paths: string[], pasted = false): Added {
   const keys = names.filter((name) => /key|solution|answer/i.test(name) && !/tokens?/i.test(name));
   const shown = names.filter((name) => !keys.includes(name));
   const lines: string[] = [];
-  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}".` : `Added "${shown[0]}" to Study/materials.`);
-  else if (shown.length > 1) lines.push(`Added ${shown.length} files to Study/materials.`);
+  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}". The tutor can quote it.` : `Added "${shown[0]}" to your course material. The tutor can quote it.`);
+  else if (shown.length > 1) lines.push(`Added ${shown.length} files to your course material. The tutor can quote them.`);
   if (keys.length > 0) lines.push(`${keys.length} ${keys.length === 1 ? "file looks" : "files look"} like an answer ${keys.length === 1 ? "key" : "keys"}. ${keys.length === 1 ? "It is" : "They are"} added, and this window keeps ${keys.length === 1 ? "it" : "them"} closed.`);
   const trouble = shown.flatMap((name) => {
     if (/scan/i.test(name)) return [`"${name}" is a scan with no text, so its text cannot be searched.`];
@@ -401,7 +401,7 @@ function material(paths: string[], pasted = false): Added {
     if (/\.pptx?$/i.test(name)) return [`Search does not read .pptx files, so "${name}" cannot be searched. A PDF of it can be.`];
     return [];
   });
-  if (shown.length > 0) lines.push(...(trouble.length > 0 ? trouble : [shown.length === 1 ? "Search can read it." : "Search can read all of it."]));
+  lines.push(...trouble);
   return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
 }
 
@@ -652,7 +652,11 @@ export function chooseVariant(): void {
   if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
   if (screen === "library" && state === "empty") shelf = "empty";
   // The end of a sitting shows today's day being earned.
-  if (screen === "summary") studiedToday = false;
+  // Nothing is marked yet today, so no study day is ticked and no count is made: the counts and the week agree.
+  if (screen === "summary") {
+    studiedToday = false;
+    markedToday = 0;
+  }
   if (screen === "summary" && state === "unmarked") marking = false;
   // Magnesium picked, with the demo course's conversation begun on Claude Code.
   if (state === "magnesium") engineChosen = "direct";

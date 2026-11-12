@@ -1,10 +1,12 @@
-// Small parts every screen shares: the top strip, the proof ring, the three
-// proof dots, the week of study days, and a few ways to say a time.
+// Small parts every screen shares: the top strip, the proof dots, the level,
+// the week of study days, the due token, and a few ways to say a time. Each
+// concept is drawn here once and used everywhere.
 
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { Activity, Dots as DotsData, Exam, Proofs } from "../types";
 import { Icon } from "./icons";
+import { Line } from "./Rich";
 
 /** True while an input method is composing. WebKit reports the keydown that confirms a word with keyCode 229 and isComposing false. */
 export const composing = (event: { nativeEvent: KeyboardEvent; keyCode: number }) =>
@@ -43,11 +45,47 @@ export function agoText(days: number | null): string {
   return `${days} days ago`;
 }
 
-/** How near an exam is, as a word the styles colour: "now" within 3 days, "soon" within a week. */
-export function urgency(exam: Exam | null): "now" | "soon" | "far" | "none" {
-  const days = exam?.days_left;
-  if (days === null || days === undefined || days < 0) return "none";
-  return days <= 3 ? "now" : days <= 7 ? "soon" : "far";
+/** The words after an exam's title in a chip: " in 6 days", " is tomorrow", " is today", or "". */
+export function examWhen(exam: Exam): string {
+  const days = exam.days_left;
+  if (days === null || days === undefined || days < 0) return "";
+  if (days === 0) return " is today";
+  if (days === 1) return " is tomorrow";
+  return ` in ${days} days`;
+}
+
+/** The exam as one sentence: "Midterm 1 is on Tue 17 Nov, in 6 days." The title may hold mathematics. */
+export function ExamSentence({ exam }: { exam: Exam }) {
+  const days = exam.days_left;
+  const when = days === null || days === undefined || days < 0 ? null : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  const on = exam.day ? `on ${exam.day}` : null;
+  const tail = on && when ? `${on}, ${when}` : (on ?? when);
+  return (
+    <>
+      <Line text={exam.title} />
+      {tail ? ` is ${tail}.` : ""}
+    </>
+  );
+}
+
+/** A goal such as "PS3 Q3 · reading Vmax" as a short reference and a title. */
+export function splitGoal(goal: string): { ref: string | null; title: string } {
+  const parts = /^(.{1,28}?)\s+[\u00b7\u2022]\s+(.+)$/.exec(goal.trim());
+  const ref = parts ? parts[1] : null;
+  const rest = parts ? parts[2] : goal.trim();
+  const title = rest.replace(/^[a-z]/, (letter) => letter.toUpperCase()).replace(/\s+[\u00b7\u2022]\s+/g, ", ");
+  return { ref, title };
+}
+
+/** A line of text with no middle dots in it, and a full stop at its end. */
+export function sentence(text: string): string {
+  const plain = text.trim().replace(/\s+[\u00b7\u2022]\s+/g, ", ");
+  return /[.!?]$/.test(plain) ? plain : `${plain}.`;
+}
+
+/** Say a list as one run of words: "a, b and c". */
+export function plain(text: string): string {
+  return text.replace(/\s+[\u00b7\u2022]\s+/g, ", ");
 }
 
 /**
@@ -93,35 +131,9 @@ export function IconButton(props: {
 
 export function PaletteKey({ onClick }: { onClick: () => void }) {
   return (
-    <button className="key" title="Everything else" aria-label="Open commands" onClick={onClick}>
+    <button className="key" title="Menu: library, proofs, papers, settings (⌘K)" aria-label="Open the menu" onClick={onClick}>
       &#8984;K
     </button>
-  );
-}
-
-/** A ring that fills with the share given, with anything in its middle. */
-export function Ring(props: { share: number; size: number; stroke?: number; tone?: string; children?: ReactNode; label?: string }) {
-  const stroke = props.stroke ?? Math.max(3, Math.round(props.size / 12));
-  const radius = (props.size - stroke) / 2;
-  const round = 2 * Math.PI * radius;
-  const share = Math.max(0, Math.min(1, props.share));
-  return (
-    <span className={`ring ${props.tone ?? ""}`} style={{ width: props.size, height: props.size }} role="img" aria-label={props.label}>
-      <svg width={props.size} height={props.size} viewBox={`0 0 ${props.size} ${props.size}`}>
-        <circle className="ring-track" cx={props.size / 2} cy={props.size / 2} r={radius} strokeWidth={stroke} />
-        <circle
-          className="ring-fill"
-          cx={props.size / 2}
-          cy={props.size / 2}
-          r={radius}
-          strokeWidth={stroke}
-          strokeDasharray={round}
-          strokeDashoffset={round * (1 - share)}
-          transform={`rotate(-90 ${props.size / 2} ${props.size / 2})`}
-        />
-      </svg>
-      {props.children !== undefined && <span className="ring-mid">{props.children}</span>}
-    </span>
   );
 }
 
@@ -131,7 +143,7 @@ export function Ring(props: { share: number; size: number; stroke?: number; tone
  */
 export function skillCounts(proofs: Proofs): string | null {
   if (proofs.levelled || proofs.skills === 0) return null;
-  return `${proofs.proven} proven · ${proofs.skills - proofs.proven} in progress`;
+  return `${proofs.proven} of ${proofs.skills} skills proven, ${proofs.skills - proofs.proven} in progress`;
 }
 
 /** The share of a course's proofs that are earned. */
@@ -139,14 +151,88 @@ export function proofShare(proofs: Proofs): number {
   return proofs.total === 0 ? 0 : proofs.earned / proofs.total;
 }
 
-/** Three marks: a filled one is a proof that counts, a faded one was earned before a later miss. */
-export function Dots({ dots }: { dots: DotsData }) {
-  const earned = dots.filter((d) => d === 2).length;
+/** How many proofs a skill holds that count: its filled dots. */
+export function proofsOf(dots: DotsData): number {
+  return dots.filter((dot) => dot === 2).length;
+}
+
+/**
+ * The proof mark: three dots. A filled dot is a proof that counts, a ring is
+ * one still to earn. A proof earned today has a soft halo; with `flare` the
+ * new dot burns white for an instant and settles into green. There is no
+ * other state: a skill that was restarted shows rings and says so in words.
+ */
+export function ProofDots({ earned, today = 0, flare = false }: { earned: number; today?: number; flare?: boolean }) {
+  const total = Math.max(0, Math.min(3, earned));
+  const fresh = Math.max(0, Math.min(total, today));
   return (
-    <span className="dots" role="img" aria-label={`${earned} of 3 proofs`}>
-      {dots.map((dot, index) => (
-        <i key={index} className={dot === 2 ? "full" : dot === 1 ? "past" : undefined} />
+    <span className="dots" role="img" aria-label={`${total} of 3 proofs${fresh > 0 ? `, ${fresh} earned today` : ""}`}>
+      {[0, 1, 2].map((index) => (
+        <i key={index} className={index < total - fresh ? "on" : index < total ? (flare ? "on new flare" : "on new") : undefined} />
       ))}
+    </span>
+  );
+}
+
+/** One dot, for the legend. */
+export function ProofDot({ state }: { state: "on" | "off" | "new" }) {
+  return (
+    <span className="dots" aria-hidden="true">
+      <i className={state === "off" ? undefined : state === "new" ? "on new" : "on"} />
+    </span>
+  );
+}
+
+const LEVEL_SIZE = { sm: 56, md: 80, lg: 104 } as const;
+
+/** The level: a thin ring that fills with the share of proofs earned, the number in the middle. */
+export function Level({ value, size = "md", share, title }: { value: number; size?: "sm" | "md" | "lg"; share?: number; title?: string }) {
+  const box = LEVEL_SIZE[size];
+  const stroke = 2.5;
+  const radius = (box - stroke) / 2;
+  const round = 2 * Math.PI * radius;
+  const filled = Math.max(0, Math.min(1, share ?? 0));
+  return (
+    <span className={`level-ring ${size}`} style={{ width: box, height: box }} role="img" aria-label={`Level ${value}`} title={title}>
+      <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
+        <circle className="level-track" cx={box / 2} cy={box / 2} r={radius} />
+        {filled > 0 && (
+          <circle
+            className="level-fill"
+            cx={box / 2}
+            cy={box / 2}
+            r={radius}
+            strokeWidth={stroke}
+            strokeDasharray={round}
+            strokeDashoffset={round * (1 - filled)}
+            transform={`rotate(-90 ${box / 2} ${box / 2})`}
+          />
+        )}
+      </svg>
+      <span className="level-mid">
+        <b className="num">{value}</b>
+        <small>Level</small>
+      </span>
+    </span>
+  );
+}
+
+/** A due thing: an amber point and a few words. With no number, "due today". */
+export function Due({ n }: { n?: number }) {
+  return (
+    <span className="due">
+      <i />
+      {n === undefined ? "due today" : `${n} due today`}
+    </span>
+  );
+}
+
+/** "4 days running", or the invitation to start a run. */
+export function Run({ days, invite }: { days: number; invite?: boolean }) {
+  if (days <= 0) return invite ? <span className="run-line" title={RUN_HINT}>One marked answer starts a run</span> : null;
+  return (
+    <span className="run-line num" title={RUN_HINT}>
+      {days} {days === 1 ? "day" : "days"} running
     </span>
   );
 }
@@ -160,21 +246,23 @@ function addDays(day: string, by: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** Monday to Sunday of this week, with the days studied filled in. */
-export function Week({ activity, celebrate }: { activity: Activity; celebrate?: boolean }) {
-  const today = new Date(`${activity.today}T12:00:00`);
-  const sinceMonday = (today.getDay() + 6) % 7;
-  const studied = new Set(activity.days);
+/**
+ * Seven days, Monday to Sunday, `back` weeks before the week of `today`. A day
+ * studied is filled, today is ringed, any other day is an empty ring.
+ */
+export function Week({ days, today, back = 0, letters = true }: { days: string[]; today: string; back?: number; letters?: boolean }) {
+  const sinceMonday = (new Date(`${today}T12:00:00`).getDay() + 6) % 7;
+  const studied = new Set(days);
+  const dates = WEEKDAYS.map((_, index) => addDays(today, index - sinceMonday - back * 7));
+  const count = dates.filter((date) => studied.has(date)).length;
   return (
-    <span className="week" role="img" aria-label={`${activity.run} days running`} title={RUN_HINT}>
+    <span className="week" role="img" aria-label={`${count} of 7 days studied`}>
       {WEEKDAYS.map((letter, index) => {
-        const date = addDays(activity.today, index - sinceMonday);
-        const isToday = index === sinceMonday;
-        const kind = studied.has(date) ? "done" : index > sinceMonday ? "ahead" : "missed";
+        const isToday = dates[index] === today;
         return (
-          <span key={index} className={`week-day ${kind}${isToday ? " today" : ""}${isToday && celebrate ? " pop" : ""}`}>
-            <i>{studied.has(date) && <Icon name="check" size={11} />}</i>
-            <b>{letter}</b>
+          <span key={index} className={`week-day${studied.has(dates[index]) ? " done" : ""}${isToday ? " today" : ""}`}>
+            <i />
+            {letters && <b>{letter}</b>}
           </span>
         );
       })}
@@ -182,28 +270,41 @@ export function Week({ activity, celebrate }: { activity: Activity; celebrate?: 
   );
 }
 
+/** The week of study days the learner is in, and the run, as the library and the end of a sitting show them. */
+export function ThisWeek({ activity }: { activity: Activity }) {
+  return <Week days={activity.days} today={activity.today} />;
+}
+
 /** What a proof is, in one line, for a tooltip. */
 export const PROOF_HINT = "A proof is one answer you gave alone, on its own day. Three proofs prove a skill.";
 
 /** What the run is, in one line, for a tooltip. */
-export const RUN_HINT = "Days on which you answered a question, in a row. One missed day a week is a rest day and does not end the run.";
+export const RUN_HINT = "Days on which you had an answer marked, in a row. One missed day a week is a rest day and does not end the run.";
 
-/** Five weeks of study days, oldest first, as small squares. */
-export function Weeks({ activity }: { activity: Activity }) {
-  const today = new Date(`${activity.today}T12:00:00`);
-  const sinceMonday = (today.getDay() + 6) % 7;
-  const studied = new Set(activity.days);
-  const cells: { date: string; done: boolean; ahead: boolean }[] = [];
-  for (let index = -28; index < 7; index++) {
-    const offset = index - sinceMonday;
-    const date = addDays(activity.today, offset);
-    cells.push({ date, done: studied.has(date), ahead: offset > 0 });
-  }
+/**
+ * The lesson's old clock ring. Only the lesson screen still draws it, and it
+ * goes when the clock there becomes plain text. Nothing else is a ring but the level.
+ */
+export function Ring(props: { share: number; size: number; stroke?: number; tone?: string }) {
+  const stroke = props.stroke ?? 3;
+  const radius = (props.size - stroke) / 2;
+  const round = 2 * Math.PI * radius;
+  const share = Math.max(0, Math.min(1, props.share));
   return (
-    <span className="weeks" role="img" aria-label="Study days in the last five weeks">
-      {cells.map((cell) => (
-        <i key={cell.date} className={cell.ahead ? "ahead" : cell.done ? "done" : undefined} title={cell.ahead ? undefined : cell.date} />
-      ))}
+    <span className={`ring ${props.tone ?? ""}`} style={{ width: props.size, height: props.size }} aria-hidden="true">
+      <svg width={props.size} height={props.size} viewBox={`0 0 ${props.size} ${props.size}`}>
+        <circle className="ring-track" cx={props.size / 2} cy={props.size / 2} r={radius} strokeWidth={stroke} />
+        <circle
+          className="ring-fill"
+          cx={props.size / 2}
+          cy={props.size / 2}
+          r={radius}
+          strokeWidth={stroke}
+          strokeDasharray={round}
+          strokeDashoffset={round * (1 - share)}
+          transform={`rotate(-90 ${props.size / 2} ${props.size / 2})`}
+        />
+      </svg>
     </span>
   );
 }

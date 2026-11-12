@@ -5,7 +5,7 @@
 import { useState } from "react";
 
 import { Icon } from "../ui/icons";
-import { Ring, TopBar, clockText, useNow } from "../ui/bits";
+import { PaletteKey, TopBar, clockText, useNow } from "../ui/bits";
 import type { Home, Paper as PaperInfo } from "../types";
 import { displayName } from "./Library";
 
@@ -18,6 +18,7 @@ export function Paper(props: {
   onHandIn: () => void;
   onEnd: () => void;
   onBack: () => void;
+  onPalette: () => void;
 }) {
   const { home } = props;
   const now = useNow(1000);
@@ -32,17 +33,17 @@ export function Paper(props: {
     const over = leftSeconds < 0;
     return (
       <section className="screen paper running" data-screen="paper">
-        <TopBar center={<span className="bar-title">{sitting.name}</span>} />
+        <TopBar center={<span className="bar-title">{sitting.name}</span>} right={<PaletteKey onClick={props.onPalette} />} />
         <div className="center">
           <div className="paper-col">
-            <Ring share={over ? 1 : leftSeconds / total} size={248} stroke={6} tone={over ? "amber" : "ink"} label="Time left">
+            <p className="paper-clock" role="timer" aria-label="Time left">
               <span className={over ? "count over" : "count"} data-role="countdown">
                 {clockText(leftSeconds)}
               </span>
               <small>
                 {over ? "over" : "left"} of {sitting.minutes} min
               </small>
-            </Ring>
+            </p>
             <p className="paper-rule">
               {over ? (
                 "Time is up. Hand in what you have."
@@ -52,28 +53,26 @@ export function Paper(props: {
                 </>
               )}
             </p>
-            <div className="row center">
+            <div className="row center paper-actions">
               <button className="btn primary" autoFocus onClick={props.onHandIn}>
-                <Icon name="camera" size={16} /> Hand in a photo or PDF
+                Hand in a photo or PDF
               </button>
-            </div>
-            <div className="row center">
               {confirmEnd ? (
                 <>
-                  <span className="aside">Nothing is marked.</span>
-                  <button className="btn small danger" onClick={props.onEnd}>
+                  <button className="btn danger" onClick={props.onEnd}>
                     End the sitting
                   </button>
-                  <button className="btn ghost small" onClick={() => setConfirmEnd(false)}>
+                  <button className="btn ghost" onClick={() => setConfirmEnd(false)}>
                     Keep going
                   </button>
                 </>
               ) : (
-                <button className="btn ghost small" onClick={() => setConfirmEnd(true)}>
+                <button className="btn ghost" data-role="paper-end" onClick={() => setConfirmEnd(true)}>
                   End without handing in
                 </button>
               )}
             </div>
+            {confirmEnd && <p className="aside">Ending now marks nothing.</p>}
             <p className="aside">
               <Icon name="lock" size={13} /> The tutor is off and the key is locked until you hand in.
             </p>
@@ -95,14 +94,12 @@ export function Paper(props: {
             {displayName(home.name)}
           </button>
         }
+        right={<PaletteKey onClick={props.onPalette} />}
       />
       <div className="center">
         <div className="paper-col">
           {home.papers.length === 0 ? (
             <>
-              <span className="done-mark quiet" aria-hidden="true">
-                <Icon name="paper" size={28} />
-              </span>
               <h1>No paper to sit yet</h1>
               <p className="paper-rule">The tutor builds papers for an exam. Start a lesson and name the exam, and its papers appear here.</p>
               <div className="row center">
@@ -144,8 +141,9 @@ export function Paper(props: {
               </label>
               <div className="row center">
                 <button className="btn primary" disabled={!valid} onClick={() => picked && props.onStart(picked, length)}>
-                  <Icon name="play" size={14} fill /> Start the clock
+                  Start the clock
                 </button>
+                {!valid && <span className="aside">Enter a length from 1 to 600 minutes.</span>}
               </div>
               <p className="aside">The paper opens to print. The tutor stays off until you hand in.</p>
             </>

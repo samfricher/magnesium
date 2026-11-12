@@ -14,21 +14,33 @@
   margin-bottom: var(--s5);
 }
 
-.shelf-week {
-  display: flex;
-  align-items: center;
-  gap: var(--s4);
-}
-
-.shelf-week .run-line {
-  margin-bottom: var(--s4);
-}
-
 .shelf-head h1 {
   font-family: var(--serif);
   font-size: var(--fs-title);
   font-weight: 600;
   line-height: 1.1;
+}
+
+.shelf-week {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+}
+
+.shelf-caption {
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+.shelf-days {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+}
+
+.shelf-days .run-line {
+  line-height: 20px;
 }
 
 .cards {
@@ -37,33 +49,83 @@
   gap: var(--s4);
 }
 
+/* A course card is a surface, not a button. Its one main action is a real
+   button (.cc-open) whose hit area is stretched over the whole card; the
+   course page and the remove control are separate buttons above it. It is
+   flat: the border and the fill answer a hover. */
 .course-card {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
-  min-height: 168px;
+  min-height: 176px;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
   background: var(--surface);
-  cursor: pointer;
   transition:
     border-color var(--t-fast) ease-out,
-    background var(--t-fast) ease-out;
+    background var(--t-fast) ease-out,
+    transform var(--t-fast) ease-out;
 }
 
-/* A card you can press is flat: its border and its fill answer a hover. */
 .course-card:hover {
   border-color: var(--line-2);
   background: var(--hover);
+}
+
+.course-card:has(.cc-open:active) {
+  transform: translateY(1px);
+  transition-duration: 80ms;
+}
+
+.course-card:not(.hero):has(.cc-open:focus-visible) {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+html:not([data-input="key"]) .course-card:has(.cc-open:focus-visible) {
+  outline: none;
+}
+
+.cc-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+}
+
+/* The card's name, when the name is its button. */
+.cc-open:not(.btn) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cc-open:not(.btn):focus-visible {
+  outline: none;
+}
+
+.course-card .btn.cc-open:active {
+  transform: none;
+}
+
+.cc-side,
+.cc-more,
+.cc-foot .due {
+  position: relative;
+  z-index: 1;
 }
 
 .course-card.hero {
   grid-column: 1 / -1;
   min-height: 0;
   gap: var(--s4);
-  padding: var(--s5) var(--s6);
+  padding: var(--s6);
 }
 
 .cc-top {
@@ -71,7 +133,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
-  min-height: 26px;
+  min-height: 28px;
 }
 
 .cc-more {
@@ -111,58 +173,60 @@
   overflow: hidden;
 }
 
-.course-card.hero h2 {
-  font-size: var(--fs-card);
+/* What the course is on now: a short reference over a title set in the reading face. */
+.cc-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s2);
 }
 
-.cc-goal {
-  margin-top: var(--s1);
-  font-size: var(--fs-small);
+.cc-ref {
+  font-size: var(--fs-caption);
+  color: var(--muted);
+}
+
+.cc-title {
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
   line-height: 1.45;
   color: var(--muted);
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
 }
 
-.course-card.hero .cc-goal {
-  margin-top: var(--s2);
-  font-size: var(--fs-ui);
-  max-width: 56ch;
+.cc-title .katex {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.cc-title.dim {
+  color: var(--faint);
+}
+
+.course-card.hero .cc-title {
+  font-size: var(--fs-read);
+  line-height: 1.5;
+  max-width: 48ch;
+  color: var(--text);
 }
 
 .cc-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s4);
-  min-height: 20px;
-}
-
-.course-card.hero .cc-foot {
-  gap: var(--s4);
+  gap: var(--s2) var(--s4);
+  min-height: 24px;
 }
 
 .cc-meta {
-  font-size: var(--fs-caption);
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.course-card .ring-mid {
-  font-size: var(--fs-read);
-}
-
-.course-card.hero .ring-mid {
-  font-size: var(--fs-title);
-}
-
-.course-card.hero .ring-mid small {
-  font-size: var(--fs-caption);
+  font-size: var(--fs-small);
+  color: var(--muted);
 }
 
 .course-card.asking {
-  cursor: default;
   justify-content: center;
 }
 
@@ -173,7 +237,6 @@
 
 .course-card.asking h2 {
   font-size: var(--fs-read);
-  white-space: normal;
 }
 
 .cc-note {
@@ -207,7 +270,6 @@
 }
 
 .empty h2 {
-  margin-top: var(--s4);
   font-family: var(--serif);
   font-size: var(--fs-title);
   font-weight: 600;
@@ -251,38 +313,26 @@
   overflow-wrap: break-word;
 }
 
+/* The exam, as one sentence in the quiet ink. */
 .exam-line {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
   margin-top: var(--s2);
   font-size: var(--fs-ui);
+  line-height: 1.5;
   color: var(--muted);
   min-height: 22px;
-}
-
-.exam-line b {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.exam-line span + span::before,
-.exam-line b::before {
-  content: "·";
-  margin-right: var(--s2);
-  color: var(--faint);
-  font-weight: 400;
 }
 
 .level {
   display: flex;
   align-items: center;
-  gap: var(--s4);
-  padding: var(--s2) var(--s4) var(--s2) var(--s2);
+  gap: var(--s3);
+  padding: var(--s2) var(--s3) var(--s2) var(--s2);
   border: 1px solid transparent;
   border-radius: var(--r-card);
   background: transparent;
   text-align: left;
+  font-size: var(--fs-small);
+  color: var(--muted);
   transition:
     background var(--t-fast) ease-out,
     border-color var(--t-fast) ease-out;
@@ -290,30 +340,15 @@
 
 .level:hover {
   background: var(--surface);
-  border-color: var(--line);
+  border-color: var(--line-2);
 }
 
-.level .ring-mid {
-  font-size: var(--fs-card);
+.level:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
-.level > span:last-child {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-}
-
-.level > span:last-child b {
-  font-size: var(--fs-ui);
-  font-weight: 600;
-}
-
-.level small {
-  font-size: var(--fs-caption);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
+/* The next card: the one thing to do now, on this page and as the library's first card. */
 .next-card {
   display: flex;
   flex-direction: column;
@@ -323,8 +358,16 @@
   background: var(--surface);
 }
 
+.next-ref {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
 .next-card h2 {
-  margin-top: var(--s3);
+  margin-top: var(--s2);
   font-family: var(--serif);
   font-size: var(--fs-card);
   font-weight: 600;
@@ -332,19 +375,18 @@
   text-wrap: balance;
 }
 
-.next-card p {
-  margin-top: var(--s3);
-  font-size: var(--fs-ui);
-  line-height: 1.55;
-  color: var(--muted);
-  max-width: 62ch;
+.next-card .katex,
+.tile .katex {
+  white-space: nowrap;
 }
 
-.next-card p b {
-  margin-right: var(--s2);
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--faint);
+.next-card p:not(.next-ref) {
+  margin-top: var(--s3);
+  font-family: var(--serif);
+  font-size: var(--fs-ui);
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 62ch;
 }
 
 .next-card .field {
@@ -358,9 +400,8 @@
 
 .dues {
   display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s1) var(--s3);
+  flex-direction: column;
+  gap: var(--s1);
 }
 
 .dues-what {
@@ -375,11 +416,12 @@
   margin-top: var(--s4);
 }
 
+/* Proofs, a timed paper, a new lesson: one tile design. */
 .tile {
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
-  min-height: 112px;
+  gap: var(--s2);
+  min-height: 128px;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
@@ -387,12 +429,18 @@
   text-align: left;
   transition:
     background var(--t-fast) ease-out,
-    border-color var(--t-fast) ease-out;
+    border-color var(--t-fast) ease-out,
+    transform var(--t-fast) ease-out;
 }
 
 .tile:hover {
   background: var(--hover);
   border-color: var(--line-2);
+}
+
+.tile:active {
+  transform: translateY(1px);
+  transition-duration: 80ms;
 }
 
 .tile-head {
@@ -408,53 +456,14 @@
   font-family: var(--serif);
   font-size: var(--fs-read);
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .tile-foot {
   margin-top: auto;
   font-size: var(--fs-small);
-  color: var(--faint);
-}
-
-/* Every skill as one small mark. Fuller means more proofs. */
-.marks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  align-items: center;
-}
-
-.marks i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
-}
-
-.marks i.p1 {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1.5px var(--accent-mid);
-}
-
-.marks i.p2 {
-  background: var(--accent-mid);
-  box-shadow: none;
-}
-
-.marks i.p3 {
-  background: var(--accent);
-  box-shadow: none;
-}
-
-.marks i.due {
-  box-shadow: inset 0 0 0 1.5px var(--amber);
-}
-
-.marks b {
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--faint);
-  margin-left: var(--s1);
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 /* ---- the lesson: one column, one answer box ---- */
@@ -1112,22 +1121,21 @@
   text-align: center;
 }
 
+/* A check only when something moved. Nothing marked gets a quiet ring and a dash. */
 .done-mark {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: var(--text);
   color: var(--bg);
-  animation: pop 0.6s var(--ease) both;
 }
 
 .done-mark.quiet {
-  background: var(--surface);
+  background: transparent;
   color: var(--muted);
-  box-shadow: 0 0 0 1px var(--line-2);
-  animation: none;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
 }
 
 .summary-col h1,
@@ -1137,14 +1145,20 @@
   font-family: var(--serif);
   font-size: var(--fs-title);
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
 .summary-col h1 {
+  margin-top: var(--s4);
   font-size: var(--fs-display);
+  line-height: 1.15;
 }
 
-.summary-sub,
+.summary-col h1[data-role="unmarked"] {
+  font-size: var(--fs-title);
+}
+
 .setup-sub {
   margin-top: var(--s2);
   color: var(--muted);
@@ -1153,68 +1167,66 @@
 .earned {
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
+  gap: var(--s3);
   width: 100%;
-  margin-top: var(--s6);
-  padding: var(--s4) var(--s5) var(--s5);
+  margin-top: var(--s5);
+  padding: var(--s4) var(--s5);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
   background: var(--surface);
   text-align: left;
 }
 
-.earned-head {
-  margin-bottom: var(--s1);
-  font-family: var(--serif);
-  font-size: var(--fs-card);
-  font-weight: 600;
-}
-
-.earned-head b {
-  font-weight: 600;
-  color: var(--accent);
-}
-
 .earned-row {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  font-size: var(--fs-ui);
+  font-family: var(--serif);
+  font-size: var(--fs-read);
 }
 
-.earned-row .dots i.full:last-of-type,
-.earned-row .dots i.full:has(+ i:not(.full)) {
-  animation: pop 0.7s var(--ease) var(--t-move) both;
+.earned-row .dots {
+  padding: var(--s1);
 }
 
-.next-time {
+.level-line {
   display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  width: 100%;
-  margin-top: var(--s5);
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  font-family: var(--serif);
+  font-size: var(--fs-read);
+  line-height: 1.4;
   text-align: left;
 }
 
-.next-time p {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: var(--s3);
-  align-items: baseline;
+.summary-lead {
+  margin-top: var(--s3);
+  font-family: var(--serif);
+  font-size: var(--fs-read);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.summary-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s4);
   font-size: var(--fs-ui);
   line-height: 1.5;
   color: var(--muted);
 }
 
-.next-time b {
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--faint);
+.summary-facts .next-time {
+  font-family: var(--serif);
+  font-size: var(--fs-read);
+  color: var(--text);
 }
 
 .summary-week {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   flex-wrap: wrap;
   gap: var(--s4);
@@ -1222,11 +1234,39 @@
 }
 
 .summary-week .run-line {
-  margin-bottom: var(--s4);
+  line-height: 20px;
 }
 
 .summary-col .row {
-  margin-top: var(--s6);
+  margin-top: var(--s5);
+}
+
+/* A short window: the same screen, with less air. */
+@media (max-height: 640px) {
+  .summary-col h1 {
+    font-size: var(--fs-title);
+  }
+
+  .done-mark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .summary-col h1,
+  .level-line,
+  .summary-facts,
+  .summary-week,
+  .earned {
+    margin-top: var(--s3);
+  }
+
+  .summary-col .row {
+    margin-top: var(--s4);
+  }
+
+  .earned {
+    padding: var(--s3) var(--s4);
+  }
 }
 
 /* ---- progress: the proofs ---- */
@@ -1241,11 +1281,7 @@
   display: flex;
   align-items: center;
   gap: var(--s5);
-  margin-bottom: var(--s6);
-}
-
-.board-head .ring-mid b {
-  font-size: var(--fs-display);
+  margin-bottom: var(--s5);
 }
 
 .board-title {
@@ -1253,32 +1289,17 @@
   min-width: 0;
 }
 
-.board-title h1 {
-  font-size: var(--fs-title);
-}
-
 .board-sum {
   margin-top: var(--s2);
-  font-size: var(--fs-small);
+  font-size: var(--fs-ui);
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
-.board-sum b {
-  color: var(--text);
+.board-next {
+  margin-top: var(--s1);
+  font-size: var(--fs-ui);
   font-weight: 600;
-}
-
-.board-sum span {
-  color: var(--faint);
-}
-
-.board-days {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--s2);
-  flex: none;
+  color: var(--text);
 }
 
 .targets {
@@ -1302,6 +1323,20 @@
   color: var(--muted);
   font-size: var(--fs-small);
   font-weight: 600;
+  transition:
+    background var(--t-fast) ease-out,
+    color var(--t-fast) ease-out;
+}
+
+.targets button:hover:not(.on),
+.segmented button:hover:not(.on):not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.targets button:active,
+.segmented button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .targets button.on,
@@ -1311,48 +1346,65 @@
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
+/* What every mark on the page means. */
 .legend {
   display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  list-style: none;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.legend li {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
   align-items: center;
   gap: var(--s3);
-  margin-bottom: var(--s2);
-  font-size: var(--fs-small);
-  color: var(--faint);
+}
+
+.legend li > .legend-text {
+  grid-column: 1 / -1;
 }
 
 .group {
   margin-top: var(--s5);
 }
 
-.group h3 {
+.group h3,
+.foot-section h3 {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  margin: 0 0 var(--s2) var(--s3);
-  font-size: var(--fs-caption);
+  min-height: 40px;
+  margin: 0 0 var(--s1) var(--s3);
+  font-size: var(--fs-ui);
   font-weight: 600;
+  color: var(--text);
+}
+
+.group h3 span,
+.foot-section h3 span {
+  font-weight: 400;
   color: var(--muted);
 }
 
 .group h3 .btn {
-  margin: -8px var(--s3) -8px auto;
-}
-
-.group h3 span {
-  padding: 0 var(--s2);
-  border-radius: var(--r-pill);
-  background: var(--hover);
-  font-size: var(--fs-caption);
-  color: var(--muted);
+  margin-left: auto;
 }
 
 .skill {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--s4);
+  gap: var(--s3);
   position: relative;
-  padding: var(--s3) var(--s3);
+  padding: var(--s3);
   border-radius: var(--r-control);
   transition: background var(--t-fast);
 }
@@ -1361,8 +1413,8 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 12px;
-  right: 12px;
+  left: var(--s3);
+  right: var(--s3);
   height: 1px;
   background: var(--line);
 }
@@ -1377,26 +1429,23 @@
   min-width: 0;
 }
 
+/* A skill's name and what went wrong hold mathematics, so they are set in the reading face. */
 .skill-name {
+  font-family: var(--serif);
   font-size: var(--fs-ui);
   font-weight: 600;
 }
 
 .skill-what {
+  font-family: var(--serif);
   font-size: var(--fs-small);
   color: var(--muted);
 }
 
 .skill-note {
-  font-size: var(--fs-caption);
-  color: var(--faint);
+  font-size: var(--fs-small);
+  color: var(--muted);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.skill.is-due .skill-note {
-  color: var(--amber);
-  font-weight: 600;
 }
 
 .skill.untested .skill-name {
@@ -1404,19 +1453,16 @@
   color: var(--muted);
 }
 
-.skill.proven .skill-what {
-  color: var(--faint);
-}
-
 .more {
   margin: var(--s1) 0 0 var(--s1);
-  height: 28px;
+  height: 32px;
   padding: 0 var(--s3);
   border: 0;
   border-radius: var(--r-control);
   background: transparent;
-  color: var(--faint);
+  color: var(--muted);
   font-size: var(--fs-small);
+  font-weight: 600;
 }
 
 .more:hover {
@@ -1435,22 +1481,30 @@
 
 .board-foot {
   display: flex;
-  gap: var(--s7);
+  flex-direction: column;
+  gap: var(--s5);
   margin-top: var(--s6);
-  padding-top: var(--s5);
+  padding-top: var(--s4);
   border-top: 1px solid var(--line);
 }
 
-.board-foot h3 {
-  font-size: var(--fs-caption);
-  font-weight: 600;
+.foot-section > p,
+.foot-notes p {
+  margin-left: var(--s3);
+  font-size: var(--fs-small);
+  line-height: 1.5;
   color: var(--muted);
+}
+
+.foot-section .run-line {
+  margin-left: var(--s2);
+  font-weight: 400;
 }
 
 .scores {
   display: flex;
   gap: var(--s4);
-  margin-top: var(--s4);
+  margin: var(--s2) 0 0 var(--s3);
 }
 
 .score {
@@ -1459,14 +1513,13 @@
   align-items: center;
   gap: var(--s1);
   font-size: var(--fs-caption);
-  color: var(--faint);
+  color: var(--muted);
   white-space: nowrap;
 }
 
 .score b {
   font-size: var(--fs-small);
   color: var(--text);
-  font-variant-numeric: tabular-nums;
 }
 
 .score-bar {
@@ -1486,38 +1539,56 @@
 }
 
 .foot-notes {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
-  font-size: var(--fs-small);
-  line-height: 1.5;
-  color: var(--muted);
 }
 
-.foot-notes b {
-  margin-right: var(--s1);
-  font-weight: 600;
-  color: var(--text);
+/* Five weeks of study days, newest first, one labelled row each. */
+.weeks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: var(--s2) 0 var(--s3) var(--s3);
+}
+
+.weeks-row {
+  display: grid;
+  grid-template-columns: 104px auto;
+  align-items: start;
+}
+
+.weeks-name {
+  font-size: var(--fs-small);
+  line-height: 20px;
+  color: var(--muted);
 }
 
 /* ---- a timed paper ---- */
 
-.paper .ring-mid small {
-  margin-top: var(--s2);
-  font-size: var(--fs-caption);
-  font-weight: 400;
-  color: var(--muted);
+/* The clock is plain text: a number and the length of the paper. */
+.paper-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
 }
 
 .count {
+  font-family: var(--serif);
   font-size: var(--fs-display);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.paper-clock small {
+  font-size: var(--fs-small);
+  color: var(--muted);
 }
 
 .paper-rule {
-  margin-top: var(--s6);
+  margin-top: var(--s5);
   font-family: var(--serif);
   font-size: var(--fs-read);
   line-height: 1.55;
@@ -1525,7 +1596,9 @@
   text-wrap: balance;
 }
 
+/* The marks the student writes are set in the reading face, like the words around them. */
 .paper-rule b {
+  font-family: var(--serif);
   font-weight: 600;
   color: var(--text);
 }
@@ -1534,12 +1607,13 @@
   margin-top: var(--s5);
 }
 
-.paper-col .row + .row {
-  margin-top: var(--s3);
+.paper-col .paper-actions {
+  margin-top: var(--s5);
+  gap: var(--s2) var(--s3);
 }
 
 .paper-col > .aside {
-  margin-top: var(--s5);
+  margin-top: var(--s3);
 }
 
 .paper-list {
@@ -1571,11 +1645,15 @@
   border-color: var(--line-2);
 }
 
+.paper-list button:active {
+  transform: translateY(1px);
+}
+
 .paper-list button i {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 1.5px solid var(--line-2);
+  border: 1.5px solid var(--faint);
   flex: none;
 }
 
@@ -1620,10 +1698,6 @@
   max-width: 540px;
 }
 
-.setup-col .mark {
-  margin-top: var(--s2);
-}
-
 .steps {
   width: 100%;
   margin-top: var(--s6);
@@ -1657,6 +1731,11 @@
 .step.ok .step-mark {
   background: var(--text);
   color: var(--bg);
+}
+
+/* Every problem that blocks you is red, in its mark and in its words. */
+.step:not(.ok):not(.plain) .step-head span {
+  color: var(--red);
 }
 
 .step.plain .step-mark {
@@ -1738,15 +1817,6 @@
   .dock {
     padding-left: var(--s4);
     padding-right: var(--s4);
-  }
-
-  .board-days {
-    display: none;
-  }
-
-  .board-foot {
-    flex-direction: column;
-    gap: var(--s5);
   }
 
   .track {
@@ -1923,30 +1993,15 @@
 
 .material-strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s2) var(--s3);
   margin-top: var(--s4);
-  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  padding: var(--s3) var(--s4);
   border: 1px dashed var(--line-2);
   border-radius: var(--r-card);
-  color: var(--muted);
-}
-
-.material-strip > span:not(.grow) {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.material-strip b {
   font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.material-strip small {
-  font-size: var(--fs-caption);
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .palette.paste {
@@ -2062,8 +2117,7 @@
 
 /* ---- what runs a lesson, and today's counts ---- */
 
-/* Quiet on purpose: one small choice under the library's title, and beside
-   the payment choice on the setup screen. */
+/* Quiet on purpose: one small choice beside the payment choice on the setup screen. */
 .engine {
   display: flex;
   flex-direction: column;
@@ -2102,7 +2156,7 @@
 .engine-line {
   font-size: var(--fs-caption);
   line-height: 1.5;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .step-body .engine {
@@ -2112,7 +2166,7 @@
 .step-body .engine p.engine-line {
   margin-top: 0;
   font-size: var(--fs-caption);
-  color: var(--faint);
+  color: var(--muted);
 }
 
 /* The engine of the conversation on screen, in the lesson's top strip. */
@@ -2128,27 +2182,6 @@
   font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--muted);
-}
-
-.summary-col .today-line {
-  margin-top: var(--s4);
-}
-
-.summary-col .marks-note {
-  margin-top: var(--s2);
-  font-size: var(--fs-small);
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.cc-foot .btn.small.ghost {
-  margin-left: -8px;
-}
-
-.shelf-title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 
 .engine-line {
