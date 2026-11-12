@@ -26,6 +26,9 @@ What a turn does is chosen by words in the learner's message (inside
   REWORD       pose the open paper redo again in other words
   MENTION      speak of paper redo 2 and pose an ordinary task
   COLD         with "b = -5": mark the answer cold
+  REPAIRED     finish the first repair the state listed (or REPAIR <n>:
+               repair n), with its next question
+  BADREPAIR    name a repair with no number
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
   RESTART      stream part of the reply, start the same message again, then
@@ -155,12 +158,17 @@ def redo_question(number):
 NEXT_REDO = {"question": "A second plot crosses at −0.25: what is Km?", "key": "4"}
 # The numbers of the paper redos the state listed and this model has not posed.
 redos_listed = []
+# The numbers of the repairs the state listed, first listed first.
+repairs_listed = []
 
 
 def reply_for(learner, state):
     listed = re.findall(r'^(\d+)\. Tag "', state, re.M)
     if listed:
         redos_listed[:] = [int(number) for number in listed]
+    for number in re.findall(r'^Repair (\d+)\. Tag "', state, re.M):
+        if int(number) not in repairs_listed:
+            repairs_listed.append(int(number))
     if "could not be read" in state:
         delay = float(os.environ.get("STAND_IN_REPAIR_DELAY", "0"))
         time.sleep(delay)
@@ -185,6 +193,17 @@ def reply_for(learner, state):
         return "What do you see in front of the 5?" + block(note="Lost: asked what they see."), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
+    if "BADREPAIR" in learner:
+        return "That finishes the repair." + block(repair={"done": "taught the step"}), False
+    if "REPAIRED" in learner or re.search(r"REPAIR \d+", learner):
+        named = re.search(r"REPAIR (\d+)", learner)
+        number = int(named.group(1)) if named else (repairs_listed[0] if repairs_listed else 1)
+        if number in repairs_listed:
+            repairs_listed.remove(number)
+        return "Right: that is the step that was missing. That finishes the repair." + block(
+            note="The last check of the repair.",
+            repair={"number": number, "done": "taught reading Km off the x intercept; three checks",
+                    "next": {"question": "A plot crosses the x axis at −0.2: what is Km?", "key": "5"}}), False
     if "VERYSLOW" in learner:
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:

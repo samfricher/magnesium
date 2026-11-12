@@ -491,6 +491,10 @@ struct State {
     /// Why no task is open although the last reply may have set one, to
     /// tell the tutor with the next message.
     no_task: Option<String>,
+    /// Repairs newly waiting, to list for the tutor with the next message.
+    repairs_new: Vec<record::WaitingRepair>,
+    /// What the record made of the last repair, to tell the tutor.
+    repair_outcome: Option<String>,
     /// The learner's memories the tutor has been shown, by the short id it
     /// names them with: ("m1", the runtime's memory id).
     memories: Vec<(String, String)>,
@@ -1313,12 +1317,33 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
     // When the calls above made none, in a sitting not asked about yet, one
     // is made: the prompt hook's notice counts the quick checks due, and
     // says nothing of paper redos.
+    let sitting_starts = !state.checks_asked;
+    let mut status_now: Option<Value> = None;
     if found.is_none() && !asked && !state.checks_asked {
         if let Ok(status) = host.call(
             "context",
             json!({"schema": "learner-model/v2", "action": "status"}),
         ) {
             found = due_of(&status);
+            status_now = Some(status);
+        }
+    }
+    // A sitting starts with the paper questions waiting for a repair, as
+    // the record lists them.
+    if sitting_starts {
+        let status = status_now.or_else(|| {
+            host.call(
+                "context",
+                json!({"schema": "learner-model/v2", "action": "status"}),
+            )
+            .ok()
+        });
+        if let Some(rows) = status
+            .as_ref()
+            .and_then(|status| status.get("repairs_waiting"))
+        {
+            let made = state.lesson.take_waiting(rows, false);
+            state.repairs_new.extend(made);
         }
     }
     state.checks_asked = true;
@@ -1357,6 +1382,8 @@ fn prepare(shared: &Arc<Shared>, words: &str, from_window: bool, prompt_id: &str
     }
     facts.outcome = state.outcome.take();
     facts.no_task = state.no_task.take();
+    facts.new_repairs = std::mem::take(&mut state.repairs_new);
+    facts.repair_outcome = state.repair_outcome.take();
     if facts.full {
         facts.graphs = course_graphs(&shared.root);
     }
@@ -1606,7 +1633,38 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         no_clock,
     };
     match &record {
-        Some(record) => save(shared, record, &message, &reply, deadline, shown),
+        Some(record) => {
+            let saved = save(shared, record, &message, &reply, deadline, shown);
+            // A repair is recorded only behind a turn the record holds, and
+            // never while recording is off or the lesson is paused or
+            // stopped: the save may have found it so.
+            let halted = lock(&shared.state).halt.is_some();
+            match (&record.repair, saved, halted) {
+                (_, _, true) => {}
+                (Some(note), true, false) => repair(shared, note, deadline),
+                (Some(note), false, false) => {
+                    shared.note(&format!(
+                        "repair {} not recorded: the turn's record was not kept",
+                        note.number
+                    ));
+                    repair_lost(
+                        shared,
+                        &format!(
+                            "Repair {} was not recorded: the record could not keep your last reply. Its paper question still waits for a repair.",
+                            note.number
+                        ),
+                    );
+                }
+                (None, _, false) if record.repair_unreadable => {
+                    shared.note("the block named a repair that could not be read");
+                    repair_lost(
+                        shared,
+                        "Your block named a repair, but without its number or a line on what was done, so nothing was recorded: its paper question still waits for a repair.",
+                    );
+                }
+                _ => {}
+            }
+        }
         None => {
             // The reply may have posed a new task, which the engine cannot
             // know: the task in hand is forgotten, so the next answer is
@@ -1625,6 +1683,13 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                     text: NOT_MARKED.into(),
                 });
             }
+            // The reply may have finished a repair: none is recorded.
+            if !lock(&shared.state).lesson.repairs.is_empty() {
+                shared.emit(AgentEvent::Notice {
+                    kind: NoticeKind::Other,
+                    text: REPAIR_NOT_SAVED.into(),
+                });
+            }
         }
     }
     // The reply as the learner saw it, for the record.
@@ -1636,6 +1701,203 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         shared.note(&format!("stop hook failed: {why}"));
     }
     ended
+}
+
+/// The learner's notice for a repair that may have been finished and was
+/// not recorded.
+const REPAIR_NOT_SAVED: &str = "If the tutor finished a repair just now, it was not saved: that paper question still waits for its repair.";
+
+/// A repair the tutor finished and the record does not hold: the learner is
+/// told now, and the tutor, with `why`, on the next turn.
+fn repair_lost(shared: &Arc<Shared>, why: &str) {
+    lock(&shared.state).repair_outcome = Some(why.to_owned());
+    shared.emit(AgentEvent::Notice {
+        kind: NoticeKind::Other,
+        text: REPAIR_NOT_SAVED.into(),
+    });
+}
+
+/// Record the repair the tutor finished, by `deadline`: for each of its rows
+/// the record says, just now, is waiting for one, never another, and then
+/// read back what the record made of each. The tutor is told on the next
+/// turn; the learner now when nothing could be recorded.
+fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
+    let Some(waiting) = lock(&shared.state)
+        .lesson
+        .repairs
+        .iter()
+        .find(|repair| repair.number == note.number)
+        .cloned()
+    else {
+        shared.note(&format!(
+            "the tutor named repair {}, which is not listed",
+            note.number
+        ));
+        lock(&shared.state).repair_outcome = Some(format!(
+            "No Repair {} is listed, so nothing was recorded. Name a repair only by a number the state lists.",
+            note.number
+        ));
+        return;
+    };
+    // What waits now, as the record says: a repair on a row whose redo is
+    // already set would move that redo.
+    let status = shared.host.call_by(
+        "context",
+        json!({"schema": "learner-model/v2", "action": "status"}),
+        deadline,
+    );
+    let Some(now) = status
+        .ok()
+        .and_then(|status| status.get("repairs_waiting").cloned())
+        .and_then(|rows| rows.as_array().cloned())
+    else {
+        shared.note("the rows waiting for a repair could not be read: no repair recorded");
+        repair_lost(
+            shared,
+            &format!(
+                "Repair {} was not recorded: the record could not say which rows wait for it. Its paper question still waits for a repair.",
+                note.number
+            ),
+        );
+        return;
+    };
+    let rows: Vec<String> = waiting
+        .rows
+        .iter()
+        .filter(|row| {
+            now.iter()
+                .any(|listed| listed["item"].as_str() == Some(row.as_str()))
+        })
+        .cloned()
+        .collect();
+    if rows.is_empty() {
+        shared.note(&format!(
+            "repair {}: no row of it waits any more",
+            note.number
+        ));
+        let mut state = lock(&shared.state);
+        state
+            .lesson
+            .repairs
+            .retain(|repair| repair.number != note.number);
+        state.repair_outcome = Some(format!(
+            "The record holds no row of Repair {} as waiting any more, so nothing was recorded for it.",
+            note.number
+        ));
+        return;
+    }
+    let change = |next: bool| -> Vec<Value> {
+        rows.iter()
+            .map(|row| {
+                let mut change = json!({"item": row, "repaired": note.done});
+                if let (true, Some(n)) = (next, &note.next) {
+                    change["next"] = json!({"question": n.question, "answer_key": n.key});
+                }
+                change
+            })
+            .collect()
+    };
+    let request_id = format!("{}-repair-{}", shared.session, shared.next_id());
+    let mut request = json!({
+        "schema": "learner-model/v2",
+        "action": "update",
+        "request_id": request_id,
+        "practice": change(true),
+    });
+    let mut outcome = shared
+        .host
+        .call_by("learning_step", request.clone(), deadline);
+    // A next question the runtime will not store never costs the repair.
+    if let Err(why) = &outcome {
+        if !host_client::unknown(why) && why.contains(".next") && note.next.is_some() {
+            request["practice"] = json!(change(false));
+            request["request_id"] = json!(format!("{request_id}-again"));
+            outcome = shared
+                .host
+                .call_by("learning_step", request.clone(), deadline);
+        }
+    }
+    // Unknown: ask again with the same request, which the record answers
+    // with its first result if it kept it, and keeps once if it did not.
+    if outcome.as_ref().is_err_and(|why| host_client::unknown(why)) {
+        outcome = shared
+            .host
+            .call_by("learning_step", request, Instant::now() + READ_BACK);
+    }
+    let result = match outcome {
+        Ok(result) => result,
+        Err(why) => {
+            shared.note(&format!("repair {} not recorded: {why}", note.number));
+            if why.contains("recording_disabled") {
+                lock(&shared.state).halt = Some(Halt::RecordingOff);
+                return;
+            }
+            repair_lost(
+                shared,
+                &format!(
+                    "Repair {} was not recorded: the record refused it. Its paper question still waits for a repair.",
+                    note.number
+                ),
+            );
+            return;
+        }
+    };
+    // What the record made of each row: scheduled, or still waiting.
+    let items = result["practice"]["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut scheduled: Vec<(String, String)> = Vec::new();
+    for row in &rows {
+        if let Some(next) = items
+            .iter()
+            .find(|item| item["item"].as_str() == Some(row.as_str()))
+            .and_then(|item| item["next_redo"].as_str())
+        {
+            scheduled.push((row.clone(), next.to_owned()));
+        }
+    }
+    let mut state = lock(&shared.state);
+    if let Some(repair) = state
+        .lesson
+        .repairs
+        .iter_mut()
+        .find(|repair| repair.number == note.number)
+    {
+        repair
+            .rows
+            .retain(|row| !scheduled.iter().any(|(done, _)| done == row));
+    }
+    state
+        .lesson
+        .repairs
+        .retain(|repair| !repair.rows.is_empty());
+    let dates: Vec<&str> = scheduled.iter().map(|(_, date)| date.as_str()).collect();
+    state.repair_outcome = Some(match dates.first() {
+        Some(first) if dates.len() == rows.len() => format!(
+            "The record holds Repair {} as done: its paper question comes back as a redo on {first}. You may tell the learner so.",
+            note.number
+        ),
+        Some(first) => format!(
+            "The record holds Repair {} as done for some of its paper questions, which come back as a redo on {first}; the others still wait for a repair.",
+            note.number
+        ),
+        None => format!(
+            "The record did not schedule a redo for Repair {}: its paper question still waits for a repair.",
+            note.number
+        ),
+    });
+    if dates.is_empty() {
+        drop(state);
+        shared.note(&format!(
+            "repair {} saved, but no row was scheduled: {result}",
+            note.number
+        ));
+        shared.emit(AgentEvent::Notice {
+            kind: NoticeKind::Other,
+            text: REPAIR_NOT_SAVED.into(),
+        });
+    }
 }
 
 /// The notice for an answer the record could not keep.
@@ -1755,7 +2017,7 @@ fn forget_open_task(
 }
 
 /// Keep the turn's record in the runtime, by `deadline`. `shown` is when
-/// the window showed the reply whole.
+/// the window showed the reply whole. Returns whether the record holds it.
 fn save(
     shared: &Arc<Shared>,
     record: &Record,
@@ -1763,7 +2025,7 @@ fn save(
     reply: &str,
     deadline: Instant,
     shown: SystemTime,
-) {
+) -> bool {
     let mut state = lock(&shared.state);
     let request_id = format!("{}-turn-{}", shared.session, shared.next_id());
     let write = state.lesson.apply(record, message, reply, &request_id);
@@ -1855,7 +2117,7 @@ fn save(
         || request.get("event_dispositions").is_some()
         || request.get("practice").is_some();
     if !worth {
-        return;
+        return true;
     }
     // A call whose outcome is unknown is replayed as it was by the host
     // client. A refusal is answered once, changed. `sent` is the request
@@ -2029,6 +2291,25 @@ fn save(
                     }
                     .to_owned(),
                 );
+                // Its failed rows now wait for a repair, as the record holds
+                // them: open, with no next redo.
+                if failed {
+                    let rows: Vec<Value> = result["practice"]["items"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|item| {
+                            item["next_redo"].is_null() && item["status"].as_str() != Some("closed")
+                        })
+                        .filter_map(|item| {
+                            let name = item["item"].as_str()?;
+                            let plan = name.rsplit_once('#').map(|(plan, _)| plan);
+                            Some(json!({"item": name, "plan": plan, "tag": redo.tag}))
+                        })
+                        .collect();
+                    let made = state.lesson.take_waiting(&json!(rows), true);
+                    state.repairs_new.extend(made);
+                }
                 if redo.right && !passed {
                     shared.note(&format!("a right redo answer earned no pass: {effects:?}"));
                     shared.emit(AgentEvent::Notice {
@@ -2044,11 +2325,13 @@ fn save(
                 let line = format!("{short}: {}: new, as you noted", note.skill);
                 state.memories_new.push(line);
             }
+            true
         }
         Err(why) if already_saved(&why) => {
             // It committed: only the session's revision is not known. The
             // next write reads it again if it is refused for it.
             shared.note("the turn was already in the record");
+            true
         }
         // The record could not say, even asked again: the learner is told
         // the answer may not be marked.
@@ -2060,6 +2343,7 @@ fn save(
                     text: NOT_KNOWN.into(),
                 });
             }
+            false
         }
         Err(why) => {
             shared.note(&format!("the record was not saved: {why}"));
@@ -2067,15 +2351,16 @@ fn save(
             // runtime keeps nothing, as the learner asked.
             if why.contains("recording_disabled") {
                 state.halt = Some(Halt::RecordingOff);
-                return;
+                return false;
             }
             if why.contains("learning_inactive") {
                 state.halt = Some(Halt::Stopped);
-                return;
+                return false;
             }
             if write.marked {
                 lost(&why);
             }
+            false
         }
     }
 }
