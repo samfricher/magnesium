@@ -18,8 +18,9 @@ use mg_core::manager::{EngineChoice, Opened, Setup};
 use mg_core::material::{Added, Listed};
 use mg_core::plan::Plan;
 use mg_core::runtime::Mark;
-use mg_core::store::{Engine, PaperSitting};
+use mg_core::store::{Engine, PaperSitting, Turn};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
+use mg_core::workspace::{Files, LessonInfo};
 use mg_core::{Manager, Store};
 use serde::Serialize;
 use tauri::{Emitter, Manager as _, State, WindowEvent};
@@ -262,6 +263,31 @@ fn add_pasted_text(shell: State<'_, Shell>, text: String) -> Reply<Added> {
     plain(shell.manager.add_pasted_text(&text))
 }
 
+/// The open folder's lessons, newest first.
+#[tauri::command(async)]
+fn lessons(shell: State<'_, Shell>) -> Reply<Vec<LessonInfo>> {
+    plain(shell.manager.lessons())
+}
+
+/// The turns of one lesson, shown again without starting the agent.
+#[tauri::command(async)]
+fn lesson_turns(shell: State<'_, Shell>, session: String) -> Reply<Vec<Turn>> {
+    plain(shell.manager.lesson_turns(&session))
+}
+
+/// What the open folder's `Study/` holds, for ⌘P.
+#[tauri::command(async)]
+fn study_files(shell: State<'_, Shell>) -> Reply<Files> {
+    plain(shell.manager.study_files())
+}
+
+/// The learner's own edit of a plan file, refused if the file changed since
+/// they read it.
+#[tauri::command(async)]
+fn write_plan(shell: State<'_, Shell>, path: String, text: String, expected_ms: i64) -> Reply<i64> {
+    plain(shell.manager.write_plan(&path, &text, expected_ms))
+}
+
 /// A source a reply cited, for the panel beside the lesson. Kept inside the
 /// study folder, and never an answer key.
 #[tauri::command(async)]
@@ -417,6 +443,10 @@ fn main() {
             add_pasted_text,
             marks,
             material_list,
+            lessons,
+            lesson_turns,
+            study_files,
+            write_plan,
             source,
             source_pdf,
             open_file,

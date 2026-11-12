@@ -29,6 +29,7 @@ use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
 use crate::store::{Engine, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
+use crate::workspace;
 
 #[derive(Default)]
 struct Buffer {
@@ -399,6 +400,37 @@ impl Manager {
     /// Keep another installed `magnesium` and stop asking about it.
     pub fn keep_runtime(&self) -> RuntimeSetup {
         install::keep(&self.store)
+    }
+
+    /// The open folder's lessons: every conversation the window kept turns
+    /// of, newest first, with the one Continue resumes marked.
+    pub fn lessons(&self) -> AgentResult<Vec<workspace::LessonInfo>> {
+        let folder = self.need_folder()?;
+        let current = self.store.folder(&folder).session_id;
+        Ok(workspace::lessons(
+            &self.store.all_turns(&folder),
+            current.as_deref(),
+        ))
+    }
+
+    /// The turns of one of the open folder's lessons, to show it again
+    /// without starting the agent.
+    pub fn lesson_turns(&self, session: &str) -> AgentResult<Vec<Turn>> {
+        let folder = self.need_folder()?;
+        Ok(self.store.turns(&folder, session))
+    }
+
+    /// What the open folder's `Study/` holds, newest first.
+    pub fn study_files(&self) -> AgentResult<workspace::Files> {
+        let folder = self.need_folder()?;
+        Ok(workspace::files(&study::root(&folder)))
+    }
+
+    /// Save the learner's own edit of a plan file, if it has not changed
+    /// since they read it.
+    pub fn write_plan(&self, path: &str, text: &str, expected_ms: i64) -> AgentResult<i64> {
+        let folder = self.need_folder()?;
+        workspace::write_plan(&study::root(&folder), path, text, expected_ms).map_err(AgentError)
     }
 
     pub fn account(&self) -> Account {

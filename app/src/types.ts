@@ -285,6 +285,24 @@ export type Setup = { runtime: RuntimeSetup; account: Account; payment: Payment 
 /** The window's version, and the commit the download was built from. */
 export type About = { version: string; commit: string | null };
 
+/** One conversation the window kept, as a lesson the learner can open again. */
+export type LessonInfo = {
+  session: string;
+  first_ms: number;
+  last_ms: number;
+  turns: number;
+  /** The first thing the learner said, on one line. */
+  opening: string;
+  /** The folder's conversation: the one Continue resumes. */
+  current: boolean;
+};
+
+/** One file under `Study/`, from the study root. */
+export type StudyFile = { path: string; changed_ms: number };
+
+/** What `Study/` holds, newest first. Answer keys are counted, never named. */
+export type StudyFiles = { files: StudyFile[]; keys: number; more: boolean };
+
 /** Everything the page may ask of the core. The window and the demo both implement it. */
 export interface Core {
   initialFolder(): Promise<string | null>;
@@ -337,6 +355,14 @@ export interface Core {
   addPastedText(text: string): Promise<Added>;
   /** The files already in this course's material folder. */
   materialList(): Promise<Materials>;
+  /** The open folder's lessons, newest first. */
+  lessons(): Promise<LessonInfo[]>;
+  /** The turns of one lesson, without starting the agent. */
+  lessonTurns(session: string): Promise<Turn[]>;
+  /** What the open folder's `Study/` holds. */
+  studyFiles(): Promise<StudyFiles>;
+  /** Save the learner's edit of a plan file; refused when it changed since `expectedMs`. Resolves to its new time. */
+  writePlan(path: string, text: string, expectedMs: number): Promise<number>;
   /** The answers the runtime has marked, oldest first, or null when this runtime has no `attempts` command. */
   marks(): Promise<Mark[] | null>;
   /**
