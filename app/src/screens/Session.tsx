@@ -16,10 +16,10 @@ import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState
 
 import { core } from "../bridge";
 import { HELP, busy, isHint, opening, splitConfidence, tutorText, type Card, type SessionState } from "../lesson";
-import { countTasks, hasMath, hasTask, renderPlain, sourceLinks } from "../render";
+import { hasMath, hasTask, renderPlain, sourceLinks } from "../render";
 import { sourceRef, type SourceRef } from "../sources";
 import { Line, Rich } from "../ui/Rich";
-import { AddMenu, MaterialNote } from "../ui/Material";
+import { MaterialNote } from "../ui/Material";
 import { SourcePanel } from "../ui/SourcePanel";
 import { Icon } from "../ui/icons";
 import { PaletteKey, TopBar, composing, splitGoal, useNow } from "../ui/bits";
@@ -232,6 +232,8 @@ function PermissionCard(props: {
 function QuestionCard(props: {
   card: Extract<Card, { kind: "question" }>;
   onAnswer: (id: string, answers: Answer[]) => void;
+  /** Where the card puts what Esc does to it, for the page to call when the focus is not in the card. */
+  escape: React.MutableRefObject<(() => void) | null>;
 }) {
   const { card } = props;
   const [chosen, setChosen] = useState<Record<number, string[]>>({});
@@ -267,6 +269,25 @@ function QuestionCard(props: {
     else choose(index, q, label);
   };
 
+  /**
+   * Esc on a card: the first takes back the choice made, and the focus goes to
+   * the field for the learner's own words; with no choice, it goes to the field.
+   * It never goes on to the page, so it cannot open a second card.
+   */
+  const back = (from?: number) => {
+    if (Object.values(chosen).some((labels) => labels.length > 0)) setChosen({});
+    const at = from ?? 0;
+    const box = root.current?.querySelector<HTMLInputElement>(`.ask-q[data-q="${at}"] input.field`);
+    if (box && document.activeElement !== box) box.focus();
+  };
+  props.escape.current = () => back();
+  useEffect(() => {
+    const slot = props.escape;
+    return () => {
+      slot.current = null;
+    };
+  }, [props.escape]);
+
   const options = (index: number) => Array.from(root.current?.querySelectorAll<HTMLButtonElement>(`.ask-q[data-q="${index}"] .option`) ?? []);
   const field = (index: number) => root.current?.querySelector<HTMLInputElement>(`.ask-q[data-q="${index}"] input.field`) ?? null;
 
@@ -280,13 +301,9 @@ function QuestionCard(props: {
     const list = options(index);
     const digit = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
 
-    // Esc takes back a choice first. With none made it goes on to the page.
     if (event.key === "Escape") {
-      if (Object.values(chosen).some((labels) => labels.length > 0)) {
-        event.preventDefault();
-        setChosen({});
-        field(index)?.focus();
-      }
+      event.preventDefault();
+      back(index);
       return;
     }
 
@@ -429,24 +446,29 @@ function forgetDraft() {
   kept = null;
 }
 
-/** The symbols the course's answers most often need, and the LaTeX each one writes. `|` is where the caret goes. */
-const SYMBOLS: { show: string; name: string; tex: string }[] = [
-  { show: "\\bar{x}", name: "x bar, the mean", tex: "\\bar{x}" },
-  { show: "\\sigma", name: "sigma", tex: "\\sigma" },
-  { show: "\\mu", name: "mu", tex: "\\mu" },
-  { show: "\\sqrt{x}", name: "square root", tex: "\\sqrt{|}" },
-  { show: "x^2", name: "squared", tex: "^2" },
-  { show: "x^3", name: "cubed", tex: "^3" },
-  { show: "\\le", name: "less than or equal to", tex: "\\le" },
-  { show: "\\ge", name: "greater than or equal to", tex: "\\ge" },
-  { show: "\\pm", name: "plus or minus", tex: "\\pm" },
-  { show: "\\times", name: "times", tex: "\\times" },
-  { show: "\\div", name: "divided by", tex: "\\div" },
-  { show: "\\sum", name: "sum", tex: "\\sum" },
-  { show: "\\infty", name: "infinity", tex: "\\infty" },
-  { show: "\\ne", name: "not equal to", tex: "\\ne" },
-  { show: "\\approx", name: "approximately equal to", tex: "\\approx" },
-  { show: "\\frac{a}{b}", name: "fraction", tex: "\\frac{|}{}" },
+/**
+ * The symbols the course's answers most often need. Each is written as the
+ * character itself, which the tutor reads as it is and which draws inside a
+ * formula too; only the fraction has no character, so it is LaTeX, with the
+ * caret between its first braces.
+ */
+const SYMBOLS: { show: string; name: string; insert: string; tex?: boolean }[] = [
+  { show: "x̄", name: "x bar, the mean", insert: "x̄" },
+  { show: "σ", name: "sigma", insert: "σ" },
+  { show: "μ", name: "mu", insert: "μ" },
+  { show: "√", name: "square root", insert: "√" },
+  { show: "x²", name: "squared", insert: "²" },
+  { show: "x³", name: "cubed", insert: "³" },
+  { show: "≤", name: "less than or equal to", insert: "≤" },
+  { show: "≥", name: "greater than or equal to", insert: "≥" },
+  { show: "±", name: "plus or minus", insert: "±" },
+  { show: "×", name: "times", insert: "×" },
+  { show: "÷", name: "divided by", insert: "÷" },
+  { show: "∑", name: "sum", insert: "∑" },
+  { show: "∞", name: "infinity", insert: "∞" },
+  { show: "≠", name: "not equal to", insert: "≠" },
+  { show: "≈", name: "approximately equal to", insert: "≈" },
+  { show: "\\frac{a}{b}", name: "fraction", insert: "\\frac{|}{}", tex: true },
 ];
 
 /** Whether the caret, after `before`, is inside a formula already begun with a dollar sign. */
@@ -467,23 +489,37 @@ function inMath(before: string): boolean {
 /** The learner's text holds nothing to send: empty, or only dollar signs and spaces. */
 const bare = (text: string) => /^[\s$]*$/.test(text);
 
-/** How sure the learner is: optional, one choice of three. A radio group with one tab stop; the arrows move and choose. */
-function Sure(props: { value: string | null; onChange: (value: string | null, fromKey: boolean) => void }) {
+/**
+ * How sure the learner is: optional, one choice of three, and about the answer,
+ * so it shows once something is typed (its room is kept, so nothing moves). A
+ * radio group with one tab stop. The arrows move and choose; Space and Return
+ * choose the one in hand and never clear it or move the focus; a click on the
+ * chosen one clears it, the only way to. ⌥1, ⌥2 and ⌥3 choose from the answer box.
+ */
+function Sure(props: { value: string | null; shown: boolean; onChange: (value: string | null, fromKey: boolean) => void }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const at = CONFIDENCE.findIndex(([word]) => word === props.value);
   const stop = at >= 0 ? at : 0;
   const key = (event: React.KeyboardEvent, from: number) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === " " || event.key === "Enter") {
+      // A key chooses. Left to itself the button would click, and a click on the chosen one clears it.
+      event.preventDefault();
+      event.stopPropagation();
+      props.onChange(CONFIDENCE[from][0], true);
+      return;
+    }
     const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
-    if (step === 0 || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (step === 0) return;
     event.preventDefault();
     const next = (from + step + CONFIDENCE.length) % CONFIDENCE.length;
     props.onChange(CONFIDENCE[next][0], true);
     refs.current[next]?.focus();
   };
   return (
-    <span className="sure">
+    <span className={props.shown ? "sure" : "sure idle"}>
       <span className="sure-label" aria-hidden="true">
-        How sure?
+        How sure? (optional)
       </span>
       <span
         className="seg"
@@ -497,17 +533,124 @@ function Sure(props: { value: string | null; onChange: (value: string | null, fr
             ref={(el) => {
               refs.current[n] = el;
             }}
+            type="button"
             role="radio"
             aria-checked={props.value === word}
+            aria-keyshortcuts={`Alt+${n + 1}`}
             tabIndex={n === stop ? 0 : -1}
             data-label={label}
+            title={`${label} (⌥${n + 1}). Click it again to clear.`}
             onKeyDown={(e) => key(e, n)}
+            onKeyUp={(e) => {
+              // The key was taken on the way down; the button must not click on the way up.
+              if (e.key === " ") e.preventDefault();
+            }}
             onClick={() => props.onChange(props.value === word ? null : word, false)}
           >
             {label}
           </button>
         ))}
       </span>
+    </span>
+  );
+}
+
+/**
+ * The one button for what the learner adds: a photo of their work, or course
+ * material. It opens a short menu. Return, Space or the arrows open it and
+ * move in it, Esc closes it and gives the focus back, and Tab leaves it.
+ */
+function Attach(props: { onPhoto: () => void; onMaterial: () => void }) {
+  const [open, setOpen] = useState(false);
+  const holder = useRef<HTMLSpanElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const items = useRef<(HTMLButtonElement | null)[]>([]);
+  const first = useRef<0 | 1>(0);
+
+  useEffect(() => {
+    if (!open) return;
+    items.current[first.current === 1 ? items.current.length - 1 : 0]?.focus();
+    const close = (event: MouseEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const choose = (run: () => void) => {
+    setOpen(false);
+    run();
+  };
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || composing(event)) return;
+    if (!open) {
+      if (event.target === button.current && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        first.current = event.key === "ArrowUp" ? 1 : 0;
+        setOpen(true);
+      }
+      return;
+    }
+    const list = items.current.filter((el): el is HTMLButtonElement => el !== null);
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") {
+      // Takes the key: the lesson's own Esc must not also run.
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      button.current?.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      list[(Math.max(at, 0) + (event.key === "ArrowDown" ? 1 : -1) + list.length) % list.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      list[event.key === "Home" ? 0 : list.length - 1]?.focus();
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    }
+  };
+  return (
+    <span className="add-menu" ref={holder} onKeyDown={onKeyDown}>
+      <button
+        ref={button}
+        type="button"
+        className={open ? "icon-btn on" : "icon-btn"}
+        title="Attach a photo of your work or course material"
+        aria-label="Attach a photo of your work or course material"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-role="add-material"
+        onClick={() => {
+          first.current = 0;
+          setOpen(!open);
+        }}
+      >
+        <Icon name="clip" size={17} />
+      </button>
+      {open && (
+        <span className="menu" role="menu" aria-label="Attach">
+          <button
+            type="button"
+            role="menuitem"
+            ref={(el) => {
+              items.current[0] = el;
+            }}
+            onClick={() => choose(props.onPhoto)}
+          >
+            Photo of your work…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            ref={(el) => {
+              items.current[1] = el;
+            }}
+            onClick={() => choose(props.onMaterial)}
+          >
+            Course material…
+          </button>
+        </span>
+      )}
     </span>
   );
 }
@@ -522,7 +665,6 @@ function Composer(props: {
   onSend: (text: string) => void;
   onNote: (text: string) => void;
   onAddFiles: () => void;
-  onPasteText: () => void;
   /** The working line, shown at the end of the row of help buttons while the tutor writes. */
   working?: React.ReactNode;
 }) {
@@ -599,6 +741,8 @@ function Composer(props: {
 
   // Dollar signs and spaces alone are not an answer.
   const content = !bare(text) || files.length > 0;
+  // How sure is about the answer, so it is asked once there are words to be sure of.
+  const typed = !bare(text);
 
   const send = () => {
     if (props.paused || !content) return;
@@ -607,7 +751,7 @@ function Composer(props: {
       return;
     }
     const parts = [text.trim()];
-    if (confidence) parts.push(`Confidence: ${confidence}`);
+    if (confidence && typed) parts.push(`Confidence: ${confidence}`);
     if (files.length > 0) parts.push(`${files.length === 1 ? "Photo" : "Photos"} of my working: ${files.join(", ")}`);
     props.onSend(parts.filter((part) => part !== "").join("\n\n"));
     setText("");
@@ -651,30 +795,36 @@ function Composer(props: {
     } catch (error) {
       props.onNote(String(error));
     }
+    box.current?.focus();
   };
 
   /**
-   * Write a symbol's LaTeX at the caret. Inside a formula already begun it goes
-   * in as it is; outside one it goes between dollar signs. A selection is
-   * wrapped by a symbol that takes an argument, and left as it is by one that
-   * does not.
+   * Write a symbol at the caret. A character goes in as it is, wherever the
+   * caret is. The fraction is LaTeX: inside a formula already begun it goes in
+   * as it is; outside one it goes between dollar signs, with the caret between
+   * its first braces, and a selection becomes its numerator.
    */
-  const insert = (tex: string) => {
+  const insert = (symbol: (typeof SYMBOLS)[number]) => {
     const el = box.current;
     if (!el) return;
+    if (!symbol.tex) {
+      const at = el.selectionEnd;
+      caretAt.current = at + symbol.insert.length;
+      setText(`${text.slice(0, at)}${symbol.insert}${text.slice(at)}`);
+      return;
+    }
+    const tex = symbol.insert;
     const mark = tex.indexOf("|");
-    const picked = mark >= 0 ? text.slice(el.selectionStart, el.selectionEnd) : "";
-    const from = mark >= 0 ? el.selectionStart : el.selectionEnd;
-    const to = mark >= 0 ? el.selectionEnd : el.selectionEnd;
+    const picked = text.slice(el.selectionStart, el.selectionEnd);
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
     const before = text.slice(0, from);
-    const snippet = mark >= 0 ? `${tex.slice(0, mark)}${picked}${tex.slice(mark + 1)}` : tex;
-    const inside = inMath(before);
-    const open = inside ? "" : "$";
-    const close = inside ? "" : "$";
-    // The caret goes where the argument is, or, for a fraction taking a selection, into its denominator.
-    const caret = mark >= 0 && picked === "" ? mark : picked !== "" && snippet.endsWith("{}") ? snippet.length - 1 : snippet.length;
-    caretAt.current = from + open.length + caret;
-    setText(`${before}${open}${snippet}${close}${text.slice(to)}`);
+    const snippet = `${tex.slice(0, mark)}${picked}${tex.slice(mark + 1)}`;
+    const wrap = inMath(before) ? "" : "$";
+    // The caret goes in the first braces, or, for a selection taken as the numerator, into the denominator.
+    const caret = picked === "" ? mark : snippet.length - 1;
+    caretAt.current = from + wrap.length + caret;
+    setText(`${before}${wrap}${snippet}${wrap}${text.slice(to)}`);
   };
 
   const closeSymbols = () => {
@@ -691,6 +841,14 @@ function Composer(props: {
         if (e.key === "Escape" && symbols && !composing(e)) {
           e.preventDefault();
           closeSymbols();
+          return;
+        }
+        // ⌥1, ⌥2, ⌥3 say how sure, from the answer box, once there is an answer to be sure of.
+        // The key's code is read, for ⌥1 types a character of its own on a Mac.
+        const pick = /^Digit([123])$/.exec(e.code);
+        if (pick && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !composing(e)) {
+          e.preventDefault();
+          if (typed) setConfidence(CONFIDENCE[Number(pick[1]) - 1][0]);
         }
       }}
     >
@@ -705,9 +863,9 @@ function Composer(props: {
               aria-label={symbol.name}
               // The caret stays in the answer box: a click on a symbol never takes it.
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => insert(symbol.tex)}
+              onClick={() => insert(symbol)}
             >
-              <Line text={`$${symbol.show}$`} />
+              {symbol.tex ? <Line text={`$${symbol.show}$`} /> : symbol.show}
             </button>
           ))}
         </div>
@@ -755,10 +913,7 @@ function Composer(props: {
           </div>
         )}
         <div className="tools">
-          <button className="icon-btn" title="Add a photo of your working" aria-label="Add a photo of your working" onClick={addPhoto}>
-            <Icon name="camera" size={17} />
-          </button>
-          <AddMenu disabled={false} onFiles={props.onAddFiles} onPaste={props.onPasteText} />
+          <Attach onPhoto={addPhoto} onMaterial={props.onAddFiles} />
           <button
             className={symbols ? "icon-btn on" : "icon-btn"}
             title="Symbols for mathematics"
@@ -781,13 +936,14 @@ function Composer(props: {
           )}
           <Sure
             value={confidence}
+            shown={typed}
             onChange={(value, fromKey) => {
               setConfidence(value);
               if (!fromKey) box.current?.focus();
             }}
           />
           <button
-            className="btn primary small send"
+            className="btn primary send"
             disabled={!content}
             onClick={send}
             title={props.disabled ? "Sends when the tutor finishes" : "Send (Return)"}
@@ -801,7 +957,7 @@ function Composer(props: {
         <button
           className="btn ghost small"
           disabled={props.disabled}
-          title={props.disabled ? why : "Ask for a hint (⌘⇧H)"}
+          title={props.disabled ? why : "Hint (⌘⇧H). An answer given with a hint won't count as a proof today."}
           aria-keyshortcuts="Meta+Shift+H"
           onClick={() => ask(HELP.hint)}
         >
@@ -878,7 +1034,7 @@ function Thinking(props: {
 }
 
 /** The task in the strip: its label, and its first lines as running text. */
-type Pin = { label: string; html: string; n: string };
+type Pin = { label: string; html: string };
 
 function summarize(task: HTMLElement): Pin {
   const box = task.cloneNode(true) as HTMLElement;
@@ -892,7 +1048,7 @@ function summarize(task: HTMLElement): Pin {
     if (html !== "") parts.push(html);
     if (parts.length === 2) break;
   }
-  return { label, html: parts.join(" "), n: task.dataset.n ?? "" };
+  return { label, html: parts.join(" ") };
 }
 
 export function Session(props: {
@@ -934,6 +1090,7 @@ export function Session(props: {
   const stopInput = useRef<HTMLInputElement>(null);
   const keepGoing = useRef<HTMLButtonElement>(null);
   const now = useNow(20_000);
+  const cardEscape = useRef<(() => void) | null>(null);
 
   // A source a reply cited opens beside the lesson, but only after the learner
   // has answered that reply's task, and it closes when the tutor poses the
@@ -951,12 +1108,14 @@ export function Session(props: {
     window.setTimeout(() => (keep ? keepGoing.current : stopInput.current)?.focus(), 0);
   };
 
-  // Esc closes the innermost thing first: the symbol row, a choice made on a
-  // card, a popover, a source (each takes the key and says so). Only with
-  // nothing open does it open the End sheet, with "Keep going" in hand, so a
-  // second Esc or a Return goes back to the lesson. It does this the same way
-  // whether or not the answer box holds a draft: the draft is kept. It never
-  // ends a lesson by itself.
+  // Esc closes the innermost thing first: the symbol row, a popover, a source
+  // (each takes the key and says so). With a card on screen (a question, or a
+  // request for permission) it never opens the End sheet: a question takes back
+  // its choice, then moves the focus to its field. Only with nothing open does
+  // it open the End sheet, with "Keep going" in hand, so a second Esc or a
+  // Return goes back to the lesson. It does this the same way whether or not
+  // the answer box holds a draft: the draft is kept. It never ends a lesson by
+  // itself.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
@@ -964,6 +1123,8 @@ export function Session(props: {
       event.preventDefault();
       // A source beside the lesson, or over it, is shut before anything else is.
       if (source) setSource(null);
+      // A card on screen takes the key: it never opens the End sheet beside it.
+      else if (state.cards.length > 0) cardEscape.current?.();
       else beginStop(true);
     };
     window.addEventListener("keydown", key);
@@ -1002,18 +1163,9 @@ export function Session(props: {
   const lagged = useDeferredValue(useMemo(() => ({ since: live?.since, raw }), [live?.since, raw]));
   const text = lagged.since === live?.since ? lagged.raw : raw;
 
-  // The tasks are numbered in the order the lesson set them, a reply with two checks taking two numbers.
-  const counts = useMemo(() => state.earlier.map((turn) => countTasks(turn.tutor)), [state.earlier]);
-  const setsTask = useMemo(() => counts.map((count) => count > 0), [counts]);
-  const taskStarts = useMemo(() => {
-    let next = 1;
-    return counts.map((count) => {
-      const start = next;
-      next += count;
-      return start;
-    });
-  }, [counts]);
-  const liveStart = 1 + counts.reduce((all, count) => all + count, 0);
+  // Which replies set a task. The page does not number them: the tutor's own
+  // label ("Task", "Check 1 of 2") and the rule in the margin say which is live.
+  const setsTask = useMemo(() => state.earlier.map((turn) => hasTask(turn.tutor)), [state.earlier]);
   const liveSetsTask = text !== "" && hasTask(text);
   const posed = setsTask.filter(Boolean).length + (liveSetsTask ? 1 : 0);
 
@@ -1077,7 +1229,6 @@ export function Session(props: {
               onNote={props.onNote}
               linksOpen={index < state.earlier.length ? !setsTask[index] || answered(index) : !opts.writing && !liveSetsTask}
               onSource={openSource}
-              taskFrom={taskStarts[index] ?? liveStart}
             />
           </div>
         )}
@@ -1123,6 +1274,18 @@ export function Session(props: {
    * never covers it, and the last line does not move: the room under the text
    * is the room the settling would have made.
    */
+  // Every move of the view is a plain write of scrollTop, never a smooth scroll
+  // or scrollIntoView: WebKit (the real window) times those differently from
+  // Chrome. The position written is remembered, so a scroll event that goes
+  // above it is the learner's, and the page's own writes never read as theirs.
+  const mine = useRef(0);
+  const setTop = (top: number) => {
+    const s = stage.current;
+    if (!s) return;
+    s.scrollTop = top;
+    mine.current = s.scrollTop;
+  };
+
   const place = (kind: "start" | "grow" | "settle") => {
     const s = stage.current;
     const now = liveRef.current;
@@ -1131,19 +1294,23 @@ export function Session(props: {
     if (kind === "settle") {
       const task = openTask();
       const want = task ? holding(task) : null;
-      if (want !== null) s.scrollTop = Math.max(s.scrollTop, want);
+      if (want !== null) setTop(Math.max(s.scrollTop, want));
       return;
     }
-    s.scrollTop = max;
+    setTop(max);
   };
 
-  /** Bring the task in hand into view above the answer box, wherever the view is. */
+  /**
+   * Bring the task in hand clear of the answer box when the box takes the
+   * focus. It only ever moves the view down: if the learner has read on to the
+   * reply, focusing the box must not pull them back up to the task.
+   */
   const reveal = () => {
     const s = stage.current;
     const task = openTask();
-    if (!s || !task) return;
+    if (!s || !task || isBusyRef.current) return;
     const want = holding(task);
-    if (want !== null) s.scrollTop = want;
+    if (want !== null && want > s.scrollTop) setTop(want);
   };
 
   const measure = () => {
@@ -1152,7 +1319,7 @@ export function Session(props: {
     const task = openTask();
     let next: Pin | null = null;
     if (task && task.getBoundingClientRect().bottom < s.getBoundingClientRect().top + EDGE) next = summarize(task);
-    setPin((old) => (old === next || (old && next && old.html === next.html && old.label === next.label && old.n === next.n) ? old : next));
+    setPin((old) => (old === next || (old && next && old.html === next.html && old.label === next.label) ? old : next));
     const rest = s.scrollHeight - s.clientHeight - s.scrollTop;
     setBelow(rest > 24);
     // Back at the end, the view follows the reply again.
@@ -1160,18 +1327,17 @@ export function Session(props: {
     if (main.current) main.current.dataset.scrolled = s.scrollTop > 0 ? "yes" : "no";
   };
 
-  const smooth = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
   const showTask = () => {
     const task = openTask();
     if (!task || !stage.current) return;
     follow.current = false;
-    stage.current.scrollTo({ top: Math.max(0, contentTop(task) - EDGE), behavior: smooth() });
+    setTop(Math.max(0, contentTop(task) - EDGE));
   };
   const toEnd = () => {
     const s = stage.current;
     if (!s) return;
     follow.current = true;
-    s.scrollTo({ top: s.scrollHeight, behavior: smooth() });
+    setTop(s.scrollHeight);
   };
 
   // A new exchange shows its end.
@@ -1185,6 +1351,16 @@ export function Session(props: {
   useLayoutEffect(() => {
     if (!isBusy && follow.current) place("settle");
     measure();
+    // Fonts and drawn formulas can still change the page's height a frame or two
+    // later, in WebKit more than in Chrome: settle again once they have.
+    if (isBusy) return;
+    let frames = 0;
+    let id = window.requestAnimationFrame(function again() {
+      if (follow.current) place("settle");
+      measure();
+      if (++frames < 3) id = window.requestAnimationFrame(again);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [isBusy]);
 
   useLayoutEffect(() => {
@@ -1212,14 +1388,21 @@ export function Session(props: {
   useLayoutEffect(() => {
     if (!showEarlier) return;
     const el = liveRef.current;
-    el?.scrollIntoView({ block: "start" });
-    el?.closest(".scroll")?.scrollBy(0, -72);
+    if (el && stage.current) setTop(Math.max(0, contentTop(el) - 72));
   }, [showEarlier]);
 
-  // Only a learner reading back holds the view where it is: the wheel going
-  // up, a finger, or the scroll bar. A click on a card is not that.
+  // Only a learner reading back holds the view where it is: the view moving up
+  // from where the page last put it (wheel, finger, keys or scroll bar), or a
+  // press on the scroll bar. A click on a card is not that, and nor is the
+  // stray tick of a trackpad.
   const held = () => {
     follow.current = false;
+  };
+  const scrolled = () => {
+    const s = stage.current;
+    if (s && s.scrollTop < mine.current - 2) held();
+    if (s) mine.current = s.scrollTop;
+    measure();
   };
 
   /** Answering a card, or deciding on one, sends the learner back to the end, where the reply will be. */
@@ -1262,7 +1445,7 @@ export function Session(props: {
         <div className="session-main" ref={main} data-scrolled="no" {...(sheet ? ({ inert: "" } as object) : {})}>
           {pin && (
             <div className="task-pin-holder">
-              <button className="task-pin" onClick={showTask} title="Show the whole task" data-role="task-pin" data-n={pin.n}>
+              <button className="task-pin" onClick={showTask} title="Show the whole task" data-role="task-pin">
                 <span className="task-pin-label">{pin.label}</span>
                 <span className="task-pin-text" dangerouslySetInnerHTML={{ __html: pin.html }} />
               </button>
@@ -1271,9 +1454,7 @@ export function Session(props: {
           <div
             className="scroll stage"
             ref={stage}
-            onScroll={measure}
-            onWheel={(e) => e.deltaY < 0 && held()}
-            onTouchMove={held}
+            onScroll={scrolled}
             onPointerDown={(e) => e.target === stage.current && held()}
           >
             <div className="column">
@@ -1289,7 +1470,7 @@ export function Session(props: {
                     <div className="exchange" key={index}>
                       {turn.learner && <Turn text={turn.learner} />}
                       <div className="tutor">
-                        <Rich text={turn.tutor} final stopped={turn.interrupted} onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} taskFrom={taskStarts[index]} />
+                        <Rich text={turn.tutor} final stopped={turn.interrupted} onNote={props.onNote} linksOpen={!setsTask[index] || answered(index)} onSource={openSource} />
                       </div>
                     </div>
                   ))}
@@ -1316,13 +1497,16 @@ export function Session(props: {
                 {live?.error && !isBusy && <div className="banner bad selectable">{live.error}</div>}
               </div>,
               ]}
-              {state.cards.map((card) =>
-                card.kind === "permission" ? (
-                  <PermissionCard key={card.id} card={card} onDecide={decide} />
-                ) : (
-                  <QuestionCard key={card.id} card={card} onAnswer={answer} />
-                ),
-              )}
+              {/* One card at a time: while the End sheet stands, a card waits, whole, behind it. */}
+              {state.cards.map((card) => (
+                <div key={card.id} hidden={stopping}>
+                  {card.kind === "permission" ? (
+                    <PermissionCard card={card} onDecide={decide} />
+                  ) : (
+                    <QuestionCard card={card} onAnswer={answer} escape={cardEscape} />
+                  )}
+                </div>
+              ))}
               {state.notices.map((notice) => (
                 <div className="banner warn selectable" key={notice.text}>
                   <span>{notice.text}</span>
@@ -1334,7 +1518,7 @@ export function Session(props: {
             </div>
           </div>
           {/* The end sheet, the nudge and a note about material stand above the dock, not in it: the answer box is on the foot of the window and nothing moves it. */}
-          {(stopping || (blockOver && !nudged && !isBusy) || props.material) && (
+          {(stopping || (blockOver && !nudged && !isBusy && state.cards.length === 0) || props.material) && (
             <div className="dock-notes">
               <div className="column">
               {stopping && (
@@ -1374,7 +1558,7 @@ export function Session(props: {
                   </div>
                 </div>
               )}
-              {!stopping && blockOver && !nudged && !isBusy && (
+              {!stopping && blockOver && !nudged && !isBusy && state.cards.length === 0 && (
                 <div className="banner nudge">
                   <span>
                     <b>{props.blockMinutes} minutes done.</b> A good place to stop?
@@ -1434,7 +1618,6 @@ export function Session(props: {
                     onSend={props.onSend}
                     onNote={props.onNote}
                     onAddFiles={props.onAddFiles}
-                    onPasteText={props.onPasteText}
                     working={
                       live && isBusy ? (
                         <Thinking

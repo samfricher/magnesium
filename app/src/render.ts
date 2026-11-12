@@ -383,36 +383,6 @@ export function hasTask(src: string): boolean {
   return found;
 }
 
-/**
- * Number the tasks of a reply: each task box (and each earlier task paragraph
- * that is not inside the box) takes the next number from `from`, as a data
- * attribute the page draws in its margin. Returns how many it numbered.
- */
-export function numberTasks(html: string, from: number): { html: string; count: number } {
-  let next = from;
-  let afterBox = -1;
-  const numbered = html.replace(/<(div|p) class="task">/g, (whole: string, tag: string, offset: number) => {
-    // The paragraph the box opens with is the box's own, not another task.
-    if (tag === "p" && offset === afterBox) return whole;
-    if (tag === "div") afterBox = offset + whole.length;
-    return `<${tag} class="task" data-n="${next++}">`;
-  });
-  return { html: numbered, count: next - from };
-}
-
-const taskCounts = new Map<string, number>();
-
-/** How many numbered tasks a reply sets. */
-export function countTasks(src: string): number {
-  let found = taskCounts.get(src);
-  if (found === undefined) {
-    found = numberTasks(renderMarkdown(src), 1).count;
-    if (taskCounts.size > 400) taskCounts.clear();
-    taskCounts.set(src, found);
-  }
-  return found;
-}
-
 /** The links in a reply that open a source beside the lesson, in the order written. */
 export function sourceLinks(src: string): { text: string; href: string }[] {
   const holder = document.createElement("template");
