@@ -40,6 +40,10 @@ When Claude Code loads this skill, it prints "Base directory for this skill: <pa
 
 Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, as the ramp needs them. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
 
+LaTeX cannot break a line inside `\text{}` or a display, so such a line can run off the right edge of the page, where every PDF viewer cuts it mid-word. The script then prints `CUT LINE` with the line of `<Name>-body.tex`, and it does not write that PDF. It does the same for a line that ends within a quarter inch of the edge, which a printer cuts off. Rewrite each line it names so LaTeX can break it. In running text, end the math before the words, as in `$\{\langle G,k\rangle :$ $G$ has a vertex cover of size at most $k\}$`. Break a long display into lines with `multline*` or `aligned` and `\\`. Then run the build again until it prints no `CUT LINE`. Never give the learner a paper or key with a `CUT LINE` or a failed build. A `wide line` note stays on the page and needs no change.
+
+In a folder from before this check, `papers/src/build.sh` has no `CUT LINE` in it. Before you build there, write the `build.sh` template's text over that copy, and run the build once without a paper name, so it checks every paper.
+
 ## Upgrade an old gap log
 
 Magnesium brings an older gap log's rows into the learner record when stage `papers_loop` loads, and writes its Gaps table from then on, as that stage says. A folder from before this has text above `## Tags` in `gap-log.md` that tells you to write the Next redo date or the Status, or has no `Conf:` line there. A folder from before confidence letters has a Method in `plan.md`, or a paper not yet marked, that does not ask for S, U or G. Check for these after that stage loads, and use this skill's templates:

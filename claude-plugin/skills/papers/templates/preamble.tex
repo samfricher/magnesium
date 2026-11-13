@@ -15,6 +15,10 @@
 \setlist[enumerate]{itemsep=3pt,topsep=4pt}
 \setlength{\parskip}{4pt}
 \setlength{\parindent}{0pt}
+% A paragraph that TeX could only set with a line running into the margin
+% gets up to 3em more space per line, spread between its words, instead. A
+% paragraph that already fits is set exactly as without it.
+\setlength{\emergencystretch}{3em}
 \pagestyle{fancy}
 \fancyhf{}
 \rfoot{Page \thepage}
