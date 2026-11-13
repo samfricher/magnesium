@@ -207,3 +207,28 @@ export function withoutPaths(text: string): string {
     .replace(ABSOLUTE, (path) => path.split("/").pop() ?? path)
     .replace(IN_FOLDER, (path) => path.split("/").pop() ?? path);
 }
+
+/**
+ * A file of course material as a title: its own name, with no folder before
+ * it and no extension after it, its dashes as spaces. "Week 4/slides.pdf" is
+ * "Slides (Week 4)"; "week5-sampling-distributions.md" is "Week5 sampling
+ * distributions".
+ */
+export function materialTitle(name: string): string {
+  const parts = name.split("/").filter(Boolean);
+  const file = parts.pop() ?? name;
+  // Dashes between words are spaces; a date's or a time's stay as they are.
+  const bare = file.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/_+/g, " ").replace(/(?<=\p{L})-+|-+(?=\p{L})/gu, " ").replace(/\s+/g, " ").trim() || file;
+  const titled = bare.charAt(0).toUpperCase() + bare.slice(1);
+  return parts.length > 0 ? `${titled} (${parts.join(", ")})` : titled;
+}
+
+/** What kind of material a file is, in a word: "PDF", "notes", "image", or nothing. */
+export function materialKind(name: string): string {
+  const ext = (name.split(".").pop() ?? "").toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (["md", "markdown", "txt", "rst", "tex"].includes(ext)) return "notes";
+  if (["png", "jpg", "jpeg", "gif", "webp", "heic"].includes(ext)) return "image";
+  if (["csv", "json"].includes(ext)) return "data";
+  return "";
+}

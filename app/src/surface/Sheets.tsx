@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { core } from "../bridge";
 import { drawPage, openPdf, type Pdf } from "../pdf";
+import { renderMarkdown } from "../render";
+import { materialTitle } from "../words";
 import type { SourceRef } from "../sources";
 import type { Source } from "../types";
 
@@ -101,7 +103,17 @@ export function SourceSheet(props: { source: SourceRef; folder: string; onClose:
   useEffect(() => box.current?.focus(), []);
 
   // A file the window refused is not named: an answer key's name stays out of sight.
-  const name = failure ? "Source" : (shown?.name ?? source.path.split("/").pop() ?? source.path);
+  // Otherwise it goes by a title: its name, with no folder and no extension.
+  const name = failure ? "Source" : materialTitle(shown?.name ?? source.path.split("/").pop() ?? source.path);
+  const markdown = /\.(md|markdown)$/i.test(shown?.name ?? source.path);
+  // A link inside a note stays in the window: a web link goes to the browser, nothing else is followed.
+  const onLink = (event: React.MouseEvent<HTMLElement>) => {
+    const link = (event.target as HTMLElement).closest("a");
+    if (!link) return;
+    event.preventDefault();
+    const href = link.getAttribute("href") ?? "";
+    if (/^https?:\/\//i.test(href)) void core().then((api) => api.openUrl(href));
+  };
   return (
     <>
       <div className="scrim" onMouseDown={props.onClose} />
@@ -131,6 +143,12 @@ export function SourceSheet(props: { source: SourceRef; folder: string; onClose:
         ) : shown.kind === "image" && shown.image ? (
           <div className="sheet-body">
             <img className="source-image" src={shown.image} alt={shown.name} />
+          </div>
+        ) : markdown ? (
+          // Notes are drawn as prose, as the tutor's words are: their Markdown is never shown.
+          <div className="sheet-body prose-body">
+            <div className="prose source-prose" onClick={onLink} dangerouslySetInnerHTML={{ __html: renderMarkdown(shown.text ?? "") }} />
+            {shown.truncated && <p className="sheet-note">Only the start of this file is shown.</p>}
           </div>
         ) : (
           <div className="sheet-body">

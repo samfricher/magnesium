@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Line } from "../surface/Rich";
 import type { Core, Home, LessonInfo, Mark, Materials, Paper } from "../types";
-import { displayName, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, materialKind, materialTitle, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -23,6 +23,8 @@ type Props = {
   onHandedIn: (folder: string, words: { shown: string; sent: string }, title: string) => void;
   onForget: (folder: string) => void;
   onPaste: (folder: string) => void;
+  /** Show a file of material in the window: a PDF, text or an image; Markdown drawn as prose. */
+  onOpenMaterial: (folder: string, path: string) => void;
   onNote: (text: string) => void;
   /** Bumped when the material changes from outside the page, as by a drop. */
   refresh: number;
@@ -199,8 +201,9 @@ export function WorkspacePage(props: Props) {
           ) : (
             <div className="list" role="list">
               {materials.names.map((file) => (
-                <button key={file} role="listitem" className="home-row file-row" onClick={() => void api.openFile(`Study/materials/${file}`, folder).catch((problem) => props.onNote(String(problem)))}>
-                  <span className="row-name file-name">{file}</span>
+                <button key={file} role="listitem" className="home-row file-row" onClick={() => props.onOpenMaterial(folder, `Study/materials/${file}`)}>
+                  <span className="row-name">{materialTitle(file)}</span>
+                  <span className="row-when">{materialKind(file)}</span>
                 </button>
               ))}
               {materials.files > materials.names.length && <p className="page-note">and {materials.files - materials.names.length} more</p>}

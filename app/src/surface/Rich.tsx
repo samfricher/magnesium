@@ -299,6 +299,9 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     // Stop the webview following an anchor before anything is awaited.
     if (path || link) event.preventDefault();
     if (path) {
+      // A file the window can show opens in the window; only another kind goes to the Mac.
+      const shown = onSource ? sourceRef((path.textContent ?? "").trim()) : null;
+      if (shown) return onSource?.(shown, path as HTMLElement);
       try {
         await (await core()).openFile((path.textContent ?? "").trim());
       } catch (error) {

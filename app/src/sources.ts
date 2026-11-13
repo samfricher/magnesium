@@ -8,8 +8,8 @@
 
 export type SourceRef = { path: string; page: number | null };
 
-/** The kinds of file the panel beside the lesson shows. Other links open as they always did. */
-const SHOWN = ["pdf", "txt", "md", "tex", "csv", "json", "rst"];
+/** The kinds of file the window shows itself, over the lesson: a PDF, text (Markdown drawn as prose), an image. Never handed to another app. */
+const SHOWN = ["pdf", "txt", "md", "markdown", "tex", "csv", "json", "rst", "png", "jpg", "jpeg", "gif", "webp"];
 
 /** Whether a link goes to a file on this Mac, and not to the web or inside the page. */
 export function isLocalHref(href: string): boolean {
