@@ -470,6 +470,8 @@ async function run(op: Op): Promise<Result> {
       const target = document.activeElement as HTMLElement | null;
       const field = editable(target);
       if (!target || !field) return { ok: false, error: "no text field has focus" };
+      // "replace": the words take the place of all that is in the field, as after ⌘A.
+      if (op.replace && (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) field.select();
       insert(field, String(op.text ?? ""));
       return { ok: true };
     }
