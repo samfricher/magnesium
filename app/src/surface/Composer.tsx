@@ -118,6 +118,8 @@ type Props = {
   onPick: () => Promise<string[]>;
   onHelp?: (words: string) => void;
   onStop?: () => void;
+  /** What stopping does now: "stop the reply", or "stop the tutor" while it waits on a card. */
+  stopWords?: string;
   /** Return on an empty line: what the line's end names, when there is something to carry on. */
   onEmptyReturn?: () => void;
 };
@@ -341,7 +343,7 @@ export const Composer = memo(
           onFocus={() => place !== "rest" && !latest.current.active && latest.current.onMove(place)}
         />
         <span className="line-tools">
-          {/* The clip: photos and PDFs, with the next message. */}
+          {/* Attaching, one control in every state of the line: photos of working and PDFs, with the next message. */}
           <button
             type="button"
             className="clip"
@@ -351,22 +353,18 @@ export const Composer = memo(
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void pick()}
           >
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-              <path
-                d="M10.6 4.2 5.3 9.5a1.6 1.6 0 0 0 2.3 2.3l5.6-5.6a2.9 2.9 0 0 0-4.1-4.1L3.4 7.8a4.1 4.1 0 0 0 5.8 5.8l4.6-4.6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.25"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            Attach
           </button>
           {/* The one line's quiet end. Under a task it is also the step out to talk
               (data-drive="talk"), so a harness or a click can say "talk" here. */}
-          {props.busy && props.onStop ? (
+          {props.busy && text.trim() !== "" ? (
+            // Return while the tutor is busy keeps the words until it has finished.
+            <span key="queue" className="line-end" aria-hidden="true">
+              <span className="keys">↩</span> send when the tutor finishes
+            </span>
+          ) : props.busy && props.onStop ? (
             <button className="line-stop" onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onStop?.()}>
-              <span className="keys">{props.stopKey ?? "esc"}</span> stop the reply
+              <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
             </button>
           ) : place === "rest" && text.trim() === "" ? null : text.trim() !== "" && place !== "rest" ? (
             // With words on the line, its end says what Return does with them.
@@ -431,9 +429,6 @@ export const Composer = memo(
               I don’t know
             </button>
             <span className="help-gap" aria-hidden="true" />
-            <button className="quiet-act" data-drive="photo" onMouseDown={(e) => e.preventDefault()} onClick={() => void pick()}>
-              Photo
-            </button>
             <button className="quiet-act" data-drive="symbols" aria-expanded={symbols} onMouseDown={(e) => e.preventDefault()} onClick={() => setSymbols((open) => !open)}>
               Symbols
             </button>

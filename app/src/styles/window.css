@@ -100,8 +100,6 @@
   color: var(--quiet);
 }
 .bar-act:hover { color: var(--text); }
-/* The bar's buttons show the keyboard's place with the tint the tabs use, not a ring. */
-:root[data-input="key"] .bar-act:focus-visible { outline: none; background: var(--tint); color: var(--text); }
 .bar-act.on { color: var(--text); background: var(--tint); }
 /* Settings while its tab is in front: said in the text's colour, without a second pill beside the tab's. */
 .bar-act.current { color: var(--text); }
@@ -130,10 +128,13 @@
    and moves only as far as it must when it does not. The surface runs under the plan, which has a ground of its own. */
 /* The column's left edge stays where it was; the column narrows to end before the plan, and moves
    left only when it would be narrower than 24em. */
+.session.with-panel .surface,
+.session.with-panel .top-edge { right: var(--panel-w); }
+/* 100% is the room left of the panel; the column's own place with no panel is half of 100% + the panel's width, less half the measure. */
 .session.with-panel .column,
 .session.with-panel .top-edge .inner {
-  --left: max(calc(var(--hang) + 24px), min(calc((100% - var(--measure)) / 2), calc(100% - var(--panel-w) - var(--hang) - 28px - 24em)));
-  width: min(var(--measure), calc(100% - var(--panel-w) - var(--hang) - 28px - var(--left)));
+  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--panel-w) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
+  width: min(var(--measure), calc(100% - var(--hang) - 28px - var(--left)));
   margin-left: var(--left);
   margin-right: 0;
 }
@@ -462,11 +463,10 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 0.7rem;
 }
 .clip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px;
+  padding: 0;
+  font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);
-  border-radius: 3px;
+  white-space: nowrap;
 }
 .clip:hover { color: var(--text); }
 .line-stop { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
@@ -569,8 +569,6 @@ dialog.layer::backdrop { background: transparent; }
 .home-row.static:not(:has(.quiet-act)) { grid-template-columns: minmax(0, 1fr) max-content; }
 
 
-/* On the answer line, "Photo" under it opens the same picker: the clip is the talk line's. */
-.line.task .clip { display: none; }
 /* The paste sheet is one field: no rules boxing it. */
 .layer.sheet.paste .sheet-name { border-bottom: 0; }
 .layer.sheet.paste .layer-keys { border-top: 0; }
@@ -603,9 +601,6 @@ dialog.layer::backdrop { background: transparent; }
 .page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
 .tab-new:disabled { color: var(--faint); cursor: default; background: none; }
 
-/* The tab bar's tabs and its "+" show the keyboard's place as its other buttons do: the tint, no ring. */
-:root[data-input="key"] .tab-button:focus-visible,
-:root[data-input="key"] .tab-new:focus-visible { outline: none; background: var(--tint); color: var(--text); }
 /* "Your work" shows the keyboard's place as the other quiet actions do. */
 :root[data-input="key"] .your-work summary:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 
@@ -623,3 +618,19 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .clip:focus-visible,
 :root[data-input="key"] .line-end:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 :root[data-input="key"] .segment input:focus-visible + span { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
+
+/* Help that cannot be asked for now looks it. */
+.help-row .quiet-act:disabled { color: var(--faint); }
+/* The keyboard's place in the tab bar and on the line's own controls: an ink bar under the words, unlike a tab
+   or switch that is on (the tint). */
+:root[data-input="key"] .tab-button:focus-visible,
+:root[data-input="key"] .tab-new:focus-visible,
+:root[data-input="key"] .bar-act:focus-visible,
+:root[data-input="key"] .side-tab-name:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+:root[data-input="key"] .clip:focus-visible { outline: none; color: var(--text); box-shadow: 0 2px 0 var(--ink); }
+/* A tab whose tutor waits on the learner (a permission, a question): a ring, not the writing dot. */
+.ask-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }
+
+/* Settings keeps one column whatever line width is chosen in it: a column that followed the Line width slider moved
+   the slider under the pointer while it was dragged. */
+.settings-page .page-column { width: min(31rem, calc(100% - 2 * var(--hang) - 40px)); }

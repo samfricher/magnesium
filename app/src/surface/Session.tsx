@@ -791,7 +791,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
     setScrolled(el.scrollTop > 4);
-    stuck.current = fromFoot < 48;
+    // At the foot within a few pixels: any scroll up to read lets the lesson go, so a resize does not pull it back.
+    stuck.current = fromFoot < 6;
     keepPlace(now.current.place, { fromFoot: Math.round(fromFoot) });
   };
 
@@ -832,7 +833,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const box = asked.getBoundingClientRect();
     // The line's top, as it would be with no question pinned over it.
     const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
-    setQuestionInView(box.top >= view.top + 40 && box.bottom <= lineTop + 4);
+    setQuestionInView((was) => (was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24));
   };
   useEffect(() => {
     measureQuestion.current();
@@ -1127,7 +1128,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         onPasteImage={onPasteImage}
                         onPick={onPick}
                         onHelp={askHelp}
-                        onStop={ownBusy && session.cards.length === 0 ? stopReply : undefined}
+                        onStop={ownBusy ? stopReply : undefined}
+                        stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
                       />
                     </div>
                     {footFact && (

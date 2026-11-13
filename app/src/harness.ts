@@ -41,13 +41,14 @@
 //   scroll {target?, to?, by?}  bring a target (as click names it) to the top
 //                           of its view; or move the view in front (a page,
 //                           or the session's surface) to "top" or "bottom",
-//                           or by some pixels, as a wheel would
+//                           or by some pixels, as a wheel would, and say how
+//                           far it then is from its foot ({by: 0} only reads)
 //   quit
 //
 // The names a harness clicks by (data-drive): "start" (Home's first row),
 // "composer", "answer" and "talk" (the session's line), "home", "new-session",
 // "settings", "plan-toggle", "attach", "tab-<n>" (the n-th tab, from 1),
-// "hint", "lost", "dont-know", "photo", "symbols" (under the answer line).
+// "hint", "lost", "dont-know", "symbols" (under the answer line).
 
 import { core, isDemo } from "./bridge";
 import type { AgentEvent, Intent } from "./types";
@@ -557,6 +558,9 @@ async function run(op: Op): Promise<Result> {
         if (op.to === "top") view.scrollTop = 0;
         else if (op.to === "bottom") view.scrollTop = view.scrollHeight;
         else view.scrollTop += Number(op.by ?? 0);
+        await nextPaint();
+        // Where the view is now, from its foot: { by: 0 } reads it without moving it.
+        return { ok: true, from_foot: Math.round(view.scrollHeight - view.clientHeight - view.scrollTop) };
       }
       await nextPaint();
       return { ok: true };

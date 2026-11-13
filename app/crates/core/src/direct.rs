@@ -1780,7 +1780,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             );
             if forgot.is_some_and(|task| task.redo.is_some()) {
                 shared.emit(AgentEvent::Notice {
-                    kind: NoticeKind::Other,
+                    kind: NoticeKind::Turn,
                     text: REDO_SET_ASIDE.into(),
                 });
             }
@@ -1946,14 +1946,14 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             shared.note("no valid record after asking again: this turn has no mark, and the open task is forgotten");
             if open {
                 shared.emit(AgentEvent::Notice {
-                    kind: NoticeKind::Other,
+                    kind: NoticeKind::Turn,
                     text: NOT_MARKED.into(),
                 });
             }
             // The reply may have finished a repair: none is recorded.
             if !lock(&shared.state).lesson.repairs.is_empty() {
                 shared.emit(AgentEvent::Notice {
-                    kind: NoticeKind::Other,
+                    kind: NoticeKind::Turn,
                     text: REPAIR_NOT_SAVED.into(),
                 });
             }
@@ -1995,7 +1995,7 @@ const REPAIR_NOT_SAVED: &str = "If the tutor finished a repair just now, it was 
 fn repair_lost(shared: &Arc<Shared>, why: &str, notice: &str) {
     lock(&shared.state).repair_outcome = Some(why.to_owned());
     shared.emit(AgentEvent::Notice {
-        kind: NoticeKind::Other,
+        kind: NoticeKind::Turn,
         text: notice.into(),
     });
 }
@@ -2208,7 +2208,7 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
             note.number
         ));
         shared.emit(AgentEvent::Notice {
-            kind: NoticeKind::Other,
+            kind: NoticeKind::Turn,
             text: REPAIR_NOT_SAVED.into(),
         });
     }
@@ -2367,7 +2367,7 @@ fn save(
     // A task that looks like a paper redo and is none for the record.
     if let Some(why) = write.not_a_redo {
         shared.emit(AgentEvent::Notice {
-            kind: NoticeKind::Other,
+            kind: NoticeKind::Turn,
             text: match why {
                 NotARedo::Unlisted => REDO_UNLISTED,
                 NotARedo::SetAside => REDO_SET_ASIDE,
@@ -2380,7 +2380,7 @@ fn save(
     let lost = |why: &str| {
         shared.note(&format!("an answer was not marked: {why}"));
         shared.emit(AgentEvent::Notice {
-            kind: NoticeKind::Other,
+            kind: NoticeKind::Turn,
             text: NOT_MARKED.into(),
         });
     };
@@ -2498,7 +2498,7 @@ fn save(
                     );
                     if redo.right {
                         shared.emit(AgentEvent::Notice {
-                            kind: NoticeKind::Other,
+                            kind: NoticeKind::Turn,
                             text: REDO_NO_COUNT.into(),
                         });
                     }
@@ -2587,7 +2587,7 @@ fn save(
                 if right && !passed {
                     shared.note(&format!("a right check answer earned no pass: {effects:?}"));
                     shared.emit(AgentEvent::Notice {
-                        kind: NoticeKind::Other,
+                        kind: NoticeKind::Turn,
                         text: CHECK_NO_PASS.into(),
                     });
                 }
@@ -2644,7 +2644,7 @@ fn save(
                 if redo.right && !passed {
                     shared.note(&format!("a right redo answer earned no pass: {effects:?}"));
                     shared.emit(AgentEvent::Notice {
-                        kind: NoticeKind::Other,
+                        kind: NoticeKind::Turn,
                         text: if failed { REDO_FAILED } else { REDO_NO_COUNT }.into(),
                     });
                 }
@@ -2670,7 +2670,7 @@ fn save(
             shared.note(&format!("the save's outcome is still unknown: {why}"));
             if write.marked {
                 shared.emit(AgentEvent::Notice {
-                    kind: NoticeKind::Other,
+                    kind: NoticeKind::Turn,
                     text: NOT_KNOWN.into(),
                 });
             }

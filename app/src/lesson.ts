@@ -134,10 +134,33 @@ function asTurn(live: Live): LessonTurn | null {
   };
 }
 
+/** Claude Code's line while it waits out a limit and will try again by itself. */
+const waitingOut = (text: string) => /waiting to try again/i.test(text);
+
+/**
+ * One usage limit, said once. Claude Code reports a limit up to three ways:
+ * waiting to try again, when it resets, and at the turn's end what to do.
+ * The one that says when it resets is kept, with what to do added if it
+ * lacks it; the waiting line gives way to either.
+ */
+function limitNotice(old: Notice, next: Notice): Notice {
+  if (waitingOut(old.text)) return next;
+  if (waitingOut(next.text)) return old;
+  const resets = (text: string) => /\bresets?\b/i.test(text);
+  // The one that says when it resets; else the later, which is the turn's end saying what to do.
+  const base = resets(old.text) ? old : next;
+  if (/send your message again/i.test(base.text)) return base;
+  return { ...base, text: `${base.text.trim()} ${resets(base.text) ? "Send your message again once it resets." : "Send your message again later."}` };
+}
+
+/** What the learner writes next lets go of what was said about the turn before; the rest still stands. */
+const aboutTheTurn = (notice: Notice) => notice.kind === "turn" || notice.kind === "retry" || notice.kind === "usage_limit";
+
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
-  // One usage limit is said once: Claude Code reports it as it happens and again as the turn ends,
-  // and the first says when it resets.
-  if (notice.kind === "usage_limit" && notices.some((n) => n.kind === "usage_limit")) return notices;
+  if (notice.kind === "usage_limit") {
+    const at = notices.findIndex((n) => n.kind === "usage_limit");
+    if (at !== -1) return notices.map((n, i) => (i === at ? limitNotice(n, notice) : n));
+  }
   // A retry line replaces the retry line before it, so they do not pile up.
   const kept = notices.filter((n) => n.text !== notice.text && !(n.kind === "retry" && notice.kind === "retry"));
   return [...kept, notice].slice(-3);
@@ -185,6 +208,8 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
         ...state,
         cards: [],
         live: { ...live, done, streaming: "", status: "idle", error: event.error, interrupted: event.interrupted },
+        // Nothing waits to try again once the turn has ended.
+        notices: state.notices.filter((n) => !waitingOut(n.text)),
       };
     }
     case "notice":
@@ -193,7 +218,7 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       const ended = { ...state, open: false, cards: [], live: state.live ? { ...live, status: "idle" as Status } : null };
       if (event.expected) return ended;
       const text = `The tutor's program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
-      return { ...ended, notices: addNotice(state.notices, { kind: "other", text }) };
+      return { ...ended, notices: addNotice(state.notices, { kind: "turn", text }) };
     }
     // A mark belongs to the last message the learner sent. The plan is read by the page, which then says what changed.
     case "marked": {
@@ -269,8 +294,8 @@ export function reduce(state: SessionState, action: Action): SessionState {
           ...(action.question ? { question: action.question } : {}),
         },
         cards: [],
-        // A notice is about the turn before: it goes when the learner writes again, unless it still stands (signed out).
-        notices: state.notices.filter((n) => n.kind === "sign_in"),
+        // Notices about the turn before go when the learner writes again; one that still stands stays.
+        notices: state.notices.filter((n) => !aboutTheTurn(n)),
         startedMs: state.startedMs ?? action.now,
       };
     }
@@ -317,7 +342,7 @@ export function reduce(state: SessionState, action: Action): SessionState {
       return {
         ...state,
         live: state.live ? { ...state.live, status: "idle", error: action.error } : blankLive("", Date.now(), "idle"),
-        notices: addNotice(state.notices, { kind: "other", text: action.error }),
+        notices: addNotice(state.notices, { kind: "turn", text: action.error }),
       };
     case "stopped":
       return { ...emptySession };

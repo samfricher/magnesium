@@ -102,6 +102,10 @@ pub enum NoticeKind {
     UsageLimit,
     SignIn,
     Retry,
+    /// About the turn just ended (an answer not marked, a redo that did not
+    /// count): the window lets it go when the learner writes again.
+    Turn,
+    /// Stands until it is dismissed (a part that did not start).
     Other,
 }
 

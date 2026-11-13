@@ -301,7 +301,6 @@ fn build<R: Runtime>(
             &command(table, "lost", "I’m Lost")?,
             &command(table, "unknown", "I Don’t Know")?,
             &separator()?,
-            &command(table, "photo", "Photo of Your Work…")?,
             &command(table, "symbols", "Symbols")?,
             &separator()?,
             &command(table, "stop-reply", "Stop the Reply")?,

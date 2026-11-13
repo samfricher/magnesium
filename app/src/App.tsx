@@ -757,6 +757,7 @@ export function App() {
     kind: tab.kind,
     title: tabTitles[tab.key],
     busy: tab.key === busyKey && !asking[tab.key],
+    asking: Boolean(asking[tab.key]),
     folder: tab.kind === "session" ? tab.folder : null,
   }));
   const k = (action: KeyAction) => keyName(prefs.keys[action]);

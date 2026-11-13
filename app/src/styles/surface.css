@@ -713,7 +713,7 @@ button.line-end:hover { color: var(--text); }
   /* Solid to the foot of the step's name, then a fade a line and a half deep. */
   background: linear-gradient(to bottom, var(--ground) calc(64px - var(--tabs-h)), transparent);
 }
-.session.with-panel .top-edge { right: 0; }
+
 .top-edge .inner {
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
