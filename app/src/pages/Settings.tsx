@@ -3,7 +3,7 @@
 // learner's own choices are kept in the window's storage on this Mac; the
 // engine, the payment and a paper's time are kept by the core.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
 import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
@@ -63,23 +63,40 @@ function hexOf(value: string, dark: boolean, fallback: string): string {
   return /^#[0-9a-f]{6}$/i.test(got) ? got : fallback;
 }
 
+/**
+ * Two to five choices, one of them chosen: native radio buttons (forms
+ * guide), drawn as the window's quiet segments. One Tab stop; the arrow keys
+ * move along them and choose, as radios do.
+ */
 function Choice<T extends string | number | boolean>(props: { name: string; options: [T, string][]; value: T; onPick: (value: T) => void; face?: (value: T) => string | undefined; disabled?: boolean }) {
+  const group = useId();
   return (
     <span className="segments" role="radiogroup" aria-label={props.name}>
       {props.options.map(([value, label]) => (
-        <button
+        <label
           key={String(value)}
-          role="radio"
-          aria-checked={props.value === value}
-          className={props.value === value ? "segment chosen" : "segment"}
+          className={`segment${props.value === value ? " chosen" : ""}${props.disabled ? " off" : ""}`}
           style={props.face?.(value) ? { fontFamily: props.face(value) } : undefined}
-          disabled={props.disabled}
-          onClick={() => props.onPick(value)}
         >
-          {label}
-        </button>
+          <input type="radio" className="visually-hidden" name={group} checked={props.value === value} disabled={props.disabled} onChange={() => props.onPick(value)} />
+          <span>{label}</span>
+        </label>
       ))}
     </span>
+  );
+}
+
+/** One setting: its visible name names the group of controls that set it. */
+function Setting(props: { name: string; id?: string; className?: string; children: ReactNode; action?: string }) {
+  const made = useId();
+  const id = props.id ?? made;
+  return (
+    <div className={`setting${props.className ? ` ${props.className}` : ""}`} role="group" aria-labelledby={id} data-key-action={props.action}>
+      <p className="setting-name" id={id}>
+        {props.name}
+      </p>
+      <div className="setting-control">{props.children}</div>
+    </div>
   );
 }
 
@@ -87,19 +104,22 @@ function FontField(props: { label: string; value: string; known: [string, string
   const isKnown = props.known.some(([value]) => value === props.value.toLowerCase());
   const [typed, setTyped] = useState(isKnown ? "" : props.value);
   const found = typed.trim() === "" ? null : installed(typed);
+  const note = useId();
   return (
-    <div className="setting">
-      <p className="setting-name">{props.label}</p>
-      <div className="setting-control">
-        <Choice name={props.label} options={props.known} value={isKnown ? props.value.toLowerCase() : ""} onPick={(value) => (setTyped(""), props.onPick(value))} face={(value) => faceCss(value, props.fallback)} />
+    <Setting name={props.label}>
+      <Choice name={props.label} options={props.known} value={isKnown ? props.value.toLowerCase() : ""} onPick={(value) => (setTyped(""), props.onPick(value))} face={(value) => faceCss(value, props.fallback)} />
         <span className="font-other">
           <input
             className="text-field"
             list="mac-faces"
             aria-label={`${props.label}: another font on this Mac`}
+            aria-invalid={found === false}
+            aria-describedby={found === false ? note : undefined}
             placeholder="Another font on this Mac"
             value={typed}
             spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="none"
             style={typed && found ? { fontFamily: faceCss(typed, props.fallback) } : undefined}
             onChange={(event) => {
               const value = event.target.value;
@@ -107,24 +127,29 @@ function FontField(props: { label: string; value: string; known: [string, string
               if (value.trim() !== "" && installed(value)) props.onPick(value.trim());
             }}
           />
-          {found === false && <span className="setting-note">not on this Mac</span>}
+          {found === false && (
+            <span className="setting-note" id={note}>
+              not on this Mac
+            </span>
+          )}
         </span>
-      </div>
-    </div>
+    </Setting>
   );
 }
 
 function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean }) {
   return (
-    <label className="colour">
-      <input type="color" value={hexOf(props.value, props.dark, props.fallback)} onChange={(event) => props.onPick(event.target.value)} aria-label={props.label} />
-      <span>{props.label}</span>
+    <span className="colour">
+      <label className="colour">
+        <input type="color" value={hexOf(props.value, props.dark, props.fallback)} onChange={(event) => props.onPick(event.target.value)} />
+        <span>{props.label}</span>
+      </label>
       {props.own && props.value !== "" && (
-        <button className="plain" onClick={(event) => (event.preventDefault(), props.onPick(""))}>
+        <button type="button" className="plain" onClick={() => props.onPick("")}>
           the window's own
         </button>
       )}
-    </label>
+    </span>
   );
 }
 
@@ -133,10 +158,9 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
   const [said, setSaid] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   return (
-    <div className="setting key-row" data-key-action={props.action}>
-      <p className="setting-name">{props.what}</p>
-      <div className="setting-control">
+    <Setting name={props.what} className="key-row" action={props.action}>
         <button
+          type="button"
           ref={button}
           className={listening ? "key-cap listening" : "key-cap"}
           aria-label={`${props.what}: ${listening ? "press the new keys" : keyName(props.combo) || "no key"}. Choose to change it.`}
@@ -172,9 +196,10 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
             back to {keyName(DEFAULTS.keys[props.action])}
           </button>
         )}
-        {said && <span className="setting-note">{said}</span>}
-      </div>
-    </div>
+        <span className="setting-note" role="status">
+          {said}
+        </span>
+    </Setting>
   );
 }
 
@@ -237,40 +262,31 @@ export function SettingsPage(props: Props) {
           </h2>
           <FontField label="The tutor's words" value={prefs.face} known={FACES} fallback={faceCss("charter")} list={macFaces} onPick={(face) => change({ face })} />
           <FontField label="Your own words" value={prefs.voice} known={VOICES} fallback={faceCss("system")} list={macFaces} onPick={(voice) => change({ voice })} />
-          <div className="setting">
-            <p className="setting-name">Size</p>
-            <div className="setting-control">
-              <input type="range" min={12} max={28} step={1} value={prefs.size} aria-label="Text size" onChange={(event) => change({ size: Number(event.target.value) })} />
-              <span className="setting-value">{prefs.size}</span>
-              {prefs.size !== DEFAULTS.size && (
-                <button className="plain" onClick={() => change({ size: DEFAULTS.size })}>
-                  usual size
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Line width</p>
-            <div className="setting-control">
-              <Choice name="Line width" options={MEASURES} value={prefs.measure} onPick={(measure) => change({ measure })} />
-              <input type="range" min={40} max={110} step={1} value={prefs.measure} aria-label="Line width in characters" onChange={(event) => change({ measure: Number(event.target.value) })} />
-              <span className="setting-value">{prefs.measure} characters</span>
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Lines that name keys</p>
-            <div className="setting-control">
-              <Choice
-                name="Lines that name keys"
-                options={[
-                  [true, "Shown"],
-                  [false, "Hidden"],
-                ]}
-                value={prefs.hints}
-                onPick={(hints) => change({ hints })}
-              />
-            </div>
-          </div>
+          <Setting name="Size" id="setting-size">
+            <input type="range" min={12} max={28} step={1} value={prefs.size} aria-labelledby="setting-size" onChange={(event) => change({ size: Number(event.target.value) })} />
+            <span className="setting-value">{prefs.size}</span>
+            {prefs.size !== DEFAULTS.size && (
+              <button className="plain" onClick={() => change({ size: DEFAULTS.size })}>
+                usual size
+              </button>
+            )}
+          </Setting>
+          <Setting name="Line width">
+            <Choice name="Line width" options={MEASURES} value={prefs.measure} onPick={(measure) => change({ measure })} />
+            <input type="range" min={40} max={110} step={1} value={prefs.measure} aria-label="Line width in characters" onChange={(event) => change({ measure: Number(event.target.value) })} />
+            <span className="setting-value">{prefs.measure} characters</span>
+          </Setting>
+          <Setting name="Lines that name keys">
+            <Choice
+              name="Lines that name keys"
+              options={[
+                [true, "Shown"],
+                [false, "Hidden"],
+              ]}
+              value={prefs.hints}
+              onPick={(hints) => change({ hints })}
+            />
+          </Setting>
           <p className="sample" style={{ fontFamily: faceCss(prefs.face) }}>
             The line meets the y-axis at 1/V<sub>max</sub>.
             <span className="sample-you" style={{ fontFamily: prefs.voice === "reading" ? faceCss(prefs.face) : faceCss(prefs.voice, faceCss("system")) }}>
@@ -284,47 +300,32 @@ export function SettingsPage(props: Props) {
           <h2 className="section-head" id="h-appearance">
             Appearance
           </h2>
-          <div className="setting">
-            <p className="setting-name">Light or dark</p>
-            <div className="setting-control">
-              <Choice name="Light or dark" options={SCHEMES} value={prefs.scheme} onPick={(scheme) => change({ scheme })} />
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Ink</p>
-            <div className="setting-control">
-              <span className="swatches" role="radiogroup" aria-label="Ink">
-                {Object.entries(INKS).map(([name, [light, dark]]) => (
-                  <button
-                    key={name}
-                    role="radio"
-                    aria-checked={prefs.ink === name && prefs.inkDark === name}
-                    aria-label={name}
-                    title={name}
-                    className={prefs.ink === name && prefs.inkDark === name ? "swatch chosen" : "swatch"}
-                    style={{ background: `linear-gradient(135deg, ${light} 50%, ${dark} 50%)` }}
-                    onClick={() => change({ ink: name, inkDark: name })}
-                  />
-                ))}
-              </span>
-              <ColourField label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
-              <ColourField label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Ground</p>
-            <div className="setting-control">
-              <ColourField label="in light" value={prefs.ground} dark={false} fallback="#fafaf8" own onPick={(ground) => change({ ground })} />
-              <ColourField label="in dark" value={prefs.groundDark} dark fallback="#1c1d20" own onPick={(groundDark) => change({ groundDark })} />
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Text</p>
-            <div className="setting-control">
-              <ColourField label="in light" value={prefs.text} dark={false} fallback="#1e2023" own onPick={(text) => change({ text })} />
-              <ColourField label="in dark" value={prefs.textDark} dark fallback="#e3e3df" own onPick={(textDark) => change({ textDark })} />
-            </div>
-          </div>
+          <Setting name="Light or dark">
+            <Choice name="Light or dark" options={SCHEMES} value={prefs.scheme} onPick={(scheme) => change({ scheme })} />
+          </Setting>
+          <Setting name="Ink">
+            <span className="swatches" role="radiogroup" aria-label="Ink">
+              {Object.entries(INKS).map(([name, [light, dark]]) => {
+                const chosen = prefs.ink === name && prefs.inkDark === name;
+                return (
+                  <label key={name} className={chosen ? "swatch chosen" : "swatch"} title={name}>
+                    <input type="radio" className="visually-hidden" name="settings-ink" aria-label={name} checked={chosen} onChange={() => change({ ink: name, inkDark: name })} />
+                    <span className="swatch-face" style={{ background: `linear-gradient(135deg, ${light} 50%, ${dark} 50%)` }} />
+                  </label>
+                );
+              })}
+            </span>
+            <ColourField label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
+            <ColourField label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
+          </Setting>
+          <Setting name="Ground">
+            <ColourField label="in light" value={prefs.ground} dark={false} fallback="#fafaf8" own onPick={(ground) => change({ ground })} />
+            <ColourField label="in dark" value={prefs.groundDark} dark fallback="#1c1d20" own onPick={(groundDark) => change({ groundDark })} />
+          </Setting>
+          <Setting name="Text">
+            <ColourField label="in light" value={prefs.text} dark={false} fallback="#1e2023" own onPick={(text) => change({ text })} />
+            <ColourField label="in dark" value={prefs.textDark} dark fallback="#e3e3df" own onPick={(textDark) => change({ textDark })} />
+          </Setting>
           <p className="setting-note wide">Quiet text, rules and the line an answer is written on are mixed from the text and the ground, so they stay readable whatever colours are chosen.</p>
         </section>
 
@@ -356,91 +357,79 @@ export function SettingsPage(props: Props) {
           <h2 className="section-head" id="h-lessons">
             Lessons
           </h2>
-          <div className="setting">
-            <p className="setting-name">Lessons run on</p>
-            <div className="setting-control">
-              {props.engine ? (
-                <Choice name="Lessons run on" options={(["plugin", "direct"] as Engine[]).map((value) => [value, ENGINE_NAMES[value]] as [Engine, string])} value={props.engine.chosen} onPick={props.onEngine} disabled={props.lessonOpen} />
-              ) : (
-                <span className="setting-note">Open a workspace to choose.</span>
-              )}
-              <span className="setting-note">
-                {props.lessonOpen
-                  ? "A running lesson keeps its engine; close it to change."
-                  : "Claude Code runs a lesson as in a terminal. Magnesium runs it in the window, with Claude Code as the model. The next session uses it."}
-              </span>
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">Paid with</p>
-            <div className="setting-control">
-              {props.setup && (
-                <Choice
-                  name="Paid with"
-                  options={[
-                    ["plan", "Your Claude plan"],
-                    ["api_key", "An API key"],
-                  ]}
-                  value={props.setup.payment}
-                  onPick={props.onPayment}
-                />
-              )}
-              {account && (
-                <span className="setting-note">
-                  {account.problem ?? (account.signed_in ? `${account.name} is signed in.` : `${account.name} is not signed in.`)}
-                  {!account.signed_in && (
-                    <button className="plain" onClick={props.onSignIn}>
-                      Sign in
-                    </button>
-                  )}
-                  <button className="plain" onClick={props.onCheckAgain}>
-                    check again
-                  </button>
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="setting">
-            <p className="setting-name">A paper's time</p>
-            <div className="setting-control">
+          <Setting name="Lessons run on">
+            {props.engine ? (
+              <Choice name="Lessons run on" options={(["plugin", "direct"] as Engine[]).map((value) => [value, ENGINE_NAMES[value]] as [Engine, string])} value={props.engine.chosen} onPick={props.onEngine} disabled={props.lessonOpen} />
+            ) : (
+              <span className="setting-note">Open a workspace to choose.</span>
+            )}
+            <span className="setting-note">
+              {props.lessonOpen
+                ? "A running lesson keeps its engine; close it to change."
+                : "Claude Code runs a lesson as in a terminal. Magnesium runs it in the window, with Claude Code as the model. The next session uses it."}
+            </span>
+          </Setting>
+          <Setting name="Paid with">
+            {props.setup && (
               <Choice
-                name="A paper's time"
-                options={[25, 50, 90].map((value) => [value, `${value} min`] as [number, string])}
-                value={props.blockMinutes}
-                onPick={(value) => props.onBlock(value)}
+                name="Paid with"
+                options={[
+                  ["plan", "Your Claude plan"],
+                  ["api_key", "An API key"],
+                ]}
+                value={props.setup.payment}
+                onPick={props.onPayment}
               />
-              <input
-                className="text-field number"
-                type="number"
-                min={5}
-                max={240}
-                aria-label="A paper's time in minutes"
-                value={minutes}
-                onChange={(event) => setMinutes(event.target.value)}
-                onBlur={() => {
-                  const value = Math.round(Number(minutes));
-                  if (Number.isFinite(value) && value >= 5 && value <= 240) props.onBlock(value);
-                  else setMinutes(String(props.blockMinutes));
-                }}
-              />
-              <span className="setting-note">minutes, when a paper names none</span>
-            </div>
-          </div>
-          {runtime && (
-            <div className="setting">
-              <p className="setting-name">The magnesium program</p>
-              <div className="setting-control">
-                <span className="setting-note">
-                  {runtime.installed ? `Version ${runtime.installed.version.split("+")[0]}` : "Not found"}
-                  {runtime.state === "kept" ? ", kept over this app's copy" : ""}
-                </span>
-                {runtime.state === "kept" && runtime.bundled && (
-                  <button className="plain" onClick={props.onReplaceRuntime}>
-                    use this app's {runtime.bundled.version.split("+")[0]}
+            )}
+            {account && (
+              <span className="setting-note">
+                {account.problem ?? (account.signed_in ? `${account.name} is signed in.` : `${account.name} is not signed in.`)}
+                {!account.signed_in && (
+                  <button className="plain" onClick={props.onSignIn}>
+                    Sign in
                   </button>
                 )}
-              </div>
-            </div>
+                <button className="plain" onClick={props.onCheckAgain}>
+                  check again
+                </button>
+              </span>
+            )}
+          </Setting>
+          <Setting name="A paper's time">
+            <Choice
+              name="A paper's time"
+              options={[25, 50, 90].map((value) => [value, `${value} min`] as [number, string])}
+              value={props.blockMinutes}
+              onPick={(value) => props.onBlock(value)}
+            />
+            <input
+              className="text-field number"
+              type="number"
+              min={5}
+              max={240}
+              aria-label="A paper's time in minutes"
+              value={minutes}
+              onChange={(event) => setMinutes(event.target.value)}
+              onBlur={() => {
+                const value = Math.round(Number(minutes));
+                if (Number.isFinite(value) && value >= 5 && value <= 240) props.onBlock(value);
+                else setMinutes(String(props.blockMinutes));
+              }}
+            />
+            <span className="setting-note">minutes, when a paper names none</span>
+          </Setting>
+          {runtime && (
+            <Setting name="The magnesium program">
+              <span className="setting-note">
+                {runtime.installed ? `Version ${runtime.installed.version.split("+")[0]}` : "Not found"}
+                {runtime.state === "kept" ? ", kept over this app's copy" : ""}
+              </span>
+              {runtime.state === "kept" && runtime.bundled && (
+                <button className="plain" onClick={props.onReplaceRuntime}>
+                  use this app's {runtime.bundled.version.split("+")[0]}
+                </button>
+              )}
+            </Setting>
           )}
           <p className="setting-note wide">Recording in a study folder is turned off and on by asking the tutor, in words, on the Magnesium engine.</p>
         </section>
