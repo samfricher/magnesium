@@ -28,7 +28,7 @@
   user-select: none;
 }
 .tabs {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   height: 100%;
   display: flex;
@@ -36,15 +36,19 @@
   gap: 2px;
   overflow: hidden;
 }
+/* Tabs stay on one row: those not shown shrink to a short name, the one
+   shown keeps its full name, and one too far along is scrolled into view. */
 .tab {
   display: inline-flex;
   align-items: center;
-  min-width: 0;
+  min-width: 5.5rem;
   max-width: 15rem;
   flex: 0 1 auto;
   border-radius: 6px;
 }
-.tab.home { flex-shrink: 0; }
+.tab.home,
+.tab.here { flex-shrink: 0; }
+.tab.home { min-width: 0; }
 .tab-button {
   display: inline-flex;
   align-items: center;
@@ -79,7 +83,7 @@
 }
 .tab-new:hover { color: var(--text); background: var(--tint); }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); flex: none; }
-.tabbar-end { flex: none; display: flex; align-items: center; gap: 2px; }
+.tabbar-end { flex: none; display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .bar-act {
   padding: 4px 8px;
   border-radius: 6px;
@@ -432,3 +436,13 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
 
 /* Settings' sections carry their own rule: the page's head needs none. */
 .settings-page .page-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 0.4rem; }
+
+/* Words for a screen reader only. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

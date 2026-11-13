@@ -21,6 +21,7 @@ import type { AgentEvent, Answer, Core, Decision, Home, Plan, Setup, Turn as Sav
 import { displayName, firstWords, markWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
 import { Cards, Notices, Turn, Working } from "./Conversation";
+import { tabId } from "../pages/Tabs";
 import { PlanPanel } from "./PlanPanel";
 import { Line } from "./Rich";
 
@@ -825,6 +826,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       data-phase={phase}
       data-busy={ownBusy ? "yes" : "no"}
       data-tab={tab.key}
+      role="tabpanel"
+      aria-labelledby={tabId(tab.key)}
       aria-hidden={props.active ? undefined : true}
     >
       {phase === "lesson" && (
@@ -1022,7 +1025,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           </section>
         </div>
       </main>
-      {props.panel && <PlanPanel plan={plan} changed={changed} />}
+      {props.panel && <PlanPanel plan={plan} changed={changed} id={props.active ? "plan-panel" : undefined} />}
     </div>
   );
 });

@@ -18,7 +18,7 @@ import { core, isDemo } from "./bridge";
 import { mark, ready } from "./harness";
 import { HomePage, mostRecent, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
-import { Tabs, type TabView } from "./pages/Tabs";
+import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
 import { actionOf, applyPrefs, flushPlaces, keyName, loadPrefs, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
 import type { SourceRef } from "./sources";
@@ -745,7 +745,7 @@ export function App() {
       />
       <div className="views" aria-hidden={covered ? true : undefined}>
         {activeTab.kind === "home" && api && (
-          <div className="view">
+          <div className="view" role="tabpanel" aria-labelledby={tabId("home")}>
             {homeFolder ? (
               <WorkspacePage
                 key={homeFolder}
@@ -800,7 +800,7 @@ export function App() {
           </div>
         )}
         {activeTab.kind === "settings" && (
-          <div className="view">
+          <div className="view" role="tabpanel" aria-labelledby={tabId("settings")}>
             <SettingsPage
               prefs={prefs}
               change={changePrefs}
