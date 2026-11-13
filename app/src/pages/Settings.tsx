@@ -146,7 +146,7 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
           }}
           onBlur={() => setListening(false)}
           onKeyDown={(event) => {
-            if (!listening) return;
+            if (!listening || event.nativeEvent.isComposing || event.keyCode === 229) return;
             event.preventDefault();
             event.stopPropagation();
             if (event.key === "Escape") return setListening(false);

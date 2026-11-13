@@ -611,6 +611,8 @@ export function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      // A key an input method is composing with is its own: Esc there cancels the composition, not the reply or the task.
+      if (event.isComposing || event.keyCode === 229) return;
       const { prefs, overlay, tabs, active } = now.current;
       const action: KeyAction | null = actionOf(event, prefs.keys);
       if (action) {
