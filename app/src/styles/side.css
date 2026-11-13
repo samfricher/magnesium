@@ -43,6 +43,7 @@
 .side-head {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-height: 38px;
@@ -51,7 +52,7 @@
 }
 .side-switch {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 9rem;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -81,7 +82,7 @@
 .side-tab.here .side-close,
 .side-close:focus-visible { visibility: visible; }
 .side-close:hover { color: var(--text); }
-.side-tools { flex: none; display: flex; align-items: center; gap: 2px; }
+.side-tools { flex: none; display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .side-zoom { display: inline-flex; align-items: center; }
 .side-zoom .zoom-now { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; }
 
@@ -103,7 +104,8 @@
 .doc-note { margin: 0; padding: 1rem 20px; font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
 
 /* A PDF: its pages in a column, on the window's ground. */
-.doc-pdf { padding: 16px 0 24vh; }
+/* Positioned, so each page's offset is measured from the column it scrolls in, not from the panel. */
+.doc-pdf { position: relative; padding: 16px 0 24vh; }
 .doc-page {
   position: relative;
   margin: 0 auto 12px;
@@ -186,3 +188,11 @@
 .side-open:hover { color: var(--text); }
 /* Named in the reply that sets the open task: its title, as plain words, until the task is answered. */
 .prose code.titled.shut { font: inherit; padding: 0; background: none; border-radius: 0; }
+
+/* Flipped to the lesson while the panel fills the session: the lesson's column is where it is with no panel. */
+.session.expanded.lesson-front .column,
+.session.expanded.lesson-front .top-edge .inner {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin-left: auto;
+  margin-right: auto;
+}

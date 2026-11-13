@@ -315,6 +315,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [docs, setDocsState] = useState<Docs>(() => docsOf(docsKey));
   const [goTo, setGoTo] = useState(0);
   const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (!props.active) setPicking(false);
+  }, [props.active]);
   const docView = useRef<DocHandle | null>(null);
   const keptDocsKey = useRef(docsKey);
   useEffect(() => {
@@ -697,7 +700,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         if (!props.panel) {
           props.onShowPanel();
           setDocs({ ...docs, lessonFront: false });
-          window.setTimeout(() => docView.current?.focus(), 60);
+          // The panel mounts and the document opens: try until it is there to take the keyboard.
+          for (const ms of [80, 400, 1200]) window.setTimeout(() => docView.current?.focus(), ms);
           return true;
         }
         if (docs.expanded) {

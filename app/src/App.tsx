@@ -568,6 +568,10 @@ export function App() {
   }, []);
   const onShowPanel = useCallback(() => {
     setPanel(true);
+    widenPanel();
+  }, []);
+  // A document wants more room than the plan: a panel at the plan's width opens wider.
+  const widenPanel = useCallback(() => {
     // A document wants more room than the plan: a panel at the plan's width opens wider.
     setPanelWidth((old) => {
       const wide = Math.round(Math.max(old, Math.min(window.innerWidth * 0.46, 620)));
@@ -608,10 +612,11 @@ export function App() {
     if (!inSession) disabled.push("plan");
     // The panel's commands work in a session, and on a workspace's page with material open beside it.
     const docs = inSession ? (handles.current[activeTab.key]?.docs() ?? null) : activeTab.kind === "home" && homeFolder ? docsOf(workspaceDocsKey(homeFolder)) : null;
-    const withDoc = docs !== null && docs.shown !== null && (inSession ? panel : true);
+    // A document in front that can be seen: not hidden with the panel, nor behind the lesson it was flipped from.
+    const withDoc = docs !== null && docs.shown !== null && (inSession ? panel : true) && !(docs.expanded && docs.lessonFront);
     if (!inSession && !(docs && docs.open.length > 0)) disabled.push("expand-panel", "flip-panel");
     // Flipping needs a document to flip to, or a panel that fills the session; zoom needs a PDF in front.
-    else if (!withDoc && !docs?.expanded) disabled.push("flip-panel");
+    else if (!(docs && docs.shown !== null) && !docs?.expanded) disabled.push("flip-panel");
     if (!withDoc) disabled.push("close-document");
     if (!withDoc || !/\.pdf$/i.test(docs?.shown ?? "")) disabled.push("zoom-in-document", "zoom-out-document", "zoom-fit-document");
     if (!inSession && !(activeTab.kind === "home" && homeFolder)) disabled.push("open-document");
@@ -623,8 +628,8 @@ export function App() {
       disabled,
       titles: {
         plan: panel ? "Hide Panel" : "Show Panel",
-        "expand-panel": docs?.expanded && !docs.lessonFront ? "Put the Panel Beside the Lesson" : "Expand Panel",
-        "flip-panel": docs?.expanded && !docs.lessonFront ? "Switch to the Lesson" : "Switch to the Document",
+        "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
+        "flip-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Switch to the Lesson" : "Switch to the Page") : "Switch to the Document",
         ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
       },
     };
@@ -860,7 +865,7 @@ export function App() {
                 onPaste={(folder) => setOverlay({ kind: "paste", folder })}
                 panelWidth={panelWidth}
                 onPanelWidth={onPanelWidth}
-                onShowPanel={onShowPanel}
+                onShowPanel={widenPanel}
                 onDocsChange={onDocsChange}
                 registerPanel={registerWorkspacePanel}
                 onNote={note}
