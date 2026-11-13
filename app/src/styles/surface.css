@@ -71,6 +71,7 @@
 }
 
 /* The key-hint lines, off when the learner says so. */
+:root[data-hints="off"] .row-key,
 :root[data-hints="off"] .keys,
 :root[data-hints="off"] .keyhint,
 :root[data-hints="off"] .record-keys,
@@ -201,7 +202,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .choice-rest {
   padding: 0.38rem var(--hang);
   border-radius: 4px;
-  font: 400 0.882rem/1.4 var(--app);
+  font: 400 0.941rem/1.4 var(--app);
   color: var(--text);
 }
 .choice-rest:hover { background: var(--tint); }
@@ -308,7 +309,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--quiet);
 }
 .said-sure { color: var(--ink); }
-.plain { color: var(--quiet); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; font: inherit; margin-left: 0.4rem; }
+/* A quiet word that does something: as Hint and dismiss are, no underline. */
+.plain { color: var(--quiet); font: inherit; margin-left: 0.4rem; }
 .plain:hover { color: var(--text); }
 
 /* Under the line: the way to the other line. */
@@ -424,17 +426,25 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .card-question { margin: 0 0 0.5rem; }
 .card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
 /* The permission card's choices are the window's one kind of choice, as on the first screen. */
-.card-acts { gap: 2px 0.9rem; margin-left: -0.7rem; }
+.card-acts { gap: 2px 0.9rem; margin-left: -0.5rem; }
 .act {
-  padding: 0.3rem 0.7rem;
+  padding: 0.3rem 0.5rem;
   border-radius: 4px;
-  font: 400 0.824rem/1.4 var(--app);
+  font: 400 0.941rem/1.4 var(--you);
   color: var(--text);
 }
 .act:hover { background: var(--tint); }
 /* No choice looks chosen before it is: the keyboard's place is a thin bar at the choice's edge. */
-/* Inside a card, whose own rule is ink, the keyboard's place is the tint. */
-.act:focus { background: var(--tint); }
+/* A card's choice that Return would take: a "›" before it, as the line where one writes has.
+   Nothing about it reads as chosen, and the choices keep their place on the column. */
+.act { position: relative; }
+.act:focus::before {
+  content: "›";
+  position: absolute;
+  left: -0.45rem;
+  font: 400 0.882rem/1.4 var(--mono);
+  color: var(--ink);
+}
 :root[data-input="key"] .act:focus-visible { outline: none; }
 
 /* Files over the window. */
@@ -485,7 +495,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .layer-line {
   position: relative;
   padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang) + 0.25rem);
-  border-bottom: 1px solid var(--edge);
 }
 .layer-line::before {
   content: "›";
@@ -501,7 +510,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   background: transparent;
   color: var(--text);
   caret-color: var(--ink);
-  font: 400 0.882rem/1.6 var(--you);
+  font: 400 0.941rem/1.6 var(--you);
   padding: 0;
 }
 .layer-line input::placeholder { color: var(--quiet); opacity: 1; }
@@ -532,7 +541,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.thing .row-label { font: 400 0.941rem/1.45 var(--read); color: var(--text); }
 .row.do .row-label,
-.row.file .row-label { font: 400 0.824rem/1.6 var(--app); color: var(--text); }
+.row.file .row-label { font: 400 0.941rem/1.5 var(--app); color: var(--text); }
 .row.file .row-label { font-family: var(--app); color: var(--text); }
 .row.note { grid-template-columns: var(--hang) minmax(0, 1fr); }
 .row.note .row-label { font: 400 0.765rem/1.55 var(--app); color: var(--quiet); white-space: normal; }
@@ -554,7 +563,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 @keyframes changed {
   from { background: var(--ink-soft); }
 }
-.row.empty { color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang)); }
+.row.empty { display: block; color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem); }
 
 .choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.15rem 0.5rem; padding-left: 1rem; }
 .choice {
@@ -693,7 +702,7 @@ button.line-end:hover { color: var(--text); }
 .line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
 .line.rest .field:focus { border-bottom-color: var(--ink); }
 .line.rest .line-tools { bottom: 0.35rem; }
-.line.rest .line-end { font-size: 0.824rem; color: var(--text); }
+.line.rest .line-end { color: var(--quiet); }
 .line.rest .line-end .keys { color: var(--ink); }
 .now > .keys { color: var(--hint); }
 
@@ -701,10 +710,10 @@ button.line-end:hover { color: var(--text); }
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(100px - var(--tabs-h));
+  height: calc(98px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) calc(80px - var(--tabs-h)), transparent);
+  background: linear-gradient(to bottom, var(--ground) calc(88px - var(--tabs-h)), transparent);
 }
 .session.with-panel .top-edge { right: 0; }
 .top-edge .inner {
@@ -734,3 +743,11 @@ button.line-end:hover { color: var(--text); }
 
 /* A session headed by its course alone: no rule under one small line. */
 .now.lesson .head.bare { margin-bottom: 1rem; }
+
+/* What the learner said before: its "›" in the quiet grey; the ink one is the live line's. */
+.you.talk::before { color: var(--hint); }
+/* While a card waits on the learner, the line under it holds no clip and sits at a turn's gap. */
+.foot.asking .clip { display: none; }
+.foot.asking { margin-top: 0.4rem; }
+/* An empty font field draws no rule until it has the focus or words. */
+.text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }

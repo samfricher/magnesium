@@ -131,7 +131,7 @@ export const Tabs = memo(function Tabs(props: Props) {
             Plan
           </button>
         )}
-        <button type="button" className={props.active === "settings" ? "bar-act on" : "bar-act"} data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>
+        <button type="button" className={props.active === "settings" ? "bar-act current" : "bar-act"} data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>
           Settings
         </button>
       </div>

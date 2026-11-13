@@ -287,7 +287,7 @@ export function WorkspacePage(props: Props) {
               Take this folder off the list
             </button>
           </p>
-          <p className={props.running ? "page-note dim" : "page-note"}>The folder and its sessions stay as they are.</p>
+          <p className="page-note">{props.running ? "Close its running session first." : "The folder and its sessions stay as they are."}</p>
         </section>
       </div>
     </div>

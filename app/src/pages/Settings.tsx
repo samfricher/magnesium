@@ -363,8 +363,8 @@ export function SettingsPage(props: Props) {
           </Setting>
           <p className="sample" style={{ fontFamily: faceCss(prefs.face) }}>
             The line meets the y-axis at 1/V<sub>max</sub>.
+            {/* The tutor's words, then the learner's, on a line of their own as in a lesson. */}
             <span className="sample-you" style={{ fontFamily: prefs.voice === "reading" ? faceCss(prefs.face) : faceCss(prefs.voice, faceCss("system")) }}>
-              {" "}
               Vmax = 4 µM/s
             </span>
           </p>
@@ -482,7 +482,7 @@ export function SettingsPage(props: Props) {
           <Setting name="A paper’s time">
             <Choice
               name="A paper’s time"
-              options={[25, 50, 90].map((value) => [value, `${value} min`] as [number, string])}
+              options={[25, 50, 90].map((value) => [value, String(value)] as [number, string])}
               value={props.blockMinutes}
               onPick={(value) => props.onBlock(value)}
             />

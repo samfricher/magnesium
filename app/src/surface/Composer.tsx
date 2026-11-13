@@ -368,6 +368,11 @@ export const Composer = memo(
             <button className="line-stop" onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onStop?.()}>
               <span className="keys">{props.stopKey ?? "esc"}</span> stop the reply
             </button>
+          ) : text.trim() !== "" && place !== "rest" ? (
+            // With words on the line, its end says what Return does with them.
+            <span key="send" className="line-end" aria-hidden="true">
+              <span className="keys">↩</span> {place === "task" ? "answer" : "send"}
+            </span>
           ) : place === "task" ? (
             <button
               key="talk"

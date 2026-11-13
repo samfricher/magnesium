@@ -20,7 +20,7 @@ function Steps({ steps }: { steps: Plan["steps"] }) {
       {steps.map((step, at) => (
         <li key={at} className={`${step.status}${step.status === "doing" ? " current" : ""}`} aria-current={step.status === "doing" ? "step" : undefined}>
           <span className="panel-mark" aria-hidden="true">
-            {step.status === "done" ? "✓" : step.status === "doing" ? "›" : "·"}
+            {step.status === "done" ? "✓" : step.status === "doing" ? "›" : ""}
           </span>
           <span className="panel-item">
             <Line text={step.step} />

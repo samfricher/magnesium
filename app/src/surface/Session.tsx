@@ -817,29 +817,41 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskText_, phase]);
   const restated = parked ? (held ? task.text : firstWords(task.text, 160)) : null;
-  // Whether the reply that asks the open task is in view, above the foot: while it is,
-  // the foot does not say the question again.
+  // Whether the reply that asks the open task is in view and close above the line: while it is,
+  // the foot does not say the question again. Out of view, or far up past other turns, it does.
   const [questionSeen, setQuestionSeen] = useState(false);
-  useEffect(() => {
+  const measureQuestion = useRef<() => void>(() => {});
+  measureQuestion.current = () => {
     const root = surface.current;
     const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
-    if (!root || !asked || task === null) {
-      setQuestionSeen(false);
-      return;
-    }
-    // The foot covers the surface's bottom: what is under it is not in view. Its pinned question
-    // is left out of that measure, as it is the thing that shows or not.
+    if (!root || !asked || task === null) return setQuestionSeen(false);
     const foot = root.querySelector<HTMLElement>(".foot");
     const pinned = foot?.querySelector<HTMLElement>(".parked, .restated");
-    const below = Math.max(0, (foot?.offsetHeight ?? 0) - (pinned?.offsetHeight ?? 0) - 8);
-    const watch = new IntersectionObserver((entries) => setQuestionSeen(entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0.5)), {
-      root,
-      rootMargin: `-48px 0px -${below}px 0px`,
-      threshold: [0, 0.6, 1],
-    });
-    watch.observe(asked);
-    return () => watch.disconnect();
-  }, [task, openAt, session, held]);
+    const view = root.getBoundingClientRect();
+    const box = asked.getBoundingClientRect();
+    // The line's top, as it would be with no question pinned over it.
+    const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
+    const shown = box.top >= view.top + 40 && box.bottom <= lineTop + 4;
+    const near = lineTop - box.bottom < 180;
+    setQuestionSeen(shown && near);
+  };
+  useEffect(() => {
+    measureQuestion.current();
+    const root = surface.current;
+    if (!root) return;
+    let frame = 0;
+    const again = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => measureQuestion.current());
+    };
+    root.addEventListener("scroll", again, { passive: true });
+    window.addEventListener("resize", again);
+    return () => {
+      cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", again);
+      window.removeEventListener("resize", again);
+    };
+  }, [task, openAt, session, held, props.panel]);
   // A session named by the learner's first words: its heading would only say them again.
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
@@ -1051,13 +1063,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       key={`${turn.ms}-${index}`}
                       turn={turn}
                       open={index === openAt}
-                      held={index === openAt && held}
+                      held={index === openAt && held && !parked}
                       linksOpen={index !== openAt}
                       writing={live && session.live!.status !== "idle"}
                       divider={at > 0 && (turn.said === "opening" || opening(turn.learner) !== null)}
                       task={index === openAt ? task?.text : undefined}
                       showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor) || (turn.question !== undefined && poses(before.tutor, turn.question)))}
-                      settled={index < turns.length - 1 || props.panel}
+                      settled
                       planKey={props.panel ? null : keyName(props.prefs.keys.plan) || null}
                       onSource={onSource}
                       onNote={note}
@@ -1074,7 +1086,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   // The record's latest fact, then the one line, whose role
                   // follows where it sits: inside the open task it is that
                   // task's answer, else it is talk.
-                  <div className={`foot${held ? " in-task" : ""}`}>
+                  <div className={`foot${held ? " in-task" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
                     {task && !held && !questionSeen && (
                       <button
                         className="parked"
