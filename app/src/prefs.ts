@@ -29,7 +29,14 @@ export type KeyAction =
   | "symbols"
   | "bigger"
   | "smaller"
-  | "actual-size";
+  | "actual-size"
+  | "expand-panel"
+  | "flip-panel"
+  | "close-document"
+  | "open-document"
+  | "zoom-in-document"
+  | "zoom-out-document"
+  | "zoom-fit-document";
 
 export type Prefs = {
   /** The face the material and the tutor are read in: a name below, or any face installed on this Mac. */
@@ -59,7 +66,14 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["open-workspace", "Open a folder"],
   ["close-session", "Close session"],
   ["attach", "Attach a photo or PDF"],
-  ["plan", "Show plan"],
+  ["plan", "Show panel"],
+  ["expand-panel", "Expand panel"],
+  ["flip-panel", "Switch to the document"],
+  ["open-document", "Open document"],
+  ["close-document", "Close document"],
+  ["zoom-in-document", "Zoom in on the document"],
+  ["zoom-out-document", "Zoom out of the document"],
+  ["zoom-fit-document", "Fit the document to the panel"],
   ["settings", "Settings"],
   ["commands", "Command menu"],
   ["hint", "Hint"],
@@ -102,6 +116,13 @@ export const DEFAULTS: Prefs = {
     bigger: "cmd+=",
     smaller: "cmd+-",
     "actual-size": "cmd+0",
+    "expand-panel": "cmd+shift+e",
+    "flip-panel": "cmd+\\",
+    "close-document": "cmd+shift+w",
+    "open-document": "cmd+shift+o",
+    "zoom-in-document": "cmd+alt+=",
+    "zoom-out-document": "cmd+alt+-",
+    "zoom-fit-document": "none",
   },
 };
 
@@ -156,6 +177,18 @@ const PREFS = "mg.prefs.2";
 /** Keys an earlier window kept under other names. */
 const OLD_KEYS: Record<string, KeyAction> = { stop: "stop-reply", new: "new-session", courses: "open-workspace" };
 const PLACE = "mg.place";
+const PANEL = "mg.panel";
+
+/** The panel's width as the learner left it, in pixels: at first the plan's own width. */
+export function panelWidthKept(): number {
+  const kept = readJson<{ width?: number }>(PANEL)?.width;
+  const plan = Math.round(15.5 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 17));
+  return typeof kept === "number" && kept >= 200 && kept <= 4000 ? kept : plan;
+}
+
+export function keepPanelWidth(width: number): void {
+  writeJson(PANEL, { width });
+}
 
 function readJson<T>(key: string): T | null {
   try {

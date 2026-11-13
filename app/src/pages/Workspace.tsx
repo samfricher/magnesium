@@ -4,9 +4,13 @@
 // record of the learner's marked answers, and the folder itself (take it off
 // the list, upgrade it, set it up). File names are shown; paths are not.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
+import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
+import { SidePanel } from "../surface/SidePanel";
+import { sourceRef } from "../sources";
 import type { Core, Home, LessonInfo, Mark, Materials, Paper } from "../types";
 import { displayName, materialKind, materialTitle, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
@@ -23,8 +27,15 @@ type Props = {
   onHandedIn: (folder: string, words: { shown: string; sent: string }, title: string) => void;
   onForget: (folder: string) => void;
   onPaste: (folder: string) => void;
-  /** Show a file of material in the window: a PDF, text or an image; Markdown drawn as prose. */
-  onOpenMaterial: (folder: string, path: string) => void;
+  /** The panel's width, in pixels, shared with the sessions'. */
+  panelWidth: number;
+  onPanelWidth: (width: number) => void;
+  /** A document opened: a panel at the plan's width opens wider. */
+  onShowPanel: () => void;
+  /** The documents changed: the menu follows. */
+  onDocsChange: () => void;
+  /** The page takes the panel's commands (expand, flip, close, zoom) while it is in front. */
+  registerPanel: (run: ((command: string) => boolean) | null) => void;
   onNote: (text: string) => void;
   /** Bumped when the material changes from outside the page, as by a drop. */
   refresh: number;
@@ -54,6 +65,80 @@ export function WorkspacePage(props: Props) {
   const [materials, setMaterials] = useState<Materials | null | "none">(null);
   const [marks, setMarks] = useState<Mark[] | null | "unread">("unread");
   const [busy, setBusy] = useState(false);
+
+  // Material opens beside the page, as a document opens beside a lesson, and stays open with the page.
+  const docsKey = workspaceDocsKey(folder);
+  const [docs, setDocsState] = useState<Docs>(() => docsOf(docsKey));
+  const [goTo, setGoTo] = useState(0);
+  const [picking, setPicking] = useState(false);
+  const docView = useRef<DocHandle | null>(null);
+  const column = useRef<HTMLDivElement>(null);
+  const docsNow = useRef(docs);
+  docsNow.current = docs;
+  const setDocs = useCallback(
+    (next: Docs) => {
+      setDocsState(next);
+      docsNow.current = next;
+      keepDocs(docsKey, next);
+      props.onDocsChange();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [docsKey],
+  );
+  const openMaterial = (path: string) => {
+    if (!sourceRef(path)) {
+      props.onNote("PDFs, notes and pictures open beside the page; this kind of file stays in the folder.");
+      return;
+    }
+    setDocs(withOpened(docsNow.current, path, null));
+    setGoTo((n) => n + 1);
+    props.onShowPanel();
+  };
+  const panelRun = useRef<(command: string) => boolean>(() => false);
+  panelRun.current = (command) => {
+    const docs = docsNow.current;
+    if (command === "open-document") {
+      props.onShowPanel();
+      setPicking(true);
+      return true;
+    }
+    if (docs.open.length === 0) return false;
+    switch (command) {
+      case "escape": {
+        // Out of the document, back to the page; from a document that fills the tab, back to the page.
+        const inPanel = (document.activeElement as HTMLElement | null)?.closest(".panel.side");
+        if (!inPanel && !(docs.expanded && !docs.lessonFront)) return false;
+        if (docs.expanded && !docs.lessonFront) setDocs({ ...docs, lessonFront: true });
+        (document.activeElement as HTMLElement | null)?.blur();
+        return true;
+      }
+      case "expand-panel":
+        setDocs({ ...docs, expanded: !docs.expanded || docs.lessonFront, lessonFront: false });
+        return true;
+      case "flip-panel":
+        if (docs.expanded) setDocs({ ...docs, lessonFront: !docs.lessonFront });
+        else if (column.current?.contains(document.activeElement) === false) column.current.querySelector<HTMLElement>("button")?.focus();
+        else docView.current?.focus();
+        return true;
+      case "close-document":
+        if (!docs.shown) return false;
+        setDocs(withClosed(docs, docs.shown));
+        return true;
+      case "zoom-in-document":
+      case "zoom-out-document":
+      case "zoom-fit-document":
+        docView.current?.zoom(command === "zoom-in-document" ? 1 : command === "zoom-out-document" ? -1 : 0);
+        return true;
+    }
+    return false;
+  };
+  const { registerPanel } = props;
+  useEffect(() => {
+    registerPanel((command) => panelRun.current(command));
+    return () => registerPanel(null);
+  }, [registerPanel]);
+  // The panel shows while material is open beside the page, or while its list is open to pick from.
+  const withDocs = docs.open.length > 0 || picking;
 
   const read = useCallback(async () => {
     const [opened, listed, held] = await Promise.all([
@@ -135,8 +220,13 @@ export function WorkspacePage(props: Props) {
   }
 
   return (
-    <div className="page workspace-page" data-page="workspace">
-      <div className="page-column">
+    <div
+      className={`page workspace-page${withDocs ? " with-docs" : ""}${withDocs && docs.expanded ? " expanded" : ""}${withDocs && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
+      data-page="workspace"
+      style={withDocs ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
+    >
+      <div className="page-scroll">
+      <div className="page-column" ref={column}>
         <button className="back" data-drive="home" onClick={props.onBack}>
           ‹ Home
         </button>
@@ -178,7 +268,13 @@ export function WorkspacePage(props: Props) {
                 Hand in your work…
               </button>
               {sitting.path && (
-                <button className="quiet-act" onClick={() => void api.openFile(sitting.path!, folder).catch((problem) => props.onNote(String(problem)))}>
+                <button
+                  className="quiet-act"
+                  onClick={() =>
+                    // The paper opens beside the page, as the material does; a kind the window does not show goes to the Mac.
+                    sourceRef(sitting.path!) ? openMaterial(sitting.path!) : void api.openFile(sitting.path!, folder).catch((problem) => props.onNote(String(problem)))
+                  }
+                >
                   Open the paper again
                 </button>
               )}
@@ -198,7 +294,7 @@ export function WorkspacePage(props: Props) {
           ) : (
             <div className="list" role="list">
               {materials.names.map((file) => (
-                <button key={file} role="listitem" className="home-row file-row" onClick={() => props.onOpenMaterial(folder, `Study/materials/${file}`)}>
+                <button key={file} role="listitem" className="home-row file-row" aria-current={docs.shown === `Study/materials/${file}` ? "true" : undefined} onClick={() => openMaterial(`Study/materials/${file}`)}>
                   <span className="row-name">{materialTitle(file)}</span>
                   {mixed && <span className="row-when">{materialKind(file)}</span>}
                 </button>
@@ -288,6 +384,24 @@ export function WorkspacePage(props: Props) {
           {props.running && <p className="page-note">Close its running session first.</p>}
         </section>
       </div>
+      </div>
+      {withDocs && (
+        <SidePanel
+          plan={null}
+          docs={docs}
+          folder={folder}
+          goTo={goTo}
+          width={props.panelWidth}
+          expanded={docs.expanded}
+          onDocs={setDocs}
+          onWidth={props.onPanelWidth}
+          onExpand={(expanded) => setDocs({ ...docsNow.current, expanded, lessonFront: false })}
+          onNote={props.onNote}
+          handle={(found) => (docView.current = found)}
+          picking={picking}
+          onPicking={setPicking}
+        />
+      )}
     </div>
   );
 }

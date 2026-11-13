@@ -208,12 +208,13 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.materialTitles = titles;
     if (titles.some((title) => /\.[a-z0-9]{1,5}$/i.test(title) || title.includes("/"))) throw new Error(`material is listed by file name: ${titles.join(", ")}`);
     document.querySelector<HTMLElement>('[data-page="workspace"] .file-row')!.click();
-    await until("the material in the window", () => document.querySelector('[data-role="source-panel"] .sheet-name') !== null, 5000);
-    const sheet = document.querySelector('[data-role="source-panel"] .sheet-name')?.textContent ?? "";
+    // It opens beside the page, in the panel, named by its title in the panel's switcher.
+    await until("the material beside the page", () => document.querySelector('[data-role="side-panel"] .side-tab.here') !== null, 5000);
+    const sheet = document.querySelector('[data-role="side-panel"] .side-tab.here')?.textContent?.replace(/×$/, "") ?? "";
     steps.materialSheet = sheet;
-    if (/\.[a-z0-9]{1,5}$/i.test(sheet)) throw new Error(`material opened under its file name: ${sheet}`);
-    press("Escape");
-    await until("the material to close", () => document.querySelector('[data-role="source-panel"]') === null, 3000);
+    if (/\.[a-z0-9]{1,5}$/i.test(sheet) || sheet.includes("/")) throw new Error(`material opened under its file name: ${sheet}`);
+    document.querySelector<HTMLElement>('[data-role="side-panel"] .side-tab.here .side-close')?.click();
+    await until("the material to close", () => document.querySelector('[data-role="side-panel"]') === null, 3000);
 
     // A pasted image is handed in as a file, and named in the message by the place it was written.
     const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));

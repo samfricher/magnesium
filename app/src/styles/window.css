@@ -129,11 +129,11 @@
 /* The column's left edge stays where it was; the column narrows to end before the plan, and moves
    left only when it would be narrower than 24em. */
 .session.with-panel .surface,
-.session.with-panel .top-edge { right: var(--panel-w); }
+.session.with-panel .top-edge { right: var(--side-w, var(--panel-w)); }
 /* 100% is the room left of the panel; the column's own place with no panel is half of 100% + the panel's width, less half the measure. */
 .session.with-panel .column,
 .session.with-panel .top-edge .inner {
-  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--panel-w) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
+  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--side-w, var(--panel-w)) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
   width: min(var(--measure), calc(100% - var(--hang) - 28px - var(--left)));
   margin-left: var(--left);
   margin-right: 0;
