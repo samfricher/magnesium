@@ -28,6 +28,12 @@
 //                           reply, and every marked and plan_changed, so far
 //   ready                   whether ready() was called, and the startup time
 //   errors                  what went wrong on the page so far
+//   session                 the session in front: its phase, where the line
+//                           is (task or talk), whether it is in the open task,
+//                           the open task's words, and the files on the line
+//   attach {path|paths}     put files on the line of the session in front, as
+//                           a drop does (photos and PDFs), for a harness that
+//                           cannot drive the Mac's Open panel
 //   menu                    the macOS menu bar as data: each menu's title, and
 //                           each item's title, id, enabled state and key
 //   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
@@ -61,6 +67,13 @@ const marks: Record<string, number> = {};
 export function mark(name: string): void {
   if (!(name in marks)) marks[name] = Date.now();
 }
+/** What the window lets the harness ask of the session in front. Set by the page; used only by the drive loop. */
+type Probe = { session: () => unknown; attach: (paths: string[]) => boolean };
+let probe: Probe | null = null;
+export function setProbe(given: Probe): void {
+  probe = given;
+}
+
 // A measurement running holds the drive loop, so nothing types into the composer meanwhile.
 let measuring: Promise<unknown> | null = null;
 
@@ -512,6 +525,21 @@ async function run(op: Op): Promise<Result> {
       return { ok: true, ready: readyCalled, startup_ms: perfResult.startup_ms };
     case "errors":
       return { ok: true, errors: [...(window.__mgErrors ?? [])] };
+    case "session": {
+      const found = probe?.session() ?? null;
+      if (!found) return { ok: false, error: "no session is in front" };
+      const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
+      return { ok: true, ...(found as object), files };
+    }
+    case "attach": {
+      const paths = Array.isArray(op.paths) ? op.paths.map(String) : op.path ? [String(op.path)] : [];
+      if (paths.length === 0) return { ok: false, error: "name a path or paths" };
+      if (!probe?.attach(paths)) return { ok: false, error: "no session is in front" };
+      // The files are handed in to the study folder before they show on the line.
+      for (let i = 0; i < 50 && document.querySelectorAll(".session.in-front .attached .file").length === 0; i++) await sleep(100);
+      await nextPaint();
+      return { ok: true };
+    }
     case "menu":
       try {
         return { ok: true, menu: await invoke<unknown>("harness_menu") };

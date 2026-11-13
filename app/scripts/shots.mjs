@@ -42,6 +42,8 @@ const shots = [
   ["session-earlier", "session-earlier", 400],
   ["settings", "settings", 300],
   ["settings-keys", "settings-keys", 300],
+  ["settings-colour", "settings-colour", 300],
+  ["material", "material", 600],
   // The plan beside the lesson: shown, and shown after the tutor changed it.
   ["panel", "panel", 400],
   ["panel-changed", "panel-changed", 500],

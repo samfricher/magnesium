@@ -6,7 +6,7 @@
 //   #s1-cold (Home)  #s1-cold-first  #s2-start  #s2-answer  #s3-before
 //   #s3-after  #s4-offplan  #s4-return  #s5-week  #s5-week-next  #narrow-lesson
 // and the new screens of the combined window:
-//   #workspace  #new-session  #new-session-start  #settings  #settings-keys  #panel  #panel-changed  #attach
+//   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
 //   #permission  #paper  #upgrade  #help-row  #symbols
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
@@ -209,28 +209,46 @@ const setup = (): Setup => ({ runtime: runtime(), account: account(), payment })
 /** The conversation left, as the window keeps it: what `turns` reads at rest. */
 function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
   if (folder !== FOLDER || firstOpen) return [];
+  // Each kept turn says how it was sent and, as Magnesium's engine notes it, the task it left open.
+  const noted = (task: string | null, posed = false) => ({ noted: true, task, posed });
   if (session === "demo-0") {
     const at = Date.now() - 5 * DAY_MS;
+    const RECIPROCAL = "Take the reciprocal of both sides.";
     return [
-      { session, ms: at, learner: "Let's work on taking reciprocals of the rate equation.", tutor: "Start from $v = \\frac{V_{max}[S]}{K_m + [S]}$. **Task.** Take the reciprocal of both sides.", interrupted: false },
-      { session, ms: at + 60_000, learner: "1/v = (K_m + [S]) / (V_max [S])", tutor: "Right. Split the fraction and you have a straight line in $\\frac{1}{[S]}$.", interrupted: false },
+      { session, ms: at, learner: "Let's work on taking reciprocals of the rate equation.", tutor: `Start from $v = \\frac{V_{max}[S]}{K_m + [S]}$. ${RECIPROCAL}`, interrupted: false, ...noted(RECIPROCAL, true) },
+      { session, ms: at + 60_000, learner: "1/v = (K_m + [S]) / (V_max [S])", tutor: "Right. Split the fraction and you have a straight line in $\\frac{1}{[S]}$.", interrupted: false, intent: "answer", ...noted(null) },
     ];
   }
   const at = Date.now() - (week ? 7 : 2) * 86_400_000;
-  const turn = (n: number, learner: string, tutor: string): Turn => ({ session: "demo", ms: at + n * 60_000, learner, tutor, interrupted: false });
+  const turn = (n: number, learner: string, tutor: string, more: Partial<Turn> = {}): Turn => ({ session: "demo", ms: at + n * 60_000, learner, tutor, interrupted: false, ...more });
+  const FORM = "Write $\\frac{1}{v}$ in terms of $\\frac{1}{[S]}$.";
   const turns = [
-    turn(0, "I'm back. Let's continue.", "Last time ended at the rate equation. Take reciprocals of both sides and see what kind of line it gives.\n\n**Task.** Write $\\frac{1}{v}$ in terms of $\\frac{1}{[S]}$."),
-    turn(1, "1/v = (K_m/V_max)(1/[S]) + 1/V_max", "Right, and that is the whole of the Lineweaver–Burk form: a straight line, slope $\\frac{K_m}{V_{max}}$, intercept $\\frac{1}{V_{max}}$."),
+    turn(0, "I'm back. Let's continue.", `Last time ended at the rate equation. Take reciprocals of both sides and see what kind of line it gives.\n\n${FORM}`, noted(FORM, true)),
+    turn(1, "1/v = (K_m/V_max)(1/[S]) + 1/V_max", "Right, and that is the whole of the Lineweaver–Burk form: a straight line, slope $\\frac{K_m}{V_{max}}$, intercept $\\frac{1}{V_{max}}$.", { intent: "answer", ...noted(null) }),
   ];
-  if (has("reopen")) turns.push(turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING));
+  if (has("reopen")) turns.push(turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING, noted(VMAX_TASK, true)));
   if (week) {
     turns.push(
-      turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING),
-      turn(3, "V_max = 4 µM/s", RIGHT),
-      turn(4, "I skipped three days and the midterm moved, change the plan", demoBaseReply("change the plan") ?? ""),
+      turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING, noted(VMAX_TASK, true)),
+      turn(3, "V_max = 4 µM/s", RIGHT, { intent: "answer", ...noted(KM_TASK, true) }),
+      turn(4, "I skipped three days and the midterm moved, change the plan", demoBaseReply("change the plan") ?? "", { intent: "talk", ...noted(KM_TASK) }),
     );
   }
   return turns;
+}
+
+/** The record's rows for the kept answers of the demo's sessions, at the minute each was given. */
+function keptMarks(): Mark[] {
+  const minute = (ms: number) => {
+    const d = new Date(ms);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return ["demo", "demo-0"].flatMap((session) =>
+    savedTurns(FOLDER, session)
+      .filter((turn) => turn.intent === "answer")
+      .map((turn, n) => ({ id: `k-${session}-${n}`, at: minute(turn.ms), label: n === 0 ? "taking reciprocals of the rate equation" : "reading $V_{max}$ from the y-intercept", mark: "right", help: "none", cold: true, paper: null })),
+  );
 }
 
 let emit: (event: AgentEvent) => void = () => {};
@@ -263,6 +281,8 @@ async function reply(text: string, after?: () => void, hold = false) {
   const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
   if (posed) openTask = posed;
   emit({ type: "open_task", task: openTask, posed: posed !== null });
+  // The record is read once a mark has had its moment.
+  window.setTimeout(() => emit({ type: "settled" }), 500);
   after?.();
 }
 
@@ -451,7 +471,7 @@ export function demoCore(): Core {
     },
     addPastedText: async (): Promise<Added> => ({ saved: ["Study/materials/Pasted text 10.41.txt"], keys: 0, lines: ["Kept the pasted text with the course material."] }),
     materialList: async () => ({ names: materialNames, files: materialNames.length + 4, keys: 1 }),
-    marks: async () => [...marks],
+    marks: async () => [...keptMarks(), ...marks],
     onDrop: async () => () => {},
     source: async (path): Promise<Source> => {
       if (/key|solution/i.test(path)) throw new Error("That looks like an answer key, so the window does not open it.");
@@ -553,6 +573,16 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       return actions.run("settings");
     case "settings-keys":
       return actions.run("keys-help");
+    case "settings-colour":
+      actions.run("settings");
+      await wait(150);
+      document.querySelector<HTMLElement>("[data-drive='colour-ink-light']")?.click();
+      return wait(100);
+    case "material":
+      actions.goWorkspace(FOLDER);
+      await wait(300);
+      document.querySelector<HTMLElement>(".file-row")?.click();
+      return wait(400);
     case "workspace":
       return actions.goWorkspace(FOLDER);
     case "new-session":

@@ -201,6 +201,20 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       if (refused === null) throw new Error(`a source outside the study folder, or an answer key, opened: ${outside}`);
     }
 
+    // The workspace lists its material by title, with no extension and no path, and shows it in the window.
+    actions.goWorkspace(folder);
+    await until("the material listed", () => document.querySelector('[data-page="workspace"] .file-row') !== null, 10_000);
+    const titles = Array.from(document.querySelectorAll('[data-page="workspace"] .file-row .row-name')).map((row) => row.textContent ?? "");
+    steps.materialTitles = titles;
+    if (titles.some((title) => /\.[a-z0-9]{1,5}$/i.test(title) || title.includes("/"))) throw new Error(`material is listed by file name: ${titles.join(", ")}`);
+    document.querySelector<HTMLElement>('[data-page="workspace"] .file-row')!.click();
+    await until("the material in the window", () => document.querySelector('[data-role="source-panel"] .sheet-name') !== null, 5000);
+    const sheet = document.querySelector('[data-role="source-panel"] .sheet-name')?.textContent ?? "";
+    steps.materialSheet = sheet;
+    if (/\.[a-z0-9]{1,5}$/i.test(sheet)) throw new Error(`material opened under its file name: ${sheet}`);
+    press("Escape");
+    await until("the material to close", () => document.querySelector('[data-role="source-panel"]') === null, 3000);
+
     // A pasted image is handed in as a file, and named in the message by the place it was written.
     const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
     const kept = await within("handing in a pasted image", api.attachBytes("Pasted 10.41.png", png, "attached", folder));
@@ -250,6 +264,26 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
     if (!document.querySelector(".session.in-front .sent-files")?.textContent?.includes(kept.split("/").pop() ?? kept)) throw new Error("the file sent was not named under the message");
 
+    // Esc in a task goes to talk in one press, with the symbols open and words on the line, and keeps the words.
+    await actions.session()!.say("A task, please.\n\n**Task.** What is 2 + 2?", "talk");
+    await until("the line in the task", () => document.querySelector('.session.in-front .line[data-line="task"]') !== null, 10_000);
+    actions.run("symbols");
+    await until("the symbols", () => document.querySelector(".session.in-front .symbols") !== null, 3000);
+    const field = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+    const setField = (value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    field.focus();
+    setField("√4");
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await until("the line on talk", () => document.querySelector('.session.in-front .line[data-line="talk"]') !== null, 3000);
+    const onLine = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')?.value;
+    steps.escape = { onLine, symbols: document.querySelector(".session.in-front .symbols") !== null };
+    if (onLine !== "√4") throw new Error(`Esc lost the words on the line: ${onLine}`);
+    if (document.querySelector(".session.in-front .symbols") !== null) throw new Error("Esc left the symbols open");
+    setField("");
+
     // The quiet controls, and the plan beside the lesson, shown and hidden.
     steps.controls = ["attach", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
@@ -272,6 +306,21 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (sessions.length === 0 || sessions[0].turns === 0) throw new Error("the session was not listed on its workspace's page");
     const turns = await api.lessonTurns(folder, sessions[0].session);
     if (turns.length === 0) throw new Error("the session's turns were not kept to be read again");
+    if (!turns.some((turn) => turn.intent === "talk")) throw new Error("a kept turn does not say it was sent as talk");
+
+    // Opened again, it is as it was left: its heading at the top, its turns under it, and nothing is sent.
+    actions.openSession(folder, sessions[0].session, sessions[0].title ?? "");
+    await until("the session again", () => document.querySelector(".session.in-front .now.lesson article") !== null, 10_000);
+    await wait(1500);
+    const head = document.querySelector(".session.in-front .now.lesson .head")!.getBoundingClientRect().top;
+    const first = document.querySelector(".session.in-front .now.lesson article")!.getBoundingClientRect().top;
+    const again = await api.lessonTurns(folder, sessions[0].session);
+    steps.reopened = { headAbove: head < first, turns: again.length, open: session().open };
+    if (!(head < first)) throw new Error("a reopened session drew its turns above its heading");
+    if (again.length !== turns.length || session().open) throw new Error("opening a kept session sent something");
+    if (!document.querySelector(".session.in-front .you.talk")) throw new Error("talk in a reopened session is not drawn as talk");
+    actions.run("close-session");
+    await until("the session's tab to close again", () => actions.session() === null, 10_000);
     await wait(600);
     const left = (await api.windowState()) as { v?: number; tabs?: unknown[] } | null;
     steps.windowState = left ? { v: left.v, tabs: left.tabs?.length } : null;
