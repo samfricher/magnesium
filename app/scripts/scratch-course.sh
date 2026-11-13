@@ -13,8 +13,10 @@
 #   window/              a scratch window home, for MAGNESIUM_APP_HOME: the
 #                        three folders below in its library, and lessons on
 #                        Magnesium (the direct engine)
-#   Intro-Statistics/    the course: three lecture notes in Study/materials,
-#                        and a plan for "Midterm 2", ten days from today, in
+#   Intro-Statistics/    the course, as a learner's folder often is: two past
+#                        papers (PDFs, one with a "#" in its name) and an answer
+#                        key in Study/midterm-2/papers, no other material, and
+#                        a plan for "Midterm 2", ten days from today, in
 #                        Study/midterm-2/plan.md with five items
 #   Linear-Algebra/      set up, one lecture note, no plan
 #   Organic-Chemistry/   set up, nothing in it yet
@@ -164,107 +166,56 @@ TODAY=$(day 0)
 EXAM=$(day 10)
 
 # --- The course ------------------------------------------------------------
-mkdir -p "$COURSE/Study/materials" "$COURSE/Study/midterm-2"
-cat > "$COURSE/Study/materials/week5-sampling-distributions.md" <<'EOF'
-# Week 5: Sampling distributions
-
-A statistic, such as the sample mean x̄, changes from sample to sample. Its
-**sampling distribution** is the distribution of its values over all the
-samples of size n we could have drawn.
-
-## The sample mean
-
-If the population has mean μ and standard deviation σ, then for random
-samples of size n:
-
-- the mean of x̄ is μ (x̄ is unbiased);
-- the standard deviation of x̄ is σ / √n, called the **standard error**.
-
-When σ is unknown we estimate the standard error with s / √n.
-
-## The central limit theorem
-
-For large n (a common rule: n ≥ 30), x̄ is approximately normal whatever the
-shape of the population. For a normal population it is normal for every n.
-
-## Worked example
-
-Bags of flour have mean weight 1000 g and standard deviation 12 g. For
-samples of 36 bags, the standard error is 12 / √36 = 2 g, so about 95% of
-sample means fall within 1000 ± 4 g.
-
-## Check yourself
-
-1. A sample of 25 has s = 10. What is the estimated standard error of x̄?
-2. Why does the standard error shrink as n grows?
-EOF
-cat > "$COURSE/Study/materials/week6-confidence-intervals.md" <<'EOF'
-# Week 6: Confidence intervals for a mean
-
-A **confidence interval** gives a range of plausible values for a parameter.
-For a population mean with σ unknown:
-
-    x̄ ± t* · s / √n,   with n − 1 degrees of freedom.
-
-The **margin of error** is t* · s / √n.
-
-## Reading the confidence level
-
-A 95% interval comes from a method that captures μ in 95% of samples. It
-does not say there is a 95% probability that μ lies in this one interval:
-μ is fixed, and the interval either holds it or does not.
-
-## What changes the width
-
-- A higher confidence level widens the interval (larger t*).
-- A larger sample narrows it (smaller s / √n).
-- More spread in the data widens it.
-
-## Worked example
-
-A sample of 16 study sessions has x̄ = 42 min and s = 8 min. With 15
-degrees of freedom, t* = 2.131 for 95%. The margin is 2.131 · 8 / 4 = 4.26,
-so the interval is 37.7 to 46.3 minutes.
-
-## Check yourself
-
-1. Find a 90% interval for the example above (t* = 1.753).
-2. To halve the margin of error, by what factor must n grow?
-EOF
-cat > "$COURSE/Study/materials/week7-hypothesis-tests.md" <<'EOF'
-# Week 7: Hypothesis tests for a mean
-
-A test weighs the evidence against a **null hypothesis** H₀, such as
-μ = 50, in favour of an **alternative** Hₐ, such as μ ≠ 50.
-
-## The one-sample t test
-
-    t = (x̄ − μ₀) / (s / √n),   with n − 1 degrees of freedom.
-
-The **p-value** is the probability, if H₀ were true, of a statistic at least
-as extreme as the one observed. A small p-value is evidence against H₀.
-
-## Errors
-
-- Type I: rejecting a true H₀. Its probability is the significance level α.
-- Type II: keeping a false H₀.
-
-## Tests and intervals
-
-A two-sided test at level α rejects μ = μ₀ exactly when μ₀ lies outside the
-(1 − α) confidence interval.
-
-## Worked example
-
-n = 25, x̄ = 53, s = 10, H₀: μ = 50. The standard error is 2, so t = 1.5
-with 24 degrees of freedom; the two-sided p-value is about 0.15. The data
-give little evidence against μ = 50.
-
-## Check yourself
-
-1. Does a p-value of 0.15 show that H₀ is true?
-2. What happens to t if n grows and x̄ and s stay the same?
-EOF
+# As a learner's folder often is: its past papers under the target's papers
+# folder, and no other material. The papers are PDFs with real text (so a
+# page's words can be selected), and one has its answer key beside it, which
+# the window never opens or names.
+mkdir -p "$COURSE/Study/materials" "$COURSE/Study/midterm-2/papers"
+python3 -I - "$COURSE/Study/midterm-2/papers" <<'PY'
+import os, sys
+out = sys.argv[1]
+def pdf(path, pages):
+    objs = []
+    def add(body):
+        objs.append(body)
+        return len(objs)
+    font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    bold = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+    kids = []
+    pages_id = len(objs) + 1 + 2 * len(pages)
+    esc = lambda t: t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    for lines in pages:
+        text = ["BT", "/F2 18 Tf", "72 720 Td", "(%s) Tj" % esc(lines[0]), "/F1 12 Tf", "0 -34 Td"]
+        for line in lines[1:]:
+            text += ["(%s) Tj" % esc(line), "0 -20 Td"]
+        text.append("ET")
+        stream = "\n".join(text)
+        content = add("<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
+        kids.append(add("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> >> >>" % (pages_id, content, font, bold)))
+    add("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join("%d 0 R" % k for k in kids), len(kids)))
+    catalog = add("<< /Type /Catalog /Pages %d 0 R >>" % pages_id)
+    body = "%PDF-1.4\n"
+    offsets = []
+    for n, obj in enumerate(objs, 1):
+        offsets.append(len(body.encode("latin-1")))
+        body += "%d 0 obj\n%s\nendobj\n" % (n, obj)
+    xref = len(body.encode("latin-1"))
+    body += "xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    body += "".join("%010d 00000 n \n" % o for o in offsets)
+    body += "trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, catalog, xref)
+    with open(os.path.join(out, path), "wb") as f:
+        f.write(body.encode("latin-1"))
+pdf("Midterm 2023.pdf", [
+    ["Midterm 2, 2023", "75 minutes. One page of notes and a calculator.", "", "Question 1 (10 marks)", "A sample of 36 bags has mean 1003 g and s = 12 g.", "(a) Find the standard error of the mean.", "(b) Is a mean of 1000 g plausible? Explain."],
+    ["Question 2 (12 marks)", "A 95% interval for a mean study time is 37.7 to 46.3 minutes.", "(a) Give the sample mean and the margin of error.", "(b) Say what 95% means here, in one sentence."],
+    ["Question 3 (14 marks)", "n = 25, x-bar = 53, s = 10. Test H0: mu = 50 against mu != 50.", "(a) Find t and its degrees of freedom.", "(b) The p-value is about 0.15. What do you conclude?", "(c) Name the error you could be making."],
+])
+pdf("Practice midterm #2.pdf", [
+    ["Practice midterm #2", "Untimed. Work from a blank page.", "", "1. A sample of 49 has s = 14. Find the standard error.", "2. Why does a larger sample give a narrower interval?"],
+    ["3. A test gives p = 0.03 at alpha = 0.05.", "What do you conclude, and what error could you be making?"],
+])
+pdf("Midterm 2023 key.pdf", [["Midterm 2, 2023: answer key", "1(a) 2 g. 1(b) Yes: 1000 is within 2 standard errors."]])
+PY
 
 cat > "$COURSE/Study/midterm-2/plan.md" <<EOF
 # Midterm 2: study plan
@@ -304,7 +255,7 @@ Drop order if time runs short: tests and intervals together.
 
 ## 14. Changes
 
-- $TODAY: plan built from the course notes for weeks 5 to 7.
+- $TODAY: plan built from the past papers.
 EOF
 
 # --- Two more folders for the library ----------------------------------------

@@ -135,11 +135,18 @@ try {
   // A workspace's page, its material and the paste sheet.
   await step(w, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(w, 800);
-  await shoot(w, "workspace", "Workspace: Intro Statistics");
-  await step(w, "open the first note", { op: "click", target: "Sampling distributions" });
+  await shoot(w, "workspace", "Workspace: Intro Statistics, its past papers and no other material");
+  // A note of the material: Linear Algebra has one.
+  await step(w, "back home for a note", { op: "click", target: "‹ Home" });
+  await step(w, "open Linear Algebra", { op: "click", target: "workspace-Linear Algebra", by: "drive" });
+  await settle(w, 800);
+  await step(w, "open its note", { op: "click", target: "Week 3 eigenvalues" });
   await settle(w, 1000);
   await shoot(w, "material", "A note of the material, opened from the workspace");
   await step(w, "close the note", { op: "key", key: "Escape" });
+  await step(w, "back to Home", { op: "click", target: "‹ Home" });
+  await step(w, "Intro Statistics again", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(w, 600);
   await step(w, "paste text", { op: "click", target: "Paste text…" });
   await settle(w);
   await shoot(w, "paste", "Paste text as material");
