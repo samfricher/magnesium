@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { mark, ready } from "./harness";
+import { harnessOn, mark, ready, setProbe } from "./harness";
 import { HomePage, mostRecent, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
@@ -47,6 +47,9 @@ type Saved = {
 
 const HOME: HomeTab = { key: "home", kind: "home" };
 const SETTINGS: SettingsTab = { key: "settings", kind: "settings" };
+
+/** A session not begun yet is named by its workspace: "Intro Statistics, new". */
+const newTitle = (name: string) => `${displayName(name)}, new`;
 
 let counter = 0;
 const newKey = () => `s${Date.now().toString(36)}${(counter++).toString(36)}`;
@@ -181,27 +184,28 @@ export function App() {
         note("Open a workspace first: a folder your course is in.");
         return;
       }
-      const name = now.current.workspaces?.find((each) => each.folder === where)?.name;
-      addSession({ folder: where, session: null, title: "New session", ...(pending ? { pending } : {}) });
-      if (!name) void loadWorkspaces();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [addSession, goWorkspace, note, loadWorkspaces],
-  );
-
-  const openSession = useCallback(
-    (folder: string, session: string, title: string, pending?: Pending) => {
-      const open = now.current.tabs.find((each) => each.kind === "session" && each.folder === folder && each.session === session);
-      if (open) {
-        activate(open.key);
-        if (pending?.kind === "continue") {
-          const handle = handles.current[open.key];
-          if (handle && !handle.state().open && !handle.busy()) void handle.start();
-        }
+      // A workspace has one session not begun at a time: New session goes to it.
+      const waiting = now.current.tabs.find((each) => each.kind === "session" && each.folder === where && each.session === null && !each.pending && !handles.current[each.key]?.state().live);
+      if (waiting) {
+        activate(waiting.key);
+        if (pending?.kind === "start") void handles.current[waiting.key]?.start();
         return;
       }
+      const name = now.current.workspaces?.find((each) => each.folder === where)?.name ?? where.split("/").pop() ?? "";
+      addSession({ folder: where, session: null, title: newTitle(name), ...(pending ? { pending } : {}) });
+      void loadWorkspaces();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activate, addSession, goWorkspace, note, loadWorkspaces],
+  );
+
+  /** A kept session, in its tab as it was left: its turns, its open task and the line in it. Nothing is sent. */
+  const openSession = useCallback(
+    (folder: string, session: string, title: string) => {
+      const open = now.current.tabs.find((each) => each.kind === "session" && each.folder === folder && each.session === session);
+      if (open) return activate(open.key);
       void now.current.api?.touchSession(folder, session).catch(() => {});
-      addSession({ folder, session, title, ...(pending ? { pending } : {}) });
+      addSession({ folder, session, title });
     },
     [activate, addSession],
   );
@@ -209,7 +213,7 @@ export function App() {
   const continueRecent = useCallback(() => {
     const list = now.current.workspaces ?? [];
     const recent = mostRecent(list);
-    if (recent?.latest) openSession(recent.folder, recent.latest.session, recent.latest.title ?? "", { kind: "continue" });
+    if (recent?.latest) openSession(recent.folder, recent.latest.session, recent.latest.title ?? "");
     else if (list[0]) newSession(list[0].folder, { kind: "start" });
   }, [openSession, newSession]);
 
@@ -564,7 +568,7 @@ export function App() {
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
-      tabs: tabs.map((tab) => ({ id: tab.key, title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || "New session" })),
+      tabs: tabs.map((tab) => ({ id: tab.key, title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "") })),
       disabled,
       titles: { plan: panel ? "Hide Plan" : "Show Plan", ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}) },
     };
@@ -655,6 +659,23 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // What the evidence harness may ask of the session in front: inert without it.
+  useEffect(() => {
+    setProbe({
+      session: () => {
+        const tab = now.current.tabs.find((each) => each.key === now.current.active);
+        return tab?.kind === "session" ? (handles.current[tab.key]?.probe() ?? null) : null;
+      },
+      attach: (paths) => {
+        if (!harnessOn()) return false;
+        const tab = now.current.tabs.find((each) => each.key === now.current.active);
+        const handle = tab?.kind === "session" ? handles.current[tab.key] : null;
+        handle?.drop(paths);
+        return Boolean(handle);
+      },
+    });
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Files dropped on the window: on a session they join its line; on a
   // workspace's page they are its material.
@@ -721,7 +742,7 @@ export function App() {
   const tabViews: TabView[] = tabs.map((tab) => ({
     key: tab.key,
     kind: tab.kind,
-    title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || "New session",
+    title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? ""),
     busy: tab.key === busyKey,
     folder: tab.kind === "session" ? tab.folder : null,
   }));
@@ -770,6 +791,7 @@ export function App() {
                   )
                 }
                 onPaste={(folder) => setOverlay({ kind: "paste", folder })}
+                onOpenMaterial={(folder, path) => setOverlay({ kind: "source", folder, source: { path, page: null } })}
                 onNote={note}
               />
             ) : (
@@ -779,7 +801,7 @@ export function App() {
                 step={step_}
                 focus={!covered && restored}
                 notes={notes}
-                onContinue={(folder, session, title) => openSession(folder, session, title, { kind: "continue" })}
+                onContinue={(folder, session, title) => openSession(folder, session, title)}
                 onStartIn={(folder) => newSession(folder, { kind: "start" })}
                 onWorkspace={(folder) => goWorkspace(folder)}
                 onPickFolder={() => void pickFolder()}

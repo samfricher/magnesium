@@ -22,7 +22,7 @@ export type Said = Intent | "help" | "opening";
  * the `marked` event; `change` is what the turn changed in the plan, read from
  * the plan after `plan_changed`.
  */
-export type LessonTurn = Turn & {
+export type LessonTurn = Omit<Turn, "posed"> & {
   pick?: boolean;
   said?: Said;
   marks?: Mark[];
@@ -86,8 +86,8 @@ export const emptySession: SessionState = {
 
 export type Action =
   | { type: "opened"; turns: Turn[] }
-  /** A session's saved turns, shown without its tutor running. */
-  | { type: "shown"; turns: Turn[] }
+  /** A session's saved turns, rebuilt with what each was, shown without its tutor running. */
+  | { type: "shown"; turns: LessonTurn[]; task?: { text: string | null } }
   | { type: "reopened" }
   /** The tutor's program is another session's now. */
   | { type: "released" }
@@ -101,6 +101,11 @@ export type Action =
   | { type: "failed"; error: string }
   | { type: "stopped" }
   | { type: "reset" };
+
+/** A kept turn as the lesson draws it, before anything is known of what it was. */
+export function plainTurn(turn: Turn): LessonTurn {
+  return { session: turn.session, ms: turn.ms, learner: turn.learner, tutor: turn.tutor, interrupted: turn.interrupted };
+}
 
 export function tutorText(live: Live): string {
   return [...live.done, live.streaming].filter((part) => part.trim() !== "").join("\n");
@@ -194,6 +199,7 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       return { ...state, live: { ...state.live, marks } };
     }
     case "plan_changed":
+    case "settled":
       return state;
     case "open_task": {
       const task = { text: event.task };
@@ -207,7 +213,7 @@ export function reduce(state: SessionState, action: Action): SessionState {
   switch (action.type) {
     case "opened": {
       // A resumed lesson opens on its last exchange, with the rest folded.
-      const turns = action.turns;
+      const turns = action.turns.map(plainTurn);
       const last = turns.length > 0 ? turns[turns.length - 1] : null;
       return {
         ...state,
@@ -227,8 +233,19 @@ export function reduce(state: SessionState, action: Action): SessionState {
         open: false,
         earlier: turns.slice(0, -1),
         cards: [],
+        ...(action.task ? { task: action.task } : {}),
         live: last
-          ? { ...blankLive(last.learner, last.ms, "idle"), done: last.tutor ? [last.tutor] : [], interrupted: last.interrupted }
+          ? {
+              ...blankLive(last.learner, last.ms, "idle"),
+              done: last.tutor ? [last.tutor] : [],
+              interrupted: last.interrupted,
+              ...(last.said ? { said: last.said } : {}),
+              ...(last.marks ? { marks: last.marks } : {}),
+              ...(last.change ? { change: last.change } : {}),
+              ...(last.posed ? { posed: last.posed } : {}),
+              ...(last.question ? { question: last.question } : {}),
+              ...(last.unmarked ? { unmarked: last.unmarked } : {}),
+            }
           : null,
       };
     }

@@ -377,6 +377,28 @@ export function flushPlaces(): void {
   if (places) writeJson(PLACE, places);
 }
 
+// ---------------------------------------------------------------------------
+// What the plan's reading said changed after a turn, so a reopened session
+// shows its plan card again. It is the window's own reading of the plan,
+// before and after, never the tutor's words; kept for the last 300 turns.
+
+const CHANGES = "mg.changes";
+
+/** The key of a turn's change: its session, the learner's words and the start of the reply. */
+const changeKey = (session: string, learner: string, tutor: string) => `${session}\u241f${learner.trim()}\u241f${tutor.replace(/\s+/g, " ").trim().slice(0, 80)}`;
+
+export function keepChange(session: string, learner: string, tutor: string, change: unknown): void {
+  const all = readJson<Record<string, { at: number; change: unknown }>>(CHANGES) ?? {};
+  all[changeKey(session, learner, tutor)] = { at: Date.now(), change };
+  const keys = Object.keys(all);
+  if (keys.length > 300) for (const old of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - 300)) delete all[old];
+  writeJson(CHANGES, all);
+}
+
+export function changeOf(session: string, learner: string, tutor: string): unknown {
+  return readJson<Record<string, { at: number; change: unknown }>>(CHANGES)?.[changeKey(session, learner, tutor)]?.change ?? null;
+}
+
 /**
  * The runtime starts a new sitting after three hours without a message. The
  * window reopens on the session it was left on only within that time;

@@ -62,7 +62,23 @@ export type Card = {
  */
 export type Activity = { today: string; days: string[]; run: number; studied_today: boolean };
 
-export type Turn = { session: string; ms: number; learner: string; tutor: string; interrupted: boolean };
+/**
+ * A kept turn. `intent` is how the learner's words were sent (none for the
+ * window's own words, help, or an earlier window's turn). When `noted`, the
+ * engine said which task was open after it (`task`, none when none was) and
+ * whether its reply posed it (`posed`).
+ */
+export type Turn = {
+  session: string;
+  ms: number;
+  learner: string;
+  tutor: string;
+  interrupted: boolean;
+  intent?: Intent | null;
+  task?: string | null;
+  posed?: boolean;
+  noted?: boolean;
+};
 
 /**
  * One of a folder's sessions: a conversation the window kept turns of.
@@ -245,7 +261,9 @@ export type AgentEvent =
    * when this turn's reply asked for it. Sent by an engine that knows its
    * open task (Magnesium's). The window puts the field for an answer inside it.
    */
-  | { type: "open_task"; task: string | null; posed: boolean };
+  | { type: "open_task"; task: string | null; posed: boolean }
+  /** The record has been read for the last message: any mark it has for it was sent before this. */
+  | { type: "settled" };
 
 export type Words = { shown: string; sent: string };
 

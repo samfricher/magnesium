@@ -14,10 +14,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
-import { keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
+import { changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
-import type { AgentEvent, Answer, Core, Decision, Home, Plan, Setup, Turn as SavedTurn } from "../types";
+import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
 import { displayName, firstWords, markWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
 import { Cards, Notices, Turn, Working } from "./Conversation";
@@ -27,8 +27,6 @@ import { Line } from "./Rich";
 
 /** What a session tab starts with, once, when it is opened. */
 export type Pending =
-  /** Carry on where the learner stopped: the window's opening words. */
-  | { kind: "continue" }
   /** Start the plan's next thing, in a session not yet begun. */
   | { kind: "start" }
   /** Ask the tutor to mark a paper that was handed in. */
@@ -53,6 +51,8 @@ export type SessionHandle = {
   start: (words?: string) => Promise<boolean>;
   taskOpen: () => boolean;
   busy: () => boolean;
+  /** Where the learner is, for the evidence harness: the phase, the line's place, the open task. */
+  probe: () => { phase: string; line: "task" | "talk"; held: boolean; task: string | null; open: boolean; busy: boolean };
 };
 
 type Props = {
@@ -89,12 +89,6 @@ export function setupReady(setup: Setup | null): boolean {
   if (!setup) return false;
   const runtime = setup.runtime.state === "ready" || setup.runtime.state === "kept";
   return runtime && setup.account.installed && setup.account.signed_in;
-}
-
-/** The turns of a sitting, from the last time the window's opening words were sent. */
-function sittingStartOf(turns: SavedTurn[]): number {
-  for (let i = turns.length - 1; i >= 0; i--) if (opening(turns[i].learner)) return i;
-  return 0;
 }
 
 /**
@@ -137,13 +131,59 @@ export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask
  * Why the record kept no mark for an answer, in the record's terms. Only a
  * first try at a task is marked, so a second answer to the same task is not.
  */
-function unmarkedWhy(session: SessionState, since: number): string | null {
+function unmarkedWhy(session: SessionState, since: number): string {
   const turns = [...session.earlier, ...(session.live ? [session.live] : [])] as { since?: number; ms?: number; said?: Said; question?: string; learner: string }[];
   const at = turns.findIndex((turn) => (turn.since ?? turn.ms) === since);
-  const question = at >= 0 ? turns[at].question : undefined;
-  const earlier = question !== undefined && turns.slice(0, Math.max(0, at)).some((turn) => turn.said === "answer" && turn.question === question);
-  // Another try is not a first try, and only a first try is marked: nothing to say.
-  return earlier ? null : "The record kept no mark for this answer. The workspace page lists what it holds.";
+  return whyUnmarked(turns.slice(0, Math.max(0, at)), at >= 0 ? turns[at].question : undefined);
+}
+
+/** Why the record kept no mark for an answer to `question`, after the turns before it: the same line for the same case, every time. */
+function whyUnmarked(before: { said?: Said; question?: string }[], question: string | undefined): string {
+  const again = question !== undefined && before.some((turn) => turn.said === "answer" && turn.question === question);
+  return again ? "Only a first try at a task is marked; this was another try." : "The record kept no mark for this answer. The workspace page lists what it holds.";
+}
+
+/** "2026-11-12 21:01" for a moment, as the record writes when an answer was given. */
+function minuteOf(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * A session's kept turns as the lesson draws them: how each message was
+ * sent, the task it answered, the task a reply posed, the record's marks
+ * (rows of `marks()` whose time falls between the turn before and this one,
+ * one turn each), "no mark" for an answer the record has none for, and the
+ * plan card the window read after a turn. Nothing is read from the tutor's
+ * words.
+ */
+export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: string | null): LessonTurn[] {
+  const free = [...(marks ?? [])].filter((mark) => !mark.paper);
+  const out: LessonTurn[] = [];
+  let open: string | null = null;
+  saved.forEach((turn, at) => {
+    const said: Said | undefined = turn.intent ?? (opening(turn.learner) ? "opening" : isHelp(turn.learner) ? "help" : undefined);
+    const lesson: LessonTurn = { session: turn.session, ms: turn.ms, learner: turn.learner, tutor: turn.tutor, interrupted: turn.interrupted, ...(said ? { said } : {}) };
+    if (said === "answer" && open) lesson.question = open;
+    if (turn.noted && turn.posed && turn.task) lesson.posed = turn.task;
+    if (said === "answer" || said === "help" || said === undefined) {
+      const from = at > 0 ? minuteOf(saved[at - 1].ms) : "";
+      const to = minuteOf(turn.ms);
+      const mine = free.filter((mark) => mark.at >= from && mark.at <= to);
+      if (mine.length > 0) {
+        lesson.marks = mine;
+        for (const mark of mine) free.splice(free.indexOf(mark), 1);
+      } else if (said === "answer" && marks !== null) {
+        lesson.unmarked = whyUnmarked(out, lesson.question);
+      }
+    }
+    const change = session ? changeOf(session, turn.learner, turn.tutor) : null;
+    if (change) lesson.change = change as PlanDiff;
+    if (turn.noted) open = turn.task ?? null;
+    out.push(lesson);
+  });
+  return out;
 }
 
 /** The task's own words in a reply: from its bold opening word to the end. */
@@ -233,10 +273,17 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [painted, setPainted] = useState(false);
   // The lesson's heading has scrolled away: the top edge names the lesson and its step.
   const [headGone, setHeadGone] = useState(false);
+  // Scrolled from the top: only then does the top edge fade what passes under the tabs.
+  const [scrolled, setScrolled] = useState(false);
   // What the first question from earlier is about, and the day it was last answered, from the record.
   const [dueTopic, setDueTopic] = useState<string | null>(null);
   // The record's latest fact (a mark, a change to the plan, no mark), kept in view at the foot until the next message.
-  const [fact, setFact] = useState<{ kind: "mark" | "plan" | "none"; text: string; title?: string } | null>(null);
+  const [fact, setFact] = useState<{ kind: "mark" | "plan" | "none"; text: string; title?: string; since: number } | null>(null);
+  // The fact's own line is in view: the foot does not repeat it.
+  const [factSeen, setFactSeen] = useState(true);
+  // This session's engine says which task is open (Magnesium's does): the
+  // line follows what it says, not a guess from the reply's words.
+  const engineTells = useRef(false);
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -318,16 +365,19 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       setDraft(kept.draft);
       setAnswerDraft(kept.answerDraft);
       if (tab.session) {
-        const turns = await api.lessonTurns(folder, tab.session).catch(() => [] as SavedTurn[]);
+        const [saved, marks] = await Promise.all([api.lessonTurns(folder, tab.session).catch(() => [] as SavedTurn[]), api.marks(folder).catch(() => null)]);
         if (!alive) return;
-        dispatch({ type: "shown", turns });
-        // The task that was open is the open task again, with the line in it if it was there.
-        if (kept.task) dispatch({ type: "event", event: { type: "open_task", task: kept.task, posed: false } });
-        if (turns.length > 0) settled.current = turns[turns.length - 1].ms;
-        setSittingStart(sittingStartOf(turns));
+        // The open task: what the engine said after the last turn it noted, else the one kept with the place.
+        const noted = [...saved].reverse().find((turn) => turn.noted);
+        if (noted) engineTells.current = true;
+        const open = noted ? (noted.task ?? null) : kept.task;
+        dispatch({ type: "shown", turns: rebuild(saved, marks, tab.session), ...(noted || kept.task ? { task: { text: open } } : {}) });
+        if (saved.length > 0) settled.current = saved[saved.length - 1].ms;
+        setSittingStart(0);
         if (!tab.title && opened?.last?.goal) setSittingTitle(opened.last.goal);
-        setLineState(kept.line);
-        restoring.current = kept.fromFoot;
+        // As it was left: the line where it was, else in the open task.
+        setLineState(kept.seenMs > 0 ? kept.line : open ? "task" : "talk");
+        restoring.current = kept.seenMs > 0 ? kept.fromFoot : 0;
         setPhase("lesson");
       } else {
         // The next thing is drawn at once; with no lesson to carry on, it waits for the plan's next item.
@@ -356,27 +406,29 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (event.type === "turn_started") props.onBusy(props.tab.key, true);
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
-    if (event.type === "marked") setFact({ kind: "mark", text: markWords(event.mark) });
+    if (event.type === "marked") {
+      const since = now.current.session.live?.since ?? 0;
+      setFact({ kind: "mark", text: markWords(event.mark), since });
+    }
     // The engine says which task is open: a task the reply just posed takes
     // the learner's line; after help with it, the line goes back in; after
     // anything else it is on the conversation's line.
     if (event.type === "open_task" && now.current.phase === "lesson") {
+      engineTells.current = true;
       const live = now.current.session.live;
       const reply = live ? tutorText(live) : "";
       if (event.task && (event.posed || poses(reply, event.task))) setLine("task");
       // After help with it, or when a lesson opens with it still open, the task is the live one.
       else if (event.task && (live?.said === "help" || live?.said === "opening")) setLine("task");
       else setLine("talk");
-      // An answer the record kept no mark for says why, once the record has had its moment.
-      if (live && live.said === "answer") {
-        const since = live.since;
-        window.setTimeout(() => {
-          const reason = unmarkedWhy(now.current.session, since);
-          if (!reason) return;
-          dispatch({ type: "unmarked", since, reason });
-          const turn = now.current.session.live;
-          if (turn && turn.since === since && (turn.marks ?? []).length === 0) setFact({ kind: "none", text: "no mark", title: reason });
-        }, 1800);
+    }
+    // The record has been read for the last message: an answer it kept no mark for says so, the same way every time.
+    if (event.type === "settled") {
+      const live = now.current.session.live;
+      if (live && live.said === "answer" && (live.marks ?? []).length === 0 && !live.interrupted) {
+        const reason = unmarkedWhy(now.current.session, live.since);
+        dispatch({ type: "unmarked", since: live.since, reason });
+        setFact({ kind: "none", text: "no mark", title: reason, since: live.since });
       }
     }
     if (event.type === "plan_changed") {
@@ -386,8 +438,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         const diff = planDiff(was, fresh);
         if (diff.changes.length === 0) return;
         dispatch({ type: "planned", change: diff });
+        const live = now.current.session.live;
+        const sessionId = now.current.props.tab.session;
+        // Kept with the turn, so a reopened session shows its plan card again.
+        if (live && sessionId) keepChange(sessionId, live.learner, tutorText(live), { ...(live.change ?? {}), ...diff, changes: [...(live.change?.changes ?? []), ...diff.changes] });
         const moved = diff.changes.filter((each) => !each.route);
-        if (moved.length > 0) setFact({ kind: "plan", text: `The plan changed: ${moved.map((each) => `${each.what}, ${each.detail}`).join("; ")}.` });
+        if (moved.length > 0) setFact({ kind: "plan", text: `The plan changed: ${moved.map((each) => `${each.what}, ${each.detail}`).join("; ")}.`, since: live?.since ?? 0 });
         setChanged((old) => ({
           changes: [...(old?.changes ?? []), ...diff.changes],
           moved: { ...(old?.moved ?? {}), ...diff.moved },
@@ -402,7 +458,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // onto the conversation's line.
   useEffect(() => {
     const live = session.live;
-    if (!live || live.status !== "idle" || settled.current === live.since || phase !== "lesson" || session.task !== undefined) return;
+    // An engine that says which task is open places the line itself; this effect can run after it did, from an earlier render.
+    if (!live || live.status !== "idle" || settled.current === live.since || phase !== "lesson" || session.task !== undefined || engineTells.current) return;
     settled.current = live.since;
     const reply = tutorText(live);
     if (reply === "" && !live.error) return;
@@ -437,8 +494,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     props.claim(props.tab.key);
     try {
       const opened = await api.openSession(resume, { folder, session: resume ? props.tab.session : null, title });
-      dispatch({ type: "opened", turns: opened.turns });
-      setSittingStart(opened.turns.length);
+      // A session continued keeps its kept turns under its heading, as they were drawn.
+      if (!resume) dispatch({ type: "opened", turns: opened.turns });
+      else dispatch({ type: "reopened" });
+      setSittingStart(0);
       dispatch({ type: "sent", shown, now: Date.now(), said });
       setLineState("talk");
       await send(api);
@@ -540,7 +599,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!pending || started.current || phase === "loading") return;
     started.current = true;
     props.onStarted(tab.key);
-    if (pending.kind === "continue" || pending.kind === "start") void start();
+    if (pending.kind === "start") void start();
     else if (pending.kind === "paper") void begin(true, pending.shown, "talk", sittingTitle || "The paper", (api) => api.sendShown(pending.shown, pending.sent));
     // Runs once the tab has read its folder.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -630,6 +689,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     start: (words) => start(words),
     taskOpen: () => now.current.task !== null,
     busy: () => isBusyNow(now.current.session),
+    probe: () => {
+      const { phase, line, task, session } = now.current;
+      return { phase, line, held: phase === "lesson" && line === "task" && task !== null, task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
+    },
   };
   const handleRef = useRef(handle);
   handleRef.current = handle;
@@ -646,6 +709,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       start: (w) => handleRef.current.start(w),
       taskOpen: () => handleRef.current.taskOpen(),
       busy: () => handleRef.current.busy(),
+      probe: () => handleRef.current.probe(),
     };
     props.register(tab.key, stable);
     return () => props.register(tab.key, null);
@@ -693,12 +757,27 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (phase !== "loading" && props.active && !painted) requestAnimationFrame(() => setPainted(true));
   }, [phase, props.active, painted]);
 
+  // Whether the fact's own line (under the answer, or the plan card) is in view.
+  useEffect(() => {
+    const root = surface.current;
+    if (!fact || !root) return;
+    const own = root.querySelector<HTMLElement>(`article[data-ms="${fact.since}"] .record`);
+    if (!own) {
+      setFactSeen(false);
+      return;
+    }
+    const watch = new IntersectionObserver((entries) => setFactSeen(entries.some((entry) => entry.isIntersecting)), { root, threshold: 0.5 });
+    watch.observe(own);
+    return () => watch.disconnect();
+  }, [fact, session]);
+
   const onScroll = () => {
     const el = surface.current;
     if (!el || now.current.phase !== "lesson") return;
     const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
+    setScrolled(el.scrollTop > 4);
     stuck.current = fromFoot < 48;
     keepPlace(now.current.place, { fromFoot: Math.round(fromFoot) });
   };
@@ -807,17 +886,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   );
   const onSource = useCallback((source: SourceRef) => now.current.props.onSource(folder, source), [folder]);
   const stopReply = useCallback(() => interrupt(), [interrupt]);
-  // A session not running, with nothing on its line: Return carries on where the learner stopped.
-  const carryOn = useCallback(() => {
-    const { session, phase } = now.current;
-    if (phase === "lesson" && !session.open && !isBusyNow(session)) void startRef.current();
-  }, []);
-
-  const shownBefore: LessonTurn[] = phase === "lesson" ? turns.slice(Math.max(0, sittingStart - 30), sittingStart) : [];
-  const sittingTurns = phase === "lesson" ? turns.slice(sittingStart) : [];
+  // The whole session sits under its heading; a very long one shows its last 150 turns.
+  const shownFrom = Math.max(sittingStart, turns.length - 150);
+  const sittingTurns = phase === "lesson" ? turns.slice(shownFrom) : [];
   const stopKey = keyName(props.prefs.keys["stop-reply"]) || "esc";
   const paused = props.covered || !props.active || session.cards.length > 0;
-  const lineEnd = task && !held ? { keys: "↑", what: "answer" } : !session.open && phase === "lesson" && !isBusy ? { keys: "↩", what: "carry on" } : null;
+  const lineEnd = task && !held ? { keys: "↑", what: "answer" } : null;
+  // The record's latest fact is said once, beside what it marks. The foot repeats it only while that line is out of view, and never under an open task.
+  const footFact = fact && task === null && !factSeen ? fact : null;
 
   return (
     <div
@@ -830,9 +906,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       aria-labelledby={tabId(tab.key)}
       aria-hidden={props.active ? undefined : true}
     >
-      {phase === "lesson" && (
-        // A fixed top edge: text fades out under the tabs, and once the heading has
-        // scrolled away, the lesson's name and its step are said here, in the window's quiet voice.
+      {phase === "lesson" && scrolled && (
+        // A top edge once the lesson is scrolled: text fades out under the tabs, and once the heading
+        // has scrolled away, the lesson's name and its step are said here, in the window's quiet voice.
+        // At the top of the lesson there is none, so the course's name above the heading reads whole.
         <div className="top-edge" aria-hidden={!headGone}>
           {headGone && (
             <div className="inner">
@@ -844,25 +921,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       )}
       <main className="surface" ref={surface} onScroll={onScroll}>
         <div className="column">
-          {painted && shownBefore.length > 0 && (
-            <div className="before" aria-label="Earlier in this conversation">
-              {shownBefore.map((turn, at) => (
-                <Turn
-                  key={`b${turn.ms}-${at}`}
-                  turn={turn}
-                  open={false}
-                  held={false}
-                  linksOpen
-                  writing={false}
-                  divider={at > 0 && opening(turn.learner) !== null}
-                  showQuestion={at === 0 || !(shownBefore[at - 1].posed === turn.question || hasTask(shownBefore[at - 1].tutor))}
-                  onSource={onSource}
-                  onNote={note}
-                  onHold={onHold}
-                />
-              ))}
-            </div>
-          )}
           <section className={`now ${phase}`} ref={nowRef}>
             {phase === "loading" ? null : rest ? (
               <>
@@ -938,8 +996,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     <Line text={sittingTitle} />
                   </h1>
                 </header>
+                {shownFrom > 0 && <p className="record quiet earlier-note">Earlier turns of this session are kept, and not drawn here.</p>}
                 {sittingTurns.map((turn, at) => {
-                  const index = sittingStart + at;
+                  const index = shownFrom + at;
                   const live = index === turns.length - 1 && session.live !== null;
                   const before = index > 0 ? turns[index - 1] : null;
                   return (
@@ -950,7 +1009,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       held={index === openAt && held}
                       linksOpen={index !== openAt}
                       writing={live && session.live!.status !== "idle"}
-                      divider={false}
+                      divider={at > 0 && (turn.said === "opening" || opening(turn.learner) !== null)}
                       task={index === openAt ? task?.text : undefined}
                       showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor) || (turn.question !== undefined && poses(before.tutor, turn.question)))}
                       settled={index < turns.length - 1}
@@ -1010,12 +1069,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         onPick={onPick}
                         onHelp={askHelp}
                         onStop={ownBusy ? stopReply : undefined}
-                        onEmptyReturn={!session.open ? carryOn : undefined}
                       />
                     </div>
-                    {fact && (
-                      <p className={`fact ${fact.kind}`} title={fact.title} data-role="fact">
-                        {fact.text}
+                    {footFact && (
+                      <p className={`fact ${footFact.kind}`} title={footFact.title} data-role="fact">
+                        {footFact.text}
                       </p>
                     )}
                   </div>

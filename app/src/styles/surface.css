@@ -151,7 +151,8 @@ button {
    conversation left is above it, out of view, until it is scrolled to. */
 .now {
   min-height: calc(100vh - var(--tabs-h));
-  padding: calc(56px - var(--tabs-h)) 0 0;
+  /* Room under the tab bar for the course's name over the heading. */
+  padding: var(--head-room) 0 0;
   transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .now.rest { padding-top: 30vh; }
@@ -618,7 +619,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 @media (max-width: 760px) {
   :root { --hang: 16px; }
-  .now { padding-top: calc(48px - var(--tabs-h)); }
+  .now { padding-top: calc(var(--head-room) - 6px); }
   .now.rest { padding-top: 24vh; }
 }
 
