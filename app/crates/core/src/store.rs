@@ -141,6 +141,10 @@ pub struct Turn {
     pub task: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub posed: bool,
+    /// The engine said which task was open after this turn (`task` none
+    /// means none was). False for an engine that does not say.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub noted: bool,
 }
 
 /// What the engine said of a turn's task, kept beside the turn.
@@ -518,6 +522,7 @@ impl Store {
                 if let Some(note) = by_ms.get(&turn.ms) {
                     turn.task.clone_from(&note.task);
                     turn.posed = note.posed;
+                    turn.noted = true;
                 }
             }
         }
@@ -572,7 +577,7 @@ mod tests {
         assert_eq!(turns[0].tutor, "hello");
         assert_eq!(turns[0].intent, Some(Intent::Answer));
         assert_eq!(turns[0].task.as_deref(), Some("What is b?"));
-        assert!(turns[0].posed);
+        assert!(turns[0].posed && turns[0].noted);
     }
 
     #[test]
