@@ -1,4 +1,4 @@
-// Photograph the surface with the demo's made-up data, in both schemes. Uses
+// Photograph the window with the demo's made-up data, in both schemes. Uses
 // the Chrome already on this computer, with no window. Each address drives the
 // demo to its state; the page says when it is there (data-shot="ready").
 //
@@ -6,7 +6,12 @@
 //   npm run shots -- s3      only the states whose name contains "s3"
 //
 // The names follow the evidence contract: <stem>-dark.png and <stem>-light.png
-// at 1040 x 720, and narrow-lesson-dark.png at 720 x 560.
+// at 1040 x 720, and narrow-lesson-dark.png at 720 x 560. Then the combined
+// window's own screens: Home, a workspace, Settings, the plan beside the
+// lesson shown and hidden, a file on the line, the tabs and ⌘K.
+//
+// These are photographs in Chrome. What only the Mac's WebKit draws (the
+// colour wells, the range sliders, the menu bar) is checked in the real window.
 
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright-core";
@@ -18,6 +23,7 @@ const only = process.argv[2];
 const WIDE = { width: 1040, height: 720 };
 const BOTH = ["dark", "light"];
 const shots = [
+  // The five scenarios. The cold open is Home now.
   ["s1-cold", "s1-cold", 300],
   ["s1-cold-first", "s1-cold-first", 300],
   ["s2-start", "s2-start", 400],
@@ -29,19 +35,28 @@ const shots = [
   ["s5-week", "s5-week", 300],
   ["s5-week-next", "s5-week-next", 400],
   ["narrow-lesson", "narrow-lesson", 400, { width: 720, height: 560 }],
+  // Home, Workspace, Session, Settings.
+  ["workspace", "workspace", 400],
+  ["new-session", "new-session", 400],
+  ["new-session-start", "new-session-start", 400],
+  ["session-earlier", "session-earlier", 400],
   ["settings", "settings", 300],
-  // The rest of the window.
-  ["plan", "plan", 300],
+  ["settings-keys", "settings-keys", 300],
+  // The plan beside the lesson: shown, and shown after the tutor changed it.
+  ["panel", "panel", 400],
+  ["panel-changed", "panel-changed", 500],
+  ["panel-narrow", "panel", 400, { width: 720, height: 560 }],
+  // The line: help under the answer, symbols, a file on the line.
+  ["help-row", "help-row", 300],
+  ["symbols", "symbols", 300],
+  ["attach", "attach", 400],
+  // Tabs, ⌘K and the rest.
+  ["tabs", "tabs", 500],
   ["commands", "commands", 300],
-  ["courses", "courses", 500],
-  ["material", "material", 400],
-  ["work", "work", 400],
-  ["help", "help", 300],
+  ["switch", "switch", 300],
   ["source", "source", 1200],
-  ["reopen", "reopen", 400],
   ["working", "working", 700],
   ["permission", "permission", 500],
-  ["new-course", "new-course", 400],
   ["paper", "paper", 300],
   ["upgrade", "upgrade", 300],
   ["setup-signed-out", "setup-signed-out", 300],

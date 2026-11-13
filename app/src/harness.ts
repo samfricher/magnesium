@@ -27,7 +27,17 @@
 //   transcript              every message sent (with its intent), every
 //                           reply, and every marked and plan_changed, so far
 //   ready                   whether ready() was called, and the startup time
+//   errors                  what went wrong on the page so far
+//   menu                    the macOS menu bar as data: each menu's title, and
+//                           each item's title, id, enabled state and key
+//   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
+//                           a click does: the same handler, the same event
 //   quit
+//
+// The names a harness clicks by (data-drive): "start" (Home's first row),
+// "composer", "answer" and "talk" (the session's line), "home", "new-session",
+// "settings", "plan-toggle", "attach", "tab-<n>" (the n-th tab, from 1),
+// "hint", "lost", "dont-know", "photo", "symbols" (under the answer line).
 
 import { core, isDemo } from "./bridge";
 import type { AgentEvent, Intent } from "./types";
@@ -335,7 +345,7 @@ let deltas = 0;
 let turnsEnded = 0;
 
 type Entry =
-  | { at: string; kind: "send" | "new_lesson" | "shown"; text: string; intent: Intent | null; sent?: string }
+  | { at: string; kind: "send" | "new_lesson" | "shown"; text: string; intent: Intent | null; sent?: string; from?: string }
   | { at: string; kind: "reply"; text: string; ok: boolean; interrupted: boolean; error: string | null }
   | { at: string; kind: "marked"; mark: unknown }
   | { at: string; kind: "plan_changed"; what: string[] }
@@ -389,7 +399,7 @@ async function listen(): Promise<void> {
     return send(text, intent);
   };
   c.sendNewLesson = (goal: string) => {
-    transcript.push({ at: new Date().toISOString(), kind: "new_lesson", text: goal, intent: null });
+    transcript.push({ at: new Date().toISOString(), kind: "new_lesson", text: goal, intent: null, from: new Error().stack?.split("\n").slice(1, 9).join(" | ") });
     return sendNewLesson(goal);
   };
   c.sendShown = (shown: string, sent: string) => {
@@ -500,6 +510,25 @@ async function run(op: Op): Promise<Result> {
     }
     case "ready":
       return { ok: true, ready: readyCalled, startup_ms: perfResult.startup_ms };
+    case "errors":
+      return { ok: true, errors: [...(window.__mgErrors ?? [])] };
+    case "menu":
+      try {
+        return { ok: true, menu: await invoke<unknown>("harness_menu") };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    case "menu_click": {
+      const path = Array.isArray(op.path) ? op.path.map(String) : [];
+      try {
+        const id = await invoke<string>("harness_menu_click", { path });
+        // The page has the menu's event before the answer goes back.
+        await nextPaint();
+        return { ok: true, id };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
     default:
       return { ok: false, error: `no such op: ${op.op}` };
   }

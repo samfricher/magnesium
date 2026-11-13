@@ -315,6 +315,7 @@ for (const { heading, entries } of transcripts) {
   }
 }
 writeFileSync(join(out, "transcript.md"), lines.join("\n"));
+writeFileSync(join(out, "transcript.json"), JSON.stringify(transcripts, null, 2));
 run.finished = new Date().toISOString();
 save();
 console.log(run.problems.length === 0 ? `scenarios: done, in ${out}` : `scenarios: ${run.problems.length} problem(s); see ${join(out, "run.json")}`);

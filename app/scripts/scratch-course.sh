@@ -95,6 +95,16 @@ if os.path.isfile(state_file):
         paper = folder.get("paper")
         if isinstance(paper, dict) and isinstance(paper.get("started_ms"), int):
             paper["started_ms"] = earlier(paper["started_ms"]); moved += 1
+        # When the folder and each of its sessions was last opened.
+        if isinstance(folder.get("opened_ms"), int):
+            folder["opened_ms"] = earlier(folder["opened_ms"]); moved += 1
+        for note in (folder.get("sessions") or {}).values():
+            if isinstance(note, dict) and isinstance(note.get("opened_ms"), int):
+                note["opened_ms"] = earlier(note["opened_ms"]); moved += 1
+    # When the window last saw its tabs.
+    layout = state.get("window")
+    if isinstance(layout, dict) and isinstance(layout.get("seen_ms"), int):
+        layout["seen_ms"] = earlier(layout["seen_ms"]); moved += 1
     days_seen = state.get("days")
     if isinstance(days_seen, dict):
         state["days"] = {
