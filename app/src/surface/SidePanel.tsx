@@ -128,6 +128,14 @@ export const SidePanel = memo(function SidePanel(props: Props) {
     };
   });
   const close = (path: string) => onDocs(withClosed(docs, path));
+  const share = async (path: string, from: Element) => {
+    const box = from.getBoundingClientRect();
+    try {
+      await (await core()).shareFile(path, props.folder, { x: box.x, y: box.y, width: box.width, height: box.height });
+    } catch (problem) {
+      props.onNote(String(problem));
+    }
+  };
   const isPdf = shown !== null && kind.pages !== null;
 
   return (
@@ -194,12 +202,18 @@ export const SidePanel = memo(function SidePanel(props: Props) {
           </button>
         </div>
         <div className="side-tools">
+          {shown && !kind.refused && (
+            // The file itself to the Mac's share sheet, AirDrop first: an answer key never gets this far.
+            <button type="button" className="bar-act" title="Share the document: AirDrop, Mail and the rest" data-drive="share-document" onClick={(event) => void share(shown.path, event.currentTarget)}>
+              Share…
+            </button>
+          )}
           {isPdf && (
             <span className="side-zoom" role="group" aria-label="Zoom">
               <button type="button" className="bar-act" aria-label="Zoom out" title="Zoom out" data-drive="zoom-out" onClick={() => view.current?.zoom(-1)}>
                 −
               </button>
-              <button type="button" className="bar-act zoom-now" title={shown?.zoom === "fit" ? "The text as wide as the panel" : "Back to the text as wide as the panel"} aria-label="Fit the text to the panel" data-drive="zoom-fit" onClick={() => view.current?.zoom(0)}>
+              <button type="button" className="bar-act zoom-now" title={shown?.zoom === "fit" ? "As wide as the panel" : "Back to as wide as the panel"} aria-label="Fit to the panel" data-drive="zoom-fit" onClick={() => view.current?.zoom(0)}>
                 {`${Math.round((kind.zoom ?? 1) * 100)}%`}
               </button>
               <button type="button" className="bar-act" aria-label="Zoom in" title="Zoom in" data-drive="zoom-in" onClick={() => view.current?.zoom(1)}>

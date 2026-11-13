@@ -32,21 +32,73 @@ type Props = {
 // 100% is a page at its printed size: a PDF point is 1/72 inch, a CSS pixel 1/96.
 const CSS_PER_POINT = 96 / 72;
 const PAD = 16;
-// Room kept either side of the text when the page is fitted to its text, in points.
-const TEXT_MARGIN = 14;
+// Room kept either side of what is drawn when a page is fitted to it, in points.
+const INK_MARGIN = 10;
+// Pages read for where they are drawn: every page of a paper or a deck; a long book's first pages, then the
+// words of the rest.
+const INK_PAGES = 60;
+// The small scale a page is drawn at to find its ink, and what counts as ink: anything not near white.
+const INK_SCALE = 0.5;
+const INK_BELOW = 235;
 // A drag of the panel's edge or a zoom redraws once it has settled, not at every pixel.
 const SETTLE_MS = 180;
 
 type Size = { width: number; height: number };
-/** Where the text sits across a page, in points from the page's left edge: what "fit" fits. */
-type TextBox = { left: number; right: number };
+/** Where anything is drawn across the pages, in points from a page's left edge: what "fit" fits. */
+type Across = { left: number; right: number };
+type PdfPage = Awaited<ReturnType<Pdf["getPage"]>>;
+
+/** Where a page draws anything across its width: the page drawn small, and read for ink. Null for a blank page. */
+async function inkAcross(page: PdfPage): Promise<Across | null> {
+  const view = page.getViewport({ scale: INK_SCALE });
+  const canvas = document.createElement("canvas");
+  const w = (canvas.width = Math.max(1, Math.ceil(view.width)));
+  const h = (canvas.height = Math.max(1, Math.ceil(view.height)));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  try {
+    await (page.render({ canvasContext: context, viewport: view }) as unknown as RenderTask).promise;
+    const data = context.getImageData(0, 0, w, h).data;
+    const ink = (x: number) => {
+      for (let y = 0; y < h; y++) {
+        const i = (y * w + x) * 4;
+        if (data[i] < INK_BELOW || data[i + 1] < INK_BELOW || data[i + 2] < INK_BELOW) return true;
+      }
+      return false;
+    };
+    let left = 0;
+    while (left < w && !ink(left)) left++;
+    if (left === w) return null;
+    let right = w - 1;
+    while (right > left && !ink(right)) right--;
+    return { left: left / INK_SCALE, right: (right + 1) / INK_SCALE };
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
+/** Where a page's words sit across it, for a page not drawn small to be read. */
+async function wordsAcross(page: PdfPage): Promise<Across | null> {
+  const content = await page.getTextContent().catch(() => null);
+  const x0 = page.view[0] ?? 0;
+  let left = Infinity;
+  let right = -Infinity;
+  for (const item of content?.items ?? []) {
+    if (!("str" in item) || item.str.trim() === "") continue;
+    const x = item.transform[4] - x0;
+    left = Math.min(left, x);
+    right = Math.max(right, x + item.width);
+  }
+  return Number.isFinite(left) ? { left, right } : null;
+}
 type RenderTask = { cancel: () => void; promise: Promise<unknown> };
 type Drawn = { scale: number; task: RenderTask | null; layer: { cancel: () => void } | null; done: boolean };
 
 const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf, doc, goTo, onPlace, onNote, onKind }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState<Size[] | null>(null);
-  const [text, setText] = useState<TextBox | null>(null);
+  const [across, setAcross] = useState<Across | null>(null);
   const [room, setRoom] = useState(0);
   const pages = useRef<(HTMLDivElement | null)[]>([]);
   const drawn = useRef(new Map<number, Drawn>());
@@ -54,32 +106,43 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   const place = useRef({ page: Math.max(1, doc.page), within: doc.scroll ?? 0 });
   const placed = useRef(false);
 
-  // Each page's own size, in points, so the column has its height before any page is drawn; and where the
-  // text sits across the first pages, so "fit" fits the text, not the sheet with its margins.
+  // Each page's own size, in points, so the column has its height before any page is drawn; and where anything
+  // is drawn across the pages, so "fit" fits that, not the sheet with its margins, and cuts nothing drawn: a
+  // line that runs into the margin counts. The first pages are read before the column shows; the rest after,
+  // and the fit only ever widens.
   useEffect(() => {
     let alive = true;
     void (async () => {
       const found: Size[] = [];
-      let left = Infinity;
-      let right = -Infinity;
       for (let n = 1; n <= pdf.numPages; n++) {
-        const page = await pdf.getPage(n);
-        const view = page.getViewport({ scale: 1 });
+        const view = (await pdf.getPage(n)).getViewport({ scale: 1 });
         found.push({ width: view.width, height: view.height });
-        if (n <= 3) {
-          const content = await page.getTextContent().catch(() => null);
-          const x0 = page.view[0] ?? 0;
-          for (const item of content?.items ?? []) {
-            if (!("str" in item) || item.str.trim() === "") continue;
-            const x = item.transform[4] - x0;
-            left = Math.min(left, x);
-            right = Math.max(right, x + item.width);
-          }
-        }
         if (!alive) return;
       }
+      const widest = Math.max(...found.map((size) => size.width));
+      let left = Infinity;
+      let right = -Infinity;
+      const read = async (n: number) => {
+        const page = await pdf.getPage(n);
+        const seen = n <= INK_PAGES ? await inkAcross(page).catch(() => wordsAcross(page)) : await wordsAcross(page);
+        if (!seen) return;
+        left = Math.min(left, seen.left);
+        right = Math.max(right, seen.right);
+      };
+      const box = (): Across | null =>
+        Number.isFinite(left) && right - left > 40 ? { left: Math.max(0, left - INK_MARGIN), right: Math.min(widest, right + INK_MARGIN) } : null;
+      const first = Math.min(3, pdf.numPages);
+      for (let n = 1; n <= first; n++) await read(n);
+      if (!alive) return;
       setSizes(found);
-      setText(Number.isFinite(left) && right - left > 40 ? { left: Math.max(0, left - TEXT_MARGIN), right: Math.min(found[0].width, right + TEXT_MARGIN) } : null);
+      const shown = box();
+      setAcross(shown);
+      for (let n = first + 1; n <= pdf.numPages; n++) {
+        await read(n);
+        if (!alive) return;
+      }
+      const all = box();
+      if (all && (!shown || all.left < shown.left - 0.5 || all.right > shown.right + 0.5)) setAcross(all);
     })();
     return () => {
       alive = false;
@@ -96,7 +159,7 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   }, []);
 
   const widest = sizes ? Math.max(...sizes.map((size) => size.width)) : 0;
-  const fitted = text ? text.right - text.left : widest;
+  const fitted = across ? across.right - across.left : widest;
   // Hidden (flipped away or the panel off), the panel has no room: the last scale stands.
   const lastFit = useRef(1);
   if (fitted > 0 && room > 0) lastFit.current = Math.min(4, Math.max(0.2, (room - 2 * PAD) / (fitted * CSS_PER_POINT)));
@@ -223,13 +286,15 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     };
   }, [draw]);
 
-  /** Where the text block begins across the page: the column is scrolled so the text, not the sheet's margin, is in view. */
+  // Fitted, every page is set so what is drawn fills the panel with a margin, and there is nothing to scroll
+  // across; at a zoom of its own the page is centred and scrolls across, starting where its drawing does.
+  const fitting = doc.zoom === "fit" && across !== null;
   const alignAcross = useCallback(() => {
     const root = box.current;
-    if (!root || !text) return;
-    const textWidth = (text.right - text.left) * scale;
-    root.scrollLeft = Math.max(0, text.left * scale - PAD - Math.max(0, (root.clientWidth - 2 * PAD - textWidth) / 2));
-  }, [text, scale]);
+    if (!root || !across || fitting) return;
+    const drawnWidth = (across.right - across.left) * scale;
+    root.scrollLeft = Math.max(0, across.left * scale - PAD - Math.max(0, (root.clientWidth - 2 * PAD - drawnWidth) / 2));
+  }, [across, scale, fitting]);
 
   const goToPlace = useCallback(
     (page: number, within: number) => {
@@ -304,7 +369,7 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   };
 
   return (
-    <div className="doc-scroll doc-pdf" ref={box} tabIndex={0} onScroll={onScroll} onKeyDown={onKeyDown} data-role="doc-pages" data-drive="doc-pages" aria-label="Pages">
+    <div className={`doc-scroll doc-pdf${fitting ? " fitted" : ""}`} ref={box} tabIndex={0} onScroll={onScroll} onKeyDown={onKeyDown} data-role="doc-pages" data-drive="doc-pages" aria-label="Pages">
       {sizes?.map((size, at) => (
         <div
           key={at}
@@ -313,7 +378,11 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
           }}
           className="doc-page"
           data-page={at + 1}
-          style={{ width: `${Math.floor(size.width * scale)}px`, height: `${Math.floor(size.height * scale)}px` }}
+          style={{
+            width: `${Math.floor(size.width * scale)}px`,
+            height: `${Math.floor(size.height * scale)}px`,
+            ...(fitting && across ? { marginLeft: `${PAD - across.left * scale}px`, marginRight: 0 } : {}),
+          }}
           aria-label={`Page ${at + 1}`}
         />
       ))}

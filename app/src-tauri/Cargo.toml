@@ -18,3 +18,9 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 mg-core = { path = "../crates/core" }
+
+# The Mac's share sheet (AirDrop, Mail) for a document: the same AppKit bindings the window's web view is built on.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSSharingService", "NSView"] }

@@ -391,6 +391,10 @@ export interface Core {
   lessonTurns(folder: string, session: string): Promise<Turn[]>;
   /** Note that the learner opened a session. */
   touchSession(folder: string, session: string): Promise<void>;
+  /** Name one of a folder's sessions anew: the goal it turned out to have. */
+  renameSession(folder: string, session: string, title: string): Promise<void>;
+  /** Hand a document to the Mac's share sheet, pointing from a box in the page; an answer key is refused. */
+  shareFile(path: string, folder: string, at: { x: number; y: number; width: number; height: number }): Promise<void>;
   /** Open a conversation: in `where.folder`, continuing `where.session` (with `resume`), or a new one named `where.title`. */
   openSession(resume: boolean, where?: Where): Promise<Opened>;
   /** Send the learner's words. `intent` says what they are; omitted, the tutor decides. */

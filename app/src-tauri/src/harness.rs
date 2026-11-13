@@ -203,6 +203,51 @@ pub fn harness_menu_click(app: tauri::AppHandle, path: Vec<String>) -> Result<St
     crate::menu::click(&app, &path)
 }
 
+/// Size and place the window, as a learner dragging its corner or its title
+/// bar would, so a check can see the page refit, and let it fall behind
+/// others or not; with nothing asked, only say where it is. Logical points,
+/// from the top left of the screen.
+#[tauri::command(async)]
+pub fn harness_frame(
+    app: tauri::AppHandle,
+    width: Option<f64>,
+    height: Option<f64>,
+    x: Option<f64>,
+    y: Option<f64>,
+    on_top: Option<bool>,
+) -> Result<Value, String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    let window = app.get_webview_window("main").ok_or("no window")?;
+    // A check that covers this window with another lets it fall behind (see keep_in_view).
+    if let Some(on_top) = on_top {
+        window
+            .set_always_on_top(on_top)
+            .map_err(|e| e.to_string())?;
+    }
+    if let (Some(width), Some(height)) = (width, height) {
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
+    if let (Some(x), Some(y)) = (x, y) {
+        window
+            .set_position(tauri::LogicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let size = window
+        .inner_size()
+        .map_err(|e| e.to_string())?
+        .to_logical::<f64>(scale);
+    let place = window
+        .outer_position()
+        .map_err(|e| e.to_string())?
+        .to_logical::<f64>(scale);
+    Ok(serde_json::json!({"width": size.width, "height": size.height, "x": place.x, "y": place.y}))
+}
+
 /// Close the window as the learner would, after the last answer is written.
 #[tauri::command(async)]
 pub fn harness_quit(app: tauri::AppHandle) {

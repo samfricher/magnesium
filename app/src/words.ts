@@ -191,6 +191,29 @@ export function sessionName(info: { title: string | null; opening: string }, fal
   return fallback ?? "A session";
 }
 
+/** Words the window itself starts a session with, not the learner's. */
+const WINDOW_START = /^(?:I'm back\. Let's continue\.|No checks right now\.|Mark my |Let's work on )/;
+
+/** A session named by the words the learner started it with: its kept name is those words, or it has none. */
+export function namedByItsWords(info: { title: string | null; opening: string }): boolean {
+  const said = info.opening.trim();
+  if (said === "" || WINDOW_START.test(said)) return false;
+  const name = info.title?.trim() ?? "";
+  return name === "" || name === said || name === firstWords(said, 80);
+}
+
+/**
+ * The lesson's goal as a session's name: a line, with no path in it. None when it only says the learner's own
+ * first words again, as the record's goal does for a lesson started from typed words ("Continue").
+ */
+export function goalName(goal: string | null | undefined, said = ""): string | null {
+  const name = firstWords(withoutPaths(goal ?? ""), 80);
+  if (name === "") return null;
+  const plain = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+  const words = plain(said);
+  return words !== "" && (plain(name) === words || words.startsWith(plain(name))) ? null : name;
+}
+
 const SEGMENT = String.raw`[^\s/"'“”,;:()<>]+`;
 const ABSOLUTE = new RegExp(String.raw`(?:~|/(?:Users|private|var|tmp|Volumes|Library|opt|usr|home))(?:/${SEGMENT})+`, "g");
 const IN_FOLDER = new RegExp(String.raw`(?:\.\./)*\b(?:Study|\.magnesium)(?:/${SEGMENT})+`, "g");

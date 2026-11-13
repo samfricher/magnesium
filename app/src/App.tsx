@@ -365,6 +365,7 @@ export function App() {
         case "zoom-in-document":
         case "zoom-out-document":
         case "zoom-fit-document":
+        case "share-document":
           if (inFront) inFront.command(command);
           else if (tab?.kind === "home") workspaceDocs.current?.(command);
           return;
@@ -564,6 +565,10 @@ export function App() {
   const onTitle = useCallback((key: string, title: string) => {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
   }, []);
+  // A session named anew from a workspace's page: any tab it is open in takes the name.
+  const onSessionRenamed = useCallback((folder: string, session: string, title: string) => {
+    setTabs((old) => old.map((each) => (each.kind === "session" && each.folder === folder && each.session === session ? { ...each, title } : each)));
+  }, []);
   const onBusy = useCallback((key: string, busy: boolean) => setBusyKey((old) => (busy ? key : old === key ? null : old)), []);
   const [asking, setAsking] = useState<Record<string, boolean>>({});
   const onAsking = useCallback((key: string, now: boolean) => setAsking((old) => (Boolean(old[key]) === now ? old : { ...old, [key]: now })), []);
@@ -604,19 +609,21 @@ export function App() {
   const activeTab = tabs.find((each) => each.key === active) ?? HOME;
   const inSession = activeTab.kind === "session";
   // Each tab's name; two sessions with one name are told apart by a number, in the bar and the Window menu.
+  // The Home tab showing a workspace's page is named by that workspace.
+  const homeTabName = homeFolder ? displayName(workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : "Home";
   const tabTitles = useMemo(() => {
     const seen: Record<string, number> = {};
     const named: Record<string, string> = {};
     for (const tab of tabs) {
-      const title = tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
+      const title = tab.kind === "home" ? homeTabName : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
       seen[title] = (seen[title] ?? 0) + 1;
       named[tab.key] = seen[title] > 1 ? `${title} (${seen[title]})` : title;
     }
     return named;
-  }, [tabs]);
+  }, [tabs, homeTabName]);
   const spec = useMemo((): MenuSpec => {
     const disabled: string[] = [];
-    if (!inSession) disabled.push("attach", "photo", "symbols", "hint", "lost", "unknown");
+    if (!inSession) disabled.push("attach", "symbols", "hint", "lost", "unknown");
     else if (!taskOpen[activeTab.key]) disabled.push("hint", "lost", "unknown");
     if (activeTab.kind === "home") disabled.push("close-session");
     if (!inSession) disabled.push("plan");
@@ -627,7 +634,7 @@ export function App() {
     if (!inSession && !(docs && docs.open.length > 0)) disabled.push("expand-panel", "flip-panel");
     // Flipping needs a document to flip to, or a panel that fills the session; zoom needs a PDF in front.
     else if (!(docs && docs.shown !== null) && !docs?.expanded) disabled.push("flip-panel");
-    if (!withDoc) disabled.push("close-document");
+    if (!withDoc) disabled.push("close-document", "share-document");
     if (!withDoc || !/\.pdf$/i.test(docs?.shown ?? "")) disabled.push("zoom-in-document", "zoom-out-document", "zoom-fit-document");
     if (!inSession && !(activeTab.kind === "home" && homeFolder)) disabled.push("open-document");
     if (busyKey === null) disabled.push("stop-reply");
@@ -876,6 +883,7 @@ export function App() {
                 panelWidth={panelWidth}
                 onPanelWidth={onPanelWidth}
                 onShowPanel={widenPanel}
+                onSessionRenamed={onSessionRenamed}
                 onDocsChange={onDocsChange}
                 registerPanel={registerWorkspacePanel}
                 onNote={note}

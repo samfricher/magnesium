@@ -416,6 +416,10 @@ export function demoCore(): Core {
     lessons: async (folder) => sessionsOf(folder),
     lessonTurns: async (folder, session) => savedTurns(folder, session),
     touchSession: async () => {},
+    renameSession: async () => {},
+    shareFile: async () => {
+      throw new Error("Sharing works in the window on the Mac, not in this demo.");
+    },
     openSession: async (resume, where): Promise<Opened> => {
       if (where?.folder) open = where.folder;
       return { resumed: resume, turns: resume ? savedTurns(open, where?.session ?? "demo") : [], engine: engineChosen };

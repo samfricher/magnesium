@@ -626,7 +626,12 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .tab-button:focus-visible,
 :root[data-input="key"] .tab-new:focus-visible,
 :root[data-input="key"] .bar-act:focus-visible,
-:root[data-input="key"] .side-tab-name:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+:root[data-input="key"] .side-tab-name:focus-visible,
+:root[data-input="key"] .side-tab:focus-visible,
+:root[data-input="key"] .side-close:focus-visible,
+:root[data-input="key"] .side-open:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+/* A document's pages with the keyboard (← → turn them): a ring would fall outside the panel, so an ink line along their top. */
+:root[data-input="key"] .doc-scroll:focus-visible { outline: none; box-shadow: inset 0 2px 0 var(--ink); }
 :root[data-input="key"] .clip:focus-visible { outline: none; color: var(--text); box-shadow: 0 2px 0 var(--ink); }
 /* A tab whose tutor waits on the learner (a permission, a question): a ring, not the writing dot. */
 .ask-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }

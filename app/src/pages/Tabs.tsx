@@ -91,8 +91,9 @@ export const Tabs = memo(function Tabs(props: Props) {
               >
                 {tab.asking ? <span className="ask-dot" aria-hidden="true" /> : tab.busy && <span className="live-dot" aria-hidden="true" />}
                 {tab.kind === "home" ? (
+                  // Home, or the workspace whose page it shows.
                   <span className="tab-name" data-drive="home">
-                    Home
+                    <Line text={tab.title} />
                   </span>
                 ) : (
                   <span className="tab-name">

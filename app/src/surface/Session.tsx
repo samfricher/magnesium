@@ -18,7 +18,7 @@ import { changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, t
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
-import { displayName, firstWords, markWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
+import { displayName, firstWords, goalName, markWords, namedByItsWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
 import { Cards, Notices, Turn, Working } from "./Conversation";
 import { tabId } from "../pages/Tabs";
@@ -735,6 +735,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         if (!docs.shown) return false;
         setDocs(withClosed(docs, docs.shown));
         return true;
+      case "share-document":
+        // The panel's own control: the sheet points from it.
+        box.current?.querySelector<HTMLElement>('[data-drive="share-document"]')?.click();
+        return true;
       case "open-document":
         // The panel first: shown, and in front of the lesson if it fills the session.
         if (!props.panel) props.onShowPanel();
@@ -1046,17 +1050,42 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     },
     [api, note],
   );
+  // The goal names the session once the tutor has set it, in its tab and in the workspace's list.
+  const nameSession = (name: string) => {
+    setSittingTitle(name);
+    props.onTitle(props.tab.key, name);
+    const id = now.current.props.tab.session;
+    if (id) void api.renameSession(folder, id, name).catch(() => {});
+  };
   useEffect(() => {
     const goal = plan?.goal?.trim();
-    const plain = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
-    const typedWords = plain(typedAtStart.current);
-    if (!provisionalTitle.current || !goal || goal === sittingTitle || goal === goalAtStart.current?.trim()) return;
-    if (typedWords !== "" && (plain(goal) === typedWords || typedWords.startsWith(plain(goal)))) return;
+    if (!provisionalTitle.current || !goal || goal === goalAtStart.current?.trim()) return;
+    const name = goalName(goal, typedAtStart.current);
+    if (!name || name === sittingTitle) return;
     provisionalTitle.current = false;
-    setSittingTitle(goal);
-    props.onTitle(props.tab.key, goal);
+    nameSession(name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan?.goal]);
+
+  // A session reopened still named by the words it was started with ("Continue") takes the goal the tutor set
+  // for it, as a new one does: where the record says which goal that is, the folder's current session.
+  const renamedOnce = useRef(false);
+  useEffect(() => {
+    const id = props.tab.session;
+    const goal = home?.last?.goal;
+    if (renamedOnce.current || !id || !goal) return;
+    renamedOnce.current = true;
+    void api.lessons(folder).then(
+      (all) => {
+        const info = all.find((each) => each.session === id);
+        if (!info || !info.current || !namedByItsWords(info)) return;
+        const name = goalName(goal, info.opening);
+        if (name && name !== info.title) nameSession(name);
+      },
+      () => {},
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.tab.session, home?.last?.goal]);
 
   // A past paper: the folder's papers, or a file in a papers folder. A link to one opens at once, even beside
   // the task that asks about it: it holds the questions, not their answers.

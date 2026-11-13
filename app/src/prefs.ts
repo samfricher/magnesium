@@ -36,7 +36,8 @@ export type KeyAction =
   | "open-document"
   | "zoom-in-document"
   | "zoom-out-document"
-  | "zoom-fit-document";
+  | "zoom-fit-document"
+  | "share-document";
 
 export type Prefs = {
   /** The face the material and the tutor are read in: a name below, or any face installed on this Mac. */
@@ -74,6 +75,7 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["zoom-in-document", "Zoom in on the document"],
   ["zoom-out-document", "Zoom out of the document"],
   ["zoom-fit-document", "Fit the document to the panel"],
+  ["share-document", "Share document"],
   ["settings", "Settings"],
   ["commands", "Command menu"],
   ["hint", "Hint"],
@@ -123,6 +125,7 @@ export const DEFAULTS: Prefs = {
     "zoom-in-document": "cmd+alt+=",
     "zoom-out-document": "cmd+alt+-",
     "zoom-fit-document": "none",
+    "share-document": "none",
   },
 };
 

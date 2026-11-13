@@ -279,6 +279,13 @@ fn source_file(root: &Path, path: &str) -> Result<(PathBuf, String), String> {
     Ok((resolved.clone(), extension(&resolved)))
 }
 
+/// The file at `path`, to hand to the Mac's share sheet: the same file the
+/// panel would open, by the same rule, so an answer key or a file outside the
+/// study folder is refused here too.
+pub fn shareable(root: &Path, path: &str) -> Result<PathBuf, String> {
+    source_file(root, path).map(|(file, _)| file)
+}
+
 /// Open a cited source for the panel beside the lesson. A PDF's bytes come
 /// from [`source_pdf`], so they are not sent twice.
 pub fn source(root: &Path, path: &str) -> Result<Source, String> {
@@ -515,6 +522,40 @@ mod tests {
             let path = format!("Study/notes/{name}");
             let refused = openable(root.path(), &path).unwrap_err();
             assert!(refused.contains("only opens"), "{name}: {refused}");
+        }
+    }
+
+    #[test]
+    fn a_document_is_shared_as_its_own_file_and_never_a_key() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let papers = root.path().join("Study/midterm-2/papers");
+        fs::create_dir_all(&papers).unwrap();
+        fs::write(papers.join("Paper2-Medium.pdf"), b"%PDF-1.4").unwrap();
+        fs::write(papers.join("Paper2-Medium-KEY.pdf"), b"%PDF-1.4").unwrap();
+        fs::write(outside.path().join("secret.pdf"), b"%PDF-1.4").unwrap();
+        std::os::unix::fs::symlink(
+            papers.join("Paper2-Medium-KEY.pdf"),
+            papers.join("innocent.pdf"),
+        )
+        .unwrap();
+
+        let shared = shareable(root.path(), "Study/midterm-2/papers/Paper2-Medium.pdf").unwrap();
+        assert_eq!(
+            shared,
+            papers.join("Paper2-Medium.pdf").canonicalize().unwrap()
+        );
+        for refused in [
+            "Study/midterm-2/papers/Paper2-Medium-KEY.pdf",
+            "Study/midterm-2/papers/innocent.pdf",
+            "../secret.pdf",
+            outside.path().join("secret.pdf").to_str().unwrap(),
+            "Study/midterm-2/papers",
+        ] {
+            assert!(
+                shareable(root.path(), refused).is_err(),
+                "{refused} was shared"
+            );
         }
     }
 

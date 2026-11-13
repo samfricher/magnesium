@@ -106,6 +106,8 @@
 /* A PDF: its pages in a column, on the window's ground. */
 /* Positioned, so each page's offset is measured from the column it scrolls in, not from the panel. */
 .doc-pdf { position: relative; padding: 16px 0 24vh; }
+/* Fitted, the pages are set so their drawing fills the panel: the sheet's blank margins fall outside it. */
+.doc-pdf.fitted { overflow-x: hidden; }
 .doc-page {
   position: relative;
   margin: 0 auto 12px;

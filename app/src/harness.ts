@@ -33,12 +33,18 @@
 //                           the open task's words, the files on the line,
 //                           where the keyboard is, and the PDF in view
 //   document                the PDF in view: the page at its top, how many,
-//                           its zoom, and where the keyboard is
+//                           its zoom, how many pages hold a picture, and
+//                           where the keyboard is
 //   attach {path|paths}     put files on the line of the session in front, as
 //                           a drop does (photos and PDFs), for a harness that
 //                           cannot drive the Mac's Open panel
 //   menu                    the macOS menu bar as data: each menu's title, and
 //                           each item's title, id, enabled state and key
+//   frame {width?, height?, x?, y?, on_top?}  size and place the window, as
+//                           dragging its corner or title bar would, let it
+//                           fall behind other windows (on_top false: the
+//                           harness keeps a driven window on top), and say
+//                           its frame
 //   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
 //                           a click does: the same handler, the same event
 //   scroll {target?, to?, by?}  bring a target (as click names it) to the top
@@ -205,14 +211,14 @@ function focusName(): string | null {
   return held && held !== document.body ? (held.dataset.drive ?? held.dataset.role ?? held.className) : null;
 }
 
-/** The PDF in view, as a reader sees it: the page at its top, how many, and how large it is drawn. */
-function pdfInView(): { page: number; of: number; zoom: string | null } | null {
+/** The PDF in view, as a reader sees it: the page at its top, how many, how large it is drawn, and how many pages hold a picture now. */
+function pdfInView(): { page: number; of: number; zoom: string | null; drawn: number } | null {
   const pdf = Array.from(document.querySelectorAll<HTMLElement>(".doc-pdf")).find(visible);
   if (!pdf) return null;
   const pages = Array.from(pdf.querySelectorAll<HTMLElement>(".doc-page"));
   const page = pages.filter((each) => each.offsetTop <= pdf.scrollTop + 24).length || 1;
   const zoom = pdf.closest(".panel.side")?.querySelector<HTMLElement>("[data-drive=zoom-fit]")?.innerText ?? null;
-  return { page, of: pages.length, zoom };
+  return { page, of: pages.length, zoom, drawn: pdf.querySelectorAll(".doc-page canvas").length };
 }
 
 function focusable(element: HTMLElement): HTMLElement {
@@ -594,6 +600,18 @@ async function run(op: Op): Promise<Result> {
       } catch (error) {
         return { ok: false, error: String(error) };
       }
+    case "frame": {
+      // The window's size and place, set or read; the page then has a frame to refit to.
+      const num = (value: unknown) => (typeof value === "number" ? value : undefined);
+      try {
+        const onTop = typeof op.on_top === "boolean" ? op.on_top : undefined;
+        const frame = await invoke<unknown>("harness_frame", { width: num(op.width), height: num(op.height), x: num(op.x), y: num(op.y), onTop });
+        await sleep(300);
+        return { ok: true, frame, inner: { width: window.innerWidth, height: window.innerHeight } };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
     case "menu_click": {
       const path = Array.isArray(op.path) ? op.path.map(String) : [];
       try {

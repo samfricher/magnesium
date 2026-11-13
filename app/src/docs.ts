@@ -7,7 +7,7 @@
 import { sourceRef } from "./sources";
 import { materialTitle } from "./words";
 
-/** How large a PDF's pages are drawn: its text as wide as the panel, or a share of the page's own size. */
+/** How large a PDF's pages are drawn: what is drawn on them as wide as the panel, or a share of their own size. */
 export type Zoom = "fit" | number;
 
 export type OpenDoc = {
@@ -27,26 +27,36 @@ export type OpenDoc = {
  */
 export type Docs = { open: OpenDoc[]; shown: string | null; expanded: boolean; lessonFront: boolean };
 
-/** The panel's narrowest, and its widest as a share of the window. */
+/** The panel's narrowest, its widest as a share of the window, and the room it always leaves the lesson. */
 export const PANEL_MIN = 300;
 export const PANEL_MAX_SHARE = 0.72;
+const LESSON_MIN = 360;
 
 /** The width a panel is drawn at: the one the learner chose, fitted to the room there is now. */
 export function fitPanelWidth(width: number, room: number = typeof window === "undefined" ? 1200 : window.innerWidth): number {
-  return Math.round(Math.min(Math.max(PANEL_MIN, width), Math.max(PANEL_MIN, room * PANEL_MAX_SHARE)));
+  const widest = Math.max(PANEL_MIN, Math.min(room * PANEL_MAX_SHARE, room - LESSON_MIN));
+  return Math.round(Math.min(Math.max(PANEL_MIN, width), widest));
 }
 
 export const ZOOMS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
-/** The next zoom step in or out from where a PDF is, "fit" being its text as wide as the panel (`fitScale`). */
+/** The next zoom step in or out from where a PDF is, "fit" being what is drawn as wide as the panel (`fitScale`). */
 export function stepZoom(zoom: Zoom, fitScale: number, by: 1 | -1): number {
   const now = zoom === "fit" ? fitScale : zoom;
   const next = by > 0 ? ZOOMS.find((step) => step > now + 0.001) : [...ZOOMS].reverse().find((step) => step < now - 0.001);
   return next ?? now;
 }
 
-/** A document's title: its file's name, with no folder and no extension. Never a path. */
-export const docTitle = (path: string) => materialTitle(path.split("/").pop() ?? path);
+/**
+ * A document's title: its file's name, with no folder and no extension. Never a path. A past paper keeps its
+ * file's own name ("Paper2-Medium"), as the folder's list of papers says it and as it goes when shared; other
+ * material reads as a title ("Week 3 eigenvalues").
+ */
+export function docTitle(path: string): string {
+  const file = path.split("/").pop() ?? path;
+  if (/(^|\/)papers?\//i.test(path)) return file.replace(/\.[a-z0-9]{1,5}$/i, "") || file;
+  return materialTitle(file);
+}
 
 const STORE = "mg.docs";
 type Stored = { by: Record<string, Docs & { seenMs: number }> };

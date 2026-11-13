@@ -12,7 +12,7 @@ import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Home, LessonInfo, Mark, Materials, Paper } from "../types";
-import { displayName, materialKind, materialTitle, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, goalName, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -32,6 +32,8 @@ type Props = {
   onPanelWidth: (width: number) => void;
   /** A document opened: a panel at the plan's width opens wider. */
   onShowPanel: () => void;
+  /** One of the folder's sessions was named anew: a tab it is open in takes the name. */
+  onSessionRenamed: (folder: string, session: string, title: string) => void;
   /** The documents changed: the menu follows. */
   onDocsChange: () => void;
   /** The page takes the panel's commands (expand, flip, close, zoom) while it is in front. */
@@ -73,6 +75,7 @@ export function WorkspacePage(props: Props) {
   const [picking, setPicking] = useState(false);
   const docView = useRef<DocHandle | null>(null);
   const column = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const docsNow = useRef(docs);
   docsNow.current = docs;
   const setDocs = useCallback(
@@ -131,6 +134,10 @@ export function WorkspacePage(props: Props) {
       case "zoom-fit-document":
         docView.current?.zoom(command === "zoom-in-document" ? 1 : command === "zoom-out-document" ? -1 : 0);
         return true;
+      case "share-document":
+        // The panel's own control: the sheet points from it.
+        pageRef.current?.querySelector<HTMLElement>('[data-drive="share-document"]')?.click();
+        return true;
     }
     return false;
   };
@@ -156,6 +163,25 @@ export function WorkspacePage(props: Props) {
   useEffect(() => {
     void read();
   }, [read, props.refresh]);
+
+  // A session still named by the words it was started with ("Continue") takes the goal the tutor set for it, as
+  // a new one does. The record says which goal that is for the folder's current session only; older sessions
+  // keep the names they have.
+  const { onSessionRenamed } = props;
+  const lastGoal = home?.last?.goal ?? null;
+  useEffect(() => {
+    const info = sessions?.find((each) => each.current);
+    if (!info || !namedByItsWords(info)) return;
+    const name = goalName(lastGoal, info.opening);
+    if (!name || name === info.title) return;
+    void api.renameSession(folder, info.session, name).then(
+      () => {
+        onSessionRenamed(folder, info.session, name);
+        void read();
+      },
+      () => {},
+    );
+  }, [api, folder, sessions, lastGoal, onSessionRenamed, read]);
 
   const readMarks = () => {
     if (marks !== "unread") return;
@@ -223,6 +249,7 @@ export function WorkspacePage(props: Props) {
 
   return (
     <div
+      ref={pageRef}
       className={`page workspace-page${withDocs ? " with-docs" : ""}${withDocs && docs.expanded ? " expanded" : ""}${withDocs && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
       data-page="workspace"
       style={withDocs ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
