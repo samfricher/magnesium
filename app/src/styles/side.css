@@ -72,7 +72,8 @@
   white-space: nowrap;
 }
 .side-tab.doc { padding: 0; max-width: 14rem; flex-shrink: 3; min-width: 3.2rem; }
-.side-tab.doc.here { flex-shrink: 0; max-width: 60%; }
+/* The document in front keeps more of its name, but never so much that the others cannot be read. */
+.side-tab.doc.here { flex-shrink: 1; max-width: 45%; min-width: 6rem; }
 .side-tab-name { padding: 3px 4px 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .side-tab.here { background: var(--tint); color: var(--text); }
 .side-tab:hover,

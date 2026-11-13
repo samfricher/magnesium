@@ -125,10 +125,15 @@ export function WorkspacePage(props: Props) {
         else if (column.current?.contains(document.activeElement) === false) column.current.querySelector<HTMLElement>("button")?.focus();
         else docView.current?.focus();
         return true;
-      case "close-document":
+      case "close-document": {
         if (!docs.shown) return false;
-        setDocs(withClosed(docs, docs.shown));
+        const hadKeys = (document.activeElement as HTMLElement | null)?.closest(".panel.side") !== null;
+        const left = withClosed(docs, docs.shown);
+        setDocs(left);
+        // The keyboard goes to the next document, or back to the page when none is left.
+        if (hadKeys) window.setTimeout(() => (left.shown ? docView.current?.focus() : column.current?.querySelector<HTMLElement>("button")?.focus()), 120);
         return true;
+      }
       case "zoom-in-document":
       case "zoom-out-document":
       case "zoom-fit-document":

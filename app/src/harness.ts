@@ -498,7 +498,8 @@ async function run(op: Op): Promise<Result> {
   switch (op.op) {
     case "type": {
       const target = document.activeElement as HTMLElement | null;
-      const field = editable(target);
+      // With nothing focused the page itself is the active element; a field inside it may be another tab's.
+      const field = target && target !== document.body ? editable(target) : null;
       if (!target || !field) return { ok: false, error: "no text field has focus" };
       // "replace": the words take the place of all that is in the field, as after ⌘A.
       if (op.replace && (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) field.select();

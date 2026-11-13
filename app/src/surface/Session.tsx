@@ -349,7 +349,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
 
   const note = useCallback((said: string) => {
     const text = withoutPaths(said.replace(/^Error: /, ""));
-    if (now.current.phase === "lesson") dispatch({ type: "note", notice: { kind: "other", text } });
+    // The window's own notes are about what was just done (a key link refused, a page not drawn): they go when the
+    // learner writes again, as the turn's notices do.
+    if (now.current.phase === "lesson") dispatch({ type: "note", notice: { kind: "turn", text } });
     else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
@@ -731,10 +733,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         else docView.current?.focus();
         return true;
       }
-      case "close-document":
+      case "close-document": {
         if (!docs.shown) return false;
-        setDocs(withClosed(docs, docs.shown));
+        const hadKeys = (document.activeElement as HTMLElement | null)?.closest(".panel.side") !== null;
+        const left = withClosed(docs, docs.shown);
+        setDocs(left);
+        // The keyboard goes where the eye goes: the next document, or the line when none is left.
+        if (hadKeys) window.setTimeout(() => (left.shown ? docView.current?.focus() : lineRef.current?.focus()), 120);
         return true;
+      }
       case "share-document":
         // The panel's own control: the sheet points from it.
         box.current?.querySelector<HTMLElement>('[data-drive="share-document"]')?.click();
@@ -870,6 +877,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     };
     const watch = new ResizeObserver(pin);
     watch.observe(section);
+    // The surface too: a window or panel resized changes its frame before its content reflows.
+    watch.observe(el);
     pin();
     return () => watch.disconnect();
   }, [phase]);
@@ -1293,7 +1302,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         canAnswer={task !== null}
                         taskOpen={task !== null}
                         end={lineEnd}
-                        onEnd={lineEnd ? () => setLine("task") : undefined}
+                        onEnd={
+                          lineEnd
+                            ? () => {
+                                setLine("task");
+                                // The line takes the keyboard back, even from a document being read beside it.
+                                window.setTimeout(() => lineRef.current?.focus(), 0);
+                              }
+                            : undefined
+                        }
                         placeholder={held ? (restated && questionInView ? "Your answer to the task above" : "Your answer") : "Say something to the tutor"}
                         stopKey={stopKey}
                         onSend={onSend}
