@@ -1,0 +1,724 @@
+/*
+ * One surface. Four neutrals and one ink per scheme; the ink is the only
+ * colour, and it marks only the caret, the `›`, the task being written in,
+ * and the record's lines. Three faces, one per voice, all the Mac's own:
+ * the material and the tutor (reading), the learner (their words), the
+ * window (its few words).
+ */
+
+/* Each colour has a light and a dark value (-l, -d); the learner's own,
+   from their settings, are set on the page over these. The quiet text, the
+   rules and the raised ground are mixed from the text and the ground, so a
+   colour of their own keeps every pair readable: quiet text is 5:1 or more
+   on its ground, and the line an answer is written on 3:1. */
+:root {
+  --ground-l: #fafaf8;
+  --ground-d: #1c1d20;
+  --text-l: #1e2023;
+  --text-d: #e3e3df;
+  --ink-l: #2f3f86;
+  --ink-d: #9aa9ee;
+
+  --ground: var(--ground-l);
+  --text: var(--text-l);
+  --ink: var(--ink-l);
+  --raised: color-mix(in srgb, var(--ground), white 70%);
+  --quiet: color-mix(in srgb, var(--text) 64%, var(--ground));
+  /* The window's own words: a tier quieter than the material's secondary text, still 4.5:1. */
+  --hint: color-mix(in srgb, var(--text) 60%, var(--ground));
+  --line: color-mix(in srgb, var(--text) 50%, var(--ground));
+  --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
+  --edge: color-mix(in srgb, var(--text) 11%, transparent);
+  --tint: color-mix(in srgb, var(--text) 5.5%, transparent);
+  --scrim: color-mix(in srgb, var(--ground) 62%, transparent);
+  --shadow: 0 18px 50px rgba(20, 22, 26, 0.13), 0 2px 6px rgba(20, 22, 26, 0.06);
+  --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
+
+  --read: Charter, "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --you: var(--app);
+
+  --size: 17px;
+  /* 66 characters of the reading face. */
+  --measure: 31em;
+  /* How far the task's rule and the prompt hang left of the column. */
+  --hang: 20px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) {
+    --ground: var(--ground-d);
+    --text: var(--text-d);
+    --ink: var(--ink-d);
+    --raised: color-mix(in srgb, var(--ground), white 6%);
+    --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+    --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+:root[data-scheme="dark"] {
+  --ground: var(--ground-d);
+  --text: var(--text-d);
+  --ink: var(--ink-d);
+  --raised: color-mix(in srgb, var(--ground), white 6%);
+  --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+  --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+/* The key-hint lines, off when the learner says so. */
+:root[data-hints="off"] .keys,
+:root[data-hints="off"] .keyhint,
+:root[data-hints="off"] .record-keys,
+:root[data-hints="off"] .layer-keys,
+:root[data-hints="off"] .foot-keys,
+:root[data-hints="off"] .line-end { display: none; }
+
+* { box-sizing: border-box; }
+
+html {
+  font-size: var(--size);
+  background: var(--ground);
+}
+
+html,
+body,
+#root,
+.app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--read);
+  font-size: 1rem;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  overflow: hidden;
+}
+
+::selection { background: color-mix(in srgb, var(--ink) 26%, transparent); }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+:focus { outline: none; }
+:root[data-input="key"] button:focus-visible,
+:root[data-input="key"] [tabindex]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* The window's tab bar is the strip it is dragged by (window.css). */
+
+/* ------------------------------------------------------------------ */
+/* The surface                                                         */
+
+/* A session's surface fills its tab under the tab bar. The heading sits where
+   it sat before there were tabs: 56px from the window's top. */
+.surface {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.column {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin: 0 auto;
+}
+
+/* What comes next, and the lesson under it, fills the window, so the
+   conversation left is above it, out of view, until it is scrolled to. */
+.now {
+  min-height: calc(100vh - var(--tabs-h));
+  /* Room under the tab bar for the course's name over the heading. */
+  padding: var(--head-room) 0 0;
+  transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.now.rest { padding-top: 30vh; }
+.now.loading { padding-top: 30vh; }
+
+.head .course {
+  margin: 0 0 0.35rem;
+  font: 400 0.765rem/1.4 var(--app);
+  color: var(--quiet);
+  letter-spacing: 0.01em;
+}
+
+.head .next {
+  display: block;
+  margin: 0;
+  font: 400 1.235rem/1.3 var(--read);
+  color: var(--text);
+  text-wrap: balance;
+  transition: font-size 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.now.rest .head .next { font-size: 1.588rem; line-height: 1.25; }
+.now.lesson .head { margin-bottom: 1.5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--faint); }
+button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
+
+.head .where {
+  margin: 0.45rem 0 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--quiet);
+}
+
+.now > .keys,
+.now > .status {
+  margin: 0.9rem 0 0;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+}
+.now > .status { white-space: normal; max-width: 34em; }
+
+
+/* The choices a setup step offers, as Spotlight offers results. */
+.choices-rest {
+  margin: 1.4rem 0 0 calc(-1 * var(--hang));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.choice-rest {
+  padding: 0.38rem var(--hang);
+  border-radius: 4px;
+  font: 400 0.882rem/1.4 var(--app);
+  color: var(--text);
+}
+.choice-rest:hover { background: var(--tint); }
+.choice-rest:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+:root[data-input="key"] .choice-rest:focus-visible { outline: none; }
+
+/* ------------------------------------------------------------------ */
+/* The line                                                            */
+
+.line {
+  position: relative;
+  margin-top: 1.5rem;
+}
+.now.rest .line { margin-top: 1.6rem; }
+
+.line .field {
+  display: block;
+  width: 100%;
+  min-height: 1.6em;
+  height: 1.6em;
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.941rem/1.6 var(--you);
+}
+.line .field::placeholder { color: var(--quiet); opacity: 1; font-family: var(--app); font-size: 0.765rem; }
+
+/* The conversation's line: a prompt hung in the margin. */
+.line.rest::before,
+.line.talk::before,
+.you.talk::before,
+.aside-line .prompt {
+  content: "›";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  top: 0;
+  width: var(--hang);
+  font: 400 0.882rem/1.6 var(--mono);
+  color: var(--ink);
+}
+.aside-line .prompt { position: static; display: inline-block; margin-left: calc(-1 * var(--hang)); }
+
+/* The task's line: inside the task, on its rule, under its question. */
+.task-line {
+  position: relative;
+  margin: 1.2rem 0 0 calc(-1 * var(--hang));
+  padding: 0.45rem 0 0.3rem calc(var(--hang) - 2px);
+  border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
+}
+.task-line.on { border-left-color: var(--ink); }
+.task-line.joined { margin-top: 0; }
+.task-line .line.task { margin: 0; }
+.line.task .field {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.15rem;
+}
+.line.task.on .field { border-bottom-color: var(--ink); }
+.task-line .restated {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--text);
+  cursor: text;
+}
+/* A task left open while the learner talks: one quiet line, its answer line folded away. */
+.task-line.parked { padding-top: 0.1rem; padding-bottom: 0.1rem; }
+.task-line.parked .restated {
+  margin: 0;
+  font-size: 0.941rem;
+  color: var(--quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-line.parked .line.task { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.task-line + .line.talk { margin-top: 0.9rem; }
+.foot-keys {
+  margin: 0.7rem 0 0;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+}
+
+.line .keyhint {
+  position: absolute;
+  right: 0;
+  bottom: 0.3rem;
+  font: 400 0.706rem/1.6 var(--app);
+  color: var(--quiet);
+  pointer-events: none;
+}
+.line .with {
+  margin: 0.25rem 0 0;
+  display: flex;
+  gap: 0.9rem;
+  font: 400 0.735rem/1.5 var(--app);
+  color: var(--quiet);
+}
+.said-sure { color: var(--ink); }
+.plain { color: var(--quiet); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; font: inherit; margin-left: 0.4rem; }
+.plain:hover { color: var(--text); }
+
+/* Under the line: the way to the other line. */
+.aside-line {
+  display: block;
+  margin-top: 0.7rem;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+}
+.aside-line:hover { color: var(--text); }
+.aside-line .keyname { font-family: var(--app); }
+.aside-line.tether .line { color: inherit; }
+
+/* ------------------------------------------------------------------ */
+/* The lesson                                                          */
+
+.turn { margin: 0; }
+.before .turn:first-child { padding-top: calc(56px - var(--tabs-h)); }
+.before { padding-bottom: 2rem; }
+
+.sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
+
+.you {
+  margin: 1.5rem 0 1.1rem;
+  font: 400 0.941rem/1.6 var(--you);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+.you.pick { color: var(--quiet); }
+
+/* An answer sits inside the task it answers: on the task's rule, under it. */
+.answer {
+  position: relative;
+  margin: 0 0 1.4rem calc(-1 * var(--hang));
+  padding: 0.55rem 0 0.15rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--faint);
+}
+.answer .you { margin: 0; }
+.answer .question { margin: 0 0 0.3rem; font-size: 0.941rem; line-height: 1.5; color: var(--quiet); }
+.answer.help .you { color: var(--quiet); }
+.answer .said-sure {
+  position: absolute;
+  right: 0;
+  top: 0.62rem;
+  font: 400 0.735rem/1.6 var(--app);
+}
+
+/* The record's own lines: a mark, a change to the plan, a notice. */
+.record {
+  margin: 0.3rem 0 0;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--ink);
+}
+.answer .record { margin-top: 0.35rem; }
+.you.talk + .record { margin: -0.6rem 0 1rem; }
+.record.quiet { color: var(--quiet); margin-bottom: 1rem; }
+.answer .record.unmarked { margin-bottom: 0; }
+.record.plan-brief { margin: 0.8rem 0 1rem; color: var(--quiet); }
+.record.note {
+  margin: 1rem 0 0 calc(-1 * var(--hang));
+  padding-left: calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+  color: var(--text);
+}
+.notices { margin-top: 1rem; }
+.notices .record.note:first-child { margin-top: 0; }
+
+.record.plan {
+  margin: 1.2rem 0 1.6rem calc(-1 * var(--hang));
+  padding: 0.1rem 0 0.1rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+}
+.record-head { margin: 0 0 0.3rem; font: 600 0.765rem/1.5 var(--app); color: var(--ink); }
+.record.plan dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 1.4rem; row-gap: 0.1rem; }
+.record.plan dl > div { display: contents; }
+.record.plan dt { color: var(--text); font: 400 0.882rem/1.5 var(--read); }
+.record.plan dd { margin: 0; color: var(--quiet); font: 400 0.765rem/1.9 var(--app); }
+.record-keys { margin: 0.35rem 0 0; font: 400 0.706rem/1.5 var(--app); color: var(--quiet); }
+
+/* The tutor is writing: a caret where its words will go. */
+.working {
+  margin: 0.6rem 0 0;
+  min-height: 1.6em;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.cursor {
+  display: inline-block;
+  width: 0.45em;
+  height: 1.05em;
+  margin-left: 0.12em;
+  vertical-align: -0.15em;
+  background: var(--ink);
+  opacity: 0.7;
+}
+/* Before the first word the caret blinks, as a terminal's does while it waits. */
+.working.waiting .cursor { animation: blink 1.1s steps(1) infinite; }
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* A request from the tutor that waits on the learner. */
+.card {
+  margin: 1.4rem 0 0 calc(-1 * var(--hang));
+  padding: 0.2rem 0 0.2rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+}
+.card-detail { margin: 0 0 0.5rem; font: 400 0.824rem/1.5 var(--mono); color: var(--quiet); overflow-wrap: anywhere; }
+.card-question { margin: 0 0 0.5rem; }
+.card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
+/* The permission card's choices are the window's one kind of choice, as on the first screen. */
+.card-acts { gap: 2px; }
+.act {
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  font: 400 0.824rem/1.4 var(--app);
+  color: var(--text);
+}
+.act:hover { background: var(--tint); }
+.act:focus { background: var(--tint); }
+
+/* Files over the window. */
+.veil {
+  position: fixed;
+  inset: 10px;
+  border: 1.5px dashed var(--ink);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ground) 80%, transparent);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  pointer-events: none;
+}
+.veil p { font: 400 0.882rem/1.4 var(--app); color: var(--ink); }
+
+/* ------------------------------------------------------------------ */
+/* Layers                                                              */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 20;
+}
+
+.layer {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 32px));
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 21;
+  overflow: hidden;
+  animation: layer-in 120ms ease-out;
+}
+@keyframes layer-in {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+}
+
+.layer-line {
+  position: relative;
+  padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang) + 0.25rem);
+  border-bottom: 1px solid var(--edge);
+}
+.layer-line::before {
+  content: "›";
+  position: absolute;
+  left: 1.1rem;
+  font: 400 0.882rem/1.6 var(--mono);
+  color: var(--ink);
+}
+.layer-line input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.882rem/1.6 var(--you);
+  padding: 0;
+}
+.layer-line input::placeholder { color: var(--quiet); opacity: 1; }
+
+.rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.35rem 0 0.6rem;
+  outline: none;
+  /* A list longer than the layer fades at its foot instead of being cut by it. */
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.6rem), transparent);
+}
+.row {
+  display: grid;
+  grid-template-columns: var(--hang) minmax(0, 1fr) minmax(0, max-content);
+  align-items: baseline;
+  column-gap: 0.25rem;
+  padding: 0.36rem 1.1rem;
+  cursor: default;
+}
+.row.on { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+.row-mark {
+  font: 400 0.765rem/1 var(--app);
+  color: var(--quiet);
+  text-align: left;
+}
+.row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.thing .row-label { font: 400 0.941rem/1.45 var(--read); color: var(--text); }
+.row.do .row-label,
+.row.file .row-label { font: 400 0.824rem/1.6 var(--app); color: var(--text); }
+.row.file .row-label { font-family: var(--app); color: var(--text); }
+.row.note { grid-template-columns: var(--hang) minmax(0, 1fr); }
+.row.note .row-label { font: 400 0.765rem/1.55 var(--app); color: var(--quiet); white-space: normal; }
+.row.note:not(:first-child) { margin-top: 0.4rem; }
+.row .done { color: var(--quiet); }
+.row-hint {
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 1rem;
+  font: 400 0.735rem/1.6 var(--app);
+  color: var(--quiet);
+  text-align: right;
+}
+.row.changed .row-hint { color: var(--ink); }
+.row.changed .row-mark { color: var(--ink); }
+.row.changed { animation: changed 2.4s ease-out 1; }
+@keyframes changed {
+  from { background: var(--ink-soft); }
+}
+.row.empty { color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang)); }
+
+.choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.15rem 0.5rem; padding-left: 1rem; }
+.choice {
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+  padding: 0 0.15rem;
+  border-bottom: 1.5px solid transparent;
+}
+.choice:hover { color: var(--text); }
+.choice.chosen { color: var(--ink); border-bottom-color: var(--ink); }
+.row:has(.choices) .row-label { font: 400 0.824rem/1.6 var(--app); }
+
+.layer-keys {
+  margin: 0;
+  padding: 0.55rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem);
+  border-top: 1px solid var(--edge);
+  font: 400 0.706rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A source, or pasted text: a larger layer. */
+.layer.sheet {
+  top: 6vh;
+  width: min(860px, calc(100vw - 32px));
+  height: 86vh;
+  max-height: none;
+}
+.sheet-name {
+  margin: 0;
+  padding: 0.8rem 1.1rem 0.7rem calc(1.1rem + var(--hang));
+  border-bottom: 1px solid var(--edge);
+  font: 400 0.824rem/1.5 var(--app);
+  color: var(--text);
+}
+.sheet-body { flex: 1; overflow: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
+.sheet-note { padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang)); color: var(--quiet); font: 400 0.824rem/1.5 var(--app); }
+.source-page { background: white; box-shadow: 0 0 0 1px var(--edge); }
+.source-text { margin: 0; width: 100%; white-space: pre-wrap; font: 400 0.824rem/1.6 var(--mono); color: var(--text); }
+.source-image { max-width: 100%; }
+.paste-field {
+  flex: 1;
+  margin: 0;
+  padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang));
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--ink);
+  font: 400 0.824rem/1.6 var(--mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now, .head .next { transition: none; }
+  .layer, .row.changed { animation: none; }
+  .cursor { animation: none; }
+}
+
+@media (max-width: 760px) {
+  :root { --hang: 16px; }
+  .now { padding-top: calc(var(--head-room) - 6px); }
+  .now.rest { padding-top: 24vh; }
+}
+
+/* ------------------------------------------------------------------ */
+/* The foot: one band, always in view. The record's latest fact, a task
+   left open (one quiet line), and the one line to write on. */
+
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 1.2rem calc(-1 * var(--hang) - 8px) 0;
+  padding: 0.2rem calc(var(--hang) + 8px) 1.2rem;
+  background: var(--ground);
+}
+/* The lesson fades out above the band rather than being cut by it. */
+.foot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.4rem;
+  height: 1.4rem;
+  background: linear-gradient(to bottom, transparent, var(--ground));
+  pointer-events: none;
+}
+.foot.in-task { margin-top: 0; }
+.now.lesson { padding-bottom: 0; }
+.now.lesson .foot .task-line { margin-top: 0; }
+.fact {
+  margin: 0.55rem 0 0;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--ink);
+}
+.fact.none { color: var(--hint); }
+.parked {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  width: 100%;
+  margin: 0 0 0.7rem calc(-1 * var(--hang));
+  padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
+  border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
+  font: 400 0.941rem/1.5 var(--read);
+  color: var(--quiet);
+  cursor: text;
+}
+.parked:hover { color: var(--text); }
+.task-line.off {
+  border-left-color: transparent;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.line-end {
+  font: 400 0.706rem/1.6 var(--app);
+  color: var(--hint);
+  background: none;
+  white-space: nowrap;
+}
+.line-end .keys { color: var(--hint); }
+button.line-end:hover { color: var(--text); }
+.line .field { padding-right: 9rem; }
+
+/* At rest the line is the one action: it has an edge, and its end says what Return does. */
+.line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
+.line.rest .field:focus { border-bottom-color: var(--ink); }
+.line.rest .line-tools { bottom: 0.35rem; }
+.line.rest .line-end { font-size: 0.824rem; color: var(--text); }
+.line.rest .line-end .keys { color: var(--ink); }
+.now > .keys { color: var(--hint); }
+
+/* The top edge of a lesson. */
+.top-edge {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: calc(84px - var(--tabs-h));
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--ground) calc(66px - var(--tabs-h)), transparent);
+}
+.session.with-panel .top-edge { right: var(--panel-w); }
+.top-edge .inner {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin: 0 auto;
+  padding-top: 0;
+  height: calc(54px - var(--tabs-h) + 6px);
+  align-items: flex-end;
+  display: flex;
+  gap: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 1rem;
+}
+.top-edge .inner > * { font: 400 0.765rem/1.4 var(--app); color: var(--hint); }
+.top-edge .top-name { color: var(--quiet); overflow: hidden; text-overflow: ellipsis; }
+.top-edge .top-step { overflow: hidden; text-overflow: ellipsis; }
+
+/* Help with the task opens near the line it is about. */
+.layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
+/* Inside the task, the band joins the question above it: nothing fades over the question. */
+.foot.in-task::before { display: none; }

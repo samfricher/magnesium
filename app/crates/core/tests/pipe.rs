@@ -396,6 +396,8 @@ fn a_replaced_conversation_says_nothing_more() {
     };
     assert!(ended_well(&events.turn_end()));
     assert_eq!(events.take_text(), "You said: hello new lesson");
+    // The new conversation's record is read for what its message changed.
+    events.until("the record read", |e| matches!(e, AgentEvent::Settled));
 
     // Wait for the old process to end, then for anything it left behind.
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -594,4 +596,76 @@ fn a_conversation_the_agent_no_longer_has_is_forgotten_not_asked_for_twice() {
     assert!(!opened.resumed);
     manager.send("hello again").unwrap();
     assert!(ended_well(&events.turn_end()));
+}
+
+#[test]
+fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    let folder = bench.folder.canonicalize().unwrap();
+
+    // The first session, named by the page as it began.
+    manager
+        .open_session_at(Some(&folder), false, None, Some("Sampling distributions"))
+        .unwrap();
+    manager.send("first").unwrap();
+    let ready = events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }));
+    let AgentEvent::Ready {
+        session_id: first, ..
+    } = ready
+    else {
+        unreachable!()
+    };
+    assert!(ended_well(&events.turn_end()));
+
+    // A second, new one.
+    manager
+        .open_session_at(Some(&folder), false, None, Some("Confidence intervals"))
+        .unwrap();
+    events.seen.clear();
+    manager.send("second").unwrap();
+    let ready = events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }));
+    let AgentEvent::Ready {
+        session_id: second, ..
+    } = ready
+    else {
+        unreachable!()
+    };
+    assert!(ended_well(&events.turn_end()));
+    assert_ne!(first, second);
+
+    let listed = manager.lessons(Some(&folder)).unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0].session, second);
+    assert_eq!(listed[0].title.as_deref(), Some("Confidence intervals"));
+    assert!(listed[0].current);
+    assert_eq!(listed[1].title.as_deref(), Some("Sampling distributions"));
+    let saved = manager.lesson_turns(Some(&folder), &first).unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].learner, "first");
+
+    // Reading another folder leaves the conversation running.
+    let other = bench.folder.parent().unwrap().join("other");
+    fs::create_dir_all(&other).unwrap();
+    manager.visit_folder(&other).unwrap();
+    assert_eq!(manager.folder().as_deref(), Some(folder.as_path()));
+    assert!(manager.lessons(Some(&other)).unwrap().is_empty());
+    events.seen.clear();
+    manager.send("still here").unwrap();
+    assert!(ended_well(&events.turn_end()));
+
+    // The first session, chosen again, resumes its own conversation.
+    let opened = manager
+        .open_session_at(Some(&folder), true, Some(&first), None)
+        .unwrap();
+    assert!(opened.resumed);
+    assert_eq!(opened.turns.len(), 1);
+    events.seen.clear();
+    manager.send("HISTORY").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    assert_eq!(events.take_text(), format!("This is turn 2 of {first}."));
+    assert_eq!(manager.store().folder(&folder).session_id, Some(first));
+    // The library lists the folder that was opened last first.
+    let workspaces = manager.workspaces();
+    assert_eq!(workspaces[0].folder, folder.to_string_lossy());
 }

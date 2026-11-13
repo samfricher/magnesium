@@ -1,325 +1,94 @@
-/* The tutor's words. They are set like a page of a book: Literata, a narrow
-   measure (the column is 34em of this size, about 66 characters), generous
-   leading. Mathematics sits on the line at the height of the letters round it. */
+/*
+ * The tutor's words: Markdown and mathematics in the reading face. A task is
+ * set apart by a rule hung in the margin, the same rule an answer sits on.
+ */
+
+.tutor { margin: 0 0 0.4rem; }
 
 .prose {
-  font-family: var(--serif);
-  font-size: var(--fs-read);
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.62;
   color: var(--text);
   overflow-wrap: break-word;
 }
-
-.prose > :first-child {
-  margin-top: 0;
-}
-
-.prose > :last-child {
-  margin-bottom: 0;
-}
-
-.prose p {
-  margin: 0 0 0.95em;
-  /* No word is left alone on a last line. */
-  text-wrap: pretty;
-}
-
-.prose li,
-.prose blockquote {
-  text-wrap: pretty;
-}
-
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: 0 0 0.85em; }
 .prose h1,
 .prose h2,
 .prose h3,
 .prose h4 {
-  margin: 1.5em 0 0.5em;
+  margin: 1.4em 0 0.5em;
+  font-size: 1rem;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.4;
 }
-
-.prose h1 {
-  font-size: 1.32em;
-}
-
-.prose h2 {
-  font-size: 1.18em;
-}
-
-.prose h3,
-.prose h4 {
-  font-size: 1em;
-}
-
-.prose strong {
-  font-weight: 600;
-}
-
+.prose h1 { font-size: 1.12rem; }
 .prose ul,
-.prose ol {
-  margin: 0 0 0.95em;
-  padding-left: 1.5em;
-}
+.prose ol { margin: 0 0 0.85em; padding-left: 1.3em; }
+.prose li { margin: 0.2em 0; }
+.prose li::marker { color: var(--quiet); }
+.prose strong { font-weight: 600; }
+.prose a { color: inherit; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+.prose a:hover { text-decoration-color: var(--ink); }
+.prose a.source { cursor: pointer; }
+.prose .source-shut { color: inherit; }
+.prose blockquote { margin: 0 0 0.85em; padding-left: 1em; border-left: 1px solid var(--faint); color: var(--quiet); }
+.prose hr { border: 0; border-top: 1px solid var(--faint); margin: 1.4em 0; }
 
-.prose li {
-  padding-left: 0.15em;
+.prose code {
+  font: 400 0.85em/1 var(--mono);
+  padding: 0.08em 0.3em;
+  border-radius: 3px;
+  background: var(--tint);
 }
-
-.prose li + li {
-  margin-top: 0.4em;
-}
-
-.prose li::marker {
-  color: var(--faint);
-  font-size: 0.86em;
-  font-weight: 600;
-}
-
-.prose li > p {
-  margin-bottom: 0.4em;
-}
-
+.prose code.path { cursor: pointer; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
 .prose pre {
-  margin: 0 0 1em;
-  padding: var(--s3) var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-control);
-  background: var(--surface);
+  margin: 0 0 0.85em;
+  padding: 0.75em 0.9em;
   overflow-x: auto;
-  font-size: var(--fs-small);
-  line-height: 1.55;
-}
-
-.prose pre code {
-  font-size: inherit;
-  background: none;
-  padding: 0;
-}
-
-.prose :not(pre) > code {
-  padding: 0.12em 0.38em;
-  border-radius: var(--r-control);
-  background: var(--hover);
-  font-size: 0.8em;
-}
-
-.prose code.path {
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: var(--line-2);
-  text-underline-offset: 3px;
-}
-
-.prose code.path:hover {
-  text-decoration: underline;
-}
-
-.prose blockquote {
-  margin: 0 0 1em;
-  padding: var(--s1) 0 var(--s1) var(--s4);
-  border-left: 3px solid var(--line-2);
-  color: var(--muted);
-}
-
-.prose .table {
-  max-width: 100%;
-  margin: 0 0 1em;
-  overflow-x: auto;
-}
-
-.prose table {
-  border-collapse: collapse;
-  font-family: var(--sans);
-  font-size: var(--fs-ui);
-  font-variant-numeric: tabular-nums;
-}
-
-.prose th,
-.prose td {
-  padding: var(--s2) var(--s4);
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-}
-
-.prose th {
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--muted);
-  border-bottom-color: var(--line-2);
-}
-
-.prose hr {
-  margin: 1.4em 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-}
-
-/* A link is ink with an underline. It is not green: green is for proofs. */
-.prose a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--muted);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  cursor: pointer;
-  transition: text-decoration-color var(--t-fast) ease-out;
-}
-
-.prose a:hover {
-  text-decoration-color: var(--text);
-}
-
-/* An inline link's focus ring is rounded like every other ring. */
-.prose a:focus-visible,
-.line a:focus-visible {
   border-radius: 4px;
-  outline-offset: 2px;
+  background: var(--tint);
+  font: 400 0.824rem/1.55 var(--mono);
 }
+.prose pre code { padding: 0; background: none; font-size: inherit; }
+.prose pre.diagram-wait { min-height: 6rem; color: transparent; }
+.prose pre.diagram-wait.undrawn { color: var(--text); }
 
-.prose img {
-  display: block;
-  max-width: 100%;
-  margin: 0 0 1em;
-  border-radius: var(--r-control);
-}
+.prose .table { overflow-x: auto; margin: 0 0 0.85em; }
+.prose table { border-collapse: collapse; font-size: 0.941rem; font-variant-numeric: tabular-nums lining-nums; }
+.prose th,
+.prose td { padding: 0.3em 0.9em 0.3em 0; border-bottom: 1px solid var(--faint); text-align: left; vertical-align: top; }
+.prose th { font-weight: 600; }
 
-.prose .missing {
-  font-family: var(--sans);
-  font-size: var(--fs-small);
-  color: var(--faint);
-}
+.prose img { max-width: 100%; border-radius: 3px; }
+.prose .missing { color: var(--quiet); font: 400 0.765rem/1.5 var(--app); }
 
-/* Mathematics. KaTeX's own letters are a little small beside Literata, so in
-   the line it is set at 1.05em to sit on the same x-height, and an inline
-   formula never breaks across lines. On its own line it gets room, and a long
-   formula scrolls inside its own box. */
-.prose .katex {
-  font-size: 1.05em;
-  white-space: nowrap;
-}
+.prose .diagram { overflow-x: auto; margin: 0.4em 0 1em; }
+.prose .diagram svg { max-width: 100%; height: auto; }
 
-.prose .katex-display {
-  margin: 1.1em 0;
-  padding: var(--s1) 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
+.prose .katex { font-size: 1.06em; }
+.prose .katex-display { margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
+.line .katex,
+.you .katex { font-size: 1.08em; }
 
-.prose .katex-display > .katex {
-  font-size: 1.15em;
-}
+.math-wait { height: 2.4rem; }
 
-.prose .diagram {
-  margin: 0 0 1em;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  background: var(--surface);
-  overflow-x: auto;
-  text-align: center;
+/* The task: the last part of a reply, on a rule hung in the margin. */
+.prose div.task {
+  margin: 1.2rem 0 0 calc(-1 * var(--hang));
+  padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--faint);
 }
+.prose div.task > :last-child { margin-bottom: 0; }
+.turn.open .prose div.task { border-left-color: color-mix(in srgb, var(--ink) 45%, var(--faint)); }
+.turn.held .prose div.task { border-left-color: var(--ink); }
+.turn.open:not(.held) .prose div.task { cursor: text; }
+.prose p.task > strong:first-child { font-weight: 600; }
+.prose p.task > strong:first-child::after { content: "."; }
 
-/* A diagram keeps the size it was drawn at, so its words stay readable: it is
-   as tall as it needs to be, and narrows to the column only as far as
-   Rich.tsx allows (its words never fall under 12px). A wider one scrolls
-   sideways inside its own box. Its room while it is drawn is kept below. */
-.prose .diagram svg {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  margin: 0 auto;
-}
+/* The open task's rule runs on into its line, under it. */
+.turn.open .tutor { margin-bottom: 0; }
+.turn.open .prose div.task { padding-bottom: 0.2rem; }
 
-.prose .diagram.wide::after {
-  content: "Scroll sideways to see the rest";
-  display: block;
-  position: sticky;
-  left: 0;
-  margin-top: var(--s2);
-  font-family: var(--sans);
-  font-size: var(--fs-caption);
-  color: var(--muted);
-}
-
-.prose pre.diagram-wait:not(.undrawn) {
-  position: relative;
-  min-height: 11em;
-  overflow: hidden;
-  border-style: solid;
-}
-
-/* What follows a diagram waits for it, so the drawing never pushes down text that is already being read. */
-.prose pre.diagram-wait:not(.undrawn) ~ * {
-  display: none;
-}
-
-.prose pre.diagram-wait:not(.undrawn) code {
-  visibility: hidden;
-}
-
-.prose pre.diagram-wait:not(.undrawn)::after {
-  content: "Drawing the diagram";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-family: var(--sans);
-  font-size: var(--fs-small);
-  color: var(--muted);
-}
-
-/* The room a display formula will take, kept while it is still being written. */
-.math-wait {
-  height: 5em;
-  font-size: var(--fs-read);
-  animation: make-room var(--t-move) var(--ease) both;
-}
-
-@keyframes make-room {
-  from {
-    height: 0;
-  }
-}
-
-/* The thing to do next. A paragraph the tutor opened with a bold "Task." is set
-   apart, and nothing dresses it but one mark in the margin: a 3px green
-   segment of the margin rule, for exactly its height, while it is the task in
-   hand. No number, no fill, no card, no corners. Its italic label ("Task",
-   "Check 1 of 2") stays above the question. */
-.prose div.task,
-.prose :not(div.task) > p.task {
-  position: relative;
-  margin: 1.2em 0 0;
-}
-
-.prose div.task::after,
-.prose :not(div.task) > p.task::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * var(--gap) - 1px);
-  width: 3px;
-  background: var(--accent);
-  pointer-events: none;
-}
-
-.prose div.task > :last-child {
-  margin-bottom: 0;
-}
-
-/* A task that has been answered is no longer the one to do: its stretch of the
-   margin rule is just the rule again. */
-.answered .prose div.task::after,
-.answered .prose :not(div.task) > p.task::after {
-  display: none;
-}
-
-.prose div.task .katex-display {
-  margin: 0.7em 0;
-}
-
-/* The label of a task ("Task", "Check 1 of 2") is the lesson's one label style (see .lesson-label). */
-.prose p.task > strong:first-child {
-  margin-bottom: var(--s1);
-}
+/* The words the engine needs a due question to open with, drawn quiet and unnumbered. */
+.prose .earlier { font: 400 0.765rem/1 var(--app); color: var(--quiet); margin-right: 0.35em; }

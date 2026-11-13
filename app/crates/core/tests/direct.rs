@@ -18,9 +18,10 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use mg_core::agent::{AgentEvent, NoticeKind};
+use mg_core::agent::{AgentEvent, Intent, NoticeKind};
 use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
+use mg_core::plan::PlanPart;
 use mg_core::store::Engine;
 use mg_core::study::Paper;
 use mg_core::{Manager, Store};
@@ -2781,4 +2782,341 @@ fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     assert_eq!(attempts[0]["cold"], false, "{attempts:#?}");
     manager.shut_down();
+}
+
+// --- Talk, and the plan ------------------------------------------------------
+
+const FIRST: &str = "What is b in x² − 5x + 6 = 0?";
+
+/// The scratch course's plan, as `scripts/scratch-course.sh` writes it: an
+/// exam ten days from today and five items.
+fn stats_plan(bench: &Bench) -> String {
+    let exam = (chrono::Local::now().date_naive() + chrono::Days::new(10)).to_string();
+    let dir = bench.root.join("Study/midterm-2");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("plan.md"),
+        format!(
+            "# Midterm 2: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 2 |\n| When | {exam} 10:00 to 11:15 |\n\n\
+             ## 6. Blocks\n\n| # | Block | Purpose | Status | Day |\n|---|---|---|---|---|\n\
+             | 1 | Sampling distributions | the standard error | doing | |\n\
+             | 2 | Confidence intervals | t intervals | todo | |\n\
+             | 3 | Hypothesis tests | p-values | todo | |\n\n## 14. Changes\n\n- built.\n"
+        ),
+    )
+    .unwrap();
+    exam
+}
+
+/// Wait for the event `matches` picks among those still to come.
+fn next_event(
+    events: &mut Events,
+    what: &str,
+    matches: impl Fn(&AgentEvent) -> bool,
+) -> AgentEvent {
+    events.until(what, matches)
+}
+
+fn marked(events: &Events) -> usize {
+    events
+        .seen
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Marked { .. }))
+        .count()
+}
+
+#[test]
+fn talk_is_never_marked_and_the_open_task_stays_open() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    events.take();
+    // The block of this reply marks the message right and poses a new
+    // task; sent as talk, code marks nothing and keeps the task.
+    manager
+        .send_with("b = -5 COLD", Some(Intent::Talk))
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let state = bench.logged("message").pop().unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        state.contains("sent this message as talk, not as an answer"),
+        "the tutor is told: {state}"
+    );
+    assert!(
+        bench.logged("message").pop().unwrap()["learner"] == "b = -5 COLD",
+        "the window's mark never reaches the model"
+    );
+    assert!(bench.attempts().is_empty(), "talk is never marked");
+    // No mark comes, however long the window looks.
+    std::thread::sleep(Duration::from_millis(1500));
+    while let Ok(event) = events.receiver.try_recv() {
+        events.seen.push(event);
+    }
+    assert_eq!(marked(&events), 0, "{:#?}", events.seen);
+    events.take();
+    // The next answer is marked, against the task that stayed open.
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let mark = next_event(&mut events, "marked", |e| {
+        matches!(e, AgentEvent::Marked { .. })
+    });
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["question"], FIRST);
+    assert_eq!(attempts[0]["mark"], "wrong");
+    match mark {
+        AgentEvent::Marked { mark } => {
+            assert_eq!(mark.mark, "wrong");
+            assert_eq!(Some(mark.id.as_str()), attempts[0]["attempt_id"].as_str());
+        }
+        _ => unreachable!(),
+    }
+    manager.shut_down();
+}
+
+#[test]
+fn an_off_plan_question_gets_no_task_and_no_mark_and_back_to_poses_the_task_again() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    events.take();
+    // Left to the tutor, an off-plan question is answered with no task.
+    manager
+        .send("By the way, why do we divide by n − 1?")
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert!(reply.contains("not on the plan"), "{reply}");
+    manager.send("OK, back to the task").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let (reply, _) = events.take();
+    assert_eq!(reply, format!("Back to it. {FIRST}"));
+    assert!(bench.attempts().is_empty());
+    // The task that was left is the one an answer is marked against.
+    manager.send("b = -5 COLD").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let attempts = bench.attempts();
+    assert_eq!(attempts.len(), 1, "{attempts:#?}");
+    assert_eq!(attempts[0]["question"], FIRST);
+    assert_eq!(attempts[0]["mark"], "right");
+    manager.shut_down();
+}
+
+#[test]
+fn the_tutor_changes_the_plan_file_and_the_window_hears_what_changed() {
+    let bench = Bench::new(None, &[]);
+    let exam = stats_plan(&bench);
+    let (manager, mut events) = bench.manager();
+    let before = manager.plan().unwrap();
+    assert_eq!(before.target.as_deref(), Some("midterm-2"));
+    assert_eq!(before.title.as_deref(), Some("Midterm 2"));
+    assert_eq!(before.exam_date.as_deref(), Some(exam.as_str()));
+    assert_eq!(before.path.as_deref(), Some("Study/midterm-2/plan.md"));
+    let ids = |plan: &mg_core::plan::Plan| {
+        plan.items
+            .iter()
+            .map(|item| item.id.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(&before),
+        vec![
+            "sampling-distributions",
+            "confidence-intervals",
+            "hypothesis-tests"
+        ]
+    );
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("Midterm 2").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let first = &bench.logged("message")[0];
+    let state = first["state"].as_str().unwrap();
+    assert!(
+        state.contains(&format!(
+            "Study plan: Study/midterm-2/plan.md: Midterm 2, on {exam}, 10 days from today"
+        )),
+        "the tutor is told where the plan is: {state}"
+    );
+    events.take();
+
+    manager
+        .send_with(
+            "I skipped three days and the midterm moved, change the plan",
+            Some(Intent::Talk),
+        )
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let changed = next_event(&mut events, "plan_changed", |e| {
+        matches!(e, AgentEvent::PlanChanged { .. })
+    });
+    let AgentEvent::PlanChanged { what } = changed else {
+        unreachable!()
+    };
+    assert!(what.contains(&PlanPart::ExamDate), "{what:?}");
+    assert!(what.contains(&PlanPart::Items), "{what:?}");
+    assert!(what.contains(&PlanPart::Text), "{what:?}");
+    let (reply, _) = events.take();
+    assert!(reply.starts_with("Done: the exam is now on"), "{reply}");
+    // The file is the plan: the runtime's digest reads the new date.
+    let after = manager.plan().unwrap();
+    let moved = (chrono::NaiveDate::parse_from_str(&exam, "%Y-%m-%d").unwrap()
+        + chrono::Days::new(7))
+    .to_string();
+    assert_eq!(after.exam_date.as_deref(), Some(moved.as_str()));
+    assert_eq!(
+        ids(&after),
+        vec![
+            "sampling-distributions",
+            "hypothesis-tests",
+            "confidence-intervals"
+        ]
+    );
+    assert!(after
+        .text
+        .as_deref()
+        .unwrap()
+        .contains("exam moved a week later"));
+    assert!(after.changed_ms.unwrap() >= before.changed_ms.unwrap());
+    let digest = bench.cli(&["digest"]);
+    assert_eq!(digest["plans"][0]["days_left"], 17);
+    // The model edited the file with Edit, which only the plan files allow.
+    let start = &bench.logged("start")[0];
+    let args: Vec<String> = serde_json::from_value(start["args"].clone()).unwrap();
+    let allowed = &args[args.iter().position(|a| a == "--allowedTools").unwrap() + 1];
+    assert!(
+        allowed.contains(&format!("Edit(/{}/Study/*/plan.md)", bench.root.display())),
+        "{allowed}"
+    );
+    // Asking for a change is talk: nothing was marked.
+    assert!(bench.attempts().is_empty());
+    manager.shut_down();
+}
+
+#[test]
+fn a_new_goal_in_the_record_block_becomes_the_lessons_goal() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(manager.plan().unwrap().goal.as_deref(), Some("TEACH me"));
+    events.take();
+    manager
+        .send_with(
+            "NEW GOAL confidence intervals for midterm-2",
+            Some(Intent::Talk),
+        )
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let changed = next_event(&mut events, "plan_changed", |e| {
+        matches!(e, AgentEvent::PlanChanged { .. })
+    });
+    let AgentEvent::PlanChanged { what } = changed else {
+        unreachable!()
+    };
+    assert_eq!(what, vec![PlanPart::Goal, PlanPart::Steps]);
+    let digest = bench.cli(&["digest"]);
+    assert_eq!(
+        digest["record"]["sessions"][0]["goal"],
+        "confidence intervals for midterm-2"
+    );
+    let plan = manager.plan().unwrap();
+    assert_eq!(
+        plan.goal.as_deref(),
+        Some("confidence intervals for midterm-2")
+    );
+    assert_eq!(plan.steps.len(), 3);
+    assert_eq!(bench.sessions(), 1, "the same lesson, with a new goal");
+    manager.shut_down();
+}
+
+#[test]
+fn the_plugin_engine_writes_the_plan_files_without_asking_and_nothing_else() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.set_engine(Engine::Plugin);
+    manager.open_session(false).unwrap();
+    manager.send_with("Why n − 1?", Some(Intent::Talk)).unwrap();
+    done(&manager, &mut events);
+    let log = bench.root.parent().unwrap().join("plugin.log");
+    let entries: Vec<Value> = fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    let start = entries.iter().find(|e| e["kind"] == "start").unwrap();
+    let args: Vec<String> = serde_json::from_value(start["value"]["args"].clone()).unwrap();
+    let settings: Value =
+        serde_json::from_str(&args[args.iter().position(|a| a == "--settings").unwrap() + 1])
+            .unwrap();
+    let root = bench.root.display();
+    let rules = |kind: &str| -> Vec<String> {
+        serde_json::from_value(settings["permissions"][kind].clone()).unwrap()
+    };
+    assert_eq!(
+        rules("allow"),
+        vec![
+            format!("Edit(/{root}/Study/*/plan.md)"),
+            format!("Write(/{root}/Study/*/plan.md)"),
+            format!("Edit(/{root}/Study/*/graph.yaml)"),
+            format!("Write(/{root}/Study/*/graph.yaml)"),
+        ]
+    );
+    assert!(rules("deny").contains(&format!("Edit(/{root}/.magnesium/**)")));
+    assert!(rules("deny").contains(&format!("Write(/{root}/.magnesium/**)")));
+    // Talk carries its plain-words lead, which the teaching files respect.
+    let received = entries
+        .iter()
+        .filter(|e| e["kind"] == "received")
+        .map(|e| e["value"].to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        received.contains("This is not an answer to the task, so please don't mark it."),
+        "{received}"
+    );
+    manager.shut_down();
+}
+
+#[test]
+fn a_kept_turn_says_how_it_was_sent_and_which_task_it_left_open() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the task", |e| {
+        matches!(e, AgentEvent::OpenTask { .. })
+    });
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    manager
+        .send_with("why that way?", Some(Intent::Talk))
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    manager.shut_down();
+
+    let folder = manager.folder().unwrap();
+    let session = manager.store().folder(&folder).session_id.unwrap();
+    let turns = manager.store().turns(&folder, &session);
+    assert_eq!(turns.len(), 3, "{turns:#?}");
+    // The window's opening words were sent with no intent, and the reply posed the task.
+    assert_eq!(turns[0].intent, None);
+    assert_eq!(turns[0].task.as_deref(), Some(FIRST));
+    assert!(turns[0].posed);
+    assert_eq!(turns[1].intent, Some(Intent::Answer));
+    assert_eq!(turns[2].intent, Some(Intent::Talk));
 }

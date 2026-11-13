@@ -113,6 +113,41 @@ pub fn hand_in(root: &Path, group: &str, source: &Path) -> Result<String, String
     Ok(relative.join(name).to_string_lossy().into_owned())
 }
 
+/// Hand in an image the learner pasted, which has no file of its own: it is
+/// written to a scratch file first, then handed in as any photo is.
+pub fn hand_in_bytes(root: &Path, group: &str, name: &str, bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("That image is larger than 200 MB.".into());
+    }
+    let ext = extension(Path::new(name));
+    let ext = if IMAGES.contains(&ext.as_str()) || ext == "pdf" {
+        ext
+    } else {
+        "png".to_owned()
+    };
+    let stem = safe_name(
+        &Path::new(name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "pasted".into()),
+    );
+    let scratch = std::env::temp_dir().join(format!(
+        "magnesium-paste-{}-{}",
+        std::process::id(),
+        Local::now().timestamp_millis()
+    ));
+    fs::create_dir_all(&scratch).map_err(|e| format!("The image could not be kept: {e}."))?;
+    let file = scratch.join(format!(
+        "{}.{ext}",
+        if stem.is_empty() { "pasted" } else { &stem }
+    ));
+    let result = fs::write(&file, bytes)
+        .map_err(|e| format!("The image could not be kept: {e}."))
+        .and_then(|()| hand_in(root, group, &file));
+    let _ = fs::remove_dir_all(&scratch);
+    result
+}
+
 /// Convert with `sips`, which every Mac has.
 fn shrink(source: &Path, target: &Path) -> bool {
     let Some(sips) = paths::find_program("sips").or_else(|| {

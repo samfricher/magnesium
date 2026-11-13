@@ -1,380 +1,420 @@
-// The window: which screen is up, and the few things that move between them.
+// The window: a quiet row of tabs over three levels.
 //
-// The way through it is a line: the library of courses, one course, the
-// lesson, and the end of the sitting. Progress, a timed paper and this Mac's
-// setup hang off that line, and each goes back to where it was opened from.
+//   Home       every workspace in the library, and the most recent session
+//              first, so Return carries on. A workspace's page opens in the
+//              Home tab: its sessions under a visible "New session", its
+//              material, papers, and the folder itself.
+//   Session    the one-surface lesson of #67, in a tab of its own.
+//   Settings   a readable page, in a tab of its own.
+//
+// Every command is a visible control, an item in the menu bar, and, for the
+// few the window itself has, a row in ⌘K. The menu sends what a click sends.
+// How the window was left (the tabs, the one in front, the plan beside the
+// lesson) is kept in the window's own state, as fields an older build skips.
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
-import { busy, emptySession, openingWords, pickedWords, reduce } from "./lesson";
-import { Course } from "./screens/Course";
-import { Library, displayName } from "./screens/Library";
-import { Palette, type Command } from "./screens/Palette";
-import { Paper } from "./screens/Paper";
-import { Progress } from "./screens/Progress";
-import { Session } from "./screens/Session";
-import { Setup, setupReady } from "./screens/Setup";
-import { Summary, reviewIn, type Sitting } from "./screens/Summary";
-import { EngineControl } from "./ui/Engine";
-import { DropVeil, PasteSheet } from "./ui/Material";
-import type {
-  About,
-  Activity,
-  AgentEvent,
-  Answer,
-  Card,
-  Core,
-  Decision,
-  Engine,
-  EngineChoice,
-  Home,
-  Materials,
-  Paper as PaperInfo,
-  Payment,
-  Progress as ProgressData,
-  Rail,
-  Row,
-  RuntimeSetup,
-  Setup as SetupData,
-  Today,
-} from "./types";
+import { harnessOn, mark, ready, setProbe } from "./harness";
+import { HomePage, mostRecent, setupStep } from "./pages/Home";
+import { SettingsPage } from "./pages/Settings";
+import { Tabs, tabId, type TabView } from "./pages/Tabs";
+import { WorkspacePage } from "./pages/Workspace";
+import { actionOf, applyPrefs, flushPlaces, keyName, loadPrefs, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
+import type { SourceRef } from "./sources";
+import { Commands } from "./surface/Commands";
+import { Session, setupReady, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
+import { PasteSheet, SourceSheet } from "./surface/Sheets";
+import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Setup, Workspace } from "./types";
+import { displayName, withoutPaths } from "./words";
 
-type View = "loading" | "setup" | "library" | "course" | "session" | "summary" | "progress" | "paper";
+type HomeTab = { key: "home"; kind: "home" };
+type SettingsTab = { key: "settings"; kind: "settings" };
+export type Tab = HomeTab | SessionTab | SettingsTab;
 
-const BLOCKS = [25, 50, 90];
+type Overlay = { kind: "commands" } | { kind: "source"; folder: string; source: SourceRef } | { kind: "paste"; folder: string } | null;
 
-/** The window's keys, for the entry in the menu that lists them. */
-const SHORTCUTS: Command = {
-  label: "Keyboard shortcuts",
-  icon: "keys",
-  keywords: "help keys shortcuts",
-  shortcuts: [
-    ["⌘K", "Open this menu"],
-    ["⌘N", "New lesson, on any page of a course. Not in a lesson, and not while a paper runs."],
-    ["⌘O", "Open a course folder (in the library and on a course page)"],
-    ["⌘⇧H", "Hint (in a lesson)"],
-    ["⌘⇧D", "I don't know (in a lesson)"],
-    ["⌘⇧L", "I'm lost (in a lesson)"],
-    ["⌘.", "Stop the reply being written"],
-    ["Return", "Send your answer, or do the screen's green button"],
-    ["⇧Return", "Start a new line in your answer"],
-    ["⌥1 ⌥2 ⌥3", "How sure? in a lesson: Sure, Unsure, Guess"],
-    ["PageUp PageDown", "Scroll the lesson from the answer box"],
-    ["⌥↑ ⌥↓", "Scroll the lesson from the answer box, a little at a time"],
-    ["← → ↑ ↓", "Move through a choice, such as Midterm and Final, or through the papers"],
-    ["↑ 1 2 3", "Choose an answer when the tutor asks \"Which of these was in your head?\": ↑ from your own words, then 1 2 3 or ↑ ↓, and Return."],
-    ["Esc", "Go back, or close what is open"],
-  ],
-  run: () => {},
+/** How the window was left, as kept in its state file. */
+type Saved = {
+  v: 1;
+  tabs: ({ kind: "session"; key: string; folder: string; session: string | null; title: string } | { kind: "settings" })[];
+  active: number;
+  /** The workspace whose page the Home tab showed, or null for Home itself. */
+  home: string | null;
+  panel: boolean;
+  seen_ms: number;
 };
-/** How often the setup screen asks Claude Code whether a sign-in finished, and for how long. */
-const SIGN_IN_POLL_MS = 2000;
-const SIGN_IN_LIMIT_MS = 15 * 60_000;
 
-const stepsDone = (rail: Rail | null) => rail?.steps.filter((step) => step.status === "done").length ?? 0;
+const HOME: HomeTab = { key: "home", kind: "home" };
+const SETTINGS: SettingsTab = { key: "settings", kind: "settings" };
 
-const proofsOf = (row: Row) => row.dots.filter((dot) => dot === 2).length;
+/** A session not begun yet is named by its workspace: "Intro Statistics, new". */
+const newTitle = (name: string) => `${displayName(name)}, new`;
 
-/** How many proofs each skill holds, by the skill's name. */
-function tally(progress: ProgressData): Map<string, number> {
-  const counts = new Map<string, number>();
-  [...progress.confirmed, ...progress.in_progress].forEach((row) => counts.set(row.name, proofsOf(row)));
-  return counts;
-}
+let counter = 0;
+const newKey = () => `s${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-/** Whether a folder's lesson can continue at once: it is set up, current, and no paper is running. */
-const canContinue = (home: Home) => home.state === "ready" && !home.sitting;
-
-/**
- * How many answers the tutor marked in a sitting, from today's counts before
- * and after it, or null when that cannot be told. A sitting that crosses
- * midnight counts the answers marked after midnight, which may be fewer than
- * all, and says nothing when there are none.
- */
-export function markedIn(before: Today | null, after: Today | null): number | null {
-  if (!before || !after) return null;
-  if (before.day === after.day) return Math.max(0, after.answered - before.answered);
-  return after.answered > 0 ? after.answered : null;
-}
-
-/**
- * The skills answered wrong in this lesson, and the day the record brings each
- * back: the marks the lesson recorded (wrong, in a lesson, since it began),
- * each joined to the skill of that name in the record, which holds its next
- * day. A mark with no skill of that name, or a skill with no next day, is
- * left out: the window says no more than the record does.
- */
-export async function slippedIn(api: Core, rows: ProgressData["in_progress"], startedMs: number | null): Promise<{ name: string; next_day: string }[]> {
-  if (startedMs === null) return [];
-  let marks: Awaited<ReturnType<Core["marks"]>> = null;
-  try {
-    marks = await api.marks();
-  } catch {
-    return [];
-  }
-  if (!marks) return [];
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const began = new Date(startedMs);
-  // The record's times are local, "2026-11-12 09:41", to the minute.
-  const since = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())} ${pad(began.getHours())}:${pad(began.getMinutes())}`;
-  const key = (text: string) => text.trim().toLowerCase();
-  const out = new Map<string, { name: string; next_day: string }>();
-  for (const mark of marks) {
-    if (mark.paper !== null || mark.mark !== "wrong" || mark.at < since) continue;
-    const row = rows.find((each) => key(each.name) === key(mark.label));
-    if (row && row.next_day) out.set(key(row.name), { name: row.name, next_day: row.next_day });
-  }
-  return [...out.values()];
-}
-
-/** The day after a day written as "2026-11-10". */
-function dayAfter(day: string): string {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
+/** What the self-check and the demo drive the window with. */
+export type Actions = {
+  run: (command: string, arg?: string) => void;
+  /** Home's first row: carry on the most recent session, or start one. */
+  continueRecent: () => void;
+  newSession: (folder?: string, pending?: Pending) => void;
+  openSession: (folder: string, session: string, title: string) => void;
+  goWorkspace: (folder: string | null) => void;
+  /** The session in front, or null. */
+  session: () => SessionHandle | null;
+  tabs: () => { key: string; kind: Tab["kind"]; title: string }[];
+  active: () => string;
+  workspaces: () => Workspace[];
+  reload: () => Promise<void>;
+};
 
 export function App() {
   const [api, setApi] = useState<Core | null>(null);
-  const [view, setView] = useState<View>("loading");
-  // Where Progress and Setup go back to.
-  const [from, setFrom] = useState<View>("library");
-  const [folders, setFolders] = useState<string[]>([]);
-  const [cards, setCards] = useState<Card[] | null>(null);
-  const [activity, setActivity] = useState<Activity | null>(null);
-  const [home, setHome] = useState<Home | null>(null);
-  const [session, dispatch] = useReducer(reduce, emptySession);
-  const [rail, setRail] = useState<Rail | null>(null);
-  const [progress, setProgress] = useState<ProgressData | null>(null);
-  const [summary, setSummary] = useState<Sitting | null>(null);
-  const [palette, setPalette] = useState(false);
-  const [asking, setAsking] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [finding, setFinding] = useState(false);
-  const [chosenPaper, setChosenPaper] = useState<PaperInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<SetupData | null>(null);
+  const [setup, setSetup] = useState<Setup | null>(null);
   const [about, setAbout] = useState<About | null>(null);
-  // Which engine runs lessons. null when the core cannot say.
   const [engine, setEngine] = useState<EngineChoice | null>(null);
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
+  const [tabs, setTabs] = useState<Tab[]>([HOME]);
+  const [active, setActive] = useState<string>("home");
+  const [homeFolder, setHomeFolder] = useState<string | null>(null);
+  const [panel, setPanel] = useState(false);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [liveKey, setLiveKey] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [taskOpen, setTaskOpen] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<string[]>([]);
   const [signingIn, setSigningIn] = useState(false);
-  // What Claude Code said before the sign-in, to see when its answer changes.
-  const accountBefore = useRef("");
-  const [upgrading, setUpgrading] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  // Adding course material: what it said, whether it is under way, whether
-  // files are being dragged over the window, and the text being pasted.
-  const [material, setMaterial] = useState<string[] | null>(null);
-  // What the course's material folder already holds. null until it has been read, or when it cannot be.
-  const [materials, setMaterials] = useState<Materials | null>(null);
-  const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [pasting, setPasting] = useState<string | null>(null);
-  // Until the first screen is up, a finished setup opens it.
-  const waitingForSetup = useRef(true);
-  // What this sitting has counted so far, for the screen that ends it:
-  // the messages the learner sent, and today's counts when it began.
-  const sitting = useRef<{ answers: number; alreadyStudied: boolean; todayBefore: Today | null }>({
-    answers: 0,
-    alreadyStudied: false,
-    todayBefore: null,
-  });
-  // The proofs each skill held when the sitting began, or null when they
-  // could not be read. The end of the sitting shows what was earned since.
-  const proofsBefore = useRef<Map<string, number> | null>(null);
-  const opening = useRef(false);
+  const [restored, setRestored] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<string | null>(null);
+  const [blockMinutes, setBlockMinutes] = useState(50);
+  const [materialChanged, setMaterialChanged] = useState(0);
+  const handles = useRef<Record<string, SessionHandle>>({});
+  const setupWait = useRef<Promise<Setup> | null>(null);
+  // The commands a key just ran: the menu's echo of the same press is not run twice.
+  const pressed = useRef<Record<string, number>>({});
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ api, view, from, home, session, palette, setup, rail, activity, engine });
-  now.current = { api, view, from, home, session, palette, setup, rail, activity, engine };
-  // The newest copies of two handlers, for the listeners that outlive a render.
-  const addMaterialRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
-  const canAddRef = useRef<() => boolean>(() => false);
+  const now = useRef({ api, setup, prefs, workspaces, tabs, active, homeFolder, panel, overlay, liveKey, busyKey });
+  now.current = { api, setup, prefs, workspaces, tabs, active, homeFolder, panel, overlay, liveKey, busyKey };
 
-  const refreshRail = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setRail(await api.rail());
-    } catch {
-      // The steps are a convenience. A lesson goes on without them.
-    }
+  useLayoutEffect(() => applyPrefs(prefs), [prefs]);
+
+  const changePrefs = useCallback((change: Partial<Prefs>) => {
+    setPrefs((old) => {
+      const next = { ...old, ...change };
+      savePrefs(next);
+      applyPrefs(next, change.scheme !== undefined);
+      return next;
+    });
   }, []);
 
-  const refreshHome = useCallback(async (): Promise<Home | null> => {
-    const { api } = now.current;
-    if (!api) return null;
-    try {
-      const fresh = await api.home();
-      setHome(fresh);
-      return fresh;
-    } catch (problem) {
-      setError(String(problem));
-      return null;
-    }
+  const note = useCallback((said: string) => {
+    const text = withoutPaths(said.replace(/^Error: /, ""));
+    setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
-  const refreshActivity = useCallback(async () => {
-    try {
-      const fresh = await now.current.api?.activity();
-      if (fresh) setActivity(fresh);
-    } catch {
-      // The run is a convenience too.
-    }
+  const loadWorkspaces = useCallback(async () => {
+    const found = await now.current.api?.workspaces().catch(() => null);
+    if (found) setWorkspaces(found);
   }, []);
 
-  /** Read the proofs for the open course. Quiet on the course page, which only draws a summary of them. */
-  const loadProgress = useCallback(async (target: string | null, loud: boolean) => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setProgress(await api.progress(target));
-    } catch (problem) {
-      if (loud) setError(String(problem));
-    }
-  }, []);
-
-  /** Read what the open course's material folder holds. A core that cannot say shows nothing: the course page reads as it did. */
-  const loadMaterials = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      setMaterials(await api.materialList());
-    } catch {
-      setMaterials(null);
-    }
-  }, []);
-
-  /** Which engine runs lessons, and the one the open folder's conversation began on. */
   const loadEngine = useCallback(async () => {
-    const { api } = now.current;
-    if (!api) return;
     try {
-      const fresh = await api.engine();
-      now.current.engine = fresh;
-      setEngine(fresh);
+      const fresh = await now.current.api?.engine();
+      if (fresh) setEngine(fresh);
     } catch {
-      // A core that cannot say shows no choice. Lessons run as before.
       setEngine(null);
     }
   }, []);
 
-  const loadLibrary = useCallback(async () => {
+  // ---------------------------------------------------------------------------
+  // Tabs
+
+  const activate = useCallback((key: string) => {
+    setOverlay(null);
+    setActive(key);
+    const tab = now.current.tabs.find((each) => each.key === key);
+    if (tab?.kind === "session" && tab.session) void now.current.api?.touchSession(tab.folder, tab.session).catch(() => {});
+  }, []);
+
+  const goWorkspace = useCallback(
+    (folder: string | null) => {
+      setHomeFolder(folder);
+      activate("home");
+      if (folder) void now.current.api?.visitFolder(folder).then(() => loadWorkspaces(), () => {});
+    },
+    [activate, loadWorkspaces],
+  );
+
+  const addSession = useCallback(
+    (tab: Omit<SessionTab, "key" | "kind">) => {
+      const key = newKey();
+      setTabs((old) => {
+        const settings = old.findIndex((each) => each.kind === "settings");
+        const next = [...old];
+        // A session goes after the sessions, before Settings.
+        next.splice(settings === -1 ? next.length : settings, 0, { key, kind: "session", ...tab });
+        return next;
+      });
+      setOverlay(null);
+      setActive(key);
+      return key;
+    },
+    [],
+  );
+
+  /** The workspace in front: the page in the Home tab, or the session's. */
+  const folderInFront = (): string | null => {
+    const { tabs, active, homeFolder, workspaces } = now.current;
+    const tab = tabs.find((each) => each.key === active);
+    if (tab?.kind === "session") return tab.folder;
+    if (tab?.kind === "home" && homeFolder) return homeFolder;
+    return workspaces?.[0]?.folder ?? null;
+  };
+
+  const newSession = useCallback(
+    (folder?: string, pending?: Pending) => {
+      const where = folder ?? folderInFront();
+      if (!where) {
+        goWorkspace(null);
+        note("Open a workspace first: a folder your course is in.");
+        return;
+      }
+      // A workspace has one session not begun at a time: New session goes to it.
+      const waiting = now.current.tabs.find((each) => each.kind === "session" && each.folder === where && each.session === null && !each.pending && !handles.current[each.key]?.state().live);
+      if (waiting) {
+        activate(waiting.key);
+        if (pending?.kind === "start") void handles.current[waiting.key]?.start();
+        return;
+      }
+      const name = now.current.workspaces?.find((each) => each.folder === where)?.name ?? where.split("/").pop() ?? "";
+      addSession({ folder: where, session: null, title: newTitle(name), ...(pending ? { pending } : {}) });
+      void loadWorkspaces();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activate, addSession, goWorkspace, note, loadWorkspaces],
+  );
+
+  /** A kept session, in its tab as it was left: its turns, its open task and the line in it. Nothing is sent. */
+  const openSession = useCallback(
+    (folder: string, session: string, title: string) => {
+      const open = now.current.tabs.find((each) => each.kind === "session" && each.folder === folder && each.session === session);
+      if (open) return activate(open.key);
+      void now.current.api?.touchSession(folder, session).catch(() => {});
+      addSession({ folder, session, title });
+    },
+    [activate, addSession],
+  );
+
+  const continueRecent = useCallback(() => {
+    const list = now.current.workspaces ?? [];
+    const recent = mostRecent(list);
+    if (recent?.latest) openSession(recent.folder, recent.latest.session, recent.latest.title ?? "");
+    else if (list[0]) newSession(list[0].folder, { kind: "start" });
+  }, [openSession, newSession]);
+
+  const closeTab = useCallback(
+    async (key: string) => {
+      if (key === "home") return;
+      const { tabs, active } = now.current;
+      const at = tabs.findIndex((each) => each.key === key);
+      if (at === -1) return;
+      await handles.current[key]?.close();
+      if (now.current.liveKey === key) setLiveKey(null);
+      if (now.current.busyKey === key) setBusyKey(null);
+      setTabs((old) => old.filter((each) => each.key !== key));
+      if (active === key) setActive(tabs[Math.max(0, at - 1)]?.key ?? "home");
+      void loadWorkspaces();
+    },
+    [loadWorkspaces],
+  );
+
+  const openSettings = useCallback((section: string | null = null) => {
+    setTabs((old) => (old.some((each) => each.kind === "settings") ? old : [...old, SETTINGS]));
+    setSettingsSection(section);
+    setOverlay(null);
+    setActive("settings");
+  }, []);
+
+  const step = (by: number) => {
+    const { tabs, active } = now.current;
+    const at = tabs.findIndex((each) => each.key === active);
+    activate(tabs[(at + by + tabs.length) % tabs.length].key);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Commands: one place for the menu, the keys, ⌘K and the visible controls
+
+  const pickFolder = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    const path = await api.pickFolder();
+    if (!path) return;
+    try {
+      await api.visitFolder(path);
+      await loadWorkspaces();
+      goWorkspace(path);
+    } catch (problem) {
+      note(String(problem));
+    }
+  };
+
+  const newFolder = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    const path = await api.pickNewFolder();
+    if (!path) return;
+    try {
+      const made = await api.newFolder(path);
+      await loadWorkspaces();
+      goWorkspace(made.folder);
+    } catch (problem) {
+      note(String(problem));
+    }
+  };
+
+  const findFolders = async () => {
     const { api } = now.current;
     if (!api) return;
     try {
-      const [list, fresh] = await Promise.all([api.recent(), api.library()]);
-      setFolders(list);
-      setCards(fresh);
+      const added = await api.findFolders();
+      note(added === 0 ? "No other study folder was found on this Mac." : `${added} ${added === 1 ? "folder" : "folders"} added.`);
+      await loadWorkspaces();
     } catch (problem) {
-      setError(String(problem));
-      setCards((old) => old ?? []);
+      note(String(problem));
     }
-    void refreshActivity();
-  }, [refreshActivity]);
+  };
 
-  const showLibrary = useCallback(() => {
-    setError(null);
-    setNotice(null);
-    setMaterial(null);
-    setAsking(false);
-    setView("library");
-    void loadLibrary();
-  }, [loadLibrary]);
-
-  /**
-   * Open a folder and show its page. With `stay`, the screen stays where it
-   * is when the folder can continue at once, for the caller to start the
-   * lesson. Resolves to the folder, or null when it could not be opened.
-   */
-  const showFolder = useCallback(
-    async (api: Core, open: () => Promise<Home>, stay = false): Promise<Home | null> => {
-      if (opening.current) return null;
-      opening.current = true;
-      setError(null);
-      setNotice(null);
-      setMaterial(null);
-      try {
-        const opened = await open();
-        waitingForSetup.current = false;
-        now.current.home = opened;
-        setHome(opened);
-        dispatch({ type: "reset" });
-        setRail(null);
-        setProgress(null);
-        setMaterials(null);
-        setSummary(null);
-        setAsking(false);
-        if (!(stay && canContinue(opened))) setView(opened.sitting ? "paper" : "course");
-        void loadProgress(null, false);
-        void refreshActivity();
-        void loadEngine();
-        setFolders(await api.recent());
-        return opened;
-      } catch (problem) {
-        setError(String(problem));
-        setView("library");
-        void loadLibrary();
-        return null;
-      } finally {
-        opening.current = false;
+  const run = useCallback(
+    (command: string, arg?: string | null) => {
+      const { tabs, active, prefs } = now.current;
+      const tab = tabs.find((each) => each.key === active);
+      const inFront = tab?.kind === "session" ? handles.current[tab.key] : null;
+      switch (command) {
+        case "home":
+          return goWorkspace(null);
+        case "go":
+          return arg ? goWorkspace(arg) : undefined;
+        case "open-workspace":
+          return void pickFolder();
+        case "new-session":
+          return newSession(arg ?? undefined);
+        case "close-session":
+          return tab && tab.kind !== "home" ? void closeTab(tab.key) : undefined;
+        case "settings":
+          return openSettings(arg ?? null);
+        case "about":
+          return openSettings("about");
+        case "keys-help":
+          return openSettings("keys");
+        case "commands":
+          setOverlay((old) => (old?.kind === "commands" ? null : { kind: "commands" }));
+          return;
+        case "plan":
+          setPanel((shown) => !shown);
+          return;
+        case "bigger":
+        case "smaller":
+        case "actual-size": {
+          const size = command === "actual-size" ? 17 : Math.max(12, Math.min(28, prefs.size + (command === "smaller" ? -1 : 1)));
+          return changePrefs({ size });
+        }
+        case "tab":
+          return arg ? activate(arg) : undefined;
+        case "previous-tab":
+          return step(-1);
+        case "next-tab":
+          return step(1);
+        case "stop-reply": {
+          const live = now.current.liveKey ? handles.current[now.current.liveKey] : null;
+          return void live?.command("stop-reply");
+        }
+        case "attach":
+        case "photo":
+        case "hint":
+        case "lost":
+        case "unknown":
+        case "symbols":
+          if (inFront) inFront.command(command);
+          else note("Open a session first.");
+          return;
       }
     },
-    [loadEngine, loadLibrary, loadProgress, refreshActivity],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activate, changePrefs, closeTab, goWorkspace, newSession, note, openSettings],
   );
+  const runRef = useRef(run);
+  runRef.current = run;
 
-  const openFolder = useCallback((api: Core, path: string) => showFolder(api, () => api.openFolder(path)), [showFolder]);
-
-  /** Take in what the setup check found. The first time it is ready, go to the first screen. */
-  const takeSetup = useCallback(
-    async (api: Core, fresh: SetupData) => {
-      setSetup(fresh);
-      if (!setupReady(fresh)) {
-        if (now.current.view === "loading") setView("setup");
-        return;
-      }
-      if (!waitingForSetup.current) return;
-      waitingForSetup.current = false;
-      const first = await api.initialFolder();
-      if (first) await openFolder(api, first);
-      else showLibrary();
-    },
-    [openFolder, showLibrary],
-  );
+  // ---------------------------------------------------------------------------
+  // Starting up
 
   useEffect(() => {
     let alive = true;
-    let unlisten = () => {};
+    const stops: (() => void)[] = [];
     void (async () => {
+      mark("page");
       const api = await core();
-      const off = await api.onEvent((event: AgentEvent) => {
-        dispatch({ type: "event", event });
-        if (event.type === "turn_ended") void refreshRail();
-        // Without the plugin this would be a plain chat with no teaching
-        // rules, so the reply is stopped and the notice says what to run.
-        if (event.type === "ready" && event.plugin_missing) void api.interrupt().catch(() => {});
-      });
-      if (!alive) {
-        off();
-        return;
-      }
-      unlisten = off;
-      setApi(api);
+      mark("core");
+      // The first calls go together: nothing waits on another it does not need.
+      const [offEvents, offMenu, initial, kept, found] = await Promise.all([
+        api.onEvent((event: AgentEvent) => onEventRef.current(event)),
+        api.onMenu((choice: MenuChoice) => onMenuRef.current(choice)),
+        api.initialFolder(),
+        api.windowState().catch(() => null),
+        api.workspaces().catch(() => [] as Workspace[]),
+      ]);
+      mark("first-calls");
+      stops.push(offEvents, offMenu);
+      if (!alive) return stops.forEach((stop) => stop());
       now.current.api = api;
+      setApi(api);
+      const looking = api.setup();
+      setupWait.current = looking;
+      void api.about().then(setAbout, () => {});
+      // The tabs as they were left: sessions of folders still in the library, and Settings.
+      const library = new Set(found.map((each) => each.folder));
+      const saved = (kept ?? null) as Saved | null;
+      const back: Tab[] = [HOME];
+      if (saved?.v === 1 && Array.isArray(saved.tabs)) {
+        for (const each of saved.tabs) {
+          if (each.kind === "settings") back.push(SETTINGS);
+          else if (each.kind === "session" && library.has(each.folder) && each.session)
+            back.push({ key: each.key || newKey(), kind: "session", folder: each.folder, session: each.session, title: each.title ?? "" });
+        }
+        setPanel(Boolean(saved.panel));
+      }
+      setTabs(back);
+      setWorkspaces(found);
+      now.current.workspaces = found;
+      // In front: the tab left in front, within the runtime's gap for a new
+      // sitting; after it, Home, so starting is one key again.
+      const recently = saved ? Date.now() - (saved.seen_ms ?? 0) < SITTING_GAP_MS : false;
+      const wanted = saved && recently ? back[Math.min(Math.max(0, saved.active ?? 0), back.length - 1)] : HOME;
+      if (initial) {
+        await api.visitFolder(initial).catch(() => null);
+        setHomeFolder(initial);
+        setActive("home");
+        void loadWorkspaces();
+      } else {
+        setHomeFolder(saved && recently && saved.home && library.has(saved.home) ? saved.home : null);
+        setActive(wanted?.key ?? "home");
+      }
+      setRestored(true);
+      const fresh = await looking;
+      now.current.setup = fresh;
+      setSetup(fresh);
       void loadEngine();
-      setFolders(await api.recent());
-      // The program is installed, or a question about it answered, before
-      // any folder is read: a newer program upgrades a folder's record.
-      const [fresh, built] = await Promise.all([api.setup(), api.about()]);
-      setAbout(built);
-      await takeSetup(api, fresh);
-      if (isDemo) (await import("./demo")).startFromAddress(actions);
-      else if (await api.selftest()) {
-        // A check that cannot even start says why, instead of saying nothing.
+      if (isDemo) {
+        await (await import("./demo")).startFromAddress(actions);
+        document.documentElement.dataset.shot = "ready";
+      } else if (await api.selftest()) {
         try {
-          await (await import("./selftest")).run(api, actions, () => now.current.session);
+          await (await import("./selftest")).run(api, actions);
         } catch (problem) {
           await api.selftestReport({ ok: false, failure: `the check could not start: ${String(problem)}`, errors: [...window.__mgErrors], steps: {} });
         }
@@ -382,44 +422,288 @@ export function App() {
     })();
     return () => {
       alive = false;
-      unlisten();
+      stops.forEach((stop) => stop());
     };
     // Runs once: every handler it uses reads the newest values through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While Claude Code's sign-in waits for the browser, look every few
-  // seconds whether it finished.
+  // The first screen is painted with its real content: tell the harness.
+  useEffect(() => {
+    if (restored && workspaces !== null) requestAnimationFrame(() => ready());
+  }, [restored, workspaces]);
+
+  // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
   useEffect(() => {
     if (!signingIn) return;
     const started = Date.now();
     const timer = window.setInterval(() => {
       const { api, setup } = now.current;
-      if (!api || !setup) return;
-      if (Date.now() - started > SIGN_IN_LIMIT_MS) {
-        setSigningIn(false);
+      if (!api || !setup || Date.now() - started > 15 * 60_000) return setSigningIn(false);
+      void api.account().then((account) => {
+        setSetup({ ...setup, account });
+        if (account.signed_in) setSigningIn(false);
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [signingIn]);
+
+  const checkAgain = async () => {
+    const { api } = now.current;
+    if (!api) return;
+    setSetup(await api.setup());
+    void loadWorkspaces();
+  };
+
+  const signIn = async () => {
+    try {
+      await now.current.api?.signIn();
+      setSigningIn(true);
+    } catch (problem) {
+      note(String(problem));
+    }
+  };
+
+  const answerRuntime = async (work: (api: Core) => Promise<Setup["runtime"]>) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setSetup({ ...setup, runtime: await work(api) });
+  };
+
+  const choosePayment = async (payment: Payment) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setSetup({ ...setup, payment });
+    const account = await api.setPayment(payment);
+    setSetup({ ...setup, payment, account });
+  };
+
+  const lessonOpen = () => Object.values(handles.current).some((handle) => handle.state().open);
+
+  /** Pick the engine for the next lesson. Saved at once; refused while a lesson is open. */
+  const chooseEngine = async (chosen: Engine) => {
+    const { api } = now.current;
+    if (!api || !engine || lessonOpen() || engine.chosen === chosen) return;
+    setEngine({ ...engine, chosen });
+    try {
+      setEngine(await api.setEngine(chosen));
+    } catch (problem) {
+      setEngine(engine);
+      note(String(problem));
+    }
+  };
+
+  const chooseBlock = (minutes: number) => {
+    setBlockMinutes(minutes);
+    void now.current.api?.setBlockMinutes(minutes);
+  };
+
+  // Settings reads a paper's time from a workspace, where the core keeps it.
+  useEffect(() => {
+    if (active !== "settings" || !api || !workspaces?.[0]) return;
+    void api.home(workspaces[0].folder).then((home) => setBlockMinutes(home.block_minutes), () => {});
+  }, [active, api, workspaces]);
+
+  // ---------------------------------------------------------------------------
+  // The tutor's events go to the session that holds its program
+
+  const onEventRef = useRef<(event: AgentEvent) => void>(() => {});
+  onEventRef.current = (event: AgentEvent) => {
+    const key = now.current.liveKey;
+    if (key) handles.current[key]?.event(event);
+  };
+
+  const claim = useCallback((key: string) => {
+    const before = now.current.liveKey;
+    if (before && before !== key) {
+      handles.current[before]?.release();
+      if (now.current.busyKey === before) setBusyKey(null);
+    }
+    now.current.liveKey = key;
+    setLiveKey(key);
+  }, []);
+
+  const register = useCallback((key: string, handle: SessionHandle | null) => {
+    if (handle) handles.current[key] = handle;
+    else delete handles.current[key];
+  }, []);
+
+  const onSession = useCallback(
+    (key: string, session: string) => {
+      setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, session } : each)));
+      void loadWorkspaces();
+    },
+    [loadWorkspaces],
+  );
+  const onTitle = useCallback((key: string, title: string) => {
+    setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
+  }, []);
+  const onBusy = useCallback((key: string, busy: boolean) => setBusyKey((old) => (busy ? key : old === key ? null : old)), []);
+  const onStarted = useCallback((key: string) => {
+    setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" && each.pending ? { ...each, pending: undefined } : each)));
+  }, []);
+  const onTaskChange = useCallback((key: string, open: boolean) => setTaskOpen((old) => (old[key] === open ? old : { ...old, [key]: open })), []);
+  const onSource = useCallback((folder: string, source: SourceRef) => setOverlay({ kind: "source", folder, source }), []);
+  const onEngine = useCallback(() => void loadEngine(), [loadEngine]);
+
+  // ---------------------------------------------------------------------------
+  // The menu bar: what it holds follows the window, and a choice runs the same command
+
+  const onMenuRef = useRef<(choice: MenuChoice) => void>(() => {});
+  onMenuRef.current = (choice: MenuChoice) => {
+    // The same press, seen by the page and then by the menu, runs once.
+    if (Date.now() - (pressed.current[choice.command] ?? 0) < 400) return;
+    runRef.current(choice.command, choice.arg);
+  };
+
+  const activeTab = tabs.find((each) => each.key === active) ?? HOME;
+  const inSession = activeTab.kind === "session";
+  const spec = useMemo((): MenuSpec => {
+    const disabled: string[] = [];
+    if (!inSession) disabled.push("attach", "photo", "symbols", "hint", "lost", "unknown");
+    else if (!taskOpen[activeTab.key]) disabled.push("hint", "lost", "unknown");
+    if (activeTab.kind === "home") disabled.push("close-session");
+    if (!inSession) disabled.push("plan");
+    if (busyKey === null) disabled.push("stop-reply");
+    return {
+      keys: Object.fromEntries(Object.entries(prefs.keys)),
+      workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
+      tabs: tabs.map((tab) => ({ id: tab.key, title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "") })),
+      disabled,
+      titles: { plan: panel ? "Hide Plan" : "Show Plan", ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}) },
+    };
+  }, [prefs.keys, workspaces, tabs, inSession, activeTab, taskOpen, busyKey, panel]);
+  useEffect(() => {
+    if (!api || isDemo) return;
+    const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
+    return () => window.clearTimeout(timer);
+  }, [api, spec]);
+
+  // ---------------------------------------------------------------------------
+  // How the window was left, kept as it changes
+
+  useEffect(() => {
+    if (!api || !restored || isDemo) return;
+    const timer = window.setTimeout(() => {
+      const saved: Saved = {
+        v: 1,
+        tabs: tabs
+          .filter((tab) => tab.kind !== "home")
+          .map((tab) => (tab.kind === "settings" ? { kind: "settings" as const } : { kind: "session" as const, key: tab.key, folder: tab.folder, session: tab.session, title: tab.title })),
+        active: Math.max(0, tabs.findIndex((tab) => tab.key === active) - 0),
+        home: homeFolder,
+        panel,
+        seen_ms: Date.now(),
+      };
+      // The saved list has no Home: its positions are one less, and Home is 0.
+      const at = tabs.findIndex((tab) => tab.key === active);
+      saved.active = at;
+      void api.setWindowState(saved).catch(() => {});
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [api, restored, tabs, active, homeFolder, panel]);
+
+  useEffect(() => {
+    const save = () => flushPlaces();
+    window.addEventListener("pagehide", save);
+    return () => window.removeEventListener("pagehide", save);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Keys
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      // A key an input method is composing with is its own: Esc there cancels the composition, not the reply or the task.
+      if (event.isComposing || event.keyCode === 229) return;
+      const { prefs, overlay, tabs, active } = now.current;
+      const action: KeyAction | null = actionOf(event, prefs.keys);
+      if (action) {
+        // ⌘K is the one command a layer over the window leaves to the window.
+        if (overlay && action !== "commands") return;
+        event.preventDefault();
+        pressed.current[action] = Date.now();
+        runRef.current(action);
         return;
       }
-      void api.account().then((account) => {
-        // Done when it is signed in as chosen, or says anything new, such as
-        // a sign-in to another kind of account.
-        if (account.signed_in && (!account.problem || JSON.stringify(account) !== accountBefore.current)) setSigningIn(false);
-        void takeSetup(api, { ...(now.current.setup ?? setup), account });
-      });
-    }, SIGN_IN_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [signingIn, takeSetup]);
+      if (overlay) return;
+      const command = event.metaKey && !event.ctrlKey && !event.altKey;
+      if (command && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+        const tab = tabs[Number(event.key) - 1];
+        if (tab) {
+          event.preventDefault();
+          pressed.current.tab = Date.now();
+          activate(tab.key);
+        }
+        return;
+      }
+      if (command && event.shiftKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
+        event.preventDefault();
+        const which = event.code === "BracketLeft" ? "previous-tab" : "next-tab";
+        pressed.current[which] = Date.now();
+        runRef.current(which);
+        return;
+      }
+      if (event.key === "Escape") {
+        const tab = tabs.find((each) => each.key === active);
+        if (tab?.kind === "session" && handles.current[tab.key]?.escape()) event.preventDefault();
+        else if (tab?.kind === "home" && now.current.homeFolder) {
+          event.preventDefault();
+          goWorkspace(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Files dropped on the window are added to the open course, on its page and
-  // in a lesson. Anywhere else a drop does nothing.
+  // What the evidence harness may ask of the session in front: inert without it.
+  useEffect(() => {
+    setProbe({
+      session: () => {
+        const tab = now.current.tabs.find((each) => each.key === now.current.active);
+        return tab?.kind === "session" ? (handles.current[tab.key]?.probe() ?? null) : null;
+      },
+      attach: (paths) => {
+        if (!harnessOn()) return false;
+        const tab = now.current.tabs.find((each) => each.key === now.current.active);
+        const handle = tab?.kind === "session" ? handles.current[tab.key] : null;
+        handle?.drop(paths);
+        return Boolean(handle);
+      },
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Files dropped on the window: on a session they join its line; on a
+  // workspace's page they are its material.
+
+  const dropRef = useRef<(paths: string[]) => void>(() => {});
+  dropRef.current = (paths: string[]) => {
+    const { api, tabs, active, homeFolder } = now.current;
+    const tab = tabs.find((each) => each.key === active);
+    if (!api) return;
+    if (tab?.kind === "session") handles.current[tab.key]?.drop(paths);
+    else if (tab?.kind === "home" && homeFolder) {
+      void api.addMaterial(paths, homeFolder).then(
+        (added) => {
+          added.lines.forEach(note);
+          setMaterialChanged((n) => n + 1);
+        },
+        (problem) => note(String(problem)),
+      );
+    } else note("Open a workspace, then drop its files on its page.");
+  };
   useEffect(() => {
     if (!api) return;
     let off = () => {};
     let alive = true;
     void api
       .onDrop(
-        (paths) => void addMaterialRef.current(paths),
-        (over) => setDragging(over && canAddRef.current()),
+        (paths) => dropRef.current(paths),
+        (over) => setDragging(over),
       )
       .then((stop) => (alive ? (off = stop) : stop()));
     return () => {
@@ -428,831 +712,201 @@ export function App() {
     };
   }, [api]);
 
-  // Text pasted on the course page, with nothing selected to type in, is
-  // offered as course material. Pasting in the answer box is an answer.
-  useEffect(() => {
-    const onPaste = (event: ClipboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable]")) return;
-      if (now.current.view !== "course" || !canAddRef.current()) return;
-      if ((event.clipboardData?.files.length ?? 0) > 0) return;
-      const text = event.clipboardData?.getData("text/plain") ?? "";
-      if (text.trim() === "") return;
-      event.preventDefault();
-      setPasting(text);
-    };
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, []);
+  // ---------------------------------------------------------------------------
+  // What the window shows
 
-  const checkAgain = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    await takeSetup(api, await api.setup());
+  const actions: Actions = {
+    run: (command, arg) => runRef.current(command, arg),
+    continueRecent,
+    newSession,
+    openSession: (folder, session, title) => openSession(folder, session, title),
+    goWorkspace,
+    session: () => {
+      const tab = now.current.tabs.find((each) => each.key === now.current.active);
+      return tab?.kind === "session" ? (handles.current[tab.key] ?? null) : null;
+    },
+    tabs: () => now.current.tabs.map((tab) => ({ key: tab.key, kind: tab.kind, title: tab.kind === "session" ? tab.title : tab.kind })),
+    active: () => now.current.active,
+    workspaces: () => now.current.workspaces ?? [],
+    reload: loadWorkspaces,
   };
 
-  const answerRuntime = async (work: (api: Core) => Promise<RuntimeSetup>) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setError(null);
-    const runtime = await work(api);
-    await takeSetup(api, { ...setup, runtime });
-  };
+  const step_ = setupStep(setup, signingIn, {
+    replace: () => void answerRuntime((api) => api.replaceRuntime()),
+    keep: () => void answerRuntime((api) => api.keepRuntime()),
+    checkAgain: () => void checkAgain(),
+    openUrl: (url) => void api?.openUrl(url),
+    signIn: () => void signIn(),
+  });
 
-  const signIn = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      accountBefore.current = JSON.stringify(now.current.setup?.account ?? null);
-      await api.signIn();
-      setSigningIn(true);
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  const choosePayment = async (payment: Payment) => {
-    const { api, setup } = now.current;
-    if (!api || !setup) return;
-    setSetup({ ...setup, payment });
-    const account = await api.setPayment(payment);
-    await takeSetup(api, { ...setup, payment, account });
-  };
-
-  /** Pick the engine for the next lesson. Saved at once, and refused while a lesson is open. */
-  const chooseEngine = async (chosen: Engine) => {
-    const { api, engine, session } = now.current;
-    if (!api || !engine || session.open || session.live !== null || engine.chosen === chosen) return;
-    setEngine({ ...engine, chosen });
-    try {
-      const fresh = await api.setEngine(chosen);
-      now.current.engine = fresh;
-      setEngine(fresh);
-    } catch (problem) {
-      setEngine(engine);
-      setError(String(problem));
-    }
-  };
-
-  /** Whether course material can be added now: a course is open, on its page or in a lesson. */
-  const canAdd = () => {
-    const { home, view } = now.current;
-    return Boolean(home) && (view === "course" || view === "session") && ["ready", "empty", "not_set_up"].includes(home?.state ?? "") && !home?.sitting;
-  };
-
-  const addMaterial = async (paths: string[]) => {
-    const { api } = now.current;
-    if (!api || paths.length === 0 || adding || !canAdd()) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addMaterial(paths)).lines);
-      void loadMaterials();
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  addMaterialRef.current = addMaterial;
-  canAddRef.current = canAdd;
-
-  // The course page says what the course already holds, read when it is shown.
-  const courseFolder = view === "course" ? (home?.folder ?? null) : null;
-  useEffect(() => {
-    if (courseFolder !== null) void loadMaterials();
-  }, [courseFolder, loadMaterials]);
-
-  const chooseMaterial = async () => {
-    const { api } = now.current;
-    if (!api || !canAdd()) return;
-    try {
-      await addMaterial(await api.pickMaterial());
-    } catch (problem) {
-      setMaterial([String(problem)]);
-    }
-  };
-
-  const savePasted = async (text: string) => {
-    const { api } = now.current;
-    if (!api || adding) return;
-    setAdding(true);
-    setMaterial(null);
-    try {
-      setMaterial((await api.addPastedText(text)).lines);
-      setPasting(null);
-      void loadMaterials();
-    } catch (problem) {
-      setPasting(null);
-      setMaterial([String(problem)]);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const openLink = (url: string) => void now.current.api?.openUrl(url).catch((problem) => setError(String(problem)));
-
-  const upgrade = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    setUpgrading(true);
-    try {
-      setHome(await api.upgradeFolder());
-      setNotice("This course is upgraded. If its record changed, the copy from before is in .magnesium/backups.");
-      void loadProgress(null, false);
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setUpgrading(false);
-    }
-  };
-
-  const pickFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickFolder();
-    if (path) await openFolder(api, path);
-  };
-
-  const newFolder = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    const path = await api.pickNewFolder();
-    if (path) await showFolder(api, () => api.newFolder(path));
-  };
-
-  const findFolders = async () => {
-    const { api } = now.current;
-    if (!api || finding) return;
-    setError(null);
-    setNotice(null);
-    setFinding(true);
-    try {
-      const added = await api.findFolders();
-      setNotice(added === 0 ? "No other course was found on this Mac." : `${added} ${added === 1 ? "course" : "courses"} added.`);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    } finally {
-      setFinding(false);
-    }
-  };
-
-  const forgetFolder = async (path: string) => {
-    const { api, home } = now.current;
-    if (!api) return;
-    try {
-      await api.forgetFolder(path);
-      if (home?.folder === path) setHome(null);
-      await loadLibrary();
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  /** Open the setup screen, with a fresh look at this Mac. */
-  const openSetup = () => {
-    const { view } = now.current;
-    if (view !== "setup") setFrom(view === "loading" ? "library" : view);
-    setView("setup");
-    void checkAgain();
-  };
-
-  /**
-   * Open the lesson screen and send the first words of the sitting. No lesson starts while this Mac's setup
-   * needs a look, such as a magnesium program older than the window needs.
-   * Resolves to whether the lesson screen opened.
-   */
-  const begin = async (resume: boolean, shown: string, send: (api: Core) => Promise<void>): Promise<boolean> => {
-    const { api } = now.current;
-    if (!api) return false;
-    if (!setupReady(now.current.setup)) {
-      openSetup();
-      return false;
-    }
-    setError(null);
-    setStarting(true);
-    let shownLesson = false;
-    try {
-      const opened = await api.openSession(resume);
-      dispatch({ type: "opened", turns: opened.turns });
-      sitting.current = { answers: 0, alreadyStudied: now.current.activity?.studied_today ?? false, todayBefore: null };
-      proofsBefore.current = null;
-      void api
-        .progress(null)
-        .then((before) => {
-          proofsBefore.current = tally(before);
-          sitting.current.todayBefore = before.today ?? null;
-        })
-        .catch(() => {});
-      setView("session");
-      shownLesson = true;
-      dispatch({ type: "sent", shown, now: Date.now() });
-      await send(api);
-      void refreshRail();
-      void loadEngine();
-    } catch (problem) {
-      if (shownLesson) dispatch({ type: "failed", error: String(problem) });
-      else setError(String(problem));
-    } finally {
-      setStarting(false);
-    }
-    return shownLesson;
-  };
-
-  const continueLesson = (skipChecks: boolean, home: Home | null = now.current.home) => {
-    const words = openingWords(
-      { stoppedAt: home?.last?.stopped_at ?? null, studiedBefore: Boolean(home?.last), title: home?.exam?.title ?? "this course" },
-      skipChecks,
-    );
-    // The window wrote these words, so they are not sent as an answer. They go
-    // through the learn skill, as a new lesson's goal does: the window's
-    // tutor has no tool to load a skill by itself.
-    return begin(true, words, (api) => api.sendNewLesson(words));
-  };
-
-  /**
-   * The library's main card: open the folder and continue its lesson at once,
-   * as Continue on the course page does. A folder that cannot continue now,
-   * because it is new, needs an upgrade or has a paper running, shows its
-   * page, which says what comes first.
-   */
-  const continueFolder = async (path: string) => {
-    const { api } = now.current;
-    if (!api) return;
-    if (!setupReady(now.current.setup)) {
-      openSetup();
-      return;
-    }
-    setStarting(true);
-    const opened = await showFolder(api, () => api.openFolder(path), true);
-    if (!opened || !canContinue(opened)) {
-      setStarting(false);
-      return;
-    }
-    // When the lesson could not start, the course page says why.
-    if (!(await continueLesson(false, opened))) setView("course");
-  };
-
-  const newLesson = async (goal: string) => {
-    const { api, home } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      if (home?.state === "not_set_up") setHome(await api.setUp());
-    } catch (problem) {
-      setError(String(problem));
-      return;
-    }
-    await begin(false, goal, (api) => api.sendNewLesson(goal));
-    setAsking(false);
-  };
-
-  const say = async (text: string) => {
-    const { api, session } = now.current;
-    if (!api) return;
-    try {
-      if (!session.open) {
-        await api.openSession(true);
-        dispatch({ type: "reopened" });
-      }
-      sitting.current.answers += 1;
-      dispatch({ type: "sent", shown: text, now: Date.now() });
-      await api.send(text);
-    } catch (problem) {
-      dispatch({ type: "failed", error: String(problem) });
-    }
-  };
-
-  const onNote = useCallback((text: string) => dispatch({ type: "note", notice: { kind: "other", text } }), []);
-
-  const guard = (work: (api: Core) => Promise<unknown>) => async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      await work(api);
-    } catch (problem) {
-      dispatch({ type: "note", notice: { kind: "other", text: String(problem) } });
-    }
-  };
-
-  /** End the sitting: save the line, close the lesson, and show what was done. */
-  const stop = async (line: string) => {
-    const { api, session, rail } = now.current;
-    if (!api) return;
-    const saved = line.trim() === "" ? null : line.trim();
-    const minutes = session.startedMs === null ? 0 : Math.max(1, Math.round((Date.now() - session.startedMs) / 60_000));
-    const done: Sitting = {
-      minutes,
-      sent: sitting.current.answers,
-      marked: null,
-      today: null,
-      stepsDone: stepsDone(rail),
-      stepsTotal: rail?.steps.length ?? 0,
-      stoppedAt: saved,
-      alreadyStudied: sitting.current.alreadyStudied,
-      earned: [],
-      tomorrow: 0,
-      slipped: [],
-      marks: [],
-    };
-    try {
-      await api.stop(saved);
-    } catch (problem) {
-      setError(String(problem));
-    }
-    dispatch({ type: "stopped" });
-    setRail(null);
-    await Promise.all([refreshHome(), refreshActivity()]);
-    try {
-      // What the runtime's record holds now, set beside what it held when
-      // the sitting began. The window claims no proof the record does not show.
-      const after = await api.progress(null);
-      setProgress(after);
-      done.today = after.today ?? null;
-      done.marked = markedIn(sitting.current.todayBefore, done.today);
-      const before = proofsBefore.current;
-      if (before) {
-        done.earned = [...after.confirmed, ...after.in_progress]
-          .map((row) => ({ row, proofs: proofsOf(row) - (before.get(row.name) ?? 0) }))
-          .filter((each) => each.proofs > 0);
-      }
-      const today = now.current.activity?.today;
-      if (today) {
-        const tomorrow = dayAfter(today);
-        done.tomorrow = after.in_progress.filter((row) => row.next_day !== null && row.next_day <= tomorrow).length;
-      }
-      done.slipped = await slippedIn(api, [...after.in_progress, ...after.confirmed], session.startedMs);
-      done.marks = await reviewIn(api, [...after.in_progress, ...after.confirmed, ...after.untested], session.startedMs);
-    } catch {
-      // Without the record the end screen says what it can.
-    }
-    void loadEngine();
-    // A sitting with nothing sent and nothing marked has nothing to sum up.
-    if (done.sent > 0 || (done.marked ?? 0) > 0) {
-      setSummary(done);
-      setView("summary");
-    } else {
-      setView("course");
-    }
-  };
-
-  const openProgress = async (target: string | null) => {
-    const { view } = now.current;
-    if (view !== "progress") setFrom(view === "summary" ? "course" : view);
-    setError(null);
-    setView("progress");
-    await loadProgress(target, true);
-  };
-
-  const openPaper = (paper: PaperInfo | null) => {
-    setChosenPaper(paper);
-    setError(null);
-    setView("paper");
-  };
-
-  const startPaper = async (paper: PaperInfo, minutes: number) => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      await api.paperStart(paper, minutes);
-      await refreshHome();
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  const handIn = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    setError(null);
-    try {
-      const files = await api.pickFiles();
-      if (files.length === 0) return;
-      const words = await api.paperEnd(files);
-      await refreshHome();
-      if (words) await begin(true, words.shown, (api) => api.sendShown(words.shown, words.sent));
-      else setView("course");
-    } catch (problem) {
-      setError(String(problem));
-    }
-  };
-
-  const endPaper = async () => {
-    const { api } = now.current;
-    if (!api) return;
-    try {
-      await api.paperEnd([]);
-    } catch (problem) {
-      setError(String(problem));
-    }
-    await refreshHome();
-    setView("course");
-  };
-
-  /** Where "back" goes: the paper or the lesson if one is running, else the page this one was opened from. */
-  const back = () => {
-    const { home, session, from, view } = now.current;
-    setError(null);
-    if (home?.sitting && view !== "paper") setView("paper");
-    else if (session.open || session.live) setView("session");
-    else if (!home || from === "library" || view === "course") showLibrary();
-    else {
-      void refreshHome();
-      setView("course");
-    }
-  };
-
-  const setBlock = async (minutes: number) => {
-    await now.current.api?.setBlockMinutes(minutes);
-    setHome((old) => (old ? { ...old, block_minutes: minutes } : old));
-  };
-
-  const askNewLesson = () => {
-    setView("course");
-    setAsking(true);
-  };
-
-  // What the demo and the self-check may drive.
-  const actions = {
-    continueLesson,
-    newLesson,
-    say,
-    stop,
-    openProgress,
-    openPaper,
-    startPaper,
-    setPalette,
-    setAsking,
-    openSetup,
-    showLibrary,
-    continueFolder,
-    chooseEngine,
-    setView: (next: string) => setView(next as View),
-    addMaterial,
-    setDragging,
-    pasteText: (text: string) => setPasting(text),
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const command = event.metaKey || event.ctrlKey;
-      const { view, session, home, api, setup } = now.current;
-      const inLesson = session.open || session.live !== null;
-      const key = event.key.toLowerCase();
-      if (command && key === "k") {
-        event.preventDefault();
-        if (view !== "loading" && (view !== "setup" || setupReady(setup))) setPalette((open) => !open);
-      } else if (command && event.key === "." && view === "session" && busy(session)) {
-        event.preventDefault();
-        void api?.interrupt();
-      } else if (command && key === "n") {
-        // A new lesson, wherever a course is open and no paper or lesson is running. Elsewhere the key does nothing.
-        event.preventDefault();
-        if (home && !home.sitting && !inLesson && ["course", "progress", "summary", "paper"].includes(view)) askNewLesson();
-      } else if (command && key === "o" && !inLesson && (view === "library" || view === "course")) {
-        event.preventDefault();
-        void pickFolder();
-      } else if (event.key === "Escape" && !event.defaultPrevented && !now.current.palette) {
-        if (view === "progress" || view === "course") back();
-        else if (view === "paper") setView("course");
-        else if (view === "summary") setView("course");
-        else if (view === "setup" && setupReady(setup)) back();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const commands = (): Command[] => {
-    const list: Command[] = [];
-    const inLesson = session.open || session.live !== null;
-    // A course is open when its page, its lesson or one of its screens is up.
-    const course = home && !home.sitting && (view !== "library" || inLesson) ? home : null;
-    if (home?.sitting) {
-      if (view !== "paper") list.push({ label: "Back to the paper", icon: "paper", run: () => setView("paper") });
-      else
-        list.push({
-          label: "End without handing in",
-          icon: "close",
-          keywords: "quit stop finish",
-          run: () => document.querySelector<HTMLButtonElement>('[data-role="paper-end"]')?.click(),
-        });
-      list.push(SHORTCUTS);
-      return list;
-    }
-    // The same core, in every context.
-    if (view !== "session" && inLesson) list.push({ label: "Back to the lesson", icon: "back", run: () => setView("session") });
-    list.push({ label: "Library", icon: "list", run: showLibrary });
-    if (course) {
-      list.push({ label: displayName(course.name), icon: "folder", run: () => setView("course") });
-      list.push({
-        label: "Proofs",
-        icon: "proof",
-        keywords: "progress stats score skills level",
-        run: () => void openProgress(null),
-      });
-      const next = course.papers.find((paper) => !paper.sat) ?? course.papers[0];
-      list.push({
-        label: "Start a timed paper",
-        hint: next ? `${next.name}${next.minutes ? `, ${next.minutes} min` : ""}` : undefined,
-        icon: "paper",
-        keywords: "exam timed practice",
-        run: () => openPaper(null),
-      });
-    }
-    if (inLesson) {
-      list.push({
-        label: "End lesson",
-        icon: "close",
-        keywords: "quit stop finish end",
-        run: () => {
-          setView("session");
-          window.setTimeout(() => document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click(), 60);
-        },
-      });
-    }
-    if (course) {
-      // One item, which opens the choice: a row per length would each say "now 50 min" and read as setting 50.
-      list.push({
-        label: "Lesson length",
-        hint: `now ${course.block_minutes} min`,
-        icon: "timer",
-        keywords: "block time length minutes",
-        choices: BLOCKS.map((minutes) => ({
-          label: `${minutes} min`,
-          hint: minutes === course.block_minutes ? "now" : undefined,
-          run: () => {
-            if (minutes !== course.block_minutes) void setBlock(minutes);
-          },
-        })),
-        run: () => {},
-      });
-    }
-    list.push({
-      label: "Setup",
-      icon: "gear",
-      keywords: "settings preferences account engine lessons run on advanced version",
-      run: () => openSetup(),
-    });
-    list.push(SHORTCUTS);
-
-    // Then what belongs to this context.
-    if (course) {
-      (progress?.targets ?? [])
-        .filter((exam) => exam.target !== (progress?.exam?.target ?? course.exam?.target))
-        .forEach((exam) =>
-          list.push({ label: `Proofs for ${exam.title}`, icon: "proof", keywords: "progress stats score", run: () => void openProgress(exam.target) }),
-        );
-      if (["ready", "empty", "not_set_up"].includes(course.state) && (view === "course" || view === "session")) {
-        list.push({ label: "Add course material…", icon: "clip", run: () => void chooseMaterial() });
-        list.push({ label: "Paste text as course material…", icon: "clip", run: () => setPasting("") });
-      }
-      if (!inLesson && (course.checks_due ?? 0) > 0 && course.state === "ready") {
-        list.push({ label: "Continue without the quick checks", hint: "they stay due", icon: "play", run: () => void continueLesson(true) });
-      }
-      if (!inLesson) list.push({ label: "New lesson", key: "⌘N", icon: "plus", run: askNewLesson });
-    }
-    const account = setup?.account;
-    if (account && (!account.signed_in || account.problem)) {
-      list.push({ label: `Sign in to ${account.name}`, icon: "bang", run: () => openSetup() });
-    }
-    if (!inLesson) {
-      list.push({ label: "Open a course folder…", key: "⌘O", icon: "folder", run: () => void pickFolder() });
-      list.push({ label: "Make a new course…", icon: "plus", run: () => void newFolder() });
-      list.push({ label: "Find course folders on this Mac", icon: "search", run: () => (showLibrary(), void findFolders()) });
-      if (home) {
-        const folder = home.folder;
-        list.push({
-          label: `Remove ${displayName(home.name)} from library`,
-          hint: "your files stay on your Mac",
-          icon: "trash",
-          run: () => void forgetFolder(folder).then(showLibrary),
-        });
-      }
-      folders
-        .filter((path) => path !== home?.folder)
-        .slice(0, 6)
-        .forEach((path) =>
-          list.push({
-            label: `Open ${displayName(path.split("/").filter(Boolean).pop() ?? path)}`,
-            hint: path,
-            icon: "folder",
-            run: () => api && void openFolder(api, path),
-          }),
-        );
-    }
-    return list;
-  };
-
-  /** The engine choice, where a screen shows it. Disabled while a lesson is open. */
-  const engineControl = (bare = false) =>
-    engine ? (
-      <EngineControl
-        bare={bare}
-        choice={engine}
-        payment={setup?.payment ?? null}
-        locked={session.open || session.live !== null}
-        onChoose={(chosen) => void chooseEngine(chosen)}
-      />
-    ) : null;
-
-  let screen: JSX.Element | null = null;
-  if (view === "loading") {
-    screen = (
-      <section className="screen loading">
-        <div className="bar" data-tauri-drag-region />
-        <div className="center">
-          <span className="mark breathing" aria-label="Loading">
-            <i />
-            <i />
-            <i />
-          </span>
-        </div>
-      </section>
-    );
-  } else if (view === "setup") {
-    screen = (
-      <Setup
-        setup={setup}
-        about={about}
-        error={error}
-        signingIn={signingIn}
-        canGoBack={!waitingForSetup.current}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-        onReplace={() => void answerRuntime((api) => api.replaceRuntime())}
-        onKeep={() => void answerRuntime((api) => api.keepRuntime())}
-        onCheck={() => void checkAgain()}
-        onSignIn={() => void signIn()}
-        onPayment={(payment) => void choosePayment(payment)}
-        onLink={openLink}
-        engine={engineControl(true)}
-      />
-    );
-  } else if (view === "library" || !home) {
-    screen = (
-      <Library
-        cards={cards}
-        folders={folders}
-        activity={activity}
-        error={error}
-        notice={notice}
-        finding={finding}
-        ready={setupReady(setup)}
-        starting={starting}
-        onContinue={(path) => void continueFolder(path)}
-        onOpen={(path) => api && void openFolder(api, path)}
-        onPick={() => void pickFolder()}
-        onNew={() => void newFolder()}
-        onFind={() => void findFolders()}
-        onForget={(path) => void forgetFolder(path)}
-        onSetup={openSetup}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "course") {
-    screen = (
-      <Course
-        home={home}
-        progress={progress}
-        asking={asking}
-        error={error}
-        notice={notice}
-        upgrading={upgrading}
-        starting={starting}
-        onUpgrade={() => void upgrade()}
-        onContinue={(skip) => void continueLesson(skip)}
-        onNewLesson={(goal) => void newLesson(goal)}
-        onAsk={setAsking}
-        onPaper={openPaper}
-        onProgress={() => void openProgress(null)}
-        onRetry={() => {
-          setError(null);
-          void refreshHome();
-        }}
-        onLibrary={showLibrary}
-        onPalette={() => setPalette(true)}
-        material={material}
-        adding={adding}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-        onPasteText={() => setPasting("")}
-        materials={materials}
-        dragging={dragging && canAdd()}
-      />
-    );
-  } else if (view === "session") {
-    screen = (
-      <Session
-        state={session}
-        rail={rail}
-        blockMinutes={home.block_minutes}
-        overlay={palette || pasting !== null}
-        onSend={(text) => void say(text)}
-        onInterrupt={() => void guard((api) => api.interrupt())()}
-        onDecide={(id: string, decision: Decision) =>
-          void guard(async (api) => {
-            await api.decide(id, decision);
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })()
-        }
-        onAnswer={(id: string, answers: Answer[]) => {
-          // What was picked stands in the lesson as the learner's note, as a typed answer does.
-          dispatch({ type: "picked", shown: pickedWords(answers), now: Date.now() });
-          void guard(async (api) => {
-            await api.answer(id, answers);
-            sitting.current.answers += 1;
-            dispatch({ type: "event", event: { type: "withdrawn", id } });
-          })();
-        }}
-        onStop={(line) => void stop(line)}
-        onNote={onNote}
-        onDismiss={(text) => dispatch({ type: "dismiss", text })}
-        onPalette={() => setPalette(true)}
-        material={material}
-        onDismissMaterial={() => setMaterial(null)}
-        onAddFiles={() => void chooseMaterial()}
-      />
-    );
-  } else if (view === "summary" && summary) {
-    screen = (
-      <Summary
-        sitting={summary}
-        activity={activity}
-        proofs={progress?.proofs ?? null}
-        onPalette={() => setPalette(true)}
-        courseName={displayName(home.name)}
-        onDone={() => setView("course")}
-        onProgress={() => void openProgress(null)}
-      />
-    );
-  } else if (view === "progress") {
-    const inLesson = session.open || session.live !== null;
-    screen = (
-      <Progress
-        data={progress}
-        activity={activity}
-        error={error}
-        folderName={home.name}
-        backLabel={inLesson ? "Lesson" : displayName(home.name)}
-        onTarget={(target) => void loadProgress(target, true)}
-        questionsDue={home.checks_due === null ? null : home.redos_due + home.checks_due}
-        onStart={!inLesson && !home.sitting && home.state === "ready" ? () => void continueLesson(false) : undefined}
-        onBack={back}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  } else if (view === "paper") {
-    screen = (
-      <Paper
-        key={home.sitting ? "running" : "choosing"}
-        home={home}
-        chosen={chosenPaper}
-        error={error}
-        onStart={(paper, minutes) => void startPaper(paper, minutes)}
-        onHandIn={() => void handIn()}
-        onEnd={() => void endPaper()}
-        onOpenPaper={home.sitting?.path ? () => void api?.openFile(home.sitting!.path!).catch(() => {}) : undefined}
-        onBack={() => setView("course")}
-        onPalette={() => setPalette(true)}
-      />
-    );
-  }
+  const tabViews: TabView[] = tabs.map((tab) => ({
+    key: tab.key,
+    kind: tab.kind,
+    title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? ""),
+    busy: tab.key === busyKey,
+    folder: tab.kind === "session" ? tab.folder : null,
+  }));
+  const k = (action: KeyAction) => keyName(prefs.keys[action]);
+  const covered = overlay !== null;
+  const homeName = homeFolder ? (workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : null;
+  const sessionRunning = (folder: string) => tabs.some((tab) => tab.kind === "session" && tab.folder === folder && handles.current[tab.key]?.state().open);
 
   return (
-    <div className="app" data-busy={busy(session) ? "yes" : "no"} data-view={view}>
-      <div className="view" key={view}>
-        {screen}
+    <div className="app" data-active={activeTab.kind} data-panel={panel ? "shown" : "hidden"}>
+      <Tabs
+        tabs={tabViews}
+        active={active}
+        plan={inSession ? panel : null}
+        planKey={k("plan")}
+        settingsKey={k("settings")}
+        newKey={k("new-session")}
+        onPick={(key) => (key === "home" && active === "home" ? goWorkspace(null) : activate(key))}
+        onClose={(key) => void closeTab(key)}
+        onNew={() => newSession()}
+        onPlan={() => run("plan")}
+        onSettings={() => openSettings()}
+      />
+      <div className="views" aria-hidden={covered ? true : undefined}>
+        {activeTab.kind === "home" && api && (
+          <div className="view" role="tabpanel" aria-labelledby={tabId("home")}>
+            {homeFolder ? (
+              <WorkspacePage
+                key={homeFolder}
+                api={api}
+                folder={homeFolder}
+                focus={!covered}
+                running={sessionRunning(homeFolder)}
+                refresh={materialChanged}
+                onBack={() => goWorkspace(null)}
+                onNewSession={(folder) => newSession(folder)}
+                onOpenSession={(folder, session, title) => openSession(folder, session, title)}
+                onHandedIn={(folder, words, title) => addSession({ folder, session: null, title, pending: { kind: "paper", shown: words.shown, sent: words.sent } })}
+                onForget={(folder) =>
+                  void api.forgetFolder(folder).then(
+                    async () => {
+                      await loadWorkspaces();
+                      goWorkspace(null);
+                    },
+                    (problem) => note(String(problem)),
+                  )
+                }
+                onPaste={(folder) => setOverlay({ kind: "paste", folder })}
+                onOpenMaterial={(folder, path) => setOverlay({ kind: "source", folder, source: { path, page: null } })}
+                onNote={note}
+              />
+            ) : (
+              <HomePage
+                api={api}
+                workspaces={workspaces}
+                step={step_}
+                focus={!covered && restored}
+                notes={notes}
+                onContinue={(folder, session, title) => openSession(folder, session, title)}
+                onStartIn={(folder) => newSession(folder, { kind: "start" })}
+                onWorkspace={(folder) => goWorkspace(folder)}
+                onPickFolder={() => void pickFolder()}
+                onNewFolder={() => void newFolder()}
+                onFindFolders={() => void findFolders()}
+              />
+            )}
+            {homeFolder && notes.length > 0 && (
+              <div className="page-notes notices">
+                {notes.map((text) => (
+                  <p key={text} className="record note">
+                    {text}{" "}
+                    <button className="plain" onClick={() => setNotes((old) => old.filter((n) => n !== text))}>
+                      dismiss
+                    </button>
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab.kind === "settings" && (
+          <div className="view" role="tabpanel" aria-labelledby={tabId("settings")}>
+            <SettingsPage
+              prefs={prefs}
+              change={changePrefs}
+              setup={setup}
+              engine={engine}
+              about={about}
+              lessonOpen={lessonOpen()}
+              blockMinutes={blockMinutes}
+              section={settingsSection}
+              onEngine={(chosen) => void chooseEngine(chosen)}
+              onPayment={(payment) => void choosePayment(payment)}
+              onBlock={chooseBlock}
+              onSignIn={() => void signIn()}
+              onCheckAgain={() => void checkAgain()}
+              onReplaceRuntime={() => void answerRuntime((api) => api.replaceRuntime())}
+            />
+          </div>
+        )}
+        {api &&
+          tabs.map((tab) =>
+            tab.kind === "session" ? (
+              <Session
+                key={tab.key}
+                tab={tab}
+                active={tab.key === active}
+                live={tab.key === liveKey}
+                api={api}
+                setup={setup}
+                setupWait={setupWait.current}
+                prefs={prefs}
+                panel={panel}
+                covered={covered}
+                elsewhereBusy={busyKey !== null && busyKey !== tab.key}
+                claim={claim}
+                register={register}
+                onSession={onSession}
+                onTitle={onTitle}
+                onBusy={onBusy}
+                onEngine={onEngine}
+                onSource={onSource}
+                onTaskChange={onTaskChange}
+                onStarted={onStarted}
+              />
+            ) : null,
+          )}
       </div>
-      {dragging && canAdd() && home && <DropVeil course={displayName(home.name)} />}
-      {pasting !== null && <PasteSheet initial={pasting} saving={adding} onSave={(text) => void savePasted(text)} onCancel={() => setPasting(null)} />}
-      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+      {dragging && (inSession || (activeTab.kind === "home" && homeFolder)) && (
+        <div className="veil" aria-hidden="true">
+          <p>{inSession ? "Drop to send with your next message" : `Drop to add to ${displayName(homeName ?? "")}'s material`}</p>
+        </div>
+      )}
+      {overlay?.kind === "commands" ? (
+        <Commands
+          workspaces={workspaces ?? []}
+          keys={{ home: k("home"), newSession: k("new-session"), closeSession: k("close-session"), settings: k("settings"), plan: k("plan"), openWorkspace: k("open-workspace") }}
+          inSession={inSession}
+          planShown={panel}
+          onClose={() => setOverlay(null)}
+          run={(command, arg) => run(command, arg)}
+        />
+      ) : overlay?.kind === "source" ? (
+        <SourceSheet source={overlay.source} folder={overlay.folder} onClose={() => setOverlay(null)} onNote={note} />
+      ) : overlay?.kind === "paste" ? (
+        <PasteSheet
+          initial=""
+          saving={false}
+          onSave={(text) => {
+            const folder = overlay.folder;
+            setOverlay(null);
+            void api?.addPastedText(text, folder).then(
+              (added) => {
+                added.lines.forEach(note);
+                setMaterialChanged((n) => n + 1);
+              },
+              (problem) => note(String(problem)),
+            );
+          }}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-export type Actions = {
-  continueLesson: (skipChecks: boolean, home?: Home | null) => Promise<boolean>;
-  newLesson: (goal: string) => Promise<void>;
-  say: (text: string) => Promise<void>;
-  stop: (line: string) => Promise<void>;
-  openProgress: (target: string | null) => Promise<void>;
-  openPaper: (paper: PaperInfo | null) => void;
-  startPaper: (paper: PaperInfo, minutes: number) => Promise<void>;
-  setPalette: (open: boolean) => void;
-  setAsking: (asking: boolean) => void;
-  openSetup: () => void;
-  showLibrary: () => void;
-  continueFolder: (path: string) => Promise<void>;
-  chooseEngine: (engine: Engine) => Promise<void>;
-  setView: (view: string) => void;
-  addMaterial: (paths: string[]) => Promise<void>;
-  setDragging: (over: boolean) => void;
-  pasteText: (text: string) => void;
-};
+export { setupReady };

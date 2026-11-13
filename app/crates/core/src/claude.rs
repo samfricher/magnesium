@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Choice, Conversation, Decision,
-    EventSink, Harness, NoticeKind, Payment, Question, StartOptions,
+    EventSink, Harness, Intent, NoticeKind, Payment, Question, StartOptions,
 };
 use crate::paths;
 
@@ -94,8 +94,10 @@ fn plugin_dir() -> Option<PathBuf> {
 ///   hooks, skills and tool server load as in a terminal. Its tools are in
 ///   the session from the first turn, as there are too few to defer.
 /// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
-///   `.magnesium/`. Permission cards are unchanged: a sandboxed command still
-///   asks.
+///   `.magnesium/`. Permission cards are unchanged, with one exception: Edit
+///   and Write on the study root's plan files (`Study/<plan>/plan.md` and
+///   `graph.yaml`) are allowed without asking, so "change the plan" asks the
+///   learner nothing. Every other write, and a sandboxed command, still asks.
 /// - The model is named. The effort is Claude Code's default, as in a
 ///   terminal.
 ///
@@ -124,12 +126,25 @@ pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
             folders.push(real);
         }
     }
+    // The study root, where the plans are, may be a parent of the folder.
+    let root = crate::direct::study_root(folder);
+    let mut roots = vec![root.clone()];
+    if let Ok(real) = std::fs::canonicalize(&root) {
+        if real != root {
+            roots.push(real);
+        }
+    }
     let deny: Vec<String> = folders
         .iter()
+        .chain(roots.iter().filter(|root| !folders.contains(root)))
         .flat_map(|folder| {
             let rule = format!("/{}/.magnesium/**", folder.display());
             [format!("Write({rule})"), format!("Edit({rule})")]
         })
+        .collect();
+    let allow: Vec<String> = roots
+        .iter()
+        .flat_map(|root| crate::direct::plan_rules(root))
         .collect();
     let settings = json!({
         "sandbox": {
@@ -137,7 +152,7 @@ pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
             "autoAllowBashIfSandboxed": false,
             "allowUnsandboxedCommands": false,
         },
-        "permissions": {"deny": deny},
+        "permissions": {"deny": deny, "allow": allow},
         "enableAllProjectMcpServers": false,
     });
     args.push("--settings".into());
@@ -1477,7 +1492,20 @@ struct ClaudeConversation {
     shared: Arc<Shared>,
 }
 
+/// The plain words put before a message the learner sent as talk. The
+/// plugin's teaching files record an attempt only for a first try at a task
+/// the tutor set, so a message that says it is none is left unmarked; code
+/// cannot hold the tutor to it on this engine (Magnesium issue 65).
+pub const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
+
 impl Conversation for ClaudeConversation {
+    fn send_with(&mut self, text: &str, intent: Option<Intent>) -> AgentResult<()> {
+        match intent {
+            Some(Intent::Talk) => self.send(&format!("{TALK_LEAD}\n\n{text}")),
+            Some(Intent::Answer) | None => self.send(text),
+        }
+    }
+
     fn send(&mut self, text: &str) -> AgentResult<()> {
         // An interrupt marked just after the last turn ended belongs to no
         // turn, and must not mark this one.
@@ -1991,6 +2019,22 @@ mod tests {
         assert!(
             deny.contains(&"Edit(//study/stats/.magnesium/**)"),
             "{deny:?}"
+        );
+        // The plan files are written without a card; nothing else is.
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(
+            allow,
+            vec![
+                "Edit(//study/stats/Study/*/plan.md)",
+                "Write(//study/stats/Study/*/plan.md)",
+                "Edit(//study/stats/Study/*/graph.yaml)",
+                "Write(//study/stats/Study/*/graph.yaml)",
+            ]
         );
         assert!(!args.iter().any(|a| a == "--bare"));
         assert!(!lesson_args(folder, None)

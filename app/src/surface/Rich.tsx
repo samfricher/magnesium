@@ -7,7 +7,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { holdBack, markTask, renderInline, renderMarkdown, setSourcesApart } from "../render";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -25,7 +25,12 @@ const pictures = new Map<string, Promise<string>>();
 const drawn = new Map<string, string>();
 const failed = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
-const keyOf = (source: string) => `${window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"}:${source}`;
+/** The scheme on screen: the one set on the page, else the Mac's. */
+export const darkNow = () => {
+  const set = document.documentElement.dataset.scheme;
+  return set ? set === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+};
+const keyOf = (source: string) => `${darkNow() ? "dark" : "light"}:${source}`;
 
 /**
  * A diagram is as big as it was drawn, so its words keep their size. It may be
@@ -41,14 +46,14 @@ function keepWordsReadable(holder: HTMLElement) {
   holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1);
 }
 
-/** A diagram's boxes take the window's control radius, not square corners. */
+/** A diagram's boxes take a small radius, as the window's few boxes do. */
 function roundNodes(svg: string): string {
   try {
     const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
     if (doc.querySelector("parsererror")) return svg;
     doc.querySelectorAll(".node rect, .cluster rect, rect.actor, rect.note").forEach((rect) => {
-      rect.setAttribute("rx", "8");
-      rect.setAttribute("ry", "8");
+      rect.setAttribute("rx", "4");
+      rect.setAttribute("ry", "4");
     });
     return new XMLSerializer().serializeToString(doc.documentElement);
   } catch {
@@ -84,24 +89,39 @@ async function drawOne(source: string, room: number) {
   try {
     // The diagram library is large, so it is fetched only when a diagram appears.
     const mermaid = (await import("mermaid")).default;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = darkNow();
     // The window's own colours, read from its tokens so a diagram follows the
     // scheme. The diagram library works colours out from these, so they are
     // resolved to plain values here.
-    const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "gray";
+    // A token can be a mix of others (color-mix), which the diagram library
+    // cannot read: each is resolved to a plain hex colour first.
+    const token = (name: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${name})`;
+      document.body.appendChild(probe);
+      const computed = getComputedStyle(probe).color;
+      probe.remove();
+      const numbers = (computed.match(/[\d.]+/g) ?? []).map(Number);
+      if (numbers.length < 3) return "gray";
+      const scale = computed.startsWith("color(") ? 255 : 1;
+      return `#${numbers
+        .slice(0, 3)
+        .map((n) => Math.round(Math.min(255, Math.max(0, n * scale))).toString(16).padStart(2, "0"))
+        .join("")}`;
+    };
     const ink = {
       box: token("--raised"),
       text: token("--text"),
-      edge: token("--line-input"),
-      line: token("--muted"),
-      second: token("--hover"),
-      third: token("--surface"),
+      edge: token("--faint"),
+      line: token("--quiet"),
+      second: token("--tint"),
+      third: token("--ground"),
     };
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
-      fontFamily: '"Magnesium Sans", -apple-system, BlinkMacSystemFont, sans-serif',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
       // A diagram fits the column; CSS scales it to the width it is given.
       flowchart: { useMaxWidth: false },
       sequence: { useMaxWidth: false },
@@ -216,22 +236,43 @@ type Props = {
    * as plain text.
    */
   linksOpen?: boolean;
-  /** Called with a link that opens a source beside the lesson. Without it such a link opens in the system's viewer. */
-  /** `from` is the link that was pressed, so closing the source can give the focus back to it. */
+  /**
+   * Called with a link that opens a source over the lesson. Without it such a
+   * link opens in the system's viewer. `from` is the link that was pressed, so
+   * closing the source can give the focus back to it.
+   */
   onSource?: (source: SourceRef, from?: HTMLElement) => void;
   /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
   stopped?: boolean;
+  /** The task this reply posed, as the engine read it: the part of the reply that holds it is set apart. */
+  task?: string;
+  /** The reply is being written: a caret stands after its last word. */
+  caret?: boolean;
 };
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false }: Props) {
+/** The writing caret, put after the last word of the last block. */
+function withCaret(html: string): string {
+  const caret = '<span class="cursor" aria-hidden="true"></span>';
+  const holder = document.createElement("template");
+  holder.innerHTML = html;
+  let last: Element | null = holder.content.lastElementChild;
+  while (last && last.lastElementChild && /^(DIV|UL|OL|BLOCKQUOTE)$/.test(last.tagName) && !last.classList.contains("katex-display")) last = last.lastElementChild;
+  if (!last || /^(PRE|TABLE|HR|DIV)$/.test(last.tagName) || last.classList.contains("katex-display")) return `${html}<p>${caret}</p>`;
+  last.insertAdjacentHTML("beforeend", caret);
+  return holder.innerHTML;
+}
+
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, task, caret = false }: Props) {
   // A reply still being written, or stopped, never shows the marks of a
   // formula, a bold span or a link it ends inside of. A display formula that
   // is held back keeps a line's room, so what follows does not jump when it closes.
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
   const html = useMemo(() => {
-    const drawn = renderMarkdown(held.text);
-    return onSource ? setSourcesApart(drawn, linksOpen) : drawn;
-  }, [held.text, linksOpen, onSource]);
+    const whole = renderMarkdown(held.text);
+    const drawn = task && final ? markTask(whole, task) : whole;
+    const linked = onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+    return caret ? withCaret(linked) : linked;
+  }, [held.text, linksOpen, onSource, task, final, caret]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet
@@ -258,6 +299,9 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     // Stop the webview following an anchor before anything is awaited.
     if (path || link) event.preventDefault();
     if (path) {
+      // A file the window can show opens in the window; only another kind goes to the Mac.
+      const shown = onSource ? sourceRef((path.textContent ?? "").trim()) : null;
+      if (shown) return onSource?.(shown, path as HTMLElement);
       try {
         await (await core()).openFile((path.textContent ?? "").trim());
       } catch (error) {

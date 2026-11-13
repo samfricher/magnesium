@@ -1,883 +1,646 @@
-// A stand-in core for a plain browser, with made-up data. It exists so the
-// screens can be worked on and photographed without a window or an agent.
-// Nothing here ships a real course, a real grade or a real learner's words.
+// A stand-in core for a plain browser, with made-up data, so the window can
+// be worked on and photographed without a shell or an agent. Nothing here is
+// a real course, a real grade or a real learner's words.
+//
+// The address picks a state. The five scenarios of the evidence contract:
+//   #s1-cold (Home)  #s1-cold-first  #s2-start  #s2-answer  #s3-before
+//   #s3-after  #s4-offplan  #s4-return  #s5-week  #s5-week-next  #narrow-lesson
+// and the new screens of the combined window:
+//   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
+//   #tabs  #commands  #switch  #session-earlier  #source  #working
+//   #permission  #paper  #upgrade  #help-row  #symbols
+//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
 
 import type { Actions } from "./App";
+import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
-import type {
-  Added,
-  Account,
-  Activity,
-  AgentEvent,
-  Card,
-  Core,
-  Engine,
-  Home,
-  Mark,
-  Opened,
-  Paper,
-  PaperSitting,
-  Payment,
-  Progress,
-  Proofs,
-  Rail,
-  Row,
-  RuntimeSetup,
-  Setup,
-  Source,
-  Turn,
-} from "./types";
+import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, Opened, Paper, PaperSitting, Payment, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
 
-const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
+const wait = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
 
-const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/PaperB.pdf", minutes: 50, sat: false };
-const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midterm-1/papers/PaperA.pdf", minutes: 50, sat: true };
+const address = () => decodeURIComponent(window.location.hash.replace(/^#/, ""));
+const state = address();
+const has = (...names: string[]) => names.includes(state);
 
-let variant = "ready";
-let sitting: PaperSitting | null = null;
-let blockMinutes = 50;
-// What the library shows: "" for four courses, "empty" for none yet.
-let shelf = "";
-let forgotten: string[] = [];
-let found = false;
-let studiedToday = true;
-// #library:fresh is a window that has never had a study day: the week is all outlines and says so.
-let history = true;
-// A sitting earns a proof when a check or a redo it opened with was passed.
-let sittingsDone = 0;
-let stoppedAt: string | null = "step 3: what the y-intercept gives.";
-// Answers the tutor marked today. Each answer sent in the demo is marked,
-// except at #summary:unmarked, which shows a sitting with none marked.
-let markedToday = 4;
-let marking = true;
-// The record's marked answers in the demo, oldest first. An answer sent in the
-// demo lesson adds a row a moment later, as the runtime would. At
-// #session:nomarks the runtime has no `attempts` command, and says so.
-const demoMarks: Mark[] = [
-  { id: "demo-1", at: "2026-11-09 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
-  { id: "demo-2", at: "2026-11-09 18:26", label: "slope and $K_m$", mark: "wrong", help: "none", cold: true, paper: null },
+const FOLDER = "/Users/you/Study/Biochemistry";
+const GOAL = "Reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot";
+const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/Paper B.pdf", minutes: 50, sat: false };
+const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midterm-1/papers/Paper A.pdf", minutes: 50, sat: true };
+
+// What the addresses change.
+const week = has("s5-week", "s5-week-next");
+const firstOpen = has("s1-cold-first");
+let signedIn = !has("setup-signed-out");
+let payment: Payment = "plan";
+let engineChosen: Engine = "direct";
+let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
+let upgraded = !has("upgrade");
+let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
+let open: string | null = FOLDER;
+const DAY_MS = 86_400_000;
+// When each folder was last opened, and its sessions: the current one, and an earlier one.
+const openedMs: Record<string, number> = {
+  [FOLDER]: Date.now() - (week ? 7 : 2) * DAY_MS,
+  "/Users/you/Study/Linear-Algebra": Date.now() - (week ? 9 : 3) * DAY_MS,
+  "/Users/you/Study/Statistics": Date.now() - 12 * DAY_MS,
+};
+const sessionsOf = (folder: string): LessonInfo[] => {
+  if (firstOpen) return [];
+  const at = openedMs[folder] ?? Date.now();
+  const info = (session: string, title: string | null, opening: string, ms: number, current: boolean): LessonInfo => ({
+    session,
+    first_ms: ms - 40 * 60_000,
+    last_ms: ms,
+    turns: 6,
+    opening,
+    current,
+    title,
+    opened_ms: ms,
+  });
+  if (folder === FOLDER)
+    return [
+      info("demo", GOAL, "I'm back. Let's continue.", at, true),
+      info("demo-0", null, "Let's work on taking reciprocals of the rate equation.", at - 3 * DAY_MS, false),
+    ];
+  if (folder.endsWith("Linear-Algebra")) return [info("la-1", "Diagonalising a matrix with a repeated eigenvalue", "Teach me diagonalising", at, true)];
+  return [];
+};
+let stoppedAt: string | null = week ? "The slope of the same line is 0.5 s. What is $K_m$?" : "step 3, what the y-intercept gives";
+let materialNames = ["Week 4 slides.pdf", "enzyme-kinetics-notes.md", "Problem set 3.pdf"];
+const holdStream = has("s3-before");
+
+if (week) demoChangePlan();
+
+// The record's marks, oldest first. An answer sent in the demo adds one a moment later.
+const marks: Mark[] = [
+  { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "m2", at: "2026-11-09 18:26", label: "the slope gives $K_m / V_{max}$", mark: "wrong", help: "none", cold: true, paper: null },
+  { id: "m3", at: "2026-11-10 17:02", label: "taking reciprocals of the rate equation", mark: "right", help: "hint", cold: false, paper: null },
+  { id: "m4", at: "2026-11-05 18:40", label: "reading $V_{max}$ from the y-intercept", mark: "wrong", help: "none", cold: true, paper: null },
 ];
-let marksAvailable = true;
-// Set once the demo lesson has recorded a wrong answer: the record brings that skill back tomorrow, not today.
-let slipRecorded = false;
-// A hint asked since the last marked answer: the next answer is given with help.
+let markCount = marks.length;
 let helpAsked = false;
-// Files in the demo course's material folder, newest first, and its answer keys.
-let materialNames = ["week3-confidence-intervals.md", "week2-sampling.md", "Week 4 slides.pdf"];
-let materialKeys = 1;
-// What runs lessons, and the engine the demo course's conversation began on.
-let engineChosen: Engine = "plugin";
-let conversationEngine: Engine | null = "plugin";
 
-function home(): Home {
-  const base: Home = {
-    folder: "/Users/you/Study/Demo-Course",
-    name: "Demo-Course",
-    state: "ready",
-    message: null,
-    exam: { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-    last: {
-      days_ago: 3,
-      goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
-      stopped_at: stoppedAt,
-      next_action: "Find Vmax from the intercept 0.25.",
-    },
-    checks_due: 2,
-    redos_due: 3,
-    first_redo: "Diagnostic Q4",
-    papers: [paperB, paperA],
-    can_resume: true,
-    sitting,
-    block_minutes: blockMinutes,
-  };
-  if (variant === "new") {
-    return { ...base, state: "not_set_up", exam: null, last: null, checks_due: 0, redos_due: 0, first_redo: null, papers: [], can_resume: false };
-  }
-  if (variant === "quiet") return { ...base, checks_due: 0, redos_due: 0, first_redo: null };
-  if (variant === "upgrade") {
+// The open task in the demo lesson: the y-intercept, then the slope.
+let task: "vmax" | "km" = week ? "km" : "vmax";
+
+// Tasks are written in prose, as the tutor on Magnesium writes them; the
+// engine names each one in its record, and says so with open_task.
+const VMAX_TASK = "The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
+const KM_TASK = "The slope of the same line is $0.5$ s. What is $K_m$?";
+const CHECK_TASK = "A line meets the y-axis at $0.2$ s/µM. What is $V_{max}$?";
+const TASKS = [VMAX_TASK, KM_TASK, CHECK_TASK, "A second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?"];
+
+const OPENING =
+  "You had the reciprocal form last time:\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}}\\cdot\\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n" +
+  "It is a straight line in $\\frac{1}{[S]}$, so each part of the line means something. Where it meets the y-axis, $\\frac{1}{[S]} = 0$, and what is left is $\\frac{1}{V_{max}}$ (see [Week 4 slides, p. 12](Study/materials/Week%204%20slides.pdf#page=2)).\n\n" +
+  VMAX_TASK;
+
+const WEEK_OPENING = `Quick check 1: ${CHECK_TASK}`;
+
+const RIGHT =
+  "Yes. The intercept is $\\frac{1}{V_{max}}$, so $V_{max} = \\frac{1}{0.25} = 4$ µM/s; the units come from taking the reciprocal of s/µM.\n\n" +
+  "The slope is the other half of the line. It is $\\frac{K_m}{V_{max}}$, so it carries both constants at once.\n\n" +
+  KM_TASK;
+
+const WRONG =
+  "Not quite. The intercept is $\\frac{1}{V_{max}}$, not $V_{max}$ itself, so take the reciprocal: $V_{max} = \\frac{1}{0.25}$.\n\n" + KM_TASK;
+
+const KM_RIGHT = "Yes: $K_m = 0.5 \\times 4 = 2$ µM. You read both constants off one line.\n\nA second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?";
+
+const HINT = "The slope is $\\frac{K_m}{V_{max}}$, and you have $V_{max}$ already. What do you multiply the slope by?";
+
+const LOST = "Let's find where it slipped. When you look at the line, which part do you read first: where it crosses the y-axis, or how steep it is?";
+
+const BACK_TO = () => `Back to it.\n\n${task === "km" ? KM_TASK : VMAX_TASK}`;
+
+function home(folder: string | null = open): Home {
+  if (folder === null) throw new Error("No course is open.");
+  if (folder !== FOLDER) {
+    const name = folder.split("/").pop() ?? folder;
     return {
-      ...base,
-      state: "needs_upgrade",
-      message:
-        "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
+      folder,
+      name,
+      state: name === "Statistics" ? "empty" : "ready",
+      message: null,
       exam: null,
-      last: null,
+      last: name === "Statistics" ? null : { days_ago: 1, goal: "Diagonalising a matrix with a repeated eigenvalue", stopped_at: null, next_action: "Find the eigenvectors for $\\lambda = 2$." },
       checks_due: 0,
       redos_due: 0,
       first_redo: null,
       papers: [],
+      can_resume: name !== "Statistics",
+      sitting: null,
+      block_minutes: 50,
     };
   }
-  if (variant === "broken") {
-    return { ...base, state: "no_runtime", message: "The magnesium program is not installed, or the window cannot find it. Install Magnesium, then open the window again." };
-  }
-  return base;
-}
-
-// What the setup screen shows, chosen by the address: #welcome:replace,
-// #welcome:signed-out, #welcome:no-claude, #welcome:key or #welcome:first.
-// #setup shows it as opened from the library, with everything ready.
-let setupVariant = "";
-let payment: Payment = "plan";
-let signedIn = true;
-const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
-
-function runtimeSetup(): RuntimeSetup {
-  const bundled = program("0.3.0+4f1c2ad9e0b7");
-  if (setupVariant === "replace") {
-    return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
-  }
-  // Worded as the core words it: install.rs.
-  if (setupVariant === "too-old") {
-    return {
-      state: "too_old",
-      installed: program("0.2.0"),
-      bundled,
-      installed_now: false,
-      message:
-        "The magnesium program on this Mac, version 0.2.0, is older than this window needs. Replace it with the copy inside this app, version 0.3.0. Until then no lesson starts.",
-    };
-  }
-  if (setupVariant === "too-old-source") {
-    return {
-      state: "too_old",
-      installed: program("0.3.0"),
-      bundled: null,
-      installed_now: false,
-      message:
-        "The magnesium program on this Mac, version 0.3.0, is older than this window needs. Ask Claude Code to install the newest Magnesium with the install guide, docs/install.md in the Magnesium repository, then check again. Until then no lesson starts.",
-    };
-  }
-  return { state: "ready", installed: bundled, bundled, installed_now: setupVariant === "first", message: null };
-}
-
-function account(): Account {
-  const base: Account = {
-    name: "Claude Code",
-    installed: true,
-    signed_in: true,
-    paid_with: "plan",
-    detail: "your Claude Max plan",
-    problem: null,
-    install_page: null,
+  const plan = demoPlan();
+  const day = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+  return {
+    folder: FOLDER,
+    name: "Biochemistry",
+    state: upgraded ? "ready" : "needs_upgrade",
+    message: upgraded
+      ? null
+      : "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
+    exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
+    last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,
+    checks_due: week ? 1 : 0,
+    redos_due: 0,
+    first_redo: "Diagnostic Q4",
+    papers: [paperB, paperA],
+    can_resume: true,
+    sitting,
+    block_minutes: 50,
   };
-  if (setupVariant === "no-claude") {
-    return {
-      ...base,
-      installed: false,
-      signed_in: false,
-      paid_with: null,
-      detail: null,
-      problem: "Claude Code is not on this Mac, or the window cannot find it. Install it, then check again.",
-      install_page: "https://code.claude.com/docs/en/setup",
-    };
-  }
-  if (!signedIn) {
-    return { ...base, signed_in: false, paid_with: null, detail: null, problem: "Claude Code is not signed in. Sign in with your Claude account." };
-  }
-  if (setupVariant === "key" && payment === "plan") {
-    return {
-      ...base,
-      paid_with: "api_key",
-      detail: "an API key set in ANTHROPIC_API_KEY, per use",
-      problem:
-        "Claude Code would pay with an API key set in ANTHROPIC_API_KEY, per use, not your Claude plan. Sign in with your Claude account to use the plan.",
-    };
-  }
-  if (payment === "api_key") return { ...base, paid_with: "api_key", detail: "your Anthropic Console sign-in, per use" };
-  return base;
 }
 
-const demoSetup = (): Setup => ({ runtime: runtimeSetup(), account: account(), payment });
-
-const rail: Rail = {
-  goal: "PS3 Q3 · reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot",
-  steps: [
-    { step: "Write the rate equation", status: "done" },
-    { step: "Take reciprocals of both sides", status: "done" },
-    { step: "What the y-intercept gives", status: "doing" },
-    { step: "What the slope gives", status: "todo" },
-    { step: "Check the units", status: "todo" },
-  ],
-  next_action: "PS3 Q3, step 3: what the y-intercept gives. The line through 0.25 is next.",
-};
-
-const isoDay = (ahead: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + ahead);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-
-const row = (dots: [number, number, number], name: string, what: string, note: string, ahead: number | null = null): Row => ({
-  dots,
-  name,
-  what,
-  note,
-  due: note.startsWith("due"),
-  next_day: note.startsWith("due") ? isoDay(0) : ahead === null ? null : isoDay(ahead),
-});
-
-const proofs = (earned: number, proven: number, skills: number): Proofs => {
-  const total = skills * 3;
-  const level = total === 0 ? 1 : 1 + Math.floor((earned * 9) / total);
-  return { earned, total, proven, skills, level, to_next: total === 0 || level >= 10 ? 0 : Math.ceil((level * total) / 9) - earned, levelled: true };
-};
-
-/** A course with no plan: its skills are counted, with no level. */
-const counted = (proven: number, skills: number): Proofs => ({ earned: 0, total: 0, proven, skills, level: 0, to_next: 0, levelled: false });
-
-const card = (name: string, more: Partial<Card>): Card => ({
-  folder: `/Users/you/Study/${name}`,
-  name,
+const card = (folder: string, more: Partial<Card>): Card => ({
+  folder,
+  name: folder.split("/").pop() ?? folder,
   state: "ready",
   exam: null,
   goal: null,
   days_ago: null,
-  proofs: proofs(0, 0, 0),
+  proofs: { earned: 0, total: 0, proven: 0, skills: 0, level: 0, to_next: 0, levelled: false },
   due: 0,
   sitting: null,
   ...more,
 });
 
 function library(): Card[] {
-  if (shelf === "empty") return [];
-  const now = home();
-  const cards = [
-    card("Demo-Course", {
-      state: now.state,
-      exam: now.exam,
-      goal: now.last?.goal ?? null,
-      days_ago: now.last?.days_ago ?? null,
-      proofs: now.state === "ready" ? proofs(15, 3, 11) : proofs(0, 0, 0),
-      due: now.redos_due + (now.checks_due ?? 0),
-      sitting: now.sitting,
-    }),
-    card("Linear-Algebra", {
-      exam: { target: "final", title: "Final", date: "2026-12-04", day: "Fri 4 Dec", days_left: 23 },
-      goal: "Diagonalising a matrix: when $A = PDP^{-1}$ exists",
-      days_ago: 1,
-      proofs: proofs(31, 8, 18),
-      due: 1,
-    }),
-    card("Probability", {
-      exam: { target: "test-2", title: "Test 2", date: "2026-12-12", day: "Sat 12 Dec", days_left: 31 },
-      goal: "The cdf method for $U = \\sqrt{Y}$, and why a transformation of $Y$ that is not one-to-one needs the sum over every branch of its inverse",
-      days_ago: 6,
-      proofs: proofs(6, 1, 14),
-    }),
-    card("Music-Theory", {
-      goal: "Reading figured bass",
-      days_ago: 3,
-      proofs: counted(2, 5),
-    }),
-    card("Organic-Chemistry", { state: "not_set_up" }),
-  ];
-  if (found) cards.push(card("Thermodynamics", { state: "empty" }));
-  return cards.filter((each) => !forgotten.includes(each.folder));
+  return folders.map((folder) =>
+    folder === FOLDER
+      ? card(folder, { goal: GOAL, days_ago: 2, sitting })
+      : folder.endsWith("Linear-Algebra")
+        ? card(folder, { goal: "Diagonalising a matrix with a repeated eigenvalue", days_ago: 1 })
+        : card(folder, { state: "empty" }),
+  );
 }
 
-function activity(): Activity {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const day = (back: number) => {
-    const date = new Date();
-    date.setDate(date.getDate() - back);
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  };
-  // Studied on these days before today, and today once a sitting is done.
-  const before = history ? [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 17, 20, 22, 23, 27, 29, 30] : [];
-  const days = before.map((back) => day(back));
-  if (studiedToday) days.push(day(0));
-  days.sort();
-  return { today: day(0), days, run: !history ? 0 : studiedToday ? 4 : 3, studied_today: studiedToday };
-}
-
-function progress(target: string | null = null): Progress {
-  // Each exam is its own plan. The final covers the whole course, so it holds more skills than the midterm: the same proofs earned are a smaller share of it, and its level is lower.
-  const wholeCourse = target === "final";
-  if (variant === "new" || variant === "upgrade" || variant === "broken") {
+function runtime(): RuntimeSetup {
+  const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
+  const bundled = program("0.3.0+4f1c2ad9e0b7");
+  if (has("setup-replace")) return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  if (has("setup-too-old")) {
     return {
-      targets: [],
-      exam: null,
-      in_progress: [],
-      confirmed: [],
-      untested: [],
-      scores: [],
-      helped: [],
-      helped_count: 0,
-      unreadable: 0,
-      checks_unknown: false,
-      proofs: proofs(0, 0, 0),
-      level_unknown: false,
-      today: null,
-      message: "Nothing is proved yet. Progress fills in after your first marked paper or quick check.",
+      state: "too_old",
+      installed: program("0.2.0"),
+      bundled,
+      installed_now: false,
+      message: "The magnesium program on this Mac, version 0.2.0, is older than this window needs. Replace it with the copy inside this app, version 0.3.0. Until then no lesson starts.",
     };
   }
-  return {
-    targets: [
-      { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-      { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 },
-    ],
-    exam:
-      target === "final"
-        ? { target: "final", title: "Final", date: "2026-12-15", day: "Tue 15 Dec", days_left: 35 }
-        : { target: "midterm-1", title: "Midterm 1", date: "2026-11-17", day: "Tue 17 Nov", days_left: 6 },
-    in_progress: [
-      // After a sitting in the demo, the first skill has earned its second proof.
-      sittingsDone > 0
-        ? row([2, 2, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "next in 3 days", 3)
-        : row([2, 0, 0], "intercept and $V_{max}$", "took the intercept as $V_{max}$", "due today"),
-      slipRecorded
-        ? row([0, 0, 0], "slope and $K_m$", "read the slope as $K_m$", "next tomorrow", 1)
-        : row([1, 1, 0], "slope and $K_m$", "read the slope as $K_m$, restarted 3 days ago", "due today"),
-      row([2, 2, 0], "units of a rate", "gave $V_{max}$ in µM", "next in 3 days", 3),
-      row([2, 0, 0], "competitive inhibition", "moved $V_{max}$, not $K_m$", "next tomorrow", 1),
-      row([0, 0, 0], "Hill coefficient", "read $n$ from the wrong axis", "fix it first"),
-      // Never got wrong: answered right, alone and cold, on two papers.
-      row([2, 2, 0], "substrate concentration", "right, alone, in Paper A Q2", "–"),
-    ],
-    confirmed: [
-      row([2, 2, 2], "rate equation", "swapped Km and [S]", "confirmed Fri 6 Nov"),
-      row([2, 2, 2], "initial rates", "used the rate at the end", "confirmed Thu 5 Nov"),
-      row([2, 2, 2], "enzyme units", "mixed up mol and µmol", "confirmed Wed 4 Nov"),
-    ],
-    untested: [
-      row([0, 0, 0], "non-competitive inhibition", "lower Vmax, same Km", "–"),
-      row([0, 0, 0], "pH and activity", "the optimum and its causes", "–"),
-      ...(wholeCourse
-        ? [
-            row([0, 0, 0], "Eadie–Hofstee plot", "the axes swapped", "–"),
-            row([0, 0, 0], "Hanes–Woolf plot", "the intercept on the wrong axis", "–"),
-            row([0, 0, 0], "cooperativity", "$n > 1$ read as inhibition", "–"),
-            row([0, 0, 0], "allosteric enzymes", "a sigmoid curve read as a hyperbola", "–"),
-            row([0, 0, 0], "two-substrate kinetics", "ping-pong against sequential", "–"),
-            row([0, 0, 0], "temperature and rate", "the denaturing drop", "–"),
-            row([0, 0, 0], "enzyme assays", "the blank not subtracted", "–"),
-          ]
-        : []),
-    ],
-    scores: [
-      { paper: "Diagnostic", date: "2026-10-28", score: "15/30", sure_right: null, sure_total: null },
-      { paper: "Paper A", date: "2026-11-04", score: "20/30", sure_right: 8, sure_total: 11 },
-      { paper: "Paper B", date: "2026-11-08", score: "24/30", sure_right: 9, sure_total: 10 },
-    ],
-    helped: ["PS3 Q4 to Q6 model answers"],
-    helped_count: 3,
-    unreadable: 0,
-    checks_unknown: false,
-    proofs: proofs(15 + (sittingsDone > 0 ? 1 : 0), 3, wholeCourse ? 18 : 11),
-    level_unknown: false,
-    today: { day: isoDay(0), answered: markedToday, started: markedToday > 0 ? 2 : 0, proofs: sittingsDone > 0 ? 1 : 0, due_tomorrow: 3 },
-    message: null,
-  };
+  return { state: "ready", installed: bundled, bundled, installed_now: firstOpen, message: null };
 }
 
-const earlier: Turn[] = [
-  ["Teach me PS3 Q3.", "Before I explain: what do you think the line's y-intercept stands for?"],
-  ["Vmax?", "Close. Is it Vmax itself, or something made from it? Write the rate equation first."],
-  ["v = Vmax[S]/(Km + [S])", "Yes. Now take the reciprocal of both sides. What do you get?"],
-  ["1/v = Km/(Vmax[S]) + 1/Vmax", "Right. Which part is the slope, and which part is left when $1/[S] = 0$?"],
-  ["the slope is Km/Vmax", "Correct: the slope is $K_m / V_{max}$. Next, what is left when $1/[S] = 0$?"],
-  ["1/Vmax", "Yes, $1/V_{max}$."],
-  [
-    "ok so what is Vmax",
-    "The line meets the y-axis where $1/[S] = 0$, so the intercept is $1/V_{max}$, not $V_{max}$.\n\nThe slide that draws it is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?",
-  ],
-].map(([learner, tutor], index) => ({ session: "demo", ms: Date.now() - (7 - index) * 60_000, learner, tutor, interrupted: false }));
-
-const REPLY =
-  "Right: $V_{max} = 1 / 0.25 = 4$ µM/s. The intercept is the reciprocal of the top speed, because at very high [S] the enzyme runs at $V_{max}$.\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}} \\cdot \\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n**Task.** In one sentence: why does the intercept sit where $1/[S] = 0$?";
-
-const LOST = "One smaller case first. Take the reciprocal of one number.\n\n**Task.** $1 / 0.25 = {?}$";
-
-const DIAGRAM =
-  "Here is the reading as a picture.\n\n```mermaid\ngraph LR\n  A[rate equation] --> B[take reciprocals]\n  B --> C{is 1/S zero?}\n  C -- yes --> D[intercept is 1 over Vmax]\n  C -- no --> E[slope is Km over Vmax]\n  D --> F[Vmax]\n  E --> G[Km]\n  F --> G\n```\n\n| 1/[S] | 1/v |\n|---|---|\n| 0 | 0.25 |\n| 1 | 0.75 |\n| 2 | 1.25 |\n| 4 | 2.25 |\n\n**Task.** Which column would change if the enzyme were twice as fast?";
-
-const SLIDE_LINES = [
-  "Enzymes speed up reactions",
-  "The rate equation",
-  "Michaelis and Menten",
-  "Initial rates",
-  "Saturation",
-  "Vmax and Km",
-  "Fitting a curve by eye",
-  "Why straight lines help",
-  "Taking reciprocals",
-  "Reciprocals of both sides",
-  "The Lineweaver-Burk plot",
-  "1/v against 1/[S]: the intercept is 1/Vmax",
-  "The slope is Km / Vmax",
-  "Worked example",
-];
-const SLIDES = () => tinyPdf(SLIDE_LINES);
-
-/** What the core would say of a cited file, for the demo's made-up course. */
-function demoSource(path: string): Source {
-  const name = path.split("/").pop() ?? path;
-  if (/key|solution|answer/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
-  if (/\.pdf$/i.test(path)) return { name, kind: "pdf", text: null, truncated: false, image: null };
-  if (/\.(md|txt)$/i.test(path)) {
-    return { name, kind: "text", text: "# Week 4\n\nThe intercept of the Lineweaver-Burk line is 1/Vmax.\nThe slope is Km/Vmax.", truncated: false, image: null };
+function account(): Account {
+  const base: Account = { name: "Claude Code", installed: true, signed_in: true, paid_with: "plan", detail: "your Claude Max plan", problem: null, install_page: null };
+  if (has("setup-no-claude")) {
+    return { ...base, installed: false, signed_in: false, paid_with: null, detail: null, problem: "Claude Code is not on this Mac, or the window cannot find it.", install_page: "https://code.claude.com/docs/en/setup" };
   }
-  throw new Error("The window shows PDFs, text and images beside a lesson. Other files stay closed.");
+  if (!signedIn) return { ...base, signed_in: false, paid_with: null, detail: null, problem: null };
+  if (payment === "api_key") return { ...base, paid_with: "api_key", detail: "your Anthropic Console sign-in, per use" };
+  return base;
 }
 
-/** What adding these made-up files would say, worded as the core words it. */
-function material(paths: string[], pasted = false): Added {
-  const names = paths.map((path) => path.split("/").pop() ?? path);
-  const keys = names.filter((name) => /key|solution|answer/i.test(name) && !/tokens?/i.test(name));
-  const shown = names.filter((name) => !keys.includes(name));
-  const lines: string[] = [];
-  if (shown.length === 1) lines.push(pasted ? `Saved your pasted text as "${shown[0]}". The tutor can quote it.` : `Added "${shown[0]}" to your course material. The tutor can quote it.`);
-  else if (shown.length > 1) lines.push(`Added ${shown.length} files to your course material. The tutor can quote them.`);
-  if (keys.length > 0) lines.push(`${keys.length} ${keys.length === 1 ? "file looks" : "files look"} like an answer ${keys.length === 1 ? "key" : "keys"}. ${keys.length === 1 ? "It is" : "They are"} added, and this window keeps ${keys.length === 1 ? "it" : "them"} closed.`);
-  const trouble = shown.flatMap((name) => {
-    if (/scan/i.test(name)) return [`"${name}" is a scan with no text, so its text cannot be searched.`];
-    if (/tokens?/i.test(name)) return [`Search leaves out "${name}" because its name has the word "tokens". Rename it and add it again.`];
-    if (/\.pptx?$/i.test(name)) return [`Search does not read .pptx files, so "${name}" cannot be searched. A PDF of it can be.`];
-    return [];
-  });
-  lines.push(...trouble);
-  return { saved: shown.map((name) => `Study/materials/${name}`), keys: keys.length, lines };
+const setup = (): Setup => ({ runtime: runtime(), account: account(), payment });
+
+/** The conversation left, as the window keeps it: what `turns` reads at rest. */
+function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
+  if (folder !== FOLDER || firstOpen) return [];
+  // Each kept turn says how it was sent and, as Magnesium's engine notes it, the task it left open.
+  const noted = (task: string | null, posed = false) => ({ noted: true, task, posed });
+  if (session === "demo-0") {
+    const at = Date.now() - 5 * DAY_MS;
+    const RECIPROCAL = "Take the reciprocal of both sides.";
+    return [
+      { session, ms: at, learner: "Let's work on taking reciprocals of the rate equation.", tutor: `Start from $v = \\frac{V_{max}[S]}{K_m + [S]}$. ${RECIPROCAL}`, interrupted: false, ...noted(RECIPROCAL, true) },
+      { session, ms: at + 60_000, learner: "1/v = (K_m + [S]) / (V_max [S])", tutor: "Right. Split the fraction and you have a straight line in $\\frac{1}{[S]}$.", interrupted: false, intent: "answer", ...noted(null) },
+    ];
+  }
+  const at = Date.now() - (week ? 7 : 2) * 86_400_000;
+  const turn = (n: number, learner: string, tutor: string, more: Partial<Turn> = {}): Turn => ({ session: "demo", ms: at + n * 60_000, learner, tutor, interrupted: false, ...more });
+  const FORM = "Write $\\frac{1}{v}$ in terms of $\\frac{1}{[S]}$.";
+  const turns = [
+    turn(0, "I'm back. Let's continue.", `Last time ended at the rate equation. Take reciprocals of both sides and see what kind of line it gives.\n\n${FORM}`, noted(FORM, true)),
+    turn(1, "1/v = (K_m/V_max)(1/[S]) + 1/V_max", "Right, and that is the whole of the Lineweaver–Burk form: a straight line, slope $\\frac{K_m}{V_{max}}$, intercept $\\frac{1}{V_{max}}$.", { intent: "answer", ...noted(null) }),
+  ];
+  if (has("reopen")) turns.push(turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING, noted(VMAX_TASK, true)));
+  if (week) {
+    turns.push(
+      turn(2, "I'm back. Let's continue. I stopped at: step 3, what the y-intercept gives", OPENING, noted(VMAX_TASK, true)),
+      turn(3, "V_max = 4 µM/s", RIGHT, { intent: "answer", ...noted(KM_TASK, true) }),
+      turn(4, "I skipped three days and the midterm moved, change the plan", demoBaseReply("change the plan") ?? "", { intent: "talk", ...noted(KM_TASK) }),
+    );
+  }
+  return turns;
 }
 
-/** Remember what the demo's folder now holds, as the core would find it. */
-function keep(added: Added): void {
-  materialNames = [...added.saved.map((path) => path.replace(/^Study\/materials\//, "")), ...materialNames];
-  materialKeys += added.keys;
+/** The record's rows for the kept answers of the demo's sessions, at the minute each was given. */
+function keptMarks(): Mark[] {
+  const minute = (ms: number) => {
+    const d = new Date(ms);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return ["demo", "demo-0"].flatMap((session) =>
+    savedTurns(FOLDER, session)
+      .filter((turn) => turn.intent === "answer")
+      .map((turn, n) => ({ id: `k-${session}-${n}`, at: minute(turn.ms), label: n === 0 ? "taking reciprocals of the rate equation" : "reading $V_{max}$ from the y-intercept", mark: "right", help: "none", cold: true, paper: null })),
+  );
 }
 
-/** The row the runtime would write for an answer sent in the demo lesson, or none. */
-function markFor(text: string): Mark | null {
+let emit: (event: AgentEvent) => void = () => {};
+// The task open in the demo lesson, as the direct engine would say it after each turn.
+let openTask: string | null = null;
+let replying = false;
+let holdRelease: (() => void) | null = null;
+
+/** Write a reply as the tutor would: in pieces, then whole. */
+async function reply(text: string, after?: () => void, hold = false) {
+  replying = true;
+  emit({ type: "turn_started" });
+  await wait(has("working") ? 400 : 160);
+  if (has("working")) {
+    emit({ type: "working", doing: "searching your course material" });
+    await new Promise<void>(() => {});
+  }
+  let shown = "";
+  const pieces = text.match(/[\s\S]{1,14}/g) ?? [];
+  for (let i = 0; i < pieces.length; i++) {
+    if (hold && i === Math.floor(pieces.length * 0.55)) await new Promise<void>((done) => (holdRelease = done));
+    shown += pieces[i];
+    emit({ type: "text_delta", text: pieces[i] });
+    await wait(8);
+  }
+  emit({ type: "text_done", text: shown });
+  emit({ type: "turn_ended", ok: true, interrupted: false, error: null });
+  replying = false;
+  // The engine says which task is open, in the tutor's words.
+  const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
+  if (posed) openTask = posed;
+  emit({ type: "open_task", task: openTask, posed: posed !== null });
+  // The record is read once a mark has had its moment.
+  window.setTimeout(() => emit({ type: "settled" }), 500);
+  after?.();
+}
+
+function answerReply(text: string): { words: string; mark: Mark["mark"] | null } {
+  const lower = text.toLowerCase().replace(/\s+/g, "");
+  if (task === "vmax") {
+    if (/=?4/.test(lower) && !lower.includes("0.25")) {
+      task = "km";
+      return { words: RIGHT, mark: "right" };
+    }
+    task = "km";
+    return { words: WRONG, mark: "wrong" };
+  }
+  if (/2/.test(lower)) return { words: KM_RIGHT, mark: "right" };
+  return { words: `Not quite: multiply the slope by $V_{max}$. $K_m = 0.5 \\times 4$.\n\n${KM_TASK}`, mark: "wrong" };
+}
+
+async function respond(text: string, intent: Intent | undefined) {
   const lower = text.toLowerCase();
-  if (/(can i have a hint|i'm lost)/.test(lower)) {
-    helpAsked = true;
-    return null;
+  const base = demoBaseReply(text);
+  if (lower.includes("into my plan")) {
+    emit({ type: "turn_started" });
+    emit({ type: "permission", id: "p1", title: "Change a file", detail: "Study/midterm-1/plan.md", can_always: true });
+    return;
   }
-  if (lower.includes("don't know") || lower.includes("(unmarked)") || !marking) return null;
-  if (/\((source|key|stream|limit|permission|slow)\)|diagram/.test(lower)) return null;
-  const helped = helpAsked;
-  helpAsked = false;
-  const wrong = lower.includes("(wrong)");
-  return {
-    id: `demo-${demoMarks.length + 1}`,
-    // The record's times are local, to the minute.
-    at: isoDay(0) + " " + new Date().toTimeString().slice(0, 5),
-    // A mark is on a skill, named as the Proofs page names it: a wrong answer on the skill the learner slipped on, a right one on the one the lesson is about.
-    label: wrong ? "slope and $K_m$" : "intercept and $V_{max}$",
-    mark: wrong ? "wrong" : "right",
-    help: helped ? "hint" : "none",
-    cold: !helped,
-    paper: null,
-  };
+  if (text.trim() === "Can I have a hint?") {
+    helpAsked = true;
+    return reply(HINT);
+  }
+  if (text.trim() === "I'm lost") {
+    helpAsked = true;
+    return reply(LOST);
+  }
+  if (text.trim() === "I don't know") {
+    await reply(`That's fine. The slope is $\\frac{K_m}{V_{max}}$, so $K_m = 0.5 \\times 4 = 2$ µM.\n\n${KM_TASK.replace("0.5", "0.25")}`);
+    return addMark("declined");
+  }
+  if (lower.includes("back to")) return reply(BACK_TO());
+  if (base) return reply(base, () => demoAfterTurn(text, emit), holdStream && lower.includes("change the plan"));
+  if (intent === "answer" && demoMayMark(text, intent)) {
+    const { words, mark } = answerReply(text);
+    await reply(words);
+    if (mark) addMark(mark);
+    return;
+  }
+  return reply(`You said: ${text}\n\nThat is talk, so nothing is marked. Say when you want to go on.`);
+}
+
+function addMark(mark: Mark["mark"]) {
+  window.setTimeout(() => {
+    markCount += 1;
+    const row: Mark = {
+      id: `m${markCount}`,
+      at: new Date().toISOString().slice(0, 16).replace("T", " "),
+      label: task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope",
+      mark,
+      help: helpAsked ? "hint" : "none",
+      cold: !helpAsked,
+      paper: null,
+    };
+    helpAsked = false;
+    marks.push(row);
+    demoMarked(row, emit);
+  }, 220);
 }
 
 export function demoCore(): Core {
-  const handlers = new Set<(event: AgentEvent) => void>();
-  const emit = (event: AgentEvent) => handlers.forEach((handler) => handler(event));
-  let stopped = false;
-  let waiting: ((value: string) => void) | null = null;
-
-  const write = async (text: string, hold = false) => {
-    emit({ type: "turn_started" });
-    const pieces = text.match(/\S+\s*/g) ?? [];
-    for (const piece of pieces) {
-      if (stopped) break;
-      emit({ type: "text_delta", text: piece });
-      await wait(hold ? 400 : 14);
-    }
-    if (!stopped) emit({ type: "text_done", text });
-    emit({ type: "turn_ended", ok: true, interrupted: stopped, error: null });
+  const plan = (folder?: string) => {
+    // Another course has a plan of its own; this demo keeps only Biochemistry's.
+    if ((folder ?? open) !== FOLDER) return { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null };
+    const kept = demoPlan();
+    // The route follows the lesson: the slope is in hand once the intercept is done.
+    const steps = task === "km" ? kept.steps.map((step, at) => ({ ...step, status: at < 3 ? "done" : at === 3 ? "doing" : "todo" })) : kept.steps;
+    return { ...kept, goal: GOAL, steps };
   };
-
-  const reply = async (text: string) => {
-    stopped = false;
-    emit({ type: "ready", session_id: "demo", problems: [], plugin_missing: false });
-    const lower = text.toLowerCase();
-    await wait(250);
-    if (lower.includes("lost")) return write(LOST);
-    if (lower.includes("hint")) return write("Look at where the line meets the $1/v$ axis. What is $1/[S]$ there?");
-    if (lower.includes("don't know")) {
-      emit({ type: "working", doing: null });
-      emit({
-        type: "question",
-        id: "q1",
-        questions: [
-          {
-            question: "Which of these was in your head?",
-            header: null,
-            multi: false,
-            options: [
-              { label: "the intercept is Vmax", description: null },
-              { label: "the intercept is 1/Vmax", description: null },
-              { label: "not sure what the intercept is", description: null },
-            ],
-          },
-        ],
-      });
-      const chosen = await new Promise<string>((done) => (waiting = done));
-      return write(`You said: ${chosen}. A short repair now, and this returns tomorrow as a question.\n\n**Task.** At $1/[S] = 0$, what is $1/v$?`);
-    }
-    if (lower.includes("permission")) {
-      emit({ type: "working", doing: "building the papers" });
-      emit({ type: "permission", id: "p1", title: "Run a command", detail: "tectonic Study/midterm-1/papers/PaperC.tex", can_always: true });
-      const decision = await new Promise<string>((done) => (waiting = done));
-      return write(decision === "refuse" ? "No problem. I'll leave the paper unbuilt for now." : "Paper C is built. Sit it when you are ready.");
-    }
-    if (lower.includes("(source)")) {
-      return write("Right, $V_{max} = 4$ µM/s. Look at the slide again while I set the next step: [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).");
-    }
-    if (lower.includes("(key)")) {
-      return write("The marking guide for this is [the answer key](Study/midterm-1/papers/PaperB-key.pdf).");
-    }
-    if (lower.includes("diagram")) return write(DIAGRAM);
-    if (lower.includes("slow")) {
-      emit({ type: "working", doing: "writing paper 2" });
-      await wait(30_000);
-      emit({ type: "working", doing: "writing paper 3" });
-      await wait(30_000);
-      return write("Done.");
-    }
-    if (lower.includes("stream")) return write(REPLY, true);
-    if (lower.includes("i'm back") || lower.includes("no checks")) {
-      return write(
-        lower.includes("no checks")
-          ? "No checks now; they stay due.\n\nYou stopped at step 3. The line meets the y-axis where $1/[S] = 0$.\n\n**Task.** The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?"
-          : "Welcome back. Two quick checks first, then step 3. The slide behind them is [Week 4 slides, p. 12](Study/midterm-1/week4-slides.pdf#page=12).\n\n**Check 1 of 2.** A rate doubles when [S] doubles. Is [S] well below or well above Km? One line, with the reason.",
-      );
-    }
-    if (lower.includes("limit")) {
-      emit({ type: "notice", kind: "usage_limit", text: "You reached your Claude usage limit. It resets at 15:00 on Tue 10 Nov." });
-      emit({ type: "turn_ended", ok: false, interrupted: false, error: null });
-      return;
-    }
-    return write(REPLY);
-  };
-
+  const workspaces = (): Workspace[] =>
+    folders
+      .map((folder) => ({ folder, name: folder.split("/").pop() ?? folder, opened_ms: openedMs[folder] ?? null, latest: sessionsOf(folder)[0] ?? null }))
+      .sort((a, b) => (b.opened_ms ?? 0) - (a.opened_ms ?? 0));
   return {
-    // The window opens on the library. Every other address opens the demo course first.
-    initialFolder: async () => (/^#?(library|welcome|setup)?(:|$)/.test(location.hash) ? null : "/Users/you/Study/Demo-Course"),
-    recent: async () => library().map((each) => each.folder),
-    library: async () => {
-      await wait(120);
-      return library();
-    },
+    initialFolder: async () => null,
+    recent: async () => [...folders],
+    library: async () => library(),
+    workspaces: async () => workspaces(),
     forgetFolder: async (path) => {
-      forgotten = [...forgotten, path];
+      folders = folders.filter((folder) => folder !== path);
     },
-    findFolders: async () => {
-      await wait(900);
-      const added = found ? 0 : 1;
-      found = true;
-      return added;
-    },
-    activity: async () => activity(),
-    pickFolder: async () => "/Users/you/Study/Demo-Course",
-    pickFiles: async () => ["/Users/you/Desktop/IMG_0412.heic"],
-    pickMaterial: async () => ["/Users/you/Desktop/Week 4 slides.pdf"],
-    pickNewFolder: async () => "/Users/you/Study/New-Course",
+    findFolders: async () => 0,
+    activity: async () => ({ today: "2026-11-12", days: [], run: 0, studied_today: false }),
+    pickFolder: async () => FOLDER,
+    pickFiles: async () => ["/Users/you/Desktop/working.jpg"],
+    pickMaterial: async () => ["/Users/you/Downloads/Week 5 slides.pdf"],
+    pickNewFolder: async () => null,
     openFolder: async (path) => {
-      const name = path.split("/").filter(Boolean).pop() ?? "Demo-Course";
-      if (name === "Demo-Course") return home();
-      const picked = library().find((each) => each.folder === path);
-      if (picked?.state === "not_set_up" || picked?.state === "empty") variant = "new";
-      else variant = "quiet";
-      return { ...home(), folder: path, name, exam: picked?.exam ?? null, papers: [] };
-    },
-    newFolder: async () => {
-      variant = "new";
-      return { ...home(), folder: "/Users/you/Study/New-Course", name: "New-Course" };
-    },
-    home: async () => home(),
-    setUp: async () => {
-      variant = "quiet";
-      return { ...home(), state: "empty", last: null, exam: null, papers: [] };
-    },
-    upgradeFolder: async () => {
-      await wait(600);
-      variant = "ready";
+      open = path;
+      if (!folders.includes(path)) folders = [path, ...folders];
       return home();
     },
-    setup: async () => demoSetup(),
-    replaceRuntime: async () => {
-      setupVariant = "";
-      return { ...runtimeSetup(), installed_now: true };
+    visitFolder: async (path) => {
+      if (!folders.includes(path)) folders = [path, ...folders];
+      return home(path);
     },
-    keepRuntime: async () => ({
-      state: "kept",
-      installed: program("0.2.0"),
-      bundled: program("0.3.0+4f1c2ad9e0b7"),
-      installed_now: false,
-      message:
-        "Lessons use the Magnesium already on this Mac, version 0.2.0. They teach with that version's rules, and it cannot open a folder that a newer Magnesium has upgraded.",
-    }),
+    newFolder: async (path) => {
+      open = path;
+      return home();
+    },
+    home: async (folder) => home(folder ?? open),
+    setUp: async (folder) => home(folder ?? open),
+    upgradeFolder: async (folder) => {
+      upgraded = true;
+      return home(folder ?? open);
+    },
+    setup: async () => setup(),
+    replaceRuntime: async () => runtime(),
+    keepRuntime: async () => runtime(),
     account: async () => account(),
     setPayment: async (chosen) => {
       payment = chosen;
       return account();
     },
-    signIn: async () => {
-      window.setTimeout(() => (signedIn = true), 3000);
-    },
-    about: async () => ({ version: "0.3.0-rc.1", commit: "4f1c2ad9e0b7" }),
-    // A conversation stays on the engine it began on. Another pick starts a new one.
-    openSession: async (resume): Promise<Opened> => {
-      const carries = resume && conversationEngine === engineChosen;
-      conversationEngine = engineChosen;
-      return { resumed: carries, turns: carries && variant !== "new" ? earlier : [], engine: engineChosen };
-    },
-    engine: async () => ({ chosen: engineChosen, conversation: conversationEngine }),
+    engine: async () => ({ chosen: engineChosen, conversation: engineChosen }),
     setEngine: async (chosen) => {
       engineChosen = chosen;
-      return { chosen: engineChosen, conversation: conversationEngine };
+      return { chosen, conversation: null };
     },
-    send: async (text) => {
-      if (marking) markedToday += 1;
-      void reply(text);
-      const row = markFor(text);
-      // The record is written while the reply is: a moment after it is sent.
-      if (row) {
-        window.setTimeout(() => {
-          demoMarks.push(row);
-          if (row.mark === "wrong") slipRecorded = true;
-        }, 500);
-      }
+    signIn: async () => {
+      signedIn = true;
     },
-    sendNewLesson: async (goal) => void reply(goal),
-    sendShown: async (shown) => void reply(shown),
+    about: async () => ({ version: "0.3.0", commit: "4f1c2ad9e0b7" }),
+    turns: async () => savedTurns(),
+    lessons: async (folder) => sessionsOf(folder),
+    lessonTurns: async (folder, session) => savedTurns(folder, session),
+    touchSession: async () => {},
+    openSession: async (resume, where): Promise<Opened> => {
+      if (where?.folder) open = where.folder;
+      return { resumed: resume, turns: resume ? savedTurns(open, where?.session ?? "demo") : [], engine: engineChosen };
+    },
+    send: async (text, intent) => {
+      void respond(text, intent);
+    },
+    sendNewLesson: async (goal) => {
+      if (/^(I'm back|No checks|Let's work on)/.test(goal)) void reply(week ? WEEK_OPENING : OPENING);
+      else void respond(goal, "talk");
+    },
+    sendShown: async (shown) => {
+      void reply(`Marking ${shown.slice(0, 40)}…`);
+    },
     interrupt: async () => {
-      stopped = true;
+      if (replying) emit({ type: "turn_ended", ok: true, interrupted: true, error: null });
+      replying = false;
     },
-    decide: async (_id, decision) => waiting?.(decision),
-    answer: async (_id, answers) => waiting?.(answers[0]?.chosen.join(", ") ?? ""),
-    // A sitting with no answer marked earns no proof and makes no study day.
+    decide: async () => {
+      void reply("Thank you. The plan is changed.");
+    },
+    answer: async () => {},
     stop: async (line) => {
       stoppedAt = line;
-      if (!marking) return;
-      studiedToday = true;
-      sittingsDone += 1;
     },
-    rail: async () => (variant === "new" ? { goal: null, steps: [], next_action: null } : rail),
-    progress: async (target) => progress(target ?? null),
-    setBlockMinutes: async (minutes) => {
-      blockMinutes = minutes;
+    rail: async () => ({ goal: GOAL, steps: demoPlan().steps, next_action: null }),
+    plan: async (folder) => plan(folder),
+    progress: async (): Promise<Progress> => ({
+      targets: [],
+      exam: null,
+      confirmed: [],
+      in_progress: week
+        ? [{ dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: "due today", due: true, next_day: null }]
+        : [],
+      untested: [],
+      scores: [{ paper: "Paper A", date: "2026-11-07", score: "31/50", sure_right: null, sure_total: null }],
+      helped: [],
+      helped_count: 0,
+      unreadable: 0,
+      checks_unknown: false,
+      proofs: { earned: 0, total: 0, proven: 0, skills: 0, level: 0, to_next: 0, levelled: false },
+      level_unknown: true,
+      today: null,
+      message: null,
+    }),
+    setBlockMinutes: async () => {},
+    attach: async (path, group) => `Study/handed-in/${group}/2026-11-12/${path.split("/").pop()}`,
+    attachBytes: async (name, _bytes, group) => `Study/handed-in/${group}/2026-11-12/${name}`,
+    addMaterial: async (paths): Promise<Added> => {
+      const names = paths.map((path) => path.split("/").pop() ?? path);
+      materialNames = [...names, ...materialNames];
+      return { saved: names.map((name) => `Study/materials/${name}`), keys: 0, lines: [`Added ${names.join(", ")} to the course material. The tutor's search can read it.`] };
     },
-    attach: async () => "Study/handed-in/working/2026-11-10/IMG_0412.jpg",
-    addMaterial: async (paths) => {
-      await wait(500);
-      const added = material(paths);
-      keep(added);
-      return added;
+    addPastedText: async (): Promise<Added> => ({ saved: ["Study/materials/Pasted text 10.41.txt"], keys: 0, lines: ["Kept the pasted text with the course material."] }),
+    materialList: async () => ({ names: materialNames, files: materialNames.length + 4, keys: 1 }),
+    marks: async () => [...keptMarks(), ...marks],
+    onDrop: async () => () => {},
+    source: async (path): Promise<Source> => {
+      if (/key|solution/i.test(path)) throw new Error("That looks like an answer key, so the window does not open it.");
+      return { name: path.split("/").pop() ?? path, kind: path.endsWith(".pdf") ? "pdf" : "text", text: path.endsWith(".pdf") ? null : "Notes.", truncated: false, image: null };
     },
-    addPastedText: async () => {
-      await wait(300);
-      const added = material(["Pasted text 2026-11-11 14-03-22.txt"], true);
-      keep(added);
-      return added;
-    },
-    materialList: async () => (variant === "new" ? { names: [], files: 0, keys: 0 } : { names: materialNames.slice(0, 20), files: materialNames.length, keys: materialKeys }),
-    marks: async () => (marksAvailable ? demoMarks.map((row) => ({ ...row })) : null),
-    onDrop: async (handler, hover) => {
-      // A browser drops a file with a name and no path, which is enough to show the screens.
-      const over = (event: DragEvent) => {
-        if (!event.dataTransfer?.types.includes("Files")) return;
-        event.preventDefault();
-        hover(true);
-      };
-      const leave = () => hover(false);
-      const drop = (event: DragEvent) => {
-        event.preventDefault();
-        hover(false);
-        const names = Array.from(event.dataTransfer?.files ?? []).map((file) => `/Users/you/Desktop/${file.name}`);
-        if (names.length > 0) handler(names);
-      };
-      window.addEventListener("dragover", over);
-      window.addEventListener("dragleave", leave);
-      window.addEventListener("drop", drop);
-      return () => {
-        window.removeEventListener("dragover", over);
-        window.removeEventListener("dragleave", leave);
-        window.removeEventListener("drop", drop);
-      };
-    },
-    source: async (path) => demoSource(path),
-    sourcePdf: async () => SLIDES().buffer as ArrayBuffer,
-    openFile: async (path) => {
-      if (/key|solution/i.test(path)) throw new Error("That looks like an answer key, so the window leaves it closed.");
-    },
+    sourcePdf: async () => tinyPdf(["The rate equation", "Where the line meets the y-axis: 1/Vmax", "The slope: Km/Vmax"]).buffer as ArrayBuffer,
+    openFile: async () => {},
     openUrl: async () => {},
-    image: async () => {
-      throw new Error("the demo has no files");
-    },
+    image: async () => "",
     paperStart: async (paper, minutes) => {
-      sitting = { target: paper.target, name: paper.name, path: paper.path, minutes, started_ms: Date.now() - (12 * 60 + 48) * 1000 };
+      sitting = { target: paper.target, name: paper.name, path: paper.path, minutes, started_ms: Date.now() };
       return sitting;
     },
     paperEnd: async (files) => {
-      const name = sitting?.name ?? "the paper";
       sitting = null;
-      return files.length > 0 ? { shown: `Mark my ${name}. I used 37 of 50 minutes.`, sent: `Mark my ${name}.` } : null;
+      return files.length > 0 ? { shown: `Mark my Paper B. My work: ${files.join(", ")}`, sent: "Mark my Paper B." } : null;
     },
+    windowState: async () => null,
+    setWindowState: async () => {},
+    setMenu: async () => {},
+    onMenu: async () => () => {},
     onEvent: async (handler) => {
-      handlers.add(handler);
-      return () => handlers.delete(handler);
+      emit = handler;
+      return () => {
+        emit = () => {};
+      };
     },
     selftest: async () => false,
     selftestReport: async () => {},
   };
 }
 
-/** Choose the demo's data before the page first asks for it. */
-export function chooseVariant(): void {
-  const [screen, state] = location.hash.slice(1).split(":");
-  if (["new", "quiet", "broken", "upgrade"].includes(state)) variant = state;
-  if (screen === "library" && state === "empty") shelf = "empty";
-  if (state === "fresh" && screen !== "session") {
-    history = false;
-    studiedToday = false;
-  }
-  // The end of a sitting shows today's day being earned.
-  // Nothing is marked yet today, so no study day is ticked and no count is made: the counts and the week agree.
-  if (screen === "summary") {
-    studiedToday = false;
-    markedToday = 0;
-  }
-  if (screen === "summary" && state === "unmarked") marking = false;
-  // A runtime from before the `attempts` command has no marks to show.
-  if (state === "nomarks") marksAvailable = false;
-  // Magnesium picked, with the demo course's conversation begun on Claude Code.
-  if (state === "magnesium") engineChosen = "direct";
-  if (screen === "welcome" && state) {
-    setupVariant = state;
-    signedIn = state !== "signed-out";
-  }
-  if (location.hash.startsWith("#paper:running")) {
-    sitting = { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - (12 * 60 + 48) * 1000 };
+/** Wait until the tutor has finished, and a moment for the record. */
+async function settle(ms = 500) {
+  await wait(120);
+  while (replying) await wait(40);
+  await wait(ms);
+}
+
+const session = (actions: Actions) => {
+  const handle = actions.session();
+  if (!handle) throw new Error("no session is in front");
+  return handle;
+};
+
+/** Home's first row: carry on the most recent session. */
+async function lesson(actions: Actions) {
+  actions.continueRecent();
+  await wait(200);
+  await settle();
+}
+
+async function answered(actions: Actions) {
+  await lesson(actions);
+  await session(actions).say("$V_{max}$ = 4 µM/s", "answer");
+  await settle(700);
+}
+
+async function changed(actions: Actions, hold = false) {
+  await answered(actions);
+  await session(actions).say("I skipped three days and the midterm moved, change the plan", "talk");
+  if (!hold) await settle(700);
+  else await wait(500);
+}
+
+async function offPlan(actions: Actions) {
+  await changed(actions);
+  await session(actions).say("By the way, why do some courses use a Hanes–Woolf plot instead?", "talk");
+  await settle();
+}
+
+/** Drive the window to the state the address names, as a learner would. */
+export async function startFromAddress(actions: Actions): Promise<void> {
+  await wait(60);
+  switch (state) {
+    case "s2-start":
+    case "s5-week-next":
+      return lesson(actions);
+    case "s2-answer":
+    case "narrow-lesson":
+      return answered(actions);
+    case "panel":
+      await answered(actions);
+      return actions.run("plan");
+    case "panel-changed":
+      await changed(actions);
+      return actions.run("plan");
+    case "help-row":
+      return lesson(actions);
+    case "symbols":
+      await lesson(actions);
+      actions.run("symbols");
+      return;
+    case "attach":
+      await lesson(actions);
+      actions.run("attach");
+      return wait(200);
+    case "settings":
+      return actions.run("settings");
+    case "settings-keys":
+      return actions.run("keys-help");
+    case "settings-colour":
+      actions.run("settings");
+      await wait(150);
+      document.querySelector<HTMLElement>("[data-drive='colour-ink-light']")?.click();
+      return wait(100);
+    case "material":
+      actions.goWorkspace(FOLDER);
+      await wait(300);
+      document.querySelector<HTMLElement>(".file-row")?.click();
+      return wait(400);
+    case "workspace":
+      return actions.goWorkspace(FOLDER);
+    case "new-session":
+      actions.newSession(FOLDER);
+      return wait(300);
+    case "new-session-start":
+      actions.newSession(FOLDER, { kind: "start" });
+      await wait(200);
+      return settle();
+    case "paper":
+      return actions.goWorkspace(FOLDER);
+    case "upgrade":
+      return actions.goWorkspace(FOLDER);
+    case "session-earlier":
+      actions.openSession(FOLDER, "demo-0", "Taking reciprocals of the rate equation");
+      return wait(300);
+    case "tabs":
+      await answered(actions);
+      actions.openSession(FOLDER, "demo-0", "Taking reciprocals of the rate equation");
+      await wait(200);
+      actions.run("settings");
+      return actions.run("tab", actions.tabs()[1].key);
+    case "source":
+      await lesson(actions);
+      await session(actions).say("V_max = 4 µM/s", "answer");
+      await settle();
+      document.querySelector<HTMLElement>(".tutor a[href*='Week']")?.click();
+      return wait(300);
+    case "s3-before":
+      return changed(actions, true);
+    case "s3-after":
+      return changed(actions);
+    case "s4-offplan":
+      return offPlan(actions);
+    case "s4-return":
+      await offPlan(actions);
+      await session(actions).say("OK, back to the task", "talk");
+      return settle();
+    case "working":
+      actions.continueRecent();
+      return wait(300);
+    case "permission":
+      await lesson(actions);
+      await session(actions).say("Can you write the lab report into my plan for Friday?", "talk");
+      return;
+    case "commands":
+      return actions.run("commands");
+    case "switch":
+      actions.run("commands");
+      await wait(80);
+      document.querySelector<HTMLElement>("[data-drive='command-switch']")?.click();
+      return;
+    default:
+      return;
   }
 }
-chooseVariant();
 
-/**
- * Put the page in the state its address names, such as #session:lost or
- * #progress. Used to photograph each screen.
- */
-export async function startFromAddress(actions: Actions): Promise<void> {
-  const [screen, state] = (location.hash.slice(1) || "library").split(":");
-  const quiet = async () => {
-    for (let n = 0; n < 200 && document.querySelector(".app")?.getAttribute("data-busy") === "yes"; n++) await wait(50);
-  };
-  await wait(50);
-  if (screen === "library" && state === "lesson") {
-    // A lesson open behind the library: the engine choice is disabled.
-    await actions.continueFolder("/Users/you/Study/Demo-Course");
-    await wait(300);
-    await quiet();
-    actions.showLibrary();
-    return;
-  }
-  if (screen === "library" && state === "continue") {
-    // Enter on the main card goes straight into its lesson.
-    await wait(300);
-    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    return;
-  }
-  if (screen === "session" || screen === "summary") {
-    if (state === "fresh") {
-      await actions.newLesson("teach me enzyme kinetics");
-      return;
-    }
-    await actions.continueLesson(false);
-    // Wait for the opening reply to finish before saying anything more.
-    await wait(300);
-    await quiet();
-    if (screen === "summary") {
-      // At #summary:slip the answer is wrong, and the record has the skill coming back tomorrow.
-      await actions.say(state === "slip" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
-      await wait(state === "slip" ? 900 : 300);
-      await quiet();
-      // The lesson is on step 3 of 5, so that is where the next one picks up.
-      await actions.stop("PS3 Q3, step 3: what the y-intercept gives.");
-      return;
-    }
-    const words: Record<string, string> = {
-      lost: "I'm lost",
-      idk: "I don't know",
-      hint: "Can I have a hint?",
-      permission: "please build paper C (permission)",
-      diagram: "show me a diagram",
-      stream: "Vmax is 4 µM/s (stream)",
-      slow: "build my plan (slow)",
-      limit: "one more (limit)",
-      answer: "Vmax is 4 µM/s",
-      source: "Vmax is 4 µM/s (source)",
-      key: "show me the key (key)",
-      math: "$V_{max} = \\frac{1}{0.25} = 4$ µM/s",
-    };
-    // What a learner does in the lesson: the answer is typed in the box and sent with its button, so the page reads the record before it goes.
-    const answerInBox = async (text: string) => {
-      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
-      if (!box) return;
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(box, text);
-      box.dispatchEvent(new Event("input", { bubbles: true }));
-      await wait(60);
-      document.querySelector<HTMLButtonElement>(".composer button.send")?.click();
-    };
-    // Marked right, alone and cold; right with a hint; wrong; and a runtime that cannot say.
-    if (state === "marked" || state === "wrong" || state === "nomarks") {
-      await answerInBox(state === "wrong" ? "Vmax is 0.25 µM/s (wrong)" : "Vmax is 4 µM/s");
-      return;
-    }
-    if (state === "helped") {
-      Array.from(document.querySelectorAll<HTMLButtonElement>(".composer button")).find((b) => b.textContent?.trim() === "Hint")?.click();
-      await wait(300);
-      await quiet();
-      await answerInBox("Vmax is 4 µM/s");
-      return;
-    }
-    if (state && words[state]) await actions.say(words[state]);
-    if (state === "source" || state === "key") {
-      await wait(300);
-      await quiet();
-      if (state === "source") document.querySelector<HTMLButtonElement>('[data-role="source-chip"]')?.click();
-      else document.querySelector<HTMLAnchorElement>(".tutor a.source")?.click();
-    }
-    if (state === "material") {
-      await actions.addMaterial(["/Users/you/Desktop/Week 4 slides.pdf", "/Users/you/Desktop/Scanned lecture notes.pdf"]);
-    }
-    if (state === "drop") actions.setDragging(true);
-    if (state === "stop") document.querySelector<HTMLButtonElement>('[data-role="end"]')?.click();
-    if (state === "earlier") document.querySelector<HTMLButtonElement>('[data-role="earlier"]')?.click();
-    if (state === "plan") document.querySelector<HTMLButtonElement>('[data-role="track"]')?.click();
-    if (state === "typing") {
-      // What the answer box looks like with mathematics typed in it.
-      const box = document.querySelector<HTMLTextAreaElement>(".composer textarea");
-      if (box) {
-        const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-        set?.call(box, "The intercept is $\\frac{1}{V_{max}}$, so $V_{max} = 4$");
-        box.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    }
-  } else if (screen === "progress") {
-    await actions.openProgress(null);
-  } else if (screen === "paper") {
-    actions.openPaper(null);
-  } else if (screen === "course" && state === "ask") {
-    actions.setAsking(true);
-  } else if (screen === "course" && state === "material") {
-    await actions.addMaterial([
-      "/Users/you/Desktop/Week 4 slides.pdf",
-      "/Users/you/Desktop/Scanned lecture notes.pdf",
-      "/Users/you/Desktop/api tokens.md",
-      "/Users/you/Desktop/Week 4 deck.pptx",
-      "/Users/you/Desktop/Midterm answer key.pdf",
-    ]);
-  } else if (screen === "course" && state === "drop") {
-    actions.setDragging(true);
-  } else if (screen === "course" && state === "paste") {
-    actions.pasteText("Bayes' rule: the posterior is proportional to the prior times the likelihood.");
-  } else if (screen === "palette") {
-    actions.setPalette(true);
-  } else if (screen === "setup" || (screen === "welcome" && !state)) {
-    actions.openSetup();
-  }
+/** For the self-check's "hold the stream" case: let a held reply finish. */
+export function releaseStream(): void {
+  holdRelease?.();
 }

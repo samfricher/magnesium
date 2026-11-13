@@ -17,7 +17,7 @@ use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::activity;
-use crate::agent::Payment;
+use crate::agent::{Intent, Payment};
 use crate::paths;
 
 /// How many folders the library keeps.
@@ -59,6 +59,32 @@ pub struct FolderState {
     /// repairs and checks it listed. Kept by the direct engine, opaque here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direct: Option<serde_json::Value>,
+    /// When the learner last opened this folder in the window, in ms since
+    /// the epoch. Added after the first windows: an older state has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opened_ms: Option<i64>,
+    /// What the window knows of each of this folder's conversations, by the
+    /// agent's id: its name, when it was last opened, and its engine.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sessions: BTreeMap<String, SessionNote>,
+    /// Fields another window build wrote that this one does not know. They are
+    /// kept as they are, so the state file can be shared between builds.
+    #[serde(flatten)]
+    pub other: BTreeMap<String, serde_json::Value>,
+}
+
+/// What the window keeps about one conversation, beside its turns.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SessionNote {
+    /// What it is about: the goal it began with, as the window named it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// When the learner last opened it, in ms since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opened_ms: Option<i64>,
+    /// The engine it runs on, so it resumes on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<Engine>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -86,9 +112,16 @@ struct Data {
     /// to keep over the one inside the app. Asked again for any other.
     #[serde(default)]
     kept_runtime: Option<String>,
+    /// How the window was left: its open tabs and which one was in front.
+    /// Opaque here; the page reads and writes it whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window: Option<serde_json::Value>,
+    /// Fields another window build wrote that this one does not know, kept.
+    #[serde(flatten)]
+    other: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Turn {
     pub session: String,
     pub ms: i64,
@@ -96,6 +129,33 @@ pub struct Turn {
     pub tutor: String,
     #[serde(default)]
     pub interrupted: bool,
+    /// How the window sent the learner's words: an answer to the open task,
+    /// or talk. None for the window's own words, help, or a turn an earlier
+    /// window kept. Additive: an older window reads the line without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<Intent>,
+    /// The task open after this turn, as the engine said it, and whether this
+    /// turn's reply posed it. Kept beside the turns, in a file of its own, as
+    /// the engine says it only once the turn's record is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub posed: bool,
+    /// The engine said which task was open after this turn (`task` none
+    /// means none was). False for an engine that does not say.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub noted: bool,
+}
+
+/// What the engine said of a turn's task, kept beside the turn.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct TaskNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    task: Option<String>,
+    #[serde(default)]
+    posed: bool,
 }
 
 /// Which engine runs a lesson.
@@ -205,8 +265,36 @@ impl Store {
         let key = key(folder);
         let mut data = self.lock();
         data.recent.retain(|other| other != &key);
-        data.recent.insert(0, key);
+        data.recent.insert(0, key.clone());
         data.recent.truncate(LIBRARY_SIZE);
+        data.folders.entry(key).or_default().opened_ms = Some(Local::now().timestamp_millis());
+        self.save(&data);
+    }
+
+    /// Change what the window keeps about one of a folder's conversations.
+    pub fn note_session(
+        &self,
+        folder: &Path,
+        session: &str,
+        change: impl FnOnce(&mut SessionNote),
+    ) {
+        if session.is_empty() {
+            return;
+        }
+        let mut data = self.lock();
+        let state = data.folders.entry(key(folder)).or_default();
+        change(state.sessions.entry(session.to_owned()).or_default());
+        self.save(&data);
+    }
+
+    /// How the window was left, as the page last wrote it.
+    pub fn window(&self) -> Option<serde_json::Value> {
+        self.lock().window.clone()
+    }
+
+    pub fn set_window(&self, value: serde_json::Value) {
+        let mut data = self.lock();
+        data.window = Some(value);
         self.save(&data);
     }
 
@@ -346,6 +434,42 @@ impl Store {
         self.root.join("transcripts").join(file_name(&key(folder)))
     }
 
+    /// The file beside a folder's transcript that holds what the engine said
+    /// of each turn's task.
+    fn task_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("tasks.jsonl")
+    }
+
+    /// Keep what the engine said of a kept turn's task: the task open after
+    /// it, and whether the turn's reply posed it.
+    pub fn note_task(
+        &self,
+        folder: &Path,
+        session: &str,
+        ms: i64,
+        task: Option<&str>,
+        posed: bool,
+    ) {
+        let path = self.task_notes(folder);
+        let Some(parent) = path.parent() else { return };
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        let note = TaskNote {
+            session: session.to_owned(),
+            ms,
+            task: task.map(str::to_owned),
+            posed,
+        };
+        let Ok(mut line) = serde_json::to_string(&note) else {
+            return;
+        };
+        line.push('\n');
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
@@ -363,6 +487,17 @@ impl Store {
         }
     }
 
+    /// Every turn the window kept for a folder, of every conversation, oldest
+    /// first: what a workspace lists as its sessions.
+    pub fn all_turns(&self, folder: &Path) -> Vec<Turn> {
+        let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
+            .collect()
+    }
+
     /// The turns the window showed in one conversation, oldest first.
     pub fn turns(&self, folder: &Path, session: &str) -> Vec<Turn> {
         let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
@@ -375,6 +510,22 @@ impl Store {
             .collect();
         let extra = turns.len().saturating_sub(400);
         turns.drain(..extra);
+        // What the engine said of each turn's task, by the turn's time.
+        if let Ok(notes) = fs::read_to_string(self.task_notes(folder)) {
+            let by_ms: BTreeMap<i64, TaskNote> = notes
+                .lines()
+                .filter_map(|line| serde_json::from_str::<TaskNote>(line).ok())
+                .filter(|note| note.session == session)
+                .map(|note| (note.ms, note))
+                .collect();
+            for turn in &mut turns {
+                if let Some(note) = by_ms.get(&turn.ms) {
+                    turn.task.clone_from(&note.task);
+                    turn.posed = note.posed;
+                    turn.noted = true;
+                }
+            }
+        }
         turns
     }
 }
@@ -400,7 +551,8 @@ mod tests {
                 ms: 1,
                 learner: "hi".into(),
                 tutor: "hello".into(),
-                interrupted: false,
+                intent: Some(Intent::Answer),
+                ..Turn::default()
             },
         );
         store.append_turn(
@@ -410,7 +562,7 @@ mod tests {
                 ms: 2,
                 learner: "x".into(),
                 tutor: "y".into(),
-                interrupted: false,
+                ..Turn::default()
             },
         );
 
@@ -419,9 +571,13 @@ mod tests {
         let state = again.folder(folder.path());
         assert_eq!(state.session_id.as_deref(), Some("abc"));
         assert_eq!(state.stopped_at.as_deref(), Some("step 3"));
+        again.note_task(folder.path(), "abc", 1, Some("What is b?"), true);
         let turns = again.turns(folder.path(), "abc");
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].tutor, "hello");
+        assert_eq!(turns[0].intent, Some(Intent::Answer));
+        assert_eq!(turns[0].task.as_deref(), Some("What is b?"));
+        assert!(turns[0].posed && turns[0].noted);
     }
 
     #[test]
@@ -474,7 +630,7 @@ mod tests {
             ms,
             learner: learner.into(),
             tutor: "…".into(),
-            interrupted: false,
+            ..Turn::default()
         };
         // Turns kept by a window that did not count days yet.
         let before = Store::at(home.path().to_path_buf());
@@ -499,6 +655,55 @@ mod tests {
         again.count_turn(day("2026-11-10"));
         assert_eq!(again.lock().days["2026-11-08"], 1);
         assert_eq!(again.lock().days["2026-11-10"], 2);
+    }
+
+    #[test]
+    fn new_fields_are_additive_and_unknown_ones_are_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let folder_key = key(folder.path());
+        // A state file written by another build, with a field this one does not know.
+        let older = serde_json::json!({
+            "recent": [folder_key],
+            "folders": { folder_key.clone(): { "session_id": "abc", "stopped_at": null, "stopped_ms": null, "paper": null, "later": 7 } },
+            "block_minutes": 50,
+            "someday": { "x": 1 }
+        });
+        fs::write(home.path().join("state.json"), older.to_string()).unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        store.opened(folder.path());
+        store.note_session(folder.path(), "abc", |note| {
+            note.title = Some("Sampling".into())
+        });
+        store.set_window(serde_json::json!({ "tabs": [] }));
+
+        let text = fs::read_to_string(home.path().join("state.json")).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(saved["someday"]["x"], 1);
+        assert_eq!(saved["folders"][&folder_key]["later"], 7);
+        assert_eq!(saved["folders"][&folder_key]["session_id"], "abc");
+        assert_eq!(
+            saved["folders"][&folder_key]["sessions"]["abc"]["title"],
+            "Sampling"
+        );
+        assert!(saved["folders"][&folder_key]["opened_ms"].is_i64());
+        assert_eq!(saved["window"]["tabs"], serde_json::json!([]));
+
+        // What an older build reads: every field it knows, unchanged in kind.
+        #[derive(serde::Deserialize)]
+        struct OldFolder {
+            session_id: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Old {
+            recent: Vec<String>,
+            folders: BTreeMap<String, OldFolder>,
+            block_minutes: Option<u32>,
+        }
+        let old: Old = serde_json::from_str(&text).unwrap();
+        assert_eq!(old.recent, vec![folder_key.clone()]);
+        assert_eq!(old.folders[&folder_key].session_id.as_deref(), Some("abc"));
+        assert_eq!(old.block_minutes, Some(50));
     }
 
     #[test]
