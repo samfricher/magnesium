@@ -1,7 +1,7 @@
 """Stub converter mirroring the pinned docling API surface.
 
 Behavior is driven by `MAGNESIUM_STUB_MODE` (`items`, `partial`, `failure`, `raise`,
-`empty`) and `MAGNESIUM_STUB_ITEMS` (JSON item list); see ../../README.md.
+`empty`) and `MAGNESIUM_STUB_ITEMS` (JSON item list).
 """
 
 import json
