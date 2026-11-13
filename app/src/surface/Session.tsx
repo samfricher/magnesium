@@ -371,12 +371,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         const noted = [...saved].reverse().find((turn) => turn.noted);
         if (noted) engineTells.current = true;
         const open = noted ? (noted.task ?? null) : kept.task;
-        dispatch({ type: "shown", turns: rebuild(saved, marks, tab.session), ...(noted || kept.task ? { task: { text: open } } : {}) });
+        const shown = rebuild(saved, marks, tab.session);
+        dispatch({ type: "shown", turns: shown, ...(noted || kept.task ? { task: { text: open } } : {}) });
         if (saved.length > 0) settled.current = saved[saved.length - 1].ms;
         setSittingStart(0);
         if (!tab.title && opened?.last?.goal) setSittingTitle(opened.last.goal);
-        // As it was left: the line where it was, else in the open task.
-        setLineState(kept.seenMs > 0 ? kept.line : open ? "task" : "talk");
+        // As it was left: with a task open the caret is in its answer line,
+        // unless the learner left words waiting on the talk line.
+        const taskShown = noted || kept.task ? open !== null : openTaskAt(shown) >= 0;
+        setLineState(taskShown && !(kept.line === "talk" && kept.draft.trim()) ? "task" : "talk");
         restoring.current = kept.seenMs > 0 ? kept.fromFoot : 0;
         setPhase("lesson");
       } else {

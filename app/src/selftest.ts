@@ -319,6 +319,9 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!(head < first)) throw new Error("a reopened session drew its turns above its heading");
     if (again.length !== turns.length || session().open) throw new Error("opening a kept session sent something");
     if (!document.querySelector(".session.in-front .you.talk")) throw new Error("talk in a reopened session is not drawn as talk");
+    const probe = actions.session()?.probe();
+    steps.reopened = { ...(steps.reopened as object), line: probe?.line, task: probe?.task !== null };
+    if (probe?.task && probe.line !== "task") throw new Error("a reopened session's open task does not hold the caret");
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
     await wait(600);
