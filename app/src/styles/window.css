@@ -132,8 +132,8 @@
    left only when it would be narrower than 24em. */
 .session.with-panel .column,
 .session.with-panel .top-edge .inner {
-  --left: max(calc(var(--hang) + 24px), min(calc((100% - var(--measure)) / 2), calc(100% - var(--panel-w) - var(--hang) - 28px - 24em)));
-  width: min(var(--measure), calc(100% - var(--panel-w) - var(--hang) - 28px - var(--left)));
+  --left: max(calc(var(--hang) + 24px), min(calc((100% - var(--measure)) / 2), calc(100% - var(--side-w, var(--panel-w)) - var(--hang) - 28px - 24em)));
+  width: min(var(--measure), calc(100% - var(--side-w, var(--panel-w)) - var(--hang) - 28px - var(--left)));
   margin-left: var(--left);
   margin-right: 0;
 }

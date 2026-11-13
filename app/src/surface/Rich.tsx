@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
 import { holdBack, markTask, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { docTitle } from "../docs";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -216,12 +217,40 @@ async function loadImages(root: HTMLElement, final: boolean) {
 
 const FILE = /^(?:\.{0,2}\/)?[\w .()+-]+(?:\/[\w .()+-]+)*.(?:pdf|png|jpe?g|gif|webp|md|tex|txt|csv|html)$/i;
 
-/** Mark inline code that names a file, so a click opens it. */
-function markPaths(root: HTMLElement) {
+/**
+ * A file the tutor names in inline code reads as its title, as a link that
+ * opens it beside the lesson; its path is kept on the link, never shown. A
+ * kind of file the window does not show itself keeps its name and opens on
+ * the Mac.
+ */
+function markPaths(root: HTMLElement, titled: boolean, open: boolean) {
   root.querySelectorAll<HTMLElement>("code").forEach((code) => {
     if (code.parentElement?.tagName === "PRE") return;
-    const text = code.textContent ?? "";
-    if (text.length < 200 && FILE.test(text.trim())) code.classList.add("path");
+    // Marked once already: the task it was shut for may have been answered since.
+    if (code.dataset.path) {
+      if (code.classList.contains("titled")) {
+        code.classList.toggle("path", open);
+        code.classList.toggle("shut", !open);
+      }
+      return;
+    }
+    const text = (code.textContent ?? "").trim();
+    if (text.length >= 200 || !FILE.test(text)) return;
+    code.dataset.path = text;
+    // In the reply that sets the open task, it reads as its title but opens only once the task is answered, as a link does.
+    if (open || !titled) code.classList.add("path");
+    if (titled && sourceRef(text)) {
+      code.classList.add("titled");
+      if (!open) code.classList.add("shut");
+      code.textContent = docTitle(text);
+      code.title = docTitle(text);
+    }
+  });
+  // A link whose words are its own path reads as the file's title too.
+  root.querySelectorAll<HTMLAnchorElement>("a.source").forEach((link) => {
+    const href = link.getAttribute("href") ?? "";
+    const words = (link.textContent ?? "").trim();
+    if (words !== "" && (words === href || words === href.split("#")[0] || FILE.test(words))) link.textContent = docTitle(href.split("#")[0]);
   });
 }
 
@@ -290,8 +319,8 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     const root = ref.current;
     if (!root) return;
     void loadImages(root, final);
-    markPaths(root);
-  }, [html, final]);
+    markPaths(root, Boolean(onSource), linksOpen);
+  }, [html, final, onSource, linksOpen]);
 
   const onClick = async (event: React.MouseEvent<HTMLDivElement>) => {
     const path = (event.target as HTMLElement).closest("code.path");
@@ -300,10 +329,11 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     if (path || link) event.preventDefault();
     if (path) {
       // A file the window can show opens in the window; only another kind goes to the Mac.
-      const shown = onSource ? sourceRef((path.textContent ?? "").trim()) : null;
+      const named = (path as HTMLElement).dataset.path ?? (path.textContent ?? "").trim();
+      const shown = onSource ? sourceRef(named) : null;
       if (shown) return onSource?.(shown, path as HTMLElement);
       try {
-        await (await core()).openFile((path.textContent ?? "").trim());
+        await (await core()).openFile(named);
       } catch (error) {
         onNote?.(String(error));
       }
