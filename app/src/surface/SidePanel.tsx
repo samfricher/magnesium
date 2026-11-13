@@ -88,7 +88,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
 
   const pick = (path: string | null) => onDocs({ ...docs, shown: path });
 
-  // The folder's material, to open beside the lesson: by title, never a path; an answer key is never listed.
   // What can be opened: the folder's past papers, then its material, each by its title; an answer key is never
   // listed (the runtime leaves keys out of both), and the core refuses one besides.
   type Openable = { path: string; title: string; kind: string };

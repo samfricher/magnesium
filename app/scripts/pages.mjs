@@ -270,7 +270,7 @@ try {
   await step(w, "back to the top", { op: "scroll", to: "top" });
   await step(w, "open the past paper", { op: "click", target: "Midterm 2023" });
   await settle(w, 1800);
-  await shoot(w, "workspace-document", "Workspace: a past paper opened from its material");
+  await shoot(w, "workspace-document", "Workspace: a past paper opened from its name");
   await closeDocument(w, "Midterm 2023");
 
   const menu = await step(w, "the menu bar", { op: "menu" });

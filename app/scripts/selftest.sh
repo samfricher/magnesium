@@ -11,6 +11,10 @@
 #
 # Set MAGNESIUM_APP_BIN to check another build, such as the one inside
 # target/release/bundle/macos/Magnesium.app/Contents/MacOS/.
+#
+# Keep other windows off it while it runs: pdf.js draws a page on animation
+# frames, which WebKit stops for a window that is covered, so a PDF step can
+# time out under another window.
 
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
