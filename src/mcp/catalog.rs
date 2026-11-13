@@ -39,11 +39,11 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
             generated_schema::<crate::adapter::ReplyRequest>(),
         ),
         "context" => (
-            "Read workspace learner-state status or prepare current descriptions for the goal.",
+            "Load Magnesium's teaching instructions, or read the learner's current state. It takes one of two shapes. An instruction load is {\"action\":\"instructions\",\"host\":\"claude\",\"stage\":<stage>}, where stage is orient_and_probe, plan_and_route, teach_and_practice, interpret_and_repair, review_and_transfer, consolidate_and_resume, papers or papers_loop; add \"operation\": state_and_evidence, source_use or tool_recipes to load that contract. A learner-state read is {\"schema\":\"learner-model/v2\",\"action\": status, prepare, session_choices or pending_events, ...}, with no host or stage. prepare returns the current memory descriptions for a goal; status gives the current session revision a checkpoint needs. A session start or resume through learning_step already returns prepare for its goal, so call prepare yourself only for another goal or after a compaction. Reading changes nothing: it does not resume, bind, assess or process a session.",
             generated_schema::<crate::adapter::ContextRequest>(),
         ),
         "memory" => (
-            "Search, browse, read or inspect current learner memories and explicitly historical supporting work. Action reviews pages suggested reviews with current memory and needs_reconsideration notices; accepts memory_id, limit, cursor and max_bytes.",
+            "Search, browse, read or inspect current learner memories and explicitly historical supporting work. Search is {\"schema\":\"learner-model/v2\",\"action\":\"search\",\"goal\":\"<topic>\",\"original_query\":\"<learner's words>\"}; read is {\"schema\":\"learner-model/v2\",\"action\":\"read\",\"refs\":[{\"kind\":\"current_memory\"|\"observation\"|\"event\",\"id\":\"<id>\"}]}; browse is {\"schema\":\"learner-model/v2\",\"action\":\"browse\"} with an optional topic. The other actions are topics, history, reviews, observations and pending_work. Action reviews pages suggested reviews with current memory and needs_reconsideration notices; accepts memory_id, limit, cursor and max_bytes. A search result can leave state_text out, so read a memory before relying on its description. An empty search does not mean there is no history: rephrase, use the learner's literal words, or browse. Reading never assesses or processes work.",
             generated_schema::<crate::learner::read::MemoryRequest>(),
         ),
         "learning_step" => (
@@ -51,11 +51,11 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
             generated_schema::<crate::adapter::LearningStepRequest>(),
         ),
         "search_sources" => (
-            "Search subject sources within this workspace's file/privacy boundaries.",
+            "Search the course material in this study folder for a passage, by plain words. Each result names a file and an anchor (a page or a line range) to read in full with the sources tool. Use it before teaching from or citing course material. It keeps to the folder's privacy rules: a file left out for a word in its name, and a PDF with no text layer, are not searched, so an empty result does not show that the material lacks the topic; rephrase in the material's own words, or narrow path_prefix to one folder.",
             generated_schema::<crate::adapter::SearchRequest>(),
         ),
         "sources" => (
-            "Inspect original source anchors with extraction limitations and bounded original text.",
+            "Read the original text at a source anchor that search_sources returned. action inspect returns the text for path, anchor_kind (page or line), anchor_start and optional anchor_end, cut at 64 KB with truncated set when it was cut; action status returns the anchor's coverage and extraction limits without the text. Pass the content_sha256 the search result gave to make sure the file has not changed since. Parsed text can miss what a page image shows, such as layout, notation, plots or code indentation: when that matters to the point, Read the page itself.",
             generated_schema::<crate::adapter::SourcesRequest>(),
         ),
         _ => return None,
