@@ -9,6 +9,8 @@
 :root {
   --tabs-h: 38px;
   --panel-w: 15.5rem;
+  /* Under the tab bar, before the first line of a lesson or of its plan. */
+  --head-room: 28px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,7 +275,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 /* Every control shows where the keyboard is (forms guide): the chosen
    segment's ring is drawn on its words, as its radio is out of sight. */
 :root[data-input="key"] .segment input:focus-visible + span,
-:root[data-input="key"] .settings-page input:is([type="range"], [type="color"]):focus-visible {
+:root[data-input="key"] .settings-page input[type="range"]:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
   border-radius: 3px;
@@ -300,8 +302,29 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
 .swatch.chosen .swatch-face { outline: 2px solid var(--ink); outline-offset: 2px; }
 :root[data-input="key"] .swatch input:focus-visible + .swatch-face { outline: 2px dashed var(--ink); outline-offset: 2px; }
 .colour { display: inline-flex; align-items: center; gap: 0.35rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
-.colour input[type="color"] { width: 1.6rem; height: 1.35rem; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; cursor: pointer; }
 .colour .plain { margin-left: 0.1rem; }
+/* A colour's well, its reset and its grid sit in the setting's row: the grid wraps to a line of its own. */
+.colour-field { display: contents; }
+.colour-well { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.colour-field > .plain { font: 400 0.765rem/1.5 var(--app); margin-left: -0.5rem; }
+.colour-well { display: inline-flex; align-items: center; gap: 0.35rem; }
+.colour-well:hover { color: var(--text); }
+.colour-well[aria-expanded="true"] { color: var(--ink); }
+/* The grid opens on its own line, under the wells, in the page. */
+.colour-picker {
+  order: 1;
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin: 0.2rem 0 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--faint);
+  border-radius: 6px;
+}
+.colour-picker .swatches { flex-wrap: wrap; }
+.text-field.hex { min-width: 0; width: 5.5rem; font-variant-numeric: tabular-nums; }
 .sample { margin: 0.8rem 0 0; padding: 0.7rem 0 0.2rem; font-size: 1rem; line-height: 1.62; color: var(--text); border-top: 1px dashed var(--faint); }
 .sample-you { font-size: 0.941rem; }
 .key-cap {
@@ -330,7 +353,7 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   bottom: 0;
   width: var(--panel-w);
   overflow-y: auto;
-  padding: calc(56px - var(--tabs-h)) 20px 2rem 18px;
+  padding: var(--head-room) 20px 2rem 18px;
   border-left: 1px solid var(--edge);
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);
@@ -472,3 +495,7 @@ dialog.layer {
 }
 dialog.layer:not([open]) { display: none; }
 dialog.layer::backdrop { background: transparent; }
+
+/* A note of the course's material, drawn as prose in the source viewer. */
+.sheet-body.prose-body { display: block; padding: 1.2rem 2rem 2rem; }
+.source-prose { max-width: var(--measure); margin: 0 auto; font-size: 1rem; line-height: 1.62; color: var(--text); }

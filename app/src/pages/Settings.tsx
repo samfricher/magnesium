@@ -137,17 +137,98 @@ function FontField(props: { label: string; value: string; known: [string, string
   );
 }
 
-function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean }) {
+/** The colours a well offers, by what it colours and for which scheme: each readable on the ground it is for. */
+const PALETTES: Record<"ink" | "ground" | "text", [string[], string[]]> = {
+  ink: [
+    ["#2f3f86", "#2e5b4a", "#4e3c8c", "#3b3e44", "#1f4e8c", "#0f6b6b", "#7a3b2e", "#8a5a00", "#6b2d5c", "#1e2023"],
+    ["#9aa9ee", "#86c2a6", "#bdaeef", "#c7cad0", "#8fb7f0", "#7fd0d0", "#e0a090", "#e6c070", "#e0a0d0", "#e3e3df"],
+  ],
+  ground: [
+    ["#fafaf8", "#ffffff", "#f6f3ec", "#f2f2f2", "#eef1f4", "#f7f1e3", "#edf3ee", "#fdf8f0"],
+    ["#1c1d20", "#000000", "#15171a", "#222326", "#1b1e24", "#201d1a", "#181c1a", "#26262a"],
+  ],
+  text: [
+    ["#1e2023", "#000000", "#2b2b2b", "#3a3530", "#1d2733", "#2f2a24"],
+    ["#e3e3df", "#ffffff", "#d8d8d2", "#ece6da", "#dfe6ee", "#cfcfcf"],
+  ],
+};
+
+/**
+ * A colour chosen in the page itself, not in the Mac's colour panel: a well
+ * that opens a grid of swatches (radio buttons: one Tab stop, the arrow keys
+ * choose) and a field for any colour as #rrggbb. Esc closes the grid.
+ */
+function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string }) {
+  const [open, setOpen] = useState(false);
+  const hex = hexOf(props.value, props.dark, props.fallback);
+  const [typed, setTyped] = useState(hex);
+  useEffect(() => setTyped(hex), [hex]);
+  const group = useId();
+  const well = useRef<HTMLButtonElement>(null);
+  const palette = PALETTES[props.kind][props.dark ? 1 : 0];
+  const close = () => {
+    setOpen(false);
+    well.current?.focus();
+  };
   return (
-    <span className="colour">
-      <label className="colour">
-        <input type="color" value={hexOf(props.value, props.dark, props.fallback)} onChange={(event) => props.onPick(event.target.value)} />
+    <span className="colour-field">
+      <button
+        type="button"
+        ref={well}
+        className="colour-well"
+        data-drive={`colour-${props.kind}-${props.dark ? "dark" : "light"}`}
+        aria-expanded={open}
+        aria-label={`${props.name} ${props.label}: ${hex}`}
+        onClick={() => setOpen((shown) => !shown)}
+      >
+        <span className="swatch-face" style={{ background: hex }} />
         <span>{props.label}</span>
-      </label>
+      </button>
       {props.own && props.value !== "" && (
         <button type="button" className="plain" onClick={() => props.onPick("")}>
           the window's own
         </button>
+      )}
+      {open && (
+        <span
+          className="colour-picker"
+          role="group"
+          aria-label={`${props.name} ${props.label}`}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              close();
+            }
+          }}
+        >
+          <span className="swatches" role="radiogroup" aria-label={`${props.name} ${props.label}: colours`}>
+            {palette.map((colour) => (
+              <label key={colour} className={colour === hex ? "swatch chosen" : "swatch"} title={colour}>
+                <input type="radio" className="visually-hidden" name={group} aria-label={colour} checked={colour === hex} onChange={() => props.onPick(colour)} />
+                <span className="swatch-face" style={{ background: colour }} />
+              </label>
+            ))}
+          </span>
+          <input
+            className="text-field hex"
+            aria-label={`${props.name} ${props.label}: any colour, as #rrggbb`}
+            aria-invalid={!/^#[0-9a-f]{6}$/i.test(typed.trim())}
+            value={typed}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="none"
+            maxLength={7}
+            onChange={(event) => {
+              const value = event.target.value;
+              setTyped(value);
+              if (/^#[0-9a-f]{6}$/i.test(value.trim())) props.onPick(value.trim().toLowerCase());
+            }}
+          />
+          <button type="button" className="plain" onClick={close}>
+            done
+          </button>
+        </span>
       )}
     </span>
   );
@@ -315,16 +396,16 @@ export function SettingsPage(props: Props) {
                 );
               })}
             </span>
-            <ColourField label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
-            <ColourField label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
+            <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
+            <ColourField kind="ink" name="Ink" label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
           </Setting>
           <Setting name="Ground">
-            <ColourField label="in light" value={prefs.ground} dark={false} fallback="#fafaf8" own onPick={(ground) => change({ ground })} />
-            <ColourField label="in dark" value={prefs.groundDark} dark fallback="#1c1d20" own onPick={(groundDark) => change({ groundDark })} />
+            <ColourField kind="ground" name="Ground" label="in light" value={prefs.ground} dark={false} fallback="#fafaf8" own onPick={(ground) => change({ ground })} />
+            <ColourField kind="ground" name="Ground" label="in dark" value={prefs.groundDark} dark fallback="#1c1d20" own onPick={(groundDark) => change({ groundDark })} />
           </Setting>
           <Setting name="Text">
-            <ColourField label="in light" value={prefs.text} dark={false} fallback="#1e2023" own onPick={(text) => change({ text })} />
-            <ColourField label="in dark" value={prefs.textDark} dark fallback="#e3e3df" own onPick={(textDark) => change({ textDark })} />
+            <ColourField kind="text" name="Text" label="in light" value={prefs.text} dark={false} fallback="#1e2023" own onPick={(text) => change({ text })} />
+            <ColourField kind="text" name="Text" label="in dark" value={prefs.textDark} dark fallback="#e3e3df" own onPick={(textDark) => change({ textDark })} />
           </Setting>
           <p className="setting-note wide">Quiet text, rules and the line an answer is written on are mixed from the text and the ground, so they stay readable whatever colours are chosen.</p>
         </section>
