@@ -169,7 +169,7 @@ mod tests {
             ms,
             learner: learner.into(),
             tutor: "ok".into(),
-            interrupted: false,
+            ..Turn::default()
         }
     }
 

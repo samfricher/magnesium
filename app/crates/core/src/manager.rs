@@ -49,6 +49,11 @@ struct Buffer {
     /// The name the page gave this conversation when it began, kept with the
     /// conversation's id once the agent reports it.
     title: Option<String>,
+    /// How the words in `learner` were sent: an answer, or talk.
+    intent: Option<Intent>,
+    /// When the last turn was kept, so what the engine says of its task is
+    /// kept beside it.
+    last_ms: Option<i64>,
 }
 
 struct Inner {
@@ -609,19 +614,32 @@ impl Manager {
                     if std::mem::take(&mut buffer.typed) && !learner.trim().is_empty() {
                         store.count_turn(study::today());
                     }
+                    let intent = buffer.intent.take();
                     if let Some(session) = buffer.session.clone() {
                         if !tutor.trim().is_empty() || !learner.trim().is_empty() {
+                            let ms = Local::now().timestamp_millis();
                             store.append_turn(
                                 &folder,
                                 &Turn {
                                     session,
-                                    ms: Local::now().timestamp_millis(),
+                                    ms,
                                     learner,
                                     tutor,
                                     interrupted: *interrupted,
+                                    intent,
+                                    ..Turn::default()
                                 },
                             );
+                            buffer.last_ms = Some(ms);
                         }
+                    }
+                }
+                // The engine says which task is open once the turn's record
+                // is kept: it is kept beside the turn, for a reopened lesson.
+                AgentEvent::OpenTask { task, posed } if live => {
+                    let buffer = lock(&buffer);
+                    if let (Some(session), Some(ms)) = (buffer.session.clone(), buffer.last_ms) {
+                        store.note_task(&folder, &session, ms, task.as_deref(), *posed);
                     }
                 }
                 _ => {}
@@ -850,6 +868,7 @@ impl Manager {
             let mut buffer = lock(&buffer);
             buffer.learner = shown.to_owned();
             buffer.typed = typed;
+            buffer.intent = intent;
         }
         // What the record and the plan hold before the message, so the turn
         // can be compared with them once it has settled.
@@ -1234,6 +1253,11 @@ fn settle(
                     break;
                 }
             }
+        }
+        // The record has been read for this message: say so, unless the
+        // learner has written again since.
+        if lock(&settling.watch).seq == seq && live() {
+            out(AgentEvent::Settled);
         }
         release(&mut counted);
     });

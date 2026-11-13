@@ -17,7 +17,7 @@ use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::activity;
-use crate::agent::Payment;
+use crate::agent::{Intent, Payment};
 use crate::paths;
 
 /// How many folders the library keeps.
@@ -121,7 +121,7 @@ struct Data {
     other: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Turn {
     pub session: String,
     pub ms: i64,
@@ -129,6 +129,29 @@ pub struct Turn {
     pub tutor: String,
     #[serde(default)]
     pub interrupted: bool,
+    /// How the window sent the learner's words: an answer to the open task,
+    /// or talk. None for the window's own words, help, or a turn an earlier
+    /// window kept. Additive: an older window reads the line without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<Intent>,
+    /// The task open after this turn, as the engine said it, and whether this
+    /// turn's reply posed it. Kept beside the turns, in a file of its own, as
+    /// the engine says it only once the turn's record is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub posed: bool,
+}
+
+/// What the engine said of a turn's task, kept beside the turn.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct TaskNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    task: Option<String>,
+    #[serde(default)]
+    posed: bool,
 }
 
 /// Which engine runs a lesson.
@@ -407,6 +430,42 @@ impl Store {
         self.root.join("transcripts").join(file_name(&key(folder)))
     }
 
+    /// The file beside a folder's transcript that holds what the engine said
+    /// of each turn's task.
+    fn task_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("tasks.jsonl")
+    }
+
+    /// Keep what the engine said of a kept turn's task: the task open after
+    /// it, and whether the turn's reply posed it.
+    pub fn note_task(
+        &self,
+        folder: &Path,
+        session: &str,
+        ms: i64,
+        task: Option<&str>,
+        posed: bool,
+    ) {
+        let path = self.task_notes(folder);
+        let Some(parent) = path.parent() else { return };
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        let note = TaskNote {
+            session: session.to_owned(),
+            ms,
+            task: task.map(str::to_owned),
+            posed,
+        };
+        let Ok(mut line) = serde_json::to_string(&note) else {
+            return;
+        };
+        line.push('\n');
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
@@ -447,6 +506,21 @@ impl Store {
             .collect();
         let extra = turns.len().saturating_sub(400);
         turns.drain(..extra);
+        // What the engine said of each turn's task, by the turn's time.
+        if let Ok(notes) = fs::read_to_string(self.task_notes(folder)) {
+            let by_ms: BTreeMap<i64, TaskNote> = notes
+                .lines()
+                .filter_map(|line| serde_json::from_str::<TaskNote>(line).ok())
+                .filter(|note| note.session == session)
+                .map(|note| (note.ms, note))
+                .collect();
+            for turn in &mut turns {
+                if let Some(note) = by_ms.get(&turn.ms) {
+                    turn.task.clone_from(&note.task);
+                    turn.posed = note.posed;
+                }
+            }
+        }
         turns
     }
 }
@@ -472,7 +546,8 @@ mod tests {
                 ms: 1,
                 learner: "hi".into(),
                 tutor: "hello".into(),
-                interrupted: false,
+                intent: Some(Intent::Answer),
+                ..Turn::default()
             },
         );
         store.append_turn(
@@ -482,7 +557,7 @@ mod tests {
                 ms: 2,
                 learner: "x".into(),
                 tutor: "y".into(),
-                interrupted: false,
+                ..Turn::default()
             },
         );
 
@@ -491,9 +566,13 @@ mod tests {
         let state = again.folder(folder.path());
         assert_eq!(state.session_id.as_deref(), Some("abc"));
         assert_eq!(state.stopped_at.as_deref(), Some("step 3"));
+        again.note_task(folder.path(), "abc", 1, Some("What is b?"), true);
         let turns = again.turns(folder.path(), "abc");
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].tutor, "hello");
+        assert_eq!(turns[0].intent, Some(Intent::Answer));
+        assert_eq!(turns[0].task.as_deref(), Some("What is b?"));
+        assert!(turns[0].posed);
     }
 
     #[test]
@@ -546,7 +625,7 @@ mod tests {
             ms,
             learner: learner.into(),
             tutor: "…".into(),
-            interrupted: false,
+            ..Turn::default()
         };
         // Turns kept by a window that did not count days yet.
         let before = Store::at(home.path().to_path_buf());

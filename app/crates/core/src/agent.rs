@@ -79,6 +79,9 @@ pub enum AgentEvent {
     /// The window puts the field for an answer inside it. Sent by an engine
     /// that knows its open task (Magnesium's); never a mark.
     OpenTask { task: Option<String>, posed: bool },
+    /// The record has been read for what the last message changed: any mark
+    /// it has for it has been sent. With none, the record kept no mark.
+    Settled,
 }
 
 /// What the learner's message is. The window says it; the tutor does not

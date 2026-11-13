@@ -3084,3 +3084,39 @@ fn the_plugin_engine_writes_the_plan_files_without_asking_and_nothing_else() {
     );
     manager.shut_down();
 }
+
+#[test]
+fn a_kept_turn_says_how_it_was_sent_and_which_task_it_left_open() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the task", |e| {
+        matches!(e, AgentEvent::OpenTask { .. })
+    });
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    manager
+        .send_with("why that way?", Some(Intent::Talk))
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    manager.shut_down();
+
+    let folder = manager.folder().unwrap();
+    let session = manager.store().folder(&folder).session_id.unwrap();
+    let turns = manager.store().turns(&folder, &session);
+    assert_eq!(turns.len(), 3, "{turns:#?}");
+    // The window's opening words were sent with no intent, and the reply posed the task.
+    assert_eq!(turns[0].intent, None);
+    assert_eq!(turns[0].task.as_deref(), Some(FIRST));
+    assert!(turns[0].posed);
+    assert_eq!(turns[1].intent, Some(Intent::Answer));
+    assert_eq!(turns[2].intent, Some(Intent::Talk));
+}

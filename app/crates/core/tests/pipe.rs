@@ -396,6 +396,8 @@ fn a_replaced_conversation_says_nothing_more() {
     };
     assert!(ended_well(&events.turn_end()));
     assert_eq!(events.take_text(), "You said: hello new lesson");
+    // The new conversation's record is read for what its message changed.
+    events.until("the record read", |e| matches!(e, AgentEvent::Settled));
 
     // Wait for the old process to end, then for anything it left behind.
     let deadline = Instant::now() + Duration::from_secs(20);
