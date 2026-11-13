@@ -1,1 +1,1 @@
-"""Stub `docling.datamodel` package (see tests/README.md)."""
+"""Stub `docling.datamodel` package."""
