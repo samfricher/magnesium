@@ -201,7 +201,7 @@ export function Notices({ notices, onDismiss }: { notices: Notice[]; onDismiss: 
         <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
           {withoutPaths(notice.text)}{" "}
           <button className="plain" onClick={() => onDismiss(notice.text)}>
-            dismiss
+            Dismiss
           </button>
         </p>
       ))}

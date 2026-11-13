@@ -15,7 +15,7 @@ The window holds one tutor's program at a time. The session tab that holds it ge
 
 ## The plan beside the lesson
 
-From #69's agenda. The panel shows the exam and its date, then the plan's items as a task list (✓ done, ● the one in hand, ○ to do) with each block's day, then this session's steps. When the tutor changes the plan, the panel changes in place: a row that moved says *moved up*, *moved down*, *new* or *day moved*, and a moved exam says *moved from* its old date. B's plan card under the reply stays as it was. It shows no file, path or Markdown, and nothing in it edits the plan: the plan changes when the learner asks the tutor. It is shown and hidden by its switch, View > Show Plan, ⌘P or ⌘K, and the window remembers which. Hidden, the session is the surface alone.
+From #69's agenda. The panel shows the exam and its date, then the plan's items as a task list (✓ done, ● the one in hand, ○ to do) with each block's day, and this session's steps set in under the item in hand. When the tutor changes the plan, the panel changes in place: a row that moved says *moved*, *new* or *day moved*, and a moved exam says *moved from* its old date. Under the reply, one quiet line names what changed. It shows no file, path or Markdown, and nothing in it edits the plan: the plan changes when the learner asks the tutor. It is shown and hidden by its switch, View > Show Plan, ⌘P or ⌘K, and the window remembers which. Hidden, the session is the surface alone.
 
 ## Settings
 

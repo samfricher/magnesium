@@ -560,6 +560,17 @@ export function App() {
 
   const activeTab = tabs.find((each) => each.key === active) ?? HOME;
   const inSession = activeTab.kind === "session";
+  // Each tab's name; two sessions with one name are told apart by a number, in the bar and the Window menu.
+  const tabTitles = useMemo(() => {
+    const seen: Record<string, number> = {};
+    const named: Record<string, string> = {};
+    for (const tab of tabs) {
+      const title = tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
+      seen[title] = (seen[title] ?? 0) + 1;
+      named[tab.key] = seen[title] > 1 ? `${title} (${seen[title]})` : title;
+    }
+    return named;
+  }, [tabs]);
   const spec = useMemo((): MenuSpec => {
     const disabled: string[] = [];
     if (!inSession) disabled.push("attach", "photo", "symbols", "hint", "lost", "unknown");
@@ -570,11 +581,11 @@ export function App() {
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
-      tabs: tabs.map((tab) => ({ id: tab.key, title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "") })),
+      tabs: tabs.map((tab) => ({ id: tab.key, title: tabTitles[tab.key] })),
       disabled,
       titles: { plan: panel ? "Hide Plan" : "Show Plan", ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}) },
     };
-  }, [prefs.keys, workspaces, tabs, inSession, activeTab, taskOpen, busyKey, panel]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, busyKey, panel]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -744,7 +755,7 @@ export function App() {
   const tabViews: TabView[] = tabs.map((tab) => ({
     key: tab.key,
     kind: tab.kind,
-    title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? ""),
+    title: tabTitles[tab.key],
     busy: tab.key === busyKey && !asking[tab.key],
     folder: tab.kind === "session" ? tab.folder : null,
   }));
@@ -818,7 +829,7 @@ export function App() {
                   <p key={text} className="record note">
                     {text}{" "}
                     <button className="plain" onClick={() => setNotes((old) => old.filter((n) => n !== text))}>
-                      dismiss
+                      Dismiss
                     </button>
                   </p>
                 ))}

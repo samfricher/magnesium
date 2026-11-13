@@ -255,7 +255,6 @@ button.home-row:focus:hover { background: var(--tint); }
   color: var(--text);
 }
 .new-session { position: relative; }
-.new-session .plus { position: absolute; left: 0.3rem; color: var(--ink); font-family: var(--app); }
 .new-session:hover:not(:disabled) { background: var(--tint); }
 .new-session:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
 :root[data-input="key"] .new-session:focus-visible { outline: none; }
@@ -442,10 +441,12 @@ input[type="range"]::-webkit-slider-thumb {
 /* This session's steps, under the plan's item in hand. The item's dot says where the learner is. */
 .panel-item .panel-items.steps { margin: 0.3rem 0 0.15rem; }
 .panel-items.steps li { padding: 0.1rem 0; }
-.panel-items.steps .panel-item { font: 400 0.824rem/1.45 var(--read); color: var(--text); }
+.panel-items.steps .panel-item { font: 400 0.765rem/1.45 var(--read); color: var(--quiet); }
 .panel-items.steps li.done .panel-item { color: var(--quiet); }
 .panel-items li.current .panel-items.steps li:not(.current) .panel-mark { color: var(--hint); }
-.panel-items li.current .panel-items.steps .panel-item { color: var(--text); }
+.panel-items li.current .panel-items.steps .panel-item { color: var(--quiet); }
+/* The step in hand: in the ink, with no mark; "›" is the learner's own. */
+.panel-items li.current .panel-items.steps li.current .panel-item { color: var(--ink); }
 .panel-items li.current .panel-items.steps li.done .panel-item { color: var(--quiet); }
 .panel-note { color: var(--quiet); margin: 0; }
 
@@ -560,7 +561,8 @@ dialog.layer::backdrop { background: transparent; }
 .source-prose { max-width: var(--measure); margin: 0 auto; font-size: 1rem; line-height: 1.62; color: var(--text); }
 
 /* A colour's well keeps its column on every row; light and dark are named on the first. */
-.setting:has(.colour-field) { align-items: center; }
+.setting:has(.colour-field) { align-items: start; }
+.setting:has(.colour-field) .setting-name { padding-top: 0.1rem; }
 .colour-well .unnamed { visibility: hidden; }
 
 /* A row of past work with no action of its own: its date ends at the column's edge, as every row's does. */
@@ -600,3 +602,24 @@ dialog.layer::backdrop { background: transparent; }
 /* A short paragraph does not end on one word alone. */
 .page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
 .tab-new:disabled { color: var(--faint); cursor: default; background: none; }
+
+/* The tab bar's tabs and its "+" show the keyboard's place as its other buttons do: the tint, no ring. */
+:root[data-input="key"] .tab-button:focus-visible,
+:root[data-input="key"] .tab-new:focus-visible { outline: none; background: var(--tint); color: var(--text); }
+/* "Your work" shows the keyboard's place as the other quiet actions do. */
+:root[data-input="key"] .your-work summary:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+
+/* How sure the learner said they were is their own word: quiet once sent. Ink is the record's. */
+.answer .said-sure { color: var(--quiet); }
+/* A card's label beside its ink rule: the rule marks the card, the label is quiet. */
+.card .record-head { color: var(--quiet); }
+/* The "+" waits out of sight until there is a workspace to start in. */
+.tab-new:disabled { visibility: hidden; }
+/* The folder's own action stands apart from the sections above it. */
+.folder-acts { margin-top: 2.6rem; }
+
+/* Small controls show the keyboard's place one way: an ink underline, no ring. */
+:root[data-input="key"] .plain:focus-visible,
+:root[data-input="key"] .clip:focus-visible,
+:root[data-input="key"] .line-end:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+:root[data-input="key"] .segment input:focus-visible + span { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }

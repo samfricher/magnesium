@@ -147,9 +147,6 @@ export function WorkspacePage(props: Props) {
 
         <section aria-label="Sessions">
           <button className="new-session" data-drive="new-session" autoFocus={props.focus} disabled={!ready || sitting !== null} onClick={() => props.onNewSession(folder)}>
-            <span className="plus" aria-hidden="true">
-              +
-            </span>{" "}
             New session
           </button>
           {sessions === null || sessions.length === 0 ? null : (
@@ -283,11 +280,12 @@ export function WorkspacePage(props: Props) {
                 Check again
               </button>
             )}
-            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : undefined} onClick={() => props.onForget(folder)}>
+            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
             </button>
           </p>
-          <p className="page-note">{props.running ? "Close its running session first." : "The folder and its sessions stay as they are."}</p>
+          {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
+          {props.running && <p className="page-note">Close its running session first.</p>}
         </section>
       </div>
     </div>

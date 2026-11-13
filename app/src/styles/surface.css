@@ -669,20 +669,17 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--ink);
 }
 .fact.none { color: var(--hint); }
+/* The open task, pinned while its question is out of view: the one thing to come back to, whole and in the text's colour. */
 .parked {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
   width: 100%;
   margin: 0 0 0.7rem calc(-1 * var(--hang));
   padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
   border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
   font: 400 0.941rem/1.5 var(--read);
-  color: var(--quiet);
+  color: var(--text);
   cursor: text;
 }
-.parked:hover { color: var(--text); }
 .task-line.off {
   border-left-color: transparent;
   padding-top: 0;
@@ -710,10 +707,11 @@ button.line-end:hover { color: var(--text); }
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(104px - var(--tabs-h));
+  height: calc(110px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) calc(72px - var(--tabs-h)), transparent);
+  /* Solid to the foot of the step's name, then a fade a line and a half deep. */
+  background: linear-gradient(to bottom, var(--ground) calc(64px - var(--tabs-h)), transparent);
 }
 .session.with-panel .top-edge { right: 0; }
 .top-edge .inner {
@@ -755,7 +753,8 @@ button.line-end:hover { color: var(--text); }
 /* While a card waits, the line under it shows no prompt of its own. */
 .foot.asking .line.talk::before { visibility: hidden; }
 
-/* A notice that stops the lesson (a usage limit, a sign-in) is the window speaking: in the record's ink. */
-.record.note[role="alert"] { color: var(--ink); }
+/* A notice that stops the lesson (a usage limit, a sign-in): at reading size so it is not skimmed past,
+   in the text's colour, as a mark that is not right yet is; the ink would read as a success. */
+.record.note[role="alert"] { color: var(--text); font-size: 0.941rem; }
 /* A card waiting at the foot keeps its whole rule: no fade over it. */
 .foot.asking::before { display: none; }

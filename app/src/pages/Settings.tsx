@@ -229,7 +229,7 @@ function ColourField(props: { label: string; value: string; dark: boolean; fallb
             }}
           />
           <button type="button" className="plain" onClick={close}>
-            done
+            Done
           </button>
         </span>
       )}
@@ -423,9 +423,6 @@ export function SettingsPage(props: Props) {
           ))}
           <div className="fixed-keys">
             <p>
-              <span className="key-cap static">↩</span> start, or send · <span className="key-cap static">⇧↩</span> a new line
-            </p>
-            <p>
               <span className="key-cap static">esc</span> talk instead · <span className="key-cap static">↑</span> back to the task
             </p>
             <p>
@@ -473,9 +470,12 @@ export function SettingsPage(props: Props) {
                     Sign in
                   </button>
                 )}
-                <button className="plain" onClick={props.onCheckAgain}>
-                  check again
-                </button>
+                {/* Checking again is for a check that failed. */}
+                {(!account.signed_in || account.problem) && (
+                  <button className="plain" onClick={props.onCheckAgain}>
+                    Check again
+                  </button>
+                )}
               </span>
             )}
           </Setting>
@@ -492,6 +492,7 @@ export function SettingsPage(props: Props) {
               min={5}
               max={240}
               aria-label="A paper's time in minutes"
+              placeholder="other"
               value={minutes}
               onChange={(event) => setMinutes(event.target.value)}
               onBlur={() => {
