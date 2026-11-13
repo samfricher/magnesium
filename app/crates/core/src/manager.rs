@@ -561,6 +561,8 @@ impl Manager {
             // this check and the event reaching the page.
             let now = lock(&current);
             let live = *now == generation;
+            // The turn this event ended and kept, by its conversation and time.
+            let mut kept_turn: Option<(String, i64)> = None;
             match &event {
                 AgentEvent::Ready { session_id, .. } if !session_id.is_empty() => {
                     let mut buffer = lock(&buffer);
@@ -621,7 +623,7 @@ impl Manager {
                             store.append_turn(
                                 &folder,
                                 &Turn {
-                                    session,
+                                    session: session.clone(),
                                     ms,
                                     learner,
                                     tutor,
@@ -631,6 +633,7 @@ impl Manager {
                                 },
                             );
                             buffer.last_ms = Some(ms);
+                            kept_turn = Some((session, ms));
                         }
                     }
                 }
@@ -660,6 +663,7 @@ impl Manager {
                     Arc::clone(&out),
                     Arc::clone(&current),
                     generation,
+                    kept_turn.map(|(session, ms)| (Arc::clone(&store), session, ms)),
                 );
             }
         })
@@ -1172,7 +1176,9 @@ impl Manager {
 /// Read what a turn changed, once its record is kept: the plan, compared with
 /// the last reading, and the record's marks, compared with those before the
 /// message. Sends `plan_changed` and `marked` while the conversation is still
-/// the page's. Runs on its own thread, so the page is never held up.
+/// the page's, and keeps the new marks' ids beside `turn` (the store, and the
+/// conversation and time of the turn the message ended in). Runs on its own
+/// thread, so the page is never held up.
 fn settle(
     settling: Settling,
     folder: PathBuf,
@@ -1180,6 +1186,7 @@ fn settle(
     out: EventSink,
     current: Arc<Mutex<u64>>,
     generation: u64,
+    turn: Option<(Arc<Store>, String, i64)>,
 ) {
     let (seq, before, intent) = {
         let mut watch = lock(&settling.watch);
@@ -1224,9 +1231,14 @@ fn settle(
         // record by now, so one reading says it all; the plugin engine's
         // tutor may write it a little after the reply, so it is read a few
         // times more. A message sent meanwhile ends the looking.
+        // `found` is the new rows' ids: empty when the record was read and
+        // had none, and none when the looking was cut short or never read it.
+        let mut found: Option<Vec<String>> = None;
         if let Some(before) = before {
             let once = kept == Some(true) || (intent == Some(Intent::Talk) && kept.is_some());
             let mut waited = 0;
+            let mut read = false;
+            let mut cut = false;
             for (look, at) in MARK_LOOKS_MS.iter().enumerate() {
                 if look >= BUSY_LOOKS {
                     release(&mut counted);
@@ -1234,14 +1246,18 @@ fn settle(
                 std::thread::sleep(Duration::from_millis(at - waited));
                 waited = *at;
                 if lock(&settling.watch).seq != seq || !live() {
+                    cut = true;
                     break;
                 }
-                let fresh: Vec<runtime::Mark> = runtime::marks(&folder)
+                let rows = runtime::marks(&folder);
+                read |= rows.is_some();
+                let fresh: Vec<runtime::Mark> = rows
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|row| !before.contains(&row.id))
                     .collect();
                 if !fresh.is_empty() {
+                    found = Some(fresh.iter().map(|mark| mark.id.clone()).collect());
                     if live() {
                         for mark in fresh {
                             out(AgentEvent::Marked { mark });
@@ -1253,6 +1269,15 @@ fn settle(
                     break;
                 }
             }
+            if found.is_none() && read && !cut {
+                found = Some(Vec::new());
+            }
+        }
+        // Kept beside the turn, so a reopened lesson shows these marks under
+        // it: the record's rows carry only the minute, which several quick
+        // answers can share.
+        if let (Some(ids), Some((store, session, ms))) = (&found, &turn) {
+            store.note_marks(&folder, session, *ms, ids);
         }
         // The record has been read for this message: say so, unless the
         // learner has written again since.

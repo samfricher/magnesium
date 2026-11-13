@@ -39,7 +39,7 @@ A mark or a proof on screen comes only from the runtime's record (`marked`, `mar
 
 ## The window's own state
 
-The tabs, which one is in front, the workspace page in the Home tab and the plan's switch are kept in `state.json` as a new `window` field. When each folder and each session was last opened, a session's name and its engine are kept as new fields beside each folder. All of them are additive: an older build reads the file and skips them, and this build keeps any field it does not know. Drafts, the line's place and each session's scroll are kept per tab in the page's storage. The window reopens as it was left. After three hours away (the runtime's gap for a new sitting) it opens on Home, with the tabs still there, so starting stays one key.
+The tabs, which one is in front, the workspace page in the Home tab and the plan's switch are kept in `state.json` as a new `window` field. When each folder and each session was last opened, a session's name and its engine are kept as new fields beside each folder. All of them are additive: an older build reads the file and skips them, and this build keeps any field it does not know. Beside each kept turn, in a file of its own next to the turns, the window keeps the ids of the record's rows that appeared for that message, so a reopened session shows each mark under the answer it was shown on. Turns kept before that match the record's rows by the minute, as they did. Drafts, the line's place and each session's scroll are kept per tab in the page's storage. The window reopens as it was left. After three hours away (the runtime's gap for a new sitting) it opens on Home, with the tabs still there, so starting stays one key.
 
 ## For the harness
 

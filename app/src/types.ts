@@ -66,7 +66,10 @@ export type Activity = { today: string; days: string[]; run: number; studied_tod
  * A kept turn. `intent` is how the learner's words were sent (none for the
  * window's own words, help, or an earlier window's turn). When `noted`, the
  * engine said which task was open after it (`task`, none when none was) and
- * whether its reply posed it (`posed`).
+ * whether its reply posed it (`posed`). `mark_ids` are the ids of the
+ * record's marked answers that appeared for its message (empty when none
+ * did); none when the window did not read the record for it, as for a turn
+ * an earlier window kept.
  */
 export type Turn = {
   session: string;
@@ -78,6 +81,7 @@ export type Turn = {
   task?: string | null;
   posed?: boolean;
   noted?: boolean;
+  mark_ids?: string[] | null;
 };
 
 /**

@@ -145,6 +145,13 @@ pub struct Turn {
     /// means none was). False for an engine that does not say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub noted: bool,
+    /// The ids of the record's marked answers that appeared for this turn's
+    /// message: the marks the window showed under it. Empty when the record
+    /// was read and had none; none when it was not read to the end, as for a
+    /// turn an earlier window kept. Kept beside the turns, in a file of its
+    /// own, as the record is read only once the turn is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark_ids: Option<Vec<String>>,
 }
 
 /// What the engine said of a turn's task, kept beside the turn.
@@ -156,6 +163,15 @@ struct TaskNote {
     task: Option<String>,
     #[serde(default)]
     posed: bool,
+}
+
+/// Which of the record's marked answers appeared for a turn, kept beside it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct MarksNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    ids: Vec<String>,
 }
 
 /// Which engine runs a lesson.
@@ -440,6 +456,12 @@ impl Store {
         self.transcript(folder).with_extension("tasks.jsonl")
     }
 
+    /// The file beside a folder's transcript that holds which of the
+    /// record's marked answers appeared for each turn.
+    fn marks_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("marks.jsonl")
+    }
+
     /// Keep what the engine said of a kept turn's task: the task open after
     /// it, and whether the turn's reply posed it.
     pub fn note_task(
@@ -450,41 +472,33 @@ impl Store {
         task: Option<&str>,
         posed: bool,
     ) {
-        let path = self.task_notes(folder);
-        let Some(parent) = path.parent() else { return };
-        if fs::create_dir_all(parent).is_err() {
-            return;
-        }
         let note = TaskNote {
             session: session.to_owned(),
             ms,
             task: task.map(str::to_owned),
             posed,
         };
-        let Ok(mut line) = serde_json::to_string(&note) else {
-            return;
+        append_line(&self.task_notes(folder), &note);
+    }
+
+    /// Keep which of the record's marked answers appeared for a kept turn's
+    /// message, by their ids: none when the record was read and had no new
+    /// row. A reopened lesson shows these rows under the turn, so a mark
+    /// stays on the answer it was shown on, also when several answers fall
+    /// in one minute. Only ids are kept; the marks are read from the record.
+    pub fn note_marks(&self, folder: &Path, session: &str, ms: i64, ids: &[String]) {
+        let note = MarksNote {
+            session: session.to_owned(),
+            ms,
+            ids: ids.to_vec(),
         };
-        line.push('\n');
-        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
-            let _ = file.write_all(line.as_bytes());
-        }
+        append_line(&self.marks_notes(folder), &note);
     }
 
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
-        let path = self.transcript(folder);
-        let Some(parent) = path.parent() else { return };
-        if fs::create_dir_all(parent).is_err() {
-            return;
-        }
-        let Ok(mut line) = serde_json::to_string(turn) else {
-            return;
-        };
-        line.push('\n');
-        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
-            let _ = file.write_all(line.as_bytes());
-        }
+        append_line(&self.transcript(folder), turn);
     }
 
     /// Every turn the window kept for a folder, of every conversation, oldest
@@ -526,7 +540,45 @@ impl Store {
                 }
             }
         }
+        // Which marked answers appeared for each turn, by the turn's time.
+        if let Ok(notes) = fs::read_to_string(self.marks_notes(folder)) {
+            let mut by_ms: BTreeMap<i64, Vec<String>> = BTreeMap::new();
+            for note in notes
+                .lines()
+                .filter_map(|line| serde_json::from_str::<MarksNote>(line).ok())
+                .filter(|note| note.session == session)
+            {
+                let ids = by_ms.entry(note.ms).or_default();
+                for id in note.ids {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+            for turn in &mut turns {
+                if let Some(ids) = by_ms.get(&turn.ms) {
+                    turn.mark_ids = Some(ids.clone());
+                }
+            }
+        }
         turns
+    }
+}
+
+/// Add one line of JSON to the end of a file of the window's own, making its
+/// folder first. Nothing is shown when it cannot be written: the copy is the
+/// window's, and the agent and the runtime keep their own.
+fn append_line(path: &Path, value: &impl Serialize) {
+    let Some(parent) = path.parent() else { return };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let Ok(mut line) = serde_json::to_string(value) else {
+        return;
+    };
+    line.push('\n');
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
     }
 }
 
@@ -578,6 +630,49 @@ mod tests {
         assert_eq!(turns[0].intent, Some(Intent::Answer));
         assert_eq!(turns[0].task.as_deref(), Some("What is b?"));
         assert!(turns[0].posed && turns[0].noted);
+    }
+
+    #[test]
+    fn the_marks_seen_for_a_turn_come_back_with_it_and_an_older_turn_has_none() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let turn = |session: &str, ms: i64| Turn {
+            session: session.into(),
+            ms,
+            learner: "an answer".into(),
+            tutor: "…".into(),
+            intent: Some(Intent::Answer),
+            ..Turn::default()
+        };
+        for ms in [1, 2, 3] {
+            store.append_turn(folder.path(), &turn("abc", ms));
+        }
+        store.append_turn(folder.path(), &turn("other", 2));
+        // The record read after each message: two rows for the first, none
+        // for the second, and nothing kept for the third (looking cut short).
+        store.note_marks(folder.path(), "abc", 1, &["a-1".into(), "a-2".into()]);
+        store.note_marks(folder.path(), "abc", 2, &[]);
+        store.note_marks(folder.path(), "other", 2, &["a-9".into()]);
+
+        let turns = Store::at(home.path().to_path_buf()).turns(folder.path(), "abc");
+        let ids: Vec<Option<Vec<String>>> = turns.iter().map(|t| t.mark_ids.clone()).collect();
+        assert_eq!(
+            ids,
+            [
+                Some(vec!["a-1".to_owned(), "a-2".to_owned()]),
+                Some(Vec::new()),
+                None
+            ]
+        );
+        // The turn's own line is as an older window wrote it.
+        let text = fs::read_to_string(store.transcript(folder.path())).unwrap();
+        assert!(!text.contains("mark_ids"), "{text}");
+        // And the notes are no turn when the days are counted from the files.
+        let notes = fs::read_to_string(store.marks_notes(folder.path())).unwrap();
+        assert!(notes
+            .lines()
+            .all(|line| serde_json::from_str::<Turn>(line).is_err()));
     }
 
     #[test]
