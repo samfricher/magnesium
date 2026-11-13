@@ -432,3 +432,6 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
 
 /* The field and its quiet tools share one row: the tools sit at its end. */
 .field-row { position: relative; }
+
+/* Settings' sections carry their own rule: the page's head needs none. */
+.settings-page .page-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 0.4rem; }
