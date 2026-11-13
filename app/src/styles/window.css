@@ -41,13 +41,16 @@
 /* Tabs stay on one row: those not shown shrink to a short name, the one
    shown keeps its full name, and one too far along is scrolled into view. */
 .tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-width: 5.5rem;
+  min-width: 0;
   max-width: 15rem;
   flex: 0 1 auto;
   border-radius: 6px;
 }
+/* A tab that can close keeps room for its mark, shown or not, so every gap in the row is the same. */
+.tab:not(.home) .tab-button { padding-right: 22px; }
 .tab.home,
 .tab.here { flex-shrink: 0; }
 .tab.home { min-width: 0; }
@@ -67,7 +70,11 @@
 .tab.here .tab-button,
 .tab-button:hover { color: var(--text); }
 .tab-close {
-  padding: 2px 7px 2px 0;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 7px 2px 2px;
   font: 400 13px/1 var(--app);
   color: var(--hint);
   visibility: hidden;
@@ -117,10 +124,13 @@
 .session.in-front { visibility: visible; }
 /* With the plan beside it, the lesson keeps its column where it was while it fits left of the plan,
    and moves only as far as it must when it does not. The surface runs under the plan, which has a ground of its own. */
+/* The column's left edge stays where it was; the column narrows to end before the plan, and moves
+   left only when it would be narrower than 24em. */
 .session.with-panel .column,
 .session.with-panel .top-edge .inner {
-  width: min(var(--measure), calc(100% - var(--panel-w) - 2 * var(--hang) - 64px));
-  margin-left: max(calc(var(--hang) + 24px), min(calc((100% - var(--measure)) / 2), calc(100% - var(--panel-w) - var(--hang) - 28px - var(--measure))));
+  --left: max(calc(var(--hang) + 24px), min(calc((100% - var(--measure)) / 2), calc(100% - var(--panel-w) - var(--hang) - 28px - 24em)));
+  width: min(var(--measure), calc(100% - var(--panel-w) - var(--hang) - 28px - var(--left)));
+  margin-left: var(--left);
   margin-right: 0;
 }
 
@@ -133,9 +143,10 @@
   margin: 0 auto;
   padding: var(--head-room) 0 24vh;
 }
-.home-page .page-column { padding-top: 14vh; }
+.home-page .page-column { padding-top: calc(var(--head-room) + 0.4rem); }
 
-.page-head { margin: 0 0 1.5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--faint); }
+.page-head { margin: 0 0 1.8rem; }
+.settings-page .page-head { padding-top: calc(0.765rem * 1.4 + 0.35rem); }
 .page-title {
   margin: 0;
   font: 400 1.235rem/1.3 var(--read);
@@ -160,7 +171,7 @@
 
 .list-head {
   margin: 1.8rem 0 0.35rem;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--hint);
   letter-spacing: 0.01em;
 }
@@ -173,13 +184,14 @@ section:first-child > .list-head,
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: baseline;
   column-gap: 1.2rem;
-  width: calc(100% + 2 * var(--hang));
+  width: calc(100% + var(--hang));
   margin-left: calc(-1 * var(--hang));
-  padding: 0.38rem var(--hang);
+  padding: 0.38rem 0 0.38rem var(--hang);
   border-radius: 4px;
 }
 button.home-row:hover { background: var(--tint); }
-button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+button.home-row:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
+button.home-row:focus:hover { background: var(--tint); }
 :root[data-input="key"] button.home-row:focus-visible { outline: none; }
 .home-row.static { grid-template-columns: minmax(0, 1fr) max-content max-content; cursor: default; }
 .row-name {
@@ -191,7 +203,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   color: var(--text);
 }
 .row-name.file-name { font: 400 0.882rem/1.5 var(--app); }
-.row-when { font: 400 0.735rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row-when { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .home-row.static .quiet-act { margin-left: 0.4rem; }
 
 /* Home's first row: the most recent session, Return away. */
@@ -202,7 +214,9 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   padding-bottom: 0.55rem;
 }
 .home-row.first .next-name { font-size: 1.235rem; line-height: 1.35; white-space: normal; }
-.home-row.first .row-key { font: 400 0.824rem/1 var(--app); color: var(--ink); padding-left: 0.2rem; }
+.home-row.first .row-key { font: 400 0.824rem/1 var(--app); color: var(--ink); padding-left: 0.2rem; visibility: hidden; }
+/* Return carries on from the row that has the focus: its mark goes with the focus. */
+.home-row.first:focus .row-key { visibility: visible; }
 
 .page-acts { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; margin: 0.8rem 0 0; }
 .home-page .page-acts { margin-top: 2.2rem; }
@@ -245,6 +259,8 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 .your-work summary { cursor: pointer; list-style: none; margin-top: 0; }
 .your-work summary::-webkit-details-marker { display: none; }
 .your-work summary::after { content: " ›"; color: var(--hint); }
+.your-work summary.list-head { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.your-work summary.list-head:hover { color: var(--text); }
 .your-work[open] summary::after { content: " ⌄"; }
 
 /* ------------------------------------------------------------------ */
@@ -252,7 +268,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 
 .section-head {
   margin: 2.6rem 0 0.4rem;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--hint);
   letter-spacing: 0.01em;
 }
@@ -267,7 +283,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 .setting-name { margin: 0; font: 400 0.824rem/1.5 var(--app); color: var(--text); }
 .setting-control { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; min-width: 0; }
 .setting-value { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); font-variant-numeric: tabular-nums; }
-.setting-note { font: 400 0.735rem/1.5 var(--app); color: var(--quiet); }
+.setting-note { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .setting-note.wide { display: block; margin: 0.3rem 0 0.4rem; max-width: 36em; }
 .segments { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
 .segment {
@@ -353,7 +369,8 @@ input[type="range"]::-webkit-slider-thumb {
 .colour-picker .swatches { flex-wrap: wrap; }
 .colour-picker .plain { font: 400 0.765rem/1.5 var(--app); margin-left: 0; }
 .text-field.hex { min-width: 0; width: 5.5rem; font-variant-numeric: tabular-nums; }
-.sample { margin: 1rem 0 0; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
+.sample { margin: 0.6rem 0 0.6rem 10.2rem; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
+.sample sub { font-size: 0.68em; }
 .sample-you { font-size: 0.941rem; }
 .key-cap {
   font: 400 0.765rem/1.5 var(--app);
@@ -398,7 +415,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .panel-title { font: 400 0.941rem/1.35 var(--read); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-date { color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.panel-was { margin: -0.6rem 0 0.8rem; color: var(--quiet); font-size: 0.706rem; }
+.panel-was { margin: -0.6rem 0 0.8rem; color: var(--quiet); font-size: 0.765rem; }
 .panel-items { list-style: none; margin: 0; padding: 0; }
 .panel-items li {
   display: grid;
@@ -407,17 +424,22 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 0.24rem 0;
   border-radius: 3px;
 }
-.panel-mark { color: var(--hint); font-size: 0.706rem; }
+.panel-mark { color: var(--hint); font-size: 0.765rem; }
 .panel-item { min-width: 0; font: 400 0.824rem/1.45 var(--read); color: var(--text); overflow-wrap: anywhere; }
 .panel-items li.done .panel-item { color: var(--quiet); }
 .panel-items li.current .panel-item,
 .panel-items li.current .panel-mark { color: var(--ink); }
-.panel-day { display: block; font: 400 0.706rem/1.5 var(--app); color: var(--quiet); }
+.panel-day { display: block; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .panel-items li.changed .panel-day { color: var(--text); }
 .panel-items li.changed { animation: changed 2.4s ease-out 1; }
-/* This session's steps, under the plan's items: set in a little, in the same face. */
-.panel-items.steps { margin-top: 1.1rem; padding-left: 1.1rem; }
-.panel-items.steps .panel-item { font: 400 0.824rem/1.45 var(--read); }
+/* This session's steps, under the plan's item in hand. The item's dot says where the learner is. */
+.panel-item .panel-items.steps { margin: 0.3rem 0 0.15rem; }
+.panel-items.steps li { padding: 0.1rem 0; }
+.panel-items.steps .panel-item { font: 400 0.824rem/1.45 var(--read); color: var(--text); }
+.panel-items.steps li.done .panel-item { color: var(--quiet); }
+.panel-items li.current .panel-items.steps li:not(.current) .panel-mark { color: var(--hint); }
+.panel-items li.current .panel-items.steps .panel-item { color: var(--text); }
+.panel-items li.current .panel-items.steps li.done .panel-item { color: var(--quiet); }
 .panel-note { color: var(--quiet); margin: 0; }
 
 /* ------------------------------------------------------------------ */
@@ -439,7 +461,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 3px;
 }
 .clip:hover { color: var(--text); }
-.line-stop { font: 400 0.706rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
+.line-stop { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
 .line-stop .keys { color: var(--hint); }
 .line-stop:hover { color: var(--text); }
 .attached:empty { margin: 0; }
@@ -448,7 +470,7 @@ input[type="range"]::-webkit-slider-thumb {
   flex-wrap: wrap;
   gap: 0.35rem;
   margin: 0.35rem 0 0;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
 }
 .attached .file {
@@ -470,7 +492,7 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 0.1rem 1rem;
   margin: 0.4rem 0 0;
 }
-.help-row .quiet-act { font-size: 0.706rem; color: var(--hint); }
+.help-row .quiet-act { font-size: 0.765rem; color: var(--hint); }
 .help-row .quiet-act:hover:not(:disabled),
 .help-row .quiet-act[aria-expanded="true"] { color: var(--text); }
 .help-gap { flex: 1 1 auto; }
@@ -484,8 +506,10 @@ input[type="range"]::-webkit-slider-thumb {
   text-align: center;
 }
 .symbol:hover { background: var(--tint); }
-.sent-files { margin: 0.15rem 0 0; font: 400 0.735rem/1.5 var(--app); color: var(--quiet); }
+.sent-files { margin: 0.15rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .answer .sent-files { margin-top: 0.2rem; }
+/* Files sent with talk sit with the words they went with, not nearer the reply under them. */
+.you.talk + .sent-files { margin: -0.9rem 0 1.1rem; }
 .plain.skip { margin-left: 0; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -529,7 +553,18 @@ dialog.layer::backdrop { background: transparent; }
 .source-prose { max-width: var(--measure); margin: 0 auto; font-size: 1rem; line-height: 1.62; color: var(--text); }
 
 /* A colour's well keeps its column on every row; light and dark are named on the first. */
+.setting:has(.colour-field) { align-items: center; }
 .colour-well .unnamed { visibility: hidden; }
 
 /* A row of past work with no action of its own: its date ends at the column's edge, as every row's does. */
 .home-row.static:not(:has(.quiet-act)) { grid-template-columns: minmax(0, 1fr) max-content; }
+/* A note under an action that cannot be taken now is as faint as the action. */
+.page-note.dim { opacity: 0.5; }
+
+/* On the answer line, "Photo" under it opens the same picker: the clip is the talk line's. */
+.line.task .clip { display: none; }
+/* While the answer is being written, its line is the answer's alone: Esc still steps out to talk. */
+.line.task.typed .line-end { visibility: hidden; }
+/* The paste sheet is one field: no rules boxing it. */
+.layer.sheet.paste .sheet-name { border-bottom: 0; }
+.layer.sheet.paste .layer-keys { border-top: 0; }

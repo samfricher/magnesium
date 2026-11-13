@@ -322,7 +322,7 @@ export const Composer = memo(
     const label = place === "task" ? "Your answer to the task" : place === "talk" ? "Say something to the tutor" : "Start, or say what to work on";
     const help = (words: string) => latest.current.onHelp?.(words);
     return (
-      <div className={`line ${place}${props.active ? " on" : ""}${files.length > 0 ? " with-files" : ""}`} data-line={place}>
+      <div className={`line ${place}${props.active ? " on" : ""}${files.length > 0 ? " with-files" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line={place}>
         <div className="field-row">
         <textarea
           ref={box}
@@ -420,10 +420,10 @@ export const Composer = memo(
               Hint
             </button>
             <button className="quiet-act" data-drive="lost" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.lost)}>
-              I'm lost
+              I’m lost
             </button>
             <button className="quiet-act" data-drive="dont-know" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.unknown)}>
-              I don't know
+              I don’t know
             </button>
             <span className="help-gap" aria-hidden="true" />
             <button className="quiet-act" data-drive="photo" onMouseDown={(e) => e.preventDefault()} onClick={() => void pick()}>

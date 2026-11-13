@@ -216,7 +216,8 @@ export function withoutPaths(text: string): string {
  */
 export function materialTitle(name: string): string {
   const parts = name.split("/").filter(Boolean);
-  const file = parts.pop() ?? name;
+  // "week5" is "week 5": a number run onto the word that counts it.
+  const file = (parts.pop() ?? name).replace(/\b(week|wk|lecture|lec|chapter|ch|unit|lab|part|session|tutorial|tut|problem|set|hw|homework|quiz|exam|midterm|paper|slides?)(\d)/gi, "$1 $2");
   // Dashes between words are spaces; a date's or a time's stay as they are.
   const bare = file.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/_+/g, " ").replace(/(?<=\p{L})-+|-+(?=\p{L})/gu, " ").replace(/\s+/g, " ").trim() || file;
   const titled = bare.charAt(0).toUpperCase() + bare.slice(1);

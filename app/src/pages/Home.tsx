@@ -169,7 +169,7 @@ export function HomePage(props: Props) {
                   data-drive="start"
                   onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(first.folder))}
                 >
-                  <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "A new session"}</span>
+                  <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
                   <span className="row-when">
                     {displayName(first.name)}
                     {recent?.latest ? `, ${whenOpened(recent.latest.opened_ms)}` : ""}
@@ -181,11 +181,11 @@ export function HomePage(props: Props) {
               </section>
             )}
             <section className="home-list" aria-label="Workspaces">
-              <p className="list-head">Workspaces</p>
               {workspaces.map((workspace) => (
                 <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
                   <span className="row-name">{displayName(workspace.name)}</span>
-                  <span className="row-when">{whenOpened(workspace.opened_ms)}</span>
+                  {/* The session carried on says when; its workspace's row does not say it again. */}
+                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest ? "" : whenOpened(workspace.opened_ms)}</span>
                 </button>
               ))}
             </section>

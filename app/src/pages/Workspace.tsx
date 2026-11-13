@@ -266,8 +266,7 @@ export function WorkspacePage(props: Props) {
           )}
         </details>
 
-        <section aria-label="This folder">
-          <p className="list-head">This folder</p>
+        <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
             {home?.state === "not_set_up" && (
               <button className="quiet-act" disabled={busy} onClick={() => void setUp()}>
@@ -285,10 +284,10 @@ export function WorkspacePage(props: Props) {
               </button>
             )}
             <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : undefined} onClick={() => props.onForget(folder)}>
-              Take it off the list
+              Take this folder off the list
             </button>
           </p>
-          <p className="page-note">The folder and its sessions stay as they are.</p>
+          <p className={props.running ? "page-note dim" : "page-note"}>The folder and its sessions stay as they are.</p>
         </section>
       </div>
     </div>

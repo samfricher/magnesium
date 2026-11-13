@@ -119,7 +119,7 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
         <Marks marks={marks} />
         {marks.length === 0 && turn.unmarked && (
           <p className="record quiet unmarked" title={turn.unmarked}>
-            no mark
+            Not marked.
           </p>
         )}
       </div>

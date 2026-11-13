@@ -77,6 +77,8 @@ type Props = {
   onSession: (key: string, session: string) => void;
   onTitle: (key: string, title: string) => void;
   onBusy: (key: string, busy: boolean) => void;
+  /** A card waits on the learner (a permission, a question): the tutor is not writing meanwhile. */
+  onAsking: (key: string, asking: boolean) => void;
   onEngine: () => void;
   onSource: (folder: string, source: SourceRef) => void;
   onTaskChange: (key: string, open: boolean) => void;
@@ -761,6 +763,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (phase !== "loading" && props.active && !painted) requestAnimationFrame(() => setPainted(true));
   }, [phase, props.active, painted]);
 
+  // While a card waits on the learner, the tutor is not writing: the tab says so.
+  const asking = session.cards.length > 0;
+  useEffect(() => {
+    props.onAsking(tab.key, asking);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asking]);
+
   // Whether the fact's own line (under the answer, or the plan card) is in view.
   useEffect(() => {
     const root = surface.current;
@@ -814,20 +823,23 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useEffect(() => {
     const root = surface.current;
     const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
-    if (!root || !asked || !parked) {
+    if (!root || !asked || task === null) {
       setQuestionSeen(false);
       return;
     }
+    // The foot covers the surface's bottom: what is under it is not in view. Its pinned question
+    // is left out of that measure, as it is the thing that shows or not.
     const foot = root.querySelector<HTMLElement>(".foot");
-    const below = Math.max(0, (foot?.offsetHeight ?? 0) - 8);
-    const watch = new IntersectionObserver((entries) => setQuestionSeen(entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0.6)), {
+    const pinned = foot?.querySelector<HTMLElement>(".parked, .restated");
+    const below = Math.max(0, (foot?.offsetHeight ?? 0) - (pinned?.offsetHeight ?? 0) - 8);
+    const watch = new IntersectionObserver((entries) => setQuestionSeen(entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0.5)), {
       root,
       rootMargin: `-48px 0px -${below}px 0px`,
       threshold: [0, 0.6, 1],
     });
     watch.observe(asked);
     return () => watch.disconnect();
-  }, [parked, openAt, session, held]);
+  }, [task, openAt, session, held]);
   // A session named by the learner's first words: its heading would only say them again.
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
@@ -940,7 +952,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           {headGone && (
             <div className="inner">
               {/* The tab names the session already: the step in hand is what this line adds. */}
-              {currentStep ? <Line text={currentStep} className="top-step" /> : <Line text={sittingTitle} className="top-name" />}
+              {currentStep && !props.panel ? <Line text={currentStep} className="top-step" /> : !currentStep ? <Line text={sittingTitle} className="top-name" /> : null}
             </div>
           )}
         </div>
@@ -974,7 +986,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     place="rest"
                     placeKey={place}
                     initial={draft}
-                    placeholder={rest.start ? "Or say what you would rather do" : undefined}
+                    placeholder={rest.start ? "Say what you would rather do" : undefined}
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
                     active
                     busy={false}
@@ -1045,7 +1057,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       divider={at > 0 && (turn.said === "opening" || opening(turn.learner) !== null)}
                       task={index === openAt ? task?.text : undefined}
                       showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor) || (turn.question !== undefined && poses(before.tutor, turn.question)))}
-                      settled={index < turns.length - 1}
+                      settled={index < turns.length - 1 || props.panel}
                       planKey={props.panel ? null : keyName(props.prefs.keys.plan) || null}
                       onSource={onSource}
                       onNote={note}
@@ -1095,6 +1107,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         taskOpen={task !== null}
                         end={lineEnd}
                         onEnd={lineEnd ? () => setLine("task") : undefined}
+                        placeholder={held ? (restated && questionSeen ? "Your answer to the task above" : "Your answer") : ownBusy ? undefined : "Say something to the tutor"}
                         stopKey={stopKey}
                         onSend={onSend}
                         onMove={setLine}

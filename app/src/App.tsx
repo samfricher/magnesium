@@ -539,6 +539,8 @@ export function App() {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
   }, []);
   const onBusy = useCallback((key: string, busy: boolean) => setBusyKey((old) => (busy ? key : old === key ? null : old)), []);
+  const [asking, setAsking] = useState<Record<string, boolean>>({});
+  const onAsking = useCallback((key: string, now: boolean) => setAsking((old) => (Boolean(old[key]) === now ? old : { ...old, [key]: now })), []);
   const onStarted = useCallback((key: string) => {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" && each.pending ? { ...each, pending: undefined } : each)));
   }, []);
@@ -743,7 +745,7 @@ export function App() {
     key: tab.key,
     kind: tab.kind,
     title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? ""),
-    busy: tab.key === busyKey,
+    busy: tab.key === busyKey && !asking[tab.key],
     folder: tab.kind === "session" ? tab.folder : null,
   }));
   const k = (action: KeyAction) => keyName(prefs.keys[action]);
@@ -863,6 +865,7 @@ export function App() {
                 onSession={onSession}
                 onTitle={onTitle}
                 onBusy={onBusy}
+                onAsking={onAsking}
                 onEngine={onEngine}
                 onSource={onSource}
                 onTaskChange={onTaskChange}
