@@ -68,9 +68,7 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: 
           )}
           {steps.length > 0 && (
             <>
-              <p className="panel-sub">
-                <Line text={plan.goal!} />
-              </p>
+              {/* No heading of their own: they are this session's, whose name heads the lesson beside them. */}
               <ol className="panel-items steps" aria-label="This session's steps">
                 {steps.map((step, at) => (
                   <li key={at} className={`${step.status}${step.status === "doing" ? " current" : ""}`} aria-current={step.status === "doing" ? "step" : undefined}>

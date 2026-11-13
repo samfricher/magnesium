@@ -267,9 +267,11 @@ export function Layer(props: Props) {
           })}
           {rows.length === 0 && <p className="row note empty">Nothing matches.</p>}
         </div>
-        <p className="layer-keys" aria-hidden="true">
-          {props.keys}
-        </p>
+        {props.keys !== "" && (
+          <p className="layer-keys" aria-hidden="true">
+            {props.keys}
+          </p>
+        )}
       </dialog>
     </>
   );

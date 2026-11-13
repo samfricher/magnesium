@@ -42,6 +42,7 @@
   --size: 17px;
   /* 66 characters of the reading face. */
   --measure: 31em;
+  --measure-rem: 31rem;
   /* How far the task's rule and the prompt hang left of the column. */
   --hang: 20px;
 
@@ -342,7 +343,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   overflow-wrap: anywhere;
   position: relative;
 }
-.you.pick { color: var(--quiet); }
+
 
 /* An answer sits inside the task it answers: on the task's rule, under it. */
 .answer {
@@ -375,18 +376,15 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .record.note {
   margin: 1rem 0 0 calc(-1 * var(--hang));
   padding-left: calc(var(--hang) - 2px);
-  border-left: 2px solid var(--ink);
+  border-left: 2px solid var(--line);
   color: var(--text);
 }
 .notices { margin-top: 1rem; }
 .notices .record.note:first-child { margin-top: 0; }
 
-.record.plan {
-  margin: 1.2rem 0 1.6rem calc(-1 * var(--hang));
-  padding: 0.1rem 0 0.1rem calc(var(--hang) - 2px);
-  border-left: 2px solid var(--ink);
-}
+.record.plan { margin: 1.2rem 0 1.6rem; }
 .record-head { margin: 0 0 0.3rem; font: 600 0.765rem/1.5 var(--app); color: var(--ink); }
+.record.plan .record-head { color: var(--text); }
 .record.plan dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 1.4rem; row-gap: 0.1rem; }
 .record.plan dl > div { display: contents; }
 .record.plan dt { color: var(--text); font: 400 0.882rem/1.5 var(--read); }
@@ -436,7 +434,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--text);
 }
 .act:hover { background: var(--tint); }
-.act:focus { background: var(--tint); }
+/* No choice looks chosen before it is: the keyboard's place is a thin bar at the choice's edge. */
+.act:focus { box-shadow: inset 2px 0 0 var(--ink); }
+:root[data-input="key"] .act:focus-visible { outline: none; }
 
 /* Files over the window. */
 .veil {
@@ -601,15 +601,21 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .paste-field {
   flex: 1;
   margin: 0;
-  padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang));
+  /* The learner's own face, on the reading column, as on the session's line. */
+  padding: 1rem max(calc(1.1rem + var(--hang)), calc((100% - var(--measure-rem)) / 2));
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--text);
   caret-color: var(--ink);
-  font: 400 0.824rem/1.6 var(--mono);
+  font: 400 0.941rem/1.6 var(--you);
 }
+
+/* A sheet's name and its notes start where its text does: on the reading column. */
+.layer.sheet .sheet-name,
+.layer.sheet .sheet-note,
+.layer.sheet .layer-keys { padding-left: max(calc(1.1rem + var(--hang)), calc((100% - var(--measure-rem)) / 2)); padding-right: max(1.1rem, calc((100% - var(--measure-rem)) / 2)); }
 
 @media (prefers-reduced-motion: reduce) {
   .now, .head .next { transition: none; }
@@ -647,6 +653,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   pointer-events: none;
 }
 .foot.in-task { margin-top: 0; }
+.foot:not(.in-task) { padding-top: 0.7rem; }
 .now.lesson { padding-bottom: 0; }
 .now.lesson .foot .task-line { margin-top: 0; }
 .fact {
@@ -696,12 +703,12 @@ button.line-end:hover { color: var(--text); }
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(84px - var(--tabs-h));
+  height: calc(100px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) calc(66px - var(--tabs-h)), transparent);
+  background: linear-gradient(to bottom, var(--ground) calc(80px - var(--tabs-h)), transparent);
 }
-.session.with-panel .top-edge { right: var(--panel-w); }
+.session.with-panel .top-edge { right: 0; }
 .top-edge .inner {
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
@@ -720,5 +727,12 @@ button.line-end:hover { color: var(--text); }
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
-/* Inside the task, the band joins the question above it: nothing fades over the question. */
+/* Inside the task, the band joins the question above it: nothing fades over the question, and its rule runs on unbroken. */
 .foot.in-task::before { display: none; }
+.foot.in-task { padding-top: 0; }
+/* A settled task and the answer under it: one rule, not two with a gap between. */
+.turn:has(.tutor .prose > div.task:last-child) .tutor { margin-bottom: 0; }
+.turn:has(.tutor .prose > div.task:last-child) + .turn > .answer:first-child { margin-top: 0; padding-top: 0.6rem; }
+
+/* A session headed by its course alone: no rule under one small line. */
+.now.lesson .head.bare { border-bottom: 0; padding-bottom: 0; margin-bottom: 1rem; }

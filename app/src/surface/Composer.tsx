@@ -104,6 +104,8 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line: the one key worth naming here, and what it does. */
   end?: { keys: string; what: string } | null;
+  /** The end is a way somewhere (back into the open task): a press on it goes there. */
+  onEnd?: () => void;
   /** The key that stops the tutor's reply, named at the line's end while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
@@ -368,6 +370,7 @@ export const Composer = memo(
             </button>
           ) : place === "task" ? (
             <button
+              key="talk"
               className="line-end"
               data-drive="talk"
               tabIndex={-1}
@@ -380,11 +383,17 @@ export const Composer = memo(
               <span className="keys">esc</span> talk instead
             </button>
           ) : (
-            props.end && (
+            props.end &&
+            (props.onEnd ? (
+              // Back into the open task: the way back while its question is in view above.
+              <button key="answer" className="line-end" data-drive="answer" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onEnd?.()}>
+                <span className="keys">{props.end.keys}</span> {props.end.what}
+              </button>
+            ) : (
               <span className="line-end" aria-hidden="true">
                 <span className="keys">{props.end.keys}</span> {props.end.what}
               </span>
-            )
+            ))
           )}
         </span>
         </div>

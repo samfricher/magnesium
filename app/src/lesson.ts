@@ -135,6 +135,9 @@ function asTurn(live: Live): LessonTurn | null {
 }
 
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
+  // One usage limit is said once: Claude Code reports it as it happens and again as the turn ends,
+  // and the first says when it resets.
+  if (notice.kind === "usage_limit" && notices.some((n) => n.kind === "usage_limit")) return notices;
   // A retry line replaces the retry line before it, so they do not pile up.
   const kept = notices.filter((n) => n.text !== notice.text && !(n.kind === "retry" && notice.kind === "retry"));
   return [...kept, notice].slice(-3);
@@ -266,6 +269,8 @@ export function reduce(state: SessionState, action: Action): SessionState {
           ...(action.question ? { question: action.question } : {}),
         },
         cards: [],
+        // A notice is about the turn before: it goes when the learner writes again, unless it still stands (signed out).
+        notices: state.notices.filter((n) => n.kind === "sign_in"),
         startedMs: state.startedMs ?? action.now,
       };
     }

@@ -148,7 +148,7 @@ export function HomePage(props: Props) {
               <p className="where">Your notes, slides and past papers can be in it already, or be added later.</p>
               <div className="choices-rest" role="group">
                 <button className="choice-rest home-row-choice" data-drive="open-folder" autoFocus={props.focus} onClick={props.onPickFolder}>
-                  Choose a folder…
+                  Open a folder…
                 </button>
                 <button className="choice-rest" onClick={props.onNewFolder}>
                   Make a new folder…
@@ -163,7 +163,7 @@ export function HomePage(props: Props) {
           <>
             {first && !props.step && (
               <section className="home-first" aria-label="Carry on">
-                <p className="list-head">{recent ? "Carry on" : "Start"}</p>
+                {recent && <p className="list-head">Carry on</p>}
                 <button
                   className="home-row first"
                   data-drive="start"

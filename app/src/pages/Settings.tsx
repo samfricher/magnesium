@@ -158,7 +158,7 @@ const PALETTES: Record<"ink" | "ground" | "text", [string[], string[]]> = {
  * that opens a grid of swatches (radio buttons: one Tab stop, the arrow keys
  * choose) and a field for any colour as #rrggbb. Esc closes the grid.
  */
-function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string }) {
+function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string; named?: boolean }) {
   const [open, setOpen] = useState(false);
   const hex = hexOf(props.value, props.dark, props.fallback);
   const [typed, setTyped] = useState(hex);
@@ -182,7 +182,10 @@ function ColourField(props: { label: string; value: string; dark: boolean; fallb
         onClick={() => setOpen((shown) => !shown)}
       >
         <span className="swatch-face" style={{ background: hex }} />
-        <span>{props.label}</span>
+        {/* Light and dark are named once, on the first row; the rows under it keep the same columns. */}
+        <span className={props.named ? undefined : "unnamed"} aria-hidden={props.named ? undefined : true}>
+          {props.label}
+        </span>
       </button>
       {props.own && props.value !== "" && (
         <button type="button" className="plain" onClick={() => props.onPick("")}>
@@ -329,7 +332,6 @@ export function SettingsPage(props: Props) {
       <div className="page-column">
         <header className="page-head">
           <h1 className="page-title">Settings</h1>
-          <p className="where">Kept on this Mac. Each change shows at once.</p>
         </header>
         <datalist id="mac-faces">
           {macFaces.map((face) => (
@@ -385,6 +387,8 @@ export function SettingsPage(props: Props) {
             <Choice name="Light or dark" options={SCHEMES} value={prefs.scheme} onPick={(scheme) => change({ scheme })} />
           </Setting>
           <Setting name="Ink">
+            <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} named fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
+            <ColourField kind="ink" name="Ink" label="in dark" value={prefs.inkDark} dark named fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
             <span className="swatches" role="radiogroup" aria-label="Ink">
               {Object.entries(INKS).map(([name, [light, dark]]) => {
                 const chosen = prefs.ink === name && prefs.inkDark === name;
@@ -396,8 +400,6 @@ export function SettingsPage(props: Props) {
                 );
               })}
             </span>
-            <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
-            <ColourField kind="ink" name="Ink" label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
           </Setting>
           <Setting name="Ground">
             <ColourField kind="ground" name="Ground" label="in light" value={prefs.ground} dark={false} fallback="#fafaf8" own onPick={(ground) => change({ ground })} />
@@ -407,14 +409,13 @@ export function SettingsPage(props: Props) {
             <ColourField kind="text" name="Text" label="in light" value={prefs.text} dark={false} fallback="#1e2023" own onPick={(text) => change({ text })} />
             <ColourField kind="text" name="Text" label="in dark" value={prefs.textDark} dark fallback="#e3e3df" own onPick={(textDark) => change({ textDark })} />
           </Setting>
-          <p className="setting-note wide">Quiet text, rules and the line an answer is written on are mixed from the text and the ground, so they stay readable whatever colours are chosen.</p>
         </section>
 
         <section id="settings-keys" aria-labelledby="h-keys">
           <h2 className="section-head" id="h-keys">
             Keys
           </h2>
-          <p className="setting-note wide">Choose a key, then press the new combination. Delete leaves the command with no key; Esc keeps it as it was. The menu bar follows.</p>
+          <p className="setting-note wide">Choose a key, then press the new combination. Delete leaves the command with no key; Esc keeps it as it was.</p>
           {KEY_ACTIONS.map(([action, what]) => (
             <KeyRow key={action} action={action} what={what} combo={prefs.keys[action]} taken={taken} onSet={(combo) => setKey(action, combo)} />
           ))}
@@ -499,20 +500,15 @@ export function SettingsPage(props: Props) {
             />
             <span className="setting-note">minutes, when a paper names none</span>
           </Setting>
-          {runtime && (
+          {/* Which program runs lessons is said under About; here only while there is a choice to make. */}
+          {runtime?.state === "kept" && runtime.bundled && (
             <Setting name="The magnesium program">
-              <span className="setting-note">
-                {runtime.installed ? `Version ${runtime.installed.version.split("+")[0]}` : "Not found"}
-                {runtime.state === "kept" ? ", kept over this app's copy" : ""}
-              </span>
-              {runtime.state === "kept" && runtime.bundled && (
-                <button className="plain" onClick={props.onReplaceRuntime}>
-                  use this app's {runtime.bundled.version.split("+")[0]}
-                </button>
-              )}
+              <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app's copy` : "Kept over this app's copy"}</span>
+              <button className="plain" onClick={props.onReplaceRuntime}>
+                use this app's {runtime.bundled.version.split("+")[0]}
+              </button>
             </Setting>
           )}
-          <p className="setting-note wide">Recording in a study folder is turned off and on by asking the tutor, in words, on the Magnesium engine.</p>
         </section>
 
         <section id="settings-about" aria-labelledby="h-about">
@@ -521,6 +517,7 @@ export function SettingsPage(props: Props) {
           </h2>
           <p className="page-text" data-role="version">
             Magnesium {built}
+            {runtime?.installed ? `. Lessons use the magnesium program ${runtime.installed.version.split("+")[0]}.` : runtime ? ". The magnesium program is not found." : ""}
           </p>
           <p className="setting-note wide">Your study folders stay on this Mac. The window makes no network request; lessons run on your own Claude Code.</p>
         </section>

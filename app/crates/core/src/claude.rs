@@ -897,6 +897,19 @@ fn on_retry(shared: &Arc<Shared>, value: &Value) {
     shared.emit(AgentEvent::Notice { kind, text });
 }
 
+/// What a turn that ended at a usage limit says: Claude Code's own words, as
+/// a sentence, then what to do.
+pub(crate) fn limit_words(said: &str) -> String {
+    let said = clip(said, 200);
+    let said = said.trim_end();
+    let stop = if said.ends_with(['.', '!', '?']) {
+        ""
+    } else {
+        "."
+    };
+    format!("{said}{stop} Fix it in a terminal, then send your message again.")
+}
+
 fn on_rate_limit(shared: &Arc<Shared>, value: &Value) {
     let info = &value["rate_limit_info"];
     if info["status"].as_str() != Some("rejected") {
@@ -1294,10 +1307,7 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
         } else if looks_like_a_limit(&said) {
             shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::UsageLimit,
-                text: format!(
-                    "{} Fix it in a terminal, then send your message again.",
-                    clip(&said, 200)
-                ),
+                text: limit_words(&said),
             });
         } else {
             error = Some(match value["subtype"].as_str() {

@@ -1822,10 +1822,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         } else if claude::looks_like_a_limit(&why) {
             shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::UsageLimit,
-                text: format!(
-                    "{} Fix it in a terminal, then send your message again.",
-                    claude::clip(&why, 200)
-                ),
+                text: claude::limit_words(&why),
             });
             None
         } else if why.trim().is_empty() {

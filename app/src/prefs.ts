@@ -55,21 +55,21 @@ export type Prefs = {
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
-  ["new-session", "A new session"],
-  ["open-workspace", "Open a workspace"],
-  ["close-session", "Close the session"],
+  ["new-session", "New session"],
+  ["open-workspace", "Open a folder"],
+  ["close-session", "Close session"],
   ["attach", "Attach a photo or PDF"],
-  ["plan", "Show or hide the plan"],
+  ["plan", "Show plan"],
   ["settings", "Settings"],
-  ["commands", "The command menu"],
-  ["hint", "A hint"],
+  ["commands", "Command menu"],
+  ["hint", "Hint"],
   ["lost", "I'm lost"],
   ["unknown", "I don't know"],
   ["symbols", "Symbols"],
-  ["stop-reply", "Stop the tutor's reply"],
+  ["stop-reply", "Stop the reply"],
   ["bigger", "Bigger text"],
   ["smaller", "Smaller text"],
-  ["actual-size", "Text at its usual size"],
+  ["actual-size", "Actual size"],
 ];
 
 export const DEFAULTS: Prefs = {
@@ -236,6 +236,8 @@ export function applyPrefs(prefs: Prefs, schemeChanged = false): void {
   set("--you", voice === "reading" ? "var(--read)" : faceCss(prefs.voice, FACE_CSS.system));
   set("--size", `${prefs.size}px`);
   set("--measure", `${(prefs.measure * 0.47).toFixed(2)}em`);
+  // The same width at the root's size, for text set smaller that keeps the column's edge.
+  set("--measure-rem", `${(prefs.measure * 0.47).toFixed(2)}rem`);
   set("--ink-l", colour(prefs.ink, false));
   set("--ink-d", colour(prefs.inkDark || prefs.ink, true));
   set("--ground-l", colour(prefs.ground, false));

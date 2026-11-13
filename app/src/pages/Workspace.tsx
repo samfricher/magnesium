@@ -121,6 +121,8 @@ export function WorkspacePage(props: Props) {
   const setUp = () => act(async () => setHome(await api.setUp(folder)));
 
   const name = home ? displayName(home.name) : displayName(folder.split("/").pop() ?? "");
+  // A kind beside each file only says something when the files are not all of one kind.
+  const mixed = materials !== null && materials !== "none" && new Set(materials.names.map(materialKind)).size > 1;
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const bySkill = new Map<string, Mark[]>();
@@ -150,9 +152,7 @@ export function WorkspacePage(props: Props) {
             </span>{" "}
             New session
           </button>
-          {sessions === null ? null : sessions.length === 0 ? (
-            <p className="page-note">No sessions yet.</p>
-          ) : (
+          {sessions === null || sessions.length === 0 ? null : (
             <div className="list" role="list">
               {sessions.map((info) => {
                 const title = sessionName(info, info.current ? (home?.last?.goal ?? null) : null);
@@ -203,7 +203,7 @@ export function WorkspacePage(props: Props) {
               {materials.names.map((file) => (
                 <button key={file} role="listitem" className="home-row file-row" onClick={() => props.onOpenMaterial(folder, `Study/materials/${file}`)}>
                   <span className="row-name">{materialTitle(file)}</span>
-                  <span className="row-when">{materialKind(file)}</span>
+                  {mixed && <span className="row-when">{materialKind(file)}</span>}
                 </button>
               ))}
               {materials.files > materials.names.length && <p className="page-note">and {materials.files - materials.names.length} more</p>}
@@ -288,7 +288,7 @@ export function WorkspacePage(props: Props) {
               Take it off the list
             </button>
           </p>
-          <p className="page-note">Taking it off the list leaves the folder and its sessions as they are.</p>
+          <p className="page-note">The folder and its sessions stay as they are.</p>
         </section>
       </div>
     </div>
