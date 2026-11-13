@@ -5,11 +5,13 @@
 //   swift app/scripts/make_icon.swift
 //
 // Under src-tauri/icons/: Icon.icon (the Icon Composer document: the colour
-// behind and one SVG per shape), Assets.car (compiled from it by actool),
-// icon.icns, icon.ico and the PNGs tauri.conf.json lists. Also
-// src-tauri/app-icon.png, which the page harness attaches as a photo.
+// behind and one SVG per shape), Assets.car (compiled from it by actool), and
+// icon.icns, icon.ico and the PNGs tauri.conf.json lists, which are macOS's own
+// drawing of Assets.car. Also src-tauri/app-icon.png, which the page harness
+// attaches as a photo.
 //
-// It needs a Mac with Xcode 26 or later, for actool.
+// It needs macOS 26 or later, whose drawing of Assets.car has the glass, and
+// Xcode 26 or later, for actool.
 import AppKit
 
 let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -18,9 +20,6 @@ let icons = tauri.appendingPathComponent("icons")
 let fm = FileManager.default
 
 // MARK: - The drawing, on a 1024 canvas whose tile is 824 square at 100, y down
-
-let ground = CGColor(srgbRed: 14 / 255, green: 14 / 255, blue: 16 / 255, alpha: 1)
-let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
 
 /// A point given along the synapse: u runs from the bottom-left corner (the
 /// receiving end) to the top-right corner (the sending end), v across.
@@ -148,50 +147,47 @@ try? fm.removeItem(at: icons.appendingPathComponent("Assets.car"))
 try! fm.copyItem(at: work.appendingPathComponent("Assets.car"), to: icons.appendingPathComponent("Assets.car"))
 try? fm.removeItem(at: work)
 
-// MARK: - The flat drawing: icon.icns for macOS before 26, the PNGs, the ICO
+// MARK: - The other icon files, as macOS draws Assets.car
 
-/// Apple's tile: 824 of 1024, with continuous corners.
-func tile() -> CGPath {
-  let r = CGRect(x: 100, y: 100, width: 824, height: 824), radius: CGFloat = 185.4
-  let corners: [(CGPoint, CGVector, CGVector)] = [
-    (CGPoint(x: r.maxX, y: r.minY), CGVector(dx: 1, dy: 0), CGVector(dx: 0, dy: 1)),
-    (CGPoint(x: r.maxX, y: r.maxY), CGVector(dx: 0, dy: 1), CGVector(dx: -1, dy: 0)),
-    (CGPoint(x: r.minX, y: r.maxY), CGVector(dx: -1, dy: 0), CGVector(dx: 0, dy: -1)),
-    (CGPoint(x: r.minX, y: r.minY), CGVector(dx: 0, dy: -1), CGVector(dx: 1, dy: 0)),
-  ]
-  let path = CGMutablePath()
-  for (i, (c, d1, d2)) in corners.enumerated() {
-    func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-      CGPoint(x: c.x - x * radius * d1.dx + y * radius * d2.dx, y: c.y - x * radius * d1.dy + y * radius * d2.dy)
-    }
-    if i == 0 { path.move(to: pt(1.52866483, 0)) } else { path.addLine(to: pt(1.52866483, 0)) }
-    path.addCurve(to: pt(0.66993427, 0.06549600), control1: pt(1.08849323, 0), control2: pt(0.86840689, 0.02189799))
-    path.addLine(to: pt(0.63149399, 0.07491100))
-    path.addCurve(to: pt(0.07491100, 0.63149399), control1: pt(0.37282392, 0.16905899), control2: pt(0.16905899, 0.37282392))
-    path.addLine(to: pt(0.06549600, 0.66993427))
-    path.addCurve(to: pt(0, 1.52866483), control1: pt(0.02189799, 0.86840689), control2: pt(0, 1.08849323))
-  }
-  path.closeSubpath()
-  return path
-}
-
+// A throwaway app holding Assets.car, so that macOS draws the icon as the Dock
+// does. Its path is new each run, since macOS keeps app icons by path.
+let stub = fm.temporaryDirectory.appendingPathComponent("MagnesiumIcon-\(ProcessInfo.processInfo.processIdentifier).app")
+try? fm.removeItem(at: stub)
+try! fm.createDirectory(at: stub.appendingPathComponent("Contents/Resources"), withIntermediateDirectories: true)
+try! fm.createDirectory(at: stub.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+try! fm.copyItem(at: icons.appendingPathComponent("Assets.car"), to: stub.appendingPathComponent("Contents/Resources/Assets.car"))
+let info: NSDictionary = [
+  "CFBundleIdentifier": "dev.magnesium.icon-drawing", "CFBundleName": "Magnesium", "CFBundlePackageType": "APPL",
+  "CFBundleIconName": "Icon", "CFBundleExecutable": "stub", "CFBundleInfoDictionaryVersion": "6.0",
+]
+info.write(toFile: stub.appendingPathComponent("Contents/Info.plist").path, atomically: true)
+fm.createFile(atPath: stub.appendingPathComponent("Contents/MacOS/stub").path, contents: "#!/bin/sh\n".data(using: .utf8),
+              attributes: [.posixPermissions: 0o755])
+// macOS draws a new app's icon a moment after it is first asked for, and shows a
+// dashed placeholder until then; so each size is drawn again until a point that
+// is the black background in the icon comes out dark.
 func png(px: Int) -> Data {
-  let c = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
-                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-  c.translateBy(x: 0, y: CGFloat(px))
-  c.scaleBy(x: CGFloat(px) / 1024, y: -CGFloat(px) / 1024)
-  c.addPath(tile()); c.setFillColor(ground); c.fillPath()
-  c.addPath(tile()); c.clip()
-  c.setFillColor(white)
-  c.addPath(receiving()); c.fillPath()
-  c.addPath(sending()); c.fillPath()
-  for (p, r) in dots { c.fillEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
-  let data = NSMutableData()
-  let out = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)!
-  CGImageDestinationAddImage(out, c.makeImage()!, nil)
-  guard CGImageDestinationFinalize(out) else { fatalError("could not encode a \(px) px drawing") }
-  return data as Data
+  for _ in 0..<80 {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    rep.size = NSSize(width: px, height: px)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current!.imageInterpolation = .high
+    NSWorkspace.shared.icon(forFile: stub.path)
+      .draw(in: NSRect(x: 0, y: 0, width: px, height: px), from: .zero, operation: .copy, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
+    var sample = [Int](repeating: 0, count: 4)
+    rep.getPixel(&sample, atX: px * 3 / 10, y: px * 3 / 10)
+    if sample[3] > 250 && sample[0] < 40 {
+      guard let data = rep.representation(using: .png, properties: [:]) else { fatalError("could not encode a \(px) px drawing") }
+      return data
+    }
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.25))
+  }
+  FileHandle.standardError.write("make_icon: macOS did not draw the icon at \(px) px within 20 s\n".data(using: .utf8)!)
+  exit(1)
 }
 
 func write(_ data: Data, _ url: URL) {
@@ -236,4 +232,5 @@ for (px, image) in zip(sizes, images) {
 }
 images.forEach { ico.append($0) }
 write(ico, icons.appendingPathComponent("icon.ico"))
+try? fm.removeItem(at: stub)
 print("make_icon: wrote the icon files under \(tauri.path)")
