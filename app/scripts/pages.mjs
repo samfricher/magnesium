@@ -9,13 +9,13 @@
 // sessions are touched. Lessons run on Magnesium with the stand-in model
 // (crates/core/tests/stand_in_model.py).
 //
-// It writes <stem>-dark.png and <stem>-light.png for each page and state in
-// PAGES below, menu.json (the menu bar, which a photograph of the window does
+// It writes <stem>-dark.png and <stem>-light.png for each page and state it
+// visits, menu.json (the menu bar, which a photograph of the window does
 // not show) and run.json (each step, and any problem). It exits 1 when a step
 // failed, after doing every step it can.
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,12 +52,23 @@ run.scratch = scratch;
 execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8" });
 const runtime = join(scratch, "magnesium");
 const agent = join(scratch, "claude");
+// A photo of working, to put on the line.
+const photo = join(scratch, "working-photo.png");
+execFileSync("cp", [join(APP, "src-tauri/app-icon.png"), photo]);
 writeFileSync(agent, `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "model.log")}'\nexec python3 '${join(APP, "crates/core/tests/stand_in_model.py")}' "$@"\n`, { mode: 0o755 });
 
-async function launch(name, home) {
+const pluginAgent = join(scratch, "claude-plugin");
+mkdirSync(join(scratch, "agent"), { recursive: true });
+writeFileSync(
+  pluginAgent,
+  `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "agent.log")}'\nexport STAND_IN_STATE='${join(scratch, "agent")}'\nexec python3 '${join(APP, "crates/core/tests/stand_in_agent.py")}' "$@"\n`,
+  { mode: 0o755 },
+);
+
+async function launch(name, home, withAgent = agent) {
   const driveDir = join(scratch, "drive", name);
   mkdirSync(driveDir, { recursive: true });
-  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: agent };
+  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent };
   delete env.MAGNESIUM_APP_SELFTEST;
   delete env.MAGNESIUM_APP_FOLDER;
   const log = openSync(join(out, `window-${name}.log`), "w");
@@ -168,6 +179,22 @@ try {
   await step(w, "scroll down", { op: "scroll", to: "bottom" });
   await step(w, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
+  // A reply arriving: the stand-in writes slowly when asked to.
+  // After talk, the line is talk's already.
+  await step(w, "focus the line again", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "ask for a slow reply", { op: "type", text: "VERYSLOW: say a little more about the standard error" });
+  await step(w, "send it", { op: "key", key: "Enter" });
+  await step(w, "the reply begins", { op: "wait_reply", timeout_ms: TURN_MS });
+  await settle(w, 700);
+  await shoot(w, "session-reply", "Session: the tutor's reply arriving");
+  await step(w, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+
+  // A file on the line, before it is sent.
+  await step(w, "attach a photo", { op: "attach", path: photo });
+  await settle(w, 400);
+  await shoot(w, "session-attached", "Session: a photo on the line, before sending");
+  await step(w, "take it off", { op: "click", target: "×" });
+
   // ⌘K and its workspace switcher.
   await step(w, "⌘K", { op: "key", key: "k", meta: true });
   await settle(w, 300);
@@ -215,6 +242,31 @@ try {
   const errors = await step(w, "errors", { op: "errors" });
   if (errors.ok && errors.errors.length > 0) problem(`errors on the page: ${errors.errors.join(" | ")}`);
   await quit(w);
+
+  // Lessons on the Claude Code engine, whose stand-in asks permission and can hit a usage limit.
+  const pluginHome = join(scratch, "window-plugin");
+  mkdirSync(pluginHome, { recursive: true });
+  const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
+  writeFileSync(join(pluginHome, "state.json"), JSON.stringify({ recent: kept.recent, folders: {}, engine: "plugin" }, null, 2));
+  const p = await launch("plugin", pluginHome, pluginAgent);
+  await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(p, 800);
+  await step(p, "new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(p, 800);
+  await step(p, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
+  await step(p, "send", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission", "Session: the tutor asks permission (Claude Code engine)");
+  await step(p, "allow once", { op: "click", target: "Allow once" });
+  await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  await step(p, "focus the line again", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "hit the usage limit", { op: "type", text: "LIMIT" });
+  await step(p, "send it", { op: "key", key: "Enter" });
+  await step(p, "the error", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(p, 500);
+  await shoot(p, "session-error", "Session: the reply stopped by an error (a usage limit)");
+  await quit(p);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);
 }

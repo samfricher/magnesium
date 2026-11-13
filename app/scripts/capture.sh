@@ -47,5 +47,5 @@ CROP=$(printf '%s\n' "$WINDOWS" | awk -v x="$X" -v y="$Y" -v w="$W" -v h="$H" -v
   }')
 if [ -n "$CROP" ]; then
   set -- $CROP
-  sips -c "$1" "$2" --cropOffset "$3" "$4" "$OUT" >/dev/null
+  "$HELPER" crop "$OUT" "$4" "$3" "$2" "$1"
 fi
