@@ -59,6 +59,32 @@ pub struct FolderState {
     /// repairs and checks it listed. Kept by the direct engine, opaque here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direct: Option<serde_json::Value>,
+    /// When the learner last opened this folder in the window, in ms since
+    /// the epoch. Added after the first windows: an older state has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opened_ms: Option<i64>,
+    /// What the window knows of each of this folder's conversations, by the
+    /// agent's id: its name, when it was last opened, and its engine.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sessions: BTreeMap<String, SessionNote>,
+    /// Fields another window build wrote that this one does not know. They are
+    /// kept as they are, so the state file can be shared between builds.
+    #[serde(flatten)]
+    pub other: BTreeMap<String, serde_json::Value>,
+}
+
+/// What the window keeps about one conversation, beside its turns.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SessionNote {
+    /// What it is about: the goal it began with, as the window named it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// When the learner last opened it, in ms since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opened_ms: Option<i64>,
+    /// The engine it runs on, so it resumes on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<Engine>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -86,6 +112,13 @@ struct Data {
     /// to keep over the one inside the app. Asked again for any other.
     #[serde(default)]
     kept_runtime: Option<String>,
+    /// How the window was left: its open tabs and which one was in front.
+    /// Opaque here; the page reads and writes it whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window: Option<serde_json::Value>,
+    /// Fields another window build wrote that this one does not know, kept.
+    #[serde(flatten)]
+    other: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -205,8 +238,36 @@ impl Store {
         let key = key(folder);
         let mut data = self.lock();
         data.recent.retain(|other| other != &key);
-        data.recent.insert(0, key);
+        data.recent.insert(0, key.clone());
         data.recent.truncate(LIBRARY_SIZE);
+        data.folders.entry(key).or_default().opened_ms = Some(Local::now().timestamp_millis());
+        self.save(&data);
+    }
+
+    /// Change what the window keeps about one of a folder's conversations.
+    pub fn note_session(
+        &self,
+        folder: &Path,
+        session: &str,
+        change: impl FnOnce(&mut SessionNote),
+    ) {
+        if session.is_empty() {
+            return;
+        }
+        let mut data = self.lock();
+        let state = data.folders.entry(key(folder)).or_default();
+        change(state.sessions.entry(session.to_owned()).or_default());
+        self.save(&data);
+    }
+
+    /// How the window was left, as the page last wrote it.
+    pub fn window(&self) -> Option<serde_json::Value> {
+        self.lock().window.clone()
+    }
+
+    pub fn set_window(&self, value: serde_json::Value) {
+        let mut data = self.lock();
+        data.window = Some(value);
         self.save(&data);
     }
 
@@ -363,6 +424,17 @@ impl Store {
         }
     }
 
+    /// Every turn the window kept for a folder, of every conversation, oldest
+    /// first: what a workspace lists as its sessions.
+    pub fn all_turns(&self, folder: &Path) -> Vec<Turn> {
+        let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
+            .collect()
+    }
+
     /// The turns the window showed in one conversation, oldest first.
     pub fn turns(&self, folder: &Path, session: &str) -> Vec<Turn> {
         let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
@@ -499,6 +571,55 @@ mod tests {
         again.count_turn(day("2026-11-10"));
         assert_eq!(again.lock().days["2026-11-08"], 1);
         assert_eq!(again.lock().days["2026-11-10"], 2);
+    }
+
+    #[test]
+    fn new_fields_are_additive_and_unknown_ones_are_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let folder_key = key(folder.path());
+        // A state file written by another build, with a field this one does not know.
+        let older = serde_json::json!({
+            "recent": [folder_key],
+            "folders": { folder_key.clone(): { "session_id": "abc", "stopped_at": null, "stopped_ms": null, "paper": null, "later": 7 } },
+            "block_minutes": 50,
+            "someday": { "x": 1 }
+        });
+        fs::write(home.path().join("state.json"), older.to_string()).unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        store.opened(folder.path());
+        store.note_session(folder.path(), "abc", |note| {
+            note.title = Some("Sampling".into())
+        });
+        store.set_window(serde_json::json!({ "tabs": [] }));
+
+        let text = fs::read_to_string(home.path().join("state.json")).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(saved["someday"]["x"], 1);
+        assert_eq!(saved["folders"][&folder_key]["later"], 7);
+        assert_eq!(saved["folders"][&folder_key]["session_id"], "abc");
+        assert_eq!(
+            saved["folders"][&folder_key]["sessions"]["abc"]["title"],
+            "Sampling"
+        );
+        assert!(saved["folders"][&folder_key]["opened_ms"].is_i64());
+        assert_eq!(saved["window"]["tabs"], serde_json::json!([]));
+
+        // What an older build reads: every field it knows, unchanged in kind.
+        #[derive(serde::Deserialize)]
+        struct OldFolder {
+            session_id: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Old {
+            recent: Vec<String>,
+            folders: BTreeMap<String, OldFolder>,
+            block_minutes: Option<u32>,
+        }
+        let old: Old = serde_json::from_str(&text).unwrap();
+        assert_eq!(old.recent, vec![folder_key.clone()]);
+        assert_eq!(old.folders[&folder_key].session_id.as_deref(), Some("abc"));
+        assert_eq!(old.block_minutes, Some(50));
     }
 
     #[test]

@@ -1,4 +1,5 @@
-//! One open study folder and its one conversation.
+//! One open study folder and its one conversation, and reads of any folder in
+//! the library that leave that conversation running.
 //!
 //! The window is a layer: every teaching rule stays in the runtime and the
 //! plugin. So this sends the learner's plain words and nothing more, and a
@@ -29,6 +30,7 @@ use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
 use crate::store::{Engine, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
+use crate::workspace::{self, LessonInfo, Workspace};
 
 #[derive(Default)]
 struct Buffer {
@@ -44,6 +46,9 @@ struct Buffer {
     /// Whether the words in `learner` are an answer the learner typed. The
     /// line the window sends to open a sitting is not one.
     typed: bool,
+    /// The name the page gave this conversation when it began, kept with the
+    /// conversation's id once the agent reports it.
+    title: Option<String>,
 }
 
 struct Inner {
@@ -254,6 +259,72 @@ impl Manager {
         self.folder().ok_or_else(none_open)
     }
 
+    /// The folder a call is about: the one named, else the open folder. A
+    /// named folder is read where it is and does not become the open one, so
+    /// a conversation in another folder goes on.
+    fn at(&self, folder: Option<&Path>) -> AgentResult<PathBuf> {
+        match folder {
+            Some(path) => path
+                .canonicalize()
+                .ok()
+                .filter(|p| p.is_dir())
+                .ok_or_else(|| AgentError("That folder is not there any more.".into())),
+            None => self.need_folder(),
+        }
+    }
+
+    /// Note that the learner opened a folder, without opening it for a
+    /// lesson: the library's order and its time of last opening follow.
+    pub fn visit_folder(&self, path: &Path) -> AgentResult<Home> {
+        let folder = self.at(Some(path))?;
+        self.store.opened(&folder);
+        Ok(study::home(&folder, &self.store))
+    }
+
+    /// Every folder in the library, most recently opened first, with its
+    /// newest session, read from the window's own store alone.
+    pub fn workspaces(&self) -> Vec<Workspace> {
+        workspace::workspaces(&self.store)
+    }
+
+    /// A folder's sessions: every conversation the window kept turns of,
+    /// newest opened first, with its name and the one Continue resumes.
+    pub fn lessons(&self, folder: Option<&Path>) -> AgentResult<Vec<LessonInfo>> {
+        let folder = self.at(folder)?;
+        let state = self.store.folder(&folder);
+        Ok(workspace::sessions(
+            &self.store.all_turns(&folder),
+            state.session_id.as_deref(),
+            &state.sessions,
+        ))
+    }
+
+    /// The turns of one of a folder's sessions, to show it again without
+    /// starting the agent.
+    pub fn lesson_turns(&self, folder: Option<&Path>, session: &str) -> AgentResult<Vec<Turn>> {
+        let folder = self.at(folder)?;
+        Ok(self.store.turns(&folder, session))
+    }
+
+    /// Note that the learner opened one of a folder's sessions.
+    pub fn touch_session(&self, folder: Option<&Path>, session: &str) -> AgentResult<()> {
+        let folder = self.at(folder)?;
+        self.store.opened(&folder);
+        let now = Local::now().timestamp_millis();
+        self.store
+            .note_session(&folder, session, |note| note.opened_ms = Some(now));
+        Ok(())
+    }
+
+    /// How the window was left: its tabs and which was in front.
+    pub fn window_state(&self) -> Option<serde_json::Value> {
+        self.store.window()
+    }
+
+    pub fn set_window_state(&self, value: serde_json::Value) {
+        self.store.set_window(value);
+    }
+
     pub fn recent(&self) -> Vec<String> {
         self.store.recent()
     }
@@ -313,11 +384,23 @@ impl Manager {
     }
 
     pub fn home(&self) -> AgentResult<Home> {
-        Ok(study::home(&self.need_folder()?, &self.store))
+        self.home_at(None)
+    }
+
+    pub fn home_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
+        Ok(study::home(&self.at(folder)?, &self.store))
     }
 
     pub fn progress(&self, target: Option<&str>) -> AgentResult<Progress> {
-        Ok(study::progress(&self.need_folder()?, target))
+        self.progress_at(None, target)
+    }
+
+    pub fn progress_at(
+        &self,
+        folder: Option<&Path>,
+        target: Option<&str>,
+    ) -> AgentResult<Progress> {
+        Ok(study::progress(&self.at(folder)?, target))
     }
 
     pub fn rail(&self) -> AgentResult<Rail> {
@@ -340,7 +423,12 @@ impl Manager {
 
     /// The open folder's study plan, read fresh.
     pub fn plan(&self) -> AgentResult<Plan> {
-        let folder = self.need_folder()?;
+        self.plan_at(None)
+    }
+
+    /// A folder's study plan, read fresh.
+    pub fn plan_at(&self, folder: Option<&Path>) -> AgentResult<Plan> {
+        let folder = self.at(folder)?;
         let mut plan = plan::read(&folder);
         if let Some(seen) = lock(&self.settling.seen)
             .as_ref()
@@ -355,17 +443,29 @@ impl Manager {
     /// None when this runtime has no `attempts` command. The lesson compares
     /// two readings of this and never takes the tutor's word for a mark.
     pub fn marks(&self) -> AgentResult<Option<Vec<runtime::Mark>>> {
-        Ok(runtime::marks(&self.need_folder()?))
+        self.marks_at(None)
+    }
+
+    pub fn marks_at(&self, folder: Option<&Path>) -> AgentResult<Option<Vec<runtime::Mark>>> {
+        Ok(runtime::marks(&self.at(folder)?))
     }
 
     /// The files in the open course's material folder.
     pub fn material_list(&self) -> AgentResult<material::Listed> {
-        Ok(material::list(&study::root(&self.need_folder()?)))
+        self.material_list_at(None)
+    }
+
+    pub fn material_list_at(&self, folder: Option<&Path>) -> AgentResult<material::Listed> {
+        Ok(material::list(&study::root(&self.at(folder)?)))
     }
 
     /// Set a folder up for Magnesium, which adds a `.magnesium` folder to it.
     pub fn set_up(&self) -> AgentResult<Home> {
-        let folder = self.need_folder()?;
+        self.set_up_at(None)
+    }
+
+    pub fn set_up_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
+        let folder = self.at(folder)?;
         runtime::init(&folder)
             .map_err(|e| AgentError(format!("Magnesium could not set this folder up: {e}.")))?;
         Ok(study::home(&folder, &self.store))
@@ -374,7 +474,11 @@ impl Manager {
     /// Upgrade a folder an earlier Magnesium set up, after the learner
     /// agreed. The runtime keeps a copy of the record before it changes it.
     pub fn upgrade_folder(&self) -> AgentResult<Home> {
-        let folder = self.need_folder()?;
+        self.upgrade_folder_at(None)
+    }
+
+    pub fn upgrade_folder_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
+        let folder = self.at(folder)?;
         runtime::upgrade(&study::root(&folder))
             .map_err(|e| AgentError(format!("Magnesium could not upgrade this folder: {e}.")))?;
         Ok(study::home(&folder, &self.store))
@@ -463,6 +567,15 @@ impl Manager {
                             state.session_id = Some(id);
                             state.engine = Some(engine);
                         });
+                        let title = buffer.title.clone();
+                        let now = Local::now().timestamp_millis();
+                        store.note_session(&folder, session_id, |note| {
+                            note.engine = Some(engine);
+                            note.opened_ms = Some(now);
+                            if note.title.is_none() {
+                                note.title = title;
+                            }
+                        });
                     }
                 }
                 // An agent that ends before it reports anything was most
@@ -538,7 +651,80 @@ impl Manager {
     /// continues and its earlier turns come back. Without, the next message
     /// starts a new conversation.
     pub fn open_session(&self, resume: bool) -> AgentResult<Opened> {
-        let folder = self.need_folder()?;
+        self.open_session_at(None, resume, None, None)
+    }
+
+    /// Open a conversation in `folder` (else the open folder), which becomes
+    /// the open folder. With `resume` and a `session`, that conversation
+    /// continues, on its own engine when the window knows it; with `resume`
+    /// alone, the folder's last one does. `title` names a conversation that
+    /// begins here, for the workspace's list.
+    pub fn open_session_at(
+        &self,
+        folder: Option<&Path>,
+        resume: bool,
+        session: Option<&str>,
+        title: Option<&str>,
+    ) -> AgentResult<Opened> {
+        let folder = self.at(folder)?;
+        let title = title
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| t.chars().take(200).collect::<String>());
+        {
+            let mut inner = lock(&self.inner);
+            if inner.folder.as_deref() != Some(folder.as_path()) {
+                self.close_conversation(&mut inner);
+                inner.folder = Some(folder.clone());
+            }
+        }
+        self.store.opened(&folder);
+        if let Some(id) = session.filter(|id| resume && !id.is_empty()) {
+            // The conversation asked for becomes the folder's own, the one
+            // that resumes, on the engine it began on.
+            let state = self.store.folder(&folder);
+            let known = state
+                .sessions
+                .get(id)
+                .and_then(|note| note.engine)
+                .or_else(|| {
+                    (state.session_id.as_deref() == Some(id))
+                        .then_some(state.engine)
+                        .flatten()
+                });
+            let engine = known.unwrap_or_else(|| self.chosen());
+            let now = Local::now().timestamp_millis();
+            self.store.update(&folder, |state| {
+                if state.session_id.as_deref() != Some(id) {
+                    state.stopped_at = None;
+                    state.stopped_ms = None;
+                }
+                state.session_id = Some(id.to_owned());
+                state.engine = Some(engine);
+            });
+            self.store.note_session(&folder, id, |note| {
+                note.opened_ms = Some(now);
+                if note.title.is_none() {
+                    note.title.clone_from(&title);
+                }
+            });
+        }
+        self.open_session_in(
+            &folder,
+            resume,
+            session.filter(|id| resume && !id.is_empty()),
+            title,
+        )
+    }
+
+    fn open_session_in(
+        &self,
+        folder: &Path,
+        resume: bool,
+        session: Option<&str>,
+        title: Option<String>,
+    ) -> AgentResult<Opened> {
+        let folder = folder.to_path_buf();
         // The agent's hooks would open the record, and an earlier version's
         // record would be upgraded without the learner's yes.
         if study::needs_upgrade(&folder) {
@@ -550,17 +736,24 @@ impl Manager {
         let mut inner = lock(&self.inner);
         // A conversation resumes only on its own engine. Paper marking is
         // the plugin engine's, whatever the learner picked.
+        let saved_state = self.store.folder(&folder);
         let engine = if inner
             .papers_next
             .take()
             .is_some_and(|handed_in| handed_in.elapsed() < PAPERS_OPEN_WITHIN)
         {
             Engine::Plugin
+        } else if let Some(engine) = session.and(saved_state.engine) {
+            // A conversation the learner chose to continue runs on its own engine.
+            engine
         } else {
             self.chosen()
         };
-        let running =
-            inner.conversation.is_some() && !lock(&inner.buffer).ended && inner.engine == engine;
+        let running_session = lock(&inner.buffer).session.clone();
+        let running = inner.conversation.is_some()
+            && !lock(&inner.buffer).ended
+            && inner.engine == engine
+            && session.is_none_or(|id| running_session.as_deref() == Some(id));
         if running && resume {
             let session = lock(&inner.buffer).session.clone();
             let turns = session
@@ -584,8 +777,16 @@ impl Manager {
                 state.stopped_ms = None;
             });
         }
+        if let (Some(id), Some(name)) = (remembered.as_deref(), title.as_ref()) {
+            self.store.note_session(&folder, id, |note| {
+                if note.title.is_none() {
+                    note.title = Some(name.clone());
+                }
+            });
+        }
         let buffer = Arc::new(Mutex::new(Buffer {
             session: remembered.clone(),
+            title,
             ..Buffer::default()
         }));
         let waiter = Arc::new(Mutex::new(None));
@@ -748,21 +949,54 @@ impl Manager {
 
     /// Copy a photo or PDF of the learner's work into the study folder.
     pub fn attach(&self, source: &Path, group: &str) -> AgentResult<String> {
-        let folder = self.need_folder()?;
+        self.attach_at(None, source, group)
+    }
+
+    pub fn attach_at(
+        &self,
+        folder: Option<&Path>,
+        source: &Path,
+        group: &str,
+    ) -> AgentResult<String> {
+        let folder = self.at(folder)?;
         files::hand_in(&folder, group, source).map_err(AgentError)
+    }
+
+    /// Hand in an image the learner pasted, which has no file of its own.
+    pub fn attach_bytes_at(
+        &self,
+        folder: Option<&Path>,
+        name: &str,
+        bytes: &[u8],
+        group: &str,
+    ) -> AgentResult<String> {
+        let folder = self.at(folder)?;
+        files::hand_in_bytes(&folder, group, name, bytes).map_err(AgentError)
     }
 
     /// Add course material to the study folder: copy what the learner dropped
     /// or picked, then ask the runtime what the tutor's search can read of it.
     pub fn add_material(&self, sources: &[PathBuf]) -> AgentResult<Added> {
-        let root = study::root(&self.need_folder()?);
+        self.add_material_at(None, sources)
+    }
+
+    pub fn add_material_at(
+        &self,
+        folder: Option<&Path>,
+        sources: &[PathBuf],
+    ) -> AgentResult<Added> {
+        let root = study::root(&self.at(folder)?);
         let (saved, problems) = material::copy_in(&root, sources);
         Ok(self.said(&root, saved, problems, false))
     }
 
     /// Save pasted text as a text file in the same place.
     pub fn add_pasted_text(&self, text: &str) -> AgentResult<Added> {
-        let root = study::root(&self.need_folder()?);
+        self.add_pasted_text_at(None, text)
+    }
+
+    pub fn add_pasted_text_at(&self, folder: Option<&Path>, text: &str) -> AgentResult<Added> {
+        let root = study::root(&self.at(folder)?);
         let saved = material::save_text(&root, text).map_err(AgentError)?;
         Ok(self.said(&root, vec![saved], Vec::new(), true))
     }
@@ -791,25 +1025,50 @@ impl Manager {
     /// A source a reply cited, for the panel beside the lesson. The path is
     /// from the study root, which can be a parent of the open folder.
     pub fn source(&self, path: &str) -> AgentResult<files::Source> {
-        files::source(&study::root(&self.need_folder()?), path).map_err(AgentError)
+        self.source_at(None, path)
+    }
+
+    pub fn source_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<files::Source> {
+        files::source(&study::root(&self.at(folder)?), path).map_err(AgentError)
     }
 
     pub fn source_pdf(&self, path: &str) -> AgentResult<Vec<u8>> {
-        files::source_pdf(&study::root(&self.need_folder()?), path).map_err(AgentError)
+        self.source_pdf_at(None, path)
+    }
+
+    pub fn source_pdf_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<Vec<u8>> {
+        files::source_pdf(&study::root(&self.at(folder)?), path).map_err(AgentError)
     }
 
     pub fn open_file(&self, path: &str) -> AgentResult<()> {
-        files::open(&self.need_folder()?, path).map_err(AgentError)
+        self.open_file_at(None, path)
+    }
+
+    pub fn open_file_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<()> {
+        files::open(&self.at(folder)?, path).map_err(AgentError)
     }
 
     pub fn image(&self, path: &str) -> AgentResult<String> {
-        files::image(&self.need_folder()?, path).map_err(AgentError)
+        self.image_at(None, path)
+    }
+
+    pub fn image_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<String> {
+        files::image(&self.at(folder)?, path).map_err(AgentError)
     }
 
     /// Begin a timed paper. The clock is the start time on disk, so it keeps
     /// running if the window is closed.
     pub fn paper_start(&self, paper: &Paper, minutes: u32) -> AgentResult<PaperSitting> {
-        let folder = self.need_folder()?;
+        self.paper_start_at(None, paper, minutes)
+    }
+
+    pub fn paper_start_at(
+        &self,
+        folder: Option<&Path>,
+        paper: &Paper,
+        minutes: u32,
+    ) -> AgentResult<PaperSitting> {
+        let folder = self.at(folder)?;
         let sitting = PaperSitting {
             target: paper.target.clone(),
             name: paper.name.clone(),
@@ -823,8 +1082,8 @@ impl Manager {
         // The paper opens in the system viewer so it can be printed. A paper
         // that will not open does not stop the clock: the learner may hold a
         // printed copy.
-        let _ = self
-            .paper_file(paper)
+        let _ = files::openable(&study::root(&folder), &paper.path)
+            .map_err(AgentError)
             .and_then(|file| files::launch(&file).map_err(AgentError));
         Ok(sitting)
     }
@@ -839,7 +1098,15 @@ impl Manager {
     /// End a timed paper. With files, the learner's work is copied into the
     /// study folder and the words that ask the tutor to mark it are returned.
     pub fn paper_end(&self, hand_in: &[PathBuf]) -> AgentResult<Option<(String, String)>> {
-        let folder = self.need_folder()?;
+        self.paper_end_at(None, hand_in)
+    }
+
+    pub fn paper_end_at(
+        &self,
+        folder: Option<&Path>,
+        hand_in: &[PathBuf],
+    ) -> AgentResult<Option<(String, String)>> {
+        let folder = self.at(folder)?;
         let Some(sitting) = self.store.folder(&folder).paper else {
             return Ok(None);
         };

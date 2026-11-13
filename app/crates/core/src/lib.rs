@@ -12,6 +12,8 @@
 //!   folder and words what search can and cannot read of it.
 //! - [`plan`] reads the open folder's study plan and says what a turn
 //!   changed in it.
+//! - [`workspace`] lists a folder's sessions and the library's workspaces,
+//!   from the window's own store.
 //! - [`manager`] holds one open study folder and its one conversation.
 //!
 //! No teaching rule lives here. The runtime and its plugin hold them all, so
@@ -36,6 +38,7 @@ pub mod record;
 pub mod runtime;
 pub mod store;
 pub mod study;
+pub mod workspace;
 
 pub use agent::{Account, AgentEvent, Answer, Decision, EventSink, Harness, Payment};
 pub use manager::Manager;
