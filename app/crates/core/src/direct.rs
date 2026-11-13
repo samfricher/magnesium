@@ -3112,7 +3112,7 @@ mod tests {
     fn the_engine_knows_the_words_the_page_sends() {
         let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let read = |name: &str| std::fs::read_to_string(pages.join(name)).unwrap();
-        let session = read("surface/Layers.tsx");
+        let session = read("surface/Session.tsx");
         let lesson = read("lesson.ts");
         let strings: Vec<String> = quoted(&session)
             .into_iter()
