@@ -182,6 +182,27 @@ pub fn harness_idle(shell: State<'_, Shell>) -> bool {
     drive_dir().is_none() || !shell.manager.busy()
 }
 
+/// The whole menu bar as data: each menu's title, and each item's title, id,
+/// whether it is enabled, and its key. The page's harness cannot reach the
+/// native menu, so it asks here.
+#[tauri::command(async)]
+pub fn harness_menu(app: tauri::AppHandle) -> Result<Value, String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    Ok(crate::menu::read(&app))
+}
+
+/// Choose a menu item by its path, ["File", "Attach…"], exactly as a click on
+/// it would: the same handler sends the page the same event.
+#[tauri::command(async)]
+pub fn harness_menu_click(app: tauri::AppHandle, path: Vec<String>) -> Result<String, String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    crate::menu::click(&app, &path)
+}
+
 /// Close the window as the learner would, after the last answer is written.
 #[tauri::command(async)]
 pub fn harness_quit(app: tauri::AppHandle) {

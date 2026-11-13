@@ -20,11 +20,13 @@ use mg_core::plan::Plan;
 use mg_core::runtime::Mark;
 use mg_core::store::{Engine, PaperSitting, Turn};
 use mg_core::study::{Card, Home, Paper, Progress, Rail};
+use mg_core::workspace::{LessonInfo, Workspace};
 use mg_core::{Manager, Store};
 use serde::Serialize;
 use tauri::{Emitter, Manager as _, State, WindowEvent};
 
 mod harness;
+mod menu;
 
 /// When set to a file path, the window runs a short check of itself, writes
 /// what it found to that file, and quits. See `scripts/selftest.sh`.
@@ -39,6 +41,11 @@ type Reply<T> = Result<T, String>;
 
 fn plain<T, E: std::fmt::Display>(result: Result<T, E>) -> Reply<T> {
     result.map_err(|error| error.to_string())
+}
+
+/// The folder a call names, if it names one. With none, the open folder.
+fn named(folder: &Option<String>) -> Option<&Path> {
+    folder.as_deref().filter(|f| !f.is_empty()).map(Path::new)
 }
 
 /// A folder named on the command line or in the environment, to open at
@@ -85,18 +92,74 @@ fn open_folder(shell: State<'_, Shell>, path: String) -> Reply<Home> {
 }
 
 #[tauri::command(async)]
-fn home(shell: State<'_, Shell>) -> Reply<Home> {
-    plain(shell.manager.home())
+fn home(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Home> {
+    plain(shell.manager.home_at(named(&folder)))
+}
+
+/// Note that the learner opened a folder's page, without stopping a lesson
+/// in another one.
+#[tauri::command(async)]
+fn visit_folder(shell: State<'_, Shell>, path: String) -> Reply<Home> {
+    plain(shell.manager.visit_folder(Path::new(&path)))
+}
+
+/// Every folder in the library, most recently opened first, from the
+/// window's own store: drawn without asking the runtime anything.
+#[tauri::command(async)]
+fn workspaces(shell: State<'_, Shell>) -> Vec<Workspace> {
+    shell.manager.workspaces()
+}
+
+/// A folder's sessions, newest opened first.
+#[tauri::command(async)]
+fn lessons(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Vec<LessonInfo>> {
+    plain(shell.manager.lessons(named(&folder)))
+}
+
+/// One session's saved turns, read without starting the tutor.
+#[tauri::command(async)]
+fn lesson_turns(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    session: String,
+) -> Reply<Vec<Turn>> {
+    plain(shell.manager.lesson_turns(named(&folder), &session))
 }
 
 #[tauri::command(async)]
-fn set_up(shell: State<'_, Shell>) -> Reply<Home> {
-    plain(shell.manager.set_up())
+fn touch_session(shell: State<'_, Shell>, folder: Option<String>, session: String) -> Reply<()> {
+    plain(shell.manager.touch_session(named(&folder), &session))
+}
+
+/// How the window was left: its tabs, kept in its own state file.
+#[tauri::command(async)]
+fn window_state(shell: State<'_, Shell>) -> Option<serde_json::Value> {
+    shell.manager.window_state()
 }
 
 #[tauri::command(async)]
-fn upgrade_folder(shell: State<'_, Shell>) -> Reply<Home> {
-    plain(shell.manager.upgrade_folder())
+fn set_window_state(shell: State<'_, Shell>, value: serde_json::Value) {
+    shell.manager.set_window_state(value);
+}
+
+/// What the menu bar holds now: the workspaces, the tabs, the learner's keys.
+#[tauri::command(async)]
+fn set_menu(app: tauri::AppHandle, spec: menu::Spec) -> Reply<()> {
+    let bar = app.state::<menu::MenuBar>();
+    if bar.spec() == spec {
+        return Ok(());
+    }
+    plain(bar.apply(&app, spec))
+}
+
+#[tauri::command(async)]
+fn set_up(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Home> {
+    plain(shell.manager.set_up_at(named(&folder)))
+}
+
+#[tauri::command(async)]
+fn upgrade_folder(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Home> {
+    plain(shell.manager.upgrade_folder_at(named(&folder)))
 }
 
 #[tauri::command(async)]
@@ -166,9 +229,22 @@ fn set_engine(shell: State<'_, Shell>, engine: Engine) -> EngineChoice {
     shell.manager.set_engine(engine)
 }
 
+/// Open a conversation in a folder: the one `session` names, the folder's
+/// last one, or a new one, named `title` for the folder's list.
 #[tauri::command(async)]
-fn open_session(shell: State<'_, Shell>, resume: bool) -> Reply<Opened> {
-    plain(shell.manager.open_session(resume))
+fn open_session(
+    shell: State<'_, Shell>,
+    resume: bool,
+    folder: Option<String>,
+    session: Option<String>,
+    title: Option<String>,
+) -> Reply<Opened> {
+    plain(shell.manager.open_session_at(
+        named(&folder),
+        resume,
+        session.as_deref(),
+        title.as_deref(),
+    ))
 }
 
 /// Send the learner's words. `intent` says what they are: "talk" is never
@@ -223,13 +299,17 @@ fn turns(shell: State<'_, Shell>) -> Reply<Vec<Turn>> {
 /// The open folder's study plan, read fresh from the runtime and the plan
 /// files.
 #[tauri::command(async)]
-fn plan(shell: State<'_, Shell>) -> Reply<Plan> {
-    plain(shell.manager.plan())
+fn plan(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Plan> {
+    plain(shell.manager.plan_at(named(&folder)))
 }
 
 #[tauri::command(async)]
-fn progress(shell: State<'_, Shell>, target: Option<String>) -> Reply<Progress> {
-    plain(shell.manager.progress(target.as_deref()))
+fn progress(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    target: Option<String>,
+) -> Reply<Progress> {
+    plain(shell.manager.progress_at(named(&folder), target.as_deref()))
 }
 
 #[tauri::command(async)]
@@ -238,58 +318,91 @@ fn set_block_minutes(shell: State<'_, Shell>, minutes: u32) {
 }
 
 #[tauri::command(async)]
-fn attach(shell: State<'_, Shell>, path: String, group: String) -> Reply<String> {
-    plain(shell.manager.attach(Path::new(&path), &group))
+fn attach(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    path: String,
+    group: String,
+) -> Reply<String> {
+    plain(
+        shell
+            .manager
+            .attach_at(named(&folder), Path::new(&path), &group),
+    )
+}
+
+/// Hand in an image the learner pasted: its bytes, as it has no file.
+#[tauri::command(async)]
+fn attach_bytes(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    name: String,
+    bytes: Vec<u8>,
+    group: String,
+) -> Reply<String> {
+    plain(
+        shell
+            .manager
+            .attach_bytes_at(named(&folder), &name, &bytes, &group),
+    )
 }
 
 /// Copy what the learner dropped or picked into the study folder, and say
 /// what the tutor's search can read of it.
 #[tauri::command(async)]
-fn add_material(shell: State<'_, Shell>, paths: Vec<String>) -> Reply<Added> {
+fn add_material(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    paths: Vec<String>,
+) -> Reply<Added> {
     let sources: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    plain(shell.manager.add_material(&sources))
+    plain(shell.manager.add_material_at(named(&folder), &sources))
 }
 
 /// The runtime's marked answers in the open folder, or none when its
 /// runtime has no such command. The lesson shows a mark only from these.
 #[tauri::command(async)]
-fn marks(shell: State<'_, Shell>) -> Reply<Option<Vec<Mark>>> {
-    plain(shell.manager.marks())
+fn marks(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Option<Vec<Mark>>> {
+    plain(shell.manager.marks_at(named(&folder)))
 }
 
-/// What the open course's material folder holds: names, newest first, and a
-/// count of answer keys that are never named.
+/// What a course's material folder holds: names, newest first, and a count
+/// of answer keys that are never named.
 #[tauri::command(async)]
-fn material_list(shell: State<'_, Shell>) -> Reply<Listed> {
-    plain(shell.manager.material_list())
+fn material_list(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Listed> {
+    plain(shell.manager.material_list_at(named(&folder)))
 }
 
 #[tauri::command(async)]
-fn add_pasted_text(shell: State<'_, Shell>, text: String) -> Reply<Added> {
-    plain(shell.manager.add_pasted_text(&text))
+fn add_pasted_text(shell: State<'_, Shell>, folder: Option<String>, text: String) -> Reply<Added> {
+    plain(shell.manager.add_pasted_text_at(named(&folder), &text))
 }
 
 /// A source a reply cited, for the panel beside the lesson. Kept inside the
 /// study folder, and never an answer key.
 #[tauri::command(async)]
-fn source(shell: State<'_, Shell>, path: String) -> Reply<Source> {
-    plain(shell.manager.source(&path))
+fn source(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply<Source> {
+    plain(shell.manager.source_at(named(&folder), &path))
 }
 
 /// The bytes of a cited PDF, sent as they are and not as text.
 #[tauri::command(async)]
-fn source_pdf(shell: State<'_, Shell>, path: String) -> Result<tauri::ipc::Response, String> {
-    plain(shell.manager.source_pdf(&path)).map(tauri::ipc::Response::new)
+fn source_pdf(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    plain(shell.manager.source_pdf_at(named(&folder), &path)).map(tauri::ipc::Response::new)
 }
 
 #[tauri::command(async)]
-fn open_file(shell: State<'_, Shell>, path: String) -> Reply<()> {
-    plain(shell.manager.open_file(&path))
+fn open_file(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply<()> {
+    plain(shell.manager.open_file_at(named(&folder), &path))
 }
 
 #[tauri::command(async)]
-fn image(shell: State<'_, Shell>, path: String) -> Reply<String> {
-    plain(shell.manager.image(&path))
+fn image(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply<String> {
+    plain(shell.manager.image_at(named(&folder), &path))
 }
 
 /// Open a web address in the learner's browser. Only web addresses: the page
@@ -320,8 +433,17 @@ fn open_url(url: String) -> Reply<()> {
 }
 
 #[tauri::command(async)]
-fn paper_start(shell: State<'_, Shell>, paper: Paper, minutes: u32) -> Reply<PaperSitting> {
-    plain(shell.manager.paper_start(&paper, minutes))
+fn paper_start(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    paper: Paper,
+    minutes: u32,
+) -> Reply<PaperSitting> {
+    plain(
+        shell
+            .manager
+            .paper_start_at(named(&folder), &paper, minutes),
+    )
 }
 
 #[derive(Serialize)]
@@ -331,9 +453,13 @@ struct Words {
 }
 
 #[tauri::command(async)]
-fn paper_end(shell: State<'_, Shell>, files: Vec<String>) -> Reply<Option<Words>> {
+fn paper_end(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    files: Vec<String>,
+) -> Reply<Option<Words>> {
     let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
-    plain(shell.manager.paper_end(&files))
+    plain(shell.manager.paper_end_at(named(&folder), &files))
         .map(|words| words.map(|(shown, sent)| Words { shown, sent }))
 }
 
@@ -371,6 +497,15 @@ fn main() {
             )
             .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
+            // The menu bar, at first with the window's own keys; the page
+            // fills in the workspaces, the tabs and the learner's keys.
+            let bar = menu::MenuBar::default();
+            bar.apply(app.handle(), menu::Spec::default())?;
+            app.manage(bar);
+            app.on_menu_event(|app, event| {
+                app.state::<menu::MenuBar>()
+                    .chosen(app, event.id().as_ref());
+            });
             harness::note("setup done");
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
                 // A check that never reports must still end.
@@ -404,6 +539,14 @@ fn main() {
             activity,
             open_folder,
             home,
+            visit_folder,
+            workspaces,
+            lessons,
+            lesson_turns,
+            touch_session,
+            window_state,
+            set_window_state,
+            set_menu,
             set_up,
             upgrade_folder,
             new_folder,
@@ -430,6 +573,7 @@ fn main() {
             progress,
             set_block_minutes,
             attach,
+            attach_bytes,
             add_material,
             add_pasted_text,
             marks,
@@ -449,6 +593,8 @@ fn main() {
             harness::harness_write,
             harness::harness_idle,
             harness::harness_quit,
+            harness::harness_menu,
+            harness::harness_menu_click,
         ])
         .run(tauri::generate_context!())
         .expect("the window could not start");
