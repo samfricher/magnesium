@@ -121,6 +121,14 @@ async function quit(window) {
 
 const settle = (window, ms = 500) => window.op({ op: "wait", ms });
 
+/** Close a document: from the panel beside the page or lesson where there is one, else the sheet over it, with Esc. */
+async function closeDocument(window, title) {
+  const closed = await window.op({ op: "click", target: `close-doc-${title}`, by: "drive" });
+  if (!closed.ok) await step(window, `close ${title}`, { op: "key", key: "Escape" });
+  else run.steps.push({ label: `close ${title} in the panel` });
+  await settle(window, 300);
+}
+
 try {
   // Home on a Mac with no study folder yet.
   const emptyHome = join(scratch, "window-empty");
@@ -143,7 +151,7 @@ try {
   await step(w, "open its note", { op: "click", target: "Week 3 eigenvalues" });
   await settle(w, 1000);
   await shoot(w, "material", "A note of the material, opened from the workspace");
-  await step(w, "close the note", { op: "key", key: "Escape" });
+  await closeDocument(w, "Week 3 eigenvalues");
   await step(w, "back to Home", { op: "click", target: "‹ Home" });
   await step(w, "Intro Statistics again", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(w, 600);
@@ -180,6 +188,22 @@ try {
   await step(w, "send the change", { op: "key", key: "Enter" });
   await step(w, "the plan changes", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(w, "session-plan-changed", "Session after the tutor changed the plan, panel shown");
+  // A page the tutor cites, opened from its link: beside the lesson, or over it in an older window.
+  await step(w, "focus the line to ask for a citation", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "ask for a citation", { op: "type", text: "CITE: where is that in the slides?" });
+  await step(w, "send the citation request", { op: "key", key: "Enter" });
+  await step(w, "the citation", { op: "wait_idle", timeout_ms: TURN_MS });
+  await step(w, "open the cited page", { op: "click", target: "Midterm 2023, p. 2" });
+  await settle(w, 1800);
+  await shoot(w, "session-document", "Session: a page the tutor cited, opened from its link, while a task is open");
+  const expanded = await w.op({ op: "click", target: "panel-expand", by: "drive" });
+  if (expanded.ok) {
+    await settle(w, 900);
+    await shoot(w, "session-document-expanded", "Session: the document expanded to fill the session");
+    await step(w, "put it beside again", { op: "click", target: "panel-expand", by: "drive" });
+    await settle(w, 400);
+  }
+  await closeDocument(w, "Midterm 2023");
   await step(w, "scroll up", { op: "scroll", to: "top" });
   await settle(w, 300);
   await shoot(w, "session-earlier", "Session scrolled to its start");
@@ -243,6 +267,11 @@ try {
   await step(w, "to the foot", { op: "scroll", to: "bottom" });
   await settle(w, 300);
   await shoot(w, "workspace-work", "Workspace with a session, Your work open, at its foot");
+  await step(w, "back to the top", { op: "scroll", to: "top" });
+  await step(w, "open the past paper", { op: "click", target: "Midterm 2023" });
+  await settle(w, 1800);
+  await shoot(w, "workspace-document", "Workspace: a past paper opened from its material");
+  await closeDocument(w, "Midterm 2023");
 
   const menu = await step(w, "the menu bar", { op: "menu" });
   writeFileSync(join(out, "menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));

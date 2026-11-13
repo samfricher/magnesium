@@ -37,6 +37,8 @@ What a turn does is chosen by words in the learner's message (inside
   RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
+  CITE         cite page 2 of the scratch course's past paper as a link, name
+               its practice paper as a path, and link the paper's answer key
   RESTART      stream part of the reply, start the same message again, then
                stream it whole
   CUTSHORT     stream only the start of the reply; the finished message has
@@ -457,6 +459,10 @@ def reply_for(learner, state):
             note="The last check of the repair.",
             repair={"number": number, "done": "taught reading Km off the x intercept; three checks",
                     "next": {"question": "A plot crosses the x axis at −0.2: what is Km?", "key": "5"}}), False
+    if "CITE" in learner:
+        return ("The past paper asks it: [Midterm 2023, p. 2](Study/midterm-2/papers/Midterm%202023.pdf#page=2). "
+                "The practice paper is `Study/midterm-2/papers/Practice midterm #2.pdf`, and the past paper's key is "
+                "[the answers](Study/midterm-2/papers/Midterm%202023%20key.pdf).") + block(), False
     if "VERYSLOW" in learner:
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:
