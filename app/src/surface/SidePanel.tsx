@@ -13,7 +13,7 @@ import { materialKind, materialTitle } from "../words";
 import { DocView, type DocHandle } from "./DocView";
 import { Layer, type Row } from "./Layer";
 
-export const PANEL_MIN = 220;
+export const PANEL_MIN = 300;
 const PANEL_MAX_SHARE = 0.72;
 
 type Props = {

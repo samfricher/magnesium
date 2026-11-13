@@ -239,18 +239,20 @@ function markPaths(root: HTMLElement, titled: boolean, open: boolean) {
     code.dataset.path = text;
     // In the reply that sets the open task, it reads as its title but opens only once the task is answered, as a link does.
     if (open || !titled) code.classList.add("path");
-    if (titled && sourceRef(text)) {
+    // Every file named reads as its title; one the panel cannot show still opens on the Mac.
+    if (titled) {
       code.classList.add("titled");
       if (!open) code.classList.add("shut");
       code.textContent = docTitle(text);
       code.title = docTitle(text);
     }
   });
-  // A link whose words are its own path reads as the file's title too.
-  root.querySelectorAll<HTMLAnchorElement>("a.source").forEach((link) => {
+  // A link whose words are its own path reads as the file's title too, open or shut.
+  root.querySelectorAll<HTMLElement>("a.source, .source-shut").forEach((link) => {
     const href = link.getAttribute("href") ?? "";
     const words = (link.textContent ?? "").trim();
-    if (words !== "" && (words === href || words === href.split("#")[0] || FILE.test(words))) link.textContent = docTitle(href.split("#")[0]);
+    const path = href !== "" ? href.split("#")[0] : words;
+    if (words !== "" && (words === href || words === path || FILE.test(words))) link.textContent = docTitle(path);
   });
 }
 

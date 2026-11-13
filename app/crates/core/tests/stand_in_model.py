@@ -37,6 +37,7 @@ What a turn does is chosen by words in the learner's message (inside
   RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
   VERYSLOW     write for about ten seconds
+  CITETASK     set a task, with a link to a page of the slides beside it
   CITE         cite a page of the scratch course's slides as a link, name its
                past paper as a path, and link the paper's answer key
   RESTART      stream part of the reply, start the same message again, then
@@ -459,6 +460,9 @@ def reply_for(learner, state):
             note="The last check of the repair.",
             repair={"number": number, "done": "taught reading Km off the x intercept; three checks",
                     "next": {"question": "A plot crosses the x axis at −0.2: what is Km?", "key": "5"}}), False
+    if "CITETASK" in learner:
+        return ("Read [Week 6 slides, p. 3](Study/materials/week6-slides.pdf#page=3) after this one. "
+                "**Task:** What makes a confidence interval wider?") + block(task="What makes a confidence interval wider?"), False
     if "CITE" in learner:
         return ("The slides put it plainly: [Week 6 slides, p. 2](Study/materials/week6-slides.pdf#page=2). "
                 "The past paper is `Study/materials/midterm-2023.pdf`, and its key is "
