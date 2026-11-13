@@ -390,6 +390,7 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
 .line-stop { font: 400 0.706rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
 .line-stop .keys { color: var(--hint); }
 .line-stop:hover { color: var(--text); }
+.attached:empty { margin: 0; }
 .attached {
   display: flex;
   flex-wrap: wrap;

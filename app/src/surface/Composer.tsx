@@ -336,6 +336,7 @@ export const Composer = memo(
         <span className="line-tools">
           {/* The clip: photos and PDFs, with the next message. */}
           <button
+            type="button"
             className="clip"
             data-drive="attach"
             aria-label="Attach a photo or PDF"
@@ -382,18 +383,17 @@ export const Composer = memo(
           )}
         </span>
         </div>
-        {files.length > 0 && (
-          <p className="attached" aria-label="Files that go with the next message">
-            {files.map((file) => (
-              <span key={file} className="file">
-                {fileName(file)}
-                <button className="take-off" aria-label={`Take ${fileName(file)} off`} title="Take it off" onClick={() => setFiles((old) => old.filter((each) => each !== file))}>
-                  ×
-                </button>
-              </span>
-            ))}
-          </p>
-        )}
+        {/* Always there, so a file added by a drop or a paste is read out as it joins the line. */}
+        <p className="attached" role="group" aria-label="Files that go with the next message" aria-live="polite">
+          {files.map((file) => (
+            <span key={file} className="file">
+              {fileName(file)}
+              <button type="button" className="take-off" aria-label={`Take ${fileName(file)} off`} title="Take it off" onClick={() => setFiles((old) => old.filter((each) => each !== file))}>
+                ×
+              </button>
+            </span>
+          ))}
+        </p>
         {(confidence || queued) && (
           <p className="with">
             {confidence && <span className="said-sure">{confidence}</span>}
@@ -421,7 +421,7 @@ export const Composer = memo(
           </p>
         )}
         {symbols && (
-          <p className="symbols" role="toolbar" aria-label="Symbols">
+          <p className="symbols" role="group" aria-label="Symbols">
             {SYMBOLS.map((symbol) => (
               <button key={symbol.name} className="symbol" title={symbol.name} aria-label={symbol.name} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(symbol)}>
                 {symbol.show}
