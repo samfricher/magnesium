@@ -1,0 +1,16 @@
+{
+  "fill" : { "solid" : "srgb:0.05490,0.05490,0.06275,1.00000" },
+  "groups" : [
+    {
+      "layers" : [
+        { "glass" : true, "image-name" : "dots.svg", "name" : "dots" },
+        { "glass" : true, "image-name" : "sending.svg", "name" : "sending" },
+        { "glass" : true, "image-name" : "receiving.svg", "name" : "receiving" }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "specular" : true,
+      "translucency" : { "enabled" : true, "value" : 0.4 }
+    }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
