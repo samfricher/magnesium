@@ -1,0 +1,121 @@
+{
+  "overall": [
+    "concept-a",
+    "concept-b",
+    "concept-c"
+  ],
+  "points": {
+    "concept-a": 5,
+    "concept-b": 5,
+    "concept-c": 2
+  },
+  "firsts": {
+    "concept-a": 2,
+    "concept-b": 1,
+    "concept-c": 1
+  },
+  "ties": [],
+  "by_measure": {
+    "mine": {
+      "ranked": [
+        "concept-a",
+        "concept-b",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 7,
+        "concept-b": 3,
+        "concept-c": 2
+      },
+      "ties": []
+    },
+    "calm": {
+      "ranked": [
+        "concept-b",
+        "concept-a",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 2,
+        "concept-b": 8,
+        "concept-c": 2
+      },
+      "ties": [
+        [
+          "concept-a",
+          "concept-c"
+        ]
+      ]
+    },
+    "easy_to_start": {
+      "ranked": [
+        "concept-b",
+        "concept-a",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 2,
+        "concept-b": 8,
+        "concept-c": 2
+      },
+      "ties": [
+        [
+          "concept-a",
+          "concept-c"
+        ]
+      ]
+    },
+    "flexible": {
+      "ranked": [
+        "concept-a",
+        "concept-c",
+        "concept-b"
+      ],
+      "points": {
+        "concept-a": 7,
+        "concept-b": 2,
+        "concept-c": 3
+      },
+      "ties": []
+    },
+    "craft": {
+      "ranked": [
+        "concept-a",
+        "concept-b",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 7,
+        "concept-b": 4,
+        "concept-c": 1
+      },
+      "ties": []
+    },
+    "clarity": {
+      "ranked": [
+        "concept-a",
+        "concept-b",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 7,
+        "concept-b": 3,
+        "concept-c": 2
+      },
+      "ties": []
+    },
+    "performance": {
+      "ranked": [
+        "concept-a",
+        "concept-b",
+        "concept-c"
+      ],
+      "points": {
+        "concept-a": 8,
+        "concept-b": 4,
+        "concept-c": 0
+      },
+      "ties": []
+    }
+  }
+}

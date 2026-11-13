@@ -1,0 +1,8 @@
+2026-11-12T23:08:00.413Z course <tmp>/mg-correct-e2EvO5/Intro-Statistics; attempts before: 0
+2026-11-12T23:08:07.452Z start: {"clicked":"button[data-drive=start] \"Sampling distributions\"","ok":true}
+2026-11-12T23:08:21.436Z question 1 written; waiting for answer-1.txt
+2026-11-12T23:08:35.627Z focus: {"error":"nothing visible is named \"answer\"","ok":false}
+2026-11-12T23:08:35.874Z sent 1: {"focused":"textarea[data-drive=composer]","ok":true}
+2026-11-12T23:08:54.423Z attempts after answer 1: [["right","none",true,"building the sampling distribution of the mean from a small population"]]
+2026-11-12T23:09:10.105Z the tutor asked for the date; giving Sunday 29 November
+2026-11-12T23:10:00.168Z marked right by the record: building the sampling distribution of the mean from a small population

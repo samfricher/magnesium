@@ -1,0 +1,24 @@
+{
+  "after": [
+    {
+      "answered_at": "2026-11-12 18:10",
+      "attempt_id": "a-1075b2b71c28e56014498b8a0b257dec",
+      "cold": true,
+      "confidence": null,
+      "help": "none",
+      "kind": "standard error of a mean",
+      "label": "standard error of a sample mean",
+      "mark": "right",
+      "marks": null,
+      "no_start": false,
+      "observation_id": "o-faf7ea50accfdac3bf85a0526376141e",
+      "out_of": null,
+      "paper": null,
+      "paper_question": null,
+      "question": "A coffee machine fills cups with a mean of 250 ml and a standard deviation of 12 ml. You take 36 cups at random and average their volumes. Roughly how far would you expect that average to land from 250 ml: about 12 ml, about 2 ml, or about 0.33 ml? Say in a few words why.",
+      "response_event_id": "e-62366df2444d36ea8eadbd99a8f81fcf",
+      "seconds": null,
+      "session_id": "s-9bed71a0f04d7027d672ba1cea7e6167"
+    }
+  ]
+}

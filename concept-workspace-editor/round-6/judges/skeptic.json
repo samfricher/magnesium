@@ -1,0 +1,57 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The structure is rebuilt; only the lesson column carries over. First screen: the old design opened on a Library dashboard of course cards (levels, '5 questions due today', 'Last studied 3 days ago', Continue + Course page, baseline library.jpg). This one has no home screen at all: it restores the last document, a lesson showing its open task, the half-written answer and 'Continue Return' (shots/s1-cold-dark), and the library is now a ⌘O list of folder names (shots/folders-dark). Moving between places: the old Library → Course → Lesson/Proofs drill-down with back links (course.jpg, progress.jpg) is replaced by an editor workspace: tabs, two panes, ⌘P quick-open over lessons, plan, material, papers and record (shots/open-dark), and a ⌘B file sidebar (shots/sidebar-dark). What is shown: proof dots, level bars, due counts, the week-strip of study days, '4 days running' and the 'One proof earned' summary (summary.jpg) are all gone. Progress is a dated log of marked answers in words (shots/record-dark). The lesson: the old design was a chat column with margin labels, a docked 'Your answer' composer with Send and Hint / I don't know / I'm lost buttons, and a 'Step 3 of 5' bar (session-marked.jpg). Here the answer is written inside the task block, and talk is written at the end of the page after Esc and is never marked by construction. Marks sit in the gutter, taken from the record (live/s2-answer-dark shows 'No mark' even though the tutor said 'That is right'). The plan: the old design had a popover off the step bar (session-plan.jpg); here plan.md is a document that opens beside the lesson with old dates struck through and change bars (live/s3-after-dark). Settings: a setup screen became a text config file (shots/settings-dark). Carried over: the centred serif column, the ⌘K palette, a left-ruled task block, the 'Earlier in this lesson' fold, a filled Continue button and the mark wording. So the lesson page still reads like the old transcript, but everything around it is a different idea: the Obsidian/Sublime workspace model, not a repaint."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/settings-dark.png", "shots/settings-light.png", "shots/open-dark.png", "shots/sidebar-dark.png", "shots/s1-cold-dark.png", "shots/s5-week-next-dark.png", "window/perf.json"],
+      "blocks_next_point": "Every default screen still carries the app's instructions: 'Help ⌘K' under every open task, 'Esc to say something else' and 'Tab: back to the task' in the status line (hints = on is the default), and 'No mark, not taken as the answer' in the gutter (shots/s2-start-dark, live/s4-offplan-dark). The settings file and ⌘P make it bend to me, but the first thing I would do is strip that voice off."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-light.png", "window/s1-cold-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "The one unexplained object on an otherwise near-empty page is the rule under Continue. In shots/s1-cold-dark it is a bare line; in window/s5-week-dark and live/s5-week-dark it is an unlabelled empty field with a blinking caret. Compared with the old library (about ten facts and two buttons per course) this is very calm, but that blank field is noise."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "shots/new-lesson-dark.png", "window/s1-cold-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "On reopen the caret is not in my half-written answer. The draft is drawn as static maths behind a filled 'Continue Return' pill (shots/s1-cold-dark), and in the real window the caret sits in an unlabelled blank line under it (window/s5-week-dark). It is one Return either way, but I have to work out which Return. Nothing counts what I owe, and after a week away it only says 'Stopped on Thu 5 Nov'."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/s2-answer-dark.png", "live/attempts.json", "window/s3-after-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "The real tutor asked for the new date, got it, and changed the plan. The plan opened beside the lesson with every re-dated block barred and the old dates struck through (live/s3-after-dark). Off-plan talk got no mark and the task waited pinned at the top. The weak point is the place to talk: it has no form. It is a bare caret over a rule with no words (live/s3-before-dark, live/s4-offplan-dark), found only if you read 'Esc to say something else' in the status line."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "shots/s3-after-light.png", "shots/s4-offplan-dark.png", "shots/narrow-lesson-dark.png", "shots/narrow-lesson-light.png", "shots/record-light.png", "shots/plan-dark.png"],
+      "blocks_next_point": "The pinned task bar is unfinished. Its left rule sits about 17 px left of the task block's rule, and the same task's 'Your answer' line shows clipped beneath the translucent bar (shots/s4-offplan-dark, top). In my turn the task's 'Help ⌘K' row sat right under the pinned copy. The rest is consistent in both schemes: Charter body, system-sans chrome, quiet gutter marks and the amber change colour."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["live/s2-answer-dark.png", "window/s2-answer-dark.png", "window/s3-after-dark.png", "shots/s4-offplan-dark.png", "shots/s4-return-dark.png"],
+      "blocks_next_point": "'No mark, not taken as the answer' sits directly above the tutor's 'That is right…' (live/s2-answer-dark; in my turn 'No mark' was followed by 'Right: s/√n…'), with no visible reason. The screen is truthful to the record, but the learner cannot tell whether they have done it or need to answer again."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 595 ms (main), 682 ms (week) and 899 ms (first open); I measured 713 ms. That beats Obsidian's one to two seconds but not a native editor's under 0.5 s. Keystroke to paint is a median of 17 ms (p95 19 ms, max 20 ms), just over one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "Talk has a place but no form. It is an empty line with a caret over a rule (live/s3-before-dark, live/s4-offplan-dark), discoverable only through 'Esc to say something else' in the status line. On a stopped lesson that same blank field takes the caret instead of the half-written answer (window/s5-week-dark, live/s5-week-dark).",
+    "The pinned task bar is the roughest part of the build. Its rule is misaligned, the same task's answer line and Help row show beneath it (shots/s4-offplan-dark), and Tab can put the caret into an answer line still hidden under it, so you type blind (my turn).",
+    "The record's silence and the tutor's praise contradict each other on the page: 'No mark, not taken as the answer' followed by 'That is right' (live/s2-answer-dark). It is truthful, but a learner who has just answered is left unsure whether to answer again."
+  ],
+  "bugs": [
+    "My turn: after I handed in 'b = 5' (gutter '× Not right yet', from the record), the same text 'b = 5' reappeared as the draft in the next task's answer line ('What is b in x² + 3x − 4 = 0?'). One more Return would hand in an already-sent answer to a new question. CONCEPT.md says only unsent drafts move on. I cleared it before releasing the window.",
+    "My turn: Tab from talk back into the open task put the caret in an answer line that was scrolled up under the pinned bar. The page did not scroll, so 'b = 5' was typed invisibly until it was sent.",
+    "shots/s4-offplan-dark and shots/s4-offplan-light: the pinned task bar's left rule (x≈197) does not line up with the task block's rule (x≈214), and the task's own 'Your answer' line peeks out clipped beneath the bar.",
+    "window/s5-week-dark and live/s5-week-dark against shots/s1-cold-dark and shots/s5-week-dark: on a stopped lesson the real window focuses an unlabelled empty talk field (blinking caret) under Continue, while the demo shows only a bare rule there.",
+    "window/s5-week-dark → window/s5-week-next-dark: the stopped lesson shows the margin-of-error task as open, but Continue brings back the standard-error question. This is probably the stand-in's script, since live/s5-week-next-dark resumes the right task, but the window does not hold the task it promised."
+  ],
+  "window_turn": "I waited 210 s for the lock and used the window for about 2.5 minutes. Earlier judges had left it in light scheme with two panes: the lesson, and the Midterm 2 plan showing Sun 6 Dec with Sun 29 Nov struck through and 'moved up' / 'moved down' bars. I used keys only. Tab went back into the pinned task, but the caret landed in an answer line hidden under the pinned bar, so my typing was invisible. I handed in 'b = 5' with Return. The gutter showed '× Not right yet' from the record, the plan pane closed on its own and a new task appeared, but my already-sent 'b = 5' was refilled as its draft (bug). Esc moved the caret to a bare line at the end of the page. There 'by the way, what does a z-score mean?' got an unmarked reply, nothing appeared in the gutter, and the task waited above. ⌘P 'record' opened the Record tab with exactly two rows for today ('sign of b: Not right yet'; 'standard error of a mean: Not right yet, with a hint'). That matches every mark on the page; the answers the page calls 'No mark' are absent, as they should be. ⌘W returned to the lesson and Tab put the caret back in the task. Perf: typing median 17 ms, p95 19 ms, max 20 ms; startup 713 ms. I cleared the leftover draft and released the lock."
+}

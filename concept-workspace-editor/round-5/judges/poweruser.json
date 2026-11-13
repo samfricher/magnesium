@@ -1,0 +1,53 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 9,
+      "evidence": ["shots/settings-dark.png", "shots/settings-light.png", "shots/commands-dark.png", "shots/open-dark.png", "shots/s1-cold-dark.png", "shots/plan-edit-dark.png", "shots/material-dark.png"],
+      "blocks_next_point": "Settings are a plain-text file applied as I type (any installed font, a separate font for my own words, size, measure, scheme, ink, raw colours, every key binding), and in my turn ⌘K changes to scheme, font and size applied instantly and were written back into that file. But the file is 'kept in the window's own storage', not at a path I can keep in my dotfiles or sync, and it is edited in a bare textarea that clips long lines ('closing the lesson keeps wher' on shots/settings-dark.png) and lets the comment column drift when ⌘K rewrites a value."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "Opened cold, the screen shows the lesson title, one task with my half-written working, and 'Stopped on … Continue'. That is close to nothing. The one remaining redundancy is that the Return key is named twice: as the kbd on the button and again in the status line ('Return to continue, or write to your tutor'). The fold line 'The lesson so far · 1 exchange' is also a piece of app bookkeeping that I never need on screen."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-next-dark.png", "shots/new-lesson-dark.png", "window/s1-cold-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "One Return continues, with the caret back in the task and my draft drawn as maths. A new folder's first page is a single question with the plan's next item already chosen, so Return alone starts it. Nothing greets me with what I owe. What stops the 10 is the Record's 'Skills' section ('Not yet answered right alone; asked again today', shots/record-dark.png): it still reads as the app's schedule for me rather than a log of my own work."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "With the real tutor, the page stayed truthful. When the tutor asked for the date, nothing on screen claimed a change. Once the date was given, plan.md changed on disk and the plan opened beside the lesson with the old days struck through and change bars. The off-plan n−1 question and its answer stayed unmarked (the record is empty after the run), with the open task pinned at the top and 'Tab' beside it. What stops the 10 is my own turn: right after a plan change, with the plan pane open, two presses of Tab ('Tab: back to the task' in the status line) left the caret in the talk line, and what I typed next landed there instead of in the task."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/record-light.png", "shots/hint-dark.png", "shots/settings-dark.png", "shots/setup-signed-out-dark.png"],
+      "blocks_next_point": "The type is disciplined: Charter for documents with KaTeX that sits well beside it, the system sans at one small size for the chrome, quiet marks in the gutter, and matching dark and light themes. It also holds at the narrow size. The polish slips at the edges. The settings textarea clips its own comments. The status line on the setup screens says 'Return to continue, or write to your tutor' where there is nothing to continue. And on shots/hint-dark.png the hint is printed below the task block, so the place to answer sits above the hint it needs."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["live/s2-answer-dark.png", "window/s4-offplan-dark.png", "live/s3-after-dark.png", "shots/s4-return-dark.png"],
+      "blocks_next_point": "On live/s2-answer-dark.png the gutter says '– No mark' directly above the tutor's 'That's right'. That is truthful, since the record made no attempt, but no reason is shown on screen, so I cannot tell whether I got it. Talk also has no visible place: after Esc the caret is on an invisible line at the foot of the page (window/s4-offplan-dark.png shows only blank space where I am about to type)."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Typing is effectively one frame: median 17 ms and p95 18 ms over 60 samples, and the same again in my turn. Startup is about 0.6 to 0.7 s to the first real content on a known folder, and 0.85 to 0.93 s on a first ever open. That beats Obsidian, but it is still over the under-half-second open of a native editor like Sublime."
+    }
+  },
+  "still_dislike": [
+    "The settings file lives in the window's private storage instead of a path I can version in my dotfiles. It is edited in a plain textarea that clips long comment lines and lets the columns drift when ⌘K writes a value back.",
+    "Talk has no visible place. After Esc the caret sits on an invisible line at the foot of the page, and Tab back to the task was unreliable while the plan pane was open: in my turn, text meant for the task landed in the talk line.",
+    "Lessons are named with whatever I first typed ('TEACH' in my turn, 'Mark my Diagnostic. I used 47 of 50 minutes.' on shots/open-dark.png), so the tabs and ⌘P read like a chat log rather than named documents."
+  ],
+  "bugs": [
+    "On the setup screens the status line says 'Return to continue, or write to your tutor' although no lesson is open (shots/setup-signed-out-dark.png, shots/setup-no-claude-dark.png, shots/setup-replace-dark.png).",
+    "The settings editor clips long lines at its right edge instead of wrapping or scrolling: 'key close = cmd+w # close the tab; closing the lesson keeps wher' (shots/settings-dark.png, shots/settings-light.png, and the same in my turn).",
+    "Choosing a value from ⌘K rewrites its line in the settings file without re-padding, so the comment column drifts: after 'Scheme: system' the '#' on that line moved two columns right, and the 'ink = blue' comment is already one column out of line (seen in my turn, settings page after restoring the scheme).",
+    "With the plan pane open after 'change the plan', two presses of Tab did not move the caret back into the task, and the status line kept saying 'Tab: back to the task'. My next keystrokes ('x = 2') went into the talk line. A later Tab switched the hint to 'Esc to say something else', but ⌘A followed by Backspace did not visibly clear the talk draft (my turn, about 17:57 to 17:58; the photos may lag the window).",
+    "When a hint is asked for, the reply is printed below the task block, so the open answer place sits above the hint it depends on (shots/hint-dark.png)."
+  ],
+  "window_turn": "I got the lock at 17:54 after about 16 minutes of queueing, used about 4 minutes, and did everything from the keyboard, with no clicks. ⌘K then 'scheme' gave a filtered list, and 'Scheme: dark' applied instantly. ⌘K then 'font' listed nine fonts; 'SF Mono' switched the tutor's text and the material while my own words stayed in Charter. Typing went straight into the answer under the task without a click. Esc moved me onto the page, where I asked an off-plan question; the reply was unmarked, and my draft 'b = -5' stayed in the task. Tab took me back to the task with the draft, and Return handed it in: the gutter showed '✓ Right' from the record, with the question quoted above my answer because the detour had pushed it away. ⌘P listed my lesson, the plan, the material, the Record and Settings. Opening the plan and pressing ⌘E showed plan.md as raw text with '⌘S saves · Esc leaves it as it was'. ⌘W closed the tab and put the caret back in the task. ⌘, opened the settings file, which already reflected my ⌘K choices. ⌘K 'Size 20' applied instantly and widened the column with it, and ⌘L went back to the lesson. I set the font, size and scheme back through ⌘K. 'change the plan' opened the plan beside the lesson with the old exam day struck through, the moved items marked 'moved up / moved down', and 'Plan changed at 17:57 · Tab: back to the task' in the status line. Two presses of Tab after that left me in the talk line, as listed under bugs. A perf probe gave a median of 17 ms and a p95 of 18 ms. I did not quit and relaunch, so 'reopens as I left it' is judged from s1-cold and s5-week, where the draft and the open tabs come back. The settings ended as I found them, but my test draft 'x = 2' may still be on the talk line."
+}

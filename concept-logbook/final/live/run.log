@@ -1,0 +1,8 @@
+2026-11-12T23:10:18.091Z course <tmp>/mg-correct-GRwoZJ/Intro-Statistics; attempts before: 0
+2026-11-12T23:10:25.419Z start: {"clicked":"button[data-drive=start] \"Start on Midterm 2 Intro Statistics\"","ok":true}
+2026-11-12T23:10:49.679Z question 1 written; waiting for answer-1.txt
+2026-11-12T23:10:57.792Z focus: {"focused":"textarea[data-drive=answer]","ok":true}
+2026-11-12T23:10:58.001Z sent 1: {"focused":"textarea[data-drive=answer]","ok":true}
+2026-11-12T23:11:15.802Z attempts after answer 1: [["right","none",true,"standard error of a sample mean"]]
+2026-11-12T23:11:25.638Z the tutor asked for the date; giving Sunday 29 November
+2026-11-12T23:12:04.982Z marked right by the record: standard error of a sample mean

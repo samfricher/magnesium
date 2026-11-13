@@ -1,0 +1,59 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/settings-dark.png", "shots/open-dark.png", "shots/plan-edit-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The page is the learner's material and the window bends at once: in my turn, 'Ink: green' from ⌘K recoloured my own words and the task edge immediately. What holds it back is the two surfaces that promise 'this is your file'. They render as a web form, not an editor. In shots/settings-dark.png the line '# close the tab; closing the lesson keeps where' is clipped at the box's right border with no wrap, and the box runs off under the status line. In shots/plan-edit-dark.png the browser's textarea resize grip sits in the bottom-right corner."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "The cold page is one title, one task and one line, and it is genuinely quiet. Three pieces of app scaffolding still surround it: the meta line 'The lesson so far · 1 exchange', a second tab ('Midterm 1 plan') the learner did not open, and a status line repeating 'Return to continue'. The Continue button's own Return keycap already says that, so the same instruction appears twice on one screen."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png", "live/s2-answer-dark.png"],
+      "blocks_next_point": "One Return continues, the caret lands in the task with the draft kept, and nothing counts or congratulates. The miss is in live/s2-answer-dark.png: under the learner's answer the gutter says 'No mark' in the same caption style as a verdict, directly above the tutor's 'That's right'. It reads as credit withheld. The reason CONCEPT.md promises ('not taken as the answer') is not on screen."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "With the real tutor, the plan really changed. The pane opened beside the lesson, all four moved rows carry the change bar with old days struck through, and the status line read 'Plan changed at 17:33'. Off-plan talk left attempts empty, and the open task stayed pinned with a Tab key. The weak point is how fast the change leaves. On the next message the pane closes and the plan tab disappears from the tab row entirely (shots/s3-after-dark.png has it; shots/s4-offplan-dark.png and live/s4-offplan-dark.png do not), so the only trace of the move is a sentence scrolled up in the transcript."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["window/s3-after-dark.png", "live/s3-after-dark.png", "shots/narrow-lesson-dark.png", "shots/s2-answer-dark.png", "shots/s4-offplan-dark.png", "live/s4-offplan-dark.png", "shots/commands-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "The system is disciplined. Measured from the PNGs, one quiet token is 5.0:1 on #1D2023 and 5.1:1 on #FAFAF8; the change amber is 7.9:1 dark and 5.1:1 light; the ink buttons are 7.5:1 and 6.3:1. Body text is Charter at 17/1.6 on a 66-character measure. The column breaks in two panes and at narrow width. In window/s3-after-dark.png the left tab text starts at x=92 against a text column at 48, and its pill sits 7pt from the traffic lights. The right pane's 'Midterm 2 plan' starts at 542 against 568. In shots/narrow-lesson-dark.png the tab text is at 88 against 62. CONCEPT.md says 'the tab names start at the text column', but only the single wide pane does."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-start-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "window/s4-offplan-dark.png", "live/s4-offplan-dark.png", "shots/hint-dark.png"],
+      "blocks_next_point": "Answering is unmistakable: the task block has its writing line, with Help ⌘K under it. Talking is not. After an off-plan reply (shots/s4-offplan-dark.png, window/s4-offplan-dark.png) there is no visible place to write: no caret line, no field. The only cue is a 12px status note, 'Tab: back to the task'. In my turn, Esc left a page showing only 'Go on.'; the only sign that typing would go anywhere was 'Return sends what you write' in the status line."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Input latency is at the native bar: median 17 ms, p95 18 ms, max 18–19 ms, about one frame. Startup is the gap. It took 674 ms on the main open, 680 ms after a week and 854 ms on first open (window/perf.json), 604–933 ms live, and 759 ms and 848 ms in the judge runs. That beats Obsidian's 1–2 s but sits above the half-second a native editor opens in."
+    }
+  },
+  "still_dislike": [
+    "Two panes and narrow width break the column the single pane holds so well. Tab names float off the text column (92 vs 48 and 542 vs 568 in window/s3-after-dark.png; 88 vs 62 in shots/narrow-lesson-dark.png). The left tab pill jams 7pt from the traffic lights, and scroll fades leave glyph fragments under the tab hairline (shots/s2-answer-dark.png, shots/s4-offplan-dark.png, shots/narrow-lesson-dark.png).",
+    "Talk has no visible place. After Esc or an off-plan reply there is no caret line on the page, only a 12px status hint (shots/s4-offplan-dark.png, my window turn). The structural answer-versus-talk split deserves a quiet but visible line at the end of the page.",
+    "Mathematics is set three different ways. 'Vmax' is plain in the title, tab and new-lesson placeholder but typeset in the body (shots/s1-cold-dark.png, shots/new-lesson-dark.png). The learner's 'n − 1' stays upright while the tutor's n is italic. Inline maths breaks across lines at the operator: 'dividing by n −' / '1 corrects' in live/s4-offplan-dark.png."
+  ],
+  "bugs": [
+    "shots/setup-no-claude-dark.png, shots/setup-signed-out-dark.png and shots/setup-replace-dark.png: on a setup page with Claude Code missing or signed out, the status line still says 'Biochemistry 210' and 'Return to continue, or write to your tutor'.",
+    "shots/settings-dark.png: the settings line '# close the tab; closing the lesson keeps where' is clipped by the editor's right border, with no wrap or horizontal scroll cue.",
+    "shots/plan-edit-dark.png: the browser's native textarea resize grip shows in the plan editor's bottom-right corner.",
+    "shots/drop-dark.png: the dashed drop-target border runs through the status-line label 'Biochemistry 210'.",
+    "shots/s2-answer-dark.png, shots/s4-offplan-dark.png, shots/narrow-lesson-dark.png: ghost fragments of scrolled text (title descenders, a nearly legible line in the narrow shot) show just under the tab hairline.",
+    "live/s4-offplan-dark.png: KaTeX inline 'n − 1' wraps between the minus and the 1.",
+    "shots/commands-dark.png: command rows alternate between 28pt and 30pt tall, so the list has no even rhythm.",
+    "shots/hint-dark.png: the hint appears below the answer line, so the learner reads it and then has to look back up to write.",
+    "live/s2-answer-dark.png: an unmarked answer shows only 'No mark'. CONCEPT.md's 'No mark, not taken as the answer' reason is not shown.",
+    "Window turn: after Continue on 'Solve x² − 5x + 6 = 0 with the formula.', the stand-in replied 'Go on.', and the window folded the open task into 'Earlier in this lesson · 6 exchanges' with no pinned strip. The task the cold screen promised vanished from view.",
+    "Window turn: typing 'ink' in ⌘K also lists 'I don't know' and 'Pay for lessons with an API key'. After choosing an ink, focus stays in a hidden input instead of returning to the answer line."
+  ],
+  "window_turn": "My first lock (17:44–17:49) was lost: the window did not answer and could not be photographed. The orchestrator said it had been left in another desktop Space, so I did not count that against the build. After the restart (17:52–17:54) the window opened on a lesson titled 'TEACH' with one task and 'Stopped today at 17:52. Continue [Return]'. Return continued; the stand-in replied 'Go on.' and the earlier exchanges, open task included, folded away. Esc gave an invisible talk place: what I typed ('change the plan') appeared inline in blue ink at the end of the page, with no field chrome. On send, the plan opened in a right pane within about 4 s: exam Sun 29 Nov struck to Sun 6 Dec, the two swapped rows barred with 'moved up' and 'moved down', and 'Plan changed at 17:53' in the status line. 'TEACH' posed a task. 'b = 5' in the answer line got a quiet × and 'Not right yet, with a hint' from the record, and the plan pane closed by itself. In ⌘K, 'ink' then 'Ink: green' recoloured my words and the task edge live; I set it back to blue. The perf op measured median 17 ms and p95 18 ms, with startup 848 ms."
+}

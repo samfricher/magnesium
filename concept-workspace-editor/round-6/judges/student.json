@@ -1,0 +1,51 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-next-light.png", "shots/settings-dark.png", "shots/commands-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The page is my lesson and my half-written working, and it reopens where I stopped. But the margin still talks in the app's bookkeeping words: 'Right, from a blank page' and 'No mark, not taken as the answer' (window/s2-answer-dark.png, live/s2-answer-dark.png). Those are the only lines on the page that sound like someone else's system, not my notes."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "live/s5-week-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "Opening shows one title, my task with my draft, and 'Stopped on … Continue'. That is about as little as it can be. Then a plan change opens a whole second pane mid-lesson: five rows, struck-through dates, amber bars, 'moved up / moved down' tags and a paragraph (shots/s3-after-dark.png, window/s3-after-dark.png). It is the one moment the screen gets busy, and it squeezes my task to a 3-line column."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "window/s1-cold-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "Return puts me in my half-done answer with the caret in it. Nothing counts the days I missed ('Stopped on Thu 5 Nov' is just a date), and there are no streaks or scores. On the very first open (shots/s1-cold-first-dark.png), though, I have to learn what a 'study folder' is and pick between Open, New and Find before I see any of my material. That is a decision at the exact moment I'm most likely to close it."
+    },
+    "flexible": {
+      "score": 8,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "window/s3-after-dark.png", "shots/s4-offplan-dark.png"],
+      "blocks_next_point": "With the real tutor it works. It asked for the new date instead of guessing, and the plan pane showed Sun 22 struck to Sun 29 with every block re-dated. My tangent got no mark (live attempts stay empty), and 'back to the task' restated the question with the caret in it. But in my turn, with the plan pane open, Tab (which the status line advertises as 'back to the task') and clicking the pinned task strip both left the task off-screen. A character I typed went into an answer box I couldn't see."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/narrow-lesson-dark.png", "shots/narrow-lesson-light.png", "shots/s4-offplan-dark.png", "shots/plan-dark.png"],
+      "blocks_next_point": "Both schemes are clean and consistent, with no clutter and marks in grey rather than red or green. But the pinned task strip at the top of shots/s4-offplan-dark.png and -light.png sits over the half-clipped 'Your answer' line of the task beneath it, with two blue edge bars that don't line up. It looks broken just when I've wandered off."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s3-after-dark.png", "shots/s4-return-dark.png", "live/s2-answer-dark.png", "window/s4-offplan-dark.png"],
+      "blocks_next_point": "In live/s2-answer-dark.png the tutor says 'That is right' directly under my answer, while the margin says '– No mark, not taken as the answer'. It's truthful to the record, but as the learner I can't tell whether I got it or what I should do. Also, the place I talk after Esc is an unlabeled empty rule at the bottom (window/s4-offplan-dark.png), so I have to trust the status line to know where I'm typing."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 595 ms (main), 682 ms (week) and 899 ms (first open), and 713 ms in my run. That's well ahead of Obsidian but over the half-second a native editor manages. Keystrokes paint in 17 ms median and 19 ms p95, just over one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "With the plan pane open, Tab (advertised as 'back to the task') and clicking the pinned task strip don't bring the task back into view. The status line flips to 'Esc to say something else' while the answer box stays off-screen, so I lost my place right after going off-plan.",
+    "'No mark, not taken as the answer' next to the tutor saying 'That is right' (live/s2-answer-dark.png). I come away not knowing whether I got it, and there's no plain next step offered.",
+    "The plan change opens a full second pane of struck dates, bars and a 'Last change: … because the learner skipped days' sentence (window/s3-after-dark.png). It's a lot at once, and it reads like a log kept about me. One line saying what moved would do."
+  ],
+  "bugs": [
+    "My turn: after 'change the plan' opened the two panes, pressing Tab left the left pane where it was. The task stayed a faded pinned strip, but the status line changed to 'Esc to say something else', so focus went to an answer field I couldn't see. A '2' I typed landed there invisibly. Clicking the pinned strip (button 'A sample of 25 students…') also didn't scroll. Only typing 'back to the task' as talk brought the task back.",
+    "shots/s4-offplan-dark.png and shots/s4-offplan-light.png: the pinned task strip overlaps the clipped 'Your answer' text and underline of the task block below it. Its left bar sits about 37 px (2x) left of the task block's bar, so two misaligned blue bars stack.",
+    "window/s5-week-dark.png shows the margin-of-error task with Continue, but after Continue (window/s5-week-next-dark.png) the lesson starts over at the standard-error question. The earlier right answer is folded under 'Earlier in this lesson'. The live run (live/s5-week-next-dark.png) gets this right, so it is probably the stand-in tutor's reply rather than the window."
+  ],
+  "window_turn": "Opened on 'New lesson / What do you want to work on?' with 'Sampling distributions' pre-filled, and one Return put me in the lesson with the caret in the answer place. I typed 'Can I have a hint?' into the answer box: it showed 'You asked for a hint.' and was not marked. 'b = 5' got a grey × 'Not right yet, with a hint', with no red. I pressed Esc and typed 'by the way, is this even on the midterm? I feel so behind'. The reply said nothing was marked, and nothing was. 'ugh I missed three days, change the plan' opened the Midterm 2 plan beside the lesson: Sun 22 struck to Sun 29, Hypothesis tests 'moved up' and Confidence intervals 'moved down', with old dates struck and amber bars, plus 'Plan changed at 18:23' in the status line. Then Tab ('back to the task') did not bring the task into view, and neither did clicking the pinned strip. A typed '2' went somewhere invisible. Esc, then 'back to the task' as talk, closed the plan pane and re-posed the task with the caret in it. 'b = -5' then showed '– No mark, not taken as the answer' while the stand-in said 'Not quite', which is truthful to the record. ⌘K showed 'Hint', 'I'm lost', 'I don't know' and 'Sure/Unsure/A guess' with keys, which I like a lot. Typing latency measured 17 ms median, 19 ms p95. Lock taken and released."
+}

@@ -1,0 +1,59 @@
+{
+  "judge": "designer",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/settings-dark.png", "shots/settings-light.png", "shots/open-dark.png", "shots/commands-dark.png", "shots/s2-answer-dark.png"],
+      "blocks_next_point": "The column still carries the app's captions inside my material: 'The lesson so far' (shots/s1-cold-dark), 'Earlier in this lesson' (shots/s2-start-dark), the 'Your answer' placeholder (shots/s2-answer-dark), and 'Stopped on Tue 10 Nov at 16:40.' The rest is excellent: settings is a plain file with any font, size, measure, ink, colours and every key; it reopens on the stopped lesson with the draft kept; ⌘P and ⌘K work. Separately, my lines differ from the tutor's only by ink colour, so choosing the offered 'graphite' ink makes them identical Charter at the same size and colour (window turn)."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "The stopped page has a stray full-measure rule under Continue (shots/s1-cold-dark at y≈345). It is the talk line, it has no label, and it reads as a divider. In the real window the caret blinks on it (window/s5-week-dark, live/s5-week-dark), so the one quiet page has two things asking for attention. Apart from that, it opens on a tab row, a title, the open task and one Continue, with no counts and no cards."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-next-dark.png", "live/s5-week-next-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "On the stopped screen two things claim Return: the filled Continue button and the caret blinking in the empty talk line under it (window/s5-week-dark, live/s5-week-dark). The single next action should hold focus alone. What already works: the draft is kept, nothing says what I owe, after a week Continue picks up the same question (live/s5-week-next-dark), and the record is a log in words ('Right, from a blank page'), not a score."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s3-after-light.png", "live/s2-answer-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json"],
+      "blocks_next_point": "While I am off the task, the only sign that it is waiting is the pinned task strip, and it is the least legible thing on screen: 13 px grey sans at 2.6:1 (dark) and 2.3:1 (light), cut off with an ellipsis, its accent rule hanging 17 pt left of the task block's rule, and body text butting straight under its hairline (live/s4-offplan-dark, shots/s4-offplan-light). The behaviour itself is right. The real tutor asked for the new date and the plan then opened beside the lesson with old days struck through and change bars. 'That is right' from the tutor showed 'No mark, not taken as the answer', and the record stayed empty. Off-plan talk was unmarked, and 'back to the task' re-set the task with the caret in it."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-light.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/narrow-lesson-light.png", "shots/s1-cold-light.png", "shots/record-dark.png", "shots/paper-dark.png", "shots/upgrade-dark.png", "window/s3-after-dark.png"],
+      "blocks_next_point": "Geometry breaks at the edges. At 720 px the column keeps its 40 px mark gutter: it sits 92 pt from the left and 22 pt from the right (shots/narrow-lesson-dark/light). In two panes the left column is off-centre in the same way, and the left tab pill sits 7 pt from the zoom button (window/s3-after-dark, live/s3-after-dark). The system underneath is disciplined. Charter for the page, SF at 12–13 px for chrome, mono for files, about 66 characters at 1.6 leading. One quiet grey does every secondary job and measures 5.0:1 dark and 5.1:1 light. The change amber passes AA in both schemes (7.9 and 5.1), and the same thing looks the same in both schemes. Smaller faults: KaTeX V_max and K_m sit at regular weight inside the bold title (shots/s1-cold-light). Maths is typeset in tabs and titles but plain 'Vmax and Km' in ⌘P, the sidebar and the new-lesson placeholder (shots/open-dark, sidebar-dark, new-lesson-dark). Marks on the record end 12 pt short of the measure (shots/record-dark). The edge fade drags a grey band across the white PDF page (shots/paper-dark). Two filled primary buttons sit on one screen, and primary buttons come in three heights (shots/upgrade-dark, s1-cold-first-dark)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "shots/s2-answer-dark.png", "live/s2-answer-dark.png", "window/s4-offplan-dark.png", "live/s3-before-dark.png", "shots/s1-cold-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "After Esc, the place to talk is a bare rule with a caret and no words (window/s4-offplan-dark, live/s3-before-dark). You find out what typing there does only from the status line at the far bottom right. The fold above a lesson also has two names, 'The lesson so far' (shots/s1-cold-dark) and 'Earlier in this lesson' (shots/s2-start-dark), and both are styled as captions rather than controls. Marks in words beside the answer, the status line ('Plan changed at 18:15 · Tab: back to the task') and the split plan with struck-through dates make what just happened clear."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json"],
+      "blocks_next_point": "Startup takes 595–899 ms (595 main, 682 week, 899 first; 713 ms in my turn), and keystroke-to-paint p95 is 19–20 ms against a median of 17 ms, so it is just over one 16.7 ms frame. Clearly faster than Obsidian but not native-instant: it needs startup under about 0.4 s and p95 inside one frame."
+    }
+  },
+  "still_dislike": [
+    "The pinned open-task strip (live/s4-offplan-dark, shots/s4-offplan-light) is the element that says 'your task is waiting', and it is the least legible thing on screen: 2.3–2.6:1 grey sans, truncated, its rule 17 pt left of the task block's rule, and body text colliding under its hairline. Set it in the page face at AA, align its rule with the task's, and give it a ground that the text scrolls under cleanly.",
+    "Edge geometry: at the narrow size the column is 92 pt from the left and 22 pt from the right (shots/narrow-lesson-*), the left pane in a split is off-centre the same way, and the left tab pill is jammed 7 pt from the traffic lights (window/s3-after-dark). Drop or fold the mark gutter when space is short, and clear the traffic lights by at least the column inset.",
+    "Typographic consistency of the content itself. My lines differ from the tutor's only by ink colour, so graphite ink erases authorship (window turn). KaTeX is regular weight inside bold titles (shots/s1-cold-light). Maths is typeset in tabs and titles but plain text in ⌘P, the sidebar and placeholders (shots/open-dark, sidebar-dark, new-lesson-dark). A handed-in task's question drops from 17 px Charter to 13 px SF."
+  ],
+  "bugs": [
+    "Window turn: after I handed in an answer, the next task ('Solve x² − 5x + 6 = 0') opened with a stale draft 'b = 5' already in its answer place. That draft was left from the previous task. Also, ⌘A in the answer place did not select the draft, so 'b = 5b = -5' was sent; this may be the driver's synthetic key rather than the app.",
+    "Window turn: with talk in between, ⌘⇧H put 'You asked for a hint.' and the hint at the end of the page, while the answer place with the caret stayed above both, out of reading order. Compare shots/hint-dark, where the answer place follows the hint.",
+    "Window turn: I clicked the 'Midterm 2 plan' tab, then opened Record with ⌘P. A 2 px blue focus ring stayed on the inactive 'Midterm 2 plan' tab, taller than the pills and touching the active Record pill.",
+    "Window turn: opening ⌘K, or Esc to talk, hides the Help row under the answer, and everything above the task jumps about 27 pt. It jumps back when focus returns.",
+    "shots/paper-dark.png: the bottom edge fade paints a grey band across the white PDF page.",
+    "shots/upgrade-dark.png: two filled primary buttons (Upgrade this folder, Continue) on one screen. Primary buttons also come in three heights: about 37 pt in shots/s1-cold-first-dark, about 30 pt for Continue and Sign in, about 29 pt for Upgrade.",
+    "shots/record-dark.png: the right-aligned marks end 12 pt short of the right edge of the measure that every other rule uses.",
+    "shots/s1-cold-light.png: the kept draft 'V_max = 1/0.25 =' (the learner's own words) is drawn at 3.65:1, below AA.",
+    "shots/s4-offplan-dark.png: the pinned strip overlaps the scrolled task, leaving the bottom half of 'Your answer' visible under its hairline.",
+    "window/s5-week-next-dark.png: with the stand-in tutor, Continue after a week re-posed the standard-error task, not the margin-of-error task that window/s5-week-dark showed. live/s5-week-next-dark resumes correctly, so this is probably the stand-in.",
+    "shots/setup-no-claude-dark.png: the not-ready state is a 3 px dot where the ready state is a check mark; a problem has no distinct glyph."
+  ],
+  "window_turn": "I waited about 4 minutes for the lock, then used about 3 minutes. The window was in the light scheme, mid-lesson, as the previous judges left it. ⌘K 'ink' listed Ink: blue (now), green, violet, graphite. I chose graphite: my questions became indistinguishable from the tutor's text, so I set it back to blue. Esc dropped the caret onto a bare rule at the end of the page, and the status line changed to 'Tab: back to the task'. I sent 'by the way, why is a quadratic called quadratic?' and got an unmarked reply with nothing in the gutter. Tab took the caret back into the task. The plan tab reads cleanly: the exam on its day, then dated blocks, with no countdown. ⌘P → Record showed a log in words, but a stale focus ring stayed on the plan tab. ⌘⇧H put the hint at the page end while the answer place stayed above it. I handed in the answer and the gutter showed '✓ Right, with a hint', matching the record's new row, but the next task opened with a stale 'b = 5' draft in it. From the talk line I sent 'I am behind on everything, change the plan'. The plan opened in the right pane with 'Sun 6 Dec' struck through under Sun 13 Dec, change bars, and 'moved up' / 'moved down'; the status line read 'Plan changed at 18:33', and nothing anywhere said 'behind'. Tab put the caret back in the task. The perf op gave median 17 ms, p95 20 ms, startup 713 ms. I released the lock."
+}

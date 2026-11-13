@@ -1,0 +1,24 @@
+{
+  "after": [
+    {
+      "answered_at": "2026-11-12 18:36",
+      "attempt_id": "a-e9b85dbb7896f58d1e2e36e68cbccaee",
+      "cold": true,
+      "confidence": null,
+      "help": "none",
+      "kind": "sampling distribution of the sample mean",
+      "label": "sampling distribution of the mean from a small population",
+      "mark": "right",
+      "marks": null,
+      "no_start": false,
+      "observation_id": "o-bb14872302aa54128b002a3bf2b7405e",
+      "out_of": null,
+      "paper": null,
+      "paper_question": null,
+      "question": "A bag holds three cards, numbered 2, 4 and 6. You draw one card, put it back, draw again, and take the mean of your two draws. Which values can that mean take, and which value is the most likely?",
+      "response_event_id": "e-812b8db74c4cfd27d03757d91ff56d32",
+      "seconds": null,
+      "session_id": "s-8d15c4377b7d4fbece354183d908ae33"
+    }
+  ]
+}

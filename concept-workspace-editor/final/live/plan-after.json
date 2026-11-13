@@ -1,0 +1,64 @@
+{
+  "changed_ms": 1794526637499,
+  "exam_date": "2026-11-29",
+  "goal": "Sampling distributions",
+  "items": [
+    {
+      "day": "2026-11-12",
+      "id": "sampling-distributions",
+      "note": "the standard error of a mean, and when x̄ is normal",
+      "status": "todo",
+      "title": "Sampling distributions"
+    },
+    {
+      "day": "2026-11-16",
+      "id": "confidence-intervals",
+      "note": "t intervals for one mean, and what 95% means",
+      "status": "todo",
+      "title": "Confidence intervals"
+    },
+    {
+      "day": "2026-11-20",
+      "id": "hypothesis-tests",
+      "note": "t tests, p-values, the two kinds of error",
+      "status": "todo",
+      "title": "Hypothesis tests"
+    },
+    {
+      "day": "2026-11-24",
+      "id": "tests-and-intervals-together",
+      "note": "when a test and an interval agree",
+      "status": "todo",
+      "title": "Tests and intervals together"
+    },
+    {
+      "day": "2026-11-27",
+      "id": "practice-midterm",
+      "note": "75 minutes, timed, from a blank page",
+      "status": "todo",
+      "title": "Practice midterm"
+    }
+  ],
+  "path": "Study/midterm-2/plan.md",
+  "steps": [
+    {
+      "status": "done",
+      "step": "List a sampling distribution"
+    },
+    {
+      "status": "doing",
+      "step": "Probability for a sample mean"
+    },
+    {
+      "status": "todo",
+      "step": "When the normal model applies"
+    },
+    {
+      "status": "todo",
+      "step": "Sample proportions"
+    }
+  ],
+  "target": "midterm-2",
+  "text": "# Midterm 2: study plan\n\nFolder: `Study/midterm-2/`. Built 2026-11-12. Last re-plan 2026-11-12.\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 2 |\n| When | 2026-11-29 (Sun) 10:00 to 11:15 |\n| Length | 75 |\n| Aids | one page of notes, a calculator |\n| Coverage | Weeks 5 to 7: sampling distributions, confidence intervals, hypothesis tests |\n| Exclusions | two-way tables |\n| Proficiency | \"I follow the lectures but freeze on the tests\"; read as mixed |\n| Hours available | 9 |\n\n## 6. Blocks\n\n| # | Block | Purpose | Status | Day |\n|---|---|---|---|---|\n| 1 | Sampling distributions | the standard error of a mean, and when x̄ is normal | todo | 2026-11-12 |\n| 2 | Confidence intervals | t intervals for one mean, and what 95% means | todo | 2026-11-16 |\n| 3 | Hypothesis tests | t tests, p-values, the two kinds of error | todo | 2026-11-20 |\n| 4 | Tests and intervals together | when a test and an interval agree | todo | 2026-11-24 |\n| 5 | Practice midterm | 75 minutes, timed, from a blank page | todo | 2026-11-27 |\n\nNever drop: the practice midterm.\n\nDrop order if time runs short: tests and intervals together.\n\n## 7. Sessions\n\n- none planned\n\n## 14. Changes\n\n- 2026-11-12: plan built from the course notes for weeks 5 to 7.\n- 2026-11-12: exam moved from 2026-11-22 to 2026-11-29, same time, and blocks 2 to 5 re-spaced to 16, 20, 24 and 27 Nov. Why: \"I skipped three days and the midterm moved\".\n",
+  "title": "Midterm 2"
+}

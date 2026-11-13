@@ -1,0 +1,24 @@
+{
+  "after": [
+    {
+      "answered_at": "2026-11-12 18:08",
+      "attempt_id": "a-c8a1dc86db893d46aebdc73710474f6f",
+      "cold": true,
+      "confidence": null,
+      "help": "none",
+      "kind": "sampling distribution of the sample mean",
+      "label": "building the sampling distribution of the mean from a small population",
+      "mark": "right",
+      "marks": null,
+      "no_start": false,
+      "observation_id": "o-dee48e9111c9a062bf372f0ed57f5a2d",
+      "out_of": null,
+      "paper": null,
+      "paper_question": null,
+      "question": "A bag holds three tickets numbered 1, 3, 5. You draw one ticket, put it back, and draw again, then take the average of your two numbers. What is the probability that the average is exactly 3? Show how you got it.",
+      "response_event_id": "e-75208b07fe9fa5826610796b4adf8c4d",
+      "seconds": null,
+      "session_id": "s-9e957b23a38bf6c42a6034fbe9baf8d2"
+    }
+  ]
+}

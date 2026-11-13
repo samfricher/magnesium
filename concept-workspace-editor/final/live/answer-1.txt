@@ -1,0 +1,1 @@
+The mean can be 2, 3, 4, 5 or 6. Of the 9 equally likely ordered draws, 1 gives 2, 2 give 3, 3 give 4 ((2,6), (6,2), (4,4)), 2 give 5 and 1 gives 6, so 4 is the most likely, with probability 3/9 = 1/3.

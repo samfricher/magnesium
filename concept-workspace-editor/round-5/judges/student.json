@@ -1,0 +1,53 @@
+{
+  "judge": "student",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s2-start-dark.png", "shots/settings-dark.png", "shots/s1-cold-first-dark.png"],
+      "blocks_next_point": "Reopening is right: s1-cold puts back my own half-written V_max = 1/0.25 = under the task, and there is no app voice on the lesson page. The first-ever screen still speaks as the app, though. shots/s1-cold-first-dark.png is titled 'Magnesium', has an explainer paragraph and three checkmarks about the install and billing, so my first impression is of the product rather than of my course."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/s2-start-dark.png"],
+      "blocks_next_point": "The cold open is close to nothing: a title, my task, 'Stopped on Tue 10 Nov at 16:40.' and one Continue button. Two things are still on screen that I do not need. One is the quiet 'The lesson so far 1 exchange' / 'Earlier in this lesson 2 exchanges' line (shots/s1-cold-dark.png, shots/s2-start-dark.png), which counts something for no reason. The other is the plan pane's three-line 'Last change: …' paragraph (shots/s3-after-dark.png)."
+    },
+    "easy_to_start": {
+      "score": 8,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "window/s2-start-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "Return really is the whole decision, and nothing tells me what I owe. After a week it only says 'Stopped on Thu 5 Nov', with no count of days. In the real window, though, the caret did not go into the task. In my turn, Return on New lesson left the caret in the invisible talk place (status line: 'Tab: back to the task'). window/s2-start-dark.png shows no caret in 'Your answer' either, while the demo's shots/s2-start-dark.png does. So the first thing I would do, just typing my answer, gets sent as talk."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "The live run is convincing. The real tutor asked for the new date, and then the plan opened beside the lesson with every moved row barred and the old dates struck through (live/s3-after-dark.png). The bottle question stayed pinned at the top with 'Tab' while I went off on n − 1 (live/s4-offplan-dark.png). It came back with a place to answer, and live/attempts.json has no mark for the talk. What stops a 10 is that the place where I talk is invisible. Under the off-plan reply there is no line and no caret (live/s4-offplan-dark.png, shots/s4-offplan-dark.png), so 'talk any time' only works if I already know that typing anywhere counts as talk."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/commands-dark.png"],
+      "blocks_next_point": "It is clean and looks the same in both schemes and at the narrow size. Marks are quiet (a ✓ in the gutter), there is no red and no badge. The real window and the demo do not match, though. window/s2-start-dark.png has no 'Help ⌘K' line and no caret in the answer place, while shots/s2-start-dark.png has both. In every window/ and live/ photo, the macOS input bubble also floats over the text (it covers 'That's' in live/s2-answer-dark.png)."
+    },
+    "clarity": {
+      "score": 7,
+      "evidence": ["shots/s4-offplan-dark.png", "window/s4-offplan-dark.png", "live/s2-answer-dark.png", "shots/s3-after-dark.png"],
+      "blocks_next_point": "Whether a line is an answer or talk depends on where an invisible caret is. In my turn, after the wrong-answer reply the caret went back to the talk place. My retry 'b = -5' was sent as talk, got no mark, and the tutor replied 'Not quite… Try it once more', so I would think I was wrong again. Also, 'No mark' sits right under the tutor's 'That's right' (live/s2-answer-dark.png), and the reason is hidden behind a key."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup to first content is 674 ms (854 ms on first open, 759 ms on the judge copy). That is quicker than Obsidian but above native's half second. A keystroke paints in a median of 17 ms (p95 18 ms), just over one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "Put the caret inside the open task every time a reply sets or restates one. Return on a new lesson and the reply to a wrong answer both left it in the invisible talk place, so my retry answer went out as unmarked talk (my window turn; window/s2-start-dark.png has no caret in the answer place).",
+    "Make the place where I talk visible. After an off-plan reply there is no line or caret under it (shots/s4-offplan-dark.png, live/s4-offplan-dark.png), and only the small status line says 'Tab: back to the task'.",
+    "Show the reason for 'No mark' on the spot when the tutor has just said 'That's right' (live/s2-answer-dark.png), and drop the '1 exchange' / '2 exchanges' count line from the lesson top (shots/s1-cold-dark.png)."
+  ],
+  "bugs": [
+    "My window turn: after Return on New lesson, focus was in the talk place, not the task's answer place (status line 'Tab: back to the task'). The demo shots/s2-start-dark.png shows the caret in the answer; the real window/s2-start-dark.png does not.",
+    "My window turn: after the record marked 'b = 5' as 'Not right yet, with a hint', focus went back to the talk place. The retry 'b = -5' was sent as talk (drive reported focused textarea[data-drive=talk]), got no mark, and the stand-in answered 'Not quite… Try it once more'.",
+    "My window turn: about 1–2 minutes in, capture.sh began failing with 'could not create image from window', and then perf and key ops timed out at 120 s. The process was alive and idle (state S, 0% CPU). The cause is unknown and could be the Mac's display rather than the app.",
+    "live/s1-cold-dark.png: the photo is offset. The window starts about 228 px down, with a white band and a stray input bubble above it (a capture problem).",
+    "window/s5-week-next-dark.png: Continue after a week reopened the first, already-answered standard-error question, although window/s5-week-dark.png had promised the margin-of-error task. This is most likely the stand-in's reply, but the screen then treats that already-answered question as the open task."
+  ],
+  "window_turn": "I took the lock at 17:37 and released it at 17:44. The window opened on 'New lesson / What do you want to work on?' with 'Sampling distributions' filled in, and I pressed Return. The task appeared with the 'Your answer' line, but the caret was in the invisible talk place (status line: 'Tab: back to the task'). I typed 'Can I have a hint?': it appeared in blue under the task, and Return got 'You asked for a hint.' plus the hint, unmarked. I pressed Tab, typed 'b = 5' and pressed Return. The record put 'Not right yet, with a hint' in the gutter, with no red. Focus then went back to talk, so my retry 'b = -5' was sent as talk: it got no mark and the tutor said 'Not quite… Try it once more'. Only after that did the status line read 'Esc to say something else'. From about the third minute, captures failed ('could not create image from window'). A perf op and a key op (Esc before 'change the plan') timed out at 120 s, so I could not test the plan change or off-plan talk myself; for those I relied on live/ and window/."
+}

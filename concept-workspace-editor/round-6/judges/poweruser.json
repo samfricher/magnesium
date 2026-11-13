@@ -1,0 +1,53 @@
+{
+  "judge": "poweruser",
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/settings-dark.png", "shots/settings-light.png", "shots/commands-dark.png", "shots/open-dark.png", "shots/s1-cold-dark.png", "window/s1-cold-dark.png"],
+      "blocks_next_point": "Settings are a plain settings.conf with font, own font, size, width, scheme, ink, colours and every key, and that is what makes this feel like my editor. But in my turn, choosing Scheme: dark from ⌘K turned the window dark while the open Settings tab still said `scheme = system`. If the file is the source of truth, it has to show what the window is doing. Two app labels are also left on the page: the 'Your answer' placeholder in every task, and the filled blue Continue pill (shots/s1-cold-dark)."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s1-cold-dark.png", "shots/s4-return-dark.png"],
+      "blocks_next_point": "When I open it cold there is one title, the task with my half-written draft, one stop line, a row of tab names and a status line. Nothing else. What keeps it from a 10 is the three bits of app scaffolding around that one task: 'The lesson so far', 'Stopped on Tue 10 Nov at 16:40.' and a filled button. The caret already sitting in the task would say the same thing."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/new-lesson-dark.png", "window/s1-cold-dark.png", "shots/record-dark.png", "shots/s5-week-next-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "Return continues. A new lesson comes pre-filled with the plan's next item, so Return starts it. There are no counts and no streaks, and the record is a log written in words. The blocker: on window/s5-week-dark (and live/s5-week-dark) the caret blinks in an empty talk line just under the 'Continue Return' button. That gives two places Return could go on the first keystroke after a week away."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s3-after-light.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/s2-answer-dark.png", "live/attempts.json", "live/plan-after.json"],
+      "blocks_next_point": "This works with the real tutor. It asked for the new date, and then the plan pane opened beside the lesson with all four re-dated rows barred and the old days struck through. A trace line stayed in the lesson. The off-plan question went unmarked (attempts after = []), and the task came back as a block with the answer place under it. The blocker: the pinned task strip covers the task itself. In my turn, Tab back to the task with the plan pane open left the focused answer line scrolled under the strip, with only 'Help ⌘K' showing. shots/s4-offplan-dark shows the same overlap."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s3-after-dark.png", "shots/plan-dark.png", "shots/narrow-lesson-dark.png", "shots/narrow-lesson-light.png", "shots/s4-offplan-dark.png", "shots/s1-cold-first-dark.png"],
+      "blocks_next_point": "Charter for the body, system sans for the chrome and KaTeX inline all sit well together in both schemes. The gutter mark and the ochre change bars read like an editor. The one unfinished seam is shots/s4-offplan-dark/-light: the pinned task strip sits on top of the task's own 'Your answer' line, and the half-cut glyphs show under it. The welcome page's three stacked buttons of different widths also look like a default (shots/s1-cold-first-dark)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "live/s2-answer-dark.png", "window/s4-offplan-dark.png", "window/s5-week-dark.png"],
+      "blocks_next_point": "The status line always says what the keys do ('Esc to say something else', 'Tab: back to the task', 'The tutor is writing', 'Plan changed at 18:15'). But the mark's reason can contradict the conversation. On live/s2-answer-dark the tutor says 'That is right' while the gutter says 'No mark, not taken as the answer'. In my turn, a correct retry got 'Right … Next step.' and the task moved on, yet the gutter said 'not taken as the answer'. 'No mark' is truthful. The stated reason is not."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf-main.json", "judge-perf.json"],
+      "blocks_next_point": "Startup to first content is 595 ms on a normal reopen, 682 ms after a week and 899 ms on first open (713 ms in my turn). Keystroke to paint is median 17 ms and p95 19 ms. That is faster than Obsidian, but not yet Sublime: a reopen needs to be under about 400 ms, and the median keystroke needs to fit inside one 16 ms frame."
+    }
+  },
+  "still_dislike": [
+    "The pinned task strip covers the task it stands for. After Tab back to the task, the answer line I am typing in is hidden under the strip (my turn, with the plan pane open), and on shots/s4-offplan the strip overlaps 'Your answer'. The thing that makes talk-then-return work is the thing that hides my caret.",
+    "Settings are not a single source of truth. ⌘K → Scheme: dark changed the window, but the open settings.conf tab still read 'scheme = system'. A Sublime user will trust the file, and the file was wrong.",
+    "The app's voice is still in the column: a 'Your answer' placeholder in every task (the brief named this exact label), the filled blue Continue pill, and 'No mark, not taken as the answer' printed even when the tutor plainly took the answer and moved on."
+  ],
+  "bugs": [
+    "shots/s4-offplan-dark.png and shots/s4-offplan-light.png: the pinned task strip at the top of the pane overlaps the task's 'Your answer' line, and the cut-off glyphs are visible beneath it.",
+    "My window turn: with the plan pane open after a plan change, Tab ('back to the task') put focus in the answer textarea, but the pane did not scroll it into view. It stayed under the pinned strip, with only 'Help ⌘K' visible.",
+    "My window turn: ⌘K → 'Scheme: dark' switched the window to dark, but the open Settings tab (settings.conf) still showed 'scheme = system'.",
+    "My window turn: a correct retry typed in the task ('s/sqrt(n) = 10/5 = 2 minutes') got the tutor's 'Right … Next step.' and a new task, but the gutter said 'No mark, not taken as the answer'. The record not marking a retry is fine, but the stated reason is false. live/s2-answer-dark.png shows the same contradiction ('That is right' beside 'No mark, not taken as the answer').",
+    "window/s5-week-dark.png and live/s5-week-dark.png: an empty talk line with a blinking caret sits directly under the 'Continue Return' button, so the screen shows two competing targets for Return."
+  ],
+  "window_turn": "About two minutes of driving, keyboard only. The window reopened exactly on the previous judge's session (same lesson, scroll position and plan tab), in the system light scheme. I typed answers straight into the task (the caret was already there) and pressed Return. The tutor replied, and the gutter showed 'No mark, not taken as the answer' on both, including one the tutor called right and moved past. Esc dropped the caret to a quiet line at the end of the page. 'by the way, why is it called a t distribution?' went in as talk: unmarked, nothing in the gutter, and the status line switched to 'Tab: back to the task'. ⌘K opened a clean sheet. Typing 'settings' found Settings (⌘,), which opened settings.conf as a tab: font, own font, size, width, scheme, ink, colours and key bindings, with a temp path named at the top. ⌘K 'dark' listed Scheme: dark/light/system. Choosing dark switched the window instantly, but the open file still read 'scheme = system'. I set it back to system. ⌘L returned to the lesson with focus in the answer. Esc then 'I want to do hypothesis tests first, change the plan' opened the plan in a right pane with moved rows barred, old dates struck through and 'Plan changed at 18:27' in the status line. Tab back to the task focused the answer field, but it stayed hidden under the pinned strip. Measured perf: startup 713 ms, keystroke median 17 ms, p95 19 ms. I never needed the mouse."
+}

@@ -1,0 +1,8 @@
+2026-11-12T23:36:07.242Z course <tmp>/mg-correct-OEOHba/Intro-Statistics; attempts before: 0
+2026-11-12T23:36:13.354Z start: {"clicked":"button[data-drive=start] \"Sampling distributions Return\"","ok":true}
+2026-11-12T23:36:23.927Z question 1 written; waiting for answer-1.txt
+2026-11-12T23:36:33.996Z focus: {"focused":"textarea[data-drive=answer]","ok":true}
+2026-11-12T23:36:34.207Z sent 1: {"focused":"textarea[data-drive=answer]","ok":true}
+2026-11-12T23:36:53.782Z attempts after answer 1: [["right","none",true,"sampling distribution of the mean from a small population"]]
+2026-11-12T23:37:04.497Z the tutor asked for the date; giving Sunday 29 November
+2026-11-12T23:37:40.547Z marked right by the record: sampling distribution of the mean from a small population

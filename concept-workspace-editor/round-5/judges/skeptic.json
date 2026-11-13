@@ -1,0 +1,60 @@
+{
+  "judge": "skeptic",
+  "new_or_repaint": {
+    "verdict": "new",
+    "why": "The structure changed, not just the colours. Before: a Library home screen of course cards (levels, proof bars, due counts), then a Course page, then the lesson. Now there is no home screen. The window reopens on the last lesson as a document (shots/s1-cold-dark), and folders are switched with a ⌘O list (shots/folders-dark). Before: you moved down a page tree with back links. Now: tabs, two panes, ⌘P to open documents, ⌘B for a hidden file sidebar and a status line, like an editor (shots/open-dark, shots/sidebar-dark, shots/material-dark). Before: the lesson was a chat with a 'Your answer' box at the bottom, Hint / I don't know / I'm lost buttons and a 'Step 3 of 5' header. Now the answer is written inside the task block, and anything typed after Esc is talk that is never marked. I checked this in the real window: an off-plan question typed into the answer line came back 'No mark, not taken as the answer'. Before: progress lived in levels, proof dots, due counts, a streak ('4 days running') and a 'One proof earned' summary. Now it is a Record document, a log of marked answers by day, with each skill described in words, and the first screen shows none of it (shots/record-dark). Before: the plan was a step dropdown. Now it is the plan file. When it changes it opens beside the lesson with the old dates struck through and change bars (live/s3-after-dark). Setup became a settings file (shots/settings-dark). Some things were carried over: the ⌘K menu, a centred serif reading column with a ruled task block, and the welcome / 'Before your first lesson' pages with the same three folder actions, almost word for word (shots/s1-cold-first-dark, shots/setup-signed-out-dark against baseline setup-signed-out and library-empty). Those are features kept inside a new structure, not the old design repainted."
+  },
+  "scores": {
+    "mine": {
+      "score": 8,
+      "evidence": ["shots/settings-dark.png", "shots/commands-dark.png", "shots/s1-cold-dark.png", "shots/s5-week-next-dark.png", "shots/sidebar-dark.png"],
+      "blocks_next_point": "Keyboard-first breaks in a basic case. On the New lesson page, closing ⌘K with Esc left focus nowhere, and Return did nothing until I typed into the field (my window turn). The page also still speaks in the app's voice: 'The lesson so far · 1 exchange' and 'Stopped on Tue 10 Nov at 16:40.' sit above the learner's own task (shots/s1-cold-dark)."
+    },
+    "calm": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s1-cold-light.png", "shots/s5-week-dark.png", "window/s5-week-dark.png", "live/s5-week-dark.png"],
+      "blocks_next_point": "The resting page repeats itself. The Continue button carries a 'Return' key cap, and the status line also says 'Return to continue, or write to your tutor'. 'The lesson so far · 1 exchange' adds a count to a page that otherwise holds only the learner's task (shots/s1-cold-dark)."
+    },
+    "easy_to_start": {
+      "score": 9,
+      "evidence": ["shots/s1-cold-dark.png", "shots/s5-week-dark.png", "shots/s5-week-next-dark.png", "window/s1-cold-dark.png", "live/s5-week-next-dark.png", "shots/record-dark.png"],
+      "blocks_next_point": "One Return starts the lesson, and nothing on screen counts what is owed. But the Record's skill lines read like a schedule kept on the learner: 'Not yet answered right alone; asked again today.' (shots/record-dark). That is a due list written as prose, one ⌘K away."
+    },
+    "flexible": {
+      "score": 9,
+      "evidence": ["live/s3-before-dark.png", "live/s3-after-dark.png", "live/s4-offplan-dark.png", "live/s4-return-dark.png", "live/attempts.json", "live/plan-after.json", "window/s3-after-dark.png"],
+      "blocks_next_point": "The plan pane closes itself as soon as you write again. In my turn, the split was gone after the next message, and in live/s4-offplan-dark it is already gone. After that the only trace of the change in the lesson is the tutor's sentence, and getting the diff back means ⌘K, then Open the plan."
+    },
+    "craft": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s2-answer-light.png", "shots/s3-after-light.png", "shots/narrow-lesson-dark.png", "shots/hint-dark.png", "shots/settings-dark.png", "window/s4-return-dark.png"],
+      "blocks_next_point": "The task block's edges are not consistent. A hint lands below the task's answer line, so the field comes before the help it needs (shots/hint-dark). The restated task swallows the tutor's chatter, so 'Back to it.' sits inside the task block (window/s4-return-dark), and that is also what the resting page shows as the task (window/s5-week-dark)."
+    },
+    "clarity": {
+      "score": 8,
+      "evidence": ["shots/s2-answer-dark.png", "shots/s3-after-dark.png", "shots/s4-offplan-dark.png", "live/s2-answer-dark.png", "window/s5-week-dark.png", "window/s5-week-next-dark.png"],
+      "blocks_next_point": "After Esc ('Esc to say something else') the page shows no line, placeholder or caret to write on (shots/s4-offplan-dark, and my turn). You only find the talk line by typing blind. Also, live/s2-answer-dark shows 'No mark' right above the tutor's 'That's right', and the reason is not on screen."
+    },
+    "performance": {
+      "score": 8,
+      "evidence": ["window/perf.json", "live/perf.json", "judge-perf.json"],
+      "blocks_next_point": "Startup is 674–680 ms (main and week), 854 ms on first open, and 848 ms when I measured it. That is better than Obsidian but above the half-second a native editor takes. Keystroke-to-paint is a median of 17 ms and p95 of 18 ms, just over one 60 Hz frame."
+    }
+  },
+  "still_dislike": [
+    "Talk, the core idea, has nowhere visible to happen. After Esc the page shows no line, caret or placeholder (shots/s4-offplan-dark, my window turn). The structure that makes off-plan talk safe is invisible until you have already typed.",
+    "Plan changes don't last on screen. The plan pane opens with a good diff (live/s3-after-dark) and then closes at the learner's next message (live/s4-offplan-dark, my turn). There is no lasting sign in the lesson that the plan changed beyond the tutor's sentence.",
+    "The task block is fuzzy at the edges. Hints appear under the answer line (shots/hint-dark). 'Back to it.' sits inside the restated task (window/s4-return-dark, window/s5-week-dark). 'No mark' sits under an answer the real tutor called 'That's right', with no reason shown (live/s2-answer-dark)."
+  ],
+  "bugs": [
+    "Real window, New lesson page: closing ⌘K with Esc leaves focus nowhere, and Return then does nothing until you type into the field again (my window turn; it happened after the photo of the New lesson page).",
+    "Settings file: a comment is cut off at the right edge of the box: 'key close = cmd+w # close the tab; closing the lesson keeps where' (shots/settings-dark.png, shots/settings-light.png).",
+    "Hint order: 'You asked for a hint.' and the hint appear below the open task's answer line, not above it (shots/hint-dark.png, and again in my window turn).",
+    "The restated task includes the tutor's lead-in: the task block reads 'Back to it. With t* = 2.064…' (window/s4-return-dark.png), and the resting page shows that text as the open task (window/s5-week-dark.png).",
+    "Stale status line: setup pages ('Before your first lesson', Sign in, Replace it) still say 'Return to continue, or write to your tutor' (shots/setup-signed-out-dark.png, shots/setup-replace-dark.png).",
+    "With the stand-in tutor, the page after a week promises the open margin-of-error task (window/s5-week-dark.png). After Continue it shows the already-answered standard-error question instead (window/s5-week-next-dark.png). This is probably the stand-in's script, but the screen didn't keep its promise. The real tutor got it right (live/s5-week-next-dark.png).",
+    "After the answer is handed in, the caret goes to an invisible field over the tutor's reply. The macOS input indicator is drawn on top of 'That's right' (live/s2-answer-dark.png, live/s2-answer-light.png).",
+    "Not counted against the build: live/s1-cold-dark.png was captured with the window offset 228 px down below a white band. The orchestrator says the window had moved to another desktop Space."
+  ],
+  "window_turn": "I took the lock at 17:49:53 after waiting for another judge, and released it at 17:52:26. The window opened on 'New lesson' (system scheme, light), with the plan's next item filled in. ⌘K listed every command and every setting value (fonts, size, width, ink, scheme), and there was no library or course page anywhere. Esc closed ⌘K but left focus nowhere: Return did nothing. Typing 'TEACH' and Return started a lesson titled TEACH, with the caret in the task's answer line. 'b = 5' gave ✕ 'Not right yet' in the gutter, from the record. Esc left a blank page with no visible writing place. Typing 'change the plan' appeared in blue ink at the foot of the page. Return got the tutor's reply, and the Midterm 2 plan opened in a right pane with 'Sun 22 Nov' struck through, moved up / moved down bars, and 'Plan changed at 17:51' in the status line. I pressed Tab and typed 'by the way, why is it called b?' into the answer line. It came back labelled 'No mark, not taken as the answer', with nothing added to the record, and by then the plan pane had closed by itself. Tab, then 'b = -5', gave ✓ 'Right'. ⌘K then 'record' opened a Record tab with two timed rows and the skill 'sign of b' described in words: no levels, no dots. ⌘L, Esc, then 'Can I have a hint?' gave a 'You asked for a hint.' block, placed under the answer line. Measured perf: startup 848 ms, typing median 17 ms, p95 18 ms, max 19 ms. Pressing ⌘W twice folded the lesson to its open task with 'Stopped today at 17:52. Continue Return', so the place was kept without being asked."
+}

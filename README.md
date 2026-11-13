@@ -12,3 +12,5 @@ One folder per concept, `concept-<name>/round-<n>/`, made-up data only:
 - `judges/`: each judge's scores and notes, unedited. `scores.md` tabulates them.
 
 The round-9 baseline for comparison is `round-9/`.
+
+`concept-<name>/final/` holds each concept's final build: `demo/` and `window/` as above, and `live/`, one real lesson with the real Claude Code in which a person answered the tutor's first task correctly (`c3-answer-1` shows the record's mark), then asked to change the plan, went off-plan and came back. `head-to-head/` holds the four final judges, who ranked the three concepts against each other with no ties, and `ranking.md`, the table in the pull requests.
