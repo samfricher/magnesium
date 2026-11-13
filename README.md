@@ -43,7 +43,7 @@ Magnesium uses Claude Code's existing model connection. Your usual model limits 
 
 Hand this repository to your coding agent and ask it to install Magnesium by following [docs/install.md](docs/install.md). The agent asks before it installs anything beyond the build.
 
-On an Apple Silicon Mac you can instead download the study window, which installs Magnesium and sets up each study folder itself, with no terminal. The [app README](app/README.md#download) gives the steps.
+On an Apple Silicon Mac you can instead download the study window, which installs Magnesium and sets up each study folder itself, with no terminal. [Download](#download) gives the steps.
 
 In Claude Code, type `/magnesium:help` first. It shows a short guide and suggests a next step for your folder, such as adding your materials, studying a chapter, or continuing your study plan. To read about one topic, type `/magnesium:help papers`, `/magnesium:help recording`, `/magnesium:help setup`, or `/magnesium:help trouble`.
 
@@ -59,16 +59,39 @@ Magnesium is built and tested for Claude Code. Its learner record, its files and
 
 Magnesium stores your learning history in `.magnesium/` inside the study folder. Your assistant's model receives the memories and file excerpts that a lesson needs. The [user guide](docs/user-guide.md#control-recording-and-keep-a-copy) explains how to control recording and export your history.
 
+## The study window
+
+One window, made for studying. It sits over Magnesium and the coding agent you already use, and adds no teaching rule of its own: a lesson behaves the same here and in a terminal. macOS on Apple Silicon. Claude Code is the agent.
+
+### Download
+
+1. From the [releases page](https://github.com/samfricher/magnesium/releases), download the newest `Magnesium-<version>-arm64.dmg` and open it.
+2. Drag Magnesium to Applications, then open it from Applications.
+3. macOS says it could not check the app for malware. Choose **Done**.
+4. Open **System Settings → Privacy & Security**. Under Security, choose **Open Anyway** next to Magnesium, and confirm.
+
+Step 4 is needed once for each new version. The app is signed ad hoc, which is free and needs no Apple account, but it is not signed by Apple. If macOS ever says the app is damaged, the copy did not come from the release page: download it again.
+
+You need [Claude Code](https://code.claude.com/docs/en/setup), and a paid Claude plan or an Anthropic Console account. No terminal step is needed.
+
+#### What the app sets up
+
+The first screen shows each step, and moves on when they are done.
+
+- **The `magnesium` program.** It is inside the app, built from the same commit. On first open the app puts it in `~/.local/bin`, where Claude Code's own installer puts `claude`. The window, Claude Code's hooks and a terminal then all run that one copy. If another version is already installed, the app asks before it replaces it, because a newer program upgrades each study folder's record when it opens the folder. If you keep the other version, lessons run on it, and the app says what that version cannot do. A program older than the window needs is refused, whatever its version number says: the app offers to replace it, or, run from source, names the install guide, and starts no lesson until it is fixed. "Keep" is not offered for it.
+- **Claude Code.** The app looks for `claude` and asks it whether you are signed in (`claude auth status`). Signed out, a button starts Claude Code's own sign-in (`claude auth login`), which opens Anthropic's page in your browser. Without Claude Code, the app links to Anthropic's install page and offers Check again. The app never installs Claude Code, and never reads or stores a credential.
+- **How lessons are paid for.** Choose your Claude plan, the default, or an API key, paid per use. The first screen and ⌘K show which one Claude Code would use. With the plan chosen, the app starts Claude Code without the `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables, because Claude Code started by another program uses such a key over the plan without asking. A key that Claude Code keeps itself, such as an API key helper in its settings, cannot be held back: the app then says the lesson is not paid with the plan.
+- **Your study folders.** The library lists every study folder the window knows. **Open a folder** adds one, and **New folder** makes one. **Find folders on this Mac** looks through your home folder for folders that Magnesium was set up in from a terminal, and adds them. It runs only when you press it, it reads folder names only, and macOS may ask whether the app may read Documents or Desktop. A folder Magnesium has never been set up in is set up when you press Start. A folder an earlier version set up asks once, then is upgraded: Magnesium keeps a copy of its record in `.magnesium/backups` before it changes it. Say "Not now" and the folder stays as it was, and the window starts no lesson in it. **Remove** on a course takes it out of the library and leaves the folder as it is.
+
+Setting a folder up also writes two things outside it: Magnesium's plugin for Claude Code in `~/Library/Application Support/magnesium`, and one entry in Claude Code's settings that names it. The [install guide](docs/install.md#5-set-up-a-study-folder) lists every file.
+
 ## Find your way around
 
 | I want to… | Start here |
 | --- | --- |
 | Use Magnesium in a study session | [User guide](docs/user-guide.md) |
 | Build, test, or change the project | [Contributing](CONTRIBUTING.md) |
-| Use or change the study window | [App README](app/README.md) |
-| Understand the design | [Architecture](docs/architecture/learner-model.md) |
-| Work with the tools and data | [API reference](docs/architecture/learner-model-contracts.md) · [What is stored](docs/architecture/learner-model.md#what-is-stored) |
-| Understand privacy and trust boundaries | [Security model](docs/security/threat-model.md) |
+| Download the study window | [The study window](#the-study-window) |
 
 ## License
 

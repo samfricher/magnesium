@@ -1,1 +1,1 @@
-"""Stub `docling` package root (see tests/README.md)."""
+"""Stub `docling` package root."""
