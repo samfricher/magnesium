@@ -284,10 +284,15 @@ export const Composer = memo(
         send();
         return;
       }
-      if (event.key === "Escape" && symbols) {
+      // Esc does what the line's end says: in a task it steps out to talk,
+      // in one press, whatever is on the line (which stays) and whether the
+      // symbols are open (they close). While the tutor writes, Esc stops the
+      // reply instead, and the window handles it.
+      if (event.key === "Escape" && plain && !latest.current.busy && (place === "task" || symbols)) {
         event.preventDefault();
         event.stopPropagation();
         setSymbols(false);
+        if (place === "task") latest.current.onMove("talk");
         return;
       }
       // Down to the conversation's line: ↓ at the end of the task's.
