@@ -13,7 +13,8 @@
 #   window/              a scratch window home, for MAGNESIUM_APP_HOME: the
 #                        three folders below in its library, and lessons on
 #                        Magnesium (the direct engine)
-#   Intro-Statistics/    the course: three lecture notes in Study/materials,
+#   Intro-Statistics/    the course: three lecture notes, a past paper and
+#                        slides as PDFs, and the paper's answer key, in Study/materials,
 #                        and a plan for "Midterm 2", ten days from today, in
 #                        Study/midterm-2/plan.md with five items
 #   Linear-Algebra/      set up, one lecture note, no plan
@@ -306,6 +307,54 @@ Drop order if time runs short: tests and intervals together.
 
 - $TODAY: plan built from the course notes for weeks 5 to 7.
 EOF
+
+# Two PDFs with real text (so a page's words can be selected), and an answer
+# key, which the window never opens.
+python3 -I - "$COURSE/Study/materials" <<'PY'
+import os, sys
+out = sys.argv[1]
+def pdf(path, pages):
+    objs = []
+    def add(body):
+        objs.append(body)
+        return len(objs)
+    font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    bold = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+    kids = []
+    pages_id = len(objs) + 1 + 2 * len(pages)
+    for lines in pages:
+        text = ["BT", "/F2 18 Tf", "72 720 Td", "(%s) Tj" % lines[0].replace("(", "\\(").replace(")", "\\)"), "/F1 12 Tf", "0 -34 Td"]
+        for line in lines[1:]:
+            text += ["(%s) Tj" % line.replace("(", "\\(").replace(")", "\\)"), "0 -20 Td"]
+        text.append("ET")
+        stream = "\n".join(text)
+        content = add("<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
+        kids.append(add("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> >> >>" % (pages_id, content, font, bold)))
+    add("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join("%d 0 R" % k for k in kids), len(kids)))
+    catalog = add("<< /Type /Catalog /Pages %d 0 R >>" % pages_id)
+    body = "%PDF-1.4\n"
+    offsets = []
+    for n, obj in enumerate(objs, 1):
+        offsets.append(len(body.encode("latin-1")))
+        body += "%d 0 obj\n%s\nendobj\n" % (n, obj)
+    xref = len(body.encode("latin-1"))
+    body += "xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    body += "".join("%010d 00000 n \n" % o for o in offsets)
+    body += "trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, catalog, xref)
+    with open(os.path.join(out, path), "wb") as f:
+        f.write(body.encode("latin-1"))
+pdf("midterm-2023.pdf", [
+    ["Midterm 2, 2023", "75 minutes. One page of notes and a calculator.", "", "Question 1 (10 marks)", "A sample of 36 bags has mean 1003 g and s = 12 g.", "(a) Find the standard error of the mean.", "(b) Is a mean of 1000 g plausible? Explain."],
+    ["Question 2 (12 marks)", "A 95% interval for a mean study time is 37.7 to 46.3 minutes.", "(a) Give the sample mean and the margin of error.", "(b) Say what 95% means here, in one sentence."],
+    ["Question 3 (14 marks)", "n = 25, x-bar = 53, s = 10. Test H0: mu = 50 against mu != 50.", "(a) Find t and its degrees of freedom.", "(b) The p-value is about 0.15. What do you conclude?", "(c) Name the error you could be making."],
+])
+pdf("week6-slides.pdf", [
+    ["Week 6: Confidence intervals", "x-bar +/- t* s / sqrt(n), with n - 1 degrees of freedom."],
+    ["What 95% means", "The method captures mu in 95% of samples.", "It is not a 95% chance that mu is in this one interval."],
+    ["What changes the width", "Higher confidence: wider.", "Larger sample: narrower.", "More spread: wider."],
+])
+pdf("midterm-2023-key.pdf", [["Midterm 2, 2023: answer key", "1(a) 2 g. 1(b) Yes: 1000 is within 2 standard errors."]])
+PY
 
 # --- Two more folders for the library ----------------------------------------
 mkdir -p "$DIR/Linear-Algebra/Study/materials" "$DIR/Organic-Chemistry"
