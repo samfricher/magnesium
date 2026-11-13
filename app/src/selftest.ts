@@ -292,6 +292,17 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     actions.run("plan");
     await until("the plan to go", () => document.querySelector(".session.in-front .panel") === null, 3000);
 
+    // Home, then the session's tab again: its line takes the focus back.
+    const sessionTab = actions.active();
+    actions.run("home");
+    await until("Home", () => actions.active() === "home", 3000);
+    await wait(300);
+    actions.run("tab", sessionTab);
+    await until("the session in front again", () => actions.active() === sessionTab, 3000);
+    await wait(300);
+    steps.backFocus = document.activeElement?.getAttribute("data-drive") ?? document.activeElement?.tagName ?? null;
+    if (steps.backFocus !== "composer") throw new Error(`the session's line did not take the focus back: ${String(steps.backFocus)}`);
+
     const progress = await api.progress(null, folder);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 

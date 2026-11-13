@@ -720,7 +720,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   }, [tab.key]);
 
   // A tab not in front is out of reach of the keyboard and of a screen reader.
-  useEffect(() => {
+  // Set before any effect runs, so the line of a tab brought to the front can take the focus.
+  useLayoutEffect(() => {
     box.current?.toggleAttribute("inert", !props.active);
   }, [props.active]);
 
