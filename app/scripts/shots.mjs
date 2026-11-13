@@ -11,7 +11,7 @@
 // lesson shown and hidden, a file on the line, the tabs and ⌘K.
 //
 // These are photographs in Chrome. What only the Mac's WebKit draws (the
-// colour wells, the range sliders, the menu bar) is checked in the real window.
+// range sliders, the menu bar) is checked in the real window.
 
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright-core";
