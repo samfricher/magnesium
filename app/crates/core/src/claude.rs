@@ -1495,7 +1495,7 @@ struct ClaudeConversation {
 /// The plain words put before a message the learner sent as talk. The
 /// plugin's teaching files record an attempt only for a first try at a task
 /// the tutor set, so a message that says it is none is left unmarked; code
-/// cannot hold the tutor to it on this engine (see the window's README).
+/// cannot hold the tutor to it on this engine (Magnesium issue 65).
 pub const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
 
 impl Conversation for ClaudeConversation {
