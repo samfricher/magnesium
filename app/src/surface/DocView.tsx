@@ -32,30 +32,54 @@ type Props = {
 // 100% is a page at its printed size: a PDF point is 1/72 inch, a CSS pixel 1/96.
 const CSS_PER_POINT = 96 / 72;
 const PAD = 16;
+// Room kept either side of the text when the page is fitted to its text, in points.
+const TEXT_MARGIN = 14;
+// A drag of the panel's edge or a zoom redraws once it has settled, not at every pixel.
+const SETTLE_MS = 180;
 
 type Size = { width: number; height: number };
+/** Where the text sits across a page, in points from the page's left edge: what "fit" fits. */
+type TextBox = { left: number; right: number };
+type RenderTask = { cancel: () => void; promise: Promise<unknown> };
+type Drawn = { scale: number; task: RenderTask | null; layer: { cancel: () => void } | null; done: boolean };
 
 const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf, doc, goTo, onPlace, onNote, onKind }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState<Size[] | null>(null);
+  const [text, setText] = useState<TextBox | null>(null);
   const [room, setRoom] = useState(0);
   const pages = useRef<(HTMLDivElement | null)[]>([]);
-  const drawn = useRef(new Map<number, number>());
+  const drawn = useRef(new Map<number, Drawn>());
+  // Where the reader is: the page whose top is at or above the view's top, and how far down that page, 0 to 1.
+  const place = useRef({ page: Math.max(1, doc.page), within: doc.scroll ?? 0 });
   const placed = useRef(false);
-  const pageNow = useRef(doc.page);
 
-  // Each page's own size, in points, so the column has its height before any page is drawn.
+  // Each page's own size, in points, so the column has its height before any page is drawn; and where the
+  // text sits across the first pages, so "fit" fits the text, not the sheet with its margins.
   useEffect(() => {
     let alive = true;
     void (async () => {
       const found: Size[] = [];
+      let left = Infinity;
+      let right = -Infinity;
       for (let n = 1; n <= pdf.numPages; n++) {
         const page = await pdf.getPage(n);
         const view = page.getViewport({ scale: 1 });
         found.push({ width: view.width, height: view.height });
+        if (n <= 3) {
+          const content = await page.getTextContent().catch(() => null);
+          const x0 = page.view[0] ?? 0;
+          for (const item of content?.items ?? []) {
+            if (!("str" in item) || item.str.trim() === "") continue;
+            const x = item.transform[4] - x0;
+            left = Math.min(left, x);
+            right = Math.max(right, x + item.width);
+          }
+        }
         if (!alive) return;
       }
       setSizes(found);
+      setText(Number.isFinite(left) && right - left > 40 ? { left: Math.max(0, left - TEXT_MARGIN), right: Math.min(found[0].width, right + TEXT_MARGIN) } : null);
     })();
     return () => {
       alive = false;
@@ -72,9 +96,20 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   }, []);
 
   const widest = sizes ? Math.max(...sizes.map((size) => size.width)) : 0;
-  const fit = widest > 0 && room > 0 ? Math.max(0.2, (room - 2 * PAD) / (widest * CSS_PER_POINT)) : 1;
+  const fitted = text ? text.right - text.left : widest;
+  // Hidden (flipped away or the panel off), the panel has no room: the last scale stands.
+  const lastFit = useRef(1);
+  if (fitted > 0 && room > 0) lastFit.current = Math.min(4, Math.max(0.2, (room - 2 * PAD) / (fitted * CSS_PER_POINT)));
+  const fit = lastFit.current;
   const zoom = doc.zoom === "fit" ? fit : doc.zoom;
   const scale = zoom * CSS_PER_POINT;
+  // The scale pages are drawn at follows the scale they are laid out at once it has stopped changing.
+  const [drawScale, setDrawScale] = useState(scale);
+  useEffect(() => {
+    if (drawScale === scale) return;
+    const timer = window.setTimeout(() => setDrawScale(scale), SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [scale, drawScale]);
 
   useEffect(() => onKind({ pages: pdf.numPages, zoom, refused: false }), [pdf, zoom, onKind]);
 
@@ -83,115 +118,193 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     focus: () => box.current?.focus({ preventScroll: true }),
   }));
 
-  /** Draw a page, with its words as a text layer over it, at the scale now. */
+  const release = useCallback((n: number) => {
+    const was = drawn.current.get(n);
+    was?.task?.cancel();
+    was?.layer?.cancel();
+    drawn.current.delete(n);
+    pages.current[n - 1]?.replaceChildren();
+  }, []);
+
+  /** Draw a page, with its words as a text layer over it, at the settled scale; one that is superseded is cancelled. */
   const draw = useCallback(
-    async (n: number, holder: HTMLDivElement) => {
-      if (drawn.current.get(n) === scale) return;
-      drawn.current.set(n, scale);
+    async (n: number) => {
+      const holder = pages.current[n - 1];
+      if (!holder) return;
+      const was = drawn.current.get(n);
+      if (was && was.scale === drawScale && (was.done || was.task)) return;
+      was?.task?.cancel();
+      was?.layer?.cancel();
+      const mine: Drawn = { scale: drawScale, task: null, layer: null, done: false };
+      drawn.current.set(n, mine);
+      const current = () => drawn.current.get(n) === mine;
       try {
         const lib = await pdfLib();
         const page = await pdf.getPage(n);
-        if (drawn.current.get(n) !== scale) return;
-        const view = page.getViewport({ scale });
+        if (!current()) return;
+        const view = page.getViewport({ scale: drawScale });
         const ratio = Math.min(window.devicePixelRatio || 1, 3);
         const canvas = document.createElement("canvas");
         canvas.width = Math.floor(view.width * ratio);
         canvas.height = Math.floor(view.height * ratio);
-        canvas.style.width = `${view.width}px`;
-        canvas.style.height = `${view.height}px`;
         const context = canvas.getContext("2d");
         if (!context) return;
-        await page.render({ canvasContext: context, viewport: page.getViewport({ scale: scale * ratio }) }).promise;
-        if (drawn.current.get(n) !== scale) return;
+        const task = page.render({ canvasContext: context, viewport: page.getViewport({ scale: drawScale * ratio }) }) as unknown as RenderTask;
+        mine.task = task;
+        await task.promise;
+        if (!current()) return;
         const words = document.createElement("div");
         words.className = "textLayer";
-        words.style.setProperty("--scale-factor", String(scale));
+        words.style.setProperty("--scale-factor", String(drawScale));
         const layer = new lib.TextLayer({ textContentSource: page.streamTextContent(), container: words, viewport: view });
+        mine.layer = layer;
         await layer.render();
-        if (drawn.current.get(n) !== scale) return;
+        if (!current()) return;
+        mine.task = null;
+        mine.done = true;
+        // The canvas and the words fill the page's box: while a new scale settles they stretch with it.
         holder.replaceChildren(canvas, words);
       } catch (error) {
-        drawn.current.delete(n);
-        if (!String(error).includes("cancelled")) onNote(`A page could not be drawn: ${error}`);
+        if (current()) drawn.current.delete(n);
+        if (!/cancel/i.test(String(error))) onNote(`A page could not be drawn: ${error}`);
       }
     },
-    [pdf, scale, onNote],
+    [pdf, drawScale, onNote],
   );
 
-  // Pages are drawn as they come near the view, and drawn again at a new zoom.
+  // Pages near the view are drawn; pages far from it give their pictures back.
+  const near = useRef(new Set<number>());
   useEffect(() => {
     const root = box.current;
     if (!root || !sizes) return;
-    const watch = new IntersectionObserver(
+    const drawNear = new IntersectionObserver(
       (seen) => {
         for (const entry of seen) {
-          if (!entry.isIntersecting) continue;
           const n = Number((entry.target as HTMLElement).dataset.page);
-          void draw(n, entry.target as HTMLDivElement);
+          if (entry.isIntersecting) {
+            near.current.add(n);
+            void draw(n);
+          } else near.current.delete(n);
         }
       },
       { root, rootMargin: "100% 0px" },
     );
-    pages.current.forEach((page) => page && watch.observe(page));
-    return () => watch.disconnect();
-  }, [sizes, draw]);
+    const keepFar = new IntersectionObserver(
+      (seen) => {
+        for (const entry of seen) if (!entry.isIntersecting) release(Number((entry.target as HTMLElement).dataset.page));
+      },
+      { root, rootMargin: "400% 0px" },
+    );
+    pages.current.forEach((page) => {
+      if (!page) return;
+      drawNear.observe(page);
+      keepFar.observe(page);
+    });
+    return () => {
+      drawNear.disconnect();
+      keepFar.disconnect();
+    };
+  }, [sizes, draw, release]);
 
-  const scrollToPage = useCallback((n: number) => {
-    const page = pages.current[n - 1];
+  // At a new settled scale, the pages near the view are drawn again.
+  useEffect(() => {
+    near.current.forEach((n) => void draw(n));
+  }, [draw]);
+
+  // A window behind another may not have drawn: when it is in front again, any page near the view without its
+  // picture is drawn.
+  useEffect(() => {
+    const again = () => near.current.forEach((n) => (drawn.current.get(n)?.done ? undefined : void draw(n)));
+    document.addEventListener("visibilitychange", again);
+    window.addEventListener("focus", again);
+    return () => {
+      document.removeEventListener("visibilitychange", again);
+      window.removeEventListener("focus", again);
+    };
+  }, [draw]);
+
+  /** Where the text block begins across the page: the column is scrolled so the text, not the sheet's margin, is in view. */
+  const alignAcross = useCallback(() => {
     const root = box.current;
-    if (!page || !root) return;
-    root.scrollTop = page.offsetTop - PAD;
-  }, []);
+    if (!root || !text) return;
+    const textWidth = (text.right - text.left) * scale;
+    root.scrollLeft = Math.max(0, text.left * scale - PAD - Math.max(0, (root.clientWidth - 2 * PAD - textWidth) / 2));
+  }, [text, scale]);
+
+  const goToPlace = useCallback(
+    (page: number, within: number) => {
+      const holder = pages.current[page - 1];
+      const root = box.current;
+      if (!holder || !root) return;
+      root.scrollTop = holder.offsetTop + within * holder.offsetHeight - PAD;
+      place.current = { page, within };
+      alignAcross();
+    },
+    [alignAcross],
+  );
 
   // Opened where it was left, once the column has its height.
   useLayoutEffect(() => {
     if (!sizes || room === 0 || placed.current) return;
     placed.current = true;
-    scrollToPage(Math.min(Math.max(1, doc.page), sizes.length));
-  }, [sizes, room, doc.page, scrollToPage]);
+    goToPlace(Math.min(Math.max(1, place.current.page), sizes.length), place.current.within);
+  }, [sizes, room, goToPlace]);
 
-  // A link that names a page goes to it.
+  // A link that names a page goes to its top.
   const lastGo = useRef(goTo);
   useEffect(() => {
     if (goTo === lastGo.current || !sizes) return;
     lastGo.current = goTo;
-    scrollToPage(Math.min(Math.max(1, doc.page), sizes.length));
-  }, [goTo, doc.page, sizes, scrollToPage]);
+    goToPlace(Math.min(Math.max(1, doc.page), sizes.length), 0);
+  }, [goTo, doc.page, sizes, goToPlace]);
 
-  // At a new zoom, the page in view stays in view.
-  const lastScale = useRef(scale);
+  // At a new zoom or width, or back from hidden, the reader stays at the same place within the same page.
+  const lastLayout = useRef({ scale, room });
   useLayoutEffect(() => {
-    if (lastScale.current === scale || !placed.current) return;
-    lastScale.current = scale;
-    scrollToPage(pageNow.current);
-  }, [scale, scrollToPage]);
+    const was = lastLayout.current;
+    lastLayout.current = { scale, room };
+    if (!placed.current || room === 0 || (was.scale === scale && was.room === room)) return;
+    goToPlace(place.current.page, place.current.within);
+  }, [scale, room, goToPlace]);
 
+  const saveTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    },
+    [],
+  );
   const onScroll = () => {
     const root = box.current;
-    if (!root) return;
-    const middle = root.scrollTop + root.clientHeight / 3;
+    if (!root || root.clientWidth === 0) return;
+    // The page at the view's top, measured from its top: a short page (a slide) is not counted before it is reached.
+    const top = root.scrollTop + PAD;
     let n = 1;
     pages.current.forEach((page, at) => {
-      if (page && page.offsetTop <= middle) n = at + 1;
+      if (page && page.offsetTop <= top + 1) n = at + 1;
     });
-    if (n !== pageNow.current) {
-      pageNow.current = n;
-      onPlace({ page: n });
-    }
+    const holder = pages.current[n - 1];
+    const within = holder ? Math.min(1, Math.max(0, (top - holder.offsetTop) / Math.max(1, holder.offsetHeight))) : 0;
+    const moved = n !== place.current.page;
+    place.current = { page: n, within };
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => onPlace({ page: place.current.page, scroll: place.current.within }), moved ? 0 : 300);
   };
 
-  // ← and → (and Page Up and Down) turn the page while the document has the focus; never while the line does.
+  // ← and → turn the page while the document has the keyboard (never with ⇧, ⌘, ⌥ or ⌃, and never while the line has it).
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.metaKey || event.altKey || event.ctrlKey || !sizes) return;
+    if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey || !sizes) return;
     const by = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (by === 0) return;
     event.preventDefault();
-    const next = Math.min(sizes.length, Math.max(1, pageNow.current + by));
-    scrollToPage(next);
+    const { page, within } = place.current;
+    // ← from inside a page goes to its top first.
+    const next = by < 0 && within > 0.02 ? page : Math.min(sizes.length, Math.max(1, page + by));
+    goToPlace(next, 0);
   };
 
   return (
-    <div className="doc-scroll doc-pdf" ref={box} tabIndex={0} onScroll={onScroll} onKeyDown={onKeyDown} data-role="doc-pages" aria-label="Pages">
+    <div className="doc-scroll doc-pdf" ref={box} tabIndex={0} onScroll={onScroll} onKeyDown={onKeyDown} data-role="doc-pages" data-drive="doc-pages" aria-label="Pages">
       {sizes?.map((size, at) => (
         <div
           key={at}
@@ -240,7 +353,7 @@ function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace
     if (/^https?:\/\//i.test(href)) void core().then((api) => api.openUrl(href));
   };
   return (
-    <div className="doc-scroll doc-flow" ref={box} tabIndex={0} onScroll={onScroll} data-role="doc-flow">
+    <div className="doc-scroll doc-flow" ref={box} tabIndex={0} onScroll={onScroll} data-role="doc-flow" data-drive="doc-flow">
       {shown.kind === "image" && shown.image ? (
         <img className="doc-image" src={shown.image} alt="" />
       ) : markdown ? (

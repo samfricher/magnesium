@@ -21,7 +21,7 @@ import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
 import { actionOf, applyPrefs, flushPlaces, keepPanelWidth, keyName, loadPrefs, panelWidthKept, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
-import { docsOf, workspaceDocsKey } from "./docs";
+import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
 import { Commands } from "./surface/Commands";
 import { Session, setupReady, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
 import { PasteSheet } from "./surface/Sheets";
@@ -81,7 +81,16 @@ export function App() {
   const [active, setActive] = useState<string>("home");
   const [homeFolder, setHomeFolder] = useState<string | null>(null);
   const [panel, setPanel] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(() => panelWidthKept());
+  // The panel's width as the learner left it, and the window's: the panel is drawn at the first fitted to the
+  // second, so a window made narrow for a moment does not shrink the panel for good.
+  const [panelWanted, setPanelWanted] = useState(panelWidthKept);
+  const [room, setRoom] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const seen = () => setRoom(window.innerWidth);
+    window.addEventListener("resize", seen);
+    return () => window.removeEventListener("resize", seen);
+  }, []);
+  const panelWidth = fitPanelWidth(panelWanted, room);
   // Bumped when a panel's documents change, so the menu's titles and what it enables follow.
   const [docsSeen, setDocsSeen] = useState(0);
   const onDocsChange = useCallback(() => setDocsSeen((n) => n + 1), []);
@@ -563,19 +572,20 @@ export function App() {
   }, []);
   const onTaskChange = useCallback((key: string, open: boolean) => setTaskOpen((old) => (old[key] === open ? old : { ...old, [key]: open })), []);
   const onPanelWidth = useCallback((width: number) => {
-    setPanelWidth(width);
-    keepPanelWidth(width);
+    const fitted = fitPanelWidth(width);
+    setPanelWanted(fitted);
+    keepPanelWidth(fitted);
   }, []);
   const onShowPanel = useCallback(() => {
     setPanel(true);
     widenPanel();
   }, []);
-  // A document wants more room than the plan: a panel at the plan's width opens wider.
+  // A document wants more room than the plan: it opens at half the window, unless the panel is already wider.
   const widenPanel = useCallback(() => {
-    // A document wants more room than the plan: a panel at the plan's width opens wider.
-    setPanelWidth((old) => {
-      const wide = Math.round(Math.max(old, Math.min(window.innerWidth * 0.46, 620)));
-      if (wide !== old) keepPanelWidth(wide);
+    setPanelWanted((old) => {
+      if (fitPanelWidth(old) >= window.innerWidth * 0.5) return old;
+      const wide = fitPanelWidth(window.innerWidth * 0.5);
+      keepPanelWidth(wide);
       return wide;
     });
   }, []);

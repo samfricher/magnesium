@@ -30,7 +30,10 @@
 //   errors                  what went wrong on the page so far
 //   session                 the session in front: its phase, where the line
 //                           is (task or talk), whether it is in the open task,
-//                           the open task's words, and the files on the line
+//                           the open task's words, the files on the line,
+//                           where the keyboard is, and the PDF in view
+//   document                the PDF in view: the page at its top, how many,
+//                           its zoom, and where the keyboard is
 //   attach {path|paths}     put files on the line of the session in front, as
 //                           a drop does (photos and PDFs), for a harness that
 //                           cannot drive the Mac's Open panel
@@ -194,6 +197,22 @@ function find(target: string, driveOnly = false): HTMLElement | null {
     return clickable.find((element) => element.matches(CLICKABLE)) ?? clickable[0];
   }
   return null;
+}
+
+/** Where the keyboard is: the element's drive name, role or class. */
+function focusName(): string | null {
+  const held = document.activeElement as HTMLElement | null;
+  return held && held !== document.body ? (held.dataset.drive ?? held.dataset.role ?? held.className) : null;
+}
+
+/** The PDF in view, as a reader sees it: the page at its top, how many, and how large it is drawn. */
+function pdfInView(): { page: number; of: number; zoom: string | null } | null {
+  const pdf = Array.from(document.querySelectorAll<HTMLElement>(".doc-pdf")).find(visible);
+  if (!pdf) return null;
+  const pages = Array.from(pdf.querySelectorAll<HTMLElement>(".doc-page"));
+  const page = pages.filter((each) => each.offsetTop <= pdf.scrollTop + 24).length || 1;
+  const zoom = pdf.closest(".panel.side")?.querySelector<HTMLElement>("[data-drive=zoom-fit]")?.innerText ?? null;
+  return { page, of: pages.length, zoom };
 }
 
 function focusable(element: HTMLElement): HTMLElement {
@@ -536,7 +555,11 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
-      return { ok: true, ...(found as object), files };
+      return { ok: true, ...(found as object), files, focus: focusName(), document: pdfInView() };
+    }
+    case "document": {
+      const pdf = pdfInView();
+      return pdf ? { ok: true, ...pdf, focus: focusName() } : { ok: false, error: "no PDF is in view" };
     }
     case "attach": {
       const paths = Array.isArray(op.paths) ? op.paths.map(String) : op.path ? [String(op.path)] : [];

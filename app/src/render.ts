@@ -414,19 +414,23 @@ export function sourceLinks(src: string): { text: string; href: string }[] {
  * they are plain text, not links: a passage next to a question often holds
  * the answer, so it stays shut until the learner has answered.
  */
-export function setSourcesApart(html: string, open: boolean): string {
+export function setSourcesApart(html: string, open: boolean, opensNow?: (path: string) => boolean): string {
   if (!html.includes("<a ")) return html;
   const holder = document.createElement("template");
   holder.innerHTML = html;
   const links = Array.from(holder.content.querySelectorAll("a[href]")).filter((a) => sourceRef(a.getAttribute("href") ?? "") !== null);
   if (links.length === 0) return html;
   for (const link of links) {
-    if (open) {
+    // A past paper opens at once: it holds the questions, not their answers.
+    const path = sourceRef(link.getAttribute("href") ?? "")?.path ?? "";
+    if (open || opensNow?.(path)) {
       link.classList.add("source");
       continue;
     }
     const plain = document.createElement("span");
     plain.className = "source-shut";
+    // What it pointed at is kept, so its words are read against it, never rewritten as a file name.
+    plain.dataset.href = link.getAttribute("href") ?? "";
     plain.replaceChildren(...Array.from(link.childNodes));
     link.replaceWith(plain);
   }

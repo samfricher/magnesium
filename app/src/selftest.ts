@@ -4,7 +4,8 @@
 // names. scripts/selftest.sh names the stand-in, so the check starts no model.
 // It proves the parts that only exist once the window is running: the calls
 // between the page and the shell, the content policy, that mathematics, a
-// diagram and a PDF page draw, and that the window's structure holds: Home
+// diagram and a PDF page draw (and a PDF opens beside a page, with words that
+// can be selected), and that the window's structure holds: Home
 // with its first row, a workspace's page, Settings in a tab, ⌘K with its few
 // commands, a session in a tab with talk sent as talk, the plan beside it,
 // a file attached by name, and no path or file text shown anywhere.
@@ -215,6 +216,34 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (/\.[a-z0-9]{1,5}$/i.test(sheet) || sheet.includes("/")) throw new Error(`material opened under its file name: ${sheet}`);
     document.querySelector<HTMLElement>('[data-role="side-panel"] .side-tab.here .side-close')?.click();
     await until("the material to close", () => document.querySelector('[data-role="side-panel"]') === null, 3000);
+
+    // A PDF opens beside the page as its pages: drawn, their words in a layer the learner can select, and
+    // → turns to the next page.
+    const pdfRow = Array.from(document.querySelectorAll<HTMLElement>('[data-page="workspace"] .file-row')).find((row) => row.textContent?.includes("Week 1 slides"));
+    if (!pdfRow) throw new Error(`the PDF in the material is not listed: ${titles.join(", ")}`);
+    pdfRow.click();
+    const pdfPages = () => Array.from(document.querySelectorAll<HTMLElement>('[data-role="side-panel"] .doc-page'));
+    await until("the PDF's pages beside the page", () => pdfPages().length === 2, 10_000);
+    await until("the first page drawn with its words", () => {
+      const first = pdfPages()[0];
+      return first?.querySelector("canvas") != null && (first.querySelector(".textLayer")?.textContent ?? "").includes("Selectable words on page one");
+    }, 10_000);
+    const drawn = pdfPages()[0].querySelector("canvas")!;
+    const drawnPixels = drawn.getContext("2d")?.getImageData(0, 0, drawn.width, drawn.height).data ?? new Uint8ClampedArray();
+    let drawnInk = 0;
+    for (let i = 0; i < drawnPixels.length; i += 4) if (drawnPixels[i] < 128) drawnInk += 1;
+    const wordsLayer = pdfPages()[0].querySelector<HTMLElement>(".textLayer span");
+    const wordsStyle = wordsLayer ? getComputedStyle(wordsLayer) : null;
+    const selectable = wordsStyle !== null && (wordsStyle.userSelect || wordsStyle.webkitUserSelect) !== "none";
+    const scroller = document.querySelector<HTMLElement>('[data-role="side-panel"] [data-role="doc-pages"]')!;
+    scroller.focus();
+    press("ArrowRight");
+    await until("→ to turn to the second page", () => Math.abs(scroller.scrollTop - pdfPages()[1].offsetTop) < 40, 3000);
+    steps.pdfView = { pages: pdfPages().length, ink: drawnInk, selectable, zoom: document.querySelector('[data-role="side-panel"] [data-drive="zoom-fit"]')?.textContent ?? null };
+    if (drawnInk < 200) throw new Error(`the PDF's page did not draw in the panel: ${JSON.stringify(steps.pdfView)}`);
+    if (!selectable) throw new Error("the PDF's words cannot be selected");
+    document.querySelector<HTMLElement>('[data-role="side-panel"] .side-tab.here .side-close')?.click();
+    await until("the PDF to close", () => document.querySelector('[data-role="side-panel"]') === null, 3000);
 
     // A pasted image is handed in as a file, and named in the message by the place it was written.
     const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));

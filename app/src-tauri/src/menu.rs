@@ -274,7 +274,7 @@ fn build<R: Runtime>(
             &separator()?,
             &command(table, "zoom-in-document", "Zoom In on the Document")?,
             &command(table, "zoom-out-document", "Zoom Out of the Document")?,
-            &command(table, "zoom-fit-document", "Fit the Document to the Panel")?,
+            &command(table, "zoom-fit-document", "Fit the Text to the Panel")?,
             &separator()?,
             &command(table, "bigger", "Bigger Text")?,
             &command(table, "smaller", "Smaller Text")?,

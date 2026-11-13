@@ -167,7 +167,8 @@ export const Composer = memo(
       const el = box.current;
       if (!el) return;
       const active = document.activeElement;
-      if (active && active !== document.body && active !== el && active.closest(".card, .help-row, .symbols, .attached")) return;
+      // Not from a card, the help row, the symbols, a file on the line, or a document being read beside the lesson.
+      if (active && active !== document.body && active !== el && active.closest(".card, .help-row, .symbols, .attached, .panel.side")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     }, [props.active, props.paused, props.busy]);

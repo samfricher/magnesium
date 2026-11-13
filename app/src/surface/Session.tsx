@@ -307,6 +307,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const settled = useRef<number | null>(null);
   const started = useRef(false);
 
+  // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
+  const provisionalTitle = useRef(false);
+  // The goal the record held when it began, and the words typed to start it: only a goal that is neither
+  // names the session. Started from typed words, the record's goal is those words ("Continue").
+  const goalAtStart = useRef<string | null>(null);
+  const typedAtStart = useRef<string>("");
+
   // Where this session's draft, line and scroll are kept: its conversation once it has one.
   const place = keyOf(folder, tab.session, tab.key);
 
@@ -463,6 +470,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       else setLine("talk");
     }
     // The record has been read for the last message: an answer it kept no mark for says so, the same way every time.
+    // A session named before its goal was known: the goal names it once the tutor has set one.
+    if (event.type === "turn_ended" && provisionalTitle.current) void refreshPlan();
     if (event.type === "settled") {
       const live = now.current.session.live;
       if (live && live.said === "answer" && (live.marks ?? []).length === 0 && !live.interrupted) {
@@ -567,8 +576,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const typed = words?.trim() ?? "";
     const item = plan?.items.find((each) => each.status === "doing") ?? plan?.items.find((each) => each.status === "todo") ?? null;
     if (typed !== "") {
-      // Words typed first are the start: the tutor takes them as the lesson's goal.
-      return begin(continuing, typed, "talk", continuing ? sittingTitle : firstWords(typed, 80), (api) => api.sendNewLesson(typed));
+      // Words typed first are the start: the tutor takes them as the lesson's goal. The session is named as a
+      // Return start is, by the plan's item in hand, then by a goal the tutor sets: the words typed are often
+      // one like "Continue", which names nothing a learner could find again.
+      if (!continuing) {
+        provisionalTitle.current = true;
+        goalAtStart.current = now.current.plan?.goal ?? null;
+        typedAtStart.current = typed;
+      }
+      return begin(continuing, typed, "talk", continuing ? sittingTitle : (item?.title ?? displayName(current.name)), (api) => api.sendNewLesson(typed));
     }
     const title = continuing ? sittingTitle || current.last?.goal || displayName(current.name) : (item?.title ?? displayName(current.name));
     const shown = openingWords(
@@ -720,7 +736,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         setDocs(withClosed(docs, docs.shown));
         return true;
       case "open-document":
+        // The panel first: shown, and in front of the lesson if it fills the session.
         if (!props.panel) props.onShowPanel();
+        if (docs.expanded && docs.lessonFront) setDocs({ ...docs, lessonFront: false });
         setPicking(true);
         return true;
       case "zoom-in-document":
@@ -1028,6 +1046,23 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     },
     [api, note],
   );
+  useEffect(() => {
+    const goal = plan?.goal?.trim();
+    const plain = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+    const typedWords = plain(typedAtStart.current);
+    if (!provisionalTitle.current || !goal || goal === sittingTitle || goal === goalAtStart.current?.trim()) return;
+    if (typedWords !== "" && (plain(goal) === typedWords || typedWords.startsWith(plain(goal)))) return;
+    provisionalTitle.current = false;
+    setSittingTitle(goal);
+    props.onTitle(props.tab.key, goal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan?.goal]);
+
+  // A past paper: the folder's papers, or a file in a papers folder. A link to one opens at once, even beside
+  // the task that asks about it: it holds the questions, not their answers.
+  const paperPaths = useMemo(() => new Set((home?.papers ?? []).map((paper) => paper.path)), [home?.papers]);
+  const isPaper = useCallback((path: string) => paperPaths.has(path) || /(^|\/)papers?\//i.test(path), [paperPaths]);
+
   // A file the tutor named opens beside the lesson, at its page; the panel shows if it was hidden.
   // The core reads it first: a file it refuses (an answer key, a path outside the folder) never
   // gets a place in the panel, so its name is not shown there either.
@@ -1175,6 +1210,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       open={index === openAt}
                       held={index === openAt && held && !parked}
                       linksOpen={index !== openAt}
+                      opensNow={isPaper}
                       writing={live && session.live!.status !== "idle"}
                       divider={at > 0 && (turn.said === "opening" || opening(turn.learner) !== null)}
                       task={index === openAt ? task?.text : undefined}

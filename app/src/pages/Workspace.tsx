@@ -98,7 +98,9 @@ export function WorkspacePage(props: Props) {
   panelRun.current = (command) => {
     const docs = docsNow.current;
     if (command === "open-document") {
+      // The panel first: in front of the page if it fills it.
       props.onShowPanel();
+      if (docs.expanded && docs.lessonFront) setDocs({ ...docs, lessonFront: false });
       setPicking(true);
       return true;
     }
@@ -320,8 +322,18 @@ export function WorkspacePage(props: Props) {
             <p className="list-head">Papers</p>
             <div className="list" role="list">
               {home.papers.map((paper) => (
-                <div key={paper.path} role="listitem" className="home-row static">
-                  <span className="row-name">{paper.name}</span>
+                <div key={paper.path} role="listitem" className="home-row static paper-row">
+                  {/* Its name opens it to read, beside the page; sitting it is its own action. */}
+                  <button
+                    type="button"
+                    className="row-name paper-open"
+                    data-drive={`read-${paper.name}`}
+                    aria-current={docs.shown === paper.path ? "true" : undefined}
+                    title="Read it beside the page"
+                    onClick={() => openMaterial(paper.path)}
+                  >
+                    {paper.name}
+                  </button>
                   <span className="row-when">{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} minutes` : ""}</span>
                   <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy} onClick={() => void sit(paper)}>
                     Sit it

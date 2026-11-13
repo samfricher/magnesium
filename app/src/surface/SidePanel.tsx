@@ -7,14 +7,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { core } from "../bridge";
-import { docTitle, withClosed, withOpened, withPlace, type Docs, type OpenDoc } from "../docs";
+import { docTitle, fitPanelWidth, PANEL_MIN, withClosed, withOpened, withPlace, type Docs, type OpenDoc } from "../docs";
 import { sourceRef } from "../sources";
 import { materialKind, materialTitle } from "../words";
 import { DocView, type DocHandle } from "./DocView";
 import { Layer, type Row } from "./Layer";
 
-export const PANEL_MIN = 300;
-const PANEL_MAX_SHARE = 0.72;
 
 type Props = {
   /** The plan's own view, first in the switcher; null where there is no plan (a workspace's page). */
@@ -65,10 +63,7 @@ export const SidePanel = memo(function SidePanel(props: Props) {
 
   // The left edge is dragged to make the panel wider or narrower; ← and → do the same from the keyboard.
   const drag = useRef<{ x: number; width: number } | null>(null);
-  const limit = (width: number) => {
-    const room = box.current?.parentElement?.clientWidth ?? window.innerWidth;
-    return Math.round(Math.min(Math.max(PANEL_MIN, width), Math.max(PANEL_MIN, room * PANEL_MAX_SHARE)));
-  };
+  const limit = (width: number) => fitPanelWidth(width, box.current?.parentElement?.clientWidth ?? window.innerWidth);
   const onGripDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (props.expanded || event.button !== 0) return;
     event.preventDefault();
@@ -94,31 +89,41 @@ export const SidePanel = memo(function SidePanel(props: Props) {
   const pick = (path: string | null) => onDocs({ ...docs, shown: path });
 
   // The folder's material, to open beside the lesson: by title, never a path; an answer key is never listed.
-  const [material, setMaterial] = useState<string[] | null>(null);
+  // What can be opened: the folder's past papers, then its material, each by its title; an answer key is never
+  // listed (the runtime leaves keys out of both), and the core refuses one besides.
+  type Openable = { path: string; title: string; kind: string };
+  const [openable, setOpenable] = useState<Openable[] | null>(null);
   useEffect(() => {
     if (!props.picking) return;
     let alive = true;
+    setOpenable(null);
     void core()
-      .then((api) => api.materialList(props.folder))
-      .then((found) => alive && setMaterial(found.names.filter((name) => sourceRef(`Study/materials/${name}`) !== null)))
-      .catch(() => alive && setMaterial([]));
+      .then(async (api) => {
+        const [home, material] = await Promise.all([api.home(props.folder).catch(() => null), api.materialList(props.folder).catch(() => null)]);
+        const papers: Openable[] = (home?.papers ?? []).filter((paper) => sourceRef(paper.path)).map((paper) => ({ path: paper.path, title: paper.name, kind: "paper" }));
+        const notes: Openable[] = (material?.names ?? [])
+          .map((name) => `Study/materials/${name}`)
+          .filter((path) => sourceRef(path) !== null && !papers.some((paper) => paper.path === path))
+          .map((path) => ({ path, title: materialTitle(path.slice("Study/materials/".length)), kind: materialKind(path) }));
+        if (alive) setOpenable([...papers, ...notes]);
+      })
+      .catch(() => alive && setOpenable([]));
     return () => {
       alive = false;
     };
   }, [props.picking, props.folder]);
-  const openRows: Row[] = (material ?? []).map((name) => {
-    const path = `Study/materials/${name}`;
-    const open = docs.open.some((doc) => doc.path === path);
+  const openRows: Row[] = (openable ?? []).map((item) => {
+    const open = docs.open.some((doc) => doc.path === item.path);
     return {
-      id: path,
+      id: item.path,
       kind: "thing",
-      label: materialTitle(name),
-      text: `${materialTitle(name)} ${name}`,
-      hint: open ? "open" : materialKind(name),
-      drive: `open-${materialTitle(name)}`,
+      label: item.title,
+      text: `${item.title} ${item.kind}`,
+      hint: open ? "open" : item.kind,
+      drive: `open-${item.title}`,
       run: () => {
         props.onPicking(false);
-        onDocs(withOpened(docs, path, null));
+        onDocs(withOpened(docs, item.path, null));
         window.setTimeout(() => view.current?.focus(), 120);
       },
     };
@@ -127,6 +132,17 @@ export const SidePanel = memo(function SidePanel(props: Props) {
   const isPdf = shown !== null && kind.pages !== null;
 
   return (
+    <>
+    {props.picking && (
+      <Layer
+        name="Open a document"
+        mode="filter"
+        placeholder={openable === null ? "Reading the folder…" : openable.length === 0 ? "Nothing to open in this folder yet" : "A paper or a note"}
+        rows={openRows}
+        keys=""
+        onClose={() => props.onPicking(false)}
+      />
+    )}
     <aside
       ref={box}
       className={`panel side${props.expanded ? " expanded" : ""}`}
@@ -184,7 +200,7 @@ export const SidePanel = memo(function SidePanel(props: Props) {
               <button type="button" className="bar-act" aria-label="Zoom out" title="Zoom out" data-drive="zoom-out" onClick={() => view.current?.zoom(-1)}>
                 −
               </button>
-              <button type="button" className="bar-act zoom-now" title={shown?.zoom === "fit" ? "As wide as the panel" : "Back to as wide as the panel"} aria-label="Fit to the panel" data-drive="zoom-fit" onClick={() => view.current?.zoom(0)}>
+              <button type="button" className="bar-act zoom-now" title={shown?.zoom === "fit" ? "The text as wide as the panel" : "Back to the text as wide as the panel"} aria-label="Fit the text to the panel" data-drive="zoom-fit" onClick={() => view.current?.zoom(0)}>
                 {`${Math.round((kind.zoom ?? 1) * 100)}%`}
               </button>
               <button type="button" className="bar-act" aria-label="Zoom in" title="Zoom in" data-drive="zoom-in" onClick={() => view.current?.zoom(1)}>
@@ -204,16 +220,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
           </button>
         </div>
       </header>
-      {props.picking && (
-        <Layer
-          name="Open a document"
-          mode="filter"
-          placeholder={material === null ? "Reading the material…" : material.length === 0 ? "No material in this folder yet" : "A document"}
-          rows={openRows}
-          keys=""
-          onClose={() => props.onPicking(false)}
-        />
-      )}
       <div className="side-body">
         {shown ? (
           <DocView key={shown.path} ref={view} doc={shown} folder={props.folder} goTo={props.goTo} onPlace={onPlace} onNote={props.onNote} onKind={onKind} />
@@ -222,5 +228,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
         )}
       </div>
     </aside>
+    </>
   );
 });

@@ -112,7 +112,8 @@
   background: white;
   box-shadow: 0 0 0 1px var(--edge);
 }
-.doc-page canvas { display: block; }
+/* The picture fills its page's box, so while a new zoom or width settles it stretches with the page. */
+.doc-page canvas { display: block; width: 100%; height: 100%; }
 
 /* A page's words, laid over its picture so they can be selected: from the PDF reader's own rules. */
 .textLayer {
@@ -196,3 +197,15 @@
   margin-left: auto;
   margin-right: auto;
 }
+
+/* A paper's name on a workspace's page opens it to read: a row name that is a button. */
+.paper-row .paper-open { text-align: left; cursor: pointer; }
+.paper-row .paper-open:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
+.paper-row .paper-open[aria-current="true"] { color: var(--ink); }
+:root[data-input="key"] .paper-row .paper-open:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+
+/* In the dark, the white page is dimmed so it does not glare beside the lesson. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) .doc-page { filter: brightness(0.8) contrast(0.95); }
+}
+:root[data-scheme="dark"] .doc-page { filter: brightness(0.8) contrast(0.95); }
