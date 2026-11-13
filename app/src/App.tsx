@@ -762,6 +762,7 @@ export function App() {
         planKey={k("plan")}
         settingsKey={k("settings")}
         newKey={k("new-session")}
+        canNew={(workspaces?.length ?? 0) > 0}
         onPick={(key) => (key === "home" && active === "home" ? goWorkspace(null) : activate(key))}
         onClose={(key) => void closeTab(key)}
         onNew={() => newSession()}

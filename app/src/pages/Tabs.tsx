@@ -28,6 +28,8 @@ type Props = {
   planKey: string;
   settingsKey: string;
   newKey: string;
+  /** There is a workspace to start a session in. */
+  canNew: boolean;
   onPick: (key: string) => void;
   onClose: (key: string) => void;
   onNew: () => void;
@@ -114,7 +116,7 @@ export const Tabs = memo(function Tabs(props: Props) {
           );
         })}
       </div>
-      <button type="button" className="tab-new" data-drive="new-session" aria-label="New session" title={`New session   ${props.newKey}`} onClick={props.onNew}>
+      <button type="button" className="tab-new" data-drive="new-session" aria-label="New session" title={`New session   ${props.newKey}`} disabled={!props.canNew} onClick={props.onNew}>
         +
       </button>
       <div className="tabbar-end">

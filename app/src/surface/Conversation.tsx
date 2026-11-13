@@ -64,7 +64,7 @@ export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief
   if (brief) {
     return (
       <p className="record plan-brief" data-role="plan-change">
-        The plan changed: {namesOf(shown)}.{planKey && <span className="keys"> {planKey} shows it</span>}
+        The plan changed: {namesOf(shown)}.
       </p>
     );
   }

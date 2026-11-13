@@ -521,7 +521,7 @@ export function SettingsPage(props: Props) {
             Magnesium {built}
             {runtime?.installed ? `. Lessons use the magnesium program ${runtime.installed.version.split("+")[0]}.` : runtime ? ". The magnesium program is not found." : ""}
           </p>
-          <p className="setting-note wide">Your study folders stay on this Mac. The window makes no network request; lessons run on your own Claude Code.</p>
+          <p className="setting-note wide">Your study folders stay on this Mac. The window makes no network request, and lessons use your own Claude Code.</p>
         </section>
       </div>
     </div>

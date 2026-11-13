@@ -703,17 +703,17 @@ button.line-end:hover { color: var(--text); }
 .line.rest .field:focus { border-bottom-color: var(--ink); }
 .line.rest .line-tools { bottom: 0.35rem; }
 .line.rest .line-end { color: var(--quiet); }
-.line.rest .line-end .keys { color: var(--ink); }
+.line.rest .line-end .keys { color: var(--quiet); }
 .now > .keys { color: var(--hint); }
 
 /* The top edge of a lesson. */
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(98px - var(--tabs-h));
+  height: calc(104px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) calc(88px - var(--tabs-h)), transparent);
+  background: linear-gradient(to bottom, var(--ground) calc(72px - var(--tabs-h)), transparent);
 }
 .session.with-panel .top-edge { right: 0; }
 .top-edge .inner {
@@ -751,3 +751,11 @@ button.line-end:hover { color: var(--text); }
 .foot.asking { margin-top: 0.4rem; }
 /* An empty font field draws no rule until it has the focus or words. */
 .text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
+
+/* While a card waits, the line under it shows no prompt of its own. */
+.foot.asking .line.talk::before { visibility: hidden; }
+
+/* A notice that stops the lesson (a usage limit, a sign-in) is the window speaking: in the record's ink. */
+.record.note[role="alert"] { color: var(--ink); }
+/* A card waiting at the foot keeps its whole rule: no fade over it. */
+.foot.asking::before { display: none; }

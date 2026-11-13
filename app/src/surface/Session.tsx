@@ -817,23 +817,22 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskText_, phase]);
   const restated = parked ? (held ? task.text : firstWords(task.text, 160)) : null;
-  // Whether the reply that asks the open task is in view and close above the line: while it is,
-  // the foot does not say the question again. Out of view, or far up past other turns, it does.
-  const [questionSeen, setQuestionSeen] = useState(false);
+  // Whether the reply that asks the open task is in view above the line: while it is, the foot
+  // does not say the question again; out of view, it does.
+  // Whether the question is in view: while it is, the foot does not pin or restate it.
+  const [questionInView, setQuestionInView] = useState(false);
   const measureQuestion = useRef<() => void>(() => {});
   measureQuestion.current = () => {
     const root = surface.current;
     const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
-    if (!root || !asked || task === null) return setQuestionSeen(false);
+    if (!root || !asked || task === null) return setQuestionInView(false);
     const foot = root.querySelector<HTMLElement>(".foot");
     const pinned = foot?.querySelector<HTMLElement>(".parked, .restated");
     const view = root.getBoundingClientRect();
     const box = asked.getBoundingClientRect();
     // The line's top, as it would be with no question pinned over it.
     const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
-    const shown = box.top >= view.top + 40 && box.bottom <= lineTop + 4;
-    const near = lineTop - box.bottom < 180;
-    setQuestionSeen(shown && near);
+    setQuestionInView(box.top >= view.top + 40 && box.bottom <= lineTop + 4);
   };
   useEffect(() => {
     measureQuestion.current();
@@ -998,7 +997,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     place="rest"
                     placeKey={place}
                     initial={draft}
-                    placeholder={rest.start ? "Say what you would rather do" : undefined}
+                    placeholder={rest.start ? "↩ to start, or say what to work on" : undefined}
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
                     active
                     busy={false}
@@ -1087,7 +1086,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   // follows where it sits: inside the open task it is that
                   // task's answer, else it is talk.
                   <div className={`foot${held ? " in-task" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
-                    {task && !held && !questionSeen && (
+                    {task && !held && !questionInView && (
                       <button
                         className="parked"
                         data-drive="answer"
@@ -1100,8 +1099,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         <Line text={task.text} />
                       </button>
                     )}
-                    <div className={`task-line${held ? " on" : " off"}${held && (!restated || questionSeen) ? " joined" : ""}`}>
-                      {held && restated && !questionSeen && (
+                    <div className={`task-line${held ? " on" : " off"}${held && (!restated || questionInView) ? " joined" : ""}`}>
+                      {held && restated && !questionInView && (
                         <p className="restated">
                           <Line text={restated} />
                         </p>
@@ -1119,7 +1118,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         taskOpen={task !== null}
                         end={lineEnd}
                         onEnd={lineEnd ? () => setLine("task") : undefined}
-                        placeholder={held ? (restated && questionSeen ? "Your answer to the task above" : "Your answer") : ownBusy ? undefined : "Say something to the tutor"}
+                        placeholder={held ? (restated && questionInView ? "Your answer to the task above" : "Your answer") : "Say something to the tutor"}
                         stopKey={stopKey}
                         onSend={onSend}
                         onMove={setLine}
