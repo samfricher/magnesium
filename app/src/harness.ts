@@ -38,6 +38,10 @@
 //                           each item's title, id, enabled state and key
 //   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
 //                           a click does: the same handler, the same event
+//   scroll {target?, to?, by?}  bring a target (as click names it) to the top
+//                           of its view; or move the view in front (a page,
+//                           or the session's surface) to "top" or "bottom",
+//                           or by some pixels, as a wheel would
 //   quit
 //
 // The names a harness clicks by (data-drive): "start" (Home's first row),
@@ -539,6 +543,21 @@ async function run(op: Op): Promise<Result> {
       if (!probe?.attach(paths)) return { ok: false, error: "no session is in front" };
       // The files are handed in to the study folder before they show on the line.
       for (let i = 0; i < 50 && document.querySelectorAll(".session.in-front .attached .file").length === 0; i++) await sleep(100);
+      await nextPaint();
+      return { ok: true };
+    }
+    case "scroll": {
+      if (op.target !== undefined) {
+        const element = find(String(op.target), op.by === "drive");
+        if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
+        element.scrollIntoView({ block: "start" });
+      } else {
+        const view = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .surface, .views > .view")).find(visible);
+        if (!view) return { ok: false, error: "no view is in front" };
+        if (op.to === "top") view.scrollTop = 0;
+        else if (op.to === "bottom") view.scrollTop = view.scrollHeight;
+        else view.scrollTop += Number(op.by ?? 0);
+      }
       await nextPaint();
       return { ok: true };
     }
