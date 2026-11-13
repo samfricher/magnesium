@@ -1,21 +1,22 @@
-// A stand-in core for a plain browser, with made-up data, so the surface can
-// be worked on and photographed without a window or an agent. Nothing here is
+// A stand-in core for a plain browser, with made-up data, so the window can
+// be worked on and photographed without a shell or an agent. Nothing here is
 // a real course, a real grade or a real learner's words.
 //
 // The address picks a state. The five scenarios of the evidence contract:
-//   #s1-cold  #s1-cold-first  #s2-start  #s2-answer  #s3-before  #s3-after
-//   #s4-offplan  #s4-return  #s5-week  #s5-week-next  #narrow-lesson  #settings
-// and the rest of the window:
-//   #plan  #commands  #courses  #material  #work  #help  #source  #reopen
-//   #working  #permission  #new-course  #paper  #upgrade
+//   #s1-cold (Home)  #s1-cold-first  #s2-start  #s2-answer  #s3-before
+//   #s3-after  #s4-offplan  #s4-return  #s5-week  #s5-week-next  #narrow-lesson
+// and the new screens of the combined window:
+//   #workspace  #new-session  #new-session-start  #settings  #settings-keys  #panel  #panel-changed  #attach
+//   #tabs  #commands  #switch  #session-earlier  #source  #working
+//   #permission  #paper  #upgrade  #help-row  #symbols
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
 
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
-import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, Mark, Opened, Paper, PaperSitting, Payment, Progress, RuntimeSetup, Setup, Source, Turn } from "./types";
+import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, Opened, Paper, PaperSitting, Payment, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
 
-const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
+const wait = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
 
 const address = () => decodeURIComponent(window.location.hash.replace(/^#/, ""));
 const state = address();
@@ -35,7 +36,35 @@ let engineChosen: Engine = "direct";
 let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
 let upgraded = !has("upgrade");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
-let open: string | null = null;
+let open: string | null = FOLDER;
+const DAY_MS = 86_400_000;
+// When each folder was last opened, and its sessions: the current one, and an earlier one.
+const openedMs: Record<string, number> = {
+  [FOLDER]: Date.now() - (week ? 7 : 2) * DAY_MS,
+  "/Users/you/Study/Linear-Algebra": Date.now() - (week ? 9 : 3) * DAY_MS,
+  "/Users/you/Study/Statistics": Date.now() - 12 * DAY_MS,
+};
+const sessionsOf = (folder: string): LessonInfo[] => {
+  if (firstOpen) return [];
+  const at = openedMs[folder] ?? Date.now();
+  const info = (session: string, title: string | null, opening: string, ms: number, current: boolean): LessonInfo => ({
+    session,
+    first_ms: ms - 40 * 60_000,
+    last_ms: ms,
+    turns: 6,
+    opening,
+    current,
+    title,
+    opened_ms: ms,
+  });
+  if (folder === FOLDER)
+    return [
+      info("demo", GOAL, "I'm back. Let's continue.", at, true),
+      info("demo-0", null, "Let's work on taking reciprocals of the rate equation.", at - 3 * DAY_MS, false),
+    ];
+  if (folder.endsWith("Linear-Algebra")) return [info("la-1", "Diagonalising a matrix with a repeated eigenvalue", "Teach me diagonalising", at, true)];
+  return [];
+};
 let stoppedAt: string | null = week ? "The slope of the same line is 0.5 s. What is $K_m$?" : "step 3, what the y-intercept gives";
 let materialNames = ["Week 4 slides.pdf", "enzyme-kinetics-notes.md", "Problem set 3.pdf"];
 const holdStream = has("s3-before");
@@ -85,12 +114,12 @@ const LOST = "Let's find where it slipped. When you look at the line, which part
 
 const BACK_TO = () => `Back to it.\n\n${task === "km" ? KM_TASK : VMAX_TASK}`;
 
-function home(): Home {
-  if (open === null) throw new Error("No course is open.");
-  if (open !== FOLDER) {
-    const name = open.split("/").pop() ?? open;
+function home(folder: string | null = open): Home {
+  if (folder === null) throw new Error("No course is open.");
+  if (folder !== FOLDER) {
+    const name = folder.split("/").pop() ?? folder;
     return {
-      folder: open,
+      folder,
       name,
       state: name === "Statistics" ? "empty" : "ready",
       message: null,
@@ -178,8 +207,15 @@ function account(): Account {
 const setup = (): Setup => ({ runtime: runtime(), account: account(), payment });
 
 /** The conversation left, as the window keeps it: what `turns` reads at rest. */
-function savedTurns(): Turn[] {
-  if (open !== FOLDER || firstOpen) return [];
+function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
+  if (folder !== FOLDER || firstOpen) return [];
+  if (session === "demo-0") {
+    const at = Date.now() - 5 * DAY_MS;
+    return [
+      { session, ms: at, learner: "Let's work on taking reciprocals of the rate equation.", tutor: "Start from $v = \\frac{V_{max}[S]}{K_m + [S]}$. **Task.** Take the reciprocal of both sides.", interrupted: false },
+      { session, ms: at + 60_000, learner: "1/v = (K_m + [S]) / (V_max [S])", tutor: "Right. Split the fraction and you have a straight line in $\\frac{1}{[S]}$.", interrupted: false },
+    ];
+  }
   const at = Date.now() - (week ? 7 : 2) * 86_400_000;
   const turn = (n: number, learner: string, tutor: string): Turn => ({ session: "demo", ms: at + n * 60_000, learner, tutor, interrupted: false });
   const turns = [
@@ -294,23 +330,23 @@ function addMark(mark: Mark["mark"]) {
 }
 
 export function demoCore(): Core {
-  if (has("reopen")) {
-    try {
-      window.localStorage.setItem(
-        "mg.place",
-        JSON.stringify({
-          course: FOLDER,
-          by: { [FOLDER]: { draft: "", answerDraft: "the intercept is 1/V_max, so V_max =", line: "task", fromFoot: 0, inLesson: true, task: VMAX_TASK, seenMs: Date.now() - 20 * 60_000 } },
-        }),
-      );
-    } catch {
-      // A demo with no storage opens at rest.
-    }
-  }
+  const plan = (folder?: string) => {
+    // Another course has a plan of its own; this demo keeps only Biochemistry's.
+    if ((folder ?? open) !== FOLDER) return { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null };
+    const kept = demoPlan();
+    // The route follows the lesson: the slope is in hand once the intercept is done.
+    const steps = task === "km" ? kept.steps.map((step, at) => ({ ...step, status: at < 3 ? "done" : at === 3 ? "doing" : "todo" })) : kept.steps;
+    return { ...kept, goal: GOAL, steps };
+  };
+  const workspaces = (): Workspace[] =>
+    folders
+      .map((folder) => ({ folder, name: folder.split("/").pop() ?? folder, opened_ms: openedMs[folder] ?? null, latest: sessionsOf(folder)[0] ?? null }))
+      .sort((a, b) => (b.opened_ms ?? 0) - (a.opened_ms ?? 0));
   return {
-    initialFolder: async () => (firstOpen ? null : FOLDER),
+    initialFolder: async () => null,
     recent: async () => [...folders],
     library: async () => library(),
+    workspaces: async () => workspaces(),
     forgetFolder: async (path) => {
       folders = folders.filter((folder) => folder !== path);
     },
@@ -325,15 +361,19 @@ export function demoCore(): Core {
       if (!folders.includes(path)) folders = [path, ...folders];
       return home();
     },
+    visitFolder: async (path) => {
+      if (!folders.includes(path)) folders = [path, ...folders];
+      return home(path);
+    },
     newFolder: async (path) => {
       open = path;
       return home();
     },
-    home: async () => home(),
-    setUp: async () => home(),
-    upgradeFolder: async () => {
+    home: async (folder) => home(folder ?? open),
+    setUp: async (folder) => home(folder ?? open),
+    upgradeFolder: async (folder) => {
       upgraded = true;
-      return home();
+      return home(folder ?? open);
     },
     setup: async () => setup(),
     replaceRuntime: async () => runtime(),
@@ -353,7 +393,13 @@ export function demoCore(): Core {
     },
     about: async () => ({ version: "0.3.0", commit: "4f1c2ad9e0b7" }),
     turns: async () => savedTurns(),
-    openSession: async (resume): Promise<Opened> => ({ resumed: resume, turns: resume ? savedTurns() : [], engine: engineChosen }),
+    lessons: async (folder) => sessionsOf(folder),
+    lessonTurns: async (folder, session) => savedTurns(folder, session),
+    touchSession: async () => {},
+    openSession: async (resume, where): Promise<Opened> => {
+      if (where?.folder) open = where.folder;
+      return { resumed: resume, turns: resume ? savedTurns(open, where?.session ?? "demo") : [], engine: engineChosen };
+    },
     send: async (text, intent) => {
       void respond(text, intent);
     },
@@ -369,21 +415,14 @@ export function demoCore(): Core {
       replying = false;
     },
     decide: async () => {
-      void reply("Thank you. The plan file is changed.");
+      void reply("Thank you. The plan is changed.");
     },
     answer: async () => {},
     stop: async (line) => {
       stoppedAt = line;
     },
     rail: async () => ({ goal: GOAL, steps: demoPlan().steps, next_action: null }),
-    plan: async () => {
-      // Another course has a plan of its own; this demo keeps only Biochemistry's.
-      if (open !== FOLDER) return { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null };
-      const plan = demoPlan();
-      // The route follows the lesson: the slope is in hand once the intercept is done.
-      const steps = task === "km" ? plan.steps.map((step, at) => ({ ...step, status: at < 3 ? "done" : at === 3 ? "doing" : "todo" })) : plan.steps;
-      return { ...plan, goal: GOAL, steps };
-    },
+    plan: async (folder) => plan(folder),
     progress: async (): Promise<Progress> => ({
       targets: [],
       exam: null,
@@ -403,7 +442,8 @@ export function demoCore(): Core {
       message: null,
     }),
     setBlockMinutes: async () => {},
-    attach: async (path) => `Study/handed-in/working/2026-11-12/${path.split("/").pop()}`,
+    attach: async (path, group) => `Study/handed-in/${group}/2026-11-12/${path.split("/").pop()}`,
+    attachBytes: async (name, _bytes, group) => `Study/handed-in/${group}/2026-11-12/${name}`,
     addMaterial: async (paths): Promise<Added> => {
       const names = paths.map((path) => path.split("/").pop() ?? path);
       materialNames = [...names, ...materialNames];
@@ -429,6 +469,10 @@ export function demoCore(): Core {
       sitting = null;
       return files.length > 0 ? { shown: `Mark my Paper B. My work: ${files.join(", ")}`, sent: "Mark my Paper B." } : null;
     },
+    windowState: async () => null,
+    setWindowState: async () => {},
+    setMenu: async () => {},
+    onMenu: async () => () => {},
     onEvent: async (handler) => {
       emit = handler;
       return () => {
@@ -447,85 +491,120 @@ async function settle(ms = 500) {
   await wait(ms);
 }
 
+const session = (actions: Actions) => {
+  const handle = actions.session();
+  if (!handle) throw new Error("no session is in front");
+  return handle;
+};
+
+/** Home's first row: carry on the most recent session. */
 async function lesson(actions: Actions) {
-  await actions.start();
+  actions.continueRecent();
+  await wait(200);
   await settle();
 }
 
 async function answered(actions: Actions) {
   await lesson(actions);
-  await actions.say("$V_{max}$ = 4 µM/s", "answer");
+  await session(actions).say("$V_{max}$ = 4 µM/s", "answer");
   await settle(700);
 }
 
 async function changed(actions: Actions, hold = false) {
   await answered(actions);
-  actions.setLine("talk");
-  await actions.say("I skipped three days and the midterm moved, change the plan", "talk");
+  await session(actions).say("I skipped three days and the midterm moved, change the plan", "talk");
   if (!hold) await settle(700);
   else await wait(500);
 }
 
 async function offPlan(actions: Actions) {
   await changed(actions);
-  await actions.say("By the way, why do some courses use a Hanes–Woolf plot instead?", "talk");
+  await session(actions).say("By the way, why do some courses use a Hanes–Woolf plot instead?", "talk");
   await settle();
 }
 
-/** Drive the surface to the state the address names, as a learner would. */
+/** Drive the window to the state the address names, as a learner would. */
 export async function startFromAddress(actions: Actions): Promise<void> {
   await wait(60);
   switch (state) {
     case "s2-start":
+    case "s5-week-next":
       return lesson(actions);
     case "s2-answer":
     case "narrow-lesson":
       return answered(actions);
+    case "panel":
+      await answered(actions);
+      return actions.run("plan");
+    case "panel-changed":
+      await changed(actions);
+      return actions.run("plan");
+    case "help-row":
+      return lesson(actions);
+    case "symbols":
+      await lesson(actions);
+      actions.run("symbols");
+      return;
+    case "attach":
+      await lesson(actions);
+      actions.run("attach");
+      return wait(200);
     case "settings":
+      return actions.run("settings");
+    case "settings-keys":
+      return actions.run("keys-help");
+    case "workspace":
+      return actions.goWorkspace(FOLDER);
+    case "new-session":
+      actions.newSession(FOLDER);
+      return wait(300);
+    case "new-session-start":
+      actions.newSession(FOLDER, { kind: "start" });
+      await wait(200);
+      return settle();
+    case "paper":
+      return actions.goWorkspace(FOLDER);
+    case "upgrade":
+      return actions.goWorkspace(FOLDER);
+    case "session-earlier":
+      actions.openSession(FOLDER, "demo-0", "Taking reciprocals of the rate equation");
+      return wait(300);
+    case "tabs":
       await answered(actions);
-      return actions.open("settings");
-    case "help":
-      await answered(actions);
-      return actions.open("help");
+      actions.openSession(FOLDER, "demo-0", "Taking reciprocals of the rate equation");
+      await wait(200);
+      actions.run("settings");
+      return actions.run("tab", actions.tabs()[1].key);
     case "source":
       await lesson(actions);
-      await actions.say("V_max = 4 µM/s", "answer");
+      await session(actions).say("V_max = 4 µM/s", "answer");
       await settle();
-      return actions.openSource({ path: "Study/materials/Week 4 slides.pdf", page: 2 });
+      document.querySelector<HTMLElement>(".tutor a[href*='Week']")?.click();
+      return wait(300);
     case "s3-before":
       return changed(actions, true);
     case "s3-after":
       return changed(actions);
-    case "plan":
-      await changed(actions);
-      return actions.open("plan");
     case "s4-offplan":
       return offPlan(actions);
     case "s4-return":
       await offPlan(actions);
-      await actions.say("OK, back to the task", "talk");
+      await session(actions).say("OK, back to the task", "talk");
       return settle();
-    case "s5-week-next":
-      return lesson(actions);
     case "working":
-      await actions.start();
-      return;
+      actions.continueRecent();
+      return wait(300);
     case "permission":
       await lesson(actions);
-      actions.setLine("talk");
-      await actions.say("Can you write the lab report into my plan for Friday?", "talk");
+      await session(actions).say("Can you write the lab report into my plan for Friday?", "talk");
       return;
     case "commands":
-      return actions.open("commands");
-    case "courses":
-      return actions.open("courses");
-    case "material":
-      return actions.open("material");
-    case "work":
-      await answered(actions);
-      return actions.open("work");
-    case "new-course":
-      return actions.switchCourse("/Users/you/Study/Statistics");
+      return actions.run("commands");
+    case "switch":
+      actions.run("commands");
+      await wait(80);
+      document.querySelector<HTMLElement>("[data-drive='command-switch']")?.click();
+      return;
     default:
       return;
   }

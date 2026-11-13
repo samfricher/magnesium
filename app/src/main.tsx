@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
@@ -5,6 +6,7 @@ import { mark } from "./harness";
 import { applyPrefs, loadPrefs } from "./prefs";
 import "./styles/surface.css";
 import "./styles/prose.css";
+import "./styles/window.css";
 
 // Anything that goes wrong on the page is kept, so the self-check can report it.
 declare global {
@@ -50,6 +52,25 @@ new MutationObserver((changes) => {
   }
 }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "href", "role"] });
 
+/** A page that fails says so in a line, and keeps what failed for the self-check, instead of going blank. */
+class Kept extends Component<{ children: ReactNode }, { failed: string | null }> {
+  state = { failed: null as string | null };
+  static getDerivedStateFromError(error: unknown) {
+    return { failed: String(error) };
+  }
+  componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
+    window.__mgErrors.push(`render: ${String(error)} ${(info.componentStack ?? "").split("\n").slice(0, 4).join(" ")}`);
+  }
+  render() {
+    if (this.state.failed) return <p className="record note page-failed">The window met a problem it cannot draw past: {this.state.failed}. Quit and open it again.</p>;
+    return this.props.children;
+  }
+}
+
 // The text faces are the Mac's own and the faces mathematics is set in are
 // bundled, so nothing waits for a face: the first paint is the real one.
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <Kept>
+    <App />
+  </Kept>,
+);

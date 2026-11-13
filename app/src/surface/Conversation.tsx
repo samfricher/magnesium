@@ -6,15 +6,26 @@
 
 import { memo } from "react";
 
-import { isHelp, opening, splitConfidence, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
+import { isHelp, opening, splitAttached, splitConfidence, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, type PlanDiff } from "../words";
+import { firstWords, markWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
   return <div className={className} dangerouslySetInnerHTML={{ __html: renderPlain(text) }} />;
+}
+
+/** Files that went with a message, by their own names: never the folder they were kept in. */
+function Sent({ files, working }: { files: string[]; working: boolean }) {
+  if (files.length === 0) return null;
+  return (
+    <p className="sent-files" data-role="sent-files">
+      {working ? "with your work: " : "with "}
+      {files.map((file) => file.split("/").pop()).join(", ")}
+    </p>
+  );
 }
 
 function Marks({ marks }: { marks: Mark[] }) {
@@ -61,14 +72,17 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
   const text = turn.learner;
   if (text.trim() === "") return null;
   if (turn.said === "opening" || opening(text)) return null;
-  const { text: words, confidence } = splitConfidence(text);
+  const attached = splitAttached(text);
+  const { text: words, confidence } = splitConfidence(attached.text);
   const marks = turn.marks ?? [];
+  const sent = <Sent files={attached.files} working={attached.working} />;
   if (turn.pick) return <Said text={words} className="you pick" />;
   // Help asked for is the window's own words, said for the learner: one quiet line, not an answer.
   if (turn.said === "help" || (turn.said === undefined && isHelp(text))) {
     return (
       <>
         <Said text={words} className="you talk help" />
+        {sent}
         <Marks marks={marks} />
       </>
     );
@@ -81,7 +95,8 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
             <Line text={firstWords(turn.question)} />
           </p>
         )}
-        <Said text={words} className="you" />
+        {words.trim() !== "" && <Said text={words} className="you" />}
+        {sent}
         {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
         <Marks marks={marks} />
         {marks.length === 0 && turn.unmarked && (
@@ -94,7 +109,8 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
   }
   return (
     <>
-      <Said text={words} className="you talk" />
+      {words.trim() !== "" && <Said text={words} className="you talk" />}
+      {sent}
       <Marks marks={marks} />
     </>
   );
@@ -163,7 +179,7 @@ export function Notices({ notices, onDismiss }: { notices: Notice[]; onDismiss: 
     <div className="notices">
       {notices.map((notice) => (
         <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
-          {notice.text}{" "}
+          {withoutPaths(notice.text)}{" "}
           <button className="plain" onClick={() => onDismiss(notice.text)}>
             dismiss
           </button>
@@ -181,7 +197,7 @@ export function Cards(props: { cards: Card[]; onDecide: (id: string, decision: D
         card.kind === "permission" ? (
           <div key={card.id} className="card" role="group" aria-label={card.title}>
             <p className="record-head">{card.title}</p>
-            <p className="card-detail">{card.detail}</p>
+            <p className="card-detail">{withoutPaths(card.detail)}</p>
             <p className="card-acts">
               <button className="act" data-drive="allow" onClick={() => props.onDecide(card.id, "allow_once")} autoFocus>
                 Allow once

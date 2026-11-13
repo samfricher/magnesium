@@ -127,19 +127,15 @@ button {
   border-radius: 3px;
 }
 
-/* The strip the window is dragged by, over the traffic lights. */
-.drag {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 38px;
-  z-index: 5;
-}
+/* The window's tab bar is the strip it is dragged by (window.css). */
 
 /* ------------------------------------------------------------------ */
 /* The surface                                                         */
 
+/* A session's surface fills its tab under the tab bar. The heading sits where
+   it sat before there were tabs: 56px from the window's top. */
 .surface {
-  position: fixed;
+  position: absolute;
   inset: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -154,8 +150,8 @@ button {
 /* What comes next, and the lesson under it, fills the window, so the
    conversation left is above it, out of view, until it is scrolled to. */
 .now {
-  min-height: 100vh;
-  padding: 56px 0 0;
+  min-height: calc(100vh - var(--tabs-h));
+  padding: calc(56px - var(--tabs-h)) 0 0;
   transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .now.rest { padding-top: 30vh; }
@@ -332,7 +328,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* The lesson                                                          */
 
 .turn { margin: 0; }
-.before .turn:first-child { padding-top: 56px; }
+.before .turn:first-child { padding-top: calc(56px - var(--tabs-h)); }
 .before { padding-bottom: 2rem; }
 
 .sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
@@ -622,7 +618,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 @media (max-width: 760px) {
   :root { --hang: 16px; }
-  .now { padding-top: 48px; }
+  .now { padding-top: calc(48px - var(--tabs-h)); }
   .now.rest { padding-top: 24vh; }
 }
 
@@ -678,9 +674,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   padding-bottom: 0;
 }
 .line-end {
-  position: absolute;
-  right: 0;
-  bottom: 0.25rem;
   font: 400 0.706rem/1.6 var(--app);
   color: var(--hint);
   background: none;
@@ -688,29 +681,31 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .line-end .keys { color: var(--hint); }
 button.line-end:hover { color: var(--text); }
-.line .field { padding-right: 7rem; }
+.line .field { padding-right: 9rem; }
 
 /* At rest the line is the one action: it has an edge, and its end says what Return does. */
 .line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
 .line.rest .field:focus { border-bottom-color: var(--ink); }
-.line.rest .line-end { bottom: 0.35rem; font-size: 0.824rem; color: var(--text); }
+.line.rest .line-tools { bottom: 0.35rem; }
+.line.rest .line-end { font-size: 0.824rem; color: var(--text); }
 .line.rest .line-end .keys { color: var(--ink); }
 .now > .keys { color: var(--hint); }
 
 /* The top edge of a lesson. */
 .top-edge {
-  position: fixed;
+  position: absolute;
   inset: 0 0 auto 0;
-  height: 84px;
+  height: calc(84px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) 66px, transparent);
+  background: linear-gradient(to bottom, var(--ground) calc(66px - var(--tabs-h)), transparent);
 }
+.session.with-panel .top-edge { right: var(--panel-w); }
 .top-edge .inner {
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
   padding-top: 0;
-  height: 54px;
+  height: calc(54px - var(--tabs-h) + 6px);
   align-items: flex-end;
   display: flex;
   gap: 1.1rem;
@@ -721,9 +716,6 @@ button.line-end:hover { color: var(--text); }
 .top-edge .inner > * { font: 400 0.765rem/1.4 var(--app); color: var(--hint); }
 .top-edge .top-name { color: var(--quiet); overflow: hidden; text-overflow: ellipsis; }
 .top-edge .top-step { overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 760px) {
-  .top-edge .inner { padding-left: 64px; }
-}
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }

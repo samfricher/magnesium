@@ -158,3 +158,52 @@ export function stoppedWords(line: string): string {
   const text = line.trim();
   return /[.?!]$/.test(text) ? `You stopped at: ${text}` : `You stopped at ${text}.`;
 }
+
+/**
+ * When something was last opened, as a list says it: "today, 14:05",
+ * "yesterday", "Tuesday" within the week, else "Tue 10 Nov" (with the year
+ * when it is not this one). Never "N days ago": a list is not a countdown.
+ */
+export function whenOpened(ms: number | null | undefined, now = new Date()): string {
+  if (!ms) return "";
+  const then = new Date(ms);
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((day(now) - day(then)) / 86_400_000);
+  const time = `${String(then.getHours()).padStart(2, "0")}:${String(then.getMinutes()).padStart(2, "0")}`;
+  if (days <= 0) return `today, ${time}`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return LONG_DAYS[then.getDay()];
+  const short = `${DAYS[then.getDay()]} ${then.getDate()} ${MONTHS[then.getMonth()]}`;
+  return then.getFullYear() === now.getFullYear() ? short : `${short} ${then.getFullYear()}`;
+}
+
+/**
+ * A session's name: the goal the window kept when it began, else what its
+ * first words asked for, else the folder's last goal; never a path.
+ */
+export function sessionName(info: { title: string | null; opening: string }, fallback: string | null): string {
+  if (info.title) return info.title;
+  const asked = /^Let's work on ([\s\S]+)\.$/.exec(info.opening.trim());
+  if (asked) return asked[1];
+  const plain = info.opening.trim();
+  const windowWords = /^(?:I'm back\. Let's continue\.|No checks right now\.|Mark my )/.test(plain);
+  if (plain && !windowWords) return firstWords(plain, 80);
+  return fallback ?? "A session";
+}
+
+const SEGMENT = String.raw`[^\s/"'“”,;:()<>]+`;
+const ABSOLUTE = new RegExp(String.raw`(?:~|/(?:Users|private|var|tmp|Volumes|Library|opt|usr|home))(?:/${SEGMENT})+`, "g");
+const IN_FOLDER = new RegExp(String.raw`(?:\.\./)*\b(?:Study|\.magnesium)(?:/${SEGMENT})+`, "g");
+
+/**
+ * The window's and the core's words with no path in them: a path is said by
+ * its file's own name, the material folder as "the course material", and
+ * the record's backups in words. The tutor's own words are not changed.
+ */
+export function withoutPaths(text: string): string {
+  return text
+    .replace(/\bin \.magnesium\/backups\b/g, "as a backup")
+    .replace(/\b(?:in|to) Study\/materials(?=[.\s]|$)/g, (found) => `${found.split(" ")[0]} the course material`)
+    .replace(ABSOLUTE, (path) => path.split("/").pop() ?? path)
+    .replace(IN_FOLDER, (path) => path.split("/").pop() ?? path);
+}

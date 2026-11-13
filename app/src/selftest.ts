@@ -1,21 +1,23 @@
 // A check the window runs on itself when started with MAGNESIUM_APP_SELFTEST.
 //
-// It drives the real surface inside the real window, against whatever agent
-// program the environment names. scripts/selftest.sh names the stand-in, so
-// the check starts no model. It proves the parts that only exist once the
-// window is running: the calls between the page and the shell, the content
-// policy, that mathematics, a diagram and a PDF page draw, and that the
-// surface's own structure holds: the next thing on the first screen, the line
-// under it, a layer summoned by a key, talk sent as talk.
+// It drives the real window, against whatever agent program the environment
+// names. scripts/selftest.sh names the stand-in, so the check starts no model.
+// It proves the parts that only exist once the window is running: the calls
+// between the page and the shell, the content policy, that mathematics, a
+// diagram and a PDF page draw, and that the window's structure holds: Home
+// with its first row, a workspace's page, Settings in a tab, ⌘K with its few
+// commands, a session in a tab with talk sent as talk, the plan beside it,
+// a file attached by name, and no path or file text shown anywhere.
 
 import type { Actions } from "./App";
-import { tutorText, type SessionState } from "./lesson";
+import { attachedWords, splitAttached, tutorText } from "./lesson";
 import { tinyPdf } from "./demoPdf";
 import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
-import { DEFAULTS, prefsToText, textToPrefs } from "./prefs";
+import { comboOf, keyName, parseCombo } from "./prefs";
 import { sourceRef } from "./sources";
 import type { Core } from "./types";
+import { withoutPaths } from "./words";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
 
@@ -33,20 +35,29 @@ function within<T>(what: string, work: Promise<T>, limitMs = 20_000): Promise<T>
 }
 
 /** A key pressed on the page, as the learner would press it. */
-function press(key: string, mods: { meta?: boolean } = {}) {
+function press(key: string, mods: { meta?: boolean; shift?: boolean } = {}) {
   const target = (document.activeElement as HTMLElement | null) ?? document.body;
-  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, metaKey: Boolean(mods.meta) }));
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, metaKey: Boolean(mods.meta), shiftKey: Boolean(mods.shift) }));
 }
 
-export async function run(api: Core, actions: Actions, session: () => SessionState): Promise<void> {
+/** What the window shows as interface must hold no path, no Markdown source and no settings file. */
+function noRawFiles(where: string): void {
+  const text = document.body.innerText;
+  const found = [/Study\/[\w-]/, /\/Users\//, /\.magnesium/, /plan\.md/, /state\.json/, /settings\.conf/, /^#{1,3} /m, /\| --- \|/].find((pattern) => pattern.test(text));
+  if (found) throw new Error(`${where} shows a path or file text (${found}): ${text.slice(0, 200)}`);
+}
+
+export async function run(api: Core, actions: Actions): Promise<void> {
   const steps: Record<string, unknown> = {};
   let failure: string | null = null;
+  const session = () => actions.session()?.state() ?? { open: false, earlier: [], live: null, cards: [], notices: [], startedMs: null };
   const idle = () => {
     const live = session().live;
     return live !== null && live.status === "idle" && tutorText(live) !== "";
   };
   try {
-    const home = await api.home();
+    const folder = (await api.initialFolder()) ?? "";
+    const home = await api.home(folder);
     steps.home = { state: home.state, name: home.name };
 
     // The setup calls, through the shell. The stand-in is signed in to a plan
@@ -62,27 +73,48 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
     steps.about = about;
     if (!about.version) throw new Error("the window did not report its version");
 
-    // The first screen: the next thing, which starts the lesson, and the line under it.
-    await until("the first screen", () => document.querySelector('[data-drive="start"]') !== null || document.querySelector(".now.rest .next") !== null, 10_000);
-    steps.firstScreen = {
-      next: document.querySelector(".now.rest .next")?.textContent ?? null,
-      line: document.querySelector('.now.rest [data-drive="composer"]') !== null,
-    };
-    if (!steps.firstScreen || !(steps.firstScreen as { line: boolean }).line) throw new Error("the first screen has no line to write on");
+    // The folder named at the start opens its page in the Home tab: a visible New session, and no path.
+    await until("the workspace's page", () => document.querySelector('[data-page="workspace"] [data-drive="new-session"]') !== null, 10_000);
+    noRawFiles("the workspace's page");
+    steps.workspace = { title: document.querySelector(".page-title")?.textContent ?? null };
 
-    // A layer comes with its key and goes with Esc.
+    // Home: every workspace, and a first row Return starts from.
+    actions.goWorkspace(null);
+    await until("Home", () => document.querySelector('[data-page="home"] [data-drive="start"]') !== null, 10_000);
+    await wait(100);
+    steps.homePage = { rows: document.querySelectorAll('[data-page="home"] .home-row').length, first: document.querySelector('[data-drive="start"]')?.textContent ?? null };
+    if (document.activeElement?.getAttribute("data-drive") !== "start") throw new Error("Home's first row does not have the focus");
+    noRawFiles("Home");
+
+    // Settings: a page in its own tab, with its sections, no file and no path.
     press(",", { meta: true });
-    await until("the settings layer", () => document.querySelector('[data-layer="Settings"]') !== null, 3000);
-    press("Escape");
-    await until("the settings layer to go", () => document.querySelector('[data-layer="Settings"]') === null, 3000);
-    steps.layer = true;
+    await until("the Settings tab", () => document.querySelector('[data-page="settings"]') !== null, 3000);
+    const sections = Array.from(document.querySelectorAll(".settings-page .section-head")).map((head) => head.textContent);
+    steps.settings = { sections, keys: document.querySelectorAll(".key-row").length, colours: document.querySelectorAll('input[type="color"]').length };
+    for (const wanted of ["Reading", "Appearance", "Keys", "Lessons", "About"]) if (!sections.includes(wanted)) throw new Error(`Settings has no ${wanted} section`);
+    if (document.querySelectorAll("textarea").length > 0) throw new Error("Settings shows a text to edit");
+    noRawFiles("Settings");
+    press("w", { meta: true });
+    await until("Settings to close", () => document.querySelector('[data-page="settings"]') === null, 3000);
 
-    // The settings as text read back as they were, and a line that cannot be read changes nothing.
-    const asText = prefsToText(DEFAULTS);
-    const settingsBack = textToPrefs(`${asText}\nreading-font = Avenir Next\nkey.plan = cmd+shift+p\nnonsense\n`, DEFAULTS);
-    steps.settingsText = { face: settingsBack.prefs.face, plan: settingsBack.prefs.keys.plan, problems: settingsBack.problems.length };
-    if (JSON.stringify(textToPrefs(asText, DEFAULTS).prefs) !== JSON.stringify(DEFAULTS)) throw new Error("the settings did not read back from their text");
-    if (settingsBack.prefs.face !== "Avenir Next" || settingsBack.prefs.keys.plan !== "cmd+shift+p" || settingsBack.problems.length !== 1) throw new Error(`the settings text was not read: ${JSON.stringify(steps.settingsText)}`);
+    // ⌘K holds only the window's own few commands, and goes with Esc.
+    press("k", { meta: true });
+    await until("the command menu", () => document.querySelector('[data-layer="Commands"]') !== null, 3000);
+    const commands = Array.from(document.querySelectorAll('[data-layer="Commands"] .row-label')).map((row) => row.textContent);
+    steps.commands = commands;
+    if (commands.length > 6 || !commands.includes("Home") || !commands.includes("Settings") || !commands.includes("New session")) throw new Error(`⌘K holds other things: ${commands.join(", ")}`);
+    press("Escape");
+    await until("the command menu to go", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
+
+    // The learner's keys: a combination is read from a key press and written as the Mac writes it.
+    const combo = comboOf({ key: "j", code: "KeyJ", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true });
+    steps.keys = { combo, name: combo ? keyName(combo) : null, none: parseCombo("none") };
+    if (combo !== "cmd+shift+j" || keyName(combo) !== "⇧⌘J" || parseCombo("none") !== null) throw new Error(`a key was not read: ${JSON.stringify(steps.keys)}`);
+
+    // The core's own words reach the screen with no path in them.
+    const plain = [withoutPaths("Added 5 files to Study/materials."), withoutPaths("Change Study/midterm-1/plan.md"), withoutPaths("in .magnesium/backups"), withoutPaths("1/v in s/µM")];
+    steps.withoutPaths = plain;
+    if (plain.join("|") !== "Added 5 files to the course material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
 
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
     const page = document.createElement("div");
@@ -158,74 +190,92 @@ export async function run(api: Core, actions: Actions, session: () => SessionSta
 
     // Course material through the shell: pasted text is saved as a text file in
     // the study folder; the core reads it back, and refuses what lies outside the folder.
-    const pasted = await within("saving pasted text", api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood."));
+    const pasted = await within("saving pasted text", api.addPastedText("Bayes' rule: posterior is proportional to prior times likelihood.", folder));
     const savedAs = pasted.saved[0];
     steps.material = { saved: pasted.saved.length, lines: pasted.lines };
     if (!savedAs?.startsWith("Study/materials/Pasted text ") || !savedAs.endsWith(".txt")) throw new Error(`pasted text was not saved as a text file: ${JSON.stringify(pasted)}`);
-    const readBack = await within("reading a saved text file", api.source(savedAs));
+    const readBack = await within("reading a saved text file", api.source(savedAs, folder));
     if (readBack.kind !== "text" || !readBack.text?.includes("posterior")) throw new Error("a saved text file did not open as text");
     for (const outside of ["../outside.pdf", "/etc/hosts", "Study/midterm-1/papers/PaperB-key.pdf"]) {
-      const refused = await within(`opening ${outside}`, api.source(outside)).then(() => null, (problem) => String(problem));
+      const refused = await within(`opening ${outside}`, api.source(outside, folder)).then(() => null, (problem) => String(problem));
       if (refused === null) throw new Error(`a source outside the study folder, or an answer key, opened: ${outside}`);
     }
 
-    // The library, the plan and the saved conversation, through the shell.
-    const cards = await api.library();
-    const plan = await api.plan();
-    const saved = await api.turns();
-    steps.library = { cards: cards.length, first: cards[0]?.name, plan: { items: plan.items.length, path: plan.path }, saved: saved.length };
-    if (!cards.some((card) => card.folder === home.folder)) throw new Error("the open folder is not in the library");
+    // A pasted image is handed in as a file, and named in the message by the place it was written.
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+    const kept = await within("handing in a pasted image", api.attachBytes("Pasted 10.41.png", png, "attached", folder));
+    steps.attached = kept;
+    if (!kept.startsWith("Study/handed-in/attached/")) throw new Error(`a pasted image was not handed in: ${kept}`);
+    const asWork = attachedWords([kept], true);
+    const toRead = attachedWords([kept], false);
+    if (!asWork.startsWith("Photo of my working: ") || !/may be my working or course material/.test(toRead)) throw new Error(`a file was not named in plain words: ${asWork} / ${toRead}`);
+    if (splitAttached(`b = 5\n\n${toRead}`).files[0] !== kept || splitAttached(`b = 5\n\n${toRead}`).text !== "b = 5") throw new Error("a file named in a message was not read back");
 
-    // Start: the next thing, as Return on the first screen does.
+    // The library, the plan and the folder's sessions, through the shell.
+    const listed = await api.workspaces();
+    const plan = await api.plan(folder);
+    steps.library = { workspaces: listed.length, first: listed[0]?.name, plan: { items: plan.items.length } };
+    if (!listed.some((each) => each.folder === home.folder)) throw new Error("the open folder is not in the library");
+
+    // Start: Home's first row, which opens the session in a tab of its own.
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
-    await actions.start();
+    actions.continueRecent();
+    await until("a session's tab", () => actions.session() !== null, 5000);
     await until("the first reply", idle);
-    if (document.querySelector(".now.lesson") === null) throw new Error("the lesson did not fill the surface");
-    await actions.say(message, "talk");
+    if (document.querySelector(".session.in-front .now.lesson") === null) throw new Error("the lesson did not fill its tab");
+    await actions.session()!.say(message, "talk");
     await until("the reply to be on screen", () => session().earlier.length >= 1 && idle());
     const reply = tutorText(session().live!);
     steps.reply = reply.slice(0, 120);
     if (!reply.includes("Self-check")) throw new Error(`the reply was not the stand-in's echo: ${reply.slice(0, 80)}`);
     if (session().live?.said !== "talk") throw new Error("talk was not sent as talk");
 
-    await until("the page to draw the reply", () => document.querySelector(".tutor .prose") !== null, 5000);
+    await until("the page to draw the reply", () => document.querySelector(".session.in-front .tutor .prose") !== null, 5000);
     await wait(1500);
-    steps.math = document.querySelectorAll(".tutor .katex").length;
-    steps.diagram = document.querySelectorAll(".tutor .diagram svg").length;
+    steps.math = document.querySelectorAll(".session.in-front .tutor .katex").length;
+    steps.diagram = document.querySelectorAll(".session.in-front .tutor .diagram svg").length;
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
 
-    await actions.say("PERMISSION", "talk");
+    await actions.session()!.say("PERMISSION", "talk");
     await until("the permission card", () => session().cards.length > 0);
     steps.card = document.querySelector(".card .record-head")?.textContent ?? null;
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 
-    // The learner's own line on screen draws its mathematics too.
-    await actions.say("my answer is $x^2$", "talk");
+    // The learner's own line on screen draws its mathematics too, and a file sent with it is named, not its path.
+    await actions.session()!.say(`my answer is $x^2$\n\n${toRead}`, "talk");
     await until("the reply to the answer", () => idle() && session().live?.learner.includes("my answer") === true);
-    steps.saidMath = document.querySelectorAll(".you .katex").length;
+    steps.saidMath = document.querySelectorAll(".session.in-front .you .katex").length;
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
+    if (!document.querySelector(".session.in-front .sent-files")?.textContent?.includes(kept.split("/").pop() ?? kept)) throw new Error("the file sent was not named under the message");
 
-    const rail = await api.rail();
-    steps.rail = { goal: rail.goal, steps: rail.steps.length };
-    const progress = await api.progress(null);
+    // The quiet controls, and the plan beside the lesson, shown and hidden.
+    steps.controls = ["attach", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
+    if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
+    actions.run("plan");
+    await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);
+    actions.run("plan");
+    await until("the plan to go", () => document.querySelector(".session.in-front .panel") === null, 3000);
+
+    const progress = await api.progress(null, folder);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 
-    // The plan's layer comes with ⌘P over the lesson.
-    press("p", { meta: true });
-    await until("the plan's layer", () => document.querySelector('[data-layer="The plan"]') !== null, 3000);
-    press("Escape");
-    await until("the plan's layer to go", () => document.querySelector('[data-layer="The plan"]') === null, 3000);
-
-    // Stop here: the lesson is kept for the next sitting, and the surface is at rest again.
-    await actions.stop();
-    await until("the surface at rest", () => document.querySelector(".now.rest") !== null, 10_000);
-    const after = await api.home();
+    // Close the session: its tab goes, and the lesson is kept for the next sitting.
+    actions.run("close-session");
+    await until("the session's tab to close", () => actions.session() === null && actions.tabs().length === 1, 10_000);
+    const after = await api.home(folder);
     steps.afterStop = { can_resume: after.can_resume, stopped_at: after.last?.stopped_at ?? null };
     if (!after.can_resume) throw new Error("the lesson was not kept for the next sitting");
-    const kept = await api.turns();
-    if (kept.length === 0) throw new Error("the conversation was not kept to be drawn above the next thing");
+    const sessions = await api.lessons(folder);
+    steps.sessions = sessions.map((each) => ({ title: each.title, turns: each.turns }));
+    if (sessions.length === 0 || sessions[0].turns === 0) throw new Error("the session was not listed on its workspace's page");
+    const turns = await api.lessonTurns(folder, sessions[0].session);
+    if (turns.length === 0) throw new Error("the session's turns were not kept to be read again");
+    await wait(600);
+    const left = (await api.windowState()) as { v?: number; tabs?: unknown[] } | null;
+    steps.windowState = left ? { v: left.v, tabs: left.tabs?.length } : null;
+    if (left?.v !== 1) throw new Error("how the window was left was not kept");
   } catch (problem) {
     failure = String(problem);
   }

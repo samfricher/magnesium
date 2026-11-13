@@ -6,10 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { core } from "../bridge";
 import { drawPage, openPdf, type Pdf } from "../pdf";
 import type { SourceRef } from "../sources";
-import { prefsToText, textToPrefs, type Prefs } from "../prefs";
 import type { Source } from "../types";
 
-function PdfView({ path, start, onNote }: { path: string; start: number | null; onNote: (note: string) => void }) {
+function PdfView({ path, folder, start, onNote }: { path: string; folder: string; start: number | null; onNote: (note: string) => void }) {
   const [pdf, setPdf] = useState<Pdf | null>(null);
   const [page, setPage] = useState(start ?? 1);
   const [failure, setFailure] = useState<string | null>(null);
@@ -22,7 +21,7 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
     let opened: Pdf | null = null;
     void (async () => {
       try {
-        opened = await openPdf(await (await core()).sourcePdf(path));
+        opened = await openPdf(await (await core()).sourcePdf(path, folder));
         if (!alive) return void opened.destroy();
         setPdf(opened);
         // A page past the end shows the last page, and the foot says which.
@@ -35,7 +34,7 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
       alive = false;
       void opened?.destroy();
     };
-  }, [path, start]);
+  }, [path, folder, start]);
 
   useEffect(() => {
     const el = holder.current;
@@ -82,7 +81,7 @@ function PdfView({ path, start, onNote }: { path: string; start: number | null; 
   );
 }
 
-export function SourceSheet(props: { source: SourceRef; onClose: () => void; onNote: (note: string) => void }) {
+export function SourceSheet(props: { source: SourceRef; folder: string; onClose: () => void; onNote: (note: string) => void }) {
   const { source } = props;
   const [shown, setShown] = useState<Source | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -91,13 +90,13 @@ export function SourceSheet(props: { source: SourceRef; onClose: () => void; onN
   useEffect(() => {
     let alive = true;
     void core()
-      .then((api) => api.source(source.path))
+      .then((api) => api.source(source.path, props.folder))
       .then((got) => alive && setShown(got))
       .catch((error) => alive && setFailure(String(error).replace(/^Error: /, "")));
     return () => {
       alive = false;
     };
-  }, [source.path]);
+  }, [source.path, props.folder]);
 
   useEffect(() => box.current?.focus(), []);
 
@@ -122,15 +121,13 @@ export function SourceSheet(props: { source: SourceRef; onClose: () => void; onN
           }
         }}
       >
-        <p className="sheet-name" title={failure ? undefined : source.path}>
-          {name}
-        </p>
+        <p className="sheet-name">{name}</p>
         {failure ? (
           <p className="sheet-note">{failure}</p>
         ) : !shown ? (
           <p className="sheet-note">Opening…</p>
         ) : shown.kind === "pdf" ? (
-          <PdfView path={source.path} start={source.page} onNote={props.onNote} />
+          <PdfView path={source.path} folder={props.folder} start={source.page} onNote={props.onNote} />
         ) : shown.kind === "image" && shown.image ? (
           <div className="sheet-body">
             <img className="source-image" src={shown.image} alt={shown.name} />
@@ -174,49 +171,6 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
           }}
         />
         <p className="layer-keys">{props.saving ? "Saving…" : "⌘↩ keep it   esc close"}</p>
-      </div>
-    </>
-  );
-}
-
-/**
- * The settings as a text the learner edits, as in Ghostty or Sublime: one
- * setting a line. Each change is read and applied as it is typed; a line that
- * cannot be read is named under the text and changes nothing.
- */
-export function ConfigSheet(props: { prefs: Prefs; onApply: (prefs: Prefs) => void; onClose: () => void }) {
-  const [text, setText] = useState(() => prefsToText(props.prefs));
-  const [problems, setProblems] = useState<string[]>([]);
-  const field = useRef<HTMLTextAreaElement>(null);
-  const base = useRef(props.prefs);
-  useEffect(() => field.current?.focus(), []);
-  const change = (value: string) => {
-    setText(value);
-    const read = textToPrefs(value, base.current);
-    setProblems(read.problems);
-    props.onApply(read.prefs);
-  };
-  return (
-    <>
-      <div className="scrim" onMouseDown={props.onClose} />
-      <div className="layer sheet config" role="dialog" aria-modal="true" aria-label="Settings as text" data-layer="Settings as text">
-        <p className="sheet-name">Settings, as text</p>
-        <textarea
-          ref={field}
-          className="paste-field"
-          data-drive="settings-text"
-          value={text}
-          spellCheck={false}
-          onChange={(event) => change(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              props.onClose();
-            }
-          }}
-        />
-        <p className="layer-keys">{problems.length > 0 ? problems.slice(0, 2).join(";   ") : "applied as you type, kept on this Mac   esc close"}</p>
       </div>
     </>
   );

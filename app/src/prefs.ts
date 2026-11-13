@@ -2,17 +2,34 @@
 // window's own storage. None of it is learning state: the record keeps that.
 //
 // Settings bend the window to the learner: the face they read in, the face
-// their own words are in, the size, the line length, the scheme and the ink.
-// The memory is per course: the draft on the line, where the line was (in the
-// task or in the conversation), how far the lesson was scrolled, and when the
-// window last saw it.
+// their own words are in, the size, the line length, the scheme, the colours
+// and every key. The Settings page is where they are changed; they are never
+// shown as a file. The memory is per session: the draft on the line, where
+// the line was (in the task or in the conversation), how far the lesson was
+// scrolled, and when the window last saw it.
 
 /** A face named by the window, or any installed face by its name. */
 export type Face = string;
 export type Scheme = "system" | "light" | "dark";
 
-/** What a key does. Each can be bound to any key with ⌘, ⌃, ⌥ or ⇧. */
-export type KeyAction = "commands" | "courses" | "plan" | "material" | "work" | "settings" | "help" | "stop" | "new";
+/** What a key does. Each can be bound to any key with ⌘, ⌃, ⌥ or ⇧. The names are the menu bar's commands. */
+export type KeyAction =
+  | "home"
+  | "commands"
+  | "new-session"
+  | "open-workspace"
+  | "close-session"
+  | "attach"
+  | "settings"
+  | "plan"
+  | "stop-reply"
+  | "hint"
+  | "lost"
+  | "unknown"
+  | "symbols"
+  | "bigger"
+  | "smaller"
+  | "actual-size";
 
 export type Prefs = {
   /** The face the material and the tutor are read in: a name below, or any face installed on this Mac. */
@@ -37,15 +54,22 @@ export type Prefs = {
 };
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
-  ["commands", "everything (the command layer)"],
-  ["courses", "courses"],
-  ["plan", "the plan"],
-  ["material", "material and papers"],
-  ["work", "your work"],
-  ["settings", "settings"],
-  ["help", "help with the task"],
-  ["stop", "stop the tutor's reply"],
-  ["new", "a new lesson"],
+  ["home", "Home"],
+  ["new-session", "A new session"],
+  ["open-workspace", "Open a workspace"],
+  ["close-session", "Close the session"],
+  ["attach", "Attach a photo or PDF"],
+  ["plan", "Show or hide the plan"],
+  ["settings", "Settings"],
+  ["commands", "The command menu"],
+  ["hint", "A hint"],
+  ["lost", "I'm lost"],
+  ["unknown", "I don't know"],
+  ["symbols", "Symbols"],
+  ["stop-reply", "Stop the tutor's reply"],
+  ["bigger", "Bigger text"],
+  ["smaller", "Smaller text"],
+  ["actual-size", "Text at its usual size"],
 ];
 
 export const DEFAULTS: Prefs = {
@@ -61,7 +85,24 @@ export const DEFAULTS: Prefs = {
   text: "",
   textDark: "",
   hints: true,
-  keys: { commands: "cmd+k", courses: "cmd+o", plan: "cmd+p", material: "cmd+e", work: "cmd+y", settings: "cmd+,", help: "cmd+/", stop: "cmd+.", new: "cmd+n" },
+  keys: {
+    home: "cmd+1",
+    commands: "cmd+k",
+    "new-session": "cmd+n",
+    "open-workspace": "cmd+o",
+    "close-session": "cmd+w",
+    attach: "cmd+u",
+    settings: "cmd+,",
+    plan: "cmd+p",
+    "stop-reply": "cmd+.",
+    hint: "cmd+shift+h",
+    lost: "cmd+shift+l",
+    unknown: "cmd+shift+d",
+    symbols: "cmd+shift+m",
+    bigger: "cmd+=",
+    smaller: "cmd+-",
+    "actual-size": "cmd+0",
+  },
 };
 
 export const FACES: [Face, string][] = [
@@ -112,6 +153,8 @@ export function faceCss(face: string, fallback = FACE_CSS.charter): string {
 }
 
 const PREFS = "mg.prefs.2";
+/** Keys an earlier window kept under other names. */
+const OLD_KEYS: Record<string, KeyAction> = { stop: "stop-reply", new: "new-session", courses: "open-workspace" };
 const PLACE = "mg.place";
 
 function readJson<T>(key: string): T | null {
@@ -137,9 +180,15 @@ export function cleanPrefs(raw: Partial<Prefs>): Prefs {
   const num = (value: unknown, low: number, high: number, fallback: number) =>
     typeof value === "number" && Number.isFinite(value) ? Math.min(high, Math.max(low, Math.round(value))) : fallback;
   const keys = { ...DEFAULTS.keys };
+  const given = (raw.keys ?? {}) as Record<string, unknown>;
+  for (const [old, action] of Object.entries(OLD_KEYS)) {
+    const combo = given[old];
+    if (typeof combo === "string" && given[action] === undefined && parseCombo(combo)) keys[action] = normalCombo(combo);
+  }
   for (const [action] of KEY_ACTIONS) {
-    const combo = raw.keys?.[action];
-    if (typeof combo === "string" && parseCombo(combo)) keys[action] = normalCombo(combo);
+    const combo = given[action];
+    if (combo === "none") keys[action] = "none";
+    else if (typeof combo === "string" && parseCombo(combo)) keys[action] = normalCombo(combo);
   }
   return {
     face: str(raw.face, DEFAULTS.face) || DEFAULTS.face,
@@ -206,8 +255,12 @@ const NAMES: Record<string, string> = { "⌘": "cmd", command: "cmd", meta: "cmd
 
 /** "cmd+k" as its parts, or null when it names no key. */
 export function parseCombo(text: string): { mods: Set<string>; key: string } | null {
-  const parts = text.toLowerCase().split("+").map((part) => NAMES[part.trim()] ?? part.trim());
-  const key = parts.pop() ?? "";
+  if (text.trim().toLowerCase() === "none") return null;
+  const lower = text.toLowerCase();
+  // A key that is itself "+" comes last, after a "+".
+  const plus = lower.endsWith("++");
+  const parts = (plus ? lower.slice(0, -2) : lower).split("+").filter((part, at, all) => part !== "" || at === all.length - 1).map((part) => NAMES[part.trim()] ?? part.trim());
+  const key = plus ? "+" : (parts.pop() ?? "");
   if (key === "" || parts.some((part) => !(MODS as readonly string[]).includes(part))) return null;
   return { mods: new Set(parts), key };
 }
@@ -220,96 +273,44 @@ function normalCombo(text: string): string {
 /** The action a key press is bound to, if any. */
 export function actionOf(event: KeyboardEvent, keys: Record<KeyAction, string>): KeyAction | null {
   const key = event.key.toLowerCase();
+  // ⌥ and ⇧ change the character a key types; its code names the key itself.
+  const code = /^Key([A-Z])$/.exec(event.code)?.[1]?.toLowerCase() ?? /^Digit(\d)$/.exec(event.code)?.[1] ?? null;
   for (const [action] of KEY_ACTIONS) {
     const combo = parseCombo(keys[action]);
     if (!combo) continue;
     const want = (mod: string, held: boolean) => combo.mods.has(mod) === held;
-    if (combo.key === key && want("cmd", event.metaKey) && want("ctrl", event.ctrlKey) && want("alt", event.altKey) && want("shift", event.shiftKey)) return action;
+    if ((combo.key === key || combo.key === code) && want("cmd", event.metaKey) && want("ctrl", event.ctrlKey) && want("alt", event.altKey) && want("shift", event.shiftKey)) return action;
   }
   return null;
+}
+
+/** The key combination a key press makes, "cmd+shift+h", or null for a modifier alone or a plain key. */
+export function comboOf(event: { key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }): string | null {
+  const key = event.key.toLowerCase();
+  if (["meta", "control", "alt", "shift", "capslock", "fn", "dead", "unidentified"].includes(key)) return null;
+  const mods = [event.metaKey && "cmd", event.ctrlKey && "ctrl", event.altKey && "alt", event.shiftKey && "shift"].filter(Boolean) as string[];
+  const fkey = /^f\d{1,2}$/.test(key);
+  // A plain key types; a combination needs ⌘, ⌃ or ⌥ (⇧ alone types a capital).
+  if (!fkey && !mods.some((mod) => mod !== "shift")) return null;
+  // With ⌥ a Mac types another character: the key's own name is read from its code.
+  const fromCode = /^Key([A-Z])$/.exec(event.code)?.[1]?.toLowerCase() ?? /^Digit(\d)$/.exec(event.code)?.[1];
+  const name = event.altKey && fromCode ? fromCode : key === " " ? "space" : key;
+  return [...mods, name].join("+");
 }
 
 /** "cmd+k" as the Mac writes it, "⌘K". */
 export function keyName(combo: string): string {
   const parsed = parseCombo(combo);
-  if (!parsed) return combo;
+  if (!parsed) return combo === "none" ? "" : combo;
   const marks: Record<string, string> = { cmd: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧" };
-  return `${MODS.filter((mod) => parsed.mods.has(mod)).map((mod) => marks[mod]).join("")}${parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key}`;
+  // In the Mac's own order: ⌃ ⌥ ⇧ ⌘.
+  const order = ["ctrl", "alt", "shift", "cmd"];
+  const names: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→", enter: "↩", escape: "esc", backspace: "⌫", space: "Space", tab: "⇥" };
+  const key = names[parsed.key] ?? (parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key.toUpperCase());
+  return `${order.filter((mod) => parsed.mods.has(mod)).map((mod) => marks[mod]).join("")}${key}`;
 }
 
-// ---------------------------------------------------------------------------
-// Settings as text: what ⌘, opens to edit by hand, as Ghostty or Sublime do.
-
-const FIELDS: [keyof Prefs, string][] = [
-  ["face", "reading-font"],
-  ["voice", "your-font"],
-  ["size", "size"],
-  ["measure", "line-length"],
-  ["scheme", "scheme"],
-  ["ink", "ink"],
-  ["inkDark", "ink-dark"],
-  ["ground", "ground"],
-  ["groundDark", "ground-dark"],
-  ["text", "text"],
-  ["textDark", "text-dark"],
-  ["hints", "key-hints"],
-];
-
-/** The settings as the text the learner edits. */
-export function prefsToText(prefs: Prefs): string {
-  const lines = [
-    "# Magnesium's window, as you set it. One setting a line: name = value.",
-    "# It is kept on this Mac and applied as you type. Esc closes it.",
-    "#",
-    "# reading-font and your-font: charter, iowan, newyork, system, mono, reading",
-    "#   (your-font only), or any font on this Mac by its name.",
-    "# size: 12 to 28. line-length: characters, 40 to 110.",
-    "# scheme: system, light or dark. key-hints: on or off.",
-    "# ink, ground and text, and their -dark twins: a colour (#2f3f86, rgb(...),",
-    "#   a CSS name) or an ink: blue-black, green-black, violet, graphite.",
-    "#   Leave ground and text empty for the window's own.",
-    "",
-  ];
-  for (const [field, name] of FIELDS) {
-    const value = prefs[field];
-    lines.push(`${name} = ${typeof value === "boolean" ? (value ? "on" : "off") : String(value)}`);
-  }
-  lines.push("", "# Keys: key.<what> = a key with cmd, ctrl, alt or shift, such as cmd+shift+p.");
-  for (const [action, what] of KEY_ACTIONS) lines.push(`key.${action} = ${prefs.keys[action]}`.padEnd(28) + `# ${what}`);
-  return `${lines.join("\n")}\n`;
-}
-
-/** Read the text back. A line that cannot be read is named in `problems` and left as it was. */
-export function textToPrefs(text: string, base: Prefs): { prefs: Prefs; problems: string[] } {
-  const raw: Partial<Prefs> & Record<string, unknown> = { ...base, keys: { ...base.keys } };
-  const problems: string[] = [];
-  text.split("\n").forEach((line, at) => {
-    const bare = line.replace(/#.*$/, "").trim();
-    if (bare === "") return;
-    const found = /^([a-z.-]+)\s*=\s*(.*)$/i.exec(bare);
-    if (!found) return void problems.push(`line ${at + 1} has no "name = value"`);
-    const name = found[1].toLowerCase();
-    const value = found[2].trim();
-    if (name.startsWith("key.")) {
-      const action = name.slice(4) as KeyAction;
-      if (!KEY_ACTIONS.some(([known]) => known === action)) return void problems.push(`line ${at + 1}: no key is called ${name}`);
-      if (!parseCombo(value)) return void problems.push(`line ${at + 1}: ${value} is not a key`);
-      raw.keys![action] = value;
-      return;
-    }
-    const field = FIELDS.find(([, known]) => known === name)?.[0];
-    if (!field) return void problems.push(`line ${at + 1}: no setting is called ${name}`);
-    if (field === "size" || field === "measure") {
-      const number = Number(value);
-      if (!Number.isFinite(number)) return void problems.push(`line ${at + 1}: ${name} wants a number`);
-      raw[field] = number;
-    } else if (field === "hints") raw.hints = !/^(off|no|false|0)$/i.test(value);
-    else raw[field] = value as never;
-  });
-  return { prefs: cleanPrefs(raw), problems };
-}
-
-/** Where the learner was in one course. */
+/** Where the learner was in one session. */
 export type Place = {
   /** The words on the conversation's line, not yet sent. */
   draft: string;
@@ -327,33 +328,45 @@ export type Place = {
   seenMs: number;
 };
 
-type Places = { course: string | null; by: Record<string, Place> };
+type Places = { by: Record<string, Place> };
 
 const blankPlace: Place = { draft: "", answerDraft: "", line: "talk", fromFoot: 0, inLesson: false, task: null, seenMs: 0 };
 
 let places: Places | null = null;
 
 function allPlaces(): Places {
-  places ??= readJson<Places>(PLACE) ?? { course: null, by: {} };
+  places ??= { by: readJson<Places>(PLACE)?.by ?? {} };
   return places;
 }
 
-/** The course the window last had open. */
-export function lastCourse(): string | null {
-  return allPlaces().course;
+/** The key a session's place is kept under: its folder and its conversation, or the tab of a session not begun. */
+export const placeKey = (folder: string, session: string | null, tab: string) => `${folder}#${session ?? tab}`;
+
+export function placeOf(key: string): Place {
+  return { ...blankPlace, ...(allPlaces().by[key] ?? {}) };
 }
 
-export function placeOf(folder: string): Place {
-  return { ...blankPlace, ...(allPlaces().by[folder] ?? {}) };
+/** A session just begun has its conversation's id now: its place moves to it. */
+export function movePlace(from: string, to: string): void {
+  const all = allPlaces();
+  if (!all.by[from] || all.by[to]) return;
+  all.by[to] = all.by[from];
+  delete all.by[from];
+  flushPlaces();
 }
 
 let timer: number | null = null;
 
 /** Keep a change to where the learner is. Written a moment later, so typing stays cheap. */
-export function keepPlace(folder: string, change: Partial<Place>): void {
+export function keepPlace(key: string, change: Partial<Place>): void {
   const all = allPlaces();
-  all.course = folder;
-  all.by[folder] = { ...placeOf(folder), ...change, seenMs: Date.now() };
+  all.by[key] = { ...placeOf(key), ...change, seenMs: Date.now() };
+  // Kept for the last 200 sessions only.
+  const keys = Object.keys(all.by);
+  if (keys.length > 200) {
+    keys.sort((a, b) => all.by[a].seenMs - all.by[b].seenMs);
+    for (const old of keys.slice(0, keys.length - 200)) delete all.by[old];
+  }
   if (timer !== null) window.clearTimeout(timer);
   timer = window.setTimeout(flushPlaces, 300);
 }
@@ -366,8 +379,8 @@ export function flushPlaces(): void {
 
 /**
  * The runtime starts a new sitting after three hours without a message. The
- * window reopens inside a lesson only within that time, and only when the
- * record agrees the lesson is from today.
+ * window reopens on the session it was left on only within that time;
+ * after it, it opens on Home, with the tabs as they were.
  */
 export const SITTING_GAP_MS = 3 * 60 * 60 * 1000;
 

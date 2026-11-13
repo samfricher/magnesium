@@ -86,7 +86,11 @@ export const emptySession: SessionState = {
 
 export type Action =
   | { type: "opened"; turns: Turn[] }
+  /** A session's saved turns, shown without its tutor running. */
+  | { type: "shown"; turns: Turn[] }
   | { type: "reopened" }
+  /** The tutor's program is another session's now. */
+  | { type: "released" }
   | { type: "sent"; shown: string; now: number; said?: Said; question?: string }
   | { type: "planned"; change: PlanDiff }
   | { type: "unmarked"; since: number; reason: string }
@@ -215,9 +219,25 @@ export function reduce(state: SessionState, action: Action): SessionState {
           : null,
       };
     }
+    case "shown": {
+      const turns = action.turns;
+      const last = turns.length > 0 ? turns[turns.length - 1] : null;
+      return {
+        ...state,
+        open: false,
+        earlier: turns.slice(0, -1),
+        cards: [],
+        live: last
+          ? { ...blankLive(last.learner, last.ms, "idle"), done: last.tutor ? [last.tutor] : [], interrupted: last.interrupted }
+          : null,
+      };
+    }
     case "reopened":
       // The agent was restarted under a lesson that is still on screen.
       return { ...state, open: true };
+    case "released":
+      // Another tab's session took the tutor's program: this one shows what it said, and starts again when written to.
+      return { ...state, open: false, cards: [], live: state.live && state.live.status !== "idle" ? { ...state.live, status: "idle" } : state.live };
     case "sent": {
       const previous = state.live ? asTurn(state.live) : null;
       return {
@@ -353,4 +373,29 @@ export function pickedWords(answers: Answer[]): string {
     .map((answer) => answer.chosen.join(", "))
     .filter((line) => line.trim() !== "")
     .join("\n");
+}
+
+/**
+ * The words that name files sent with a message. A file sent with an answer,
+ * or while a task is open, is the learner's work, handed in with it. Any other
+ * is a file for the tutor to read, and the tutor is told plainly that it may
+ * be working or course material, so it can ask when it cannot tell.
+ */
+export function attachedWords(paths: string[], working: boolean): string {
+  const list = paths.join(", ");
+  const photos = paths.every((path) => !/\.pdf$/i.test(path));
+  if (working) return `${paths.length === 1 ? (photos ? "Photo" : "File") : photos ? "Photos" : "Files"} of my working: ${list}`;
+  return paths.length === 1
+    ? `A file for you to read: ${list}. It may be my working or course material.`
+    : `Files for you to read: ${list}. They may be my working or course material.`;
+}
+
+const ATTACHED = /(?:^|\n\n)(?:(?:Photos?|Files?) of my working: (.+)|(?:A file|Files) for you to read: (.+?)\. (?:It|They) may be my working or course material\.)\s*$/;
+
+/** What the learner said, apart from the files that went with it, which the lesson names by their file names alone. */
+export function splitAttached(text: string): { text: string; files: string[]; working: boolean } {
+  const found = ATTACHED.exec(text);
+  if (!found) return { text, files: [], working: false };
+  const list = (found[1] ?? found[2] ?? "").split(", ").map((each) => each.trim()).filter(Boolean);
+  return { text: text.slice(0, found.index).trim(), files: list, working: found[1] !== undefined };
 }
