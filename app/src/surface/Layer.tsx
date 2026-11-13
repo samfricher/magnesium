@@ -5,8 +5,14 @@
 // The line either filters the list ("filter"), or is said to the tutor when
 // Return is pressed with words on it ("say", the plan's layer). A list with
 // nothing to type (settings) has no line.
+//
+// A layer is a native modal dialog (dialog guide): the window behind it is
+// inert, focus stays in it, Esc closes it, and focus goes back to where it
+// was. The line is a combobox over a listbox (menu and dialog guides): the
+// row ↑ and ↓ choose is the line's active option, so a screen reader says it
+// while the focus stays on the line.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type Choice = { label: string; chosen: boolean; pick: () => void; face?: string };
 
@@ -62,11 +68,33 @@ function matches(row: Row, words: string[]): boolean {
   return words.every((word) => text.includes(word));
 }
 
+/** Whether a key press belongs to an input method still composing: WebKit can report it with isComposing false, but keyCode 229. */
+const composing = (event: React.KeyboardEvent) => event.nativeEvent.isComposing || event.keyCode === 229;
+
 export function Layer(props: Props) {
   const [text, setText] = useState("");
   const [at, setAt] = useState(0);
   const field = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDialogElement>(null);
+  const id = useId();
+  const listId = `${id}-rows`;
+  const rowId = (index: number) => `${id}-row-${index}`;
+
+  // Opened as a modal as it is drawn, and closed before it is taken away, so focus goes back to where it was.
+  useLayoutEffect(() => {
+    const dialog = box.current;
+    if (dialog && !dialog.open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.setAttribute("open", "");
+      }
+    }
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
 
   const rows = useMemo(() => {
     if (props.mode !== "filter" || text.trim() === "") return props.rows.filter((row) => !row.onlyFound);
@@ -94,7 +122,8 @@ export function Layer(props: Props) {
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.nativeEvent.isComposing) return;
+    // Return and Esc that confirm or cancel an input method's composition are its own.
+    if (composing(event)) return;
     const row = selected >= 0 ? rows[selected] : null;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -136,20 +165,46 @@ export function Layer(props: Props) {
     }
   };
 
+  /** A press outside the layer's box, on its backdrop, closes it. The pointer's place is tested: the dialog is also the target of a press on its own edge. */
+  const onBackdrop = (event: React.MouseEvent<HTMLDialogElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const r = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) props.onClose();
+  };
+
+  const active = selected >= 0 ? rowId(selected) : undefined;
   let number = 0;
   return (
     <>
-      <div className="scrim" onMouseDown={props.onClose} />
-      <div className={`layer${props.wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-label={props.name} data-layer={props.name} onKeyDown={onKeyDown}>
+      <div className="scrim" />
+      <dialog
+        ref={box}
+        className={`layer${props.wide ? " wide" : ""}`}
+        aria-label={props.name}
+        data-layer={props.name}
+        onKeyDown={onKeyDown}
+        onMouseDown={onBackdrop}
+        onCancel={(event) => {
+          event.preventDefault();
+          props.onClose();
+        }}
+      >
         {props.mode !== "none" && (
           <div className="layer-line">
             <input
               ref={field}
               data-drive="layer"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={active}
               aria-label={props.placeholder ?? props.name}
               placeholder={props.placeholder}
               value={text}
               spellCheck={props.mode === "say"}
+              autoCorrect="off"
+              autoCapitalize="none"
               onChange={(event) => {
                 setText(event.target.value);
                 setAt(0);
@@ -158,13 +213,22 @@ export function Layer(props: Props) {
           </div>
         )}
         {props.children}
-        <div className="rows" ref={list} tabIndex={props.mode === "none" ? 0 : -1} role="listbox" aria-label={props.name}>
+        <div
+          className="rows"
+          id={listId}
+          ref={list}
+          tabIndex={props.mode === "none" ? 0 : -1}
+          role="listbox"
+          aria-label={props.name}
+          aria-activedescendant={props.mode === "none" ? active : undefined}
+        >
           {rows.map((row, index) => {
             if (runnable(row)) number += 1;
             const shownNumber = props.numbered && runnable(row) ? number : null;
             return (
               <div
                 key={row.id}
+                id={rowId(index)}
                 data-at={index}
                 data-drive={row.drive}
                 role={runnable(row) ? "option" : "presentation"}
@@ -203,8 +267,10 @@ export function Layer(props: Props) {
           })}
           {rows.length === 0 && <p className="row note empty">Nothing matches.</p>}
         </div>
-        <p className="layer-keys">{props.keys}</p>
-      </div>
+        <p className="layer-keys" aria-hidden="true">
+          {props.keys}
+        </p>
+      </dialog>
     </>
   );
 }
