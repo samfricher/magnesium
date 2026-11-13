@@ -101,7 +101,6 @@
   inset: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
 }
 /* Every session stays as it was left behind the one in front: its scroll, its draft, its reply still coming. */
 .session {
@@ -133,7 +132,6 @@
   margin: 0;
   font: 400 1.588rem/1.25 var(--read);
   color: var(--text);
-  text-wrap: balance;
 }
 .page-head .where,
 .page-column .where {
@@ -317,7 +315,6 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   bottom: 0;
   width: var(--panel-w);
   overflow-y: auto;
-  scrollbar-width: thin;
   padding: calc(56px - var(--tabs-h)) 20px 2rem 18px;
   border-left: 1px solid var(--edge);
   font: 400 0.765rem/1.5 var(--app);
