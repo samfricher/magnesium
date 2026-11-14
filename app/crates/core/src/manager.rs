@@ -297,11 +297,16 @@ impl Manager {
     pub fn lessons(&self, folder: Option<&Path>) -> AgentResult<Vec<LessonInfo>> {
         let folder = self.at(folder)?;
         let state = self.store.folder(&folder);
-        Ok(workspace::sessions(
+        let mut listed = workspace::sessions(
             &self.store.all_turns(&folder),
             state.session_id.as_deref(),
             &state.sessions,
-        ))
+        );
+        let root = study::root(&folder);
+        for lesson in &mut listed {
+            lesson.goal = crate::peek::goal_of_conversation(&root, &lesson.session);
+        }
+        Ok(listed)
     }
 
     /// The turns of one of a folder's sessions, to show it again without
@@ -309,6 +314,25 @@ impl Manager {
     pub fn lesson_turns(&self, folder: Option<&Path>, session: &str) -> AgentResult<Vec<Turn>> {
         let folder = self.at(folder)?;
         Ok(self.store.turns(&folder, session))
+    }
+
+    /// Give one of a folder's sessions a new name, for its tab and the
+    /// workspace's list: the goal it turned out to have, in place of the words
+    /// it was started with.
+    pub fn rename_session(
+        &self,
+        folder: Option<&Path>,
+        session: &str,
+        title: &str,
+    ) -> AgentResult<()> {
+        let folder = self.at(folder)?;
+        let title: String = title.trim().chars().take(200).collect();
+        if title.is_empty() {
+            return Ok(());
+        }
+        self.store
+            .note_session(&folder, session, |note| note.title = Some(title));
+        Ok(())
     }
 
     /// Note that the learner opened one of a folder's sessions.
@@ -1049,6 +1073,12 @@ impl Manager {
 
     pub fn source_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<files::Source> {
         files::source(&study::root(&self.at(folder)?), path).map_err(AgentError)
+    }
+
+    /// The file a document is, to share as it is (AirDrop, Mail): refused for
+    /// an answer key or a file outside the study folder, as opening it is.
+    pub fn shareable_at(&self, folder: Option<&Path>, path: &str) -> AgentResult<PathBuf> {
+        files::shareable(&study::root(&self.at(folder)?), path).map_err(AgentError)
     }
 
     pub fn source_pdf(&self, path: &str) -> AgentResult<Vec<u8>> {

@@ -27,6 +27,8 @@ use tauri::{Emitter, Manager as _, State, WindowEvent};
 
 mod harness;
 mod menu;
+mod occlusion;
+mod share;
 
 /// When set to a file path, the window runs a short check of itself, writes
 /// what it found to that file, and quits. See `scripts/selftest.sh`.
@@ -395,6 +397,52 @@ fn source_pdf(
     plain(shell.manager.source_pdf_at(named(&folder), &path)).map(tauri::ipc::Response::new)
 }
 
+/// Hand a document to the Mac's share sheet, pointing from the control at
+/// `x`, `y` (its box in the page): the file itself, so AirDrop sends the
+/// original. An answer key, or a file outside the study folder, is refused.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn share_file(
+    app: tauri::AppHandle,
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    path: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Reply<()> {
+    let file = plain(shell.manager.shareable_at(named(&folder), &path))?;
+    let window = app
+        .get_webview_window("main")
+        .ok_or("The window is not open.")?;
+    share::show(
+        &window,
+        file,
+        share::Anchor {
+            x,
+            y,
+            width,
+            height,
+        },
+    )
+}
+
+/// Name one of a folder's sessions anew: the goal it turned out to have.
+#[tauri::command(async)]
+fn rename_session(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    session: String,
+    title: String,
+) -> Reply<()> {
+    plain(
+        shell
+            .manager
+            .rename_session(named(&folder), &session, &title),
+    )
+}
+
 #[tauri::command(async)]
 fn open_file(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply<()> {
     plain(shell.manager.open_file_at(named(&folder), &path))
@@ -544,6 +592,8 @@ fn main() {
             lessons,
             lesson_turns,
             touch_session,
+            rename_session,
+            share_file,
             window_state,
             set_window_state,
             set_menu,
@@ -595,6 +645,7 @@ fn main() {
             harness::harness_quit,
             harness::harness_menu,
             harness::harness_menu_click,
+            harness::harness_frame,
         ])
         .run(tauri::generate_context!())
         .expect("the window could not start");

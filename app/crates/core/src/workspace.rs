@@ -28,6 +28,10 @@ pub struct LessonInfo {
     /// When the learner last opened it, in ms since the epoch: its last turn,
     /// or a later look at it.
     pub opened_ms: i64,
+    /// The goal of the record's lesson this conversation is bound to, when the
+    /// record says; not the folder's last goal, which a lesson in a terminal
+    /// may have set.
+    pub goal: Option<String>,
 }
 
 /// The lessons in a folder's kept turns, newest first.
@@ -48,6 +52,7 @@ pub fn lessons(turns: &[Turn], current: Option<&str>) -> Vec<LessonInfo> {
                 current: current == Some(turn.session.as_str()),
                 title: None,
                 opened_ms: turn.ms,
+                goal: None,
             });
         entry.first_ms = entry.first_ms.min(turn.ms);
         entry.last_ms = entry.last_ms.max(turn.ms);
@@ -93,6 +98,7 @@ pub fn sessions(
             current: current == Some(id.as_str()),
             title: note.title.clone().filter(|t| !t.trim().is_empty()),
             opened_ms: opened,
+            goal: None,
         });
     }
     out.sort_by_key(|lesson| std::cmp::Reverse(lesson.opened_ms));

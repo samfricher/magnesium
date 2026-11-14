@@ -60,7 +60,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// The keys the window starts with, as the page's own defaults.
-const DEFAULT_KEYS: [(&str, &str); 16] = [
+const DEFAULT_KEYS: [(&str, &str); 22] = [
     ("home", "cmd+1"),
     ("commands", "cmd+k"),
     ("new-session", "cmd+n"),
@@ -77,6 +77,12 @@ const DEFAULT_KEYS: [(&str, &str); 16] = [
     ("bigger", "cmd+="),
     ("smaller", "cmd+-"),
     ("actual-size", "cmd+0"),
+    ("expand-panel", "cmd+shift+e"),
+    ("flip-panel", "cmd+\\"),
+    ("close-document", "cmd+shift+w"),
+    ("open-document", "cmd+shift+o"),
+    ("zoom-in-document", "cmd+alt+="),
+    ("zoom-out-document", "cmd+alt+-"),
 ];
 
 /// "cmd+shift+h" as the menu writes an accelerator, "Cmd+Shift+H".
@@ -236,6 +242,10 @@ fn build<R: Runtime>(
             &separator()?,
             &command(table, "close-session", "Close Session")?,
             &separator()?,
+            &command(table, "open-document", "Open Document…")?,
+            &command(table, "close-document", "Close Document")?,
+            &command(table, "share-document", "Share Document…")?,
+            &separator()?,
             &command(table, "attach", "Attach a Photo or PDF…")?,
         ],
     )?;
@@ -259,7 +269,13 @@ fn build<R: Runtime>(
         true,
         &[
             &command(table, "home", "Home")?,
-            &command(table, "plan", "Show Plan")?,
+            &command(table, "plan", "Show Panel")?,
+            &command(table, "expand-panel", "Expand Panel")?,
+            &command(table, "flip-panel", "Switch to the Document")?,
+            &separator()?,
+            &command(table, "zoom-in-document", "Zoom In on the Document")?,
+            &command(table, "zoom-out-document", "Zoom Out of the Document")?,
+            &command(table, "zoom-fit-document", "Fit the Document to the Panel")?,
             &separator()?,
             &command(table, "bigger", "Bigger Text")?,
             &command(table, "smaller", "Smaller Text")?,

@@ -142,6 +142,8 @@ type TurnProps = {
   held: boolean;
   /** Links to a source stay shut until the task in this reply is answered. */
   linksOpen: boolean;
+  /** A file that opens even while this reply's links are shut: a past paper. */
+  opensNow?: (path: string) => boolean;
   /** The reply is still being written. */
   writing: boolean;
   /** A sitting began here, in an earlier part of the conversation. */
@@ -160,7 +162,7 @@ type TurnProps = {
 };
 
 /** One exchange. Finished exchanges are drawn once and kept: a new word in the live reply redraws only the live one. */
-export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold }: TurnProps) {
   const reply = turn.tutor;
   return (
     <article
@@ -172,7 +174,7 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, d
       <Learner turn={turn} showQuestion={showQuestion} />
       {reply.trim() !== "" && (
         <div className="tutor">
-          <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} onSource={onSource} onNote={onNote} task={task ?? turn.posed} caret={writing} />
+          <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} opensNow={opensNow} onSource={onSource} onNote={onNote} task={task ?? turn.posed} caret={writing} />
         </div>
       )}
       {turn.interrupted && <p className="record quiet">Stopped.</p>}

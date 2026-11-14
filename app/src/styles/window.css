@@ -129,11 +129,11 @@
 /* The column's left edge stays where it was; the column narrows to end before the plan, and moves
    left only when it would be narrower than 24em. */
 .session.with-panel .surface,
-.session.with-panel .top-edge { right: var(--panel-w); }
+.session.with-panel .top-edge { right: var(--side-w, var(--panel-w)); }
 /* 100% is the room left of the panel; the column's own place with no panel is half of 100% + the panel's width, less half the measure. */
 .session.with-panel .column,
 .session.with-panel .top-edge .inner {
-  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--panel-w) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
+  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--side-w, var(--panel-w)) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
   width: min(var(--measure), calc(100% - var(--hang) - 28px - var(--left)));
   margin-left: var(--left);
   margin-right: 0;
@@ -626,7 +626,23 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .tab-button:focus-visible,
 :root[data-input="key"] .tab-new:focus-visible,
 :root[data-input="key"] .bar-act:focus-visible,
-:root[data-input="key"] .side-tab-name:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+:root[data-input="key"] .side-tab-name:focus-visible,
+:root[data-input="key"] .side-tab:focus-visible,
+:root[data-input="key"] .side-close:focus-visible,
+:root[data-input="key"] .side-open:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+/* A document's pages with the keyboard (← → turn them): a ring would fall outside the panel, so an ink line along
+   the top of the view, held there over the pages as they scroll. */
+:root[data-input="key"] .doc-scroll:focus-visible { outline: none; }
+:root[data-input="key"] .doc-scroll:focus-visible::before {
+  content: "";
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 2px;
+  margin-bottom: -2px;
+  background: var(--ink);
+}
 :root[data-input="key"] .clip:focus-visible { outline: none; color: var(--text); box-shadow: 0 2px 0 var(--ink); }
 /* A tab whose tutor waits on the learner (a permission, a question): a ring, not the writing dot. */
 .ask-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }

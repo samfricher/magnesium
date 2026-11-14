@@ -7,6 +7,7 @@ import { applyPrefs, loadPrefs } from "./prefs";
 import "./styles/surface.css";
 import "./styles/prose.css";
 import "./styles/window.css";
+import "./styles/side.css";
 
 // Anything that goes wrong on the page is kept, so the self-check can report it.
 declare global {

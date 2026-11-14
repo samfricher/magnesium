@@ -19,22 +19,25 @@ export function isLocalHref(href: string): boolean {
 
 function decode(text: string): string {
   try {
-    return decodeURI(text);
+    // Every escape, "%23" (#) among them: a file's name may hold any of them.
+    return decodeURIComponent(text);
   } catch {
     return text;
   }
 }
 
+// A path, up to and including a kind of file the window shows, then perhaps a fragment such as "page=12".
+// A "#" before the extension is part of the file's name: "Homework #3.pdf".
+const SPLIT = new RegExp(`^(.*?\\.(?:${SHOWN.join("|")}))(?:#(.*))?$`, "i");
+
 /** The file and the page a link names, or null when it is not a link to a file the panel shows. */
 export function sourceRef(href: string): SourceRef | null {
   if (!isLocalHref(href)) return null;
-  const bare = href.replace(/^file:\/\//, "");
-  const hash = bare.indexOf("#");
-  const path = decode(hash === -1 ? bare : bare.slice(0, hash)).trim();
-  if (path === "") return null;
-  const ext = path.includes(".") ? (path.split(".").pop() ?? "").toLowerCase() : "";
-  if (!SHOWN.includes(ext)) return null;
-  const page = hash === -1 ? null : /(?:^|&)page=(\d{1,5})(?:&|$)/.exec(bare.slice(hash + 1))?.[1];
+  const found = SPLIT.exec(decode(href.replace(/^file:\/\//, "")).trim());
+  if (!found) return null;
+  const path = found[1].trim();
+  if (path === "" || /^\.[a-z0-9]+$/i.test(path)) return null;
+  const page = found[2] ? /(?:^|&)page=(\d{1,5})(?:&|$)/.exec(found[2])?.[1] : null;
   const number = page ? Number(page) : null;
   return { path, page: number !== null && number >= 1 ? number : null };
 }

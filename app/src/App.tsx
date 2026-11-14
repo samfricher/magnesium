@@ -20,11 +20,11 @@ import { HomePage, mostRecent, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
-import { actionOf, applyPrefs, flushPlaces, keyName, loadPrefs, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
-import type { SourceRef } from "./sources";
+import { actionOf, applyPrefs, flushPlaces, keepPanelWidth, keyName, loadPrefs, panelWidthKept, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
+import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
 import { Commands } from "./surface/Commands";
 import { Session, setupReady, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
-import { PasteSheet, SourceSheet } from "./surface/Sheets";
+import { PasteSheet } from "./surface/Sheets";
 import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Setup, Workspace } from "./types";
 import { displayName, withoutPaths } from "./words";
 
@@ -32,7 +32,7 @@ type HomeTab = { key: "home"; kind: "home" };
 type SettingsTab = { key: "settings"; kind: "settings" };
 export type Tab = HomeTab | SessionTab | SettingsTab;
 
-type Overlay = { kind: "commands" } | { kind: "source"; folder: string; source: SourceRef } | { kind: "paste"; folder: string } | null;
+type Overlay = { kind: "commands" } | { kind: "paste"; folder: string } | null;
 
 /** How the window was left, as kept in its state file. */
 type Saved = {
@@ -81,6 +81,19 @@ export function App() {
   const [active, setActive] = useState<string>("home");
   const [homeFolder, setHomeFolder] = useState<string | null>(null);
   const [panel, setPanel] = useState(false);
+  // The panel's width as the learner left it, and the window's: the panel is drawn at the first fitted to the
+  // second, so a window made narrow for a moment does not shrink the panel for good.
+  const [panelWanted, setPanelWanted] = useState(panelWidthKept);
+  const [room, setRoom] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const seen = () => setRoom(window.innerWidth);
+    window.addEventListener("resize", seen);
+    return () => window.removeEventListener("resize", seen);
+  }, []);
+  const panelWidth = fitPanelWidth(panelWanted, room);
+  // Bumped when a panel's documents change, so the menu's titles and what it enables follow.
+  const [docsSeen, setDocsSeen] = useState(0);
+  const onDocsChange = useCallback(() => setDocsSeen((n) => n + 1), []);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [liveKey, setLiveKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -93,6 +106,9 @@ export function App() {
   const [blockMinutes, setBlockMinutes] = useState(50);
   const [materialChanged, setMaterialChanged] = useState(0);
   const handles = useRef<Record<string, SessionHandle>>({});
+  // The workspace page in front takes the panel's commands for the material open beside it.
+  const workspaceDocs = useRef<((command: string) => boolean) | null>(null);
+  const registerWorkspacePanel = useCallback((run: ((command: string) => boolean) | null) => (workspaceDocs.current = run), []);
   const setupWait = useRef<Promise<Setup> | null>(null);
   // The commands a key just ran: the menu's echo of the same press is not run twice.
   const pressed = useRef<Record<string, number>>({});
@@ -342,6 +358,17 @@ export function App() {
           if (inFront) inFront.command(command);
           else note("Open a session first.");
           return;
+        case "expand-panel":
+        case "flip-panel":
+        case "close-document":
+        case "open-document":
+        case "zoom-in-document":
+        case "zoom-out-document":
+        case "zoom-fit-document":
+        case "share-document":
+          if (inFront) inFront.command(command);
+          else if (tab?.kind === "home") workspaceDocs.current?.(command);
+          return;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -538,6 +565,10 @@ export function App() {
   const onTitle = useCallback((key: string, title: string) => {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
   }, []);
+  // A session named anew from a workspace's page: any tab it is open in takes the name.
+  const onSessionRenamed = useCallback((folder: string, session: string, title: string) => {
+    setTabs((old) => old.map((each) => (each.kind === "session" && each.folder === folder && each.session === session ? { ...each, title } : each)));
+  }, []);
   const onBusy = useCallback((key: string, busy: boolean) => setBusyKey((old) => (busy ? key : old === key ? null : old)), []);
   const [asking, setAsking] = useState<Record<string, boolean>>({});
   const onAsking = useCallback((key: string, now: boolean) => setAsking((old) => (Boolean(old[key]) === now ? old : { ...old, [key]: now })), []);
@@ -545,7 +576,24 @@ export function App() {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" && each.pending ? { ...each, pending: undefined } : each)));
   }, []);
   const onTaskChange = useCallback((key: string, open: boolean) => setTaskOpen((old) => (old[key] === open ? old : { ...old, [key]: open })), []);
-  const onSource = useCallback((folder: string, source: SourceRef) => setOverlay({ kind: "source", folder, source }), []);
+  const onPanelWidth = useCallback((width: number) => {
+    const fitted = fitPanelWidth(width);
+    setPanelWanted(fitted);
+    keepPanelWidth(fitted);
+  }, []);
+  const onShowPanel = useCallback(() => {
+    setPanel(true);
+    widenPanel();
+  }, []);
+  // A document wants more room than the plan: it opens at half the window, unless the panel is already wider.
+  const widenPanel = useCallback(() => {
+    setPanelWanted((old) => {
+      if (fitPanelWidth(old) >= window.innerWidth * 0.5) return old;
+      const wide = fitPanelWidth(window.innerWidth * 0.5);
+      keepPanelWidth(wide);
+      return wide;
+    });
+  }, []);
   const onEngine = useCallback(() => void loadEngine(), [loadEngine]);
 
   // ---------------------------------------------------------------------------
@@ -561,31 +609,48 @@ export function App() {
   const activeTab = tabs.find((each) => each.key === active) ?? HOME;
   const inSession = activeTab.kind === "session";
   // Each tab's name; two sessions with one name are told apart by a number, in the bar and the Window menu.
+  // The Home tab showing a workspace's page is named by that workspace.
+  const homeTabName = homeFolder ? displayName(workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : "Home";
   const tabTitles = useMemo(() => {
     const seen: Record<string, number> = {};
     const named: Record<string, string> = {};
     for (const tab of tabs) {
-      const title = tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
+      const title = tab.kind === "home" ? homeTabName : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
       seen[title] = (seen[title] ?? 0) + 1;
       named[tab.key] = seen[title] > 1 ? `${title} (${seen[title]})` : title;
     }
     return named;
-  }, [tabs]);
+  }, [tabs, homeTabName]);
   const spec = useMemo((): MenuSpec => {
     const disabled: string[] = [];
-    if (!inSession) disabled.push("attach", "photo", "symbols", "hint", "lost", "unknown");
+    if (!inSession) disabled.push("attach", "symbols", "hint", "lost", "unknown");
     else if (!taskOpen[activeTab.key]) disabled.push("hint", "lost", "unknown");
     if (activeTab.kind === "home") disabled.push("close-session");
     if (!inSession) disabled.push("plan");
+    // The panel's commands work in a session, and on a workspace's page with material open beside it.
+    const docs = inSession ? (handles.current[activeTab.key]?.docs() ?? null) : activeTab.kind === "home" && homeFolder ? docsOf(workspaceDocsKey(homeFolder)) : null;
+    // A document in front that can be seen: not hidden with the panel, nor behind the lesson it was flipped from.
+    const withDoc = docs !== null && docs.shown !== null && (inSession ? panel : true) && !(docs.expanded && docs.lessonFront);
+    if (!inSession && !(docs && docs.open.length > 0)) disabled.push("expand-panel", "flip-panel");
+    // Flipping needs a document to flip to, or a panel that fills the session; zoom needs a PDF in front.
+    else if (!(docs && docs.shown !== null) && !docs?.expanded) disabled.push("flip-panel");
+    if (!withDoc) disabled.push("close-document", "share-document");
+    if (!withDoc || !/\.pdf$/i.test(docs?.shown ?? "")) disabled.push("zoom-in-document", "zoom-out-document", "zoom-fit-document");
+    if (!inSession && !(activeTab.kind === "home" && homeFolder)) disabled.push("open-document");
     if (busyKey === null) disabled.push("stop-reply");
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
       tabs: tabs.map((tab) => ({ id: tab.key, title: tabTitles[tab.key] })),
       disabled,
-      titles: { plan: panel ? "Hide Plan" : "Show Plan", ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}) },
+      titles: {
+        plan: panel ? "Hide Panel" : "Show Panel",
+        "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
+        "flip-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Switch to the Lesson" : "Switch to the Page") : "Switch to the Document",
+        ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
+      },
     };
-  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, busyKey, panel]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, busyKey, panel, homeFolder, docsSeen]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -663,7 +728,8 @@ export function App() {
         if (tab?.kind === "session" && handles.current[tab.key]?.escape()) event.preventDefault();
         else if (tab?.kind === "home" && now.current.homeFolder) {
           event.preventDefault();
-          goWorkspace(null);
+          // Esc leaves a document beside the page before it leaves the page.
+          if (!workspaceDocs.current?.("escape")) goWorkspace(null);
         }
       }
     };
@@ -761,6 +827,11 @@ export function App() {
     folder: tab.kind === "session" ? tab.folder : null,
   }));
   const k = (action: KeyAction) => keyName(prefs.keys[action]);
+  // While a panel fills the session (or the workspace's page), the tab bar says which way the switch goes.
+  void docsSeen;
+  const frontDocs = activeTab.kind === "session" ? (panel ? (handles.current[activeTab.key]?.docs() ?? null) : null) : activeTab.kind === "home" && homeFolder ? docsOf(workspaceDocsKey(homeFolder)) : null;
+  const flipState: string | null =
+    frontDocs && frontDocs.expanded && (activeTab.kind === "session" || frontDocs.open.length > 0) ? (frontDocs.lessonFront ? "Document" : activeTab.kind === "session" ? "Lesson" : "Page") : null;
   const covered = overlay !== null;
   const homeName = homeFolder ? (workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : null;
   const sessionRunning = (folder: string) => tabs.some((tab) => tab.kind === "session" && tab.folder === folder && handles.current[tab.key]?.state().open);
@@ -772,6 +843,9 @@ export function App() {
         active={active}
         plan={inSession ? panel : null}
         planKey={k("plan")}
+        flip={flipState}
+        flipKey={k("flip-panel")}
+        onFlip={() => run("flip-panel")}
         settingsKey={k("settings")}
         newKey={k("new-session")}
         canNew={(workspaces?.length ?? 0) > 0}
@@ -806,7 +880,12 @@ export function App() {
                   )
                 }
                 onPaste={(folder) => setOverlay({ kind: "paste", folder })}
-                onOpenMaterial={(folder, path) => setOverlay({ kind: "source", folder, source: { path, page: null } })}
+                panelWidth={panelWidth}
+                onPanelWidth={onPanelWidth}
+                onShowPanel={widenPanel}
+                onSessionRenamed={onSessionRenamed}
+                onDocsChange={onDocsChange}
+                registerPanel={registerWorkspacePanel}
                 onNote={note}
               />
             ) : (
@@ -880,7 +959,10 @@ export function App() {
                 onBusy={onBusy}
                 onAsking={onAsking}
                 onEngine={onEngine}
-                onSource={onSource}
+                panelWidth={panelWidth}
+                onPanelWidth={onPanelWidth}
+                onShowPanel={onShowPanel}
+                onDocsChange={onDocsChange}
                 onTaskChange={onTaskChange}
                 onStarted={onStarted}
               />
@@ -901,8 +983,6 @@ export function App() {
           onClose={() => setOverlay(null)}
           run={(command, arg) => run(command, arg)}
         />
-      ) : overlay?.kind === "source" ? (
-        <SourceSheet source={overlay.source} folder={overlay.folder} onClose={() => setOverlay(null)} onNote={note} />
       ) : overlay?.kind === "paste" ? (
         <PasteSheet
           initial=""

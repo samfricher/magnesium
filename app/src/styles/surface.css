@@ -381,6 +381,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .notices { margin-top: 1rem; }
 .notices .record.note:first-child { margin-top: 0; }
+/* "Dismiss" stays one word on the note's line, never a line of its own. */
+.notices .plain { white-space: nowrap; }
 
 .record.plan { margin: 1.2rem 0 1.6rem; }
 .record-head { margin: 0 0 0.3rem; font: 400 0.765rem/1.5 var(--app); color: var(--ink); }

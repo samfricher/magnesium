@@ -17,6 +17,9 @@ function pdfReader() {
   return reader;
 }
 
+/** The reader itself, for its text layer: the words of a page laid over its picture, so they can be selected. */
+export const pdfLib = () => pdfReader();
+
 /** Open a PDF from its bytes. */
 export async function openPdf(bytes: ArrayBuffer | Uint8Array): Promise<Pdf> {
   const lib = await pdfReader();

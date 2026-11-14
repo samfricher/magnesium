@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
 import { holdBack, markTask, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { docTitle } from "../docs";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -214,14 +215,49 @@ async function loadImages(root: HTMLElement, final: boolean) {
   }
 }
 
-const FILE = /^(?:\.{0,2}\/)?[\w .()+-]+(?:\/[\w .()+-]+)*.(?:pdf|png|jpe?g|gif|webp|md|tex|txt|csv|html)$/i;
+// A file's name as the tutor writes it in code: words, spaces, "#" and the like, then a dot and a known kind.
+const FILE = /^(?:\.{0,2}\/)?[\w .()+#,'-]+(?:\/[\w .()+#,'-]+)*\.(?:pdf|png|jpe?g|gif|webp|md|tex|txt|csv|html)$/i;
 
-/** Mark inline code that names a file, so a click opens it. */
-function markPaths(root: HTMLElement) {
+/**
+ * A file the tutor names in inline code reads as its title, as a link that
+ * opens it beside the lesson; its path is kept on the link, never shown. A
+ * kind of file the window does not show itself keeps its name and opens on
+ * the Mac.
+ */
+function markPaths(root: HTMLElement, titled: boolean, linksOpen: boolean, opensNow?: (path: string) => boolean) {
   root.querySelectorAll<HTMLElement>("code").forEach((code) => {
     if (code.parentElement?.tagName === "PRE") return;
-    const text = code.textContent ?? "";
-    if (text.length < 200 && FILE.test(text.trim())) code.classList.add("path");
+    // Marked once already: the task it was shut for may have been answered since.
+    if (code.dataset.path) {
+      if (code.classList.contains("titled")) {
+        const open = linksOpen || Boolean(opensNow?.(code.dataset.path));
+        code.classList.toggle("path", open);
+        code.classList.toggle("shut", !open);
+      }
+      return;
+    }
+    const text = (code.textContent ?? "").trim();
+    if (text.length >= 200 || !FILE.test(text)) return;
+    const open = linksOpen || Boolean(opensNow?.(text));
+    code.dataset.path = text;
+    // In the reply that sets the open task, it reads as its title but opens only once the task is answered, as a link does.
+    if (open || !titled) code.classList.add("path");
+    // Every file named reads as its title; one the panel cannot show still opens on the Mac.
+    if (titled) {
+      code.classList.add("titled");
+      if (!open) code.classList.add("shut");
+      code.textContent = docTitle(text);
+      code.title = docTitle(text);
+    }
+  });
+  // A link whose words are its own path reads as the file's title too, open or shut. Any other words are the
+  // tutor's ("Week 6 slides, p. 3") and are left as they are.
+  root.querySelectorAll<HTMLElement>("a.source, .source-shut").forEach((link) => {
+    const href = link.getAttribute("href") ?? link.dataset.href ?? "";
+    const path = sourceRef(href)?.path;
+    const words = (link.textContent ?? "").trim();
+    if (!path || words === "") return;
+    if (words === href || words === path || words === href.split("#")[0] || (FILE.test(words) && words.includes("/"))) link.textContent = docTitle(path);
   });
 }
 
@@ -236,6 +272,8 @@ type Props = {
    * as plain text.
    */
   linksOpen?: boolean;
+  /** A file that opens even while links are shut: a past paper, which holds questions, not their answers. */
+  opensNow?: (path: string) => boolean;
   /**
    * Called with a link that opens a source over the lesson. Without it such a
    * link opens in the system's viewer. `from` is the link that was pressed, so
@@ -262,7 +300,7 @@ function withCaret(html: string): string {
   return holder.innerHTML;
 }
 
-export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, onSource, stopped = false, task, caret = false }: Props) {
+export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, opensNow, onSource, stopped = false, task, caret = false }: Props) {
   // A reply still being written, or stopped, never shows the marks of a
   // formula, a bold span or a link it ends inside of. A display formula that
   // is held back keeps a line's room, so what follows does not jump when it closes.
@@ -270,9 +308,9 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
   const html = useMemo(() => {
     const whole = renderMarkdown(held.text);
     const drawn = task && final ? markTask(whole, task) : whole;
-    const linked = onSource ? setSourcesApart(drawn, linksOpen) : drawn;
+    const linked = onSource ? setSourcesApart(drawn, linksOpen, opensNow) : drawn;
     return caret ? withCaret(linked) : linked;
-  }, [held.text, linksOpen, onSource, task, final, caret]);
+  }, [held.text, linksOpen, onSource, opensNow, task, final, caret]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet
@@ -290,8 +328,8 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     const root = ref.current;
     if (!root) return;
     void loadImages(root, final);
-    markPaths(root);
-  }, [html, final]);
+    markPaths(root, Boolean(onSource), linksOpen, opensNow);
+  }, [html, final, onSource, linksOpen, opensNow]);
 
   const onClick = async (event: React.MouseEvent<HTMLDivElement>) => {
     const path = (event.target as HTMLElement).closest("code.path");
@@ -300,10 +338,11 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     if (path || link) event.preventDefault();
     if (path) {
       // A file the window can show opens in the window; only another kind goes to the Mac.
-      const shown = onSource ? sourceRef((path.textContent ?? "").trim()) : null;
+      const named = (path as HTMLElement).dataset.path ?? (path.textContent ?? "").trim();
+      const shown = onSource ? sourceRef(named) : null;
       if (shown) return onSource?.(shown, path as HTMLElement);
       try {
-        await (await core()).openFile((path.textContent ?? "").trim());
+        await (await core()).openFile(named);
       } catch (error) {
         onNote?.(String(error));
       }
@@ -314,7 +353,7 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     if (href === "" || href.startsWith("#")) return;
     const source = onSource ? sourceRef(href) : null;
     if (source) {
-      if (linksOpen) onSource?.(source, link as HTMLElement);
+      if (linksOpen || opensNow?.(source.path)) onSource?.(source, link as HTMLElement);
       return;
     }
     const api = await core();

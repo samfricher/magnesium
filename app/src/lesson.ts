@@ -369,16 +369,24 @@ export function openingWords(last: { stoppedAt: string | null; studiedBefore: bo
   return `Let's work on ${last.title}.`;
 }
 
-const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Let's work on [\s\S]+\.)$/;
+const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Let's work on ([\s\S]+)\.)$/;
 
 /**
- * Whether a line is one of those opening lines, and the stop line it quotes.
- * The learner did not type it, so the lesson shows it as one quiet line and
- * not as something they said.
+ * Whether a line is one of those opening lines, the stop line it quotes, and
+ * the topic a "Let's work on" names. The learner did not type it, so the
+ * lesson shows it as one quiet line and not as something they said.
  */
-export function opening(text: string): { stoppedAt: string | null } | null {
+export function opening(text: string): { stoppedAt: string | null; topic: string | null } | null {
   const found = OPENING.exec(text.trim());
-  return found ? { stoppedAt: found[1]?.trim() || null } : null;
+  return found ? { stoppedAt: found[1]?.trim() || null, topic: found[2]?.trim() || null } : null;
+}
+
+/** The line the core writes when a paper is handed in: "Mark my Paper 2. I used 41 of 50 minutes. My work: …". */
+const HANDED_IN = /^Mark my /;
+
+/** Whether the window wrote these words for the learner (an opening line, a paper handed in), and not the learner. */
+export function saidByTheWindow(text: string): boolean {
+  return opening(text) !== null || HANDED_IN.test(text.trim());
 }
 
 /**

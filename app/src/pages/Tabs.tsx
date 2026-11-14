@@ -23,9 +23,13 @@ export const tabId = (key: string) => `tab-${key}`;
 type Props = {
   tabs: TabView[];
   active: string;
-  /** The plan is shown beside the lesson; null when the tab in front is not a session. */
+  /** The panel (the plan and the session's documents) is shown beside the lesson; null when the tab in front is not a session. */
   plan: boolean | null;
   planKey: string;
+  /** The panel fills the session: what the switch goes to ("Document", "Lesson", "Page"); null when it does not fill it. */
+  flip: string | null;
+  flipKey: string;
+  onFlip: () => void;
   settingsKey: string;
   newKey: string;
   /** There is a workspace to start a session in. */
@@ -87,8 +91,9 @@ export const Tabs = memo(function Tabs(props: Props) {
               >
                 {tab.asking ? <span className="ask-dot" aria-hidden="true" /> : tab.busy && <span className="live-dot" aria-hidden="true" />}
                 {tab.kind === "home" ? (
+                  // Home, or the workspace whose page it shows.
                   <span className="tab-name" data-drive="home">
-                    Home
+                    <Line text={tab.title} />
                   </span>
                 ) : (
                   <span className="tab-name">
@@ -120,6 +125,17 @@ export const Tabs = memo(function Tabs(props: Props) {
         +
       </button>
       <div className="tabbar-end">
+        {props.flip !== null && (
+          <button
+            type="button"
+            className="bar-act"
+            data-drive="flip"
+            title={`Switch to the ${props.flip.toLowerCase()}   ${props.flipKey}`}
+            onClick={props.onFlip}
+          >
+            {props.flip}
+          </button>
+        )}
         {props.plan !== null && (
           <button
             type="button"
@@ -127,10 +143,10 @@ export const Tabs = memo(function Tabs(props: Props) {
             data-drive="plan-toggle"
             aria-expanded={props.plan}
             aria-controls={props.plan ? "plan-panel" : undefined}
-            title={`${props.plan ? "Hide" : "Show"} the plan   ${props.planKey}`}
+            title={`${props.plan ? "Hide" : "Show"} the panel: the plan and the documents open in this session   ${props.planKey}`}
             onClick={props.onPlan}
           >
-            Plan
+            Panel
           </button>
         )}
         <button type="button" className={props.active === "settings" ? "bar-act current" : "bar-act"} data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>

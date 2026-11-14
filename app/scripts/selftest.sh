@@ -11,6 +11,10 @@
 #
 # Set MAGNESIUM_APP_BIN to check another build, such as the one inside
 # target/release/bundle/macos/Magnesium.app/Contents/MacOS/.
+#
+# Keep other windows off it while it runs: pdf.js draws a page on animation
+# frames, which WebKit stops for a window that is covered, so a PDF step can
+# time out under another window.
 
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -56,11 +60,41 @@ EOF
   export MAGNESIUM_APP_RUNTIME="$WORK/magnesium"
 fi
 
+# A PDF in the course material, with real text on two pages, for the check to
+# open beside the workspace's page.
+mkdir -p "$WORK/Demo-Course/Study/materials"
+python3 -I - "$WORK/Demo-Course/Study/materials/Week 1 slides.pdf" <<'PY'
+import sys
+objs = []
+def add(body):
+    objs.append(body)
+    return len(objs)
+font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+words = ["Selectable words on page one", "Selectable words on page two"]
+parent = len(objs) + 1 + 2 * len(words)
+kids = []
+for line in words:
+    stream = "BT /F1 24 Tf 72 700 Td (%s) Tj ET" % line
+    content = add("<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
+    kids.append(add("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 %d 0 R >> >> >>" % (parent, content, font)))
+add("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join("%d 0 R" % k for k in kids), len(kids)))
+catalog = add("<< /Type /Catalog /Pages %d 0 R >>" % parent)
+body = "%PDF-1.4\n"
+offsets = []
+for n, obj in enumerate(objs, 1):
+    offsets.append(len(body))
+    body += "%d 0 obj\n%s\nendobj\n" % (n, obj)
+xref = len(body)
+body += "xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + "".join("%010d 00000 n \n" % o for o in offsets)
+body += "trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, catalog, xref)
+open(sys.argv[1], "wb").write(body.encode("latin-1"))
+PY
+
 MAGNESIUM_APP_SELFTEST="$WORK/report.json" \
 MAGNESIUM_APP_AGENT="$WORK/claude" \
 MAGNESIUM_APP_HOME="$WORK/window" \
 MAGNESIUM_APP_FOLDER="$WORK/Demo-Course" \
-  "${MAGNESIUM_APP_BIN:-$ROOT/target/debug/magnesium-window}" >"$WORK/window.log" 2>&1 || true
+  "${MAGNESIUM_APP_BIN:-${CARGO_TARGET_DIR:-$ROOT/target}/debug/magnesium-window}" >"$WORK/window.log" 2>&1 || true
 
 if [ ! -f "$WORK/report.json" ]; then
   echo "the window wrote no report. Its output:" >&2

@@ -52,6 +52,8 @@ async function tauriCore(): Promise<Core> {
     lessons: (folder) => invoke("lessons", { folder }),
     lessonTurns: (folder, session) => invoke("lesson_turns", { folder, session }),
     touchSession: (folder, session) => invoke("touch_session", { folder, session }),
+    renameSession: (folder, session, title) => invoke("rename_session", { folder, session, title }),
+    shareFile: (path, folder, at) => invoke("share_file", { folder, path, ...at }),
     openSession: (resume, where) =>
       invoke("open_session", { resume, folder: where?.folder ?? null, session: where?.session ?? null, title: where?.title ?? null }),
     send: (text, intent) => invoke("send", { text, intent: intent ?? null }),

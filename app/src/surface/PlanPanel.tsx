@@ -31,14 +31,14 @@ function Steps({ steps }: { steps: Plan["steps"] }) {
   );
 }
 
-export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: Plan | null; changed: PlanDiff | null; id?: string }) {
+export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan | null; changed: PlanDiff | null }) {
   // The item in hand: the one the plan marks doing, else the first not done.
   const current = plan ? (plan.items.find((item) => item.status === "doing")?.id ?? plan.items.find((item) => item.status !== "done")?.id) : undefined;
   const steps = plan?.goal && plan.steps.length > 0 ? plan.steps : [];
   const empty = plan !== null && plan.items.length === 0 && !plan.exam_date && steps.length === 0;
   return (
-    // A sidebar beside the lesson, not a dialog: no focus is moved or trapped, and it holds nothing to operate.
-    <aside className="panel" id={id} aria-label="The plan" data-role="plan-panel">
+    // Beside the lesson, not a dialog: no focus is moved or trapped, and it holds nothing to operate.
+    <div className="plan-view" aria-label="The plan" data-role="plan-panel">
       {plan === null ? (
         <p className="panel-note">Reading the plan…</p>
       ) : (
@@ -90,6 +90,6 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: 
           {empty && <p className="panel-note">No plan yet. Tell the tutor what this course is for, and it writes one.</p>}
         </>
       )}
-    </aside>
+    </div>
   );
 });

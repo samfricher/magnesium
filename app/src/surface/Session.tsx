@@ -18,11 +18,14 @@ import { changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, t
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
-import { displayName, firstWords, markWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
+import { displayName, firstWords, goalName, markWords, namedByItsWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
 import { Cards, Notices, Turn, Working } from "./Conversation";
 import { tabId } from "../pages/Tabs";
 import { PlanPanel } from "./PlanPanel";
+import { SidePanel } from "./SidePanel";
+import type { DocHandle } from "./DocView";
+import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, type Docs } from "../docs";
 import { Line } from "./Rich";
 
 /** What a session tab starts with, once, when it is opened. */
@@ -51,6 +54,8 @@ export type SessionHandle = {
   start: (words?: string) => Promise<boolean>;
   taskOpen: () => boolean;
   busy: () => boolean;
+  /** The documents open beside the lesson, for the menu. */
+  docs: () => Docs;
   /** Where the learner is, for the evidence harness: the phase, the line's place, the open task. */
   probe: () => { phase: string; line: "task" | "talk"; held: boolean; task: string | null; open: boolean; busy: boolean };
 };
@@ -66,8 +71,15 @@ type Props = {
   /** The look at this Mac under way at startup, for a start that comes before it is done. */
   setupWait: Promise<Setup> | null;
   prefs: Prefs;
-  /** The plan is shown beside the lesson. */
+  /** The panel (the plan and this session's documents) is shown beside the lesson. */
   panel: boolean;
+  /** The panel's width, in pixels, as the learner dragged it. */
+  panelWidth: number;
+  onPanelWidth: (width: number) => void;
+  /** Show the panel: a document was opened. */
+  onShowPanel: () => void;
+  /** The documents changed: the menu follows. */
+  onDocsChange: () => void;
   /** A layer is over the window: the line does not take the focus. */
   covered: boolean;
   /** The tutor is writing in another tab: a message here waits for it. */
@@ -80,7 +92,6 @@ type Props = {
   /** A card waits on the learner (a permission, a question): the tutor is not writing meanwhile. */
   onAsking: (key: string, asking: boolean) => void;
   onEngine: () => void;
-  onSource: (folder: string, source: SourceRef) => void;
   onTaskChange: (key: string, open: boolean) => void;
   /** Done with a pending start. */
   onStarted: (key: string) => void;
@@ -296,8 +307,38 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const settled = useRef<number | null>(null);
   const started = useRef(false);
 
+  // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
+  const provisionalTitle = useRef(false);
+  // The words typed to start it: a goal that only says them again does not name the session. Started from typed
+  // words, the record's goal for the lesson is those words ("Continue").
+  const typedAtStart = useRef<string>("");
+
   // Where this session's draft, line and scroll are kept: its conversation once it has one.
   const place = keyOf(folder, tab.session, tab.key);
+
+  // The documents open in this session, kept with it: each comes back at its page and zoom.
+  const docsKey = sessionDocsKey(folder, tab.session, tab.key);
+  const [docs, setDocsState] = useState<Docs>(() => docsOf(docsKey));
+  const [goTo, setGoTo] = useState(0);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (!props.active) setPicking(false);
+  }, [props.active]);
+  const docView = useRef<DocHandle | null>(null);
+  const keptDocsKey = useRef(docsKey);
+  useEffect(() => {
+    // A session just begun has its conversation's id now: its documents move to it.
+    if (keptDocsKey.current !== docsKey) moveDocs(keptDocsKey.current, docsKey);
+    keptDocsKey.current = docsKey;
+  }, [docsKey]);
+  const setDocs = useCallback((next: Docs) => {
+    setDocsState(next);
+    docsNow.current = next;
+    keepDocs(keptDocsKey.current, next);
+    now.current.props.onDocsChange();
+  }, []);
+  const docsNow = useRef(docs);
+  docsNow.current = docs;
 
   // The newest values, for handlers that outlive a render.
   const now = useRef({ props, phase, home, plan, session, line, place, task: null as OpenTask | null });
@@ -307,7 +348,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
 
   const note = useCallback((said: string) => {
     const text = withoutPaths(said.replace(/^Error: /, ""));
-    if (now.current.phase === "lesson") dispatch({ type: "note", notice: { kind: "other", text } });
+    // The window's own notes are about what was just done (a key link refused, a page not drawn): they go when the
+    // learner writes again, as the turn's notices do.
+    if (now.current.phase === "lesson") dispatch({ type: "note", notice: { kind: "turn", text } });
     else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
@@ -428,6 +471,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       else setLine("talk");
     }
     // The record has been read for the last message: an answer it kept no mark for says so, the same way every time.
+    // A session named before its goal was known: the goal names it once the tutor has set one.
+    if (event.type === "turn_ended" && provisionalTitle.current) void nameByOwnGoal();
     if (event.type === "settled") {
       const live = now.current.session.live;
       if (live && live.said === "answer" && (live.marks ?? []).length === 0 && !live.interrupted) {
@@ -532,8 +577,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const typed = words?.trim() ?? "";
     const item = plan?.items.find((each) => each.status === "doing") ?? plan?.items.find((each) => each.status === "todo") ?? null;
     if (typed !== "") {
-      // Words typed first are the start: the tutor takes them as the lesson's goal.
-      return begin(continuing, typed, "talk", continuing ? sittingTitle : firstWords(typed, 80), (api) => api.sendNewLesson(typed));
+      // Words typed first are the start: the tutor takes them as the lesson's goal. The session is named as a
+      // Return start is, by the plan's item in hand, then by a goal the tutor sets: the words typed are often
+      // one like "Continue", which names nothing a learner could find again.
+      if (!continuing) {
+        provisionalTitle.current = true;
+        typedAtStart.current = typed;
+      }
+      return begin(continuing, typed, "talk", continuing ? sittingTitle : (item?.title ?? displayName(current.name)), (api) => api.sendNewLesson(typed));
     }
     const title = continuing ? sittingTitle || current.last?.goal || displayName(current.name) : (item?.title ?? displayName(current.name));
     const shown = openingWords(
@@ -648,6 +699,67 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   };
 
   // ---------------------------------------------------------------------------
+  // The panel's commands: expand it, flip between the lesson and the document, close or zoom the document
+
+  const panelCommand = (command: string): boolean => {
+    const docs = docsNow.current;
+    const { props } = now.current;
+    switch (command) {
+      case "expand-panel": {
+        if (!props.panel) props.onShowPanel();
+        const filling = !docs.expanded || docs.lessonFront;
+        setDocs({ ...docs, expanded: filling, lessonFront: false });
+        window.setTimeout(() => (filling ? docView.current?.focus() : lineRef.current?.focus()), 80);
+        return true;
+      }
+      case "flip-panel": {
+        if (!props.panel) {
+          props.onShowPanel();
+          setDocs({ ...docs, lessonFront: false });
+          // The panel mounts and the document opens: try until it is there to take the keyboard.
+          for (const ms of [80, 400, 1200]) window.setTimeout(() => docView.current?.focus(), ms);
+          return true;
+        }
+        if (docs.expanded) {
+          const toLesson = !docs.lessonFront;
+          setDocs({ ...docs, lessonFront: toLesson });
+          window.setTimeout(() => (toLesson ? lineRef.current?.focus() : docView.current?.focus()), 60);
+          return true;
+        }
+        const inPanel = box.current?.querySelector(".panel.side")?.contains(document.activeElement);
+        if (inPanel) lineRef.current?.focus();
+        else docView.current?.focus();
+        return true;
+      }
+      case "close-document": {
+        if (!docs.shown) return false;
+        const hadKeys = (document.activeElement as HTMLElement | null)?.closest(".panel.side") !== null;
+        const left = withClosed(docs, docs.shown);
+        setDocs(left);
+        // The keyboard goes where the eye goes: the next document, or the line when none is left.
+        if (hadKeys) window.setTimeout(() => (left.shown ? docView.current?.focus() : lineRef.current?.focus()), 120);
+        return true;
+      }
+      case "share-document":
+        // The panel's own control: the sheet points from it.
+        box.current?.querySelector<HTMLElement>('[data-drive="share-document"]')?.click();
+        return true;
+      case "open-document":
+        // The panel first: shown, and in front of the lesson if it fills the session.
+        if (!props.panel) props.onShowPanel();
+        if (docs.expanded && docs.lessonFront) setDocs({ ...docs, lessonFront: false });
+        setPicking(true);
+        return true;
+      case "zoom-in-document":
+      case "zoom-out-document":
+      case "zoom-fit-document":
+        docView.current?.zoom(command === "zoom-in-document" ? 1 : command === "zoom-out-document" ? -1 : 0);
+        return docView.current !== null;
+    }
+    return false;
+  };
+
+  // ---------------------------------------------------------------------------
   // What the window can ask of this session
 
   const handle: SessionHandle = {
@@ -672,9 +784,16 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         if (isBusyNow(now.current.session)) interrupt();
         return true;
       }
-      return false;
+      return panelCommand(command);
     },
     escape: () => {
+      // Out of the document, back to the line; from a document that fills the session, back to the lesson.
+      const filled = now.current.props.panel && docsNow.current.expanded && !docsNow.current.lessonFront;
+      if (filled || box.current?.querySelector(".panel.side")?.contains(document.activeElement)) {
+        if (docsNow.current.expanded && !docsNow.current.lessonFront) setDocs({ ...docsNow.current, lessonFront: true });
+        lineRef.current?.focus();
+        return true;
+      }
       const { session, phase, line } = now.current;
       if (isBusyNow(session)) {
         interrupt();
@@ -694,6 +813,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     start: (words) => start(words),
     taskOpen: () => now.current.task !== null,
     busy: () => isBusyNow(now.current.session),
+    docs: () => docsNow.current,
     probe: () => {
       const { phase, line, task, session } = now.current;
       return { phase, line, held: phase === "lesson" && line === "task" && task !== null, task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
@@ -714,6 +834,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       start: (w) => handleRef.current.start(w),
       taskOpen: () => handleRef.current.taskOpen(),
       busy: () => handleRef.current.busy(),
+      docs: () => handleRef.current.docs(),
       probe: () => handleRef.current.probe(),
     };
     props.register(tab.key, stable);
@@ -754,6 +875,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     };
     const watch = new ResizeObserver(pin);
     watch.observe(section);
+    // The surface too: a window or panel resized changes its frame before its content reflows.
+    watch.observe(el);
     pin();
     return () => watch.disconnect();
   }, [phase]);
@@ -934,7 +1057,65 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     },
     [api, note],
   );
-  const onSource = useCallback((source: SourceRef) => now.current.props.onSource(folder, source), [folder]);
+  // The goal names the session once the tutor has set it, in its tab and in the workspace's list.
+  const nameSession = (name: string) => {
+    setSittingTitle(name);
+    props.onTitle(props.tab.key, name);
+    const id = now.current.props.tab.session;
+    if (id) void api.renameSession(folder, id, name).catch(() => {});
+  };
+  // The goal this session's own lesson has in the record, as the record binds the conversation to it. Not the
+  // folder's last goal: a lesson in a terminal, in the same folder, may have set that one.
+  const ownGoal = async (): Promise<{ goal: string | null; opening: string; title: string | null } | null> => {
+    const id = now.current.props.tab.session;
+    if (!id) return null;
+    const info = (await api.lessons(folder).catch(() => [])).find((each) => each.session === id);
+    return info ? { goal: info.goal ?? null, opening: info.opening, title: info.title } : null;
+  };
+  // A session started from typed words is named by its goal once the tutor has set one that is not those words.
+  const nameByOwnGoal = async () => {
+    const own = await ownGoal();
+    const name = own ? goalName(own.goal, typedAtStart.current) : null;
+    if (!provisionalTitle.current || !name || name === sittingTitle) return;
+    provisionalTitle.current = false;
+    nameSession(name);
+  };
+
+  // A session reopened still named by the words it was started with ("Continue") takes its own lesson's goal,
+  // as a new one does.
+  const renamedOnce = useRef(false);
+  useEffect(() => {
+    if (renamedOnce.current || !props.tab.session) return;
+    renamedOnce.current = true;
+    void ownGoal().then((own) => {
+      if (!own || !namedByItsWords(own)) return;
+      const name = goalName(own.goal, own.opening);
+      if (name && name !== own.title) nameSession(name);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.tab.session]);
+
+  // A past paper: the folder's papers, or a file in a papers folder. A link to one opens at once, even beside
+  // the task that asks about it: it holds the questions, not their answers.
+  const paperPaths = useMemo(() => new Set((home?.papers ?? []).map((paper) => paper.path)), [home?.papers]);
+  const isPaper = useCallback((path: string) => paperPaths.has(path) || /(^|\/)papers?\//i.test(path), [paperPaths]);
+
+  // A file the tutor named opens beside the lesson, at its page; the panel shows if it was hidden.
+  // The core reads it first: a file it refuses (an answer key, a path outside the folder) never
+  // gets a place in the panel, so its name is not shown there either.
+  const onSource = useCallback(
+    (source: SourceRef) => {
+      void api.source(source.path, folder).then(
+        () => {
+          setDocs(withOpened(docsNow.current, source.path, source.page));
+          setGoTo((n) => n + 1);
+          now.current.props.onShowPanel();
+        },
+        (problem) => note(String(problem)),
+      );
+    },
+    [api, folder, note, setDocs],
+  );
   const stopReply = useCallback(() => interrupt(), [interrupt]);
   // The whole session sits under its heading; a very long one shows its last 150 turns.
   const shownFrom = Math.max(sittingStart, turns.length - 150);
@@ -948,7 +1129,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   return (
     <div
       ref={box}
-      className={`session${props.active ? " in-front" : ""}${props.panel ? " with-panel" : ""}`}
+      className={`session${props.active ? " in-front" : ""}${props.panel ? " with-panel" : ""}${props.panel && docs.expanded ? " expanded" : ""}${props.panel && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
+      style={props.panel ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
       data-phase={phase}
       data-busy={ownBusy ? "yes" : "no"}
       data-tab={tab.key}
@@ -1065,6 +1247,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       open={index === openAt}
                       held={index === openAt && held && !parked}
                       linksOpen={index !== openAt}
+                      opensNow={isPaper}
                       writing={live && session.live!.status !== "idle"}
                       divider={at > 0 && (turn.said === "opening" || opening(turn.learner) !== null)}
                       task={index === openAt ? task?.text : undefined}
@@ -1118,7 +1301,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         canAnswer={task !== null}
                         taskOpen={task !== null}
                         end={lineEnd}
-                        onEnd={lineEnd ? () => setLine("task") : undefined}
+                        onEnd={
+                          lineEnd
+                            ? () => {
+                                setLine("task");
+                                // The line takes the keyboard back, even from a document being read beside it.
+                                window.setTimeout(() => lineRef.current?.focus(), 0);
+                              }
+                            : undefined
+                        }
                         placeholder={held ? (restated && questionInView ? "Your answer to the task above" : "Your answer") : "Say something to the tutor"}
                         stopKey={stopKey}
                         onSend={onSend}
@@ -1144,7 +1335,27 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           </section>
         </div>
       </main>
-      {props.panel && <PlanPanel plan={plan} changed={changed} id={props.active ? "plan-panel" : undefined} />}
+      {props.panel && (
+        <SidePanel
+          plan={<PlanPanel plan={plan} changed={changed} />}
+          docs={docs}
+          folder={folder}
+          goTo={goTo}
+          width={props.panelWidth}
+          expanded={docs.expanded}
+          onDocs={setDocs}
+          onWidth={props.onPanelWidth}
+          onExpand={(expanded) => {
+            setDocs({ ...docsNow.current, expanded, lessonFront: false });
+            window.setTimeout(() => (expanded ? docView.current?.focus() : lineRef.current?.focus()), 80);
+          }}
+          onNote={note}
+          handle={(found) => (docView.current = found)}
+          picking={picking && props.active}
+          onPicking={setPicking}
+          id={props.active ? "plan-panel" : undefined}
+        />
+      )}
     </div>
   );
 });

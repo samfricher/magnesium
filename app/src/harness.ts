@@ -30,12 +30,24 @@
 //   errors                  what went wrong on the page so far
 //   session                 the session in front: its phase, where the line
 //                           is (task or talk), whether it is in the open task,
-//                           the open task's words, and the files on the line
+//                           the open task's words, the files on the line,
+//                           where the keyboard is, and the PDF in view
+//   smooth {ms, scroll_by?, type_every?}  scroll the lesson and type on the
+//                           line for ms, as a learner would, and say how even
+//                           the frames were (longest gap, gaps over 50/100 ms)
+//   document                the PDF in view: the page at its top, how many,
+//                           its zoom, how many pages hold a picture, and
+//                           where the keyboard is
 //   attach {path|paths}     put files on the line of the session in front, as
 //                           a drop does (photos and PDFs), for a harness that
 //                           cannot drive the Mac's Open panel
 //   menu                    the macOS menu bar as data: each menu's title, and
 //                           each item's title, id, enabled state and key
+//   frame {width?, height?, x?, y?, on_top?}  size and place the window, as
+//                           dragging its corner or title bar would, let it
+//                           fall behind other windows (on_top false: the
+//                           harness keeps a driven window on top), and say
+//                           its frame
 //   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
 //                           a click does: the same handler, the same event
 //   scroll {target?, to?, by?}  bring a target (as click names it) to the top
@@ -194,6 +206,22 @@ function find(target: string, driveOnly = false): HTMLElement | null {
     return clickable.find((element) => element.matches(CLICKABLE)) ?? clickable[0];
   }
   return null;
+}
+
+/** Where the keyboard is: the element's drive name, role or class. */
+function focusName(): string | null {
+  const held = document.activeElement as HTMLElement | null;
+  return held && held !== document.body ? (held.dataset.drive ?? held.dataset.role ?? held.className) : null;
+}
+
+/** The PDF in view, as a reader sees it: the page at its top, how many, how large it is drawn, how many pages hold a picture now, and how far the fit's reading of the pages has got ("read of began now", in ms of the page's clock). */
+function pdfInView(): { page: number; of: number; zoom: string | null; drawn: number; inkRead: string | null } | null {
+  const pdf = Array.from(document.querySelectorAll<HTMLElement>(".doc-pdf")).find(visible);
+  if (!pdf) return null;
+  const pages = Array.from(pdf.querySelectorAll<HTMLElement>(".doc-page"));
+  const page = pages.filter((each) => each.offsetTop <= pdf.scrollTop + 24).length || 1;
+  const zoom = pdf.closest(".panel.side")?.querySelector<HTMLElement>("[data-drive=zoom-fit]")?.innerText ?? null;
+  return { page, of: pages.length, zoom, drawn: pdf.querySelectorAll(".doc-page canvas").length, inkRead: pdf.getAttribute("data-ink-read") };
 }
 
 function focusable(element: HTMLElement): HTMLElement {
@@ -473,7 +501,9 @@ async function run(op: Op): Promise<Result> {
   switch (op.op) {
     case "type": {
       const target = document.activeElement as HTMLElement | null;
-      const field = editable(target);
+      // With nothing focused the page itself is the active element: the line in view takes the words, never the
+      // first field in the page, which may be another tab's.
+      const field = target && target !== document.body ? (editable(target) ?? composer()) : composer();
       if (!target || !field) return { ok: false, error: "no text field has focus" };
       // "replace": the words take the place of all that is in the field, as after ⌘A.
       if (op.replace && (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) field.select();
@@ -536,7 +566,58 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
-      return { ok: true, ...(found as object), files };
+      return { ok: true, ...(found as object), files, focus: focusName(), document: pdfInView() };
+    }
+    case "smooth": {
+      // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`
+      // ms, as a learner reading and writing would, and say how even the frames were: the longest gap between
+      // two, and how many gaps passed 50 and 100 ms (a frame is about 16). Also the PDF's reading, as `document`.
+      const ms = Number(op.ms ?? 5000);
+      const by = Number(op.scroll_by ?? 0);
+      const every = Number(op.type_every ?? 0);
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      const line = composer();
+      const started = performance.now();
+      let last = started;
+      let typed = 0;
+      let nextType = started + every;
+      let direction = 1;
+      const gaps: number[] = [];
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          gaps.push(now - last);
+          last = now;
+          if (surface && by > 0) {
+            if (surface.scrollTop + surface.clientHeight >= surface.scrollHeight - 2) direction = -1;
+            if (surface.scrollTop <= 0) direction = 1;
+            surface.scrollTop += by * direction;
+          }
+          if (line && every > 0 && now >= nextType) {
+            insert(line, "a");
+            typed += 1;
+            nextType = now + every;
+          }
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const sorted = [...gaps].sort((a, b) => a - b);
+      return {
+        ok: true,
+        frames: gaps.length,
+        longestGapMs: Math.round(sorted[sorted.length - 1] ?? 0),
+        medianGapMs: Math.round(sorted[Math.floor(sorted.length / 2)] ?? 0),
+        over50: gaps.filter((gap) => gap > 50).length,
+        over100: gaps.filter((gap) => gap > 100).length,
+        typed,
+        startedAt: Math.round(started),
+        pdf: pdfInView(),
+      };
+    }
+    case "document": {
+      const pdf = pdfInView();
+      return pdf ? { ok: true, ...pdf, focus: focusName() } : { ok: false, error: "no PDF is in view" };
     }
     case "attach": {
       const paths = Array.isArray(op.paths) ? op.paths.map(String) : op.path ? [String(op.path)] : [];
@@ -571,6 +652,18 @@ async function run(op: Op): Promise<Result> {
       } catch (error) {
         return { ok: false, error: String(error) };
       }
+    case "frame": {
+      // The window's size and place, set or read; the page then has a frame to refit to.
+      const num = (value: unknown) => (typeof value === "number" ? value : undefined);
+      try {
+        const onTop = typeof op.on_top === "boolean" ? op.on_top : undefined;
+        const frame = await invoke<unknown>("harness_frame", { width: num(op.width), height: num(op.height), x: num(op.x), y: num(op.y), onTop });
+        await sleep(300);
+        return { ok: true, frame, inner: { width: window.innerWidth, height: window.innerHeight } };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
     case "menu_click": {
       const path = Array.isArray(op.path) ? op.path.map(String) : [];
       try {
