@@ -263,7 +263,7 @@ fn served_instructions_skip_the_task_only_on_the_learners_terms() {
     let text = served["text"].as_str().unwrap();
     assert!(
         text.contains(
-            "Skip it only when the learner requested explanation-only, asked a plain factual question, or the session is ending."
+            "Skip it only when the learner requested explanation-only, asked a plain factual question, chose the answer-only or no-quiz control, or the session is ending."
         ),
         "{host}"
     );

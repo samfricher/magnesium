@@ -10,7 +10,7 @@ When the learner was sure of an answer that is wrong, repair that mistake before
 
 Read related memories and rewrite the affected current description, current_basis, and reason. Do not create a diary entry for every turn. Useful current wording and a few retrieval cues help future retrieval; they cannot invent difficulties. Acknowledgments or unchanged interpretations can receive no_change.
 
-For example, preserve earlier correct formula substitution when later repeated confusion over coefficient labels reveals a narrower symbol-role misunderstanding. A single arithmetic slip alone warrants a narrower, uncertain interpretation. These illustrations must not be inserted as expected answers or scenario labels in live evaluations.
+For example, preserve earlier correct formula substitution when later repeated confusion over coefficient labels reveals a narrower symbol-role misunderstanding. A single arithmetic slip alone warrants a narrower, uncertain interpretation. These are illustrations, not facts about this learner.
 
 A challenge triggers inspection of the original task/answer and support. Correct from that evidence without mandatory retesting or deletion. Flag a review_note when unresolved and clear it only with an explicit supported review_resolution. New evidence can disprove the old suspicion; rereading it cannot reinforce it.
 
