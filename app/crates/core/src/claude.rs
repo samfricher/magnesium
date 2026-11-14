@@ -55,11 +55,6 @@ const SURFACE: &str = "window";
 /// Claude Code's switch for the tool servers of the learner's Claude account.
 pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
 
-/// The model a lesson runs on: the one Claude Code chose by default on
-/// 2026-11-11. It is named, so a later change of that default cannot change
-/// the tutor unseen.
-pub const MODEL: &str = "claude-fable-5-2";
-
 /// Claude Code's own tools a lesson may use. Everything else Claude Code
 /// offers is left out, and so is the learner's own setup: no other tool
 /// server, account connector, plugin or skill. Magnesium's five tools come
@@ -75,6 +70,19 @@ pub const TOOLS: [&str; 9] = [
     "WebFetch",
     "Bash",
 ];
+
+/// `--model` and `--effort`, for each the learner picked and the agent may
+/// be passed; the rest is left to Claude Code.
+pub(crate) fn push_pick(args: &mut Vec<String>, model: Option<&str>, effort: Option<&str>) {
+    if let Some(model) = model.filter(|m| crate::models::usable_model(m)) {
+        args.push("--model".into());
+        args.push(model.into());
+    }
+    if let Some(effort) = effort.filter(|e| crate::models::usable_effort(e)) {
+        args.push("--effort".into());
+        args.push(effort.into());
+    }
+}
 
 /// Where `magnesium init` keeps the plugin for Claude Code on this Mac.
 fn plugin_dir() -> Option<PathBuf> {
@@ -98,24 +106,25 @@ fn plugin_dir() -> Option<PathBuf> {
 ///   and Write on the study root's plan files (`Study/<plan>/plan.md` and
 ///   `graph.yaml`) are allowed without asking, so "change the plan" asks the
 ///   learner nothing. Every other write, and a sandboxed command, still asks.
-/// - The model is named. The effort is Claude Code's default, as in a
-///   terminal.
+/// - The model and effort are the learner's pick, each left out when it is
+///   Claude Code's own, as in a terminal. Both are pinned by name, so a
+///   later change of Claude Code's default cannot change the tutor unseen.
 ///
 /// Without the plugin on this Mac, the folder's settings still name it, and
 /// the first report then says the plugin did not load.
-pub fn lesson_args(folder: &Path, plugin: Option<&Path>) -> Vec<String> {
+pub fn lesson_args(
+    folder: &Path,
+    plugin: Option<&Path>,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--setting-sources".into(),
         "project,local".into(),
         "--tools".into(),
         TOOLS.join(","),
-        "--model".into(),
-        MODEL.into(),
     ];
-    // No effort is passed: a lesson thinks as hard as in a terminal. Low
-    // effort was tried on 2026-11-11 and called context.prepare at 1 of 11
-    // lesson starts, so it waits for a timing on the final build that shows
-    // a large gap, and then for the terminal too.
+    push_pick(&mut args, model, effort);
     if let Some(plugin) = plugin {
         args.push("--plugin-dir".into());
         args.push(plugin.display().to_string());
@@ -313,7 +322,12 @@ impl Harness for ClaudeCode {
                 "--permission-prompt-tool",
                 "stdio",
             ])
-            .args(lesson_args(&options.folder, plugin_dir().as_deref()))
+            .args(lesson_args(
+                &options.folder,
+                plugin_dir().as_deref(),
+                options.model.as_deref(),
+                options.effort.as_deref(),
+            ))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -362,6 +376,11 @@ impl Harness for ClaudeCode {
                 })
                 .map(Mutex::new),
             started: Instant::now(),
+            opening: Opening {
+                new: options.resume.is_none(),
+                effort: options.effort.clone().filter(|_| options.resume.is_none()),
+                ..Opening::default()
+            },
         });
 
         if let Some(mut stderr) = stderr {
@@ -389,10 +408,12 @@ impl Harness for ClaudeCode {
             thread::spawn(move || read_loop(&shared, stdout));
         }
 
-        // The SDKs open every conversation this way. Its reply is not judged:
-        // it can come before a folder's plugin has finished installing, so it
-        // cannot say the plugin is missing. The first `system/init` can.
+        // The SDKs open every conversation this way. Its reply is not judged
+        // for the plugin: it can come before a folder's plugin has finished
+        // installing, so it cannot say the plugin is missing. The first
+        // `system/init` can. The reply's list of models is kept.
         let id = shared.next_id();
+        *lock(&shared.opening.initialize) = Some(id.clone());
         shared.write(&json!({
             "type": "control_request",
             "request_id": id,
@@ -539,6 +560,26 @@ struct Shared {
     payment: Payment,
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
+    opening: Opening,
+}
+
+/// What the window watches for while a conversation opens.
+#[derive(Default)]
+struct Opening {
+    /// The id of the `initialize` request, whose reply lists the models.
+    initialize: Mutex<Option<String>>,
+    /// A new lesson, whose first reply is watched. A resumed one is not.
+    new: bool,
+    /// The effort the learner picked for it; none for Claude Code's own.
+    effort: Option<String>,
+    /// The model Claude Code says it runs on, from its first message.
+    model: Mutex<Option<String>>,
+    /// The list from the reply to `initialize`, to name that model.
+    models: Mutex<Vec<crate::models::ModelOption>>,
+    /// The first reply has ended, and was looked at.
+    looked: AtomicBool,
+    /// The tutor called Magnesium's context tool, which opens the record.
+    record_opened: AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -724,6 +765,7 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
         Some("result") => on_result(shared, value),
         Some("rate_limit_event") => on_rate_limit(shared, value),
         Some("control_request") => on_control_request(shared, value),
+        Some("control_response") => on_control_response(shared, value),
         Some("control_cancel_request") => {
             if let Some(id) = value["request_id"].as_str() {
                 if lock(&shared.pending).remove(id).is_some() {
@@ -733,6 +775,24 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
         }
         _ => {}
     }
+}
+
+/// The reply to `initialize` lists the models Claude Code offers. A reply
+/// to any other request the window sent needs nothing more.
+fn on_control_response(shared: &Arc<Shared>, value: &Value) {
+    let response = &value["response"];
+    let asked = lock(&shared.opening.initialize).clone();
+    if asked.is_none() || response["request_id"].as_str() != asked.as_deref() {
+        return;
+    }
+    *lock(&shared.opening.initialize) = None;
+    let models = (response["subtype"] == "success")
+        .then(|| crate::models::parse(&response["response"]))
+        .flatten();
+    if let Some(list) = &models {
+        *lock(&shared.opening.models) = list.clone();
+    }
+    shared.emit(AgentEvent::Models { models });
 }
 
 fn names(list: &Value) -> Vec<String> {
@@ -820,14 +880,25 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
             });
         }
         let problems = init_problems(value);
+        let model = runs_on(value);
+        lock(&shared.opening.model).clone_from(&model);
         shared.emit(AgentEvent::Ready {
             session_id,
             plugin_missing: problems
                 .iter()
                 .any(|problem| problem.contains("plugin did not load")),
             problems,
+            model,
         });
     }
+}
+
+/// The model Claude Code's first message says the conversation runs on.
+pub(crate) fn runs_on(init: &Value) -> Option<String> {
+    init["model"]
+        .as_str()
+        .filter(|model| crate::models::usable_model(model))
+        .map(str::to_owned)
 }
 
 /// A lesson paid another way than the learner chose, in one line. Claude
@@ -1253,6 +1324,9 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
             }
             Some("tool_use" | "server_tool_use") => {
                 begin_turn(shared);
+                if block["name"].as_str().is_some_and(is_context_tool) {
+                    shared.opening.record_opened.store(true, Ordering::SeqCst);
+                }
                 shared.emit(AgentEvent::Working {
                     doing: block["name"]
                         .as_str()
@@ -1326,6 +1400,62 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
         interrupted,
         error,
     });
+    look_at_first_reply(shared, !failed && !interrupted);
+}
+
+/// Magnesium's context tool, from its plugin: the call that opens the
+/// learner's record at the start of a lesson.
+fn is_context_tool(name: &str) -> bool {
+    name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__context")
+}
+
+/// After a new lesson's first reply, at an effort the learner picked: a
+/// reply that never opened the record is said, once. Low effort was tried
+/// on 2026-11-11 and called the context tool at 1 of 11 lesson starts.
+fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
+    let opening = &shared.opening;
+    if !opening.new
+        || opening.looked.swap(true, Ordering::SeqCst)
+        || !finished
+        || opening.record_opened.load(Ordering::SeqCst)
+    {
+        return;
+    }
+    let unopened =
+        "This lesson started without opening your record, so its answers may not be marked.";
+    // Each names what most likely kept the record shut: the effort the
+    // learner picked, or else the model.
+    let (kind, text) = match opening.effort.as_deref() {
+        Some(effort) => (
+            NoticeKind::RecordUnopenedAtEffort,
+            format!("{unopened} It ran at {} effort.", effort_words(effort)),
+        ),
+        None => {
+            let model = lock(&opening.model).clone();
+            let name = model.map(|id| {
+                crate::models::find(&lock(&opening.models), &id)
+                    .map_or(id.clone(), |row| row.name.clone())
+            });
+            (
+                NoticeKind::RecordUnopened,
+                match name {
+                    Some(name) => {
+                        format!("{unopened} It ran on {name} at Claude Code’s usual effort.")
+                    }
+                    None => unopened.to_owned(),
+                },
+            )
+        }
+    };
+    shared.emit(AgentEvent::Notice { kind, text });
+}
+
+/// An effort level in the words the window shows it in.
+pub(crate) fn effort_words(level: &str) -> String {
+    match level {
+        "xhigh" => "extra high".into(),
+        other => other.to_owned(),
+    }
 }
 
 /// The words a failed result gives for its failure, for the learner.
@@ -1841,6 +1971,7 @@ mod tests {
             payment: Payment::Plan,
             trace: None,
             started: Instant::now(),
+            opening: Opening::default(),
         });
         let mut conversation = ClaudeConversation {
             shared: Arc::clone(&shared),
@@ -1993,7 +2124,7 @@ mod tests {
     fn a_lesson_loads_the_nine_tools_magnesiums_plugin_and_nothing_of_the_learners() {
         let folder = Path::new("/study/stats");
         let plugin = Path::new("/home/me/Library/Application Support/magnesium/claude-plugin");
-        let args = lesson_args(folder, Some(plugin));
+        let args = lesson_args(folder, Some(plugin), Some("claude-opus-5-5"), None);
         let after = |flag: &str| {
             let at = args
                 .iter()
@@ -2006,10 +2137,10 @@ mod tests {
             after("--tools"),
             "Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash"
         );
-        assert_eq!(after("--model"), MODEL);
+        assert_eq!(after("--model"), "claude-opus-5-5");
         assert!(
             !args.iter().any(|a| a == "--effort"),
-            "a lesson thinks as in a terminal"
+            "with no effort picked, a lesson thinks as in a terminal"
         );
         assert_eq!(after("--plugin-dir"), plugin.display().to_string());
         let settings: Value = serde_json::from_str(&after("--settings")).unwrap();
@@ -2047,9 +2178,159 @@ mod tests {
             ]
         );
         assert!(!args.iter().any(|a| a == "--bare"));
-        assert!(!lesson_args(folder, None)
+        assert!(!lesson_args(folder, None, None, None)
             .iter()
             .any(|a| a == "--plugin-dir"));
+    }
+
+    #[test]
+    fn a_lesson_starts_on_the_pick_and_never_on_a_word_that_reads_as_a_flag() {
+        let folder = Path::new("/study/stats");
+        let args = lesson_args(folder, None, Some("claude-sonnet-4-6"), Some("high"));
+        let at = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[at + 1], "claude-sonnet-4-6");
+        let at = args.iter().position(|a| a == "--effort").unwrap();
+        assert_eq!(args[at + 1], "high");
+        // No pick: Claude Code's own model and effort.
+        let own = lesson_args(folder, None, None, None);
+        assert!(!own.iter().any(|a| a == "--model" || a == "--effort"));
+        let odd = lesson_args(folder, None, Some("--bare"), Some("--x"));
+        assert!(!odd
+            .iter()
+            .any(|a| a == "--model" || a == "--effort" || a == "--bare"));
+    }
+
+    #[test]
+    fn the_reply_to_initialize_gives_the_models_and_no_other_reply_does() {
+        let (shared, seen) = listening();
+        *lock(&shared.opening.initialize) = Some("req_1".into());
+        let reply = |id: &str, subtype: &str| {
+            json!({"type": "control_response", "response": {"subtype": subtype, "request_id": id, "response": {"models": [
+                {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)", "description": "Use the default model"},
+                {"value": "opus", "resolvedModel": "claude-opus-5-5", "displayName": "Opus", "description": "Best for everyday, complex tasks", "supportsEffort": true, "supportedEffortLevels": ["low", "high"]},
+            ]}}})
+        };
+        handle(&shared, &reply("req_9", "success"));
+        assert!(lock(&seen).is_empty(), "a reply to another request");
+        handle(&shared, &reply("req_1", "success"));
+        let Some(AgentEvent::Models {
+            models: Some(models),
+        }) = lock(&seen).last().cloned()
+        else {
+            panic!("no models in {:?}", lock(&seen));
+        };
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[1].efforts, ["low", "high"]);
+        // Said once: a second reply with the same id is not another list.
+        handle(&shared, &reply("req_1", "success"));
+        assert_eq!(lock(&seen).len(), 1);
+        // A refused request is a list that did not come.
+        let (shared, seen) = listening();
+        *lock(&shared.opening.initialize) = Some("req_1".into());
+        handle(
+            &shared,
+            &json!({"type": "control_response", "response": {"subtype": "error", "request_id": "req_1", "error": "no"}}),
+        );
+        assert_eq!(
+            lock(&seen).last(),
+            Some(&AgentEvent::Models { models: None })
+        );
+    }
+
+    #[test]
+    fn a_new_lessons_first_reply_that_never_opened_the_record_is_said_once() {
+        let said = |new: bool, effort: Option<&str>, tools: &[&str]| {
+            let (shared, seen) = listening();
+            let shared = Arc::new(Shared {
+                opening: Opening {
+                    new,
+                    effort: effort.map(str::to_owned),
+                    ..Opening::default()
+                },
+                ..Arc::try_unwrap(shared).ok().unwrap()
+            });
+            *lock(&shared.opening.models) =
+                crate::models::parse(&crate::models::tests::fourteen()).unwrap();
+            handle(
+                &shared,
+                &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-haiku-5-5"}),
+            );
+            let content: Vec<Value> = tools
+                .iter()
+                .map(|name| json!({"type": "tool_use", "id": "t", "name": name, "input": {}}))
+                .collect();
+            handle(
+                &shared,
+                &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": content}}),
+            );
+            handle(&shared, &json!({"type": "result", "subtype": "success"}));
+            handle(&shared, &json!({"type": "result", "subtype": "success"}));
+            let notices: Vec<(NoticeKind, String)> = lock(&seen)
+                .iter()
+                .filter_map(|event| match event {
+                    AgentEvent::Notice { kind, text }
+                        if matches!(
+                            kind,
+                            NoticeKind::RecordUnopened | NoticeKind::RecordUnopenedAtEffort
+                        ) =>
+                    {
+                        Some((*kind, text.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            notices
+        };
+        // At a picked effort: the effort is named.
+        assert_eq!(
+            said(true, Some("low"), &["Read"]),
+            [(
+                NoticeKind::RecordUnopenedAtEffort,
+                "This lesson started without opening your record, so its answers may not be marked. It ran at low effort.".to_owned()
+            )]
+        );
+        // At Claude Code's own effort: the model is named, as the list names it.
+        assert_eq!(
+            said(true, None, &["Read"]),
+            [(
+                NoticeKind::RecordUnopened,
+                "This lesson started without opening your record, so its answers may not be marked. It ran on Haiku at Claude Code’s usual effort.".to_owned()
+            )]
+        );
+        // The record opened, or the lesson was resumed: nothing to say.
+        assert!(said(true, None, &["mcp__plugin_magnesium_magnesium__context"]).is_empty());
+        assert!(said(
+            true,
+            Some("low"),
+            &["mcp__plugin_magnesium_magnesium__context"]
+        )
+        .is_empty());
+        assert!(said(false, None, &["Read"]).is_empty());
+    }
+
+    #[test]
+    fn the_first_message_says_the_model_the_conversation_runs_on() {
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-opus-5-5"}),
+        );
+        assert!(matches!(
+            lock(&seen).iter().find(|e| matches!(e, AgentEvent::Ready { .. })),
+            Some(AgentEvent::Ready { model: Some(model), .. }) if model == "claude-opus-5-5"
+        ));
+        // A name that could be read as a flag is not kept.
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "--bare"}),
+        );
+        assert!(matches!(
+            lock(&seen)
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Ready { .. })),
+            Some(AgentEvent::Ready { model: None, .. })
+        ));
     }
 
     /// A conversation with no program behind it, and the events it shows.
@@ -2078,6 +2359,7 @@ mod tests {
             payment: Payment::Plan,
             trace: None,
             started: Instant::now(),
+            opening: Opening::default(),
         });
         (shared, seen)
     }

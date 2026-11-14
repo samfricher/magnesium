@@ -623,6 +623,54 @@ button.line-end:hover { color: var(--text); }
 .line.rest .line-end .keys { color: var(--quiet); }
 .now > .keys { color: var(--hint); }
 
+/* The model a new session starts on: a quiet word among the start line's
+   tools, and the agent's list under the line, its text on the line's column. */
+.line.rest .clip.open { color: var(--text); }
+.model-list {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: calc(-1 * (1.1rem + var(--hang) + 0.25rem));
+  right: -1.1rem;
+  z-index: 21;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 0.3rem 0 0.45rem;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.model-list .row { width: 100%; }
+.model-list .row:hover { background: var(--tint); }
+.model-row { align-items: start; padding-top: 0.42rem; padding-bottom: 0.42rem; }
+.model-row .row-label { white-space: normal; font: 400 0.941rem/1.5 var(--app); color: var(--text); }
+.model-say { display: block; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* The chosen model's effort, under it, inside its ink edge. */
+.model-effort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.85rem;
+  padding: 0 1.1rem 0.5rem calc(1.1rem + var(--hang) + 0.25rem);
+  box-shadow: inset 2px 0 0 var(--ink);
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+}
+.model-effort .segment { font-size: 0.765rem; padding: 0; }
+.model-effort-name { margin-right: 0.1rem; }
+.model-fold .row-label,
+.model-back .row-label { font: 400 0.824rem/1.5 var(--app); color: var(--quiet); }
+.model-fold .row-hint { color: var(--quiet); }
+.model-note { margin: 0.45rem 1.1rem 0.15rem calc(1.1rem + var(--hang) + 0.25rem); font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
+:root[data-input="key"] .model-list .row:focus-visible { outline: none; background: var(--tint); }
+:root[data-input="key"] .model-effort .segment:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
+
+/* A notice with a way on: the way first, in the ink, on a line of its own. */
+.record.note .note-acts { display: flex; gap: 1.1rem; margin-top: 0.2rem; }
+.record.note .note-acts .plain { margin-left: 0; }
+.record.note .note-acts .note-act { color: var(--ink); }
+.record.note .note-acts .note-act:hover { text-decoration: underline; text-underline-offset: 3px; }
+
 /* The top edge of a lesson. */
 .top-edge {
   position: absolute;

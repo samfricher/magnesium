@@ -1271,3 +1271,77 @@ fn a_direct_tutor_changes_the_plan_when_asked_and_talk_is_not_marked() {
     println!("study folder: {}", scratch.folder.display());
     std::mem::forget(scratch);
 }
+
+#[test]
+#[ignore = "starts Claude Code on your own subscription, though it sends no prompt"]
+fn either_engine_reads_the_agents_list_of_models_before_any_prompt() {
+    let scratch = Scratch::new();
+    for engine in [Engine::Direct, Engine::Plugin] {
+        let window = scratch.window.join(format!("{engine:?}"));
+        fs::create_dir_all(&window).unwrap();
+        let trace = window.join("trace.jsonl");
+        std::env::set_var(mg_core::claude::TRACE_ENV, &trace);
+        let claude = mg_core::paths::find_program("claude").expect("claude is installed");
+        let manager = Manager::new(
+            Arc::new(Store::at(window.clone())),
+            Arc::new(ClaudeCode::new()),
+            Arc::new(|_| {}),
+        )
+        .with_direct(Arc::new(DirectTutor::with_programs(
+            claude,
+            scratch.runtime.clone(),
+        )));
+        manager.set_engine(engine);
+        manager.open_folder(&scratch.folder).unwrap();
+        assert!(
+            manager.models().pick.is_none(),
+            "a new window has no pick before the agent's first list"
+        );
+        manager.open_session(false).expect("Claude Code starts");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let choice = loop {
+            let choice = manager.models();
+            if !choice.models.is_empty() || choice.failed || Instant::now() > deadline {
+                break choice;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        manager.shut_down();
+        println!("\n== {engine:?} ==");
+        for row in &choice.models {
+            println!(
+                "{:<7} {:<28} {:<28} {:<22} {:?}",
+                if row.current { "current" } else { "older" },
+                row.value,
+                row.resolved.as_deref().unwrap_or("-"),
+                row.name,
+                row.efforts
+            );
+        }
+        println!("pick: {:?}", choice.pick);
+        assert!(!choice.failed, "Claude Code sent no list");
+        let default = choice
+            .models
+            .iter()
+            .find(|row| row.value == "default")
+            .expect("the list has a default row");
+        assert!(choice.models.iter().any(|row| row.current));
+        assert_eq!(
+            choice.pick.as_ref().map(|pick| pick.model.as_str()),
+            Some(default.id()),
+            "a new window takes the agent's default as its pick"
+        );
+        // Nothing reached the model: the window sent only control requests,
+        // the first of them the request for the list.
+        let sent: Vec<Value> = fs::read_to_string(&trace)
+            .unwrap()
+            .lines()
+            .filter(|line| line.starts_with('>'))
+            .filter_map(|line| serde_json::from_str(line.splitn(3, ' ').nth(2)?).ok())
+            .collect();
+        assert!(
+            sent.iter().all(|line| line["type"] == "control_request"),
+            "the window sent more than control requests: {sent:#?}"
+        );
+    }
+}

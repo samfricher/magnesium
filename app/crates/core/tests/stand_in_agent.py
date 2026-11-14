@@ -55,6 +55,28 @@ def emit(value):
         sys.stdout.flush()
 
 
+# The list a real Claude Code sends in its reply to `initialize`: aliases
+# first, then a full id each for older models. The names and lines follow
+# Claude Code 2.1.322's own; an account's real list differs.
+ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+MODELS = [
+    {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)",
+     "description": "Use the default model (currently Opus 5.5)", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "opus", "resolvedModel": "claude-opus-5-5", "displayName": "Opus 5.5",
+     "description": "Best for everyday, complex tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "fable", "resolvedModel": "claude-fable-5-2", "displayName": "Fable 5.2",
+     "description": "Most capable for your hardest and longest-running tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "sonnet", "resolvedModel": "claude-sonnet-5-5", "displayName": "Sonnet 5.5",
+     "description": "Efficient for routine tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "haiku", "resolvedModel": "claude-haiku-5-5", "displayName": "Haiku 5.5",
+     "description": "Fastest for quick answers", "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high"]},
+    {"value": "claude-opus-4-6", "resolvedModel": "claude-opus-4-6", "displayName": "Opus 4.6",
+     "description": "Newer version available \u00b7 select opus for Opus 5.5", "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high", "max"]},
+    {"value": "claude-haiku-4-5", "resolvedModel": "claude-haiku-4-5", "displayName": "Haiku 4.5",
+     "description": "Newer version available \u00b7 select haiku for Haiku 5.5"},
+]
+
+
 args = sys.argv[1:]
 log(
     "start",
@@ -140,12 +162,20 @@ def save_history(history):
             json.dump(history, handle)
 
 
+def runs_on():
+    """The model the first message names: the one asked for, else what the
+    default stands for in MODELS."""
+    if "--model" in args:
+        return args[args.index("--model") + 1]
+    return next(row["resolvedModel"] for row in MODELS if row["value"] == "default")
+
+
 def init_message():
     message = {
         "type": "system",
         "subtype": "init",
         "session_id": session,
-        "model": "stand-in",
+        "model": runs_on(),
         "cwd": os.getcwd(),
         "tools": ["Read", "Bash", "AskUserQuestion"],
         "mcp_servers": [],
@@ -265,11 +295,28 @@ def stopped():
     })
 
 
+opened_record = False
+
+
+def open_record(text):
+    """A new conversation's first reply opens the record with Magnesium's
+    context tool, as the plugin's lesson does, unless the message says
+    UNOPENED."""
+    global opened_record
+    if opened_record or resumed or "UNOPENED" in text:
+        return
+    opened_record = True
+    tool_id = use_tool("mcp__plugin_magnesium_magnesium__context", {})
+    emit({"type": "user", "parent_tool_use_id": None, "session_id": session,
+          "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "{}"}]}})
+
+
 def turn(text):
     emit(init_message())
     history = load_history()
     history.append(text)
     save_history(history)
+    open_record(text)
 
     if "LIMIT" in text:
         emit({"type": "rate_limit_event", "uuid": str(uuid.uuid4()), "session_id": session,
@@ -355,6 +402,9 @@ def main():
                 if not NO_PLUGIN:
                     commands += [{"name": "magnesium:learn"}, {"name": "magnesium:papers"}]
                 response = {"commands": commands}
+                # An older Claude Code sends no list.
+                if os.environ.get("STAND_IN_NO_MODELS") != "1":
+                    response["models"] = MODELS
             elif subtype == "interrupt":
                 interrupted.set()
                 with reply_ready:

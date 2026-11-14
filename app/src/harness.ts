@@ -57,10 +57,7 @@
 //                           far it then is from its foot ({by: 0} only reads)
 //   quit
 //
-// The names a harness clicks by (data-drive): "start" (Home's first row),
-// "composer" (the session's line), "home", "new-session", "settings",
-// "plan-toggle", "tab-<n>" (the n-th tab, from 1), and the line's tools:
-// "attach", "stuck", "help", "dont-know", "symbols", "send-talk", "stop".
+// Every op and the data-drive names a harness clicks by: scripts/harness.md.
 
 import { core, isDemo } from "./bridge";
 import type { AgentEvent, Intent } from "./types";

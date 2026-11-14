@@ -7,7 +7,7 @@
 // Exits 0 when the answer says ok, 1 when it does not, 2 when no answer came
 // in time (the op's timeout_ms or ms, plus 30 s; 60 s otherwise).
 //
-// The ops are listed at the top of src/harness.ts. Also importable:
+// Every op and data-drive name is in scripts/harness.md. Also importable:
 //   import { drive } from "./drive.mjs"; await drive(dir, {op: "text"});
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";

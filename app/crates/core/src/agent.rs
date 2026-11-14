@@ -11,8 +11,10 @@ use serde::{Deserialize, Serialize};
 use crate::plan::PlanPart;
 use crate::runtime::Mark;
 
-/// What the window shows. Tool calls, saves, token counts and model names are
-/// deliberately absent: the window shows the tutor's words and nothing else.
+/// What the window shows. Tool calls, saves and token counts are deliberately
+/// absent: the window shows the tutor's words and nothing else. The one
+/// exception, `Models`, is kept by the window for the start line and never
+/// drawn in a lesson.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
@@ -24,6 +26,10 @@ pub enum AgentEvent {
         /// True when the Magnesium plugin itself is absent. The session would
         /// then be a plain chat with no teaching rules, so the window stops it.
         plugin_missing: bool,
+        /// The model the agent says this conversation runs on, in its first
+        /// message. None when it does not say.
+        #[serde(default)]
+        model: Option<String>,
     },
     /// The tutor began a reply.
     TurnStarted,
@@ -82,6 +88,11 @@ pub enum AgentEvent {
     /// The record has been read for what the last message changed: any mark
     /// it has for it has been sent. With none, the record kept no mark.
     Settled,
+    /// The models the agent offers, as it reported them when the
+    /// conversation opened; none when it was asked and sent no list.
+    Models {
+        models: Option<Vec<crate::models::ModelOption>>,
+    },
 }
 
 /// What the learner's message is. The window says it; the tutor does not
@@ -107,6 +118,12 @@ pub enum NoticeKind {
     Turn,
     /// Stands until it is dismissed (a part that did not start).
     Other,
+    /// A new lesson at the agent's own effort whose first reply never opened
+    /// the record. The window offers to start it again.
+    RecordUnopened,
+    /// The same, for a lesson at an effort the learner picked. The window
+    /// offers to start it again at the agent's own effort.
+    RecordUnopenedAtEffort,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -179,6 +196,11 @@ pub struct StartOptions {
     pub resume: Option<String>,
     /// How the learner chose to pay for lessons.
     pub payment: Payment,
+    /// The model to start on, as the agent takes it; none for the agent's
+    /// own default.
+    pub model: Option<String>,
+    /// The effort level to start at; none for the agent's own.
+    pub effort: Option<String>,
 }
 
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
