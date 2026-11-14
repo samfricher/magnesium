@@ -128,6 +128,12 @@ From a terminal, `magnesium searchable PATH...` says the same for the files you 
 
 When the tutor cites a passage, the reply shows a link such as "Week 4 slides, p. 12". The link reads as plain text until you have answered that reply's task. After that it opens that page in a panel beside the lesson. Nothing leaves your Mac. The panel closes when the tutor sets the next task, or when you close it. The window opens PDFs, text and images from the study folder, and never an answer key.
 
+## Choose the model a lesson runs on
+
+In the study window, a new session's first line names the model it will start on, beside Attach. Press the name to see the models Claude Code offers on your account, each with Claude Code's own line about it. Current models come first; older ones are behind "Older models". Under the chosen model you can set its effort: Usual leaves it to Claude Code, and the other levels are the ones that model reports. Your pick is kept for the next session, and a session you carry on keeps the model it began on.
+
+The list is the one Claude Code sent when your last lesson started, so a new model appears after one lesson. Return never waits for it. Nothing changes the model by itself: your pick stays when Claude Code's default changes, and if the list no longer offers it, the start line says so before you start. If a lesson started at an effort you picked never opens your record, the lesson says so and offers to start again at Usual.
+
 ## Long lessons
 
 A long conversation can get compacted: Claude Code replaces its older part with a summary. The tutor's detailed instructions are lost with it. During a lesson, Magnesium then puts a short set of core teaching rules in front of the tutor itself: one idea and one task per reply, a guess before each new step, and the rules above about concrete cases, telling mistakes apart, finishing alone on a later day and ending a plan with a task. Claude Code gets them before the next reply.

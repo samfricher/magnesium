@@ -131,6 +131,22 @@ export type Engine = "plugin" | "direct";
 /** The learner's pick, and the engine of the open folder's saved conversation, or null when there is none. */
 export type EngineChoice = { chosen: Engine; conversation: Engine | null };
 
+/**
+ * One model the agent offers, in its own words. `value` is what it takes; `resolved` the full id that stands for.
+ * `efforts` are the effort levels it takes, empty for none. `current` is false for an older model: a full id
+ * no alias in the same list stands for.
+ */
+export type ModelOption = { value: string; resolved?: string; name: string; description: string; efforts?: string[]; current: boolean };
+
+/** The model and effort new sessions start on, by the model's full id; `effort` absent for the agent's own. */
+export type Pick = { model: string; name?: string; effort?: string };
+
+/**
+ * The agent's list as it last sent it (empty before the first lesson), whether it sent none the last time it was
+ * asked, the pick (null on a new window before the first list), and whether the list no longer offers the pick.
+ */
+export type ModelChoice = { models: ModelOption[]; failed: boolean; pick: Pick | null; not_offered: boolean };
+
 /** `engine` is the engine of the conversation that was opened. */
 export type Opened = { resumed: boolean; turns: Turn[]; engine: Engine };
 
@@ -244,8 +260,11 @@ export type Decision = "allow_once" | "allow_always" | "refuse";
 
 export type Answer = { question: string; chosen: string[] };
 
-/** "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed. */
-export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other";
+/**
+ * "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed.
+ * "record_unopened": a lesson started at a picked effort never opened the record; the window offers to start again.
+ */
+export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened";
 
 export type AgentEvent =
   | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean }
@@ -387,6 +406,10 @@ export interface Core {
   engine(): Promise<EngineChoice>;
   /** Pick the engine for the next conversation. It is saved at once. */
   setEngine(engine: Engine): Promise<EngineChoice>;
+  /** The agent's models, as it last listed them, and the model and effort new sessions start on. */
+  models(): Promise<ModelChoice>;
+  /** Pick the model and effort new sessions start on; `effort` null for the agent's own. Saved at once. */
+  setPick(model: string, effort: string | null): Promise<ModelChoice>;
   signIn(): Promise<void>;
   about(): Promise<About>;
   /** The open folder's saved conversation, as the window showed it, read without starting it. */

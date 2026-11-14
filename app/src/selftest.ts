@@ -298,6 +298,12 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     await until("a session's tab", () => actions.session() !== null, 5000);
     await until("the first reply", idle);
     if (document.querySelector(".session.in-front .now.lesson") === null) throw new Error("the lesson did not fill its tab");
+    // The models came with the conversation, in the agent's own words, and a new window took its default by full id.
+    {
+      const choice = await api.models();
+      steps.models = { rows: choice.models.length, current: choice.models.filter((row) => row.current).length, pick: choice.pick?.model ?? null, failed: choice.failed };
+      if (choice.models.length !== 7 || choice.pick?.model !== "claude-opus-5-5" || choice.failed) throw new Error(`the agent's models did not come: ${JSON.stringify(steps.models)}`);
+    }
     await actions.session()!.say(message, "talk");
     await until("the reply to be on screen", () => session().earlier.length >= 1 && idle());
     const reply = tutorText(session().live!);
@@ -441,6 +447,23 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (probe?.line === "raised") throw new Error("a reopened session opened with its line raised over the page");
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
+
+    // A new session's first line names its model and opens the agent's list; Esc gives the keyboard back to the line.
+    actions.newSession(folder);
+    await until("a new session's model", () => document.querySelector('.session.in-front [data-drive="model"]') !== null, 10_000);
+    const named = document.querySelector<HTMLElement>('.session.in-front [data-drive="model"]')!;
+    const word = named.textContent;
+    named.click();
+    await until("the list of models", () => document.querySelector(".session.in-front .model-list") !== null, 3000);
+    const rows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
+    const chosen = document.querySelector<HTMLElement>('.session.in-front [data-drive="model-row"].on')?.dataset.value ?? null;
+    press("Escape");
+    await wait(150);
+    steps.startLine = { word, rows, chosen, closed: document.querySelector(".session.in-front .model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    if (word !== "Opus 5.5" || rows !== 5 || chosen !== "opus") throw new Error(`the start line's model is not the pick: ${JSON.stringify(steps.startLine)}`);
+    if (document.querySelector(".session.in-front .model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close the list and go back to the line: ${JSON.stringify(steps.startLine)}`);
+    actions.run("close-session");
+    await until("the new session's tab to close", () => actions.session() === null, 10_000);
     await wait(600);
     const left = (await api.windowState()) as { v?: number; tabs?: unknown[] } | null;
     steps.windowState = left ? { v: left.v, tabs: left.tabs?.length } : null;

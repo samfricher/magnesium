@@ -1,7 +1,8 @@
 //! What the window itself remembers, kept on this computer and nowhere else:
 //! which folders are in the library, which conversation each one was in, the
 //! line the learner stopped at, the turns the window showed, the days the
-//! learner studied in it, how the learner chose to pay for lessons, and an
+//! learner studied in it, how the learner chose to pay for lessons, the
+//! model they picked and the last list of models the agent sent, and an
 //! installed `magnesium` they chose to keep. Never a credential.
 //!
 //! None of it is learning state. The learner record belongs to the runtime.
@@ -18,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::activity;
 use crate::agent::{Intent, Payment};
+use crate::models::{ModelOption, Pick};
 use crate::paths;
 
 /// How many folders the library keeps.
@@ -85,6 +87,13 @@ pub struct SessionNote {
     /// The engine it runs on, so it resumes on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<Engine>,
+    /// The model it runs on, so it resumes on its own. None for one an
+    /// earlier window began, which ran on `models::EARLIER`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The effort it runs at; none for the agent's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -108,6 +117,17 @@ struct Data {
     /// The engine the learner picked for new conversations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     engine: Option<Engine>,
+    /// The model and effort new sessions start on. A state an earlier window
+    /// kept has no such field, and keeps the model every lesson ran on then.
+    /// A new window's state has it empty until the agent first sends its
+    /// list, when it takes the agent's default. It is always written, empty
+    /// or not, so the two are never confused.
+    #[serde(default = "earlier_pick")]
+    pick: Option<Pick>,
+    /// The last list of models the agent sent, when it was sent, and
+    /// whether the last time it was asked it sent none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    models: Option<ModelList>,
     /// What `--version` printed for an installed `magnesium` the learner chose
     /// to keep over the one inside the app. Asked again for any other.
     #[serde(default)]
@@ -119,6 +139,23 @@ struct Data {
     /// Fields another window build wrote that this one does not know, kept.
     #[serde(flatten)]
     other: BTreeMap<String, serde_json::Value>,
+}
+
+fn earlier_pick() -> Option<Pick> {
+    Some(Pick::earlier())
+}
+
+/// The agent's list of models as the window last had it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModelList {
+    #[serde(default)]
+    pub models: Vec<ModelOption>,
+    /// When the list came, in ms since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<i64>,
+    /// The last time the agent was asked, it sent no list.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -436,6 +473,54 @@ impl Store {
         self.save(&data);
     }
 
+    /// The model and effort new sessions start on; none on a new window
+    /// before the agent has sent its list.
+    pub fn pick(&self) -> Option<Pick> {
+        self.lock().pick.clone()
+    }
+
+    pub fn set_pick(&self, pick: Pick) {
+        let mut data = self.lock();
+        data.pick = Some(pick);
+        self.save(&data);
+    }
+
+    /// The agent's list of models, as it last sent it.
+    pub fn models(&self) -> ModelList {
+        self.lock().models.clone().unwrap_or_default()
+    }
+
+    /// Keep the list the agent just sent, or note that it sent none: the
+    /// last list it did send is kept. A new window with no pick yet takes
+    /// the agent's default from the list, by its full id, so that a later
+    /// change of that default does not change it.
+    pub fn received_models(&self, models: Option<Vec<ModelOption>>) {
+        let mut data = self.lock();
+        let mut kept = data.models.clone().unwrap_or_default();
+        match models {
+            Some(models) => {
+                if data.pick.is_none() {
+                    if let Some(default) = crate::models::default_of(&models) {
+                        let shown = crate::models::find(&models, default.id()).unwrap_or(default);
+                        data.pick = Some(Pick {
+                            model: default.id().to_owned(),
+                            name: Some(shown.name.clone()),
+                            effort: None,
+                        });
+                    }
+                }
+                kept = ModelList {
+                    models,
+                    at_ms: Some(Local::now().timestamp_millis()),
+                    failed: false,
+                };
+            }
+            None => kept.failed = true,
+        }
+        data.models = Some(kept);
+        self.save(&data);
+    }
+
     pub fn kept_runtime(&self) -> Option<String> {
         self.lock().kept_runtime.clone()
     }
@@ -585,6 +670,71 @@ fn append_line(path: &Path, value: &impl Serialize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{ModelOption, EARLIER};
+
+    fn listed(value: &str, resolved: &str, name: &str) -> ModelOption {
+        ModelOption {
+            value: value.into(),
+            resolved: Some(resolved.into()),
+            name: name.into(),
+            description: String::new(),
+            efforts: Vec::new(),
+            current: true,
+        }
+    }
+
+    #[test]
+    fn a_window_that_kept_state_before_the_pick_keeps_the_model_it_ran_on() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(
+            home.path().join("state.json"),
+            r#"{"recent": [], "engine": "direct"}"#,
+        )
+        .unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        assert_eq!(store.pick().unwrap().model, EARLIER);
+        // The agent's list, with another default, changes nothing.
+        store.received_models(Some(vec![listed(
+            "default",
+            "claude-opus-5-5",
+            "Default (recommended)",
+        )]));
+        assert_eq!(store.pick().unwrap().model, EARLIER);
+    }
+
+    #[test]
+    fn a_new_window_takes_the_agents_default_by_its_full_id_once_the_list_comes() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        assert_eq!(store.pick(), None);
+        // Asked and sent nothing: still no pick, and the window says so.
+        store.received_models(None);
+        assert_eq!(store.pick(), None);
+        assert!(store.models().failed);
+        // Kept empty, a new window is not taken for an older one.
+        let again = Store::at(home.path().to_path_buf());
+        assert_eq!(again.pick(), None);
+        again.received_models(Some(vec![
+            listed("default", "claude-opus-5-5", "Default (recommended)"),
+            listed("opus", "claude-opus-5-5", "Opus"),
+        ]));
+        let pick = again.pick().unwrap();
+        assert_eq!(pick.model, "claude-opus-5-5");
+        assert_eq!(pick.name.as_deref(), Some("Opus"));
+        assert!(!again.models().failed);
+        // A later list with another default does not move it.
+        again.received_models(Some(vec![listed(
+            "default",
+            "claude-opus-5-6",
+            "Default (recommended)",
+        )]));
+        assert_eq!(again.pick().unwrap().model, "claude-opus-5-5");
+        assert_eq!(again.models().models[0].id(), "claude-opus-5-6");
+        // A list that does not come keeps the last one that did.
+        again.received_models(None);
+        let kept = again.models();
+        assert!(kept.failed && kept.models.len() == 1);
+    }
 
     #[test]
     fn state_survives_a_reopen() {

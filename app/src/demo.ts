@@ -14,7 +14,7 @@
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
-import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, Opened, Paper, PaperSitting, Payment, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
+import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, ModelChoice, ModelOption, Opened, Paper, PaperSitting, Payment, Pick, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
 
 const wait = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
 
@@ -33,6 +33,33 @@ const firstOpen = has("s1-cold-first");
 let signedIn = !has("setup-signed-out");
 let payment: Payment = "plan";
 let engineChosen: Engine = "direct";
+// The list Claude Code sends when a lesson starts, as stand-in data in its own words. A new window has none
+// before its first lesson; "model-failed" is one whose last lesson start sent none.
+const ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const MODEL_LIST: ModelOption[] = [
+  { value: "default", resolved: "claude-opus-5-5", name: "Default (recommended)", description: "Use the default model (currently Opus 5.5)", efforts: ALL_EFFORTS, current: true },
+  { value: "opus", resolved: "claude-opus-5-5", name: "Opus 5.5", description: "Best for everyday, complex tasks", efforts: ALL_EFFORTS, current: true },
+  { value: "fable", resolved: "claude-fable-5-2", name: "Fable 5.2", description: "Most capable for your hardest and longest-running tasks", efforts: ALL_EFFORTS, current: true },
+  { value: "sonnet", resolved: "claude-sonnet-5-5", name: "Sonnet 5.5", description: "Efficient for routine tasks", efforts: ALL_EFFORTS, current: true },
+  { value: "haiku", resolved: "claude-haiku-5-5", name: "Haiku 5.5", description: "Fastest for quick answers", efforts: ["low", "medium", "high"], current: true },
+  { value: "claude-fable-5-1", resolved: "claude-fable-5-1", name: "Fable 5.1", description: "Newer version available · select fable for Fable 5.2", efforts: ALL_EFFORTS, current: false },
+  { value: "claude-opus-4-6", resolved: "claude-opus-4-6", name: "Opus 4.6", description: "Newer version available · select opus for Opus 5.5", efforts: ["low", "medium", "high", "max"], current: false },
+  { value: "claude-haiku-4-5", resolved: "claude-haiku-4-5", name: "Haiku 4.5", description: "Newer version available · select haiku for Haiku 5.5", current: false },
+];
+const modelsNone = has("model-first-run", "model-list-first-run", "model-failed");
+const modelsFailed = has("model-failed");
+let pick: Pick | null = has("model-first-run", "model-list-first-run")
+  ? null
+  : has("model-not-offered")
+    ? { model: "claude-fable-4", name: "Fable 4" }
+    : has("model-effort", "record-unopened")
+      ? { model: "claude-sonnet-5-5", name: "Sonnet 5.5", effort: "low" }
+      : { model: "claude-fable-5-2", name: "Fable 5.2" };
+const modelChoice = (): ModelChoice => {
+  const models = modelsNone ? [] : MODEL_LIST;
+  const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
+  return { models, failed: modelsFailed, pick, not_offered: !offered };
+};
 let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
 let upgraded = !has("upgrade");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
@@ -255,6 +282,7 @@ let emit: (event: AgentEvent) => void = () => {};
 // The task open in the demo lesson, as the direct engine would say it after each turn.
 let openTask: string | null = null;
 let replying = false;
+let unopenedSaid = false;
 let holdRelease: (() => void) | null = null;
 
 /** Write a reply as the tutor would: in pieces, then whole. */
@@ -277,6 +305,10 @@ async function reply(text: string, after?: () => void, hold = false) {
   emit({ type: "text_done", text: shown });
   emit({ type: "turn_ended", ok: true, interrupted: false, error: null });
   replying = false;
+  if (has("record-unopened") && !unopenedSaid) {
+    unopenedSaid = true;
+    emit({ type: "notice", kind: "record_unopened", text: "This lesson started without opening your record, so its answers may not be marked. It ran at low effort." });
+  }
   // The engine says which task is open, in the tutor's words.
   const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
   if (posed) openTask = posed;
@@ -404,6 +436,12 @@ export function demoCore(): Core {
       return account();
     },
     engine: async () => ({ chosen: engineChosen, conversation: engineChosen }),
+    models: async () => modelChoice(),
+    setPick: async (model, effort) => {
+      const row = MODEL_LIST.find((m) => m.value === model || m.resolved === model);
+      pick = { model: row?.resolved ?? model, name: row?.name ?? pick?.name, ...(effort ? { effort } : {}) };
+      return modelChoice();
+    },
     setEngine: async (chosen) => {
       engineChosen = chosen;
       return { chosen, conversation: null };
@@ -590,8 +628,25 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "workspace":
       return actions.goWorkspace(FOLDER);
     case "new-session":
+    case "model-first-run":
+    case "model-failed":
+    case "model-not-offered":
       actions.newSession(FOLDER);
       return wait(300);
+    case "model-list":
+    case "model-effort":
+    case "model-older":
+    case "model-list-first-run":
+      actions.newSession(FOLDER);
+      await wait(300);
+      document.querySelector<HTMLElement>("[data-drive='model']")?.click();
+      await wait(150);
+      if (has("model-older")) document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
+      return wait(150);
+    case "record-unopened":
+      actions.newSession(FOLDER, { kind: "start" });
+      await wait(200);
+      return settle();
     case "new-session-start":
       actions.newSession(FOLDER, { kind: "start" });
       await wait(200);

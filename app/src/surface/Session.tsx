@@ -29,6 +29,7 @@ import { SidePanel } from "./SidePanel";
 import type { DocHandle } from "./DocView";
 import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, type Docs } from "../docs";
 import { Line } from "./Rich";
+import { useModelPicker } from "./ModelPicker";
 
 /** What a session tab starts with, once, when it is opened. */
 export type Pending =
@@ -268,6 +269,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
+  // The model a new session starts on, named on its first line.
+  const picker = useModelPicker({ api, onClose: () => lineRef.current?.focus() });
   const stuck = useRef(true);
   // Where the lesson was scrolled at the last scroll event: only a move up lets it go of its foot.
   const lastTop = useRef(0);
@@ -1035,6 +1038,31 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     lineRef.current?.focus();
   }, [raise]);
   const onDismiss = useCallback((text: string) => dispatch({ type: "dismiss", text }), []);
+  const again = useRef({ turns, sittingStart, sittingTitle });
+  again.current = { turns, sittingStart, sittingTitle };
+  /**
+   * A lesson started at a picked effort never opened the record: start it again, with the same first words, at
+   * the agent's own effort. The pick keeps the model and takes Usual, so the start line says so next time too.
+   */
+  const startAgain = useCallback(
+    async (text: string) => {
+      dispatch({ type: "dismiss", text });
+      const { turns: shownTurns, sittingStart: from, sittingTitle: title } = again.current;
+      const first = shownTurns[from]?.learner ?? "";
+      try {
+        const choice = await api.models();
+        if (choice.pick) await api.setPick(choice.pick.model, null);
+      } catch (problem) {
+        note(String(problem));
+        return;
+      }
+      if (first.trim() === "") return;
+      void begin(false, first, "opening", title, (core) => core.sendNewLesson(first));
+    },
+    // `begin` reads the tab's state through `now`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, note],
+  );
   const onDecide = useCallback(
     (id: string, decision: Decision) => {
       void api.decide(id, decision).then(
@@ -1178,6 +1206,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     initial={draft}
                     placeholder={rest.start ? "↩ to start, or say what to work on" : undefined}
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
+                    restTool={picker.word}
+                    restBelow={picker.list}
                     active
                     busy={false}
                     paused={paused}
@@ -1256,7 +1286,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 })}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 {error && <p className="record note">{withoutPaths(error)}</p>}
-                <Notices notices={session.notices} onDismiss={onDismiss} />
+                <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
                   // The line: the page's last line, under the reply. Typed into while the learner reads

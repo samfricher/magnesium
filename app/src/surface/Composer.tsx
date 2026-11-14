@@ -13,6 +13,7 @@
 // the line by its name, can be taken off, and goes with the next message.
 
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { HELP, attachedWords, quotable, withQuote } from "../lesson";
 import { keepPlace } from "../prefs";
@@ -101,6 +102,9 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
   end?: { keys: string; what: string } | null;
+  /** At rest: a tool before Attach, and what it opens under the line. */
+  restTool?: ReactNode;
+  restBelow?: ReactNode;
   /** The key that stops the tutor's reply, named on the line while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
@@ -135,12 +139,29 @@ export const Composer = memo(
     // Stuck asks once more what is wanted: help, or to say "I don't know".
     const [stuck, setStuck] = useState(false);
     const box = useRef<HTMLTextAreaElement>(null);
+    const restRef = useRef<HTMLDivElement>(null);
     const length = useRef(props.initial.length);
     const caretAt = useRef<number | null>(null);
     const latest = useRef(props);
     latest.current = props;
     const held = useRef({ text, quote, files });
     held.current = { text, quote, files };
+
+    // At rest the tools sit over the end of the field, and their words vary
+    // (the model's name, "↩ start"): the field's words stop short of them.
+    useLayoutEffect(() => {
+      const line = restRef.current;
+      const tools = line?.querySelector<HTMLElement>(".line-tools");
+      const field = box.current;
+      if (!line || !tools || !field) return;
+      const fit = () => {
+        field.style.paddingRight = `${Math.ceil(tools.getBoundingClientRect().width) + 16}px`;
+      };
+      fit();
+      const watch = new ResizeObserver(fit);
+      watch.observe(tools);
+      return () => watch.disconnect();
+    }, [props.place]);
 
     // The line grows with what is typed. It is measured only when it may have
     // to grow, or after text was taken away, so most keys cost one read.
@@ -363,7 +384,7 @@ export const Composer = memo(
 
     if (place === "rest") {
       return (
-        <div className={`line rest${props.active ? " on" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line="rest">
+        <div className={`line rest${props.active ? " on" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line="rest" ref={restRef}>
           <div className="field-row">
             <textarea
               ref={box}
@@ -379,6 +400,7 @@ export const Composer = memo(
               onPaste={onPaste}
             />
             <span className="line-tools">
+              {props.restTool}
               <button type="button" className="clip" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
                 Attach
               </button>
@@ -390,6 +412,7 @@ export const Composer = memo(
               )}
             </span>
           </div>
+          {props.restBelow}
         </div>
       );
     }
