@@ -633,3 +633,65 @@ dialog.layer::backdrop { background: transparent; }
 /* Settings keeps one column whatever line width is chosen in it: a column that followed the Line width slider moved
    the slider under the pointer while it was dragged. */
 .settings-page .page-column { width: min(31rem, calc(100% - 2 * var(--hang) - 40px)); }
+
+/* ------------------------------------------------------------------ */
+/* Frosted glass (glass.ts): the Mac blurs what is behind the window,
+   and the page lays its own ground over that blur part-way clear, once,
+   on the root. Everything that painted the ground to hide the page under
+   it paints nothing here; text that scrolls under an edge is faded out
+   with a mask instead, so no second layer of ground darkens a band. */
+
+:root[data-glass="on"] {
+  /* How much of the ground is laid over the blur: less in light than in dark, where the Mac's own glass is
+     already pale, so that as much of the desktop shows through in each. */
+  --frost: 72%;
+  --pane: color-mix(in srgb, var(--ground) var(--frost), transparent);
+  /* The soft field: a shade of the text over the glass, not of an opaque ground. */
+  --well: color-mix(in srgb, var(--text) 6%, transparent);
+  /* The quiet grey a step nearer the text: over a dark desktop the frosted ground is darker than the solid one,
+     and the window's small words keep 4.5:1 on it (measured over black, white, grey and busy backdrops). */
+  --quiet: color-mix(in srgb, var(--text) 72%, var(--ground));
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-glass="on"]:not([data-scheme="light"]) { --frost: 74%; --well: color-mix(in srgb, var(--text) 8%, transparent); --quiet: color-mix(in srgb, var(--text) 70%, var(--ground)); }
+}
+:root[data-glass="on"][data-scheme="dark"] { --frost: 74%; --well: color-mix(in srgb, var(--text) 8%, transparent); --quiet: color-mix(in srgb, var(--text) 70%, var(--ground)); }
+
+:root[data-glass="on"] { background: var(--pane); }
+:root[data-glass="on"] body,
+:root[data-glass="on"] .tabbar,
+:root[data-glass="on"] .panel { background: transparent; }
+
+/* A page scrolled under the tab bar. */
+:root[data-glass="on"] .views > .view::before { display: none; }
+:root[data-glass="on"] .views > .view:not(:has(.with-docs)),
+:root[data-glass="on"] .workspace-page.with-docs > .page-scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.4rem); mask-image: linear-gradient(to bottom, transparent, #000 1.4rem); }
+
+/* A lesson scrolled under its top edge: the same fade as the edge's ground had. */
+:root[data-glass="on"] .top-edge { background: none; }
+:root[data-glass="on"] .surface.scrolled {
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(64px - var(--tabs-h)), #000 calc(110px - var(--tabs-h)));
+  mask-image: linear-gradient(to bottom, transparent calc(64px - var(--tabs-h)), #000 calc(110px - var(--tabs-h)));
+}
+
+/* The line risen over the page: the reading under it is blurred away, as the Mac does under a bar. */
+:root[data-glass="on"] .foot.raised {
+  background: var(--pane);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+:root[data-glass="on"] .foot.raised::before {
+  background: none;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000);
+  mask-image: linear-gradient(to bottom, transparent, #000);
+}
+
+/* ⌘K, a sheet, the model list: frosted over the page, as a Mac popover is. */
+:root[data-glass="on"] .layer,
+:root[data-glass="on"] .model-list {
+  background: color-mix(in srgb, var(--raised) 78%, transparent);
+  -webkit-backdrop-filter: blur(30px) saturate(1.4);
+  backdrop-filter: blur(30px) saturate(1.4);
+}

@@ -60,10 +60,13 @@ export type Prefs = {
   hints: boolean;
   /** How the line the learner writes on is drawn: bare on the page's ground, or in a soft field. */
   line: LineLook;
+  /** What the window's ground is: solid, or frosted glass that lets the desktop behind it through, blurred. */
+  glass: GlassLook;
   keys: Record<KeyAction, string>;
 };
 
 export type LineLook = "bare" | "soft";
+export type GlassLook = "off" | "frosted";
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
@@ -106,6 +109,7 @@ export const DEFAULTS: Prefs = {
   textDark: "",
   hints: true,
   line: "soft",
+  glass: "off",
   keys: {
     home: "cmd+1",
     commands: "cmd+k",
@@ -245,6 +249,7 @@ export function cleanPrefs(raw: Partial<Prefs>): Prefs {
     textDark: str(raw.textDark, ""),
     hints: typeof raw.hints === "boolean" ? raw.hints : DEFAULTS.hints,
     line: raw.line === "bare" || raw.line === "soft" ? raw.line : DEFAULTS.line,
+    glass: raw.glass === "frosted" ? "frosted" : DEFAULTS.glass,
     keys,
   };
 }

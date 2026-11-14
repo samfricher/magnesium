@@ -1177,7 +1177,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           )}
         </div>
       )}
-      <main className="surface" ref={surface} onScroll={onScroll}>
+      <main className={scrolled ? "surface scrolled" : "surface"} ref={surface} onScroll={onScroll}>
         <div className="column">
           <section className={`now ${phase}`} ref={nowRef}>
             {phase === "loading" ? null : rest ? (

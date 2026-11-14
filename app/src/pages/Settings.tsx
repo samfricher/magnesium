@@ -5,6 +5,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useGlassState } from "../glass";
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
 import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
 
@@ -325,6 +326,7 @@ export function SettingsPage(props: Props) {
     for (const [other] of KEY_ACTIONS) if (other !== action && keys[other] === combo && combo !== "none") keys[other] = "none";
     change({ keys });
   };
+  const glass = useGlassState();
   const account = props.setup?.account ?? null;
   const runtime = props.setup?.runtime ?? null;
   const built = props.about ? `${props.about.version.split("+")[0]}${props.about.commit ? `, built from ${props.about.commit.slice(0, 7)}` : ", built from source"}` : "";
@@ -398,6 +400,23 @@ export function SettingsPage(props: Props) {
           </h2>
           <Setting name="Light or dark">
             <Choice name="Light or dark" options={SCHEMES} value={prefs.scheme} onPick={(scheme) => change({ scheme })} />
+          </Setting>
+          <Setting name="The window">
+            <Choice
+              name="The window"
+              options={[
+                ["off", "Solid"],
+                ["frosted", "Frosted glass"],
+              ]}
+              value={prefs.glass}
+              onPick={(glass) => change({ glass })}
+              disabled={glass !== null && !glass.can}
+            />
+            {glass && !glass.can ? (
+              <span className="setting-note">This window cannot draw glass here, so it stays solid.</span>
+            ) : glass?.reduce && prefs.glass === "frosted" ? (
+              <span className="setting-note">Solid while the Mac is set to reduce transparency or increase contrast.</span>
+            ) : null}
           </Setting>
           <Setting name="Ink">
             <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} named fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />

@@ -20,6 +20,7 @@ import { HomePage, mostRecent, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
+import { wantGlass } from "./glass";
 import { actionOf, applyPrefs, flushPlaces, keepPanelWidth, keyName, loadPrefs, panelWidthKept, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
 import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
 import { Commands } from "./surface/Commands";
@@ -117,7 +118,10 @@ export function App() {
   const now = useRef({ api, setup, prefs, workspaces, tabs, active, homeFolder, panel, overlay, liveKey, busyKey });
   now.current = { api, setup, prefs, workspaces, tabs, active, homeFolder, panel, overlay, liveKey, busyKey };
 
-  useLayoutEffect(() => applyPrefs(prefs), [prefs]);
+  useLayoutEffect(() => {
+    applyPrefs(prefs);
+    wantGlass(prefs.glass === "frosted");
+  }, [prefs]);
 
   const changePrefs = useCallback((change: Partial<Prefs>) => {
     setPrefs((old) => {

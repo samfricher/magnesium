@@ -25,6 +25,7 @@ use mg_core::{Manager, Store};
 use serde::Serialize;
 use tauri::{Emitter, Manager as _, State, WindowEvent};
 
+mod glass;
 mod harness;
 mod menu;
 mod occlusion;
@@ -651,6 +652,8 @@ fn main() {
             paper_end,
             selftest,
             selftest_report,
+            glass::glass_state,
+            glass::set_glass,
             harness::harness_config,
             harness::harness_next,
             harness::harness_done,
