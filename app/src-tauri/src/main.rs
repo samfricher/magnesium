@@ -14,7 +14,7 @@ use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
 use mg_core::install::RuntimeSetup;
-use mg_core::manager::{EngineChoice, Opened, Setup};
+use mg_core::manager::{EngineChoice, ModelChoice, Opened, Setup};
 use mg_core::material::{Added, Listed};
 use mg_core::plan::Plan;
 use mg_core::runtime::Mark;
@@ -229,6 +229,18 @@ fn engine(shell: State<'_, Shell>) -> EngineChoice {
 #[tauri::command(async)]
 fn set_engine(shell: State<'_, Shell>, engine: Engine) -> EngineChoice {
     shell.manager.set_engine(engine)
+}
+
+/// The agent's models, as it last listed them, and the learner's pick.
+#[tauri::command(async)]
+fn models(shell: State<'_, Shell>) -> ModelChoice {
+    shell.manager.models()
+}
+
+/// Pick the model and effort new sessions start on.
+#[tauri::command(async)]
+fn set_pick(shell: State<'_, Shell>, model: String, effort: Option<String>) -> Reply<ModelChoice> {
+    plain(shell.manager.set_pick(&model, effort.as_deref()))
 }
 
 /// Open a conversation in a folder: the one `session` names, the folder's
@@ -609,6 +621,8 @@ fn main() {
             about,
             engine,
             set_engine,
+            models,
+            set_pick,
             open_session,
             send,
             send_new_lesson,

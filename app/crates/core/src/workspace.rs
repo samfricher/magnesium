@@ -209,7 +209,7 @@ mod tests {
             SessionNote {
                 title: Some("Sampling distributions".into()),
                 opened_ms: Some(50),
-                engine: None,
+                ..SessionNote::default()
             },
         );
         // Begun, with no turn kept yet.
@@ -218,7 +218,7 @@ mod tests {
             SessionNote {
                 title: Some("Eigenvalues".into()),
                 opened_ms: Some(40),
-                engine: None,
+                ..SessionNote::default()
             },
         );
         let found = sessions(&turns, Some("c"), &notes);

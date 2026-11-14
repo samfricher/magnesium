@@ -197,7 +197,9 @@ fn one_process_holds_a_lesson_across_several_turns() {
         after("--tools"),
         Some("Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash")
     );
-    assert_eq!(after("--model"), Some(mg_core::claude::MODEL));
+    // A new window starts on Claude Code's own model until its list comes.
+    assert_eq!(after("--model"), None);
+    assert_eq!(after("--effort"), None);
     assert_eq!(starts[0]["surface"], "window");
     assert_eq!(starts[0]["connectors"], "false");
     assert_eq!(
@@ -668,4 +670,107 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     // The library lists the folder that was opened last first.
     let workspaces = manager.workspaces();
     assert_eq!(workspaces[0].folder, folder.to_string_lossy());
+}
+
+#[test]
+fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_resumes_on_its_own()
+{
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    assert_eq!(
+        manager.models().pick,
+        None,
+        "nothing picked before the list"
+    );
+    manager.open_session(false).unwrap();
+    manager.send("first").unwrap();
+    let AgentEvent::Ready { session_id, .. } =
+        events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }))
+    else {
+        unreachable!()
+    };
+    events.turn_end();
+    assert!(
+        !events
+            .seen
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Models { .. })),
+        "the list is the window's own, not drawn in the lesson"
+    );
+    // The list came with the conversation, and the default was taken by
+    // its full id.
+    let choice = manager.models();
+    assert_eq!(choice.models.len(), 7);
+    assert_eq!(
+        choice.models.iter().filter(|m| m.current).count(),
+        5,
+        "{:?}",
+        choice.models
+    );
+    let pick = choice.pick.unwrap();
+    assert_eq!(pick.model, "claude-opus-5-5");
+    assert_eq!(pick.name.as_deref(), Some("Opus 5.5"));
+    let note = manager.store().folder(&bench.folder).sessions[&session_id].clone();
+    assert_eq!(note.model.as_deref(), Some("claude-opus-5-5"));
+
+    // A pick the list does not offer, or an effort the model does not take,
+    // is refused.
+    assert!(manager.set_pick("claude-fable-4", None).is_err());
+    assert!(manager.set_pick("haiku", Some("max")).is_err());
+    let choice = manager.set_pick("sonnet", Some("high")).unwrap();
+    assert_eq!(choice.pick.as_ref().unwrap().model, "claude-sonnet-5-5");
+
+    // A new session starts on the pick.
+    manager.open_session(false).unwrap();
+    manager.send("second").unwrap();
+    events.turn_end();
+    let starts = bench.logged("start");
+    let args = |at: usize| -> Vec<String> {
+        starts[at]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|a| a.as_str().map(str::to_owned))
+            .collect()
+    };
+    let after = |args: &[String], flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .map(|at| args[at + 1].clone())
+    };
+    let second = args(1);
+    assert_eq!(
+        after(&second, "--model").as_deref(),
+        Some("claude-sonnet-5-5")
+    );
+    assert_eq!(after(&second, "--effort").as_deref(), Some("high"));
+
+    // The first session resumes on the model it began on, whatever is
+    // picked now.
+    manager
+        .open_session_at(None, true, Some(&session_id), None)
+        .unwrap();
+    manager.send("third").unwrap();
+    events.turn_end();
+    let starts = bench.logged("start");
+    let third: Vec<String> = starts[2]["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(after(&third, "--model").as_deref(), Some("claude-opus-5-5"));
+    assert_eq!(after(&third, "--effort"), None);
+}
+
+#[test]
+fn a_list_that_does_not_come_leaves_the_pick_alone_and_is_said() {
+    let bench = Bench::new(&[("STAND_IN_NO_MODELS", "1")]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send("first").unwrap();
+    events.turn_end();
+    let choice = manager.models();
+    assert!(choice.failed && choice.models.is_empty());
+    assert_eq!(choice.pick, None);
 }

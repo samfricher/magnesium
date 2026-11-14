@@ -93,6 +93,28 @@ def emit(value):
         sys.stdout.flush()
 
 
+# The list a real Claude Code sends in its reply to `initialize`: aliases
+# first, then a full id each for older models. The names and lines follow
+# Claude Code 2.1.322's own; an account's real list differs.
+ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+MODELS = [
+    {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)",
+     "description": "Use the default model (currently Opus 5.5)", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "opus", "resolvedModel": "claude-opus-5-5", "displayName": "Opus 5.5",
+     "description": "Best for everyday, complex tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "fable", "resolvedModel": "claude-fable-5-2", "displayName": "Fable 5.2",
+     "description": "Most capable for your hardest and longest-running tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "sonnet", "resolvedModel": "claude-sonnet-5-5", "displayName": "Sonnet 5.5",
+     "description": "Efficient for routine tasks", "supportsEffort": True, "supportedEffortLevels": ALL_EFFORTS},
+    {"value": "haiku", "resolvedModel": "claude-haiku-5-5", "displayName": "Haiku 5.5",
+     "description": "Fastest for quick answers", "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high"]},
+    {"value": "claude-opus-4-6", "resolvedModel": "claude-opus-4-6", "displayName": "Opus 4.6",
+     "description": "Newer version available \u00b7 select opus for Opus 5.5", "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high", "max"]},
+    {"value": "claude-haiku-4-5", "resolvedModel": "claude-haiku-4-5", "displayName": "Haiku 4.5",
+     "description": "Newer version available \u00b7 select haiku for Haiku 5.5"},
+]
+
+
 args = sys.argv[1:]
 log("start", {"args": args, "cwd": os.getcwd(), "env": {k: os.environ.get(k) for k in (
     "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "ENABLE_CLAUDEAI_MCP_SERVERS",
@@ -598,12 +620,14 @@ def main():
             continue
         message = json.loads(line)
         if message.get("type") == "control_request":
-            if message["request"].get("subtype") == "interrupt":
+            subtype = message["request"].get("subtype")
+            if subtype == "interrupt":
                 interrupted.set()
                 with lock:
                     pending.clear()
+            response = {"commands": [], "models": MODELS} if subtype == "initialize" else {}
             emit({"type": "control_response",
-                  "response": {"subtype": "success", "request_id": message["request_id"], "response": {}}})
+                  "response": {"subtype": "success", "request_id": message["request_id"], "response": response}})
         elif message.get("type") == "user":
             with lock:
                 pending.append(message["message"]["content"])

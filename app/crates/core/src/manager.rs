@@ -19,16 +19,17 @@ use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
-    Harness, Intent, Payment, SavedWaiter, StartOptions,
+    Harness, Intent, NoticeKind, Payment, SavedWaiter, StartOptions,
 };
 use crate::files;
 use crate::find;
 use crate::install::{self, RuntimeSetup};
 use crate::material::{self, Added};
+use crate::models::{self, ModelOption, Pick};
 use crate::paths;
 use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
-use crate::store::{Engine, PaperSitting, Store, Turn};
+use crate::store::{Engine, FolderState, PaperSitting, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
 use crate::workspace::{self, LessonInfo, Workspace};
 
@@ -54,6 +55,11 @@ struct Buffer {
     /// When the last turn was kept, so what the engine says of its task is
     /// kept beside it.
     last_ms: Option<i64>,
+    /// The model this conversation started on, by its full id; none while
+    /// it is the agent's default and the agent has not yet said which.
+    model: Option<String>,
+    /// The effort it started at; none for the agent's own.
+    effort: Option<String>,
 }
 
 struct Inner {
@@ -138,6 +144,22 @@ pub struct Opened {
     pub turns: Vec<Turn>,
     /// The engine running this conversation.
     pub engine: Engine,
+}
+
+/// The agent's models, as it last listed them, and the learner's pick, for
+/// the start line.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ModelChoice {
+    /// The list as the agent last sent it: empty before the first lesson.
+    pub models: Vec<ModelOption>,
+    /// The last time the agent was asked, it sent no list.
+    pub failed: bool,
+    /// What new sessions start on; none on a new window before the agent's
+    /// first list, when they start on the agent's default.
+    pub pick: Option<Pick>,
+    /// The pick is not on the list now: a new session starts on the agent's
+    /// default, and the pick stays as the learner left it.
+    pub not_offered: bool,
 }
 
 /// The engine the learner picked for new conversations, and the engine of
@@ -228,6 +250,98 @@ impl Manager {
     pub fn set_engine(&self, engine: Engine) -> EngineChoice {
         self.store.set_engine(engine);
         self.engine()
+    }
+
+    /// The agent's models and the learner's pick, for the start line.
+    pub fn models(&self) -> ModelChoice {
+        let list = self.store.models();
+        let pick = self.store.pick();
+        let not_offered = pick.as_ref().is_some_and(|pick| {
+            !list.models.is_empty() && models::find(&list.models, &pick.model).is_none()
+        });
+        ModelChoice {
+            models: list.models,
+            failed: list.failed,
+            pick,
+            not_offered,
+        }
+    }
+
+    /// Pick the model and effort new sessions start on. With a list, the
+    /// model must be on it and the effort one it takes; the name kept is the
+    /// one the list shows. A running conversation goes on with its own.
+    pub fn set_pick(&self, model: &str, effort: Option<&str>) -> AgentResult<ModelChoice> {
+        let effort = effort.filter(|e| !e.is_empty());
+        if !models::usable_model(model) || effort.is_some_and(|e| !models::usable_effort(e)) {
+            return Err(AgentError("That model cannot be picked.".into()));
+        }
+        let list = self.store.models();
+        let row = models::find(&list.models, model);
+        if !list.models.is_empty() && row.is_none() {
+            return Err(AgentError(
+                "That model is not on the agent's list now.".into(),
+            ));
+        }
+        if let (Some(row), Some(effort)) = (row, effort) {
+            if !row.efforts.iter().any(|level| level == effort) {
+                return Err(AgentError(format!(
+                    "{} does not take that effort.",
+                    row.name
+                )));
+            }
+        }
+        // Kept by its full id, so a later change of what an alias stands for
+        // does not change the pick.
+        let id = row.map_or(model, ModelOption::id).to_owned();
+        // The name the start line shows: a pick of the default row shows as
+        // the current model it stands for.
+        let name = models::find(&list.models, &id)
+            .or(row)
+            .map(|row| row.name.clone())
+            .or_else(|| {
+                self.store
+                    .pick()
+                    .filter(|p| p.model == id)
+                    .and_then(|p| p.name)
+            });
+        self.store.set_pick(Pick {
+            model: id,
+            name,
+            effort: effort.map(str::to_owned),
+        });
+        Ok(self.models())
+    }
+
+    /// The model and effort a conversation starts on. One continued keeps
+    /// its own; one an earlier window began ran on `models::EARLIER`. A new
+    /// one starts on the pick, or on the agent's default when the list no
+    /// longer offers it or there is no pick yet.
+    fn start_on(
+        &self,
+        saved: &FolderState,
+        remembered: Option<&str>,
+    ) -> (Option<String>, Option<String>) {
+        if let Some(id) = remembered {
+            let note = saved.sessions.get(id);
+            let model = note
+                .and_then(|note| note.model.clone())
+                .unwrap_or_else(|| models::EARLIER.into());
+            return (Some(model), note.and_then(|note| note.effort.clone()));
+        }
+        let Some(pick) = self.store.pick() else {
+            return (None, None);
+        };
+        let list = self.store.models();
+        if list.models.is_empty() {
+            return (Some(pick.model), pick.effort);
+        }
+        match models::find(&list.models, &pick.model) {
+            None => (None, None),
+            Some(row) => {
+                let effort = pick.effort.filter(|e| row.efforts.contains(e));
+                (Some(pick.model), effort)
+            }
+        }
     }
 
     /// Close the conversation, if there is one. From here on nothing it says
@@ -587,6 +701,8 @@ impl Manager {
             let live = *now == generation;
             // The turn this event ended and kept, by its conversation and time.
             let mut kept_turn: Option<(String, i64)> = None;
+            // A notice this event gives rise to, for the page.
+            let mut also: Option<AgentEvent> = None;
             match &event {
                 AgentEvent::Ready { session_id, .. } if !session_id.is_empty() => {
                     let mut buffer = lock(&buffer);
@@ -599,12 +715,17 @@ impl Manager {
                             state.engine = Some(engine);
                         });
                         let title = buffer.title.clone();
+                        let (model, effort) = (buffer.model.clone(), buffer.effort.clone());
                         let now = Local::now().timestamp_millis();
                         store.note_session(&folder, session_id, |note| {
                             note.engine = Some(engine);
                             note.opened_ms = Some(now);
                             if note.title.is_none() {
                                 note.title = title;
+                            }
+                            if model.is_some() {
+                                note.model = model;
+                                note.effort = effort;
                             }
                         });
                     }
@@ -620,6 +741,43 @@ impl Manager {
                     buffer.ended = true;
                     if live && !expected && !buffer.ready {
                         store.update(&folder, |state| state.session_id = None);
+                    }
+                }
+                // The list is the window's own, for the start line: kept, and
+                // not drawn in the lesson.
+                AgentEvent::Models { models } => {
+                    store.received_models(models.clone());
+                    let mut buffer = lock(&buffer);
+                    if let Some(list) = models {
+                        match buffer.model.clone() {
+                            // Started on the agent's default: noted by the
+                            // full id it stands for, to resume on it.
+                            None => {
+                                buffer.model =
+                                    models::default_of(list).map(|row| row.id().to_owned())
+                            }
+                            Some(model) if models::find(list, &model).is_none() => {
+                                let name = store
+                                    .pick()
+                                    .filter(|pick| pick.model == model)
+                                    .and_then(|pick| pick.name)
+                                    .unwrap_or(model);
+                                also = Some(AgentEvent::Notice {
+                                    kind: NoticeKind::Other,
+                                    text: format!("{name} is not offered on your account now, so this lesson may not start. Start a new session and pick another model on its first line."),
+                                });
+                            }
+                            Some(_) => {}
+                        }
+                        if let (true, Some(session), Some(model)) =
+                            (buffer.ready, buffer.session.clone(), buffer.model.clone())
+                        {
+                            let effort = buffer.effort.clone();
+                            store.note_session(&folder, &session, |note| {
+                                note.model = Some(model);
+                                note.effort = effort;
+                            });
+                        }
                     }
                 }
                 AgentEvent::TextDelta { text } => lock(&buffer).writing.push_str(text),
@@ -673,7 +831,12 @@ impl Manager {
             }
             let ended = matches!(event, AgentEvent::TurnEnded { .. });
             if live {
-                out(event);
+                if !matches!(event, AgentEvent::Models { .. }) {
+                    out(event);
+                }
+                if let Some(notice) = also {
+                    out(notice);
+                }
             }
             // What the turn changed is read once the reply has ended, and
             // its record has been kept.
@@ -815,6 +978,7 @@ impl Manager {
         let saved = self.store.folder(&folder);
         let remembered = saved
             .session_id
+            .clone()
             .filter(|_| resume && saved.engine.unwrap_or_default() == engine);
         if !resume {
             self.store.update(&folder, |state| {
@@ -830,9 +994,12 @@ impl Manager {
                 }
             });
         }
+        let (model, effort) = self.start_on(&saved, remembered.as_deref());
         let buffer = Arc::new(Mutex::new(Buffer {
             session: remembered.clone(),
             title,
+            model: model.clone(),
+            effort: effort.clone(),
             ..Buffer::default()
         }));
         let waiter = Arc::new(Mutex::new(None));
@@ -841,6 +1008,8 @@ impl Manager {
                 folder: folder.clone(),
                 resume: remembered.clone(),
                 payment: self.store.payment(),
+                model,
+                effort,
             },
             self.sink_for(
                 folder.clone(),

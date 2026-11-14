@@ -31,6 +31,7 @@ pub mod install;
 pub mod lesson_state;
 pub mod manager;
 pub mod material;
+pub mod models;
 pub mod paths;
 pub mod peek;
 pub mod plan;

@@ -174,18 +174,33 @@ export function Working({ live }: { live: Live }) {
   );
 }
 
-export function Notices({ notices, onDismiss }: { notices: Notice[]; onDismiss: (text: string) => void }) {
+export function Notices({ notices, onDismiss, onStartAgain }: { notices: Notice[]; onDismiss: (text: string) => void; onStartAgain?: (text: string) => void }) {
   if (notices.length === 0) return null;
   return (
     <div className="notices">
-      {notices.map((notice) => (
-        <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
-          {withoutPaths(notice.text)}{" "}
-          <button className="plain" onClick={() => onDismiss(notice.text)}>
-            Dismiss
-          </button>
-        </p>
-      ))}
+      {notices.map((notice) =>
+        notice.kind === "record_unopened" && onStartAgain ? (
+          // A lesson that never opened the record: the way on is to start again, at the agent's own effort.
+          <p key={notice.text} className="record note" role="alert">
+            {withoutPaths(notice.text)}
+            <span className="note-acts">
+              <button className="plain note-act" data-drive="start-again" onClick={() => onStartAgain(notice.text)}>
+                Start again at usual effort
+              </button>
+              <button className="plain" onClick={() => onDismiss(notice.text)}>
+                Carry on
+              </button>
+            </span>
+          </p>
+        ) : (
+          <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
+            {withoutPaths(notice.text)}{" "}
+            <button className="plain" onClick={() => onDismiss(notice.text)}>
+              Dismiss
+            </button>
+          </p>
+        ),
+      )}
     </div>
   );
 }

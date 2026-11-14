@@ -102,6 +102,8 @@ pub fn study_root(folder: &Path) -> PathBuf {
 /// - Nothing ever asks the learner for permission (`--permission-prompts
 ///   none`): the allowed tools run, and anything else is refused.
 /// - `--add-dir` lets Read reach a study root above the open folder.
+///
+/// The learner's model and effort go in front of these, from `start`.
 pub fn direct_args(
     folder: &Path,
     root: &Path,
@@ -124,8 +126,6 @@ pub fn direct_args(
         "stream-json",
         "--verbose",
         "--include-partial-messages",
-        "--model",
-        claude::MODEL,
         "--system-prompt",
         prompt,
         "--setting-sources",
@@ -316,11 +316,18 @@ impl Harness for DirectTutor {
         let version = version.split('+').next().unwrap_or_default().to_owned();
         let mut command = paths::command(&program);
         claude::apply_payment(&mut command, options.payment);
+        let mut pick = Vec::new();
+        claude::push_pick(
+            &mut pick,
+            options.model.as_deref(),
+            options.effort.as_deref(),
+        );
         command
             .current_dir(&folder)
             .env("PWD", &folder)
             .env_remove("CLAUDE_CODE_SESSION_ID")
             .envs(ISOLATION)
+            .args(pick)
             .args(direct_args(
                 &folder,
                 &root,
@@ -397,6 +404,7 @@ impl Harness for DirectTutor {
                 })
                 .map(Mutex::new),
             started: Instant::now(),
+            initialize: Mutex::new(None),
         });
         if let Some(mut stderr) = stderr {
             let shared = Arc::clone(&shared);
@@ -424,6 +432,20 @@ impl Harness for DirectTutor {
         {
             let shared = Arc::clone(&shared);
             thread::spawn(move || work_loop(&shared));
+        }
+        // Asked as the SDKs open a conversation, for its list of models only:
+        // nothing else in the reply is used here.
+        let id = shared.next_id();
+        *lock(&shared.initialize) = Some(id.clone());
+        if shared
+            .write(&json!({
+                "type": "control_request",
+                "request_id": id,
+                "request": {"subtype": "initialize", "hooks": null},
+            }))
+            .is_err()
+        {
+            *lock(&shared.initialize) = None;
         }
         // The runtime learns of the conversation as it would from Claude
         // Code. A hook fails open, so a failure here never stops the lesson.
@@ -709,6 +731,8 @@ struct Shared {
     state: Mutex<State>,
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
+    /// The id of the `initialize` request, whose reply lists the models.
+    initialize: Mutex<Option<String>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -846,6 +870,7 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read, events: &Sender<Option<Val
             (Some("system"), Some("init")) => on_init(shared, &value),
             (Some("system"), Some("api_retry")) => on_retry(shared, &value),
             (Some("rate_limit_event"), _) => on_rate_limit(shared, &value),
+            (Some("control_response"), _) => on_control_response(shared, &value),
             (Some("control_request"), _) => {
                 // Nothing here asks the learner: every tool is either allowed
                 // or refused by the launch.
@@ -864,6 +889,20 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read, events: &Sender<Option<Val
     }
     let _ = events.send(None);
     shared.push(Item::Ended);
+}
+
+/// The reply to `initialize` lists the models Claude Code offers.
+fn on_control_response(shared: &Arc<Shared>, value: &Value) {
+    let response = &value["response"];
+    let asked = lock(&shared.initialize).clone();
+    if asked.is_none() || response["request_id"].as_str() != asked.as_deref() {
+        return;
+    }
+    *lock(&shared.initialize) = None;
+    let models = (response["subtype"] == "success")
+        .then(|| crate::models::parse(&response["response"]))
+        .flatten();
+    shared.emit(AgentEvent::Models { models });
 }
 
 fn on_init(shared: &Arc<Shared>, value: &Value) {
@@ -2933,7 +2972,7 @@ mod tests {
     }
 
     #[test]
-    fn a_direct_lesson_loads_the_model_the_two_search_tools_and_the_plan_files_only() {
+    fn a_direct_lesson_loads_the_two_search_tools_and_the_plan_files_only() {
         let folder = Path::new("/study/stats");
         let args = direct_args(
             folder,
@@ -2950,7 +2989,6 @@ mod tests {
                 .map(|at| args[at + 1].clone())
                 .unwrap_or_else(|| panic!("{flag} is missing: {args:?}"))
         };
-        assert_eq!(after("--model"), claude::MODEL);
         assert_eq!(after("--system-prompt"), "You are the tutor.");
         assert_eq!(after("--setting-sources"), "");
         assert_eq!(after("--tools"), "Read,Edit,Write");
@@ -2971,9 +3009,11 @@ mod tests {
         );
         assert!(args.contains(&"--strict-mcp-config".to_owned()));
         assert!(args.contains(&"--disable-slash-commands".to_owned()));
+        // The model and effort are the learner's pick, which `start` puts
+        // in front of these.
         assert!(!args
             .iter()
-            .any(|arg| arg == "--plugin-dir" || arg == "--effort"));
+            .any(|arg| arg == "--plugin-dir" || arg == "--model" || arg == "--effort"));
         let server: Value = serde_json::from_str(&after("--mcp-config")).unwrap();
         assert_eq!(
             server["mcpServers"]["magnesium"]["command"],
