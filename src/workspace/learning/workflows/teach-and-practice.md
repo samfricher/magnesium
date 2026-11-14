@@ -57,4 +57,4 @@ Keep the task prompt, conditions, known resources, help, and proposal/delivery d
 
 ## Finish the turn
 
-End with the core rules' one task. Skip it only when the learner requested explanation-only, asked a plain factual question, or the session is ending. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.
+End with the core rules' one task. Skip it only when the learner requested explanation-only, asked a plain factual question, chose the answer-only or no-quiz control, or the session is ending. A requested full derivation may exceed a bounded event excerpt: preserve necessary reasoning and use explicit ranges for later inspection. Do not claim a receipt confirms unrecorded content. Do not append “Does that make sense?” as an assessment. Preserve the actual next unresolved connection, not a task already delivered.
