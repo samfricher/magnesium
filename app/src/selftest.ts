@@ -125,8 +125,8 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       const minute = new Date(2026, 10, 13, 13, 15, 0).getTime();
       const row = (id: string, at = "2026-11-13 13:15", paper: string | null = null): Mark => ({ id, at, label: "sign of b", mark: "right", help: "none", cold: false, paper });
       const kept = (second: number, extra: Partial<SavedTurn> = {}): SavedTurn => ({ session: "s", ms: minute + second * 1000, learner: `answer ${second}`, tutor: "…", interrupted: false, intent: "answer", ...extra });
-      // Each turn as "a-1+a-2" for its marks, "none" for an answer said to have none, "-" for neither.
-      const drawn = (turns: LessonTurn[]) => turns.map((turn) => (turn.marks ?? []).map((mark) => mark.id).join("+") || (turn.unmarked ? "none" : "-")).join(" ");
+      // Each turn as "a-1+a-2" for its marks, "-" for none.
+      const drawn = (turns: LessonTurn[]) => turns.map((turn) => (turn.marks ?? []).map((mark) => mark.id).join("+") || "-").join(" ");
       const posed = kept(0, { learner: "Go on", intent: "talk", noted: true, task: "Task 1", posed: true, mark_ids: [] });
       const triesTurns = rebuild([posed, kept(10, { noted: true, task: "Task 1", mark_ids: [] }), kept(20, { noted: true, task: "Task 1", mark_ids: [] }), kept(30, { noted: true, task: "Task 1", mark_ids: ["a-3"] })], [row("a-3")], "s");
       const reopened = {
@@ -134,20 +134,18 @@ export async function run(api: Core, actions: Actions): Promise<void> {
         twoTasks: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20, { mark_ids: ["a-2"] })], [row("a-1"), row("a-2")], "s")),
         // Three tries at one task in one minute; the record marked the third.
         threeTries: drawn(triesTurns),
-        secondTry: triesTurns[2].unmarked ?? null,
         // A row no kept answer had: from a terminal, at the same minute.
         noAnswerKept: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20, { mark_ids: [] })], [row("a-1"), row("t-9")], "s")),
         // Turns an earlier window kept, with no ids: by the minute, as before, and never a paper's row.
         older: drawn(rebuild([kept(10), kept(130)], [row("a-1"), row("p-1", "2026-11-13 13:16", "Paper 1"), row("a-2", "2026-11-13 13:17")], "s")),
         // An older turn and a newer one in the same minute: the older one does not take the newer one's mark.
         mixed: drawn(rebuild([kept(10), kept(20, { mark_ids: ["a-2"] })], [row("a-1"), row("a-2")], "s")),
-        // A runtime that cannot list its marks: no mark, and no "no mark" either.
+        // A runtime that cannot list its marks: no mark.
         noRecord: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20)], null, "s")),
       };
       steps.reopenedMarks = reopened;
-      const wanted = { twoTasks: "a-1 a-2", threeTries: "- none none a-3", noAnswerKept: "a-1 none", older: "a-1 a-2", mixed: "a-1 a-2", noRecord: "- -" };
+      const wanted = { twoTasks: "a-1 a-2", threeTries: "- - - a-3", noAnswerKept: "a-1 -", older: "a-1 a-2", mixed: "a-1 a-2", noRecord: "- -" };
       for (const [name, want] of Object.entries(wanted)) if (reopened[name as keyof typeof wanted] !== want) throw new Error(`a reopened session put a mark on the wrong answer (${name}): ${reopened[name as keyof typeof wanted]}, not ${want}`);
-      if (!reopened.secondTry?.startsWith("Only a first try")) throw new Error(`a second try was not said to be one: ${reopened.secondTry}`);
     }
 
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
@@ -327,9 +325,9 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
     if (!document.querySelector(".session.in-front .sent-files")?.textContent?.includes(kept.split("/").pop() ?? kept)) throw new Error("the file sent was not named under the message");
 
-    // Esc in a task goes to talk in one press, with the symbols open and words on the line, and keeps the words.
+    // One line with a task open. Esc closes the symbols first, then puts the line away; the words stay.
     await actions.session()!.say("A task, please.\n\n**Task.** What is 2 + 2?", "talk");
-    await until("the line in the task", () => document.querySelector('.session.in-front .line[data-line="task"]') !== null, 10_000);
+    await until("the task open", () => idle() && actions.session()?.probe().task !== null, 10_000);
     actions.run("symbols");
     await until("the symbols", () => document.querySelector(".session.in-front .symbols") !== null, 3000);
     const field = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
@@ -337,23 +335,65 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, value);
       field.dispatchEvent(new Event("input", { bubbles: true }));
     };
+    const onField = (init: KeyboardEventInit) => field.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
     field.focus();
     setField("√4");
-    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-    await until("the line on talk", () => document.querySelector('.session.in-front .line[data-line="talk"]') !== null, 3000);
-    const onLine = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')?.value;
-    steps.escape = { onLine, symbols: document.querySelector(".session.in-front .symbols") !== null };
+    onField({ key: "Escape" });
+    await until("the symbols to close", () => document.querySelector(".session.in-front .symbols") === null, 3000);
+    onField({ key: "Escape" });
+    await wait(100);
+    const onLine = field.value;
+    steps.escape = { onLine, away: document.activeElement !== field };
     if (onLine !== "√4") throw new Error(`Esc lost the words on the line: ${onLine}`);
-    if (document.querySelector(".session.in-front .symbols") !== null) throw new Error("Esc left the symbols open");
+    if (document.activeElement === field) throw new Error("a second Esc did not put the line away");
+
+    // ⌥↩ sends the words as talk, with a task open: never an answer.
+    field.focus();
+    setField("it is 4, I think");
+    onField({ key: "Enter", altKey: true });
+    await until("the words sent as talk", () => session().live?.learner === "it is 4, I think", 3000);
+    if (session().live?.said !== "talk") throw new Error(`⌥↩ sent the words as ${String(session().live?.said)}, not as talk`);
+    await until("the reply to the talk", () => idle(), 10_000);
+
+    // A key typed with a passage selected: the line quotes it, and the message goes as talk.
+    const passage = [...document.querySelectorAll<HTMLElement>(".session.in-front .tutor .prose p")].find((p) => (p.textContent ?? "").trim().length > 8);
+    if (!passage) throw new Error("no passage of the tutor's to select");
+    const range = document.createRange();
+    range.selectNodeContents(passage);
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "W", bubbles: true, cancelable: true }));
+    await until("the line to quote the passage", () => document.querySelector(".session.in-front .line.lesson .quote") !== null, 3000);
+    setField("Why?");
+    onField({ key: "Enter" });
+    await until("the quoted words sent", () => (session().live?.learner ?? "").startsWith("> "), 3000);
+    steps.quoted = { said: session().live?.said, drawn: document.querySelector(".session.in-front .said-quote") !== null };
+    if (session().live?.said !== "talk") throw new Error("a message quoting a passage was not sent as talk");
+    await until("the reply to the quoted words", () => idle(), 10_000);
     setField("");
+
+    // How far the lesson is from its end after each step that changes its layout: the line is its last line.
+    const fromEnd = () => {
+      const lesson = document.querySelector<HTMLElement>(".session.in-front main.surface");
+      return lesson ? Math.round(lesson.scrollHeight - lesson.clientHeight - lesson.scrollTop) : null;
+    };
+    const drift: Record<string, number | null> = { afterQuote: fromEnd() };
+    steps.drift = drift;
 
     // The quiet controls, and the plan beside the lesson, shown and hidden.
     steps.controls = ["attach", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
     actions.run("plan");
     await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);
+    await wait(300);
+    drift.planShown = fromEnd();
     actions.run("plan");
     await until("the plan to go", () => document.querySelector(".session.in-front .panel") === null, 3000);
+    await wait(300);
+    drift.planHidden = fromEnd();
+    // The line is the lesson's last line: a reply that grew the page, and the panel shown and hidden, leave it in view.
+    if ((drift.afterQuote ?? 0) > 6 || (drift.planHidden ?? 0) > 6) throw new Error(`the lesson let go of its end: ${JSON.stringify(drift)}`);
 
     // Home, then the session's tab again: its line takes the focus back.
     const sessionTab = actions.active();
@@ -364,7 +404,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     await until("the session in front again", () => actions.active() === sessionTab, 3000);
     await wait(300);
     steps.backFocus = document.activeElement?.getAttribute("data-drive") ?? document.activeElement?.tagName ?? null;
-    if (steps.backFocus !== "composer") throw new Error(`the session's line did not take the focus back: ${String(steps.backFocus)}`);
+    const backLine = actions.session()?.probe().line;
+    const lesson = document.querySelector<HTMLElement>(".session.in-front main.surface");
+    const where = lesson ? { fromFoot: Math.round(lesson.scrollHeight - lesson.clientHeight - lesson.scrollTop), footTop: Math.round(document.querySelector(".session.in-front .foot")?.getBoundingClientRect().top ?? -1), bottom: Math.round(lesson.getBoundingClientRect().bottom) } : null;
+    if (steps.backFocus !== "composer") throw new Error(`the session's line (${String(backLine)}, ${JSON.stringify(where)}) did not take the focus back: ${String(steps.backFocus)}`);
 
     const progress = await api.progress(null, folder);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
@@ -395,7 +438,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!document.querySelector(".session.in-front .you.talk")) throw new Error("talk in a reopened session is not drawn as talk");
     const probe = actions.session()?.probe();
     steps.reopened = { ...(steps.reopened as object), line: probe?.line, task: probe?.task !== null };
-    if (probe?.task && probe.line !== "task") throw new Error("a reopened session's open task does not hold the caret");
+    if (probe?.line === "raised") throw new Error("a reopened session opened with its line raised over the page");
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
     await wait(600);

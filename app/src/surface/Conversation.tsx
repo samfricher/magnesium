@@ -1,12 +1,13 @@
 // The lesson as it fills the surface: the tutor's words in the reading face,
-// the learner's in the face they type in, an answer inside the task it
-// answers, and the record's lines (a mark, a change to the plan) small and in
-// ink under what they are about. Nothing here reads a mark or a change from
-// the tutor's words.
+// the learner's in the face they type in, and the record's lines (a mark, a
+// change to the plan) small and in ink under what they are about. Every
+// message of the learner's is drawn the same way: the window sends them all
+// alike, and only a mark under one says the record took it as an answer.
+// Nothing here reads a mark or a change from the tutor's words.
 
 import { memo } from "react";
 
-import { isHelp, opening, splitAttached, splitConfidence, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
+import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
@@ -84,51 +85,29 @@ export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief
   );
 }
 
-/** What the learner said, drawn by how it was sent. */
+/** What the learner said: the passage it quoted, the words, the files that went with it, and the record's marks for it. */
 function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boolean }) {
   const text = turn.learner;
   if (text.trim() === "") return null;
   if (turn.said === "opening" || opening(text)) return null;
-  const attached = splitAttached(text);
+  const quoted = splitQuote(text);
+  const attached = splitAttached(quoted.text);
   const { text: words, confidence } = splitConfidence(attached.text);
   const marks = turn.marks ?? [];
-  const sent = <Sent files={attached.files} working={attached.working} />;
-  // A choice picked on a card is said by the learner, as talk is.
-  if (turn.pick) return <Said text={words} className="you talk pick" />;
-  // Help asked for is the window's own words, said for the learner: one quiet line, not an answer.
-  if (turn.said === "help" || (turn.said === undefined && isHelp(text))) {
-    return (
-      <>
-        <Said text={words} className="you talk help" />
-        {sent}
-        <Marks marks={marks} />
-      </>
-    );
-  }
-  if (turn.said === "answer") {
-    return (
-      <div className="answer">
-        {showQuestion && turn.question && (
-          <p className="question">
-            <Line text={firstWords(turn.question)} />
-          </p>
-        )}
-        {words.trim() !== "" && <Said text={words} className="you" />}
-        {sent}
-        {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
-        <Marks marks={marks} />
-        {marks.length === 0 && turn.unmarked && (
-          <p className="record quiet unmarked" title={turn.unmarked}>
-            Not marked.
-          </p>
-        )}
-      </div>
-    );
-  }
+  // A choice picked on a card, and help asked for in the window's own words, are said the same way, quieter.
+  const quiet = turn.pick || turn.said === "help" || (turn.said === undefined && isHelp(text));
   return (
     <>
-      {words.trim() !== "" && <Said text={words} className="you talk" />}
-      {sent}
+      {/* A mark on an answer to a task that is not just above it says which task it was. */}
+      {showQuestion && marks.length > 0 && turn.question && (
+        <p className="question">
+          <Line text={firstWords(turn.question)} />
+        </p>
+      )}
+      {quoted.quote && <p className="said-quote">“{quoted.quote}”</p>}
+      {words.trim() !== "" && <Said text={words} className={`you talk${quiet ? (turn.pick ? " pick" : " help") : ""}`} />}
+      {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
+      <Sent files={attached.files} working={attached.working} />
       <Marks marks={marks} />
     </>
   );

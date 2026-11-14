@@ -2,30 +2,25 @@
 //
 // - "rest": under the next thing, before a lesson. Return starts it; words
 //   typed first start it with those words.
-// - "task": inside the open task, under its question. Return hands it in as
-//   the answer (data-drive="answer").
-// - "talk": the conversation's own line, after a `›`, always there. Whatever
-//   is said on it is talk, which code never marks (data-drive="talk").
+// - "lesson": the one line of a lesson, one row: the learner's words, then at
+//   most two quiet controls. Every message goes the same way, and the record
+//   decides whether it was an answer. Two ways of sending say "this is not an
+//   answer" for sure: ⌥↩, and a message that quotes a passage the learner had
+//   selected. Both go as talk, which code never marks.
 //
-// While a task is open both are on the surface, the task's above the
-// conversation's, like two lines of one document: ↓ at the end of the task's
-// line goes down to the conversation's, ↑ at the start of the conversation's
-// goes back up, and Esc steps out of the task. Each keeps its own words. A key
-// pressed in one redraws that line and nothing else.
-//
-// The line takes files too: its quiet clip opens a picker for photos and
-// PDFs, and a file dropped on the session or an image pasted in joins it.
-// Each shows on the line as a small item that can be taken off, and goes with
-// the next message. Under the task's line, a quiet row asks for help.
+// The line takes files too: Attach opens a picker for photos and PDFs, and a
+// file dropped on the session or an image pasted in joins it. Each shows on
+// the line by its name, can be taken off, and goes with the next message.
 
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 
-import { HELP, attachedWords } from "../lesson";
+import { HELP, attachedWords, quotable, withQuote } from "../lesson";
 import { keepPlace } from "../prefs";
 
-export type Place = "rest" | "task" | "talk";
+export type Place = "rest" | "lesson";
 
-export type Sending = { text: string; place: Place };
+/** `talk` is set when the learner said for sure it is not an answer: ⌥↩, or a quoted passage. */
+export type Sending = { text: string; place: Place; talk: boolean };
 
 const CONFIDENCE = ["sure", "unsure", "guess"] as const;
 type Confidence = (typeof CONFIDENCE)[number];
@@ -74,7 +69,7 @@ const bare = (text: string) => /^[\s$]*$/.test(text);
 /** A file's own name, without the folders it was kept in. */
 export const fileName = (path: string) => path.split("/").pop() ?? path;
 
-/** What a session can do with the line from outside it: a menu item, a drop, a pasted image. */
+/** What a session can do with the line from outside it: a menu item, a drop, a pasted image, a key typed on the page. */
 export type ComposerHandle = {
   focus: () => void;
   /** Open the picker for photos and PDFs. */
@@ -82,6 +77,10 @@ export type ComposerHandle = {
   /** Files already handed in to the study folder, to go with the next message. */
   add: (saved: string[]) => void;
   toggleSymbols: () => void;
+  /** Words typed while the keyboard was elsewhere, and the passage selected when they were: the line takes both. */
+  write: (chars: string, selected?: string) => void;
+  /** Whether the line holds anything to send, or a passage to quote. */
+  holds: () => boolean;
 };
 
 type Props = {
@@ -96,20 +95,15 @@ type Props = {
   busy: boolean;
   /** A layer is over the surface, or the tab is not in front: the line does not take the focus. */
   paused: boolean;
-  /** An open task exists that ↑ can go up into. */
-  canAnswer: boolean;
-  /** A task is open: a file sent now is the learner's work. */
+  /** A task is open: Stuck is offered, ⌥↩ means something, and a file sent now is the learner's work. */
   taskOpen: boolean;
   /** Words to show when the line is empty. */
   placeholder?: string;
-  /** The quiet end of the line: the one key worth naming here, and what it does. */
+  /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
   end?: { keys: string; what: string } | null;
-  /** The end is a way somewhere (back into the open task): a press on it goes there. */
-  onEnd?: () => void;
-  /** The key that stops the tutor's reply, named at the line's end while it writes. */
+  /** The key that stops the tutor's reply, named on the line while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
-  onMove: (place: "task" | "talk") => void;
   onNote: (text: string) => void;
   /** Hand files in to the study folder; resolves to their paths there. */
   onAttach: (paths: string[], working: boolean) => Promise<string[]>;
@@ -122,20 +116,31 @@ type Props = {
   stopWords?: string;
   /** Return on an empty line: what the line's end names, when there is something to carry on. */
   onEmptyReturn?: () => void;
+  /** Words were typed, a file joined or a tool was used: the learner is writing now. */
+  onWrite?: () => void;
+  /** Esc on the line: the learner is done writing for now. The words stay. */
+  onPutAway?: () => void;
+  /** The keyboard left the line, and it holds nothing. */
+  onLeftEmpty?: () => void;
 };
 
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
     const [text, setText] = useState(props.initial);
+    const [quote, setQuote] = useState<string | null>(null);
     const [confidence, setConfidence] = useState<Confidence | null>(null);
     const [files, setFiles] = useState<string[]>([]);
-    const [queued, setQueued] = useState(false);
+    const [queued, setQueued] = useState<null | { talk: boolean }>(null);
     const [symbols, setSymbols] = useState(false);
+    // Stuck asks once more what is wanted: help, or to say "I don't know".
+    const [stuck, setStuck] = useState(false);
     const box = useRef<HTMLTextAreaElement>(null);
     const length = useRef(props.initial.length);
     const caretAt = useRef<number | null>(null);
     const latest = useRef(props);
     latest.current = props;
+    const held = useRef({ text, quote, files });
+    held.current = { text, quote, files };
 
     // The line grows with what is typed. It is measured only when it may have
     // to grow, or after text was taken away, so most keys cost one read.
@@ -151,12 +156,12 @@ export const Composer = memo(
       length.current = text.length;
     }, [text]);
 
-    // A symbol put in moves the caret to where it should stand.
+    // A symbol put in, or words typed from the page, move the caret to where it should stand.
     useEffect(() => {
       if (caretAt.current === null || !box.current) return;
+      box.current.focus({ preventScroll: true });
       box.current.setSelectionRange(caretAt.current, caretAt.current);
       caretAt.current = null;
-      box.current.focus();
     });
 
     // The line where the learner is writing has the focus whenever nothing
@@ -167,8 +172,8 @@ export const Composer = memo(
       const el = box.current;
       if (!el) return;
       const active = document.activeElement;
-      // Not from a card, the help row, the symbols, a file on the line, or a document being read beside the lesson.
-      if (active && active !== document.body && active !== el && active.closest(".card, .help-row, .symbols, .attached, .panel.side")) return;
+      // Not from a card, the line's own controls, the symbols, a file on the line, or a document being read beside the lesson.
+      if (active && active !== document.body && active !== el && active.closest(".card, .line-tools, .symbols, .attached, .panel.side")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     }, [props.active, props.paused, props.busy]);
@@ -176,70 +181,94 @@ export const Composer = memo(
     const keep = (value: string) => {
       const { placeKey, place } = latest.current;
       if (!placeKey) return;
-      keepPlace(placeKey, place === "rest" ? { draft: value } : { answerDraft: value });
+      // One line now: words an older window kept on the task's own line are this line's draft once anything is typed.
+      keepPlace(placeKey, place === "rest" ? { draft: value } : { draft: value, answerDraft: "" });
     };
 
     const change = (value: string) => {
       setText(value);
       keep(value);
       if (bare(value)) setConfidence(null);
+      if (!bare(value)) setStuck(false);
+      if (latest.current.place === "lesson" && value !== "") latest.current.onWrite?.();
     };
 
-    const content = !bare(text) || files.length > 0;
+    const typed = !bare(text);
+    const content = typed || files.length > 0;
 
-    const send = (force = false) => {
+    const send = (talk: boolean, force = false) => {
       const { place, busy, taskOpen } = latest.current;
       if (!content) {
         if (latest.current.onEmptyReturn) latest.current.onEmptyReturn();
-        else if (place === "rest") latest.current.onSend({ text: "", place });
+        else if (place === "rest") latest.current.onSend({ text: "", place, talk: false });
         return;
       }
       if (busy && !force) {
-        setQueued(true);
+        setQueued({ talk });
         return;
       }
-      const parts = [text.trim()];
-      if (confidence && !bare(text)) parts.push(`Confidence: ${confidence}`);
-      // A file sent with an answer, or while a task is open, is the learner's
-      // work. Otherwise it goes as a file for the tutor to read, and the tutor
-      // is told it may be either.
-      if (files.length > 0) parts.push(attachedWords(files, place === "task" || taskOpen));
-      latest.current.onSend({ text: parts.filter((part) => part !== "").join("\n\n"), place });
+      // A quoted passage is about the passage: never an answer.
+      const asTalk = talk || quote !== null;
+      const parts = [quote !== null ? withQuote(quote, text.trim()) : text.trim()];
+      if (confidence && typed && !asTalk) parts.push(`Confidence: ${confidence}`);
+      // A file sent while a task is open is the learner's work, unless they said the message is not an answer.
+      // Otherwise it goes as a file for the tutor to read, and the tutor is told it may be either.
+      if (files.length > 0) parts.push(attachedWords(files, place === "lesson" && taskOpen && !asTalk));
+      latest.current.onSend({ text: parts.filter((part) => part !== "").join("\n\n"), place, talk: asTalk });
       setText("");
+      setQuote(null);
       setConfidence(null);
       setFiles([]);
-      setQueued(false);
+      setQueued(null);
       setSymbols(false);
+      setStuck(false);
       length.current = 0;
       keep("");
     };
 
     // Waited for: the words go once the tutor is done.
     useEffect(() => {
-      if (queued && !props.busy) send(true);
+      if (queued && !props.busy) send(queued.talk, true);
     });
 
     const add = (saved: string[]) => {
-      if (saved.length > 0) setFiles((old) => [...old, ...saved.filter((path) => !old.includes(path))]);
+      if (saved.length === 0) return;
+      setFiles((old) => [...old, ...saved.filter((path) => !old.includes(path))]);
+      latest.current.onWrite?.();
     };
+
+    const working = () => latest.current.place === "lesson" && latest.current.taskOpen && held.current.quote === null;
 
     // Photos and PDFs chosen are handed in to the study folder, then named in the message.
     const pick = async () => {
+      latest.current.onWrite?.();
       try {
         const picked = await latest.current.onPick();
-        const working = latest.current.place === "task" || latest.current.taskOpen;
-        if (picked.length > 0) add(await latest.current.onAttach(picked, working));
+        if (picked.length > 0) add(await latest.current.onAttach(picked, working()));
       } catch (error) {
         latest.current.onNote(String(error));
       }
-      box.current?.focus();
+      box.current?.focus({ preventScroll: true });
     };
 
     useImperativeHandle(ref, () => ({
-      focus: () => box.current?.focus(),
+      focus: () => box.current?.focus({ preventScroll: true }),
       pick: () => void pick(),
       add,
-      toggleSymbols: () => setSymbols((open) => !open),
+      toggleSymbols: () => {
+        latest.current.onWrite?.();
+        setSymbols((open) => !open);
+      },
+      write: (chars, selected) => {
+        const passage = selected ? quotable(selected) : "";
+        if (passage !== "") setQuote(passage);
+        const next = held.current.text + chars;
+        caretAt.current = next.length;
+        if (chars !== "") change(next);
+        else box.current?.focus({ preventScroll: true });
+        latest.current.onWrite?.();
+      },
+      holds: () => !bare(held.current.text) || held.current.files.length > 0 || held.current.quote !== null,
     }));
 
     // An image pasted in joins the line as a file; pasted words stay a normal paste.
@@ -247,13 +276,12 @@ export const Composer = memo(
       const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/") || file.type === "application/pdf");
       if (images.length === 0 || !latest.current.onPasteImage) return;
       if (event.clipboardData.getData("text/plain").trim() === "") event.preventDefault();
-      const working = latest.current.place === "task" || latest.current.taskOpen;
       void (async () => {
         for (const file of images) {
           try {
             const bytes = new Uint8Array(await file.arrayBuffer());
             const name = file.name && file.name !== "image.png" ? file.name : `Pasted ${new Date().toTimeString().slice(0, 5).replace(":", ".")}.${file.type.split("/")[1] ?? "png"}`;
-            add([await latest.current.onPasteImage!(name, bytes, working)]);
+            add([await latest.current.onPasteImage!(name, bytes, working())]);
           } catch (error) {
             latest.current.onNote(String(error));
           }
@@ -282,163 +310,187 @@ export const Composer = memo(
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (composing(event)) return;
       const el = event.currentTarget;
-      const { place, canAnswer } = latest.current;
+      const { place, taskOpen } = latest.current;
       const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-      if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
-        send();
+        // ⌥↩ sends the words as talk: not an answer, whatever they say. It means something only while a task is open.
+        send(place === "lesson" && event.altKey && taskOpen);
         return;
       }
-      // Esc does what the line's end says: in a task it steps out to talk,
-      // in one press, whatever is on the line (which stays) and whether the
-      // symbols are open (they close). While the tutor writes, Esc stops the
-      // reply instead, and the window handles it.
-      if (event.key === "Escape" && plain && !latest.current.busy && (place === "task" || symbols)) {
+      // Esc closes what is open on the line, and then puts the line away with its words kept.
+      // While the tutor writes, Esc stops the reply instead, and the window handles it.
+      if (event.key === "Escape" && plain && !latest.current.busy && (symbols || stuck || place === "lesson")) {
         event.preventDefault();
         event.stopPropagation();
-        setSymbols(false);
-        if (place === "task") latest.current.onMove("talk");
+        if (symbols || stuck) {
+          setSymbols(false);
+          setStuck(false);
+          return;
+        }
+        el.blur();
+        latest.current.onPutAway?.();
         return;
       }
-      // Down to the conversation's line: ↓ at the end of the task's.
-      if (place === "task" && plain && event.key === "ArrowDown" && el.selectionStart === el.value.length && el.selectionEnd === el.value.length) {
+      // ⌫ on an empty line takes the quoted passage off.
+      if (event.key === "Backspace" && plain && el.value === "" && quote !== null) {
         event.preventDefault();
-        latest.current.onMove("talk");
-        return;
-      }
-      // Up into the open task: ↑ at the start of the conversation's line.
-      if (place === "talk" && canAnswer && plain && event.key === "ArrowUp" && el.selectionStart === 0 && el.selectionEnd === 0) {
-        event.preventDefault();
-        latest.current.onMove("task");
+        setQuote(null);
         return;
       }
       // How sure, said with the answer: ⌥1, ⌥2, ⌥3. The key's code is read, for ⌥1 types a character of its own on a Mac.
       const digit = /^Digit([123])$/.exec(event.code);
-      if (digit && place === "task" && event.altKey && !event.metaKey && !event.ctrlKey && !bare(text)) {
+      if (digit && place === "lesson" && taskOpen && quote === null && event.altKey && !event.metaKey && !event.ctrlKey && !bare(text)) {
         event.preventDefault();
         const picked = CONFIDENCE[Number(digit[1]) - 1];
         setConfidence((old) => (old === picked ? null : picked));
       }
     };
 
+    const onBlur = (event: React.FocusEvent<HTMLTextAreaElement>) => {
+      // The keyboard went to one of the line's own controls, or to the Mac (a picker): the line is still in use.
+      const to = event.relatedTarget as HTMLElement | null;
+      if (!to || to.closest(".line")) return;
+      if (!(!bare(held.current.text) || held.current.files.length > 0 || held.current.quote !== null)) latest.current.onLeftEmpty?.();
+    };
+
     const { place } = props;
-    const label = place === "task" ? "Your answer to the task" : place === "talk" ? "Say something to the tutor" : "Start, or say what to work on";
-    const help = (words: string) => latest.current.onHelp?.(words);
-    return (
-      <div className={`line ${place}${props.active ? " on" : ""}${files.length > 0 ? " with-files" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line={place}>
-        <div className="field-row">
-        <textarea
-          ref={box}
-          className="field"
-          // One field for both, so it is the "composer"; its other role is one
-          // element away: "talk" (its quiet end) under a task, "answer" (the open task) while talking.
-          data-drive="composer"
-          aria-label={label}
-          rows={1}
-          value={text}
-          spellCheck={place !== "task"}
-          placeholder={props.placeholder ?? ""}
-          onChange={(event) => change(event.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onFocus={() => place !== "rest" && !latest.current.active && latest.current.onMove(place)}
-        />
-        <span className="line-tools">
-          {/* Attaching, one control in every state of the line: photos of working and PDFs, with the next message. */}
-          <button
-            type="button"
-            className="clip"
-            data-drive="attach"
-            aria-label="Attach a photo or PDF"
-            title="Attach a photo or PDF"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void pick()}
-          >
-            Attach
-          </button>
-          {/* The one line's quiet end. Under a task it is also the step out to talk
-              (data-drive="talk"), so a harness or a click can say "talk" here. */}
-          {props.busy && text.trim() !== "" ? (
-            // Return while the tutor is busy keeps the words until it has finished.
-            <span key="queue" className="line-end" aria-hidden="true">
-              <span className="keys">↩</span> send when the tutor finishes
-            </span>
-          ) : props.busy && props.onStop ? (
-            <button className="line-stop" onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onStop?.()}>
-              <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
-            </button>
-          ) : place === "rest" && text.trim() === "" ? null : text.trim() !== "" && place !== "rest" ? (
-            // With words on the line, its end says what Return does with them.
-            <span key="send" className="line-end" aria-hidden="true">
-              <span className="keys">↩</span> {place === "task" ? "answer" : "send"}
-            </span>
-          ) : place === "task" ? (
-            <button
-              key="talk"
-              className="line-end"
-              data-drive="talk"
-              tabIndex={-1}
-              onFocus={() => latest.current.onMove("talk")}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                latest.current.onMove("talk");
-              }}
-            >
-              <span className="keys">esc</span> talk instead
-            </button>
-          ) : (
-            props.end &&
-            (props.onEnd ? (
-              // Back into the open task: the way back while its question is in view above.
-              <button key="answer" className="line-end" data-drive="answer" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onEnd?.()}>
-                <span className="keys">{props.end.keys}</span> {props.end.what}
+    const help = (words: string) => {
+      setStuck(false);
+      latest.current.onHelp?.(words);
+    };
+    const keep_ = (event: React.MouseEvent) => event.preventDefault();
+
+    if (place === "rest") {
+      return (
+        <div className={`line rest${props.active ? " on" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line="rest">
+          <div className="field-row">
+            <textarea
+              ref={box}
+              className="field"
+              data-drive="composer"
+              aria-label="Start, or say what to work on"
+              rows={1}
+              value={text}
+              spellCheck
+              placeholder={props.placeholder ?? ""}
+              onChange={(event) => change(event.target.value)}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+            />
+            <span className="line-tools">
+              <button type="button" className="clip" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
+                Attach
               </button>
-            ) : (
-              <span className="line-end" aria-hidden="true">
-                <span className="keys">{props.end.keys}</span> {props.end.what}
-              </span>
-            ))
-          )}
-        </span>
+              {/* With words on the line, its end says what Return does with them. */}
+              {text.trim() !== "" && props.end && (
+                <span className="line-end" aria-hidden="true">
+                  <span className="keys">{props.end.keys}</span> {props.end.what}
+                </span>
+              )}
+            </span>
+          </div>
         </div>
-        {/* Always there, so a file added by a drop or a paste is read out as it joins the line. */}
-        <p className="attached" role="group" aria-label="Files that go with the next message" aria-live="polite">
-          {files.map((file) => (
-            <span key={file} className="file">
-              {fileName(file)}
-              <button type="button" className="take-off" aria-label={`Take ${fileName(file)} off`} title="Take it off" onClick={() => setFiles((old) => old.filter((each) => each !== file))}>
-                ×
-              </button>
-            </span>
-          ))}
-        </p>
+      );
+    }
+
+    // At most two quiet controls, chosen by what the line holds now.
+    const attach = (
+      <button key="attach" type="button" className="quiet-act" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
+        Attach
+      </button>
+    );
+    const symbolsButton = (
+      <button key="symbols" type="button" className="quiet-act" data-drive="symbols" aria-expanded={symbols} onMouseDown={keep_} onClick={() => setSymbols((open) => !open)}>
+        Symbols
+      </button>
+    );
+    let tools: React.ReactNode[];
+    if (stuck) {
+      tools = [
+        <button key="help" type="button" className="quiet-act" data-drive="help" disabled={props.busy} onMouseDown={keep_} onClick={() => help(HELP.lost)}>
+          Help me
+        </button>,
+        <button key="dont-know" type="button" className="quiet-act" data-drive="dont-know" disabled={props.busy} onMouseDown={keep_} onClick={() => help(HELP.unknown)}>
+          I don’t know
+        </button>,
+      ];
+    } else if (props.busy && props.onStop) {
+      tools = [
+        typed ? symbolsButton : attach,
+        <button key="stop" type="button" className="quiet-act" data-drive="stop" onMouseDown={keep_} onClick={() => latest.current.onStop?.()}>
+          <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
+        </button>,
+      ];
+    } else if (typed || symbols) {
+      tools = [
+        symbolsButton,
+        props.taskOpen && quote === null ? (
+          <button key="talk" type="button" className="quiet-act" data-drive="send-talk" title="Send it as talk: it is not marked" onMouseDown={keep_} onClick={() => send(true)}>
+            <span className="keys">⌥↩</span> don’t mark
+          </button>
+        ) : (
+          attach
+        ),
+      ];
+    } else {
+      tools = props.taskOpen && props.onHelp
+        ? [
+            <button key="stuck" type="button" className="quiet-act" data-drive="stuck" aria-expanded={false} onMouseDown={keep_} onClick={() => setStuck(true)}>
+              Stuck
+            </button>,
+            attach,
+          ]
+        : [attach];
+    }
+
+    return (
+      <div className={`line lesson${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line="lesson">
+        {quote !== null && (
+          <p className="quote" title="⌫ on an empty line takes it off">
+            “{quote}”
+          </p>
+        )}
+        <div className="field-row">
+          {/* Always there, so a file added by a drop or a paste is read out as it joins the line. */}
+          <span className="attached" role="group" aria-label="Files that go with the next message" aria-live="polite">
+            {files.map((file) => (
+              <span key={file} className="file">
+                {fileName(file)}
+                <button type="button" className="take-off" aria-label={`Take ${fileName(file)} off`} title="Take it off" onClick={() => setFiles((old) => old.filter((each) => each !== file))}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </span>
+          <textarea
+            ref={box}
+            className="field"
+            data-drive="composer"
+            aria-label={quote !== null ? "Say something about the passage" : props.taskOpen ? "Your answer, or anything else to say" : "Say something to the tutor"}
+            rows={1}
+            value={text}
+            spellCheck
+            placeholder={props.placeholder ?? ""}
+            onChange={(event) => change(event.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onBlur={onBlur}
+          />
+          <span className="line-tools" role="group" aria-label={stuck ? "Help with the task" : "The line's tools"}>
+            {tools}
+          </span>
+        </div>
         {(confidence || queued) && (
           <p className="with">
             {confidence && <span className="said-sure">{confidence}</span>}
             {queued && <span className="queued">goes when the tutor finishes</span>}
           </p>
         )}
-        {place === "task" && props.onHelp && (
-          <p className="help-row" role="group" aria-label="Help with the task">
-            <button className="quiet-act" data-drive="hint" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.hint)}>
-              Hint
-            </button>
-            <button className="quiet-act" data-drive="lost" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.lost)}>
-              I’m lost
-            </button>
-            <button className="quiet-act" data-drive="dont-know" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.unknown)}>
-              I don’t know
-            </button>
-            <span className="help-gap" aria-hidden="true" />
-            <button className="quiet-act" data-drive="symbols" aria-expanded={symbols} onMouseDown={(e) => e.preventDefault()} onClick={() => setSymbols((open) => !open)}>
-              Symbols
-            </button>
-          </p>
-        )}
         {symbols && (
           <p className="symbols" role="group" aria-label="Symbols">
             {SYMBOLS.map((symbol) => (
-              <button key={symbol.name} className="symbol" title={symbol.name} aria-label={symbol.name} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(symbol)}>
+              <button key={symbol.name} className="symbol" title={symbol.name} aria-label={symbol.name} onMouseDown={keep_} onClick={() => insert(symbol)}>
                 {symbol.show}
               </button>
             ))}

@@ -58,8 +58,12 @@ export type Prefs = {
   textDark: string;
   /** Whether the lines that name keys are shown. */
   hints: boolean;
+  /** How the line the learner writes on is drawn: bare on the page's ground, or in a soft field. */
+  line: LineLook;
   keys: Record<KeyAction, string>;
 };
+
+export type LineLook = "bare" | "soft";
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
@@ -101,6 +105,7 @@ export const DEFAULTS: Prefs = {
   text: "",
   textDark: "",
   hints: true,
+  line: "soft",
   keys: {
     home: "cmd+1",
     commands: "cmd+k",
@@ -239,6 +244,7 @@ export function cleanPrefs(raw: Partial<Prefs>): Prefs {
     text: str(raw.text, ""),
     textDark: str(raw.textDark, ""),
     hints: typeof raw.hints === "boolean" ? raw.hints : DEFAULTS.hints,
+    line: raw.line === "bare" || raw.line === "soft" ? raw.line : DEFAULTS.line,
     keys,
   };
 }
@@ -281,6 +287,7 @@ export function applyPrefs(prefs: Prefs, schemeChanged = false): void {
   set("--text-l", colour(prefs.text, false));
   set("--text-d", colour(prefs.textDark, true));
   root.dataset.hints = prefs.hints ? "on" : "off";
+  root.dataset.field = prefs.line;
   if (prefs.scheme !== "system") root.dataset.scheme = prefs.scheme;
   else if (schemeChanged) delete root.dataset.scheme;
 }

@@ -183,7 +183,7 @@ try {
   await step(w, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(w, 600);
   await shoot(w, "session-plan", "Session with the plan panel shown");
-  await step(w, "focus talk", { op: "focus", target: "talk", by: "drive" });
+  await step(w, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(w, "ask for a change", { op: "type", text: CHANGE });
   await step(w, "send the change", { op: "key", key: "Enter" });
   await step(w, "the plan changes", { op: "wait_idle", timeout_ms: TURN_MS });

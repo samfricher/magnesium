@@ -31,8 +31,6 @@ export type LessonTurn = Omit<Turn, "posed"> & {
   posed?: string;
   /** For an answer: the task it answered, as it stood when it was sent. */
   question?: string;
-  /** For an answer the record kept no mark for: why, in the record's terms. */
-  unmarked?: string;
 };
 
 /** The exchange on screen: what the learner said and the tutor's reply to it. */
@@ -53,7 +51,6 @@ export type Live = {
   change?: PlanDiff;
   posed?: string;
   question?: string;
-  unmarked?: string;
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -93,7 +90,6 @@ export type Action =
   | { type: "released" }
   | { type: "sent"; shown: string; now: number; said?: Said; question?: string }
   | { type: "planned"; change: PlanDiff }
-  | { type: "unmarked"; since: number; reason: string }
   | { type: "picked"; shown: string; now: number }
   | { type: "event"; event: AgentEvent }
   | { type: "note"; notice: Notice }
@@ -130,7 +126,6 @@ function asTurn(live: Live): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
-    ...(live.unmarked ? { unmarked: live.unmarked } : {}),
   };
 }
 
@@ -272,7 +267,6 @@ export function reduce(state: SessionState, action: Action): SessionState {
               ...(last.change ? { change: last.change } : {}),
               ...(last.posed ? { posed: last.posed } : {}),
               ...(last.question ? { question: last.question } : {}),
-              ...(last.unmarked ? { unmarked: last.unmarked } : {}),
             }
           : null,
       };
@@ -297,17 +291,6 @@ export function reduce(state: SessionState, action: Action): SessionState {
         // Notices about the turn before go when the learner writes again; one that still stands stays.
         notices: state.notices.filter((n) => !aboutTheTurn(n)),
         startedMs: state.startedMs ?? action.now,
-      };
-    }
-    case "unmarked": {
-      // Only when the record still has no mark for that answer.
-      const mark = (turn: { marks?: Mark[] }) => (turn.marks ?? []).length > 0;
-      if (state.live && state.live.since === action.since) {
-        return mark(state.live) ? state : { ...state, live: { ...state.live, unmarked: action.reason } };
-      }
-      return {
-        ...state,
-        earlier: state.earlier.map((turn) => (turn.ms === action.since && turn.said === "answer" && !mark(turn) ? { ...turn, unmarked: action.reason } : turn)),
       };
     }
     case "planned": {
@@ -390,11 +373,35 @@ export function saidByTheWindow(text: string): boolean {
 }
 
 /**
- * The plain words the three help buttons send. The tutor gives the smallest
- * help that lets the learner take the next step, and the runtime asks a skill
- * got right with a hint again, cold, the next day.
+ * The plain words the help commands send. The tutor gives the smallest help
+ * that lets the learner take the next step, and the runtime asks a skill got
+ * right with a hint again, cold, the next day. On screen, Stuck offers "Help
+ * me", which sends `lost` until the tutor is taught words of Stuck's own, and
+ * "I don't know"; the menu bar keeps all three.
  */
 export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
+
+/** The longest passage a message quotes: enough to find the place, not a copy of the page. */
+const QUOTE_MAX = 600;
+
+/** A selection as a message quotes it: one line, its spaces collapsed, cut at a word near the limit. */
+export function quotable(selected: string): string {
+  const flat = selected.replace(/\s+/g, " ").trim();
+  if (flat.length <= QUOTE_MAX) return flat;
+  const cut = flat.slice(0, QUOTE_MAX);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), QUOTE_MAX - 40))}…`;
+}
+
+/** The message a quote and the words about it make: the passage as a Markdown quote, then the words. */
+export function withQuote(quote: string, words: string): string {
+  return `> ${quote}\n\n${words}`;
+}
+
+/** A message apart from the passage it quoted, as `withQuote` wrote them. */
+export function splitQuote(text: string): { quote: string | null; text: string } {
+  const found = /^> ([^\n]+)\n\n/.exec(text);
+  return found ? { quote: found[1], text: text.slice(found[0].length) } : { quote: null, text };
+}
 
 /**
  * What the learner said, apart from how sure they said they were. The window
