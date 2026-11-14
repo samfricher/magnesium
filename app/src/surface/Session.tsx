@@ -14,6 +14,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
+import { marksOfTurns } from "../marks";
 import { changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
@@ -156,41 +157,26 @@ function whyUnmarked(before: { said?: Said; question?: string }[], question: str
   return again ? "Only a first try at a task is marked; this was another try." : "The record kept no mark for this answer. The workspace page lists what it holds.";
 }
 
-/** "2026-11-12 21:01" for a moment, as the record writes when an answer was given. */
-function minuteOf(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 /**
  * A session's kept turns as the lesson draws them: how each message was
  * sent, the task it answered, the task a reply posed, the record's marks
- * (rows of `marks()` whose time falls between the turn before and this one,
- * one turn each), "no mark" for an answer the record has none for, and the
- * plan card the window read after a turn. Nothing is read from the tutor's
- * words.
+ * (the rows the window saw appear for the turn's message; for a turn kept
+ * without them, rows whose time falls between the turn before and this one),
+ * "no mark" for an answer the record has none for, and the plan card the
+ * window read after a turn. Nothing is read from the tutor's words.
  */
 export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: string | null): LessonTurn[] {
-  const free = [...(marks ?? [])].filter((mark) => !mark.paper);
+  const saids = saved.map((turn): Said | undefined => turn.intent ?? (opening(turn.learner) ? "opening" : isHelp(turn.learner) ? "help" : undefined));
+  const owned = marksOfTurns(saved, marks ?? [], (at) => saids[at] === "answer" || saids[at] === "help" || saids[at] === undefined);
   const out: LessonTurn[] = [];
   let open: string | null = null;
   saved.forEach((turn, at) => {
-    const said: Said | undefined = turn.intent ?? (opening(turn.learner) ? "opening" : isHelp(turn.learner) ? "help" : undefined);
+    const said = saids[at];
     const lesson: LessonTurn = { session: turn.session, ms: turn.ms, learner: turn.learner, tutor: turn.tutor, interrupted: turn.interrupted, ...(said ? { said } : {}) };
     if (said === "answer" && open) lesson.question = open;
     if (turn.noted && turn.posed && turn.task) lesson.posed = turn.task;
-    if (said === "answer" || said === "help" || said === undefined) {
-      const from = at > 0 ? minuteOf(saved[at - 1].ms) : "";
-      const to = minuteOf(turn.ms);
-      const mine = free.filter((mark) => mark.at >= from && mark.at <= to);
-      if (mine.length > 0) {
-        lesson.marks = mine;
-        for (const mark of mine) free.splice(free.indexOf(mark), 1);
-      } else if (said === "answer" && marks !== null) {
-        lesson.unmarked = whyUnmarked(out, lesson.question);
-      }
-    }
+    if (owned[at].length > 0) lesson.marks = owned[at];
+    else if (said === "answer" && marks !== null) lesson.unmarked = whyUnmarked(out, lesson.question);
     const change = session ? changeOf(session, turn.learner, turn.tutor) : null;
     if (change) lesson.change = change as PlanDiff;
     if (turn.noted) open = turn.task ?? null;

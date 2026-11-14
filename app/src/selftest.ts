@@ -11,13 +11,14 @@
 // a file attached by name, and no path or file text shown anywhere.
 
 import type { Actions } from "./App";
-import { attachedWords, splitAttached, tutorText } from "./lesson";
+import { attachedWords, splitAttached, tutorText, type LessonTurn } from "./lesson";
 import { tinyPdf } from "./demoPdf";
 import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
 import { comboOf, keyName, parseCombo } from "./prefs";
 import { sourceRef } from "./sources";
-import type { Core } from "./types";
+import { rebuild } from "./surface/Session";
+import type { Core, Mark, Turn as SavedTurn } from "./types";
 import { withoutPaths } from "./words";
 
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
@@ -116,6 +117,38 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const plain = [withoutPaths("Added 5 files to Study/materials."), withoutPaths("Change Study/midterm-1/plan.md"), withoutPaths("in .magnesium/backups"), withoutPaths("1/v in s/µM")];
     steps.withoutPaths = plain;
     if (plain.join("|") !== "Added 5 files to the course material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
+
+    // A reopened session shows each of the record's marks under the answer it
+    // was shown on live, by the record's id, also when several answers fall in
+    // one minute. A turn kept before the window kept ids matches by the minute.
+    {
+      const minute = new Date(2026, 10, 13, 13, 15, 0).getTime();
+      const row = (id: string, at = "2026-11-13 13:15", paper: string | null = null): Mark => ({ id, at, label: "sign of b", mark: "right", help: "none", cold: false, paper });
+      const kept = (second: number, extra: Partial<SavedTurn> = {}): SavedTurn => ({ session: "s", ms: minute + second * 1000, learner: `answer ${second}`, tutor: "…", interrupted: false, intent: "answer", ...extra });
+      // Each turn as "a-1+a-2" for its marks, "none" for an answer said to have none, "-" for neither.
+      const drawn = (turns: LessonTurn[]) => turns.map((turn) => (turn.marks ?? []).map((mark) => mark.id).join("+") || (turn.unmarked ? "none" : "-")).join(" ");
+      const posed = kept(0, { learner: "Go on", intent: "talk", noted: true, task: "Task 1", posed: true, mark_ids: [] });
+      const triesTurns = rebuild([posed, kept(10, { noted: true, task: "Task 1", mark_ids: [] }), kept(20, { noted: true, task: "Task 1", mark_ids: [] }), kept(30, { noted: true, task: "Task 1", mark_ids: ["a-3"] })], [row("a-3")], "s");
+      const reopened = {
+        // Answers to two tasks in one minute, each marked.
+        twoTasks: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20, { mark_ids: ["a-2"] })], [row("a-1"), row("a-2")], "s")),
+        // Three tries at one task in one minute; the record marked the third.
+        threeTries: drawn(triesTurns),
+        secondTry: triesTurns[2].unmarked ?? null,
+        // A row no kept answer had: from a terminal, at the same minute.
+        noAnswerKept: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20, { mark_ids: [] })], [row("a-1"), row("t-9")], "s")),
+        // Turns an earlier window kept, with no ids: by the minute, as before, and never a paper's row.
+        older: drawn(rebuild([kept(10), kept(130)], [row("a-1"), row("p-1", "2026-11-13 13:16", "Paper 1"), row("a-2", "2026-11-13 13:17")], "s")),
+        // An older turn and a newer one in the same minute: the older one does not take the newer one's mark.
+        mixed: drawn(rebuild([kept(10), kept(20, { mark_ids: ["a-2"] })], [row("a-1"), row("a-2")], "s")),
+        // A runtime that cannot list its marks: no mark, and no "no mark" either.
+        noRecord: drawn(rebuild([kept(10, { mark_ids: ["a-1"] }), kept(20)], null, "s")),
+      };
+      steps.reopenedMarks = reopened;
+      const wanted = { twoTasks: "a-1 a-2", threeTries: "- none none a-3", noAnswerKept: "a-1 none", older: "a-1 a-2", mixed: "a-1 a-2", noRecord: "- -" };
+      for (const [name, want] of Object.entries(wanted)) if (reopened[name as keyof typeof wanted] !== want) throw new Error(`a reopened session put a mark on the wrong answer (${name}): ${reopened[name as keyof typeof wanted]}, not ${want}`);
+      if (!reopened.secondTry?.startsWith("Only a first try")) throw new Error(`a second try was not said to be one: ${reopened.secondTry}`);
+    }
 
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.
     const page = document.createElement("div");
