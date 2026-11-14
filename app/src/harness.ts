@@ -32,6 +32,9 @@
 //                           is (task or talk), whether it is in the open task,
 //                           the open task's words, the files on the line,
 //                           where the keyboard is, and the PDF in view
+//   smooth {ms, scroll_by?, type_every?}  scroll the lesson and type on the
+//                           line for ms, as a learner would, and say how even
+//                           the frames were (longest gap, gaps over 50/100 ms)
 //   document                the PDF in view: the page at its top, how many,
 //                           its zoom, how many pages hold a picture, and
 //                           where the keyboard is
@@ -211,14 +214,14 @@ function focusName(): string | null {
   return held && held !== document.body ? (held.dataset.drive ?? held.dataset.role ?? held.className) : null;
 }
 
-/** The PDF in view, as a reader sees it: the page at its top, how many, how large it is drawn, and how many pages hold a picture now. */
-function pdfInView(): { page: number; of: number; zoom: string | null; drawn: number } | null {
+/** The PDF in view, as a reader sees it: the page at its top, how many, how large it is drawn, how many pages hold a picture now, and how far the fit's reading of the pages has got ("read of began now", in ms of the page's clock). */
+function pdfInView(): { page: number; of: number; zoom: string | null; drawn: number; inkRead: string | null } | null {
   const pdf = Array.from(document.querySelectorAll<HTMLElement>(".doc-pdf")).find(visible);
   if (!pdf) return null;
   const pages = Array.from(pdf.querySelectorAll<HTMLElement>(".doc-page"));
   const page = pages.filter((each) => each.offsetTop <= pdf.scrollTop + 24).length || 1;
   const zoom = pdf.closest(".panel.side")?.querySelector<HTMLElement>("[data-drive=zoom-fit]")?.innerText ?? null;
-  return { page, of: pages.length, zoom, drawn: pdf.querySelectorAll(".doc-page canvas").length };
+  return { page, of: pages.length, zoom, drawn: pdf.querySelectorAll(".doc-page canvas").length, inkRead: pdf.getAttribute("data-ink-read") };
 }
 
 function focusable(element: HTMLElement): HTMLElement {
@@ -564,6 +567,53 @@ async function run(op: Op): Promise<Result> {
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
       return { ok: true, ...(found as object), files, focus: focusName(), document: pdfInView() };
+    }
+    case "smooth": {
+      // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`
+      // ms, as a learner reading and writing would, and say how even the frames were: the longest gap between
+      // two, and how many gaps passed 50 and 100 ms (a frame is about 16). Also the PDF's reading, as `document`.
+      const ms = Number(op.ms ?? 5000);
+      const by = Number(op.scroll_by ?? 0);
+      const every = Number(op.type_every ?? 0);
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      const line = composer();
+      const started = performance.now();
+      let last = started;
+      let typed = 0;
+      let nextType = started + every;
+      let direction = 1;
+      const gaps: number[] = [];
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          gaps.push(now - last);
+          last = now;
+          if (surface && by > 0) {
+            if (surface.scrollTop + surface.clientHeight >= surface.scrollHeight - 2) direction = -1;
+            if (surface.scrollTop <= 0) direction = 1;
+            surface.scrollTop += by * direction;
+          }
+          if (line && every > 0 && now >= nextType) {
+            insert(line, "a");
+            typed += 1;
+            nextType = now + every;
+          }
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const sorted = [...gaps].sort((a, b) => a - b);
+      return {
+        ok: true,
+        frames: gaps.length,
+        longestGapMs: Math.round(sorted[sorted.length - 1] ?? 0),
+        medianGapMs: Math.round(sorted[Math.floor(sorted.length / 2)] ?? 0),
+        over50: gaps.filter((gap) => gap > 50).length,
+        over100: gaps.filter((gap) => gap > 100).length,
+        typed,
+        startedAt: Math.round(started),
+        pdf: pdfInView(),
+      };
     }
     case "document": {
       const pdf = pdfInView();

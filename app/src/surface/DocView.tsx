@@ -129,19 +129,24 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
         left = Math.min(left, seen.left);
         right = Math.max(right, seen.right);
       };
-      const box = (): Across | null =>
+      const drawnAcross = (): Across | null =>
         Number.isFinite(left) && right - left > 40 ? { left: Math.max(0, left - INK_MARGIN), right: Math.min(widest, right + INK_MARGIN) } : null;
+      // How far the reading has got, on the pages' element, for a check that times it.
+      const began = Math.round(performance.now());
+      const mark = (n: number) => box.current?.setAttribute("data-ink-read", `${n} ${pdf.numPages} ${began} ${Math.round(performance.now())}`);
       const first = Math.min(3, pdf.numPages);
       for (let n = 1; n <= first; n++) await read(n);
+      mark(first);
       if (!alive) return;
       setSizes(found);
-      const shown = box();
+      const shown = drawnAcross();
       setAcross(shown);
       for (let n = first + 1; n <= pdf.numPages; n++) {
         await read(n);
         if (!alive) return;
+        mark(n);
       }
-      const all = box();
+      const all = drawnAcross();
       if (all && (!shown || all.left < shown.left - 0.5 || all.right > shown.right + 0.5)) setAcross(all);
     })();
     return () => {
