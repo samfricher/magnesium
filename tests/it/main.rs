@@ -27,6 +27,7 @@ mod learner_read_surface;
 mod lifecycle;
 mod mcp_headless;
 mod mcp_host_metadata;
+mod paper_build;
 mod pending_chronology;
 mod pending_task_recovery;
 mod plugin_install;
