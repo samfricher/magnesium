@@ -13,3 +13,4 @@ This branch holds only images that pull requests and issues show. It is not part
 - `model-selector/before`, `model-selector/after`: a new session's first line before and after the model pick, and the states of its list, in the demo in Chrome.
 
 Every image uses made-up data. If this branch is deleted, the images in those pull requests and issues stop loading.
+- `frosted-glass`: the real window with frosted glass chosen, before and after, the options at each fork, the reading check over five backdrops, and the solid fallbacks. Every desktop behind the window is a made-up picture.
