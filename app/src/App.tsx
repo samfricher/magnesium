@@ -539,6 +539,8 @@ export function App() {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
   }, []);
   const onBusy = useCallback((key: string, busy: boolean) => setBusyKey((old) => (busy ? key : old === key ? null : old)), []);
+  const [asking, setAsking] = useState<Record<string, boolean>>({});
+  const onAsking = useCallback((key: string, now: boolean) => setAsking((old) => (Boolean(old[key]) === now ? old : { ...old, [key]: now })), []);
   const onStarted = useCallback((key: string) => {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" && each.pending ? { ...each, pending: undefined } : each)));
   }, []);
@@ -558,6 +560,17 @@ export function App() {
 
   const activeTab = tabs.find((each) => each.key === active) ?? HOME;
   const inSession = activeTab.kind === "session";
+  // Each tab's name; two sessions with one name are told apart by a number, in the bar and the Window menu.
+  const tabTitles = useMemo(() => {
+    const seen: Record<string, number> = {};
+    const named: Record<string, string> = {};
+    for (const tab of tabs) {
+      const title = tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
+      seen[title] = (seen[title] ?? 0) + 1;
+      named[tab.key] = seen[title] > 1 ? `${title} (${seen[title]})` : title;
+    }
+    return named;
+  }, [tabs]);
   const spec = useMemo((): MenuSpec => {
     const disabled: string[] = [];
     if (!inSession) disabled.push("attach", "photo", "symbols", "hint", "lost", "unknown");
@@ -568,11 +581,11 @@ export function App() {
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
-      tabs: tabs.map((tab) => ({ id: tab.key, title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "") })),
+      tabs: tabs.map((tab) => ({ id: tab.key, title: tabTitles[tab.key] })),
       disabled,
       titles: { plan: panel ? "Hide Plan" : "Show Plan", ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}) },
     };
-  }, [prefs.keys, workspaces, tabs, inSession, activeTab, taskOpen, busyKey, panel]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, busyKey, panel]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -742,8 +755,9 @@ export function App() {
   const tabViews: TabView[] = tabs.map((tab) => ({
     key: tab.key,
     kind: tab.kind,
-    title: tab.kind === "home" ? "Home" : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? ""),
-    busy: tab.key === busyKey,
+    title: tabTitles[tab.key],
+    busy: tab.key === busyKey && !asking[tab.key],
+    asking: Boolean(asking[tab.key]),
     folder: tab.kind === "session" ? tab.folder : null,
   }));
   const k = (action: KeyAction) => keyName(prefs.keys[action]);
@@ -760,6 +774,7 @@ export function App() {
         planKey={k("plan")}
         settingsKey={k("settings")}
         newKey={k("new-session")}
+        canNew={(workspaces?.length ?? 0) > 0}
         onPick={(key) => (key === "home" && active === "home" ? goWorkspace(null) : activate(key))}
         onClose={(key) => void closeTab(key)}
         onNew={() => newSession()}
@@ -815,7 +830,7 @@ export function App() {
                   <p key={text} className="record note">
                     {text}{" "}
                     <button className="plain" onClick={() => setNotes((old) => old.filter((n) => n !== text))}>
-                      dismiss
+                      Dismiss
                     </button>
                   </p>
                 ))}
@@ -863,6 +878,7 @@ export function App() {
                 onSession={onSession}
                 onTitle={onTitle}
                 onBusy={onBusy}
+                onAsking={onAsking}
                 onEngine={onEngine}
                 onSource={onSource}
                 onTaskChange={onTaskChange}

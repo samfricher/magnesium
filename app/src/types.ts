@@ -238,7 +238,8 @@ export type Decision = "allow_once" | "allow_always" | "refuse";
 
 export type Answer = { question: string; chosen: string[] };
 
-export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "other";
+/** "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed. */
+export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other";
 
 export type AgentEvent =
   | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean }

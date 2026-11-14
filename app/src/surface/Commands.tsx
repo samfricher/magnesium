@@ -36,7 +36,7 @@ export function Commands(props: Props) {
       run: act("go", workspace.folder),
     }));
     rows.push({ id: "open", label: "Open a folder…", text: "open folder choose another", hint: props.keys.openWorkspace, run: act("open-workspace") });
-    return <Layer key="switch" name="Switch workspace" mode="filter" placeholder="A workspace" rows={rows} keys="↩ open its page   esc close" onClose={props.onClose} />;
+    return <Layer key="switch" name="Switch workspace" mode="filter" placeholder="A workspace" rows={rows} keys="" onClose={props.onClose} />;
   }
   const rows: Row[] = [
     { id: "home", label: "Home", text: "home start workspaces library", hint: props.keys.home, drive: "command-home", run: act("home") },
@@ -45,8 +45,8 @@ export function Commands(props: Props) {
     ...(props.inSession ? [{ id: "close", label: "Close session", text: "close session stop end tab", hint: props.keys.closeSession, drive: "command-close-session", run: act("close-session") }] : []),
     { id: "settings", label: "Settings", text: "settings preferences font size colour keys engine", hint: props.keys.settings, drive: "command-settings", run: act("settings") },
     ...(props.inSession
-      ? [{ id: "plan", label: props.planShown ? "Hide the plan" : "Show the plan", text: "plan show hide panel tasks", hint: props.keys.plan, drive: "command-plan", run: act("plan") }]
+      ? [{ id: "plan", label: props.planShown ? "Hide plan" : "Show plan", text: "plan show hide panel tasks", hint: props.keys.plan, drive: "command-plan", run: act("plan") }]
       : []),
   ];
-  return <Layer key="commands" name="Commands" mode="filter" placeholder="A command" rows={rows} keys="↩ do it   esc close" onClose={props.onClose} />;
+  return <Layer key="commands" name="Commands" mode="filter" placeholder="A command" rows={rows} keys="" onClose={props.onClose} />;
 }

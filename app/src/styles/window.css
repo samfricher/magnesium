@@ -41,13 +41,16 @@
 /* Tabs stay on one row: those not shown shrink to a short name, the one
    shown keeps its full name, and one too far along is scrolled into view. */
 .tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-width: 5.5rem;
+  min-width: 0;
   max-width: 15rem;
   flex: 0 1 auto;
   border-radius: 6px;
 }
+/* A tab that can close keeps room for its mark, shown or not, so every gap in the row is the same. */
+.tab:not(.home) .tab-button { padding-right: 22px; }
 .tab.home,
 .tab.here { flex-shrink: 0; }
 .tab.home { min-width: 0; }
@@ -57,7 +60,7 @@
   gap: 6px;
   min-width: 0;
   padding: 4px 8px;
-  font: 400 12.5px/1.3 var(--app);
+  font: 400 13px/1.3 var(--app);
   color: var(--quiet);
   white-space: nowrap;
 }
@@ -67,7 +70,11 @@
 .tab.here .tab-button,
 .tab-button:hover { color: var(--text); }
 .tab-close {
-  padding: 2px 7px 2px 0;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 7px 2px 2px;
   font: 400 13px/1 var(--app);
   color: var(--hint);
   visibility: hidden;
@@ -89,11 +96,13 @@
 .bar-act {
   padding: 4px 8px;
   border-radius: 6px;
-  font: 400 12.5px/1.3 var(--app);
+  font: 400 13px/1.3 var(--app);
   color: var(--quiet);
 }
 .bar-act:hover { color: var(--text); }
 .bar-act.on { color: var(--text); background: var(--tint); }
+/* Settings while its tab is in front: said in the text's colour, without a second pill beside the tab's. */
+.bar-act.current { color: var(--text); }
 
 /* ------------------------------------------------------------------ */
 /* What is under the bar: one view in front.                          */
@@ -115,20 +124,34 @@
   visibility: hidden;
 }
 .session.in-front { visibility: visible; }
-.session.with-panel .surface { right: var(--panel-w); }
+/* With the plan beside it, the lesson keeps its column where it was while it fits left of the plan,
+   and moves only as far as it must when it does not. The surface runs under the plan, which has a ground of its own. */
+/* The column's left edge stays where it was; the column narrows to end before the plan, and moves
+   left only when it would be narrower than 24em. */
+.session.with-panel .surface,
+.session.with-panel .top-edge { right: var(--panel-w); }
+/* 100% is the room left of the panel; the column's own place with no panel is half of 100% + the panel's width, less half the measure. */
+.session.with-panel .column,
+.session.with-panel .top-edge .inner {
+  --left: max(calc(var(--hang) + 24px), min(calc((100% + var(--panel-w) - var(--measure)) / 2), calc(100% - var(--hang) - 28px - 24em)));
+  width: min(var(--measure), calc(100% - var(--hang) - 28px - var(--left)));
+  margin-left: var(--left);
+  margin-right: 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* Pages: Home, a workspace, Settings                                 */
 
+/* Every page sits on the session's own column: its measure, and its room under the tab bar. */
 .page-column {
-  width: min(34rem, calc(100% - 2 * var(--hang) - 40px));
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
-  padding: calc(56px - var(--tabs-h)) 0 24vh;
+  padding: var(--head-room) 0 24vh;
 }
-.settings-page .page-column { width: min(40rem, calc(100% - 2 * var(--hang) - 40px)); }
-.home-page .page-column { padding-top: 14vh; }
+.home-page .page-column { padding-top: calc(var(--head-room) + 0.4rem); }
 
-.page-head { margin: 0 0 1.4rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--faint); }
+.page-head { margin: 0 0 1.8rem; }
+.settings-page .page-head { padding-top: calc(0.765rem * 1.4 + 0.35rem); }
 .page-title {
   margin: 0;
   font: 400 1.235rem/1.3 var(--read);
@@ -136,7 +159,7 @@
 }
 .page-next {
   margin: 0;
-  font: 400 1.588rem/1.25 var(--read);
+  font: 400 1.235rem/1.3 var(--read);
   color: var(--text);
 }
 .page-head .where,
@@ -153,7 +176,7 @@
 
 .list-head {
   margin: 1.8rem 0 0.35rem;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--hint);
   letter-spacing: 0.01em;
 }
@@ -166,13 +189,14 @@ section:first-child > .list-head,
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: baseline;
   column-gap: 1.2rem;
-  width: calc(100% + 2 * var(--hang));
+  width: calc(100% + var(--hang));
   margin-left: calc(-1 * var(--hang));
-  padding: 0.38rem var(--hang);
+  padding: 0.38rem 0 0.38rem var(--hang);
   border-radius: 4px;
 }
 button.home-row:hover { background: var(--tint); }
-button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+button.home-row:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
+button.home-row:focus:hover { background: var(--tint); }
 :root[data-input="key"] button.home-row:focus-visible { outline: none; }
 .home-row.static { grid-template-columns: minmax(0, 1fr) max-content max-content; cursor: default; }
 .row-name {
@@ -184,7 +208,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   color: var(--text);
 }
 .row-name.file-name { font: 400 0.882rem/1.5 var(--app); }
-.row-when { font: 400 0.735rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row-when { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .home-row.static .quiet-act { margin-left: 0.4rem; }
 
 /* Home's first row: the most recent session, Return away. */
@@ -195,7 +219,9 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   padding-bottom: 0.55rem;
 }
 .home-row.first .next-name { font-size: 1.235rem; line-height: 1.35; white-space: normal; }
-.home-row.first .row-key { font: 400 0.824rem/1 var(--app); color: var(--ink); padding-left: 0.2rem; }
+.home-row.first .row-key { font: 400 0.824rem/1 var(--app); color: var(--quiet); padding-left: 0.2rem; visibility: hidden; }
+/* Return carries on from the row that has the focus: its mark goes with the focus. */
+.home-row.first:focus .row-key { visibility: visible; }
 
 .page-acts { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; margin: 0.8rem 0 0; }
 .home-page .page-acts { margin-top: 2.2rem; }
@@ -205,16 +231,17 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   padding: 0;
 }
 .quiet-act:hover:not(:disabled) { color: var(--text); }
-.quiet-act:disabled { opacity: 0.5; cursor: default; }
+.quiet-act:disabled { color: var(--faint); cursor: default; }
 .quiet-act.strong { color: var(--text); }
 
+/* Where a workspace's page sits, said as a session says its course: one small line over the heading. */
 .back {
-  display: inline-block;
-  margin: 0 0 1.1rem calc(-1 * var(--hang));
-  padding: 0.1rem var(--hang);
-  font: 400 0.765rem/1.5 var(--app);
+  display: block;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  font: 400 0.765rem/1.4 var(--app);
   color: var(--quiet);
-  border-radius: 4px;
+  letter-spacing: 0.01em;
 }
 .back:hover { color: var(--text); }
 
@@ -225,33 +252,36 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
   margin: 0 0 0.6rem calc(-1 * var(--hang));
   padding: 0.38rem var(--hang);
   border-radius: 4px;
-  font: 400 0.882rem/1.4 var(--app);
+  font: 400 1rem/1.45 var(--read);
   color: var(--text);
 }
-.new-session .plus { color: var(--ink); }
-.new-session:hover:not(:disabled),
-.new-session:focus { background: var(--tint); }
+.new-session { position: relative; }
+.new-session:hover:not(:disabled) { background: var(--tint); }
+.new-session:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
+:root[data-input="key"] .new-session:focus-visible { outline: none; }
 .new-session:disabled { color: var(--quiet); cursor: default; }
 
 .your-work { margin-top: 1.8rem; }
 .your-work summary { cursor: pointer; list-style: none; margin-top: 0; }
 .your-work summary::-webkit-details-marker { display: none; }
 .your-work summary::after { content: " ›"; color: var(--hint); }
+.your-work summary.list-head { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.your-work summary.list-head:hover { color: var(--text); }
 .your-work[open] summary::after { content: " ⌄"; }
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 
 .section-head {
-  margin: 2.4rem 0 0.6rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--faint);
-  font: 600 0.765rem/1.5 var(--app);
-  color: var(--text);
+  margin: 2.6rem 0 0.4rem;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--hint);
+  letter-spacing: 0.01em;
 }
+.settings-page section:first-of-type .section-head { margin-top: 0; }
 .setting {
   display: grid;
-  grid-template-columns: 10.5rem minmax(0, 1fr);
+  grid-template-columns: 9rem minmax(0, 1fr);
   column-gap: 1.2rem;
   align-items: baseline;
   padding: 0.5rem 0;
@@ -259,7 +289,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 .setting-name { margin: 0; font: 400 0.824rem/1.5 var(--app); color: var(--text); }
 .setting-control { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; min-width: 0; }
 .setting-value { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); font-variant-numeric: tabular-nums; }
-.setting-note { font: 400 0.735rem/1.5 var(--app); color: var(--quiet); }
+.setting-note { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .setting-note.wide { display: block; margin: 0.3rem 0 0.4rem; max-width: 36em; }
 .segments { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
 .segment {
@@ -272,6 +302,7 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 .segment:hover:not(.off) { color: var(--text); }
 .segment.chosen { color: var(--ink); border-bottom-color: var(--ink); }
 .segment.off { cursor: default; opacity: 0.6; }
+.segment.chosen.off { opacity: 1; }
 /* Every control shows where the keyboard is (forms guide): the chosen
    segment's ring is drawn on its words, as its radio is out of sight. */
 :root[data-input="key"] .segment input:focus-visible + span,
@@ -295,11 +326,29 @@ button.home-row:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(-
 .text-field.number { min-width: 0; width: 3.4rem; }
 .text-field::placeholder { color: var(--quiet); opacity: 1; }
 .font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; }
-input[type="range"] { accent-color: var(--ink); width: 11rem; }
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 0;
+}
+.text-field.number::-webkit-inner-spin-button,
+.text-field.number::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .swatches { display: inline-flex; gap: 0.4rem; }
 .swatch { display: inline-flex; cursor: pointer; }
-.swatch-face { width: 1.35rem; height: 1.35rem; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--edge); }
-.swatch.chosen .swatch-face { outline: 2px solid var(--ink); outline-offset: 2px; }
+.swatch-face { width: 1.35rem; height: 1.35rem; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--faint); }
+.swatch.chosen .swatch-face { outline: 1px solid var(--ink); outline-offset: 2px; }
 :root[data-input="key"] .swatch input:focus-visible + .swatch-face { outline: 2px dashed var(--ink); outline-offset: 2px; }
 .colour { display: inline-flex; align-items: center; gap: 0.35rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .colour .plain { margin-left: 0.1rem; }
@@ -324,21 +373,25 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   border-radius: 6px;
 }
 .colour-picker .swatches { flex-wrap: wrap; }
+.colour-picker .plain { font: 400 0.765rem/1.5 var(--app); margin-left: 0; }
 .text-field.hex { min-width: 0; width: 5.5rem; font-variant-numeric: tabular-nums; }
-.sample { margin: 0.8rem 0 0; padding: 0.7rem 0 0.2rem; font-size: 1rem; line-height: 1.62; color: var(--text); border-top: 1px dashed var(--faint); }
-.sample-you { font-size: 0.941rem; }
+.sample { margin: 0.6rem 0 0.6rem 10.2rem; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
+.sample sub { font-size: 0.68em; }
+.sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
+.sample-you::before { content: "›"; position: absolute; left: calc(-1 * var(--hang)); font: 400 0.882rem/1.6 var(--mono); color: var(--hint); }
 .key-cap {
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);
   padding: 0.05rem 0.5rem;
   min-width: 3.2rem;
-  text-align: center;
-  border: 1px solid var(--faint);
+  text-align: left;
+  border: 1px solid transparent;
   border-radius: 4px;
+  margin-left: -0.5rem;
 }
-.key-cap:hover { border-color: var(--line); }
-.key-cap.listening { color: var(--ink); border-color: var(--ink); }
-.key-cap.static { display: inline-block; min-width: 0; cursor: default; padding: 0 0.35rem; }
+.key-cap:hover { background: var(--tint); }
+.key-cap.listening { color: var(--ink); border-color: var(--ink); background: none; }
+.key-cap.static { display: inline; min-width: 0; cursor: default; padding: 0; margin: 0; border: 0; color: var(--quiet); }
 .key-row { padding: 0.28rem 0; }
 .fixed-keys { margin: 0.9rem 0 0; font: 400 0.765rem/1.9 var(--app); color: var(--quiet); }
 .fixed-keys p { margin: 0; }
@@ -357,19 +410,19 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   border-left: 1px solid var(--edge);
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);
+  background: var(--ground);
+  z-index: 5;
 }
 .panel-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.6rem;
-  padding-bottom: 0.6rem;
   margin-bottom: 0.9rem;
-  border-bottom: 1px solid var(--faint);
 }
 .panel-title { font: 400 0.941rem/1.35 var(--read); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-date { color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.panel-was { margin: -0.6rem 0 0.8rem; color: var(--ink); font-size: 0.706rem; }
+.panel-was { margin: -0.6rem 0 0.8rem; color: var(--quiet); font-size: 0.765rem; }
 .panel-items { list-style: none; margin: 0; padding: 0; }
 .panel-items li {
   display: grid;
@@ -378,16 +431,24 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   padding: 0.24rem 0;
   border-radius: 3px;
 }
-.panel-mark { color: var(--hint); font-size: 0.706rem; }
+.panel-mark { color: var(--hint); font-size: 0.765rem; }
 .panel-item { min-width: 0; font: 400 0.824rem/1.45 var(--read); color: var(--text); overflow-wrap: anywhere; }
 .panel-items li.done .panel-item { color: var(--quiet); }
 .panel-items li.current .panel-item,
 .panel-items li.current .panel-mark { color: var(--ink); }
-.panel-day { display: block; font: 400 0.706rem/1.5 var(--app); color: var(--quiet); }
-.panel-items li.changed .panel-day { color: var(--ink); }
+.panel-day { display: block; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.panel-items li.changed .panel-day { color: var(--quiet); }
 .panel-items li.changed { animation: changed 2.4s ease-out 1; }
-.panel-sub { margin: 1.3rem 0 0.35rem; color: var(--hint); font-size: 0.735rem; }
-.panel-items.steps .panel-item { font: 400 0.765rem/1.5 var(--app); }
+/* This session's steps, under the plan's item in hand. The item's dot says where the learner is. */
+.panel-item .panel-items.steps { margin: 0.3rem 0 0.15rem; }
+.panel-items.steps li { padding: 0.1rem 0; }
+.panel-items.steps .panel-item { font: 400 0.765rem/1.45 var(--read); color: var(--quiet); }
+.panel-items.steps li.done .panel-item { color: var(--quiet); }
+.panel-items li.current .panel-items.steps li:not(.current) .panel-mark { color: var(--hint); }
+.panel-items li.current .panel-items.steps .panel-item { color: var(--quiet); }
+/* The step in hand: in the ink, with no mark; "›" is the learner's own. */
+.panel-items li.current .panel-items.steps li.current .panel-item { color: var(--ink); }
+.panel-items li.current .panel-items.steps li.done .panel-item { color: var(--quiet); }
 .panel-note { color: var(--quiet); margin: 0; }
 
 /* ------------------------------------------------------------------ */
@@ -402,15 +463,13 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   gap: 0.7rem;
 }
 .clip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px;
+  padding: 0;
+  font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);
-  border-radius: 3px;
+  white-space: nowrap;
 }
 .clip:hover { color: var(--text); }
-.line.with-files .clip { color: var(--ink); }
-.line-stop { font: 400 0.706rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
+.line-stop { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
 .line-stop .keys { color: var(--hint); }
 .line-stop:hover { color: var(--text); }
 .attached:empty { margin: 0; }
@@ -419,7 +478,7 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   flex-wrap: wrap;
   gap: 0.35rem;
   margin: 0.35rem 0 0;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
 }
 .attached .file {
@@ -441,10 +500,11 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   gap: 0.1rem 1rem;
   margin: 0.4rem 0 0;
 }
-.help-row .quiet-act { font-size: 0.706rem; color: var(--hint); }
-.help-row .quiet-act:hover:not(:disabled) { color: var(--text); }
+.help-row .quiet-act { font-size: 0.765rem; color: var(--hint); }
+.help-row .quiet-act:hover:not(:disabled),
+.help-row .quiet-act[aria-expanded="true"] { color: var(--text); }
 .help-gap { flex: 1 1 auto; }
-.symbols { display: flex; flex-wrap: wrap; gap: 2px; margin: 0.35rem 0 0; }
+.symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.75rem, 1fr)); gap: 2px; margin: 0.35rem -0.35rem 0; }
 .symbol {
   min-width: 1.75rem;
   padding: 0.05rem 0.35rem;
@@ -454,8 +514,10 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
   text-align: center;
 }
 .symbol:hover { background: var(--tint); }
-.sent-files { margin: 0.15rem 0 0; font: 400 0.735rem/1.5 var(--app); color: var(--quiet); }
+.sent-files { margin: 0.15rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .answer .sent-files { margin-top: 0.2rem; }
+/* Files sent with talk sit with the words they went with, not nearer the reply under them. */
+.you.talk + .sent-files { margin: -0.9rem 0 1.1rem; }
 .plain.skip { margin-left: 0; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -469,8 +531,6 @@ input[type="range"] { accent-color: var(--ink); width: 11rem; }
 /* The field and its quiet tools share one row: the tools sit at its end. */
 .field-row { position: relative; }
 
-/* Settings' sections carry their own rule: the page's head needs none. */
-.settings-page .page-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 0.4rem; }
 
 /* Words for a screen reader only. */
 .visually-hidden {
@@ -499,3 +559,78 @@ dialog.layer::backdrop { background: transparent; }
 /* A note of the course's material, drawn as prose in the source viewer. */
 .sheet-body.prose-body { display: block; padding: 1.2rem 2rem 2rem; }
 .source-prose { max-width: var(--measure); margin: 0 auto; font-size: 1rem; line-height: 1.62; color: var(--text); }
+
+/* A colour's well keeps its column on every row; light and dark are named on the first. */
+.setting:has(.colour-field) { align-items: start; }
+.setting:has(.colour-field) .setting-name { padding-top: 0.1rem; }
+.colour-well .unnamed { visibility: hidden; }
+
+/* A row of past work with no action of its own: its date ends at the column's edge, as every row's does. */
+.home-row.static:not(:has(.quiet-act)) { grid-template-columns: minmax(0, 1fr) max-content; }
+
+
+/* The paste sheet is one field: no rules boxing it. */
+.layer.sheet.paste .sheet-name { border-bottom: 0; }
+.layer.sheet.paste .layer-keys { border-top: 0; }
+
+/* The step in hand: its mark in the ink. */
+.panel-items li.current .panel-items.steps li.current .panel-mark { color: var(--ink); }
+/* The steps' marks: one size and one width, in the column the items' marks use. */
+.panel-items.steps .panel-mark { font: 400 0.765rem/1 var(--app); text-align: center; width: 0.8rem; }
+
+/* Small quiet actions show the keyboard's place by an ink underline, as a chosen word is marked; no ring. */
+:root[data-input="key"] .quiet-act:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+/* A sheet's title at a page title's size. */
+.layer.sheet .sheet-name { font-size: 1.235rem; line-height: 1.3; }
+
+/* A page scrolled under the tab bar fades out under it, as a lesson does, instead of being cut. */
+.views > .view::before {
+  content: "";
+  position: sticky;
+  top: 0;
+  display: block;
+  height: 1.4rem;
+  margin-bottom: -1.4rem;
+  background: linear-gradient(to bottom, var(--ground), transparent);
+  z-index: 2;
+  pointer-events: none;
+}
+/* A layer takes the focus to hold the keyboard, not to be outlined. */
+:root[data-input="key"] .layer[tabindex]:focus-visible { outline: none; }
+/* A short paragraph does not end on one word alone. */
+.page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
+.tab-new:disabled { color: var(--faint); cursor: default; background: none; }
+
+/* "Your work" shows the keyboard's place as the other quiet actions do. */
+:root[data-input="key"] .your-work summary:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+
+/* How sure the learner said they were is their own word: quiet once sent. Ink is the record's. */
+.answer .said-sure { color: var(--quiet); }
+/* A card's label beside its ink rule: the rule marks the card, the label is quiet. */
+.card .record-head { color: var(--quiet); }
+/* The "+" waits out of sight until there is a workspace to start in. */
+.tab-new:disabled { visibility: hidden; }
+/* The folder's own action stands apart from the sections above it. */
+.folder-acts { margin-top: 2.6rem; }
+
+/* Small controls show the keyboard's place one way: an ink underline, no ring. */
+:root[data-input="key"] .plain:focus-visible,
+:root[data-input="key"] .clip:focus-visible,
+:root[data-input="key"] .line-end:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
+:root[data-input="key"] .segment input:focus-visible + span { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
+
+/* Help that cannot be asked for now looks it. */
+.help-row .quiet-act:disabled { color: var(--faint); }
+/* The keyboard's place in the tab bar and on the line's own controls: an ink bar under the words, unlike a tab
+   or switch that is on (the tint). */
+:root[data-input="key"] .tab-button:focus-visible,
+:root[data-input="key"] .tab-new:focus-visible,
+:root[data-input="key"] .bar-act:focus-visible,
+:root[data-input="key"] .side-tab-name:focus-visible { outline: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--ink); }
+:root[data-input="key"] .clip:focus-visible { outline: none; color: var(--text); box-shadow: 0 2px 0 var(--ink); }
+/* A tab whose tutor waits on the learner (a permission, a question): a ring, not the writing dot. */
+.ask-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }
+
+/* Settings keeps one column whatever line width is chosen in it: a column that followed the Line width slider moved
+   the slider under the pointer while it was dragged. */
+.settings-page .page-column { width: min(31rem, calc(100% - 2 * var(--hang) - 40px)); }

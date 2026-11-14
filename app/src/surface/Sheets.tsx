@@ -133,7 +133,8 @@ export function SourceSheet(props: { source: SourceRef; folder: string; onClose:
           }
         }}
       >
-        <p className="sheet-name">{name}</p>
+        {/* A note that opens with its own heading names itself. */}
+        {!(markdown && /^\s*#\s/.test(shown?.text ?? "")) && <p className="sheet-name">{name}</p>}
         {failure ? (
           <p className="sheet-note">{failure}</p>
         ) : !shown ? (
@@ -156,7 +157,7 @@ export function SourceSheet(props: { source: SourceRef; folder: string; onClose:
             {shown.truncated && <p className="sheet-note">Only the start of this file is shown.</p>}
           </div>
         )}
-        {shown?.kind !== "pdf" && <p className="layer-keys">esc close</p>}
+
       </div>
     </>
   );

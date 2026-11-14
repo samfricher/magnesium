@@ -148,7 +148,7 @@ export function HomePage(props: Props) {
               <p className="where">Your notes, slides and past papers can be in it already, or be added later.</p>
               <div className="choices-rest" role="group">
                 <button className="choice-rest home-row-choice" data-drive="open-folder" autoFocus={props.focus} onClick={props.onPickFolder}>
-                  Choose a folder…
+                  Open a folder…
                 </button>
                 <button className="choice-rest" onClick={props.onNewFolder}>
                   Make a new folder…
@@ -163,13 +163,13 @@ export function HomePage(props: Props) {
           <>
             {first && !props.step && (
               <section className="home-first" aria-label="Carry on">
-                <p className="list-head">{recent ? "Carry on" : "Start"}</p>
+                {recent && <p className="list-head">Carry on</p>}
                 <button
                   className="home-row first"
                   data-drive="start"
                   onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(first.folder))}
                 >
-                  <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "A new session"}</span>
+                  <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
                   <span className="row-when">
                     {displayName(first.name)}
                     {recent?.latest ? `, ${whenOpened(recent.latest.opened_ms)}` : ""}
@@ -181,11 +181,11 @@ export function HomePage(props: Props) {
               </section>
             )}
             <section className="home-list" aria-label="Workspaces">
-              <p className="list-head">Workspaces</p>
               {workspaces.map((workspace) => (
                 <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
                   <span className="row-name">{displayName(workspace.name)}</span>
-                  <span className="row-when">{whenOpened(workspace.opened_ms)}</span>
+                  {/* The session carried on says when; its workspace's row does not say it again. */}
+                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest ? "" : whenOpened(workspace.opened_ms)}</span>
                 </button>
               ))}
             </section>

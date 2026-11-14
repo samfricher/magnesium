@@ -24,8 +24,8 @@
   --ink: var(--ink-l);
   --raised: color-mix(in srgb, var(--ground), white 70%);
   --quiet: color-mix(in srgb, var(--text) 64%, var(--ground));
-  /* The window's own words: a tier quieter than the material's secondary text, still 4.5:1. */
-  --hint: color-mix(in srgb, var(--text) 60%, var(--ground));
+  /* The window's own words: one grey with the material's secondary text, 5:1 or more. */
+  --hint: var(--quiet);
   --line: color-mix(in srgb, var(--text) 50%, var(--ground));
   --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
   --edge: color-mix(in srgb, var(--text) 11%, transparent);
@@ -42,6 +42,7 @@
   --size: 17px;
   /* 66 characters of the reading face. */
   --measure: 31em;
+  --measure-rem: 31rem;
   /* How far the task's rule and the prompt hang left of the column. */
   --hang: 20px;
 
@@ -55,7 +56,6 @@
     --ink: var(--ink-d);
     --raised: color-mix(in srgb, var(--ground), white 6%);
     --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
-    --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
@@ -66,12 +66,12 @@
   --ink: var(--ink-d);
   --raised: color-mix(in srgb, var(--ground), white 6%);
   --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
-  --hint: color-mix(in srgb, var(--text) 55%, var(--ground));
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   color-scheme: dark;
 }
 
 /* The key-hint lines, off when the learner says so. */
+:root[data-hints="off"] .row-key,
 :root[data-hints="off"] .keys,
 :root[data-hints="off"] .keyhint,
 :root[data-hints="off"] .record-keys,
@@ -155,7 +155,6 @@ button {
   padding: var(--head-room) 0 0;
   transition: padding-top 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.now.rest { padding-top: 30vh; }
 .now.loading { padding-top: 30vh; }
 
 .head .course {
@@ -173,8 +172,7 @@ button {
   text-wrap: balance;
   transition: font-size 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.now.rest .head .next { font-size: 1.588rem; line-height: 1.25; }
-.now.lesson .head { margin-bottom: 1.5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--faint); }
+.now.lesson .head { margin-bottom: 1.8rem; }
 button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 .head .where {
@@ -187,7 +185,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .now > .keys,
 .now > .status {
   margin: 0.9rem 0 0;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
   white-space: pre;
 }
@@ -204,11 +202,11 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .choice-rest {
   padding: 0.38rem var(--hang);
   border-radius: 4px;
-  font: 400 0.882rem/1.4 var(--app);
+  font: 400 0.941rem/1.4 var(--app);
   color: var(--text);
 }
 .choice-rest:hover { background: var(--tint); }
-.choice-rest:focus { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+.choice-rest:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
 :root[data-input="key"] .choice-rest:focus-visible { outline: none; }
 
 /* ------------------------------------------------------------------ */
@@ -237,7 +235,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   caret-color: var(--ink);
   font: 400 0.941rem/1.6 var(--you);
 }
-.line .field::placeholder { color: var(--quiet); opacity: 1; font-family: var(--app); font-size: 0.765rem; }
+.line .field::placeholder { color: var(--quiet); opacity: 1; }
 
 /* The conversation's line: a prompt hung in the margin. */
 .line.rest::before,
@@ -290,7 +288,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .task-line + .line.talk { margin-top: 0.9rem; }
 .foot-keys {
   margin: 0.7rem 0 0;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
   white-space: pre;
 }
@@ -299,7 +297,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   position: absolute;
   right: 0;
   bottom: 0.3rem;
-  font: 400 0.706rem/1.6 var(--app);
+  font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
   pointer-events: none;
 }
@@ -307,11 +305,12 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   margin: 0.25rem 0 0;
   display: flex;
   gap: 0.9rem;
-  font: 400 0.735rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
 }
 .said-sure { color: var(--ink); }
-.plain { color: var(--quiet); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; font: inherit; margin-left: 0.4rem; }
+/* A quiet word that does something: as Hint and dismiss are, no underline. */
+.plain { color: var(--quiet); font: inherit; margin-left: 0.4rem; }
 .plain:hover { color: var(--text); }
 
 /* Under the line: the way to the other line. */
@@ -342,7 +341,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   overflow-wrap: anywhere;
   position: relative;
 }
-.you.pick { color: var(--quiet); }
+
 
 /* An answer sits inside the task it answers: on the task's rule, under it. */
 .answer {
@@ -358,7 +357,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   position: absolute;
   right: 0;
   top: 0.62rem;
-  font: 400 0.735rem/1.6 var(--app);
+  font: 400 0.765rem/1.6 var(--app);
 }
 
 /* The record's own lines: a mark, a change to the plan, a notice. */
@@ -368,30 +367,29 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--ink);
 }
 .answer .record { margin-top: 0.35rem; }
+.record.mark:is([data-mark="wrong"], [data-mark="partly"], [data-mark="declined"]) { color: var(--text); }
+/* A notice's dismiss is a quiet word, as the other actions in a lesson are. */
+.record.note .plain { text-decoration: none; color: var(--quiet); }
+.record.note .plain:hover { color: var(--text); }
 .you.talk + .record { margin: -0.6rem 0 1rem; }
 .record.quiet { color: var(--quiet); margin-bottom: 1rem; }
 .answer .record.unmarked { margin-bottom: 0; }
 .record.plan-brief { margin: 0.8rem 0 1rem; color: var(--quiet); }
 .record.note {
-  margin: 1rem 0 0 calc(-1 * var(--hang));
-  padding-left: calc(var(--hang) - 2px);
-  border-left: 2px solid var(--ink);
+  margin: 1rem 0 0;
   color: var(--text);
 }
 .notices { margin-top: 1rem; }
 .notices .record.note:first-child { margin-top: 0; }
 
-.record.plan {
-  margin: 1.2rem 0 1.6rem calc(-1 * var(--hang));
-  padding: 0.1rem 0 0.1rem calc(var(--hang) - 2px);
-  border-left: 2px solid var(--ink);
-}
-.record-head { margin: 0 0 0.3rem; font: 600 0.765rem/1.5 var(--app); color: var(--ink); }
+.record.plan { margin: 1.2rem 0 1.6rem; }
+.record-head { margin: 0 0 0.3rem; font: 400 0.765rem/1.5 var(--app); color: var(--ink); }
+.record.plan .record-head { color: var(--text); }
 .record.plan dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 1.4rem; row-gap: 0.1rem; }
 .record.plan dl > div { display: contents; }
 .record.plan dt { color: var(--text); font: 400 0.882rem/1.5 var(--read); }
 .record.plan dd { margin: 0; color: var(--quiet); font: 400 0.765rem/1.9 var(--app); }
-.record-keys { margin: 0.35rem 0 0; font: 400 0.706rem/1.5 var(--app); color: var(--quiet); }
+.record-keys { margin: 0.35rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 
 /* The tutor is writing: a caret where its words will go. */
 .working {
@@ -428,15 +426,26 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .card-question { margin: 0 0 0.5rem; }
 .card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
 /* The permission card's choices are the window's one kind of choice, as on the first screen. */
-.card-acts { gap: 2px; }
+.card-acts { gap: 2px 0.9rem; margin-left: -0.5rem; }
 .act {
-  padding: 0.3rem 0.7rem;
+  padding: 0.3rem 0.5rem;
   border-radius: 4px;
-  font: 400 0.824rem/1.4 var(--app);
+  font: 400 0.941rem/1.4 var(--you);
   color: var(--text);
 }
 .act:hover { background: var(--tint); }
-.act:focus { background: var(--tint); }
+/* No choice looks chosen before it is: the keyboard's place is a thin bar at the choice's edge. */
+/* A card's choice that Return would take: a "›" before it, as the line where one writes has.
+   Nothing about it reads as chosen, and the choices keep their place on the column. */
+.act { position: relative; }
+.act:focus::before {
+  content: "›";
+  position: absolute;
+  left: -0.45rem;
+  font: 400 0.882rem/1.4 var(--mono);
+  color: var(--ink);
+}
+:root[data-input="key"] .act:focus-visible { outline: none; }
 
 /* Files over the window. */
 .veil {
@@ -486,7 +495,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .layer-line {
   position: relative;
   padding: 0.85rem 1.1rem 0.75rem calc(1.1rem + var(--hang) + 0.25rem);
-  border-bottom: 1px solid var(--edge);
 }
 .layer-line::before {
   content: "›";
@@ -502,7 +510,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   background: transparent;
   color: var(--text);
   caret-color: var(--ink);
-  font: 400 0.882rem/1.6 var(--you);
+  font: 400 0.941rem/1.6 var(--you);
   padding: 0;
 }
 .layer-line input::placeholder { color: var(--quiet); opacity: 1; }
@@ -524,7 +532,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   padding: 0.36rem 1.1rem;
   cursor: default;
 }
-.row.on { background: var(--tint); box-shadow: inset 2px 0 0 var(--ink); }
+.row.on { box-shadow: inset 2px 0 0 var(--ink); }
 .row-mark {
   font: 400 0.765rem/1 var(--app);
   color: var(--quiet);
@@ -533,7 +541,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.thing .row-label { font: 400 0.941rem/1.45 var(--read); color: var(--text); }
 .row.do .row-label,
-.row.file .row-label { font: 400 0.824rem/1.6 var(--app); color: var(--text); }
+.row.file .row-label { font: 400 0.941rem/1.5 var(--app); color: var(--text); }
 .row.file .row-label { font-family: var(--app); color: var(--text); }
 .row.note { grid-template-columns: var(--hang) minmax(0, 1fr); }
 .row.note .row-label { font: 400 0.765rem/1.55 var(--app); color: var(--quiet); white-space: normal; }
@@ -545,7 +553,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-left: 1rem;
-  font: 400 0.735rem/1.6 var(--app);
+  font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
   text-align: right;
 }
@@ -555,7 +563,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 @keyframes changed {
   from { background: var(--ink-soft); }
 }
-.row.empty { color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang)); }
+.row.empty { display: block; color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem); }
 
 .choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.15rem 0.5rem; padding-left: 1rem; }
 .choice {
@@ -572,7 +580,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   margin: 0;
   padding: 0.55rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem);
   border-top: 1px solid var(--edge);
-  font: 400 0.706rem/1.5 var(--app);
+  font: 400 0.765rem/1.5 var(--app);
   color: var(--quiet);
   white-space: pre;
   overflow: hidden;
@@ -590,10 +598,10 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   margin: 0;
   padding: 0.8rem 1.1rem 0.7rem calc(1.1rem + var(--hang));
   border-bottom: 1px solid var(--edge);
-  font: 400 0.824rem/1.5 var(--app);
+  font: 400 1rem/1.4 var(--read);
   color: var(--text);
 }
-.sheet-body { flex: 1; overflow: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
+.sheet-body { flex: 1; overflow: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; mask-image: linear-gradient(to bottom, black calc(100% - 1.6rem), transparent); }
 .sheet-note { padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang)); color: var(--quiet); font: 400 0.824rem/1.5 var(--app); }
 .source-page { background: white; box-shadow: 0 0 0 1px var(--edge); }
 .source-text { margin: 0; width: 100%; white-space: pre-wrap; font: 400 0.824rem/1.6 var(--mono); color: var(--text); }
@@ -601,15 +609,21 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .paste-field {
   flex: 1;
   margin: 0;
-  padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang));
+  /* The learner's own face, on the reading column, as on the session's line. */
+  padding: 1rem max(calc(1.1rem + var(--hang)), calc((100% - var(--measure-rem)) / 2));
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--text);
   caret-color: var(--ink);
-  font: 400 0.824rem/1.6 var(--mono);
+  font: 400 0.941rem/1.6 var(--you);
 }
+
+/* A sheet's name and its notes start where its text does: on the reading column. */
+.layer.sheet .sheet-name,
+.layer.sheet .sheet-note,
+.layer.sheet .layer-keys { padding-left: max(calc(1.1rem + var(--hang)), calc((100% - var(--measure-rem)) / 2)); padding-right: max(1.1rem, calc((100% - var(--measure-rem)) / 2)); }
 
 @media (prefers-reduced-motion: reduce) {
   .now, .head .next { transition: none; }
@@ -620,7 +634,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 @media (max-width: 760px) {
   :root { --hang: 16px; }
   .now { padding-top: calc(var(--head-room) - 6px); }
-  .now.rest { padding-top: 24vh; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -647,6 +660,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   pointer-events: none;
 }
 .foot.in-task { margin-top: 0; }
+.foot:not(.in-task) { padding-top: 0.7rem; }
 .now.lesson { padding-bottom: 0; }
 .now.lesson .foot .task-line { margin-top: 0; }
 .fact {
@@ -655,27 +669,24 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--ink);
 }
 .fact.none { color: var(--hint); }
+/* The open task, pinned while its question is out of view: the one thing to come back to, whole and in the text's colour. */
 .parked {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
   width: 100%;
   margin: 0 0 0.7rem calc(-1 * var(--hang));
   padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
   border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
   font: 400 0.941rem/1.5 var(--read);
-  color: var(--quiet);
+  color: var(--text);
   cursor: text;
 }
-.parked:hover { color: var(--text); }
 .task-line.off {
   border-left-color: transparent;
   padding-top: 0;
   padding-bottom: 0;
 }
 .line-end {
-  font: 400 0.706rem/1.6 var(--app);
+  font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);
   background: none;
   white-space: nowrap;
@@ -688,20 +699,21 @@ button.line-end:hover { color: var(--text); }
 .line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
 .line.rest .field:focus { border-bottom-color: var(--ink); }
 .line.rest .line-tools { bottom: 0.35rem; }
-.line.rest .line-end { font-size: 0.824rem; color: var(--text); }
-.line.rest .line-end .keys { color: var(--ink); }
+.line.rest .line-end { color: var(--quiet); }
+.line.rest .line-end .keys { color: var(--quiet); }
 .now > .keys { color: var(--hint); }
 
 /* The top edge of a lesson. */
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(84px - var(--tabs-h));
+  height: calc(110px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) calc(66px - var(--tabs-h)), transparent);
+  /* Solid to the foot of the step's name, then a fade a line and a half deep. */
+  background: linear-gradient(to bottom, var(--ground) calc(64px - var(--tabs-h)), transparent);
 }
-.session.with-panel .top-edge { right: var(--panel-w); }
+
 .top-edge .inner {
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
@@ -720,5 +732,29 @@ button.line-end:hover { color: var(--text); }
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
-/* Inside the task, the band joins the question above it: nothing fades over the question. */
+/* Inside the task, the band joins the question above it: nothing fades over the question, and its rule runs on unbroken. */
 .foot.in-task::before { display: none; }
+.foot.in-task { padding-top: 0; }
+/* A settled task and the answer under it: one rule, not two with a gap between. */
+.turn:has(.tutor .prose > div.task:last-child) .tutor { margin-bottom: 0; }
+.turn:has(.tutor .prose > div.task:last-child) + .turn > .answer:first-child { margin-top: 0; padding-top: 0.6rem; }
+
+/* A session headed by its course alone: no rule under one small line. */
+.now.lesson .head.bare { margin-bottom: 1rem; }
+
+/* What the learner said before: its "›" in the quiet grey; the ink one is the live line's. */
+.you.talk::before { color: var(--hint); }
+/* While a card waits on the learner, the line under it holds no clip and sits at a turn's gap. */
+.foot.asking .clip { display: none; }
+.foot.asking { margin-top: 0.4rem; }
+/* An empty font field draws no rule until it has the focus or words. */
+.text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
+
+/* While a card waits, the line under it shows no prompt of its own. */
+.foot.asking .line.talk::before { visibility: hidden; }
+
+/* A notice that stops the lesson (a usage limit, a sign-in): at reading size so it is not skimmed past,
+   in the text's colour, as a mark that is not right yet is; the ink would read as a success. */
+.record.note[role="alert"] { color: var(--text); font-size: 0.941rem; }
+/* A card waiting at the foot keeps its whole rule: no fade over it. */
+.foot.asking::before { display: none; }

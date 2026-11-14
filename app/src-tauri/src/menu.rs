@@ -232,11 +232,11 @@ fn build<R: Runtime>(
         true,
         &[
             &command(table, "new-session", "New Session")?,
-            &command(table, "open-workspace", "Open Workspace…")?,
+            &command(table, "open-workspace", "Open a Folder…")?,
             &separator()?,
             &command(table, "close-session", "Close Session")?,
             &separator()?,
-            &command(table, "attach", "Attach…")?,
+            &command(table, "attach", "Attach a Photo or PDF…")?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -301,7 +301,6 @@ fn build<R: Runtime>(
             &command(table, "lost", "I’m Lost")?,
             &command(table, "unknown", "I Don’t Know")?,
             &separator()?,
-            &command(table, "photo", "Photo of Your Work…")?,
             &command(table, "symbols", "Symbols")?,
             &separator()?,
             &command(table, "stop-reply", "Stop the Reply")?,

@@ -501,7 +501,7 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
         matches!(
             e,
             AgentEvent::Notice {
-                kind: NoticeKind::Other,
+                kind: NoticeKind::Turn,
                 ..
             }
         )

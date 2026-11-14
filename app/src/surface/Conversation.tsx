@@ -40,14 +40,31 @@ function Marks({ marks }: { marks: Mark[] }) {
   );
 }
 
-export function PlanChange({ change, brief }: { change: PlanDiff; brief?: boolean }) {
-  const shown = change.changes.filter((each) => !each.route);
+/** What changed, one row for each thing that changed: "now before Confidence intervals, on Sun 15 Nov". */
+function byThing(changes: PlanDiff["changes"]): { what: string; detail: string }[] {
+  const rows: { what: string; detail: string }[] = [];
+  for (const each of changes) {
+    const row = rows.find((other) => other.what === each.what);
+    if (row) row.detail = `${row.detail}, ${each.detail.replace(/^now /, "")}`;
+    else rows.push({ what: each.what, detail: each.detail });
+  }
+  return rows;
+}
+
+/** "Midterm 2, Hypothesis tests and Confidence intervals". */
+function namesOf(rows: { what: string }[]): string {
+  const names = rows.map((row) => row.what);
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief?: boolean; planKey?: string | null }) {
+  const shown = byThing(change.changes.filter((each) => !each.route));
   if (shown.length === 0) return null;
-  // Once read, the change settles to one quiet line.
+  // Once read, the change settles to one quiet line: what changed, by name; the plan says how.
   if (brief) {
     return (
       <p className="record plan-brief" data-role="plan-change">
-        The plan changed: {shown.map((each) => `${each.what}, ${each.detail}`).join("; ")}.
+        The plan changed: {namesOf(shown)}.
       </p>
     );
   }
@@ -62,7 +79,7 @@ export function PlanChange({ change, brief }: { change: PlanDiff; brief?: boolea
           </div>
         ))}
       </dl>
-      <p className="record-keys">⌘P the whole plan</p>
+      {planKey && <p className="record-keys">{planKey} the whole plan</p>}
     </div>
   );
 }
@@ -76,7 +93,8 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
   const { text: words, confidence } = splitConfidence(attached.text);
   const marks = turn.marks ?? [];
   const sent = <Sent files={attached.files} working={attached.working} />;
-  if (turn.pick) return <Said text={words} className="you pick" />;
+  // A choice picked on a card is said by the learner, as talk is.
+  if (turn.pick) return <Said text={words} className="you talk pick" />;
   // Help asked for is the window's own words, said for the learner: one quiet line, not an answer.
   if (turn.said === "help" || (turn.said === undefined && isHelp(text))) {
     return (
@@ -101,7 +119,7 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
         <Marks marks={marks} />
         {marks.length === 0 && turn.unmarked && (
           <p className="record quiet unmarked" title={turn.unmarked}>
-            no mark
+            Not marked.
           </p>
         )}
       </div>
@@ -134,13 +152,15 @@ type TurnProps = {
   showQuestion: boolean;
   /** A later turn follows: what this one changed in the plan is one quiet line now. */
   settled?: boolean;
+  /** The key that shows the plan, while it is not shown beside the lesson; null while it is. */
+  planKey: string | null;
   onSource: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
   onHold: () => void;
 };
 
 /** One exchange. Finished exchanges are drawn once and kept: a new word in the live reply redraws only the live one. */
-export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, divider, task, showQuestion, settled, onSource, onNote, onHold }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold }: TurnProps) {
   const reply = turn.tutor;
   return (
     <article
@@ -156,7 +176,7 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, writing, d
         </div>
       )}
       {turn.interrupted && <p className="record quiet">Stopped.</p>}
-      {turn.change && <PlanChange change={turn.change} brief={settled} />}
+      {turn.change && <PlanChange change={turn.change} brief={settled} planKey={planKey} />}
     </article>
   );
 });
@@ -181,7 +201,7 @@ export function Notices({ notices, onDismiss }: { notices: Notice[]; onDismiss: 
         <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
           {withoutPaths(notice.text)}{" "}
           <button className="plain" onClick={() => onDismiss(notice.text)}>
-            dismiss
+            Dismiss
           </button>
         </p>
       ))}

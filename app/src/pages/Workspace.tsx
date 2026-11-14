@@ -121,6 +121,8 @@ export function WorkspacePage(props: Props) {
   const setUp = () => act(async () => setHome(await api.setUp(folder)));
 
   const name = home ? displayName(home.name) : displayName(folder.split("/").pop() ?? "");
+  // A kind beside each file only says something when the files are not all of one kind.
+  const mixed = materials !== null && materials !== "none" && new Set(materials.names.map(materialKind)).size > 1;
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const bySkill = new Map<string, Mark[]>();
@@ -145,14 +147,9 @@ export function WorkspacePage(props: Props) {
 
         <section aria-label="Sessions">
           <button className="new-session" data-drive="new-session" autoFocus={props.focus} disabled={!ready || sitting !== null} onClick={() => props.onNewSession(folder)}>
-            <span className="plus" aria-hidden="true">
-              +
-            </span>{" "}
             New session
           </button>
-          {sessions === null ? null : sessions.length === 0 ? (
-            <p className="page-note">No sessions yet.</p>
-          ) : (
+          {sessions === null || sessions.length === 0 ? null : (
             <div className="list" role="list">
               {sessions.map((info) => {
                 const title = sessionName(info, info.current ? (home?.last?.goal ?? null) : null);
@@ -203,7 +200,7 @@ export function WorkspacePage(props: Props) {
               {materials.names.map((file) => (
                 <button key={file} role="listitem" className="home-row file-row" onClick={() => props.onOpenMaterial(folder, `Study/materials/${file}`)}>
                   <span className="row-name">{materialTitle(file)}</span>
-                  <span className="row-when">{materialKind(file)}</span>
+                  {mixed && <span className="row-when">{materialKind(file)}</span>}
                 </button>
               ))}
               {materials.files > materials.names.length && <p className="page-note">and {materials.files - materials.names.length} more</p>}
@@ -266,8 +263,7 @@ export function WorkspacePage(props: Props) {
           )}
         </details>
 
-        <section aria-label="This folder">
-          <p className="list-head">This folder</p>
+        <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
             {home?.state === "not_set_up" && (
               <button className="quiet-act" disabled={busy} onClick={() => void setUp()}>
@@ -284,11 +280,12 @@ export function WorkspacePage(props: Props) {
                 Check again
               </button>
             )}
-            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : undefined} onClick={() => props.onForget(folder)}>
-              Take it off the list
+            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
+              Take this folder off the list
             </button>
           </p>
-          <p className="page-note">Taking it off the list leaves the folder and its sessions as they are.</p>
+          {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
+          {props.running && <p className="page-note">Close its running session first.</p>}
         </section>
       </div>
     </div>

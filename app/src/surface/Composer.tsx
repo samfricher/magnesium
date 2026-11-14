@@ -104,6 +104,8 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line: the one key worth naming here, and what it does. */
   end?: { keys: string; what: string } | null;
+  /** The end is a way somewhere (back into the open task): a press on it goes there. */
+  onEnd?: () => void;
   /** The key that stops the tutor's reply, named at the line's end while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
@@ -116,6 +118,8 @@ type Props = {
   onPick: () => Promise<string[]>;
   onHelp?: (words: string) => void;
   onStop?: () => void;
+  /** What stopping does now: "stop the reply", or "stop the tutor" while it waits on a card. */
+  stopWords?: string;
   /** Return on an empty line: what the line's end names, when there is something to carry on. */
   onEmptyReturn?: () => void;
 };
@@ -320,7 +324,7 @@ export const Composer = memo(
     const label = place === "task" ? "Your answer to the task" : place === "talk" ? "Say something to the tutor" : "Start, or say what to work on";
     const help = (words: string) => latest.current.onHelp?.(words);
     return (
-      <div className={`line ${place}${props.active ? " on" : ""}${files.length > 0 ? " with-files" : ""}`} data-line={place}>
+      <div className={`line ${place}${props.active ? " on" : ""}${files.length > 0 ? " with-files" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line={place}>
         <div className="field-row">
         <textarea
           ref={box}
@@ -339,7 +343,7 @@ export const Composer = memo(
           onFocus={() => place !== "rest" && !latest.current.active && latest.current.onMove(place)}
         />
         <span className="line-tools">
-          {/* The clip: photos and PDFs, with the next message. */}
+          {/* Attaching, one control in every state of the line: photos of working and PDFs, with the next message. */}
           <button
             type="button"
             className="clip"
@@ -349,25 +353,27 @@ export const Composer = memo(
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void pick()}
           >
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-              <path
-                d="M10.6 4.2 5.3 9.5a1.6 1.6 0 0 0 2.3 2.3l5.6-5.6a2.9 2.9 0 0 0-4.1-4.1L3.4 7.8a4.1 4.1 0 0 0 5.8 5.8l4.6-4.6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.25"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            Attach
           </button>
           {/* The one line's quiet end. Under a task it is also the step out to talk
               (data-drive="talk"), so a harness or a click can say "talk" here. */}
-          {props.busy && props.onStop ? (
+          {props.busy && text.trim() !== "" ? (
+            // Return while the tutor is busy keeps the words until it has finished.
+            <span key="queue" className="line-end" aria-hidden="true">
+              <span className="keys">↩</span> send when the tutor finishes
+            </span>
+          ) : props.busy && props.onStop ? (
             <button className="line-stop" onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onStop?.()}>
-              <span className="keys">{props.stopKey ?? "esc"}</span> stop the reply
+              <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
             </button>
+          ) : place === "rest" && text.trim() === "" ? null : text.trim() !== "" && place !== "rest" ? (
+            // With words on the line, its end says what Return does with them.
+            <span key="send" className="line-end" aria-hidden="true">
+              <span className="keys">↩</span> {place === "task" ? "answer" : "send"}
+            </span>
           ) : place === "task" ? (
             <button
+              key="talk"
               className="line-end"
               data-drive="talk"
               tabIndex={-1}
@@ -380,11 +386,17 @@ export const Composer = memo(
               <span className="keys">esc</span> talk instead
             </button>
           ) : (
-            props.end && (
+            props.end &&
+            (props.onEnd ? (
+              // Back into the open task: the way back while its question is in view above.
+              <button key="answer" className="line-end" data-drive="answer" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => latest.current.onEnd?.()}>
+                <span className="keys">{props.end.keys}</span> {props.end.what}
+              </button>
+            ) : (
               <span className="line-end" aria-hidden="true">
                 <span className="keys">{props.end.keys}</span> {props.end.what}
               </span>
-            )
+            ))
           )}
         </span>
         </div>
@@ -411,15 +423,12 @@ export const Composer = memo(
               Hint
             </button>
             <button className="quiet-act" data-drive="lost" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.lost)}>
-              I'm lost
+              I’m lost
             </button>
             <button className="quiet-act" data-drive="dont-know" disabled={props.busy} onMouseDown={(e) => e.preventDefault()} onClick={() => help(HELP.unknown)}>
-              I don't know
+              I don’t know
             </button>
             <span className="help-gap" aria-hidden="true" />
-            <button className="quiet-act" data-drive="photo" onMouseDown={(e) => e.preventDefault()} onClick={() => void pick()}>
-              Photo
-            </button>
             <button className="quiet-act" data-drive="symbols" aria-expanded={symbols} onMouseDown={(e) => e.preventDefault()} onClick={() => setSymbols((open) => !open)}>
               Symbols
             </button>

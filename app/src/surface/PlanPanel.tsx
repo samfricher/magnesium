@@ -11,7 +11,25 @@ import type { Plan } from "../types";
 import { shortDay, type PlanDiff } from "../words";
 import { Line } from "./Rich";
 
-const MOVED_WORDS: Record<string, string> = { up: "moved up", down: "moved down", new: "new", day: "day moved" };
+const MOVED_WORDS: Record<string, string> = { up: "moved", down: "moved", new: "new", day: "day moved" };
+
+/** This session's steps, under the plan's item in hand: done, the one in hand (in ink), to do. */
+function Steps({ steps }: { steps: Plan["steps"] }) {
+  return (
+    <ol className="panel-items steps" aria-label="This session's steps">
+      {steps.map((step, at) => (
+        <li key={at} className={`${step.status}${step.status === "doing" ? " current" : ""}`} aria-current={step.status === "doing" ? "step" : undefined}>
+          <span className="panel-mark" aria-hidden="true">
+            {step.status === "done" ? "✓" : ""}
+          </span>
+          <span className="panel-item">
+            <Line text={step.step} />
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: Plan | null; changed: PlanDiff | null; id?: string }) {
   // The item in hand: the one the plan marks doing, else the first not done.
@@ -51,7 +69,7 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: 
                     data-drive={`plan-${item.id}`}
                   >
                     <span className="panel-mark" aria-hidden="true">
-                      {item.status === "done" ? "✓" : here ? "●" : "○"}
+                      {item.status === "done" ? "✓" : here ? "●" : ""}
                     </span>
                     <span className="panel-item">
                       <Line text={item.title} />
@@ -60,31 +78,15 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed, id }: { plan: 
                           {[moved ? MOVED_WORDS[moved] : null, item.day ? shortDay(item.day) : null].filter(Boolean).join(", ")}
                         </span>
                       )}
+                      {here && steps.length > 0 && <Steps steps={steps} />}
                     </span>
                   </li>
                 );
               })}
             </ol>
           )}
-          {steps.length > 0 && (
-            <>
-              <p className="panel-sub">
-                <Line text={plan.goal!} />
-              </p>
-              <ol className="panel-items steps" aria-label="This session's steps">
-                {steps.map((step, at) => (
-                  <li key={at} className={`${step.status}${step.status === "doing" ? " current" : ""}`} aria-current={step.status === "doing" ? "step" : undefined}>
-                    <span className="panel-mark" aria-hidden="true">
-                      {step.status === "done" ? "✓" : step.status === "doing" ? "●" : "○"}
-                    </span>
-                    <span className="panel-item">
-                      <Line text={step.step} />
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </>
-          )}
+          {/* A session whose steps belong to no item of the plan: they stand on their own. */}
+          {steps.length > 0 && (plan.items.length === 0 || current === undefined) && <Steps steps={steps} />}
           {empty && <p className="panel-note">No plan yet. Tell the tutor what this course is for, and it writes one.</p>}
         </>
       )}

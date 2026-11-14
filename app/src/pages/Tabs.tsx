@@ -15,7 +15,7 @@ import { memo, useEffect, useRef } from "react";
 
 import { Line } from "../surface/Rich";
 
-export type TabView = { key: string; kind: "home" | "session" | "settings"; title: string; busy: boolean; folder: string | null };
+export type TabView = { key: string; kind: "home" | "session" | "settings"; title: string; busy: boolean; asking: boolean; folder: string | null };
 
 /** The id of a tab's button, which its panel is labelled by. */
 export const tabId = (key: string) => `tab-${key}`;
@@ -28,6 +28,8 @@ type Props = {
   planKey: string;
   settingsKey: string;
   newKey: string;
+  /** There is a workspace to start a session in. */
+  canNew: boolean;
   onPick: (key: string) => void;
   onClose: (key: string) => void;
   onNew: () => void;
@@ -83,7 +85,7 @@ export const Tabs = memo(function Tabs(props: Props) {
                 onKeyDown={(event) => onKeyDown(event, at)}
                 onAuxClick={(event) => event.button === 1 && tab.kind !== "home" && props.onClose(tab.key)}
               >
-                {tab.busy && <span className="live-dot" aria-hidden="true" />}
+                {tab.asking ? <span className="ask-dot" aria-hidden="true" /> : tab.busy && <span className="live-dot" aria-hidden="true" />}
                 {tab.kind === "home" ? (
                   <span className="tab-name" data-drive="home">
                     Home
@@ -93,7 +95,7 @@ export const Tabs = memo(function Tabs(props: Props) {
                     <Line text={tab.title} />
                   </span>
                 )}
-                {tab.busy && <span className="visually-hidden">, the tutor is writing</span>}
+                {tab.asking ? <span className="visually-hidden">, the tutor waits for you</span> : tab.busy && <span className="visually-hidden">, the tutor is writing</span>}
               </button>
               {tab.kind !== "home" && (
                 // For the pointer only: a tablist holds tabs, so the keyboard closes a tab with Delete or ⌘W.
@@ -114,7 +116,7 @@ export const Tabs = memo(function Tabs(props: Props) {
           );
         })}
       </div>
-      <button type="button" className="tab-new" data-drive="new-session" aria-label="New session" title={`New session   ${props.newKey}`} onClick={props.onNew}>
+      <button type="button" className="tab-new" data-drive="new-session" aria-label="New session" title={`New session   ${props.newKey}`} disabled={!props.canNew} onClick={props.onNew}>
         +
       </button>
       <div className="tabbar-end">
@@ -131,7 +133,7 @@ export const Tabs = memo(function Tabs(props: Props) {
             Plan
           </button>
         )}
-        <button type="button" className="bar-act" data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>
+        <button type="button" className={props.active === "settings" ? "bar-act current" : "bar-act"} data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>
           Settings
         </button>
       </div>
