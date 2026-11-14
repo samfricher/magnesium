@@ -3,8 +3,9 @@
 // A session not yet begun shows the next thing, already chosen, and the line
 // to write on; Return starts it. A session begun fills the same surface: the
 // tutor's words in the reading face, the learner's in the face they type in,
-// an answer written inside the task it answers, the record's lines small and
-// in ink, and one line at the foot. An earlier session opens with its saved
+// the record's lines small and in ink, and one line to write on: the page's
+// last line, which rises to the foot of the window when the learner types
+// while reading higher up. An earlier session opens with its saved
 // turns and no tutor running; the first thing written continues it.
 //
 // The window holds one tutor's program at a time. The tab that holds it is
@@ -15,7 +16,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 
 import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
-import { changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
+import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
@@ -57,8 +58,8 @@ export type SessionHandle = {
   busy: () => boolean;
   /** The documents open beside the lesson, for the menu. */
   docs: () => Docs;
-  /** Where the learner is, for the evidence harness: the phase, the line's place, the open task. */
-  probe: () => { phase: string; line: "task" | "talk"; held: boolean; task: string | null; open: boolean; busy: boolean };
+  /** Where the learner is, for the evidence harness: the phase, where the line is ("end", "raised" over the page, or "away" with the end out of view), the open task. */
+  probe: () => { phase: string; line: "end" | "raised" | "away"; task: string | null; open: boolean; busy: boolean };
 };
 
 type Props = {
@@ -142,28 +143,11 @@ export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask
 }
 
 /**
- * Why the record kept no mark for an answer, in the record's terms. Only a
- * first try at a task is marked, so a second answer to the same task is not.
- */
-function unmarkedWhy(session: SessionState, since: number): string {
-  const turns = [...session.earlier, ...(session.live ? [session.live] : [])] as { since?: number; ms?: number; said?: Said; question?: string; learner: string }[];
-  const at = turns.findIndex((turn) => (turn.since ?? turn.ms) === since);
-  return whyUnmarked(turns.slice(0, Math.max(0, at)), at >= 0 ? turns[at].question : undefined);
-}
-
-/** Why the record kept no mark for an answer to `question`, after the turns before it: the same line for the same case, every time. */
-function whyUnmarked(before: { said?: Said; question?: string }[], question: string | undefined): string {
-  const again = question !== undefined && before.some((turn) => turn.said === "answer" && turn.question === question);
-  return again ? "Only a first try at a task is marked; this was another try." : "The record kept no mark for this answer. The workspace page lists what it holds.";
-}
-
-/**
  * A session's kept turns as the lesson draws them: how each message was
  * sent, the task it answered, the task a reply posed, the record's marks
  * (the rows the window saw appear for the turn's message; for a turn kept
  * without them, rows whose time falls between the turn before and this one),
- * "no mark" for an answer the record has none for, and the plan card the
- * window read after a turn. Nothing is read from the tutor's words.
+ * and the plan card the window read after a turn. Nothing is read from the tutor's words.
  */
 export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: string | null): LessonTurn[] {
   const saids = saved.map((turn): Said | undefined => turn.intent ?? (opening(turn.learner) ? "opening" : isHelp(turn.learner) ? "help" : undefined));
@@ -176,7 +160,6 @@ export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: strin
     if (said === "answer" && open) lesson.question = open;
     if (turn.noted && turn.posed && turn.task) lesson.posed = turn.task;
     if (owned[at].length > 0) lesson.marks = owned[at];
-    else if (said === "answer" && marks !== null) lesson.unmarked = whyUnmarked(out, lesson.question);
     const change = session ? changeOf(session, turn.learner, turn.tutor) : null;
     if (change) lesson.change = change as PlanDiff;
     if (turn.noted) open = turn.task ?? null;
@@ -249,7 +232,6 @@ function liveTurn(session: SessionState): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
-    ...(live.unmarked ? { unmarked: live.unmarked } : {}),
   };
 }
 
@@ -262,13 +244,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [session, dispatch] = useReducer(reduce, emptySession);
   const [sittingStart, setSittingStart] = useState(0);
   const [sittingTitle, setSittingTitle] = useState<string>(tab.title);
-  const [line, setLineState] = useState<"task" | "talk">("talk");
+  // The line is up at the foot of the window, over the page: the learner began writing while reading higher up.
+  const [raised, setRaisedState] = useState(false);
+  // The page's end is in view, and the line with it.
+  const [atEnd, setAtEnd] = useState(true);
   const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   // What the tutor changed in the plan in this sitting, for the panel.
   const [changed, setChanged] = useState<PlanDiff | null>(null);
   const [draft, setDraft] = useState("");
-  const [answerDraft, setAnswerDraft] = useState("");
   const [painted, setPainted] = useState(false);
   // The lesson's heading has scrolled away: the top edge names the lesson and its step.
   const [headGone, setHeadGone] = useState(false);
@@ -276,21 +260,18 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [scrolled, setScrolled] = useState(false);
   // What the first question from earlier is about, and the day it was last answered, from the record.
   const [dueTopic, setDueTopic] = useState<string | null>(null);
-  // The record's latest fact (a mark, a change to the plan, no mark), kept in view at the foot until the next message.
-  const [fact, setFact] = useState<{ kind: "mark" | "plan" | "none"; text: string; title?: string; since: number } | null>(null);
+  // The record's latest fact (a mark, a change to the plan), kept in view at the foot until the next message.
+  const [fact, setFact] = useState<{ kind: "mark" | "plan"; text: string; title?: string; since: number } | null>(null);
   // The fact's own line is in view: the foot does not repeat it.
   const [factSeen, setFactSeen] = useState(true);
-  // This session's engine says which task is open (Magnesium's does): the
-  // line follows what it says, not a guess from the reply's words.
-  const engineTells = useRef(false);
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
   const stuck = useRef(true);
+  // Where the lesson was scrolled at the last scroll event: only a move up lets it go of its foot.
+  const lastTop = useRef(0);
   const restoring = useRef<number | null>(null);
-  // The exchange whose finished reply last placed the learner's line.
-  const settled = useRef<number | null>(null);
   const started = useRef(false);
 
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
@@ -327,8 +308,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   docsNow.current = docs;
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ props, phase, home, plan, session, line, place, task: null as OpenTask | null });
-  now.current = { props, phase, home, plan, session, line, place, task: now.current?.task ?? null };
+  const now = useRef({ props, phase, home, plan, session, raised, atEnd, place, task: null as OpenTask | null });
+  now.current = { props, phase, home, plan, session, raised, atEnd, place, task: now.current?.task ?? null };
 
   useImperativeHandle(outer, () => box.current!);
 
@@ -340,10 +321,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
-  const setLine = useCallback((where: "task" | "talk") => {
-    setLineState(where);
-    keepPlace(now.current.place, { line: where });
+  const setRaised = useCallback((up: boolean) => {
+    now.current.raised = up;
+    setRaisedState(up);
   }, []);
+  /** The learner is writing: away from the page's end, the line comes up to the foot of the window. */
+  const raise = useCallback(() => {
+    if (now.current.phase === "lesson" && !now.current.atEnd && !now.current.raised) setRaised(true);
+  }, [setRaised]);
 
   // ---------------------------------------------------------------------------
   // Reading
@@ -393,24 +378,18 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (opened && (opened.checks_due ?? 0) + opened.redos_due > 0) void readDueTopic();
       const planning = refreshPlan();
       const kept = placeOf(place);
-      setDraft(kept.draft);
-      setAnswerDraft(kept.answerDraft);
+      // Words an older window kept on the task's own line are this line's draft.
+      setDraft(kept.draft || kept.answerDraft);
       if (tab.session) {
         const [saved, marks] = await Promise.all([api.lessonTurns(folder, tab.session).catch(() => [] as SavedTurn[]), api.marks(folder).catch(() => null)]);
         if (!alive) return;
         // The open task: what the engine said after the last turn it noted, else the one kept with the place.
         const noted = [...saved].reverse().find((turn) => turn.noted);
-        if (noted) engineTells.current = true;
         const open = noted ? (noted.task ?? null) : kept.task;
         const shown = rebuild(saved, marks, tab.session);
         dispatch({ type: "shown", turns: shown, ...(noted || kept.task ? { task: { text: open } } : {}) });
-        if (saved.length > 0) settled.current = saved[saved.length - 1].ms;
         setSittingStart(0);
         if (!tab.title && opened?.last?.goal) setSittingTitle(opened.last.goal);
-        // As it was left: with a task open the caret is in its answer line,
-        // unless the learner left words waiting on the talk line.
-        const taskShown = noted || kept.task ? open !== null : openTaskAt(shown) >= 0;
-        setLineState(taskShown && !(kept.line === "talk" && kept.draft.trim()) ? "task" : "talk");
         restoring.current = kept.seenMs > 0 ? kept.fromFoot : 0;
         setPhase("lesson");
       } else {
@@ -444,29 +423,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       const since = now.current.session.live?.since ?? 0;
       setFact({ kind: "mark", text: markWords(event.mark), since });
     }
-    // The engine says which task is open: a task the reply just posed takes
-    // the learner's line; after help with it, the line goes back in; after
-    // anything else it is on the conversation's line.
-    if (event.type === "open_task" && now.current.phase === "lesson") {
-      engineTells.current = true;
-      const live = now.current.session.live;
-      const reply = live ? tutorText(live) : "";
-      if (event.task && (event.posed || poses(reply, event.task))) setLine("task");
-      // After help with it, or when a lesson opens with it still open, the task is the live one.
-      else if (event.task && (live?.said === "help" || live?.said === "opening")) setLine("task");
-      else setLine("talk");
-    }
-    // The record has been read for the last message: an answer it kept no mark for says so, the same way every time.
     // A session named before its goal was known: the goal names it once the tutor has set one.
     if (event.type === "turn_ended" && provisionalTitle.current) void nameByOwnGoal();
-    if (event.type === "settled") {
-      const live = now.current.session.live;
-      if (live && live.said === "answer" && (live.marks ?? []).length === 0 && !live.interrupted) {
-        const reason = unmarkedWhy(now.current.session, live.since);
-        dispatch({ type: "unmarked", since: live.since, reason });
-        setFact({ kind: "none", text: "no mark", title: reason, since: live.since });
-      }
-    }
     if (event.type === "plan_changed") {
       const was = now.current.plan;
       void refreshPlan().then((fresh) => {
@@ -488,23 +446,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       });
     }
   };
-
-  // When a reply is whole, the line goes where the next thing is: into the
-  // task the reply set, back into the task after help with it, and otherwise
-  // onto the conversation's line.
-  useEffect(() => {
-    const live = session.live;
-    // An engine that says which task is open places the line itself; this effect can run after it did, from an earlier render.
-    if (!live || live.status !== "idle" || settled.current === live.since || phase !== "lesson" || session.task !== undefined || engineTells.current) return;
-    settled.current = live.since;
-    const reply = tutorText(live);
-    if (reply === "" && !live.error) return;
-    const turns = [...session.earlier, liveTurn(session)!];
-    const open = openTaskAt(turns);
-    if (hasTask(reply) && !live.interrupted) setLine("task");
-    else if (live.said === "help" && open >= 0) setLine("task");
-    else setLine("talk");
-  }, [session, phase, setLine]);
 
   // ---------------------------------------------------------------------------
   // Lessons
@@ -535,7 +476,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       else dispatch({ type: "reopened" });
       setSittingStart(0);
       dispatch({ type: "sent", shown, now: Date.now(), said });
-      setLineState("talk");
       await send(api);
       props.onEngine();
       return true;
@@ -606,9 +546,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (phase === "rest") void startRef.current(sending.text);
       return;
     }
-    if (sending.place === "task") void sayRef.current(sending.text, isHelp(sending.text) ? "help" : "answer", now.current.task?.text);
+    // Sent, the line goes back to the page's end, where the reply comes.
+    setRaised(false);
+    // One line for everything: with a task open, a message may be its answer, and the record decides.
+    // Help asked for, ⌥↩ and a quoted passage are never an answer.
+    const task = now.current.task?.text;
+    if (isHelp(sending.text)) void sayRef.current(sending.text, "help", task);
+    else if (task !== undefined && !sending.talk) void sayRef.current(sending.text, "answer", task);
     else void sayRef.current(sending.text, "talk");
-  }, []);
+  }, [setRaised]);
   const startRef = useRef(start);
   startRef.current = start;
   const sayRef = useRef(say);
@@ -673,8 +619,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const attach = paths.filter((path) => kinds.test(path));
     const other = paths.filter((path) => !kinds.test(path));
     if (attach.length > 0) {
-      const working = now.current.line === "task" || now.current.task !== null;
-      void onAttach(attach, working).then((saved) => lineRef.current?.add(saved));
+      void onAttach(attach, now.current.task !== null).then((saved) => lineRef.current?.add(saved));
     }
     if (other.length > 0) {
       void api.addMaterial(other, folder).then(
@@ -751,11 +696,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const handle: SessionHandle = {
     event: (event) => onEvent(event),
     command: (command) => {
-      const { phase, task } = now.current;
+      const { phase } = now.current;
       if (command === "hint" || command === "lost" || command === "unknown") {
         if (phase !== "lesson") return false;
         askHelp(command === "hint" ? "Can I have a hint?" : command === "lost" ? "I'm lost" : "I don't know");
-        if (task) setLine("task");
         return true;
       }
       if (command === "attach" || command === "photo") {
@@ -780,13 +724,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         lineRef.current?.focus();
         return true;
       }
-      const { session, phase, line } = now.current;
+      const { session, raised } = now.current;
       if (isBusyNow(session)) {
         interrupt();
         return true;
       }
-      if (phase === "lesson" && line === "task") {
-        setLine("talk");
+      // The line up over the page goes back down to the end, its words kept.
+      if (raised) {
+        setRaised(false);
         return true;
       }
       return false;
@@ -801,8 +746,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     busy: () => isBusyNow(now.current.session),
     docs: () => docsNow.current,
     probe: () => {
-      const { phase, line, task, session } = now.current;
-      return { phase, line, held: phase === "lesson" && line === "task" && task !== null, task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
+      const { phase, raised, atEnd, task, session } = now.current;
+      return { phase, line: raised ? "raised" : atEnd ? "end" : "away", task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
     },
   };
   const handleRef = useRef(handle);
@@ -848,6 +793,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     }
     if (restoring.current !== null) {
       el.scrollTop = el.scrollHeight - el.clientHeight - restoring.current;
+      // Reopened where the learner was reading: the lesson stays there as it grows.
+      stuck.current = restoring.current < 6;
+      lastTop.current = el.scrollTop;
       restoring.current = null;
     }
   }, [phase, painted]);
@@ -901,9 +849,43 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
     setScrolled(el.scrollTop > 4);
     // At the foot within a few pixels: any scroll up to read lets the lesson go, so a resize does not pull it back.
-    stuck.current = fromFoot < 6;
+    // Only a move up does. A scroll event is delivered a frame late, and a reply still coming can have grown the
+    // page under it by then; read as a scroll away, that would leave the line under the window at the end of a reply.
+    const up = el.scrollTop < lastTop.current - 1;
+    lastTop.current = el.scrollTop;
+    if (up) stuck.current = fromFoot < 6;
+    else if (fromFoot < 6) stuck.current = true;
+    const end = measureEnd();
+    // Read away from the end with nothing on the line, and the keyboard is the page's again: Space pages down.
+    if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
+      (document.activeElement as HTMLElement).blur();
+    }
     keepPlace(now.current.place, { fromFoot: Math.round(fromFoot) });
   };
+
+  /**
+   * Whether the line, the page's last line, is in view, kept for the render.
+   * A tab behind another one is not drawn, and WebKit can still send it a
+   * scroll then, with every measure at nothing: that says nothing, so it is
+   * not read, and the tab is measured again when it comes to the front.
+   */
+  const measureEnd = (): boolean | null => {
+    const el = surface.current;
+    if (!el || el.clientHeight === 0 || now.current.phase !== "lesson") return null;
+    const line = nowRef.current?.querySelector<HTMLElement>(".foot");
+    const end = !line || line.getBoundingClientRect().top < el.getBoundingClientRect().bottom - 8;
+    if (end !== now.current.atEnd) {
+      now.current.atEnd = end;
+      setAtEnd(end);
+    }
+    return end;
+  };
+  useEffect(() => {
+    if (!props.active) return;
+    const frame = requestAnimationFrame(() => measureEnd());
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.active, phase]);
 
   // ---------------------------------------------------------------------------
   // What the surface shows
@@ -915,10 +897,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const task = useMemo(() => openTaskOf(session, turns), [session, turns]);
   const openAt = task?.at ?? -1;
   now.current.task = task;
-  const held = phase === "lesson" && line === "task" && task !== null;
-  // The task's question is said above its line unless the reply just above
-  // posed it: in full while the learner is in it, else on one quiet line.
-  const parked = task !== null && openAt !== turns.length - 1;
   // The open task is kept with where the learner was, so a reopened window has it as a task.
   const taskText_ = task?.text ?? null;
   useEffect(() => {
@@ -926,7 +904,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     props.onTaskChange(tab.key, taskText_ !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskText_, phase]);
-  const restated = parked ? (held ? task.text : firstWords(task.text, 160)) : null;
   // Whether the reply that asks the open task is in view above the line: while it is, the foot
   // does not say the question again; out of view, it does.
   // Whether the question is in view: while it is, the foot does not pin or restate it.
@@ -937,7 +914,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
     if (!root || !asked || task === null) return setQuestionInView(false);
     const foot = root.querySelector<HTMLElement>(".foot");
-    const pinned = foot?.querySelector<HTMLElement>(".parked, .restated");
+    const pinned = foot?.querySelector<HTMLElement>(".parked");
     const view = root.getBoundingClientRect();
     const box = asked.getBoundingClientRect();
     // The line's top, as it would be with no question pinned over it.
@@ -960,7 +937,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       root.removeEventListener("scroll", again);
       window.removeEventListener("resize", again);
     };
-  }, [task, openAt, session, held, props.panel]);
+  }, [task, openAt, session, raised, props.panel]);
   // A session named by the learner's first words: its heading would only say them again.
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
@@ -1022,7 +999,41 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (sending.text.trim() !== "" || rest?.start) onSend(sending);
   };
 
-  const onHold = useCallback(() => setLine("task"), [setLine]);
+  const putAway = useCallback(() => setRaised(false), [setRaised]);
+
+  // Words typed anywhere in the lesson, or in a document beside it, are the
+  // learner's: they go to the line, which rises if the page's end is out of
+  // view, and a passage selected when the first key is typed is quoted with
+  // them. Space and the arrows still move the page, a control keeps its
+  // Return, and a key bound to a command keeps its command.
+  useEffect(() => {
+    if (!props.active || phase !== "lesson") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.isComposing || event.keyCode === 229) return;
+      const { props: current, session: shown } = now.current;
+      if (current.covered || shown.cards.length > 0) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable], .layer, .card")) return;
+      const enter = event.key === "Enter" && !event.altKey && !event.shiftKey;
+      const char = event.key.length === 1 && event.key !== " ";
+      if (!enter && !char) return;
+      if (enter && target?.closest("button, a, summary, [role='button'], [role='option']")) return;
+      if (actionOf(event, current.prefs.keys)) return;
+      const selection = window.getSelection();
+      const selected = selection && !selection.isCollapsed && selection.anchorNode && box.current?.contains(selection.anchorNode) ? selection.toString() : "";
+      event.preventDefault();
+      raise();
+      lineRef.current?.write(char ? event.key : "", selected);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [props.active, phase, raise]);
+
+  // A press on the open task is a start on it: the line takes the keyboard.
+  const onHold = useCallback(() => {
+    raise();
+    lineRef.current?.focus();
+  }, [raise]);
   const onDismiss = useCallback((text: string) => dispatch({ type: "dismiss", text }), []);
   const onDecide = useCallback(
     (id: string, decision: Decision) => {
@@ -1108,7 +1119,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const sittingTurns = phase === "lesson" ? turns.slice(shownFrom) : [];
   const stopKey = keyName(props.prefs.keys["stop-reply"]) || "esc";
   const paused = props.covered || !props.active || session.cards.length > 0;
-  const lineEnd = task && !held ? { keys: "↑", what: "back to the task" } : null;
   // The record's latest fact is said once, beside what it marks. The foot repeats it only while that line is out of view, and never under an open task.
   const footFact = fact && task === null && !factSeen ? fact : null;
 
@@ -1171,10 +1181,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     active
                     busy={false}
                     paused={paused}
-                    canAnswer={false}
                     taskOpen={false}
                     onSend={restSend}
-                    onMove={() => {}}
                     onNote={note}
                     onAttach={onAttach}
                     onPasteImage={onPasteImage}
@@ -1231,7 +1239,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       key={`${turn.ms}-${index}`}
                       turn={turn}
                       open={index === openAt}
-                      held={index === openAt && held && !parked}
+                      held={false}
                       linksOpen={index !== openAt}
                       opensNow={isPaper}
                       writing={live && session.live!.status !== "idle"}
@@ -1251,65 +1259,39 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 <Notices notices={session.notices} onDismiss={onDismiss} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
-                  // The foot: one band that stays in view whatever the scroll.
-                  // The record's latest fact, then the one line, whose role
-                  // follows where it sits: inside the open task it is that
-                  // task's answer, else it is talk.
-                  <div className={`foot${held ? " in-task" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
-                    {task && !held && !questionInView && (
-                      <button
-                        className="parked"
-                        data-drive="answer"
-                        onFocus={() => setLine("task")}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          setLine("task");
-                        }}
-                      >
+                  // The line: the page's last line, under the reply. Typed into while the learner reads
+                  // higher up, it rises to the foot of the window over the page, and goes back down when
+                  // the words are sent or put away. The record's latest fact sits under it at the end.
+                  <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
+                    {task && !raised && !questionInView && (
+                      <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={task.text} />
                       </button>
                     )}
-                    <div className={`task-line${held ? " on" : " off"}${held && (!restated || questionInView) ? " joined" : ""}`}>
-                      {held && restated && !questionInView && (
-                        <p className="restated">
-                          <Line text={restated} />
-                        </p>
-                      )}
-                      <Composer
-                        key={`line-${place}`}
-                        ref={lineRef}
-                        place={held ? "task" : "talk"}
-                        placeKey={place}
-                        initial={answerDraft || draft}
-                        active
-                        busy={isBusy}
-                        paused={paused}
-                        canAnswer={task !== null}
-                        taskOpen={task !== null}
-                        end={lineEnd}
-                        onEnd={
-                          lineEnd
-                            ? () => {
-                                setLine("task");
-                                // The line takes the keyboard back, even from a document being read beside it.
-                                window.setTimeout(() => lineRef.current?.focus(), 0);
-                              }
-                            : undefined
-                        }
-                        placeholder={held ? (restated && questionInView ? "Your answer to the task above" : "Your answer") : "Say something to the tutor"}
-                        stopKey={stopKey}
-                        onSend={onSend}
-                        onMove={setLine}
-                        onNote={note}
-                        onAttach={onAttach}
-                        onPasteImage={onPasteImage}
-                        onPick={onPick}
-                        onHelp={askHelp}
-                        onStop={ownBusy ? stopReply : undefined}
-                        stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
-                      />
-                    </div>
-                    {footFact && (
+                    <Composer
+                      key={`line-${place}`}
+                      ref={lineRef}
+                      place="lesson"
+                      placeKey={place}
+                      initial={draft}
+                      active={atEnd || raised}
+                      busy={isBusy}
+                      paused={paused}
+                      taskOpen={task !== null}
+                      stopKey={stopKey}
+                      onSend={onSend}
+                      onNote={note}
+                      onAttach={onAttach}
+                      onPasteImage={onPasteImage}
+                      onPick={onPick}
+                      onHelp={askHelp}
+                      onStop={ownBusy ? stopReply : undefined}
+                      stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
+                      onWrite={raise}
+                      onPutAway={putAway}
+                      onLeftEmpty={putAway}
+                    />
+                    {footFact && !raised && (
                       <p className={`fact ${footFact.kind}`} title={footFact.title} data-role="fact">
                         {footFact.text}
                       </p>

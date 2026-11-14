@@ -379,6 +379,17 @@ export function SettingsPage(props: Props) {
               onPick={(hints) => change({ hints })}
             />
           </Setting>
+          <Setting name="Your line">
+            <Choice
+              name="Your line"
+              options={[
+                ["bare", "Bare line"],
+                ["soft", "Soft field"],
+              ]}
+              value={prefs.line}
+              onPick={(line) => change({ line })}
+            />
+          </Setting>
         </section>
 
         <section id="settings-appearance" aria-labelledby="h-appearance">

@@ -58,9 +58,9 @@
 //   quit
 //
 // The names a harness clicks by (data-drive): "start" (Home's first row),
-// "composer", "answer" and "talk" (the session's line), "home", "new-session",
-// "settings", "plan-toggle", "attach", "tab-<n>" (the n-th tab, from 1),
-// "hint", "lost", "dont-know", "symbols" (under the answer line).
+// "composer" (the session's line), "home", "new-session", "settings",
+// "plan-toggle", "tab-<n>" (the n-th tab, from 1), and the line's tools:
+// "attach", "stuck", "help", "dont-know", "symbols", "send-talk", "stop".
 
 import { core, isDemo } from "./bridge";
 import type { AgentEvent, Intent } from "./types";

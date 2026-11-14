@@ -48,7 +48,7 @@ const shots = [
   ["panel", "panel", 400],
   ["panel-changed", "panel-changed", 500],
   ["panel-narrow", "panel", 400, { width: 720, height: 560 }],
-  // The line: help under the answer, symbols, a file on the line.
+  // The line: Stuck and Attach with a task open, symbols, a file on the line.
   ["help-row", "help-row", 300],
   ["symbols", "symbols", 300],
   ["attach", "attach", 400],

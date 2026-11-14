@@ -33,6 +33,8 @@
   --scrim: color-mix(in srgb, var(--ground) 62%, transparent);
   --shadow: 0 18px 50px rgba(20, 22, 26, 0.13), 0 2px 6px rgba(20, 22, 26, 0.06);
   --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
+  /* The soft field the learner may write in: a shade under the page in light and over it in dark. A field lighter than a light page looked worse when it was tried. */
+  --well: color-mix(in srgb, var(--text) 5%, var(--ground));
 
   --read: Charter, "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -57,6 +59,7 @@
     --raised: color-mix(in srgb, var(--ground), white 6%);
     --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --well: color-mix(in srgb, var(--ground), white 6%);
     color-scheme: dark;
   }
 }
@@ -67,6 +70,7 @@
   --raised: color-mix(in srgb, var(--ground), white 6%);
   --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --well: color-mix(in srgb, var(--ground), white 6%);
   color-scheme: dark;
 }
 
@@ -239,7 +243,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 /* The conversation's line: a prompt hung in the margin. */
 .line.rest::before,
-.line.talk::before,
 .you.talk::before,
 .aside-line .prompt {
   content: "›";
@@ -252,40 +255,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .aside-line .prompt { position: static; display: inline-block; margin-left: calc(-1 * var(--hang)); }
 
-/* The task's line: inside the task, on its rule, under its question. */
-.task-line {
-  position: relative;
-  margin: 1.2rem 0 0 calc(-1 * var(--hang));
-  padding: 0.45rem 0 0.3rem calc(var(--hang) - 2px);
-  border-left: 2px solid color-mix(in srgb, var(--ink) 40%, var(--faint));
-}
-.task-line.on { border-left-color: var(--ink); }
-.task-line.joined { margin-top: 0; }
-.task-line .line.task { margin: 0; }
-.line.task .field {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 0.15rem;
-}
-.line.task.on .field { border-bottom-color: var(--ink); }
-.task-line .restated {
-  margin: 0 0 0.4rem;
-  font-size: 1rem;
-  line-height: 1.55;
-  color: var(--text);
-  cursor: text;
-}
-/* A task left open while the learner talks: one quiet line, its answer line folded away. */
-.task-line.parked { padding-top: 0.1rem; padding-bottom: 0.1rem; }
-.task-line.parked .restated {
-  margin: 0;
-  font-size: 0.941rem;
-  color: var(--quiet);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.task-line.parked .line.task { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.task-line + .line.talk { margin-top: 0.9rem; }
 .foot-keys {
   margin: 0.7rem 0 0;
   font: 400 0.765rem/1.5 var(--app);
@@ -343,37 +312,18 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 
 
-/* An answer sits inside the task it answers: on the task's rule, under it. */
-.answer {
-  position: relative;
-  margin: 0 0 1.4rem calc(-1 * var(--hang));
-  padding: 0.55rem 0 0.15rem calc(var(--hang) - 2px);
-  border-left: 2px solid var(--faint);
-}
-.answer .you { margin: 0; }
-.answer .question { margin: 0 0 0.3rem; font-size: 0.941rem; line-height: 1.5; color: var(--quiet); }
-.answer.help .you { color: var(--quiet); }
-.answer .said-sure {
-  position: absolute;
-  right: 0;
-  top: 0.62rem;
-  font: 400 0.765rem/1.6 var(--app);
-}
-
 /* The record's own lines: a mark, a change to the plan, a notice. */
 .record {
   margin: 0.3rem 0 0;
   font: 400 0.765rem/1.5 var(--app);
   color: var(--ink);
 }
-.answer .record { margin-top: 0.35rem; }
 .record.mark:is([data-mark="wrong"], [data-mark="partly"], [data-mark="declined"]) { color: var(--text); }
 /* A notice's dismiss is a quiet word, as the other actions in a lesson are. */
 .record.note .plain { text-decoration: none; color: var(--quiet); }
 .record.note .plain:hover { color: var(--text); }
 .you.talk + .record { margin: -0.6rem 0 1rem; }
 .record.quiet { color: var(--quiet); margin-bottom: 1rem; }
-.answer .record.unmarked { margin-bottom: 0; }
 .record.plan-brief { margin: 0.8rem 0 1rem; color: var(--quiet); }
 .record.note {
   margin: 1rem 0 0;
@@ -639,38 +589,11 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 
 /* ------------------------------------------------------------------ */
-/* The foot: one band, always in view. The record's latest fact, a task
-   left open (one quiet line), and the one line to write on. */
-
-.foot {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  margin: 1.2rem calc(-1 * var(--hang) - 8px) 0;
-  padding: 0.2rem calc(var(--hang) + 8px) 1.2rem;
-  background: var(--ground);
-}
-/* The lesson fades out above the band rather than being cut by it. */
-.foot::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -1.4rem;
-  height: 1.4rem;
-  background: linear-gradient(to bottom, transparent, var(--ground));
-  pointer-events: none;
-}
-.foot.in-task { margin-top: 0; }
-.foot:not(.in-task) { padding-top: 0.7rem; }
-.now.lesson { padding-bottom: 0; }
-.now.lesson .foot .task-line { margin-top: 0; }
 .fact {
   margin: 0.55rem 0 0;
   font: 400 0.765rem/1.5 var(--app);
   color: var(--ink);
 }
-.fact.none { color: var(--hint); }
 /* The open task, pinned while its question is out of view: the one thing to come back to, whole and in the text's colour. */
 .parked {
   display: block;
@@ -682,11 +605,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--text);
   cursor: text;
 }
-.task-line.off {
-  border-left-color: transparent;
-  padding-top: 0;
-  padding-bottom: 0;
-}
 .line-end {
   font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);
@@ -695,7 +613,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .line-end .keys { color: var(--hint); }
 button.line-end:hover { color: var(--text); }
-.line .field { padding-right: 9rem; }
+.line.rest .field { padding-right: 9rem; }
 
 /* At rest the line is the one action: it has an edge, and its end says what Return does. */
 .line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
@@ -734,29 +652,100 @@ button.line-end:hover { color: var(--text); }
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
-/* Inside the task, the band joins the question above it: nothing fades over the question, and its rule runs on unbroken. */
-.foot.in-task::before { display: none; }
-.foot.in-task { padding-top: 0; }
-/* A settled task and the answer under it: one rule, not two with a gap between. */
-.turn:has(.tutor .prose > div.task:last-child) .tutor { margin-bottom: 0; }
-.turn:has(.tutor .prose > div.task:last-child) + .turn > .answer:first-child { margin-top: 0; padding-top: 0.6rem; }
 
 /* A session headed by its course alone: no rule under one small line. */
 .now.lesson .head.bare { margin-bottom: 1rem; }
 
 /* What the learner said before: its "›" in the quiet grey; the ink one is the live line's. */
 .you.talk::before { color: var(--hint); }
-/* While a card waits on the learner, the line under it holds no clip and sits at a turn's gap. */
-.foot.asking .clip { display: none; }
+/* While a card waits on the learner, the line under it sits at a turn's gap. */
 .foot.asking { margin-top: 0.4rem; }
 /* An empty font field draws no rule until it has the focus or words. */
 .text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
 
 /* While a card waits, the line under it shows no prompt of its own. */
-.foot.asking .line.talk::before { visibility: hidden; }
+.foot.asking .line.lesson .field-row::before { visibility: hidden; }
 
 /* A notice that stops the lesson (a usage limit, a sign-in): at reading size so it is not skimmed past,
    in the text's colour, as a mark that is not right yet is; the ink would read as a success. */
 .record.note[role="alert"] { color: var(--text); font-size: 0.941rem; }
 /* A card waiting at the foot keeps its whole rule: no fade over it. */
-.foot.asking::before { display: none; }
+.foot.asking.raised::before { display: none; }
+
+/* ------------------------------------------------------------------ */
+/* The lesson's line: one row, the learner's words and at most two
+   quiet tools. It is the page's last line; typed into while the learner
+   reads higher up, it rises to the foot of the window over the page.
+   Drawn bare on the page's ground, or in a soft field: the learner's
+   choice in Settings. */
+
+/* Its ground reaches into the margin, where a "›" hangs: over the page, nothing of the page shows beside it. */
+.foot {
+  position: relative;
+  z-index: 3;
+  margin: 1.6rem calc(-1 * var(--hang) - 8px) 0;
+  padding: 0 calc(var(--hang) + 8px) 1.4rem;
+}
+.foot.raised {
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.5rem;
+  background: var(--ground);
+}
+/* Over the page, the reading fades out under the line rather than being cut by it. */
+.foot.raised::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2.6rem;
+  height: 2.6rem;
+  background: linear-gradient(to bottom, transparent, var(--ground));
+  pointer-events: none;
+}
+.line.lesson { margin: 0; }
+.line.lesson .field-row { display: flex; align-items: flex-end; gap: 1.2rem; }
+.line.lesson .field { flex: 1 1 auto; width: auto; min-width: 0; caret-color: var(--text); }
+.line.lesson .line-tools { position: static; flex: none; gap: 1.1rem; padding-bottom: 0.2rem; }
+.line.lesson .line-tools .quiet-act { color: var(--hint); white-space: nowrap; }
+.line.lesson .line-tools .quiet-act:hover:not(:disabled) { color: var(--text); }
+.line.lesson .line-tools .keys { margin-right: 0.15em; }
+/* Files going with the next message sit on the row, before the words. */
+.line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.15rem; }
+.line.lesson .attached:empty { display: none; }
+/* The passage the words are about, quoted above them. */
+.line.lesson .quote {
+  margin: 0 0 0.3rem;
+  font: italic 400 0.882rem/1.45 var(--read);
+  color: var(--quiet);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The bare line: the learner's "›" hung in the margin, in the quiet grey every line of theirs carries. */
+:root:not([data-field="soft"]) .line.lesson .field-row::before {
+  content: "›";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  top: 0;
+  font: 400 0.882rem/1.6 var(--mono);
+  color: var(--hint);
+}
+
+/* The soft field: one row in a shade of the page, the words at the column's edge. */
+:root[data-field="soft"] .line.lesson {
+  margin: 0 -18px;
+  padding: 10px 18px;
+  border-radius: 13px;
+  background: var(--well);
+}
+
+/* What the learner sent: every message drawn the same way. */
+.said-quote { margin: 1.5rem 0 0; font: italic 400 0.882rem/1.45 var(--read); color: var(--quiet); }
+.said-quote + .you { margin-top: 0.25rem; }
+.turn > .question { margin: 1.5rem 0 0; font-size: 0.941rem; line-height: 1.5; color: var(--quiet); }
+.turn > .question + .you,
+.turn > .question + .said-quote { margin-top: 0.3rem; }
+.you + .said-sure { display: block; margin: -0.9rem 0 1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }

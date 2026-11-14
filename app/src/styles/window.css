@@ -469,9 +469,6 @@ input[type="range"]::-webkit-slider-thumb {
   white-space: nowrap;
 }
 .clip:hover { color: var(--text); }
-.line-stop { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); white-space: nowrap; }
-.line-stop .keys { color: var(--hint); }
-.line-stop:hover { color: var(--text); }
 .attached:empty { margin: 0; }
 .attached {
   display: flex;
@@ -494,16 +491,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .take-off { padding: 0 0.4rem; color: var(--hint); font: inherit; }
 .take-off:hover { color: var(--text); }
-.help-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.1rem 1rem;
-  margin: 0.4rem 0 0;
-}
-.help-row .quiet-act { font-size: 0.765rem; color: var(--hint); }
-.help-row .quiet-act:hover:not(:disabled),
-.help-row .quiet-act[aria-expanded="true"] { color: var(--text); }
-.help-gap { flex: 1 1 auto; }
 .symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.75rem, 1fr)); gap: 2px; margin: 0.35rem -0.35rem 0; }
 .symbol {
   min-width: 1.75rem;
@@ -515,7 +502,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .symbol:hover { background: var(--tint); }
 .sent-files { margin: 0.15rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
-.answer .sent-files { margin-top: 0.2rem; }
 /* Files sent with talk sit with the words they went with, not nearer the reply under them. */
 .you.talk + .sent-files { margin: -0.9rem 0 1.1rem; }
 .plain.skip { margin-left: 0; }
@@ -604,8 +590,6 @@ dialog.layer::backdrop { background: transparent; }
 /* "Your work" shows the keyboard's place as the other quiet actions do. */
 :root[data-input="key"] .your-work summary:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 
-/* How sure the learner said they were is their own word: quiet once sent. Ink is the record's. */
-.answer .said-sure { color: var(--quiet); }
 /* A card's label beside its ink rule: the rule marks the card, the label is quiet. */
 .card .record-head { color: var(--quiet); }
 /* The "+" waits out of sight until there is a workspace to start in. */
@@ -620,7 +604,6 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .segment input:focus-visible + span { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
 
 /* Help that cannot be asked for now looks it. */
-.help-row .quiet-act:disabled { color: var(--faint); }
 /* The keyboard's place in the tab bar and on the line's own controls: an ink bar under the words, unlike a tab
    or switch that is on (the tint). */
 :root[data-input="key"] .tab-button:focus-visible,

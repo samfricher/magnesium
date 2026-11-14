@@ -169,10 +169,9 @@ async function shoot(window, stem) {
 }
 
 /**
- * Type and send with Return, as the learner does. An answer goes where the
- * concept takes answers to the open task (data-drive="answer"), and talk
- * where it takes talk (data-drive="talk"); a concept with one field for both
- * names it "composer".
+ * Type and send with Return, as the learner does. A concept with a field of
+ * its own for answers or for talk names it by `role` ("answer", "talk"); the
+ * window's one line for both is "composer".
  */
 async function say(window, label, words, role) {
   const placed = await window.op({ op: "focus", target: role, by: "drive" });
