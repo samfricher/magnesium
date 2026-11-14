@@ -292,6 +292,22 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.library = { workspaces: listed.length, first: listed[0]?.name, plan: { items: plan.items.length } };
     if (!listed.some((each) => each.folder === home.folder)) throw new Error("the open folder is not in the library");
 
+    // Before the first lesson the agent has sent no list: the line names Claude Code's default, the list says why it is empty, and Esc closes it from the line.
+    actions.newSession(folder);
+    await until("a new session's model, before any list", () => document.querySelector('.session.in-front [data-drive="model"]') !== null, 10_000);
+    const before = document.querySelector<HTMLElement>('.session.in-front [data-drive="model"]')!;
+    const beforeWord = before.textContent;
+    before.click();
+    await until("the empty list of models", () => document.querySelector(".session.in-front .model-list") !== null, 3000);
+    const emptyRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
+    press("Escape");
+    await wait(150);
+    steps.emptyList = { word: beforeWord, rows: emptyRows, closed: document.querySelector(".session.in-front .model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    if (beforeWord !== "Default" || emptyRows !== 0) throw new Error(`a new window's start line is not Claude Code's default: ${JSON.stringify(steps.emptyList)}`);
+    if (document.querySelector(".session.in-front .model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close an empty list of models: ${JSON.stringify(steps.emptyList)}`);
+    actions.run("close-session");
+    await until("the unstarted session's tab to close", () => actions.session() === null, 10_000);
+
     // Start: Home's first row, which opens the session in a tab of its own.
     const message = "Self-check. Inline $a^b$ and a diagram:\n\n```mermaid\ngraph LR\n  A[rate] --> B[reciprocal]\n```";
     actions.continueRecent();

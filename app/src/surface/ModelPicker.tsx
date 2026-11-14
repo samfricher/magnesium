@@ -74,6 +74,21 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
     (list?.querySelector<HTMLElement>("[data-nav].on") ?? list?.querySelector<HTMLElement>("[data-nav]"))?.focus();
   }, [open, older]);
 
+  // Esc closes it wherever the keyboard is. A list with no rows yet (before
+  // the first lesson, or when the agent sent none) has nothing to move the
+  // keyboard to, so it stays on the line or the word, outside the list.
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    };
+    document.addEventListener("keydown", escape, true);
+    return () => document.removeEventListener("keydown", escape, true);
+  }, [open, close]);
+
   // A press anywhere else closes it.
   useEffect(() => {
     if (!open) return;
@@ -112,12 +127,6 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close(true);
-      return;
-    }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     const stops = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])];
     const at = stops.indexOf(document.activeElement as HTMLElement);
