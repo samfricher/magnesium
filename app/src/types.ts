@@ -94,6 +94,8 @@ export type LessonInfo = {
   current: boolean;
   title: string | null;
   opened_ms: number;
+  /** The goal of the record's lesson this conversation is bound to, when the record says. */
+  goal?: string | null;
 };
 
 /** A folder in the library, read from the window's own store: its name, when it was last opened, and its newest session. */

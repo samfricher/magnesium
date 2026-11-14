@@ -111,6 +111,26 @@ pub struct Step {
     pub status: String,
 }
 
+/// The goal of the lesson the record binds to one conversation (a window
+/// session's id: the runtime binds the host thread `…:claude:<id>` to a
+/// lesson). None when the record holds no such binding, or its tables are not
+/// as read here.
+pub fn goal_of_conversation(root: &Path, conversation: &str) -> Option<String> {
+    if conversation.trim().is_empty() {
+        return None;
+    }
+    let conn = open(&root.join(".magnesium/state.sqlite"))?;
+    let thread = format!(":claude:{conversation}");
+    conn.query_row(
+        "SELECT ls.goal FROM host_bindings hb JOIN learning_sessions ls ON ls.session_id = hb.session_id \
+         WHERE substr(hb.host_thread_id, -length(?1)) = ?1 ORDER BY ls.updated_at_ms DESC LIMIT 1",
+        [&thread],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+    .filter(|goal| !goal.trim().is_empty())
+}
+
 /// The steps of the current goal, from the most recently saved checkpoint. An
 /// older runtime stores none, and then the rail shows the goal alone.
 pub fn goal_steps(root: &Path) -> Vec<Step> {
@@ -198,6 +218,38 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_conversation_gets_its_own_lessons_goal_not_the_folders_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = dir.path().join(".magnesium");
+        std::fs::create_dir_all(&control).unwrap();
+        assert_eq!(goal_of_conversation(dir.path(), "window-1"), None);
+        let conn = Connection::open(control.join("state.sqlite")).unwrap();
+        // A window session started with "Continue", then a newer lesson in a terminal in the same folder.
+        conn.execute_batch(
+            "CREATE TABLE learning_sessions(session_id TEXT PRIMARY KEY, goal TEXT, updated_at_ms INTEGER);
+             CREATE TABLE host_bindings(host_kind TEXT, host_thread_id TEXT, session_id TEXT, PRIMARY KEY(host_kind, host_thread_id));
+             INSERT INTO learning_sessions VALUES('s-window', 'Continue', 1);
+             INSERT INTO learning_sessions VALUES('s-terminal', 'Hypothesis tests from the terminal', 2);
+             INSERT INTO host_bindings VALUES('claude', 'magnesium-h1:claude:window-1', 's-window');
+             INSERT INTO host_bindings VALUES('claude', 'magnesium-h1:claude:terminal-7', 's-terminal');",
+        )
+        .unwrap();
+        drop(conn);
+        assert_eq!(
+            goal_of_conversation(dir.path(), "window-1").as_deref(),
+            Some("Continue")
+        );
+        assert_eq!(
+            goal_of_conversation(dir.path(), "terminal-7").as_deref(),
+            Some("Hypothesis tests from the terminal")
+        );
+        // A conversation the record has no lesson for, and one whose id only ends like another's, know nothing.
+        assert_eq!(goal_of_conversation(dir.path(), "window-2"), None);
+        assert_eq!(goal_of_conversation(dir.path(), "1"), None);
+        assert_eq!(goal_of_conversation(dir.path(), ""), None);
     }
 
     #[test]

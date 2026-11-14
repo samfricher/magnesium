@@ -1,11 +1,11 @@
-//! Keep the window drawing while another window covers it.
+//! Keep a driven window drawing while another window covers it.
 //!
 //! WebKit treats a web view whose window is covered (or on a Space that is
 //! not showing) as hidden: it stops animation frames and painting until the
-//! window is seen again. The page draws a PDF page and the Open… list on
-//! those frames, so either stayed blank behind another window until the
-//! learner brought it forward. WebKit's own switch for that is not public on
-//! macOS; it is asked for only where the web view answers to it.
+//! window is seen again. A check that drives the window behind other windows
+//! would then wait for paints that never come. WebKit's switch for that is
+//! Apple-internal, so only the harness asks for it (`harness::keep_in_view`),
+//! and only where the web view answers to it; a learner's window never does.
 
 #[cfg(target_os = "macos")]
 pub fn keep_drawing(window: &tauri::WebviewWindow) {

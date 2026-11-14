@@ -169,24 +169,21 @@ export function WorkspacePage(props: Props) {
     void read();
   }, [read, props.refresh]);
 
-  // A session still named by the words it was started with ("Continue") takes the goal the tutor set for it, as
-  // a new one does. The record says which goal that is for the folder's current session only; older sessions
-  // keep the names they have.
+  // A session still named by the words it was started with ("Continue") takes its own lesson's goal, as a new
+  // one does: the goal the record binds to that conversation, never the folder's last goal, which a lesson in a
+  // terminal may have set.
   const { onSessionRenamed } = props;
-  const lastGoal = home?.last?.goal ?? null;
   useEffect(() => {
-    const info = sessions?.find((each) => each.current);
-    if (!info || !namedByItsWords(info)) return;
-    const name = goalName(lastGoal, info.opening);
-    if (!name || name === info.title) return;
-    void api.renameSession(folder, info.session, name).then(
-      () => {
-        onSessionRenamed(folder, info.session, name);
-        void read();
-      },
+    const renames = (sessions ?? [])
+      .filter((info) => namedByItsWords(info))
+      .map((info) => ({ info, name: goalName(info.goal, info.opening) }))
+      .filter((each): each is { info: LessonInfo; name: string } => each.name !== null && each.name !== each.info.title);
+    if (renames.length === 0) return;
+    void Promise.all(renames.map(({ info, name }) => api.renameSession(folder, info.session, name).then(() => onSessionRenamed(folder, info.session, name)))).then(
+      () => void read(),
       () => {},
     );
-  }, [api, folder, sessions, lastGoal, onSessionRenamed, read]);
+  }, [api, folder, sessions, onSessionRenamed, read]);
 
   const readMarks = () => {
     if (marks !== "unread") return;

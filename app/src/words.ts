@@ -1,6 +1,7 @@
 // The window's own few words: what the record's marks say, what changed in a
 // plan, and how a day is written. Nothing here reads the tutor's words.
 
+import { opening, saidByTheWindow } from "./lesson";
 import type { Mark, Plan, PlanItem } from "./types";
 
 /** "Demo-Course" as "Demo Course". */
@@ -183,21 +184,17 @@ export function whenOpened(ms: number | null | undefined, now = new Date()): str
  */
 export function sessionName(info: { title: string | null; opening: string }, fallback: string | null): string {
   if (info.title) return info.title;
-  const asked = /^Let's work on ([\s\S]+)\.$/.exec(info.opening.trim());
-  if (asked) return asked[1];
+  const topic = opening(info.opening)?.topic;
+  if (topic) return topic;
   const plain = info.opening.trim();
-  const windowWords = /^(?:I'm back\. Let's continue\.|No checks right now\.|Mark my )/.test(plain);
-  if (plain && !windowWords) return firstWords(plain, 80);
+  if (plain && !saidByTheWindow(plain)) return firstWords(plain, 80);
   return fallback ?? "A session";
 }
-
-/** Words the window itself starts a session with, not the learner's. */
-const WINDOW_START = /^(?:I'm back\. Let's continue\.|No checks right now\.|Mark my |Let's work on )/;
 
 /** A session named by the words the learner started it with: its kept name is those words, or it has none. */
 export function namedByItsWords(info: { title: string | null; opening: string }): boolean {
   const said = info.opening.trim();
-  if (said === "" || WINDOW_START.test(said)) return false;
+  if (said === "" || saidByTheWindow(said)) return false;
   const name = info.title?.trim() ?? "";
   return name === "" || name === said || name === firstWords(said, 80);
 }

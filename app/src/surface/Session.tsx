@@ -309,9 +309,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
 
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
   const provisionalTitle = useRef(false);
-  // The goal the record held when it began, and the words typed to start it: only a goal that is neither
-  // names the session. Started from typed words, the record's goal is those words ("Continue").
-  const goalAtStart = useRef<string | null>(null);
+  // The words typed to start it: a goal that only says them again does not name the session. Started from typed
+  // words, the record's goal for the lesson is those words ("Continue").
   const typedAtStart = useRef<string>("");
 
   // Where this session's draft, line and scroll are kept: its conversation once it has one.
@@ -473,7 +472,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     }
     // The record has been read for the last message: an answer it kept no mark for says so, the same way every time.
     // A session named before its goal was known: the goal names it once the tutor has set one.
-    if (event.type === "turn_ended" && provisionalTitle.current) void refreshPlan();
+    if (event.type === "turn_ended" && provisionalTitle.current) void nameByOwnGoal();
     if (event.type === "settled") {
       const live = now.current.session.live;
       if (live && live.said === "answer" && (live.marks ?? []).length === 0 && !live.interrupted) {
@@ -583,7 +582,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       // one like "Continue", which names nothing a learner could find again.
       if (!continuing) {
         provisionalTitle.current = true;
-        goalAtStart.current = now.current.plan?.goal ?? null;
         typedAtStart.current = typed;
       }
       return begin(continuing, typed, "talk", continuing ? sittingTitle : (item?.title ?? displayName(current.name)), (api) => api.sendNewLesson(typed));
@@ -1066,35 +1064,36 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const id = now.current.props.tab.session;
     if (id) void api.renameSession(folder, id, name).catch(() => {});
   };
-  useEffect(() => {
-    const goal = plan?.goal?.trim();
-    if (!provisionalTitle.current || !goal || goal === goalAtStart.current?.trim()) return;
-    const name = goalName(goal, typedAtStart.current);
-    if (!name || name === sittingTitle) return;
+  // The goal this session's own lesson has in the record, as the record binds the conversation to it. Not the
+  // folder's last goal: a lesson in a terminal, in the same folder, may have set that one.
+  const ownGoal = async (): Promise<{ goal: string | null; opening: string; title: string | null } | null> => {
+    const id = now.current.props.tab.session;
+    if (!id) return null;
+    const info = (await api.lessons(folder).catch(() => [])).find((each) => each.session === id);
+    return info ? { goal: info.goal ?? null, opening: info.opening, title: info.title } : null;
+  };
+  // A session started from typed words is named by its goal once the tutor has set one that is not those words.
+  const nameByOwnGoal = async () => {
+    const own = await ownGoal();
+    const name = own ? goalName(own.goal, typedAtStart.current) : null;
+    if (!provisionalTitle.current || !name || name === sittingTitle) return;
     provisionalTitle.current = false;
     nameSession(name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan?.goal]);
+  };
 
-  // A session reopened still named by the words it was started with ("Continue") takes the goal the tutor set
-  // for it, as a new one does: where the record says which goal that is, the folder's current session.
+  // A session reopened still named by the words it was started with ("Continue") takes its own lesson's goal,
+  // as a new one does.
   const renamedOnce = useRef(false);
   useEffect(() => {
-    const id = props.tab.session;
-    const goal = home?.last?.goal;
-    if (renamedOnce.current || !id || !goal) return;
+    if (renamedOnce.current || !props.tab.session) return;
     renamedOnce.current = true;
-    void api.lessons(folder).then(
-      (all) => {
-        const info = all.find((each) => each.session === id);
-        if (!info || !info.current || !namedByItsWords(info)) return;
-        const name = goalName(goal, info.opening);
-        if (name && name !== info.title) nameSession(name);
-      },
-      () => {},
-    );
+    void ownGoal().then((own) => {
+      if (!own || !namedByItsWords(own)) return;
+      const name = goalName(own.goal, own.opening);
+      if (name && name !== own.title) nameSession(name);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.tab.session, home?.last?.goal]);
+  }, [props.tab.session]);
 
   // A past paper: the folder's papers, or a file in a papers folder. A link to one opens at once, even beside
   // the task that asks about it: it holds the questions, not their answers.

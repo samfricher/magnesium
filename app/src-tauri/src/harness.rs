@@ -76,6 +76,8 @@ pub fn keep_in_view(app: &tauri::App) {
         let _ = window.set_always_on_top(true);
         // On every desktop, so a switch of Space does not hide it either.
         let _ = window.set_visible_on_all_workspaces(true);
+        // And still drawing when a check lowers it under another window on purpose (frame on_top false).
+        crate::occlusion::keep_drawing(&window);
     }
 }
 

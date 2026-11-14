@@ -531,9 +531,6 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                occlusion::keep_drawing(&window);
-            }
             harness::keep_in_view(app);
             harness::note("setup start");
             mg_core::paths::warm_up();

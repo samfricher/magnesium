@@ -297,11 +297,16 @@ impl Manager {
     pub fn lessons(&self, folder: Option<&Path>) -> AgentResult<Vec<LessonInfo>> {
         let folder = self.at(folder)?;
         let state = self.store.folder(&folder);
-        Ok(workspace::sessions(
+        let mut listed = workspace::sessions(
             &self.store.all_turns(&folder),
             state.session_id.as_deref(),
             &state.sessions,
-        ))
+        );
+        let root = study::root(&folder);
+        for lesson in &mut listed {
+            lesson.goal = crate::peek::goal_of_conversation(&root, &lesson.session);
+        }
+        Ok(listed)
     }
 
     /// The turns of one of a folder's sessions, to show it again without
