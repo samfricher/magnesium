@@ -141,7 +141,7 @@ def init():
     if init_sent:
         return
     init_sent = True
-    emit({"type": "system", "subtype": "init", "session_id": session, "model": "claude-fable-5-2",
+    emit({"type": "system", "subtype": "init", "session_id": session, "model": args[args.index("--model") + 1] if "--model" in args else "claude-opus-5-5",
           "apiKeySource": "none",
           "tools": ["Read", "mcp__magnesium__search_sources", "mcp__magnesium__sources"],
           "mcp_servers": [{"name": "magnesium", "status": "connected"}], "plugins": [], "slash_commands": []})

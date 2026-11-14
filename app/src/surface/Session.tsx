@@ -1045,16 +1045,18 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
    * the agent's own effort. The pick keeps the model and takes Usual, so the start line says so next time too.
    */
   const startAgain = useCallback(
-    async (text: string) => {
+    async (text: string, atUsualEffort: boolean) => {
       dispatch({ type: "dismiss", text });
       const { turns: shownTurns, sittingStart: from, sittingTitle: title } = again.current;
       const first = shownTurns[from]?.learner ?? "";
-      try {
-        const choice = await api.models();
-        if (choice.pick) await api.setPick(choice.pick.model, null);
-      } catch (problem) {
-        note(String(problem));
-        return;
+      if (atUsualEffort) {
+        try {
+          const choice = await api.models();
+          if (choice.pick) await api.setPick(choice.pick.model, null);
+        } catch (problem) {
+          note(String(problem));
+          return;
+        }
       }
       if (first.trim() === "") return;
       void begin(false, first, "opening", title, (core) => core.sendNewLesson(first));

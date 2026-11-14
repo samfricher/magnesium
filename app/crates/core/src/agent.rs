@@ -26,6 +26,10 @@ pub enum AgentEvent {
         /// True when the Magnesium plugin itself is absent. The session would
         /// then be a plain chat with no teaching rules, so the window stops it.
         plugin_missing: bool,
+        /// The model the agent says this conversation runs on, in its first
+        /// message. None when it does not say.
+        #[serde(default)]
+        model: Option<String>,
     },
     /// The tutor began a reply.
     TurnStarted,
@@ -114,10 +118,12 @@ pub enum NoticeKind {
     Turn,
     /// Stands until it is dismissed (a part that did not start).
     Other,
-    /// A lesson started at an effort the learner picked, and its first reply
-    /// never opened the record. The window offers to start again at the
-    /// agent's own effort.
+    /// A new lesson at the agent's own effort whose first reply never opened
+    /// the record. The window offers to start it again.
     RecordUnopened,
+    /// The same, for a lesson at an effort the learner picked. The window
+    /// offers to start it again at the agent's own effort.
+    RecordUnopenedAtEffort,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

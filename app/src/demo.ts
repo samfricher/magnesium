@@ -54,7 +54,9 @@ let pick: Pick | null = has("model-first-run", "model-list-first-run")
     ? { model: "claude-fable-4", name: "Fable 4" }
     : has("model-effort", "record-unopened")
       ? { model: "claude-sonnet-5-5", name: "Sonnet 5.5", effort: "low" }
-      : { model: "claude-fable-5-2", name: "Fable 5.2" };
+      : has("record-unopened-usual")
+        ? { model: "claude-haiku-5-5", name: "Haiku 5.5" }
+        : { model: "claude-fable-5-2", name: "Fable 5.2" };
 const modelChoice = (): ModelChoice => {
   const models = modelsNone ? [] : MODEL_LIST;
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
@@ -305,9 +307,14 @@ async function reply(text: string, after?: () => void, hold = false) {
   emit({ type: "text_done", text: shown });
   emit({ type: "turn_ended", ok: true, interrupted: false, error: null });
   replying = false;
-  if (has("record-unopened") && !unopenedSaid) {
+  if (has("record-unopened", "record-unopened-usual") && !unopenedSaid) {
     unopenedSaid = true;
-    emit({ type: "notice", kind: "record_unopened", text: "This lesson started without opening your record, so its answers may not be marked. It ran at low effort." });
+    const unopened = "This lesson started without opening your record, so its answers may not be marked.";
+    emit(
+      has("record-unopened")
+        ? { type: "notice", kind: "record_unopened_at_effort", text: `${unopened} It ran at low effort.` }
+        : { type: "notice", kind: "record_unopened", text: `${unopened} It ran on Haiku 5.5 at Claude Code’s usual effort.` },
+    );
   }
   // The engine says which task is open, in the tutor's words.
   const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
@@ -644,6 +651,7 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       if (has("model-older")) document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
       return wait(150);
     case "record-unopened":
+    case "record-unopened-usual":
       actions.newSession(FOLDER, { kind: "start" });
       await wait(200);
       return settle();

@@ -377,6 +377,7 @@ impl Harness for ClaudeCode {
                 .map(Mutex::new),
             started: Instant::now(),
             opening: Opening {
+                new: options.resume.is_none(),
                 effort: options.effort.clone().filter(|_| options.resume.is_none()),
                 ..Opening::default()
             },
@@ -567,9 +568,14 @@ struct Shared {
 struct Opening {
     /// The id of the `initialize` request, whose reply lists the models.
     initialize: Mutex<Option<String>>,
-    /// The effort the learner picked for a new lesson. A resumed one, or
-    /// one at Claude Code's own effort, is not watched.
+    /// A new lesson, whose first reply is watched. A resumed one is not.
+    new: bool,
+    /// The effort the learner picked for it; none for Claude Code's own.
     effort: Option<String>,
+    /// The model Claude Code says it runs on, from its first message.
+    model: Mutex<Option<String>>,
+    /// The list from the reply to `initialize`, to name that model.
+    models: Mutex<Vec<crate::models::ModelOption>>,
     /// The first reply has ended, and was looked at.
     looked: AtomicBool,
     /// The tutor called Magnesium's context tool, which opens the record.
@@ -783,6 +789,9 @@ fn on_control_response(shared: &Arc<Shared>, value: &Value) {
     let models = (response["subtype"] == "success")
         .then(|| crate::models::parse(&response["response"]))
         .flatten();
+    if let Some(list) = &models {
+        *lock(&shared.opening.models) = list.clone();
+    }
     shared.emit(AgentEvent::Models { models });
 }
 
@@ -871,14 +880,25 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
             });
         }
         let problems = init_problems(value);
+        let model = runs_on(value);
+        lock(&shared.opening.model).clone_from(&model);
         shared.emit(AgentEvent::Ready {
             session_id,
             plugin_missing: problems
                 .iter()
                 .any(|problem| problem.contains("plugin did not load")),
             problems,
+            model,
         });
     }
+}
+
+/// The model Claude Code's first message says the conversation runs on.
+pub(crate) fn runs_on(init: &Value) -> Option<String> {
+    init["model"]
+        .as_str()
+        .filter(|model| crate::models::usable_model(model))
+        .map(str::to_owned)
 }
 
 /// A lesson paid another way than the learner chose, in one line. Claude
@@ -1393,22 +1413,41 @@ fn is_context_tool(name: &str) -> bool {
 /// reply that never opened the record is said, once. Low effort was tried
 /// on 2026-11-11 and called the context tool at 1 of 11 lesson starts.
 fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
-    let Some(effort) = shared.opening.effort.as_deref() else {
-        return;
-    };
-    if shared.opening.looked.swap(true, Ordering::SeqCst)
+    let opening = &shared.opening;
+    if !opening.new
+        || opening.looked.swap(true, Ordering::SeqCst)
         || !finished
-        || shared.opening.record_opened.load(Ordering::SeqCst)
+        || opening.record_opened.load(Ordering::SeqCst)
     {
         return;
     }
-    shared.emit(AgentEvent::Notice {
-        kind: NoticeKind::RecordUnopened,
-        text: format!(
-            "This lesson started without opening your record, so its answers may not be marked. It ran at {} effort.",
-            effort_words(effort)
+    let unopened =
+        "This lesson started without opening your record, so its answers may not be marked.";
+    // Each names what most likely kept the record shut: the effort the
+    // learner picked, or else the model.
+    let (kind, text) = match opening.effort.as_deref() {
+        Some(effort) => (
+            NoticeKind::RecordUnopenedAtEffort,
+            format!("{unopened} It ran at {} effort.", effort_words(effort)),
         ),
-    });
+        None => {
+            let model = lock(&opening.model).clone();
+            let name = model.map(|id| {
+                crate::models::find(&lock(&opening.models), &id)
+                    .map_or(id.clone(), |row| row.name.clone())
+            });
+            (
+                NoticeKind::RecordUnopened,
+                match name {
+                    Some(name) => {
+                        format!("{unopened} It ran on {name} at Claude Code’s usual effort.")
+                    }
+                    None => unopened.to_owned(),
+                },
+            )
+        }
+    };
+    shared.emit(AgentEvent::Notice { kind, text });
 }
 
 /// An effort level in the words the window shows it in.
@@ -2199,16 +2238,23 @@ mod tests {
     }
 
     #[test]
-    fn a_first_reply_at_a_picked_effort_that_never_opened_the_record_is_said_once() {
-        let opened = |effort: Option<&str>, tools: &[&str]| {
+    fn a_new_lessons_first_reply_that_never_opened_the_record_is_said_once() {
+        let said = |new: bool, effort: Option<&str>, tools: &[&str]| {
             let (shared, seen) = listening();
             let shared = Arc::new(Shared {
                 opening: Opening {
+                    new,
                     effort: effort.map(str::to_owned),
                     ..Opening::default()
                 },
                 ..Arc::try_unwrap(shared).ok().unwrap()
             });
+            *lock(&shared.opening.models) =
+                crate::models::parse(&crate::models::tests::fourteen()).unwrap();
+            handle(
+                &shared,
+                &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-haiku-5-5"}),
+            );
             let content: Vec<Value> = tools
                 .iter()
                 .map(|name| json!({"type": "tool_use", "id": "t", "name": name, "input": {}}))
@@ -2219,27 +2265,72 @@ mod tests {
             );
             handle(&shared, &json!({"type": "result", "subtype": "success"}));
             handle(&shared, &json!({"type": "result", "subtype": "success"}));
-            let said = lock(&seen)
+            let notices: Vec<(NoticeKind, String)> = lock(&seen)
                 .iter()
-                .filter(|event| {
-                    matches!(
-                        event,
-                        AgentEvent::Notice {
-                            kind: NoticeKind::RecordUnopened,
-                            ..
-                        }
-                    )
+                .filter_map(|event| match event {
+                    AgentEvent::Notice { kind, text }
+                        if matches!(
+                            kind,
+                            NoticeKind::RecordUnopened | NoticeKind::RecordUnopenedAtEffort
+                        ) =>
+                    {
+                        Some((*kind, text.clone()))
+                    }
+                    _ => None,
                 })
-                .count();
-            said
+                .collect();
+            notices
         };
-        assert_eq!(opened(Some("low"), &["Read"]), 1);
+        // At a picked effort: the effort is named.
         assert_eq!(
-            opened(Some("low"), &["mcp__plugin_magnesium_magnesium__context"]),
-            0
+            said(true, Some("low"), &["Read"]),
+            [(
+                NoticeKind::RecordUnopenedAtEffort,
+                "This lesson started without opening your record, so its answers may not be marked. It ran at low effort.".to_owned()
+            )]
         );
-        // At Claude Code's own effort there is nothing to say.
-        assert_eq!(opened(None, &["Read"]), 0);
+        // At Claude Code's own effort: the model is named, as the list names it.
+        assert_eq!(
+            said(true, None, &["Read"]),
+            [(
+                NoticeKind::RecordUnopened,
+                "This lesson started without opening your record, so its answers may not be marked. It ran on Haiku at Claude Code’s usual effort.".to_owned()
+            )]
+        );
+        // The record opened, or the lesson was resumed: nothing to say.
+        assert!(said(true, None, &["mcp__plugin_magnesium_magnesium__context"]).is_empty());
+        assert!(said(
+            true,
+            Some("low"),
+            &["mcp__plugin_magnesium_magnesium__context"]
+        )
+        .is_empty());
+        assert!(said(false, None, &["Read"]).is_empty());
+    }
+
+    #[test]
+    fn the_first_message_says_the_model_the_conversation_runs_on() {
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-opus-5-5"}),
+        );
+        assert!(matches!(
+            lock(&seen).iter().find(|e| matches!(e, AgentEvent::Ready { .. })),
+            Some(AgentEvent::Ready { model: Some(model), .. }) if model == "claude-opus-5-5"
+        ));
+        // A name that could be read as a flag is not kept.
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "init", "session_id": "s1", "model": "--bare"}),
+        );
+        assert!(matches!(
+            lock(&seen)
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Ready { .. })),
+            Some(AgentEvent::Ready { model: None, .. })
+        ));
     }
 
     /// A conversation with no program behind it, and the events it shows.

@@ -162,12 +162,20 @@ def save_history(history):
             json.dump(history, handle)
 
 
+def runs_on():
+    """The model the first message names: the one asked for, else what the
+    default stands for in MODELS."""
+    if "--model" in args:
+        return args[args.index("--model") + 1]
+    return next(row["resolvedModel"] for row in MODELS if row["value"] == "default")
+
+
 def init_message():
     message = {
         "type": "system",
         "subtype": "init",
         "session_id": session,
-        "model": "stand-in",
+        "model": runs_on(),
         "cwd": os.getcwd(),
         "tools": ["Read", "Bash", "AskUserQuestion"],
         "mcp_servers": [],
@@ -287,11 +295,28 @@ def stopped():
     })
 
 
+opened_record = False
+
+
+def open_record(text):
+    """A new conversation's first reply opens the record with Magnesium's
+    context tool, as the plugin's lesson does, unless the message says
+    UNOPENED."""
+    global opened_record
+    if opened_record or resumed or "UNOPENED" in text:
+        return
+    opened_record = True
+    tool_id = use_tool("mcp__plugin_magnesium_magnesium__context", {})
+    emit({"type": "user", "parent_tool_use_id": None, "session_id": session,
+          "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "{}"}]}})
+
+
 def turn(text):
     emit(init_message())
     history = load_history()
     history.append(text)
     save_history(history)
+    open_record(text)
 
     if "LIMIT" in text:
         emit({"type": "rate_limit_event", "uuid": str(uuid.uuid4()), "session_id": session,

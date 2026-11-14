@@ -55,7 +55,8 @@ struct Buffer {
     /// When the last turn was kept, so what the engine says of its task is
     /// kept beside it.
     last_ms: Option<i64>,
-    /// The model this conversation started on, by its full id; none while
+    /// The model this conversation runs on, by its full id: the pick it was
+    /// started with, then what the agent's first message says. None while
     /// it is the agent's default and the agent has not yet said which.
     model: Option<String>,
     /// The effort it started at; none for the agent's own.
@@ -704,10 +705,22 @@ impl Manager {
             // A notice this event gives rise to, for the page.
             let mut also: Option<AgentEvent> = None;
             match &event {
-                AgentEvent::Ready { session_id, .. } if !session_id.is_empty() => {
+                AgentEvent::Ready {
+                    session_id, model, ..
+                } if !session_id.is_empty() => {
                     let mut buffer = lock(&buffer);
                     buffer.session = Some(session_id.clone());
                     buffer.ready = true;
+                    // The model the agent says it runs on, so the session
+                    // resumes on it, whether or not a list ever comes. An
+                    // alias it names is kept by the full id the list gives.
+                    if let Some(model) = model {
+                        let list = store.models().models;
+                        buffer.model = Some(
+                            models::find(&list, model)
+                                .map_or(model.clone(), |row| row.id().to_owned()),
+                        );
+                    }
                     let id = session_id.clone();
                     if live {
                         store.update(&folder, |state| {
@@ -747,35 +760,17 @@ impl Manager {
                 // not drawn in the lesson.
                 AgentEvent::Models { models } => {
                     store.received_models(models.clone());
-                    let mut buffer = lock(&buffer);
-                    if let Some(list) = models {
-                        match buffer.model.clone() {
-                            // Started on the agent's default: noted by the
-                            // full id it stands for, to resume on it.
-                            None => {
-                                buffer.model =
-                                    models::default_of(list).map(|row| row.id().to_owned())
-                            }
-                            Some(model) if models::find(list, &model).is_none() => {
-                                let name = store
-                                    .pick()
-                                    .filter(|pick| pick.model == model)
-                                    .and_then(|pick| pick.name)
-                                    .unwrap_or(model);
-                                also = Some(AgentEvent::Notice {
-                                    kind: NoticeKind::Other,
-                                    text: format!("{name} is not offered on your account now, so this lesson may not start. Start a new session and pick another model on its first line."),
-                                });
-                            }
-                            Some(_) => {}
-                        }
-                        if let (true, Some(session), Some(model)) =
-                            (buffer.ready, buffer.session.clone(), buffer.model.clone())
-                        {
-                            let effort = buffer.effort.clone();
-                            store.note_session(&folder, &session, |note| {
-                                note.model = Some(model);
-                                note.effort = effort;
+                    let model = lock(&buffer).model.clone();
+                    if let (Some(list), Some(model)) = (models, model) {
+                        if models::find(list, &model).is_none() {
+                            let name = store
+                                .pick()
+                                .filter(|pick| pick.model == model)
+                                .and_then(|pick| pick.name)
+                                .unwrap_or(model);
+                            also = Some(AgentEvent::Notice {
+                                kind: NoticeKind::Other,
+                                text: format!("{name} is not offered on your account now, so this lesson may not start. Start a new session and pick another model on its first line."),
                             });
                         }
                     }

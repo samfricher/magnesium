@@ -262,12 +262,13 @@ export type Answer = { question: string; chosen: string[] };
 
 /**
  * "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed.
- * "record_unopened": a lesson started at a picked effort never opened the record; the window offers to start again.
+ * "record_unopened": a new lesson's first reply never opened the record; the window offers to start it again.
+ * "record_unopened_at_effort": the same, at an effort the learner picked; the window offers to start again at usual effort.
  */
-export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened";
+export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened" | "record_unopened_at_effort";
 
 export type AgentEvent =
-  | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean }
+  | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean; model?: string | null }
   | { type: "turn_started" }
   | { type: "text_delta"; text: string }
   | { type: "text_done"; text: string }

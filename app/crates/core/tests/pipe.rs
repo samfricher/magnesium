@@ -764,13 +764,113 @@ fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_r
 }
 
 #[test]
-fn a_list_that_does_not_come_leaves_the_pick_alone_and_is_said() {
+fn a_list_that_does_not_come_leaves_the_pick_alone_and_the_session_keeps_the_model_it_ran_on() {
     let bench = Bench::new(&[("STAND_IN_NO_MODELS", "1")]);
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send("first").unwrap();
+    let AgentEvent::Ready { session_id, .. } =
+        events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }))
+    else {
+        unreachable!()
+    };
     events.turn_end();
     let choice = manager.models();
     assert!(choice.failed && choice.models.is_empty());
     assert_eq!(choice.pick, None);
+    // The session is kept with the model the agent's first message named,
+    // with no list to read the default from, and resumes on it.
+    let note = manager.store().folder(&bench.folder).sessions[&session_id].clone();
+    assert_eq!(note.model.as_deref(), Some("claude-opus-5-5"));
+    manager.open_session(false).unwrap();
+    manager.send("second").unwrap();
+    events.turn_end();
+    manager
+        .open_session_at(None, true, Some(&session_id), None)
+        .unwrap();
+    manager.send("again").unwrap();
+    events.turn_end();
+    let starts = bench.logged("start");
+    let resumed: Vec<String> = starts[2]["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().map(str::to_owned))
+        .collect();
+    let at = resumed.iter().position(|a| a == "--model").unwrap();
+    assert_eq!(resumed[at + 1], "claude-opus-5-5");
+}
+
+#[test]
+fn a_new_lesson_that_never_opens_the_record_says_so_at_any_effort() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    let unopened = |events: &Events| -> Vec<(NoticeKind, String)> {
+        events
+            .seen
+            .iter()
+            .filter_map(|event| match event {
+                AgentEvent::Notice { kind, text }
+                    if matches!(
+                        kind,
+                        NoticeKind::RecordUnopened | NoticeKind::RecordUnopenedAtEffort
+                    ) =>
+                {
+                    Some((*kind, text.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    // A lesson whose first reply opens the record says nothing.
+    manager.open_session(false).unwrap();
+    manager.send("first").unwrap();
+    events.turn_end();
+    assert!(unopened(&events).is_empty());
+
+    // At Claude Code's own effort, the notice names the model.
+    manager.open_session(false).unwrap();
+    events.seen.clear();
+    manager.send("UNOPENED").unwrap();
+    events.turn_end();
+    let said = events.until("the notice", |e| {
+        matches!(
+            e,
+            AgentEvent::Notice {
+                kind: NoticeKind::RecordUnopened,
+                ..
+            }
+        )
+    });
+    assert!(matches!(said, AgentEvent::Notice { .. }));
+    assert_eq!(
+        unopened(&events),
+        [(
+            NoticeKind::RecordUnopened,
+            "This lesson started without opening your record, so its answers may not be marked. It ran on Opus 5.5 at Claude Code’s usual effort.".to_owned()
+        )]
+    );
+
+    // At a picked effort, it names the effort.
+    manager.set_pick("haiku", Some("low")).unwrap();
+    manager.open_session(false).unwrap();
+    events.seen.clear();
+    manager.send("UNOPENED").unwrap();
+    events.turn_end();
+    events.until("the notice", |e| {
+        matches!(
+            e,
+            AgentEvent::Notice {
+                kind: NoticeKind::RecordUnopenedAtEffort,
+                ..
+            }
+        )
+    });
+    assert_eq!(
+        unopened(&events),
+        [(
+            NoticeKind::RecordUnopenedAtEffort,
+            "This lesson started without opening your record, so its answers may not be marked. It ran at low effort.".to_owned()
+        )]
+    );
 }

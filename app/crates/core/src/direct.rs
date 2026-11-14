@@ -744,12 +744,13 @@ impl Shared {
         (self.sink)(event);
     }
 
-    fn ready(&self) {
+    fn ready(&self, model: Option<String>) {
         if !self.ready_sent.swap(true, Ordering::SeqCst) {
             self.emit(AgentEvent::Ready {
                 session_id: self.session.clone(),
                 problems: Vec::new(),
                 plugin_missing: false,
+                model,
             });
         }
     }
@@ -926,7 +927,7 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
             text: "Magnesium's search did not start, so the tutor cannot search your course material. In a terminal, run: magnesium info".into(),
         });
     }
-    shared.ready();
+    shared.ready(claude::runs_on(value));
 }
 
 fn on_retry(shared: &Arc<Shared>, value: &Value) {
