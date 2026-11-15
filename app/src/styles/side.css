@@ -47,7 +47,8 @@
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  padding: calc(var(--head-room) - 14px) 12px 6px 14px;
+  /* Its tabs' words (8px into each tab) start on the plan's own left edge, 18px in. */
+  padding: calc(var(--head-room) - 14px) 12px 6px 10px;
   border-bottom: 1px solid var(--edge);
 }
 .side-switch {
