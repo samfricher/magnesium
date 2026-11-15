@@ -68,7 +68,7 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan
                     aria-current={here ? "step" : undefined}
                     data-drive={`plan-${item.id}`}
                   >
-                    <span className="panel-mark" aria-hidden="true">
+                    <span className={here && item.status !== "done" ? "panel-mark here" : "panel-mark"} aria-hidden="true">
                       {item.status === "done" ? "✓" : here ? "●" : ""}
                     </span>
                     <span className="panel-item">

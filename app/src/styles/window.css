@@ -446,6 +446,8 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 3px;
 }
 .panel-mark { color: var(--hint); font-size: 0.765rem; }
+/* The dot for the item in hand, drawn at a ✓'s size: at the marks' size the glyph was the boldest thing in the panel. */
+.panel-mark.here { font-size: 0.55rem; position: relative; top: -0.12rem; }
 .panel-item { min-width: 0; font: 400 0.824rem/1.45 var(--read); color: var(--text); overflow-wrap: anywhere; }
 .panel-items li.done .panel-item { color: var(--quiet); }
 .panel-items li.current .panel-item,
