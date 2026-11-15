@@ -8,6 +8,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `key {key, meta?, shift?, alt?, ctrl?}`
 - `click {target, by?}`: a `data-drive` name, else exact visible text, else a substring of it; with `by: "drive"`, the name only
 - `focus {target, by?}`
+- `slide {target, value, by?}`: set a slider, as a drag to that value does
 - `wait_idle {timeout_ms, quiet_ms?}`
 - `wait_reply {timeout_ms}`
 - `wait {ms}`
@@ -38,4 +39,4 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - The line's tools: `attach`, `stuck`, `help`, `dont-know`, `symbols`, `send-talk`, `stop`
 - The start line's model: `model`; in its list, `model-row` (with `data-value`), `model-effort` (with `data-level`), `model-older`, `model-current`
 - The panel: `side-plan`, `plan-<item id>`, `doc-<title>`, `close-doc-<title>`, `open-document`, `open-<title>`, `zoom-in`, `zoom-out`, `zoom-fit`, `share-document`, `panel-expand`, `panel-grip`, `doc-pages`, `doc-flow`
-- Settings: `colour-<kind>-<light|dark>`
+- Settings: `colour-<kind>-<light|dark>`, `glass` (the slider for the window's ground, -10 to 10)

@@ -524,6 +524,13 @@ async function run(op: Op): Promise<Result> {
       target.focus();
       return { ok: document.activeElement === target, focused: describe(document.activeElement) };
     }
+    case "slide": {
+      const element = find(String(op.target ?? ""), op.by === "drive");
+      if (!(element instanceof HTMLInputElement) || element.type !== "range") return { ok: false, error: `no slider is named ${JSON.stringify(op.target)}` };
+      // The value a drag would leave, said to React the way a drag says it.
+      setValue(element, String(op.value ?? ""));
+      return { ok: true, value: Number(element.value) };
+    }
     case "wait_idle":
       return waitIdle(Number(op.timeout_ms ?? 120_000), op.quiet_ms === undefined ? QUIET_MS : Number(op.quiet_ms));
     case "wait_reply":

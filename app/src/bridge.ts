@@ -101,6 +101,8 @@ async function tauriCore(): Promise<Core> {
     onEvent: (handler) => listen("agent", (event) => handler(event.payload as never)),
     selftest: () => invoke("selftest"),
     selftestReport: (report) => invoke("selftest_report", { report }),
+    glassState: () => invoke("glass_state"),
+    setGlass: (material, dark) => invoke("set_glass", { material, dark }),
   };
 }
 
