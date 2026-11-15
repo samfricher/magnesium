@@ -69,7 +69,7 @@ export type SessionState = {
    * has said nothing (Claude Code's does not): the page then finds a task by
    * its bold opening word.
    */
-  task?: { text: string | null };
+  task?: { text: string | null; fallback?: boolean };
 };
 
 export const emptySession: SessionState = {
@@ -233,7 +233,7 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     case "settled":
       return state;
     case "open_task": {
-      const task = { text: event.task };
+      const task = event.fallback ? { text: event.task, fallback: true } : { text: event.task };
       if (!event.posed || !event.task || !state.live) return { ...state, task };
       return { ...state, task, live: { ...state.live, posed: event.task } };
     }

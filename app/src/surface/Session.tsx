@@ -135,7 +135,7 @@ export type OpenTask = { text: string; at: number };
  * the bold word a reply opens it with.
  */
 export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask | null {
-  if (session.task !== undefined) {
+  if (session.task !== undefined && !(session.task.text === null && session.task.fallback)) {
     const text = session.task.text;
     if (!text) return null;
     // The reply that posed it last: the engine says so, or the reply holds

@@ -1032,7 +1032,7 @@ impl Manager {
                 }
                 // The engine says which task is open once the turn's record
                 // is kept: it is kept beside the turn, for a reopened lesson.
-                AgentEvent::OpenTask { task, posed } if live => {
+                AgentEvent::OpenTask { task, posed, .. } if live => {
                     let buffer = lock(&buffer);
                     if let (Some(session), Some(ms)) = (buffer.session.clone(), buffer.last_ms) {
                         store.note_task(&folder, &session, ms, task.as_deref(), *posed);
@@ -1673,10 +1673,13 @@ fn settle(
             if lock(&settling.watch).seq != seq || !live() {
                 return;
             }
-            let Some(lesson) = runtime::lesson(&folder, Some(conversation)) else {
+            // A record with no lesson for this conversation says nothing of
+            // its tasks (the tutor never started one), so the page goes on
+            // finding the task as it did before the record could say.
+            let Some(Some(lesson)) = runtime::lesson(&folder, Some(conversation)) else {
                 return;
             };
-            let open = lesson.and_then(|lesson| lesson.open_task);
+            let open = lesson.open_task;
             let posed = open
                 .as_ref()
                 .is_some_and(|task| task.posed_at_ms >= sent_ms);
@@ -1689,9 +1692,15 @@ fn settle(
                 store.note_task(&folder, session, *ms, task.as_deref(), posed);
             }
             if lock(&settling.watch).seq == seq && live() {
+                // Options under trial for a task the tutor set and did not
+                // save: MAGNESIUM_APP_TASK_FALLBACK=bold lets the page take a
+                // bold-word task when the record names none.
+                let fallback = task.is_none()
+                    && std::env::var("MAGNESIUM_APP_TASK_FALLBACK").is_ok_and(|how| how == "bold");
                 out(AgentEvent::OpenTask {
                     task: task.clone(),
                     posed,
+                    fallback,
                 });
             }
             *told = Some(task);

@@ -85,7 +85,16 @@ pub enum AgentEvent {
     /// The window puts the field for an answer inside it. Magnesium's engine
     /// sends it from its record block; on Claude Code's, the window sends it
     /// once the turn has settled, from `magnesium lesson`. Never a mark.
-    OpenTask { task: Option<String>, posed: bool },
+    OpenTask {
+        task: Option<String>,
+        posed: bool,
+        /// With no task named: the page may still take a task that a reply
+        /// opens with a bold word, as it did before the record could say.
+        /// Claude Code's tutor can set a task and not save it; Magnesium's
+        /// engine never sends this.
+        #[serde(default)]
+        fallback: bool,
+    },
     /// The record has been read for what the last message changed: any mark
     /// it has for it has been sent. With none, the record kept no mark.
     Settled,

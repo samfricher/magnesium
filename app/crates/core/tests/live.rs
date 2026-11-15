@@ -633,7 +633,9 @@ impl Live {
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             match self.events.recv_timeout(left).expect("the turn settles") {
-                AgentEvent::OpenTask { task: open, posed } => task = Some((open, posed)),
+                AgentEvent::OpenTask {
+                    task: open, posed, ..
+                } => task = Some((open, posed)),
                 AgentEvent::Marked { mark } => marks.push(format!("{} {}", mark.mark, mark.label)),
                 AgentEvent::Settled => return (task, marks),
                 _ => {}
