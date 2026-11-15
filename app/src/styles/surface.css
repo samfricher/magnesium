@@ -790,7 +790,7 @@ button.line-end:hover { color: var(--text); }
   justify-content: space-between;
   gap: 1.5rem;
   width: 100%;
-  padding: 0.36rem 1.1rem 0.36rem calc(1.1rem + var(--hang) + 0.25rem);
+  padding: 0.36rem 1.1rem;
   font: 400 0.882rem/1.5 var(--app);
   color: var(--text);
   text-align: left;
@@ -799,15 +799,15 @@ button.line-end:hover { color: var(--text); }
 }
 .line-menu-row:hover:not(:disabled) { background: var(--tint); }
 .line-menu-row:disabled { color: var(--off); }
-/* A rule between groups, on the labels' column. */
+/* A rule between groups, on the labels' column, as light as the menu's own edge. */
 .line-menu-row.parted { margin-top: 0.55rem; }
 .line-menu-row.parted::before {
   content: "";
   position: absolute;
   top: -0.3rem;
-  left: calc(1.1rem + var(--hang) + 0.25rem);
+  left: 1.1rem;
   right: 1.1rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--edge);
 }
 .line-menu-key,
 .line-menu-detail { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
