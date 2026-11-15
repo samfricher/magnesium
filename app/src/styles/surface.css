@@ -629,7 +629,8 @@ button.line-end:hover { color: var(--text); }
   position: absolute;
   bottom: calc(100% + 0.6rem);
   left: calc(-1 * (1.1rem + var(--hang) + 0.25rem));
-  right: -1.1rem;
+  /* It ends where Stuck and More's menus end, at the line's right edge. */
+  right: 0;
   z-index: 21;
   max-height: 62vh;
   overflow-y: auto;
@@ -641,11 +642,9 @@ button.line-end:hover { color: var(--text); }
 }
 /* Over a line that sits high on the page there is more room below it. */
 .model-list.below { top: calc(100% + 0.6rem); bottom: auto; }
-/* The soft field reaches 18px past the column on each side: the list's text stays on the column. */
-:root[data-field="soft"] .model-list {
-  left: calc(18px - (1.1rem + var(--hang) + 0.25rem));
-  right: calc(18px - 1.1rem);
-}
+/* Over the soft field the list takes the field's own edges, as the line's other menus line up with it.
+   3px past them, so the open task's rule, which hangs 2px past the field, does not show at its side. */
+:root[data-field="soft"] .model-list { left: -3px; right: -3px; }
 /* A list taller than its room fades at its foot, as the layer's lists do, so a cut row reads as more to scroll to.
    Drawn over the rows rather than as a mask, which would fade the list's own edge and shadow too. */
 .model-list.scrolls::after {
