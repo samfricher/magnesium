@@ -76,6 +76,8 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const [changing, setChanging] = useState(false);
   // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
   const [room, setRoom] = useState<{ below: boolean; height: number; scrolls: boolean } | null>(null);
+  // Scrolled to its end, the list has nothing more below, so its foot is not faded over the last words.
+  const [atEnd, setAtEnd] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const where = useRef(at);
   where.current = at;
@@ -146,6 +148,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
     // nothing to say it scrolls (WebKit's scrollbar shows only while scrolling).
     const height = Math.max(160, down ? below : above);
     setRoom({ below: down, height, scrolls: list.scrollHeight > height + 1 });
+    setAtEnd(false);
   }, [open, older, choice]);
 
   // Esc closes it wherever the keyboard is. A list with no rows yet (before
@@ -299,8 +302,12 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const label = on ? "The model this session runs on" : "The model this session starts on";
   const list = open ? (
     <div
-      className={`model-list${room?.below ? " below" : ""}${room?.scrolls ? " scrolls" : ""}`}
+      className={`model-list${room?.below ? " below" : ""}${room?.scrolls && !atEnd ? " scrolls" : ""}`}
       ref={listRef}
+      onScroll={(e) => {
+        const l = e.currentTarget;
+        setAtEnd(l.scrollTop + l.clientHeight >= l.scrollHeight - 1);
+      }}
       style={room ? { maxHeight: room.height } : undefined}
       role="dialog"
       aria-label={label}
