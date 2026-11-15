@@ -491,9 +491,9 @@ input[type="range"]::-webkit-slider-thumb {
   display: inline-flex;
   align-items: baseline;
   max-width: 16rem;
-  padding: 0 0 0 0.45rem;
-  border: 1px solid var(--faint);
-  border-radius: 4px;
+  padding: 0 0 0 0.5rem;
+  border-radius: 6px;
+  background: var(--tint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
