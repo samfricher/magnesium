@@ -48,6 +48,8 @@ async function tauriCore(): Promise<Core> {
     setEngine: (engine) => invoke("set_engine", { engine }),
     models: () => invoke("models"),
     setPick: (model, effort) => invoke("set_pick", { model, effort }),
+    sessionModels: (at) => invoke("session_models", { folder: at.folder, session: at.session, live: at.live }),
+    setSessionModel: (at, model, effort) => invoke("set_session_model", { folder: at.folder, session: at.session, live: at.live, model, effort }),
     signIn: () => invoke("sign_in"),
     about: () => invoke("about"),
     turns: () => invoke("turns"),

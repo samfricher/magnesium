@@ -405,6 +405,7 @@ impl Harness for DirectTutor {
                 .map(Mutex::new),
             started: Instant::now(),
             initialize: Mutex::new(None),
+            asked: crate::models::Asked::default(),
         });
         if let Some(mut stderr) = stderr {
             let shared = Arc::clone(&shared);
@@ -733,6 +734,8 @@ struct Shared {
     started: Instant,
     /// The id of the `initialize` request, whose reply lists the models.
     initialize: Mutex<Option<String>>,
+    /// Control requests the window sent and waits on.
+    asked: crate::models::Asked,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -780,6 +783,12 @@ impl Shared {
             .write_all(line.as_bytes())
             .and_then(|()| stdin.flush())
             .map_err(|e| AgentError(format!("The tutor stopped listening: {e}.")))
+    }
+
+    /// Send a control request and wait for its answer.
+    fn ask(&self, request: Value) -> Result<Value, String> {
+        self.asked
+            .ask(self.next_id(), request, |line| self.write(line))
     }
 
     fn send_user(&self, text: &str) -> AgentResult<()> {
@@ -888,12 +897,17 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read, events: &Sender<Option<Val
             _ => {}
         }
     }
+    shared.asked.drop_all();
     let _ = events.send(None);
     shared.push(Item::Ended);
 }
 
-/// The reply to `initialize` lists the models Claude Code offers.
+/// The reply to `initialize` lists the models Claude Code offers. A reply
+/// the window waits on goes to it.
 fn on_control_response(shared: &Arc<Shared>, value: &Value) {
+    if shared.asked.deliver(value) {
+        return;
+    }
     let response = &value["response"];
     let asked = lock(&shared.initialize).clone();
     if asked.is_none() || response["request_id"].as_str() != asked.as_deref() {
@@ -2887,6 +2901,20 @@ impl Conversation for DirectConversation {
     fn saved_waiter(&self) -> Option<crate::agent::SavedWaiter> {
         let shared = Arc::clone(&self.shared);
         Some(Arc::new(move |limit| shared.wait_idle(limit)))
+    }
+
+    fn change_model(
+        &mut self,
+        model: &str,
+        effort: Option<&str>,
+    ) -> AgentResult<crate::agent::Applied> {
+        let shared = &self.shared;
+        crate::models::change(|request| shared.ask(request), model, effort)
+    }
+
+    fn applied(&mut self) -> AgentResult<crate::agent::Applied> {
+        let shared = &self.shared;
+        crate::models::applied(|request| shared.ask(request))
     }
 
     fn close(&mut self) {

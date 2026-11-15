@@ -2,8 +2,8 @@
 //
 // - "rest": under the next thing, before a lesson. Return starts it; words
 //   typed first start it with those words.
-// - "lesson": the one line of a lesson, one row: the learner's words, then at
-//   most two quiet controls. Every message goes the same way, and the record
+// - "lesson": the one line of a lesson, one row: the learner's words, then a
+//   few quiet controls. Every message goes the same way, and the record
 //   decides whether it was an answer. Two ways of sending say "this is not an
 //   answer" for sure: ⌥↩, and a message that quotes a passage the learner had
 //   selected. Both go as talk, which code never marks.
@@ -11,6 +11,9 @@
 // The line takes files too: Attach opens a picker for photos and PDFs, and a
 // file dropped on the session or an image pasted in joins it. Each shows on
 // the line by its name, can be taken off, and goes with the next message.
+//
+// Both places take one more tool from the session, the model it runs on, and
+// what that tool opens beside the line.
 
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -102,9 +105,11 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
   end?: { keys: string; what: string } | null;
-  /** At rest: a tool before Attach, and what it opens under the line. */
-  restTool?: ReactNode;
-  restBelow?: ReactNode;
+  /** A tool before the line's own, and what it opens beside the line. On the lesson's line it shows while the line is idle. */
+  tool?: ReactNode;
+  toolBeside?: ReactNode;
+  /** The tool's list is open: the tool stays on the line whatever the line holds. */
+  toolHeld?: boolean;
   /** The key that stops the tutor's reply, named on the line while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
@@ -400,7 +405,7 @@ export const Composer = memo(
               onPaste={onPaste}
             />
             <span className="line-tools">
-              {props.restTool}
+              {props.tool}
               <button type="button" className="clip" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
                 Attach
               </button>
@@ -412,7 +417,7 @@ export const Composer = memo(
               )}
             </span>
           </div>
-          {props.restBelow}
+          {props.toolBeside}
         </div>
       );
     }
@@ -466,6 +471,10 @@ export const Composer = memo(
           ]
         : [attach];
     }
+    // The session's own tool joins the line while it is idle, before the line's own tools: the words being typed,
+    // a stuck question and a reply being written keep the room. Opened from the menu, it stays while its list is open.
+    const idle = !typed && !symbols && !stuck && !(props.busy && props.onStop);
+    if (props.tool && (idle || props.toolHeld)) tools = [props.tool, ...tools];
 
     return (
       <div className={`line lesson${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line="lesson">
@@ -504,6 +513,7 @@ export const Composer = memo(
             {tools}
           </span>
         </div>
+        {props.toolBeside}
         {(confidence || queued) && (
           <p className="with">
             {confidence && <span className="said-sure">{confidence}</span>}

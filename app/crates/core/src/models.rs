@@ -6,8 +6,15 @@
 //! the last one it was sent. Magnesium keeps no list of models of its own,
 //! and adds nothing to what the agent says about each one.
 
+use std::collections::HashMap;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Mutex;
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+
+use crate::agent::{AgentError, AgentResult, Applied};
 
 /// What every lesson in the window ran on before the learner could pick:
 /// Claude Code's default on 2026-11-11, named so that a later change of that
@@ -167,6 +174,129 @@ pub fn usable_model(value: &str) -> bool {
 /// An effort level the window may pass: one lowercase word.
 pub fn usable_effort(level: &str) -> bool {
     (1..=16).contains(&level.len()) && level.chars().all(|c| c.is_ascii_lowercase())
+}
+
+/// How long the window waits for the agent to answer one control request.
+/// Claude Code answers these between its own work, in milliseconds.
+const ASK_LIMIT: Duration = Duration::from_secs(8);
+
+/// Control requests the window sent and waits on, by id.
+#[derive(Default)]
+pub(crate) struct Asked(Mutex<HashMap<String, Sender<Result<Value, String>>>>);
+
+impl Asked {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<Result<Value, String>>>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Hand a `control_response` to the request waiting on it. False when no
+    /// request of the window's waits on that id.
+    pub(crate) fn deliver(&self, value: &Value) -> bool {
+        let response = &value["response"];
+        let Some(id) = response["request_id"].as_str() else {
+            return false;
+        };
+        let Some(waiting) = self.lock().remove(id) else {
+            return false;
+        };
+        let answer = if response["subtype"] == "success" {
+            Ok(response["response"].clone())
+        } else {
+            Err(response["error"]
+                .as_str()
+                .map_or_else(|| "it refused".to_owned(), |why| clip(why.trim(), 300)))
+        };
+        let _ = waiting.send(answer);
+        true
+    }
+
+    /// The agent stopped: nothing waiting will be answered.
+    pub(crate) fn drop_all(&self) {
+        self.lock().clear();
+    }
+
+    /// Send one control request with `write` and wait for its answer.
+    pub(crate) fn ask(
+        &self,
+        id: String,
+        request: Value,
+        write: impl FnOnce(&Value) -> AgentResult<()>,
+    ) -> Result<Value, String> {
+        let (tell, answer): (_, Receiver<_>) = channel();
+        self.lock().insert(id.clone(), tell);
+        let line = json!({"type": "control_request", "request_id": id, "request": request});
+        if let Err(why) = write(&line) {
+            self.lock().remove(&id);
+            return Err(why.0);
+        }
+        match answer.recv_timeout(ASK_LIMIT) {
+            Ok(answer) => answer,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                self.lock().remove(&id);
+                Err("it did not answer in time".into())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("it stopped before it answered".into())
+            }
+        }
+    }
+}
+
+/// What a running conversation is on, from the agent's reply to
+/// `get_settings`.
+pub(crate) fn read_applied(settings: &Value) -> Option<Applied> {
+    let applied = &settings["applied"];
+    let model = applied["model"].as_str().filter(|m| usable_model(m))?;
+    Some(Applied {
+        model: model.to_owned(),
+        effort: applied["effort"]
+            .as_str()
+            .filter(|e| usable_effort(e))
+            .map(str::to_owned),
+    })
+}
+
+/// Ask what a running conversation is on.
+pub(crate) fn applied(ask: impl Fn(Value) -> Result<Value, String>) -> AgentResult<Applied> {
+    let settings = ask(json!({"subtype": "get_settings"})).map_err(|why| {
+        AgentError(format!(
+            "Claude Code did not say which model it runs on: {why}."
+        ))
+    })?;
+    read_applied(&settings)
+        .ok_or_else(|| AgentError("Claude Code did not say which model it runs on.".into()))
+}
+
+/// Change a running conversation's model and effort, as Claude Code takes
+/// them on its control stream, and read back what it is on. `effort` none
+/// takes away any level set before, so the agent's own applies.
+pub(crate) fn change(
+    ask: impl Fn(Value) -> Result<Value, String>,
+    model: &str,
+    effort: Option<&str>,
+) -> AgentResult<Applied> {
+    if !usable_model(model) || effort.is_some_and(|e| !usable_effort(e)) {
+        return Err(AgentError("That model cannot be picked.".into()));
+    }
+    ask(json!({"subtype": "set_model", "model": model}))
+        .map_err(|why| AgentError(format!("Claude Code did not change the model: {why}.")))?;
+    // A level it does not know, it drops without saying so: what it runs at
+    // is read back below. The settings this merges into (the lesson's own
+    // rules, from the command line) are kept.
+    ask(json!({"subtype": "apply_flag_settings", "settings": {"effortLevel": effort}}))
+        .map_err(|why| AgentError(format!("Claude Code did not change the effort: {why}.")))?;
+    let now = applied(&ask)?;
+    if let Some(wanted) = effort {
+        if now.effort.as_deref() != Some(wanted) {
+            return Err(AgentError(format!(
+                "Claude Code runs this session at {}, not {wanted}.",
+                now.effort.as_deref().unwrap_or("no effort level")
+            )));
+        }
+    }
+    Ok(now)
 }
 
 fn clip(text: &str, limit: usize) -> String {

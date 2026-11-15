@@ -1,11 +1,17 @@
-// The model a new session starts on, named on its first line, and the
-// agent's own list under it. The list is the one Claude Code sent when the
-// last lesson started, kept by the window: Magnesium keeps no list of models
-// of its own and adds nothing to what the agent says about each one.
+// The model and effort of the session in a tab, named on its line, and the
+// agent's own list under the word. One control for the whole session: before
+// it starts it sets what it starts on; once it runs, a change goes to Claude
+// Code at once and holds from its next request to the model. Either way it
+// becomes the pick new sessions start on.
+//
+// The list is the one Claude Code sent when the last lesson started, kept by
+// the window: Magnesium keeps no list of models of its own and adds nothing to
+// what the agent says about each one. What a running session is on is asked of
+// Claude Code each time the list opens, not remembered by the page.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Core, ModelChoice, ModelOption } from "../types";
+import type { Core, ModelAt, ModelChoice, ModelOption } from "../types";
 
 const EFFORT_WORDS: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 
@@ -20,6 +26,8 @@ export function rowFor(models: ModelOption[], model: string): ModelOption | null
   return matches.find((row) => row.current && row.value !== "default") ?? matches.find((row) => row.value === "default") ?? matches[0] ?? null;
 }
 
+const withEffort = (name: string, effort?: string | null) => (effort ? `${name} · ${effortWord(effort).toLowerCase()}` : name);
+
 /** What the start line names: the model a session started now runs on, and its effort when one was picked. */
 export function startWord(choice: ModelChoice): string {
   const fallback = choice.models.find((row) => row.value === "default");
@@ -28,34 +36,59 @@ export function startWord(choice: ModelChoice): string {
   // Not on the list now: this session runs on the agent's default, and the pick stays as the learner left it.
   if (choice.not_offered) return `${fallbackName}, for now`;
   const name = rowFor(choice.models, choice.pick.model)?.name ?? choice.pick.name ?? choice.pick.model;
-  return choice.pick.effort ? `${name} · ${effortWord(choice.pick.effort).toLowerCase()}` : name;
+  return withEffort(name, choice.pick.effort);
+}
+
+/** What the line names: what the session is on once it has one, else what it starts on. */
+export function lineWord(choice: ModelChoice): string {
+  const on = choice.on;
+  if (!on) return startWord(choice);
+  const name = rowFor(choice.models, on.model)?.name ?? (choice.pick?.model === on.model ? choice.pick.name : undefined) ?? on.model;
+  return withEffort(name, on.effort);
 }
 
 type Props = {
   api: Core;
+  /** The session's tab. */
+  at: ModelAt;
+  /** Which line the word sits on: the start line opens the list under it, the lesson's line over it. */
+  place: "rest" | "lesson";
   /** The list closed; the keyboard goes back to the line. */
   onClose: () => void;
 };
 
-/**
- * The start line's model: a quiet word among the line's tools, and the list it opens under the line.
- * Returns the two parts for the line to place.
- */
-export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list: ReactNode } {
+export type ModelPicker = {
+  /** The word, for the line's tools. Null until the window has read the choice. */
+  word: ReactNode;
+  /** The list, for the line to place; null while it is shut. */
+  list: ReactNode;
+  open: boolean;
+  /** Open or shut the list, as pressing the word does. */
+  toggle: () => void;
+};
+
+/** The model of the session in a tab: a quiet word among the line's tools, and the list it opens. */
+export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker {
   const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [open, setOpen] = useState(false);
   const [older, setOlder] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
+  // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
+  const [room, setRoom] = useState<{ below: boolean; height: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const wordRef = useRef<HTMLButtonElement>(null);
+  const where = useRef(at);
+  where.current = at;
 
   const read = useCallback(() => {
     api
-      .models()
+      .sessionModels(where.current)
       .then(setChoice)
       .catch(() => setChoice(null));
   }, [api]);
-  useEffect(read, [read]);
+  // Read again when the tab's session gets its id, or starts or stops running here.
+  useEffect(read, [read, at.folder, at.session, at.live]);
 
   const close = useCallback(
     (back: boolean) => {
@@ -67,12 +100,33 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
     [onClose],
   );
 
+  const toggle = useCallback(() => {
+    if (open) close(true);
+    else {
+      read();
+      setOpen(true);
+    }
+  }, [open, close, read]);
+
   // The keyboard goes to the chosen row when the list opens, or its first.
   useLayoutEffect(() => {
     if (!open) return;
     const list = listRef.current;
     (list?.querySelector<HTMLElement>("[data-nav].on") ?? list?.querySelector<HTMLElement>("[data-nav]"))?.focus();
-  }, [open, older]);
+  }, [open, older, choice === null]);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const line = list?.parentElement;
+    if (!open || place !== "lesson" || !list || !line) return setRoom(null);
+    const box = line.getBoundingClientRect();
+    const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
+    const above = box.top - top - 16;
+    const below = window.innerHeight - box.bottom - 16;
+    const wanted = Math.min(list.scrollHeight, window.innerHeight * 0.62);
+    const down = above < wanted && below > above;
+    setRoom({ below: down, height: Math.max(160, Math.min(window.innerHeight * 0.62, down ? below : above)) });
+  }, [open, older, place, choice]);
 
   // Esc closes it wherever the keyboard is. A list with no rows yet (before
   // the first lesson, or when the agent sent none) has nothing to move the
@@ -101,29 +155,36 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
     return () => document.removeEventListener("mousedown", away);
   }, [open, close]);
 
-  if (!choice) return { word: null, list: null };
+  if (!choice) return { word: null, list: null, open, toggle };
 
-  const pickRow = choice.pick ? rowFor(choice.models, choice.pick.model) : null;
+  const on = choice.on ?? null;
+  const chosenModel = on?.model ?? choice.pick?.model ?? null;
+  const chosenEffort = on ? (on.effort ?? null) : (choice.pick?.effort ?? null);
+  const chosenRow = chosenModel ? rowFor(choice.models, chosenModel) : null;
   const fallback = choice.models.find((row) => row.value === "default");
   const fallbackName = fallback ? (rowFor(choice.models, idOf(fallback)) ?? fallback).name : null;
 
-  const pick = async (row: ModelOption) => {
-    const kept = choice.pick?.effort && row.efforts?.includes(choice.pick.effort) ? choice.pick.effort : null;
+  const change = async (model: string, effort: string | null) => {
+    if (changing) return;
+    setChanging(true);
     try {
-      setChoice(await api.setPick(row.value, kept));
+      setChoice(await api.setSessionModel(where.current, model, effort));
       setProblem(null);
     } catch (error) {
       setProblem(String(error).replace(/^Error: /, ""));
+      // What the session is on after a refusal is Claude Code's to say.
+      read();
+    } finally {
+      setChanging(false);
     }
   };
-  const setEffort = async (level: string | null) => {
-    if (!choice.pick) return;
-    try {
-      setChoice(await api.setPick(choice.pick.model, level));
-      setProblem(null);
-    } catch (error) {
-      setProblem(String(error).replace(/^Error: /, ""));
-    }
+  const pick = (row: ModelOption) => {
+    // An effort carries over to a model that takes it.
+    const kept = chosenEffort && row.efforts?.includes(chosenEffort) ? chosenEffort : null;
+    void change(row.value, kept);
+  };
+  const setEffort = (level: string | null) => {
+    if (chosenModel) void change(chosenModel, level);
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -138,11 +199,11 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
   };
 
   const effortRow = (row: ModelOption) =>
-    row === pickRow && row.efforts && row.efforts.length > 0 ? (
+    row === chosenRow && row.efforts && row.efforts.length > 0 ? (
       <div className="model-effort" role="radiogroup" aria-label={`Effort for ${row.name}`}>
         <span className="model-effort-name">Effort</span>
         {[null, ...row.efforts].map((level) => {
-          const chosen = (choice.pick?.effort ?? null) === level;
+          const chosen = chosenEffort === level;
           return (
             <button
               key={level ?? "usual"}
@@ -153,7 +214,7 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
               data-drive="model-effort"
               data-level={level ?? "usual"}
               title={level ? undefined : "Claude Code’s own effort for this model"}
-              onClick={() => void setEffort(level)}
+              onClick={() => setEffort(level)}
             >
               {level ? effortWord(level) : "Usual"}
             </button>
@@ -166,12 +227,12 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
     <div key={row.value}>
       <button
         type="button"
-        className={`row model-row${row === pickRow ? " on" : ""}`}
-        aria-pressed={row === pickRow}
+        className={`row model-row${row === chosenRow ? " on" : ""}`}
+        aria-pressed={row === chosenRow}
         data-nav
         data-drive="model-row"
         data-value={row.value}
-        onClick={() => void pick(row)}
+        onClick={() => pick(row)}
       >
         <span className="row-mark" aria-hidden="true" />
         <span className="row-label">
@@ -188,17 +249,35 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
   const notes: string[] = [];
   if (choice.models.length === 0) {
     notes.push(
-      choice.failed
-        ? `Claude Code didn’t send its list of models when the last lesson started. ↩ starts on ${startWord(choice)}.`
-        : `Claude Code sends its list of models when a lesson starts. ↩ starts this one on ${choice.pick ? startWord(choice) : "its default"}, and the next can be chosen here.`,
+      on
+        ? `Claude Code sends its list of models when a lesson starts. This session is on ${lineWord(choice)}.`
+        : choice.failed
+          ? `Claude Code didn’t send its list of models when the last lesson started. ↩ starts on ${startWord(choice)}.`
+          : `Claude Code sends its list of models when a lesson starts. ↩ starts this one on ${choice.pick ? startWord(choice) : "its default"}, and the next can be chosen here.`,
     );
-  } else if (choice.not_offered && choice.pick) {
+  } else if (on && !chosenRow) {
+    notes.push(`This session is on ${on.model}, which isn’t on Claude Code’s list now. Pick another to go on with that.`);
+  } else if (!on && choice.not_offered && choice.pick) {
     notes.push(`${choice.pick.name ?? choice.pick.model} isn’t on Claude Code’s list now, so this session starts on ${fallbackName ?? "its default"}. Your pick stays until you choose another.`);
   }
   if (problem) notes.push(problem);
+  const footing = !on
+    ? "Claude Code’s list for your account. Your pick is kept for the next session."
+    : on.live
+      ? "Claude Code’s list for your account. A change holds from the tutor’s next reply, and new sessions start on it."
+      : "Claude Code’s list for your account. This session goes on with your pick when you next write, and new sessions start on it.";
 
+  const label = on ? "The model this session runs on" : "The model this session starts on";
   const list = open ? (
-    <div className="model-list" ref={listRef} role="dialog" aria-label="The model this session starts on" onKeyDown={onKeyDown}>
+    <div
+      className={`model-list ${place}${room?.below ? " below" : ""}`}
+      ref={listRef}
+      style={room ? { maxHeight: room.height } : undefined}
+      role="dialog"
+      aria-label={label}
+      aria-busy={changing}
+      onKeyDown={onKeyDown}
+    >
       {older ? (
         <>
           <button type="button" className="row model-back" data-nav data-drive="model-current" onClick={() => setOlder(false)}>
@@ -230,31 +309,26 @@ export function useModelPicker({ api, onClose }: Props): { word: ReactNode; list
           {text}
         </p>
       ))}
-      {choice.models.length > 0 && !older && <p className="model-note">Claude Code’s list for your account. Your pick is kept for the next session.</p>}
+      {choice.models.length > 0 && !older && <p className="model-note">{footing}</p>}
     </div>
   ) : null;
 
   const word = (
     <button
+      key="model"
       ref={wordRef}
       type="button"
-      className={`clip${open ? " open" : ""}`}
+      className={`${place === "rest" ? "clip" : "quiet-act"} model-word${open ? " open" : ""}`}
       data-drive="model"
       aria-haspopup="dialog"
       aria-expanded={open}
-      title="The model this session starts on"
+      title={label}
       onMouseDown={(event) => event.preventDefault()}
-      onClick={() => {
-        if (open) close(true);
-        else {
-          read();
-          setOpen(true);
-        }
-      }}
+      onClick={toggle}
     >
-      {startWord(choice)}
+      {lineWord(choice)}
     </button>
   );
 
-  return { word, list };
+  return { word, list, open, toggle };
 }

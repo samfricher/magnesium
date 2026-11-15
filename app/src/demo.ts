@@ -9,12 +9,13 @@
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
 //   #permission  #paper  #upgrade  #help-row  #symbols
+//   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
 
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
-import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, ModelChoice, ModelOption, Opened, Paper, PaperSitting, Payment, Pick, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
+import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, ModelAt, ModelChoice, ModelOption, Opened, Paper, PaperSitting, Payment, Pick, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
 
 const wait = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
 
@@ -52,11 +53,21 @@ let pick: Pick | null = has("model-first-run", "model-list-first-run")
   ? null
   : has("model-not-offered")
     ? { model: "claude-fable-4", name: "Fable 4" }
-    : has("model-effort", "record-unopened")
+    : has("model-effort", "record-unopened", "model-lesson", "model-lesson-effort", "model-lesson-word", "model-lesson-refused")
       ? { model: "claude-sonnet-5-5", name: "Sonnet 5.5", effort: "low" }
       : has("record-unopened-usual")
         ? { model: "claude-haiku-5-5", name: "Haiku 5.5" }
         : { model: "claude-fable-5-2", name: "Fable 5.2" };
+// What each session is on, by its tab's session id or "live" before the agent named it. A session the demo starts
+// is on the pick at the time; "model-lesson-refused" is one whose agent turns a change down.
+const sessionsOn: Record<string, { model: string; effort?: string }> = {};
+const onKey = (at: ModelAt) => at.session ?? (at.live ? "live" : null);
+const sessionChoice = (at: ModelAt): ModelChoice => {
+  const key = onKey(at);
+  if (key && !sessionsOn[key] && pick) sessionsOn[key] = { model: pick.model, ...(pick.effort ? { effort: pick.effort } : {}) };
+  const on = key ? sessionsOn[key] : undefined;
+  return { ...modelChoice(), on: on ? { ...on, live: at.live } : null };
+};
 const modelChoice = (): ModelChoice => {
   const models = modelsNone ? [] : MODEL_LIST;
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
@@ -449,6 +460,16 @@ export function demoCore(): Core {
       pick = { model: row?.resolved ?? model, name: row?.name ?? pick?.name, ...(effort ? { effort } : {}) };
       return modelChoice();
     },
+    sessionModels: async (at) => sessionChoice(at),
+    setSessionModel: async (at, model, effort) => {
+      await wait(120);
+      if (has("model-lesson-refused") && at.live) throw new Error("Claude Code did not change the model: Model 'claude-opus-4-6' not found.");
+      const row = MODEL_LIST.find((m) => m.value === model || m.resolved === model);
+      pick = { model: row?.resolved ?? model, name: row?.name ?? pick?.name, ...(effort ? { effort } : {}) };
+      const key = onKey(at);
+      if (key) sessionsOn[key] = { model: pick.model, ...(effort ? { effort } : {}) };
+      return sessionChoice(at);
+    },
     setEngine: async (chosen) => {
       engineChosen = chosen;
       return { chosen, conversation: null };
@@ -652,6 +673,27 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       document.querySelector<HTMLElement>("[data-drive='model']")?.click();
       await wait(150);
       if (has("model-older")) document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
+      return wait(150);
+    case "model-lesson-word":
+      return answered(actions);
+    case "model-lesson":
+    case "model-lesson-effort":
+    case "model-lesson-refused":
+      await answered(actions);
+      await wait(200);
+      document.querySelector<HTMLElement>("[data-drive='model']")?.click();
+      await wait(200);
+      if (has("model-lesson-effort")) {
+        document.querySelector<HTMLElement>("[data-drive='model-effort'][data-level='high']")?.click();
+        await wait(300);
+      }
+      if (has("model-lesson-refused")) {
+        document.querySelector<HTMLElement>("[data-drive='model-row'][data-value='claude-opus-4-6']")?.click();
+        document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
+        await wait(150);
+        document.querySelector<HTMLElement>("[data-drive='model-row'][data-value='claude-opus-4-6']")?.click();
+        await wait(400);
+      }
       return wait(150);
     case "record-unopened":
     case "record-unopened-usual":

@@ -244,6 +244,40 @@ fn set_pick(shell: State<'_, Shell>, model: String, effort: Option<String>) -> R
     plain(shell.manager.set_pick(&model, effort.as_deref()))
 }
 
+/// The agent's models, the pick, and what the session in a tab is on: a
+/// running one is asked.
+#[tauri::command(async)]
+fn session_models(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    session: Option<String>,
+    live: bool,
+) -> ModelChoice {
+    shell
+        .manager
+        .models_at(named(&folder), session.as_deref(), live)
+}
+
+/// Change the model and effort of the session in a tab, at once when it
+/// runs, and make them the pick for new sessions.
+#[tauri::command(async)]
+fn set_session_model(
+    shell: State<'_, Shell>,
+    folder: Option<String>,
+    session: Option<String>,
+    live: bool,
+    model: String,
+    effort: Option<String>,
+) -> Reply<ModelChoice> {
+    plain(shell.manager.set_model_at(
+        named(&folder),
+        session.as_deref(),
+        live,
+        &model,
+        effort.as_deref(),
+    ))
+}
+
 /// Open a conversation in a folder: the one `session` names, the folder's
 /// last one, or a new one, named `title` for the folder's list.
 #[tauri::command(async)]
@@ -624,6 +658,8 @@ fn main() {
             set_engine,
             models,
             set_pick,
+            session_models,
+            set_session_model,
             open_session,
             send,
             send_new_lesson,

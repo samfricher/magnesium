@@ -18,6 +18,12 @@ What a turn does is chosen by a word in the learner's message:
   HELPER      a helper agent writes text that must never be shown
   LIMIT       end the turn at a usage limit
   HISTORY     say how many turns this conversation has had
+  RUNS_ON     say the model and effort it runs on now
+
+It takes `set_model`, `apply_flag_settings` (`effortLevel` only) and
+`get_settings` on its control stream, as Claude Code 2.1.322 does: an
+unknown model is refused, an unknown effort is dropped without a word, and
+with no effort set the model's own applies ("medium" here).
 
 It also answers `auth status --json` and `auth login`, as Claude Code does:
 signed in to a Claude Max plan, or with the API key in ANTHROPIC_API_KEY when
@@ -168,6 +174,27 @@ def runs_on():
     if "--model" in args:
         return args[args.index("--model") + 1]
     return next(row["resolvedModel"] for row in MODELS if row["value"] == "default")
+
+
+# What it runs on now, changed by the control requests above.
+# Once an effort is applied on the stream, the `--effort` it started with no
+# longer counts, as in the real program.
+running = {"model": None, "effort": None, "applied": False}
+
+
+def effort_now():
+    if running["effort"]:
+        return running["effort"]
+    if "--effort" in args and not running["applied"]:
+        return args[args.index("--effort") + 1]
+    return "medium"
+
+
+def known_model(name):
+    for row in MODELS:
+        if name in (row["value"], row.get("resolvedModel")):
+            return row.get("resolvedModel") or row["value"]
+    return None
 
 
 def init_message():
@@ -371,6 +398,8 @@ def turn(text):
             return
         answers = reply.get("updatedInput", {}).get("answers", {})
         answer = "You chose: " + json.dumps(answers, sort_keys=True)
+    elif "RUNS_ON" in text:
+        answer = f"On {running['model'] or runs_on()} at {effort_now()}."
     elif "HISTORY" in text:
         answer = f"This is turn {len(history)} of {session}."
     elif "SLOW" in text:
@@ -409,6 +438,25 @@ def main():
                 interrupted.set()
                 with reply_ready:
                     reply_ready.notify_all()
+            elif subtype == "set_model":
+                wanted = message["request"].get("model")
+                model = known_model(wanted)
+                if model is None or os.environ.get("STAND_IN_REFUSE_MODEL") == "1":
+                    emit({"type": "control_response",
+                          "response": {"subtype": "error", "request_id": message["request_id"],
+                                       "error": f"Model '{wanted}' not found"}})
+                    continue
+                running["model"] = model
+                response = {"model": model}
+            elif subtype == "apply_flag_settings":
+                settings = message["request"].get("settings", {})
+                if "effortLevel" in settings:
+                    level = settings["effortLevel"]
+                    running["effort"] = level if level in ALL_EFFORTS else None
+                    running["applied"] = True
+            elif subtype == "get_settings":
+                response = {"effective": {}, "sources": [],
+                            "applied": {"model": running["model"] or runs_on(), "effort": effort_now()}}
             emit({"type": "control_response",
                   "response": {"subtype": "success", "request_id": message["request_id"], "response": response}})
         elif kind == "control_response":

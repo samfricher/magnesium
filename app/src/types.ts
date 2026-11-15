@@ -145,7 +145,16 @@ export type Pick = { model: string; name?: string; effort?: string };
  * The agent's list as it last sent it (empty before the first lesson), whether it sent none the last time it was
  * asked, the pick (null on a new window before the first list), and whether the list no longer offers the pick.
  */
-export type ModelChoice = { models: ModelOption[]; failed: boolean; pick: Pick | null; not_offered: boolean };
+export type ModelChoice = { models: ModelOption[]; failed: boolean; pick: Pick | null; not_offered: boolean; on?: On | null };
+
+/**
+ * What one session is on: the model's full id, and the effort the learner picked (absent for the agent's own).
+ * `live` when it runs in the window now, so a change applies at once; otherwise when it next runs.
+ */
+export type On = { model: string; effort?: string | null; live: boolean };
+
+/** A session's tab, for its model: its folder, its session once the agent named it, and whether it holds the running conversation. */
+export type ModelAt = { folder: string; session: string | null; live: boolean };
 
 /** `engine` is the engine of the conversation that was opened. */
 export type Opened = { resumed: boolean; turns: Turn[]; engine: Engine };
@@ -411,6 +420,10 @@ export interface Core {
   models(): Promise<ModelChoice>;
   /** Pick the model and effort new sessions start on; `effort` null for the agent's own. Saved at once. */
   setPick(model: string, effort: string | null): Promise<ModelChoice>;
+  /** The models, the pick, and what the session in a tab is on; a running one is asked. */
+  sessionModels(at: ModelAt): Promise<ModelChoice>;
+  /** Change the model and effort of the session in a tab (at once when it runs) and make them the pick. */
+  setSessionModel(at: ModelAt, model: string, effort: string | null): Promise<ModelChoice>;
   signIn(): Promise<void>;
   about(): Promise<About>;
   /** The open folder's saved conversation, as the window showed it, read without starting it. */

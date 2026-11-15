@@ -52,6 +52,14 @@ const shots = [
   ["help-row", "help-row", 300],
   ["symbols", "symbols", 300],
   ["attach", "attach", 400],
+  // The model: on the start line, and on the lesson's line once the session runs.
+  ["model-list", "model-list", 300],
+  ["model-effort", "model-effort", 300],
+  ["model-lesson-word", "model-lesson-word", 400],
+  ["model-lesson", "model-lesson", 400],
+  ["model-lesson-effort", "model-lesson-effort", 500],
+  ["model-lesson-refused", "model-lesson-refused", 600],
+  ["model-lesson-narrow", "model-lesson", 400, { width: 720, height: 560 }],
   // Tabs, ⌘K and the rest.
   ["tabs", "tabs", 500],
   ["commands", "commands", 300],

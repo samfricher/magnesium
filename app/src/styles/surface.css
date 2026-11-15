@@ -623,9 +623,11 @@ button.line-end:hover { color: var(--text); }
 .line.rest .line-end .keys { color: var(--quiet); }
 .now > .keys { color: var(--hint); }
 
-/* The model a new session starts on: a quiet word among the start line's
-   tools, and the agent's list under the line, its text on the line's column. */
-.line.rest .clip.open { color: var(--text); }
+/* The model the session runs on: a quiet word among the line's tools, and the
+   agent's list beside the line, its text on the line's column. Under the
+   start line; over the lesson's line, which sits at the foot of the page. */
+.model-word.open,
+.line.lesson .line-tools .model-word.open { color: var(--text); }
 .model-list {
   position: absolute;
   top: calc(100% + 0.6rem);
@@ -640,6 +642,16 @@ button.line-end:hover { color: var(--text); }
   border-radius: 10px;
   box-shadow: var(--shadow);
 }
+.model-list.lesson { top: auto; bottom: calc(100% + 0.6rem); }
+/* Over a line that sits high on a short page there is more room below it. */
+.model-list.lesson.below { top: calc(100% + 0.6rem); bottom: auto; }
+/* The soft field reaches 18px past the column on each side: the list's text stays on the column. */
+:root[data-field="soft"] .model-list.lesson {
+  left: calc(18px - (1.1rem + var(--hang) + 0.25rem));
+  right: calc(18px - 1.1rem);
+}
+.model-list[aria-busy="true"] .model-row,
+.model-list[aria-busy="true"] .model-effort .segment { cursor: progress; }
 .model-list .row { width: 100%; }
 .model-list .row:hover { background: var(--tint); }
 .model-row { align-items: start; padding-top: 0.42rem; padding-bottom: 0.42rem; }
@@ -662,6 +674,8 @@ button.line-end:hover { color: var(--text); }
 .model-back .row-label { font: 400 0.824rem/1.5 var(--app); color: var(--quiet); }
 .model-fold .row-hint { color: var(--quiet); }
 .model-note { margin: 0.45rem 1.1rem 0.15rem calc(1.1rem + var(--hang) + 0.25rem); font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
+/* A change Claude Code turned down: in the text's colour, so it is not skimmed past. */
+.model-note[role="alert"] { color: var(--text); }
 :root[data-input="key"] .model-list .row:focus-visible { outline: none; background: var(--tint); }
 :root[data-input="key"] .model-effort .segment:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
 
