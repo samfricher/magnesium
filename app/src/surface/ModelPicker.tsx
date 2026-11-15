@@ -200,7 +200,9 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       const why = String(error)
         .replace(/^Error: /, "")
         .replace(/^Claude Code did not change the (model|effort):\s*/, "")
-        .replace(/\.$/, "");
+        .replace(/\.$/, "")
+        // A model's id ("claude-opus-4-6") is not broken across lines at its hyphens.
+        .replace(/-/g, "\u2011");
       setProblem(`Claude Code didn’t move this session to ${asked}.${why ? ` It said: ${why}.` : ""}`);
       // What the session is on after a refusal is Claude Code's to say.
       read();
