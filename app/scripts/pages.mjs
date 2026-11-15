@@ -10,9 +10,10 @@
 // (crates/core/tests/stand_in_model.py).
 //
 // It writes <stem>-dark.png and <stem>-light.png for each page and state it
-// visits, menu.json (the menu bar, which a photograph of the window does
-// not show) and run.json (each step, and any problem). It exits 1 when a step
-// failed, after doing every step it can.
+// visits (the session's line in both of its looks, soft and bare), menu.json
+// (the menu bar, which a photograph of the window does not show) and run.json
+// (each step, and any problem). It exits 1 when a step failed, after doing
+// every step it can.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
@@ -254,6 +255,25 @@ try {
   await step(w, "settings: the end", { op: "scroll", to: "bottom" });
   await settle(w, 300);
   await shoot(w, "settings-about", "Settings: Lessons and About, at the end");
+
+  // The line drawn bare. A new window draws it as a soft field, so every photograph above has that look;
+  // these are the same session with the other one, chosen in Settings as a learner chooses it.
+  await step(w, "your line: bare", { op: "click", target: "Bare line" });
+  await step(w, "the session", { op: "click", target: "tab-2", by: "drive" });
+  await settle(w, 500);
+  await shoot(w, "session-bare", "Session: the line drawn bare");
+  await step(w, "focus the bare line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on it", { op: "type", text: ANSWER });
+  await settle(w, 300);
+  await shoot(w, "session-bare-typed", "Session: words on the bare line");
+  await step(w, "stuck", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "session-bare-stuck", "Session: Stuck open on the bare line");
+  await step(w, "close Stuck", { op: "key", key: "Escape" });
+  await step(w, "clear the line", { op: "type", text: "", replace: true });
+  await step(w, "settings again", { op: "click", target: "settings", by: "drive" });
+  await step(w, "your line: soft", { op: "click", target: "Soft field" });
+  await settle(w, 300);
 
   // Home again, with a session to carry on, and three tabs open.
   // The Home tab still shows the workspace's page: ‹ Home goes back to Home itself.

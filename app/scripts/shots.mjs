@@ -10,6 +10,10 @@
 // window's own screens: Home, a workspace, Settings, the plan beside the
 // lesson shown and hidden, a file on the line, the tabs and ⌘K.
 //
+// The line is photographed in both of its looks. A new window draws it as a
+// soft field, so every state here does; the states that show the line's own
+// parts are taken again with it bare, as <stem>-bare-<scheme>.png.
+//
 // These are photographs in Chrome. What only the Mac's WebKit draws (the
 // range sliders, the menu bar) is checked in the real window.
 
@@ -19,9 +23,12 @@ import { createServer } from "vite";
 
 const only = process.argv[2];
 
-// [stem, address, settle after ready (ms), viewport, schemes]
+// [stem, address, settle after ready (ms), viewport, schemes, the line's look]
 const WIDE = { width: 1040, height: 720 };
 const BOTH = ["dark", "light"];
+// Where the page keeps the learner's settings (PREFS in src/prefs.ts). A photograph that asked for the bare
+// line checks that the page drew it, so a renamed key fails here and is not photographed as the soft field.
+const PREFS_KEY = "mg.prefs.2";
 const shots = [
   // The five scenarios. The cold open is Home now.
   ["s1-cold", "s1-cold", 300],
@@ -79,6 +86,15 @@ const shots = [
   ["setup-no-claude", "setup-no-claude", 300],
   ["setup-replace", "setup-replace", 300],
   ["setup-too-old", "setup-too-old", 300],
+  // The line drawn bare: before the lesson, with a task open, each menu, words on it, a file on it, the model's list.
+  ["new-session-bare", "new-session", 400, WIDE, BOTH, "bare"],
+  ["help-row-bare", "help-row", 300, WIDE, BOTH, "bare"],
+  ["line-stuck-bare", "line-stuck", 300, WIDE, BOTH, "bare"],
+  ["line-more-typing-bare", "line-more-typing", 300, WIDE, BOTH, "bare"],
+  ["symbols-bare", "symbols", 300, WIDE, BOTH, "bare"],
+  ["attach-bare", "attach", 400, WIDE, BOTH, "bare"],
+  ["model-lesson-bare", "model-lesson", 400, WIDE, BOTH, "bare"],
+  ["narrow-lesson-bare", "narrow-lesson", 400, { width: 720, height: 560 }, BOTH, "bare"],
 ].filter(([name]) => !only || name.includes(only));
 
 const server = await createServer({ server: { port: 1431, strictPort: false }, logLevel: "error" });
@@ -89,9 +105,10 @@ await mkdir("shots", { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const problems = [];
 let count = 0;
-for (const [name, address, settle, viewport = WIDE, schemes = BOTH] of shots) {
+for (const [name, address, settle, viewport = WIDE, schemes = BOTH, look = null] of shots) {
   for (const scheme of schemes) {
     const page = await browser.newPage({ viewport, deviceScaleFactor: 2, colorScheme: scheme });
+    if (look) await page.addInitScript(([key, line]) => window.localStorage.setItem(key, JSON.stringify({ line })), [PREFS_KEY, look]);
     page.on("pageerror", (error) => problems.push(`${name}: ${error.message}`));
     page.on("console", (message) => {
       if (message.type() === "error") problems.push(`${name}: ${message.text()}`);
@@ -102,6 +119,7 @@ for (const [name, address, settle, viewport = WIDE, schemes = BOTH] of shots) {
     } catch {
       problems.push(`${name}: the demo never reached its state`);
     }
+    if (look && (await page.evaluate(() => document.documentElement.dataset.field)) !== look) problems.push(`${name}: the page did not draw the ${look} line`);
     await page.waitForTimeout(settle);
     await page.screenshot({ path: `shots/${name}-${scheme}.png` });
     await page.close();
