@@ -694,7 +694,7 @@ button.line-end:hover { color: var(--text); }
 :root[data-input="key"] .model-effort .segment:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-decoration-style: dotted; text-underline-offset: 4px; }
 
 /* A notice with a way on: the way first, in the ink, on a line of its own. */
-.record.note .note-acts { display: flex; gap: 1.1rem; margin-top: 0.2rem; }
+.record.note .note-acts { display: flex; gap: 1.1rem; margin-top: 0.5rem; }
 .record.note .note-acts .plain { margin-left: 0; }
 .record.note .note-acts .note-act { color: var(--ink); }
 .record.note .note-acts .note-act:hover { text-decoration: underline; text-underline-offset: 3px; }
