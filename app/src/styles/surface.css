@@ -657,7 +657,8 @@ button.line-end:hover { color: var(--text); }
 /* Over the soft field the list takes the field's own edges, as the line's other menus line up with it. The open
    task's rule, which hangs 2px past the field, is put away while the list covers its words. */
 :root[data-field="soft"] .model-list { left: 0; right: 0; }
-.foot:has(.model-list) .parked { border-left-color: transparent; }
+.foot:has(.model-list) .parked,
+.surface:has(.model-list) .turn.open .prose div.task { border-left-color: transparent; }
 /* Its words start where the field's words start, 18px in, as Stuck and More's do. */
 :root[data-field="soft"] .model-list .row { padding-left: 0; grid-template-columns: 18px minmax(0, 1fr) minmax(0, max-content); column-gap: 0; }
 :root[data-field="soft"] .model-list .model-effort { padding-left: 18px; }
