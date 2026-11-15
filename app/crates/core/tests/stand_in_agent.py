@@ -17,6 +17,11 @@ What a turn does is chosen by a word in the learner's message:
   WAIT        think for a while before the first word
   HELPER      a helper agent writes text that must never be shown
   LIMIT       end the turn at a usage limit
+  EXPIRED     the sign-in runs out, once: this turn and every later one end
+              with Claude Code's own line in the reply's place, in the shape
+              2.1.322 sent on 2026-11-15 for a key Anthropic refused, and
+              `auth status` says signed out, until `auth login` runs. The
+              same words sent again after that are answered.
   HISTORY     say how many turns this conversation has had
   RUNS_ON     say the model and effort it runs on now
 
@@ -105,7 +110,13 @@ def key_source():
     return "none"
 
 
+def expired():
+    return bool(STATE) and os.path.exists(os.path.join(STATE, "expired"))
+
+
 def signed_in():
+    if expired():
+        return False
     if os.environ.get("STAND_IN_SIGNED_OUT") != "1":
         return True
     return bool(STATE) and os.path.exists(os.path.join(STATE, "signed-in"))
@@ -126,6 +137,8 @@ if args[:2] == ["auth", "login"]:
     time.sleep(0.3)
     if STATE:
         open(os.path.join(STATE, "signed-in"), "w").close()
+        if expired():
+            os.remove(os.path.join(STATE, "expired"))
     sys.exit(0)
 
 if "--bare" in args:
@@ -346,6 +359,38 @@ def turn(text):
     history = load_history()
     history.append(text)
     save_history(history)
+
+    if "EXPIRED" in text and STATE and not os.path.exists(os.path.join(STATE, "expired-once")):
+        open(os.path.join(STATE, "expired-once"), "w").close()
+        open(os.path.join(STATE, "expired"), "w").close()
+    if expired():
+        said = "Failed to authenticate: OAuth session expired and could not be refreshed"
+        emit({
+            "type": "assistant",
+            "uuid": str(uuid.uuid4()),
+            "session_id": session,
+            "parent_tool_use_id": None,
+            "message": {"id": str(uuid.uuid4()), "role": "assistant", "model": "<synthetic>",
+                        "content": [{"type": "text", "text": said}]},
+            "error": "authentication_failed",
+            "is_api_error_message": True,
+            "api_error_status": 401,
+        })
+        emit({
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 401,
+            "duration_ms": 10,
+            "duration_api_ms": 0,
+            "num_turns": 1,
+            "session_id": session,
+            "result": said,
+            "stop_reason": "stop_sequence",
+            "total_cost_usd": 0,
+        })
+        return
+
     open_record(text)
 
     if "LIMIT" in text:

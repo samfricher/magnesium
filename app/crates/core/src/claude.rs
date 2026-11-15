@@ -767,7 +767,7 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
 }
 
 pub(crate) const SIGN_IN: &str =
-    "Claude Code is signed out. Press ⌘K and choose Sign in to Claude Code, then send your message again.";
+    "Claude Code is signed out. Sign in, then send your message again.";
 
 pub(crate) fn looks_signed_out(text: &str) -> bool {
     let text = text.to_ascii_lowercase();
@@ -776,6 +776,24 @@ pub(crate) fn looks_signed_out(text: &str) -> bool {
         || text.contains("not logged in")
         || text.contains("authentication_error")
         || text.contains("oauth token")
+        // A sign-in that ran out, in Claude Code 2.1.322: "Failed to
+        // authenticate: OAuth session expired and could not be refreshed".
+        || text.contains("failed to authenticate")
+        || text.contains("oauth session")
+}
+
+/// Whether a failed result is a sign-in that no longer holds: Anthropic
+/// refused the request's credentials (401), or the words say so.
+pub(crate) fn ended_signed_out(result: &Value, said: &str) -> bool {
+    result["api_error_status"].as_i64() == Some(401) || looks_signed_out(said)
+}
+
+/// Whether a message is Claude Code's own line about a request that failed
+/// ("Failed to authenticate: …", "API Error: …"), sent where the tutor's
+/// reply would be. It is not the tutor's words: shown as a reply, it was
+/// also kept as one, and the message it answered counted as received.
+pub(crate) fn is_own_error(value: &Value) -> bool {
+    value["is_api_error_message"].as_bool() == Some(true) || value["error"].is_string()
 }
 
 pub(crate) fn looks_like_a_limit(text: &str) -> bool {
@@ -946,11 +964,11 @@ pub(crate) fn payment_notice(payment: Payment, init: &Value) -> Option<String> {
     let plan = source == "none";
     match payment {
         Payment::Plan if !plan => Some(format!(
-            "This lesson is paid with {}, not your Claude plan. To use the plan, sign in with your Claude account (⌘K, Sign in to Claude Code).",
+            "This lesson is paid with {}, not your Claude plan. To use the plan, sign in with your Claude account.",
             key_words(Some(source))
         )),
         Payment::ApiKey if plan => Some(
-            "This lesson uses your Claude plan, because Claude Code found no API key. To pay per use, sign in with an Anthropic Console account (⌘K, Sign in to Claude Code)."
+            "This lesson uses your Claude plan, because Claude Code found no API key. To pay per use, sign in with an Anthropic Console account."
                 .into(),
         ),
         _ => None,
@@ -1305,6 +1323,20 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
     if !is_main_thread(value) {
         return;
     }
+    if is_own_error(value) {
+        match value["error"].as_str() {
+            Some("authentication_failed") => shared.emit(AgentEvent::Notice {
+                kind: NoticeKind::SignIn,
+                text: SIGN_IN.into(),
+            }),
+            Some("rate_limit") => shared.emit(AgentEvent::Notice {
+                kind: NoticeKind::UsageLimit,
+                text: "You reached your Claude usage limit.".into(),
+            }),
+            _ => {}
+        }
+        return;
+    }
     let message = &value["message"];
     let id = message["id"].as_str().unwrap_or_default().to_owned();
     let Some(blocks) = message["content"].as_array() else {
@@ -1378,19 +1410,6 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
             _ => {}
         }
     }
-    if let Some(error) = value["error"].as_str() {
-        match error {
-            "authentication_failed" => shared.emit(AgentEvent::Notice {
-                kind: NoticeKind::SignIn,
-                text: SIGN_IN.into(),
-            }),
-            "rate_limit" => shared.emit(AgentEvent::Notice {
-                kind: NoticeKind::UsageLimit,
-                text: "You reached your Claude usage limit.".into(),
-            }),
-            _ => {}
-        }
-    }
 }
 
 fn on_result(shared: &Arc<Shared>, value: &Value) {
@@ -1411,7 +1430,7 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
     let mut error = None;
     if failed && !interrupted {
         let said = what_went_wrong(value);
-        if looks_signed_out(&said) {
+        if ended_signed_out(value, &said) {
             shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::SignIn,
                 text: SIGN_IN.into(),

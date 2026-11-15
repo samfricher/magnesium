@@ -14,7 +14,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
-import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
+import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
@@ -96,6 +96,8 @@ type Props = {
   /** A card waits on the learner (a permission, a question): the tutor is not writing meanwhile. */
   onAsking: (key: string, asking: boolean) => void;
   onEngine: () => void;
+  /** Start Claude Code's own sign-in. */
+  onSignIn: () => void;
   onTaskChange: (key: string, open: boolean) => void;
   /** Done with a pending start. */
   onStarted: (key: string) => void;
@@ -270,6 +272,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
+  /** The last message sent from the line, as it was sent. */
+  const fromLine = useRef<string | null>(null);
   // The model the session runs on, or starts on: More's Model row names it, on the first line and in the lesson.
   const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
   const picker = useModelPicker({ api, at: modelAt, onClose: () => lineRef.current?.focus() });
@@ -417,8 +421,16 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // The tutor's events, when this tab holds its program
 
   const onEvent = (event: AgentEvent) => {
+    const before = now.current.session.live;
     dispatch({ type: "event", event });
     const { props } = now.current;
+    // A message from the line whose reply failed before its first word (Claude Code signed out, a request refused)
+    // reached no tutor: it goes back to the line, to send again with Return, unless something else was typed since.
+    if (event.type === "turn_ended" && unanswered(before, event) && fromLine.current === before.learner && lineRef.current && !lineRef.current.holds()) {
+      fromLine.current = null;
+      dispatch({ type: "unsent" });
+      lineRef.current.write(before.learner);
+    }
     if (event.type === "ready") {
       if (event.plugin_missing) void api.interrupt().catch(() => {});
       if (event.session_id && event.session_id !== props.tab.session) props.onSession(props.tab.key, event.session_id);
@@ -555,6 +567,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     }
     // Sent, the line goes back to the page's end, where the reply comes.
     setRaised(false);
+    fromLine.current = sending.text;
     // One line for everything: with a task open, a message may be its answer, and the record decides.
     // Help asked for, ⌥↩ and a quoted passage are never an answer.
     const task = now.current.task?.text;
@@ -1308,7 +1321,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 })}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 {error && <p className="record note">{withoutPaths(error)}</p>}
-                <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} />
+                <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} onSignIn={props.onSignIn} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
                   // The line: the page's last line, under the reply. Typed into while the learner reads

@@ -1165,6 +1165,9 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
                     _ => {}
                 }
             }
+            // Claude Code's own line about a request that failed is not the
+            // tutor's reply: the result that follows says what went wrong.
+            Some("assistant") if main && claude::is_own_error(&value) => {}
             Some("assistant") if main => {
                 let id = value["message"]["id"]
                     .as_str()
@@ -1871,7 +1874,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         || result["subtype"].as_str().is_some_and(|s| s != "success");
     if failed {
         let why = claude::what_went_wrong(&result);
-        let error = if claude::looks_signed_out(&why) {
+        let error = if claude::ended_signed_out(&result, &why) {
             shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::SignIn,
                 text: claude::SIGN_IN.into(),

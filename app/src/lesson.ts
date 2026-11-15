@@ -95,6 +95,8 @@ export type Action =
   | { type: "note"; notice: Notice }
   | { type: "dismiss"; text: string }
   | { type: "failed"; error: string }
+  /** The message on screen reached no tutor, and is back on the line. */
+  | { type: "unsent" }
   | { type: "stopped" }
   | { type: "reset" };
 
@@ -105,6 +107,11 @@ export function plainTurn(turn: Turn): LessonTurn {
 
 export function tutorText(live: Live): string {
   return [...live.done, live.streaming].filter((part) => part.trim() !== "").join("\n");
+}
+
+/** Whether a turn ended badly before the tutor wrote a word: the learner's message reached nobody. */
+export function unanswered(live: Live | null, ended: { ok: boolean; interrupted: boolean }): live is Live {
+  return live !== null && !ended.ok && !ended.interrupted && tutorText(live) === "" && live.learner.trim() !== "";
 }
 
 function blankLive(learner: string, now: number, status: Status): Live {
@@ -203,8 +210,9 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
         ...state,
         cards: [],
         live: { ...live, done, streaming: "", status: "idle", error: event.error, interrupted: event.interrupted },
-        // Nothing waits to try again once the turn has ended.
-        notices: state.notices.filter((n) => !waitingOut(n.text)),
+        // Nothing waits to try again once the turn has ended. What ended it badly is said under the turns: Claude
+        // Code's own line for it is no longer drawn as the tutor's reply.
+        notices: event.error ? addNotice(state.notices.filter((n) => !waitingOut(n.text)), { kind: "turn", text: event.error }) : state.notices.filter((n) => !waitingOut(n.text)),
       };
     }
     case "notice":
@@ -327,6 +335,8 @@ export function reduce(state: SessionState, action: Action): SessionState {
         live: state.live ? { ...state.live, status: "idle", error: action.error } : blankLive("", Date.now(), "idle"),
         notices: addNotice(state.notices, { kind: "turn", text: action.error }),
       };
+    case "unsent":
+      return { ...state, live: null };
     case "stopped":
       return { ...emptySession };
     case "reset":

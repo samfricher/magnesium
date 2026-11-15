@@ -178,10 +178,12 @@ export function Notices({
   notices,
   onDismiss,
   onStartAgain,
+  onSignIn,
 }: {
   notices: Notice[];
   onDismiss: (text: string) => void;
   onStartAgain?: (text: string, atUsualEffort: boolean) => void;
+  onSignIn?: () => void;
 }) {
   if (notices.length === 0) return null;
   return (
@@ -197,6 +199,20 @@ export function Notices({
               </button>
               <button className="plain" onClick={() => onDismiss(notice.text)}>
                 Carry on
+              </button>
+            </span>
+          </p>
+        ) : notice.kind === "sign_in" && onSignIn ? (
+          // Claude Code's sign-in is started from here: ⌘K no longer holds it, and Settings offers it only once
+          // the window has asked Claude Code again.
+          <p key={notice.text} className="record note" role="alert">
+            {withoutPaths(notice.text)}
+            <span className="note-acts">
+              <button className="plain note-act" data-drive="sign-in" onClick={onSignIn}>
+                Sign in
+              </button>
+              <button className="plain" onClick={() => onDismiss(notice.text)}>
+                Dismiss
               </button>
             </span>
           </p>
