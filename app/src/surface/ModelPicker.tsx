@@ -1,5 +1,5 @@
-// The model and effort of the session in a tab, named on its line, and the
-// agent's own list under the word. One control for the whole session: before
+// The model and effort of the session in a tab, named on its line (on the start
+// line as a word, in a lesson as More's Model row), and the agent's own list. One control for the whole session: before
 // it starts it sets what it starts on; once it runs, a change goes to Claude
 // Code at once and holds from its next request to the model. Either way it
 // becomes the pick new sessions start on.
@@ -58,8 +58,10 @@ type Props = {
 };
 
 export type ModelPicker = {
-  /** The word, for the line's tools. Null until the window has read the choice. */
+  /** The word, for the start line's tools. Null until the window has read the choice. */
   word: ReactNode;
+  /** What the session is on, or starts on, in words: More's Model row names it. */
+  name: string | null;
   /** The list, for the line to place; null while it is shut. */
   list: ReactNode;
   open: boolean;
@@ -160,7 +162,7 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     };
   }, [open, close]);
 
-  if (!choice) return { word: null, list: null, open, toggle };
+  if (!choice) return { word: null, name: null, list: null, open, toggle };
 
   const on = choice.on ?? null;
   const chosenModel = on?.model ?? choice.pick?.model ?? null;
@@ -335,5 +337,5 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     </button>
   );
 
-  return { word, list, open, toggle };
+  return { word, name: lineWord(choice), list, open, toggle };
 }

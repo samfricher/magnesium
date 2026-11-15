@@ -2,8 +2,8 @@
 //
 // - "rest": under the next thing, before a lesson. Return starts it; words
 //   typed first start it with those words.
-// - "lesson": the one line of a lesson, one row: the learner's words, then a
-//   few quiet controls. Every message goes the same way, and the record
+// - "lesson": the one line of a lesson, one row: the learner's words, then two
+//   quiet words, Stuck and More, each opening a short menu over the line. Every message goes the same way, and the record
 //   decides whether it was an answer. Two ways of sending say "this is not an
 //   answer" for sure: ⌥↩, and a message that quotes a passage the learner had
 //   selected. Both go as talk, which code never marks.
@@ -12,14 +12,15 @@
 // file dropped on the session or an image pasted in joins it. Each shows on
 // the line by its name, can be taken off, and goes with the next message.
 //
-// Both places take one more tool from the session, the model it runs on, and
-// what that tool opens beside the line.
+// The session adds its own tools: at rest a word before Attach, in a lesson rows
+// under More. Either way, what the tool opens sits beside the line.
 
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { HELP, attachedWords, quotable, withQuote } from "../lesson";
-import { keepPlace } from "../prefs";
+import { keepPlace, type KeyAction } from "../prefs";
+import { LineMenu, type LineRow } from "./LineMenu";
 
 export type Place = "rest" | "lesson";
 
@@ -105,11 +106,16 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
   end?: { keys: string; what: string } | null;
-  /** A tool before the line's own, and what it opens beside the line. On the lesson's line it shows while the line is idle. */
+  /** At rest, a tool before Attach. */
   tool?: ReactNode;
+  /** What the session's tool opens, placed beside the line. */
   toolBeside?: ReactNode;
-  /** The tool's list is open: the tool stays on the line whatever the line holds. */
-  toolHeld?: boolean;
+  /** In a lesson, the session's rows under More, after the line's own. */
+  more?: LineRow[];
+  /** What a session's row opened is open: More reads as open while it is. */
+  moreHeld?: boolean;
+  /** The key bound to an action, as the window names it; empty when none is. */
+  keyFor?: (action: KeyAction) => string;
   /** The key that stops the tutor's reply, named on the line while it writes. */
   stopKey?: string;
   onSend: (sending: Sending) => void;
@@ -141,8 +147,10 @@ export const Composer = memo(
     const [files, setFiles] = useState<string[]>([]);
     const [queued, setQueued] = useState<null | { talk: boolean }>(null);
     const [symbols, setSymbols] = useState(false);
-    // Stuck asks once more what is wanted: help, or to say "I don't know".
-    const [stuck, setStuck] = useState(false);
+    // Stuck and More each open a short menu over the line.
+    const [menu, setMenu] = useState<"stuck" | "more" | null>(null);
+    const stuckRef = useRef<HTMLButtonElement>(null);
+    const moreRef = useRef<HTMLButtonElement>(null);
     const box = useRef<HTMLTextAreaElement>(null);
     const restRef = useRef<HTMLDivElement>(null);
     const length = useRef(props.initial.length);
@@ -198,8 +206,8 @@ export const Composer = memo(
       const el = box.current;
       if (!el) return;
       const active = document.activeElement;
-      // Not from a card, the line's own controls, the symbols, a file on the line, or a document being read beside the lesson.
-      if (active && active !== document.body && active !== el && active.closest(".card, .line-tools, .symbols, .attached, .panel.side")) return;
+      // Not from a card, the line's own controls or menus, the model list, the symbols, a file on the line, or a document being read beside the lesson.
+      if (active && active !== document.body && active !== el && active.closest(".card, .line-tools, .line-menu, .model-list, .symbols, .attached, .panel.side")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     }, [props.active, props.paused, props.busy]);
@@ -215,7 +223,6 @@ export const Composer = memo(
       setText(value);
       keep(value);
       if (bare(value)) setConfidence(null);
-      if (!bare(value)) setStuck(false);
       if (latest.current.place === "lesson" && value !== "") latest.current.onWrite?.();
     };
 
@@ -247,7 +254,7 @@ export const Composer = memo(
       setFiles([]);
       setQueued(null);
       setSymbols(false);
-      setStuck(false);
+      setMenu(null);
       length.current = 0;
       keep("");
     };
@@ -346,12 +353,12 @@ export const Composer = memo(
       }
       // Esc closes what is open on the line, and then puts the line away with its words kept.
       // While the tutor writes, Esc stops the reply instead, and the window handles it.
-      if (event.key === "Escape" && plain && !latest.current.busy && (symbols || stuck || place === "lesson")) {
+      if (event.key === "Escape" && plain && !latest.current.busy && (symbols || menu || place === "lesson")) {
         event.preventDefault();
         event.stopPropagation();
-        if (symbols || stuck) {
+        if (symbols || menu) {
           setSymbols(false);
-          setStuck(false);
+          setMenu(null);
           return;
         }
         el.blur();
@@ -382,7 +389,7 @@ export const Composer = memo(
 
     const { place } = props;
     const help = (words: string) => {
-      setStuck(false);
+      setMenu(null);
       latest.current.onHelp?.(words);
     };
     const keep_ = (event: React.MouseEvent) => event.preventDefault();
@@ -422,59 +429,49 @@ export const Composer = memo(
       );
     }
 
-    // At most two quiet controls, chosen by what the line holds now.
-    const attach = (
-      <button key="attach" type="button" className="quiet-act" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
-        Attach
+    const key = (action: KeyAction) => props.keyFor?.(action) || undefined;
+    const closeMenu = (back: boolean) => {
+      setMenu(null);
+      if (back) box.current?.focus({ preventScroll: true });
+    };
+    const stuckRows: LineRow[] = [
+      { id: "hint", label: "Hint", keys: key("hint"), group: "help", disabled: props.busy, run: () => help(HELP.hint) },
+      { id: "help", label: "Help me", keys: key("lost"), group: "help", disabled: props.busy, run: () => help(HELP.lost) },
+      { id: "dont-know", label: "I don’t know", keys: key("unknown"), group: "help", disabled: props.busy, run: () => help(HELP.unknown) },
+    ];
+    const moreRows: LineRow[] = [
+      // Said for sure to be no answer: only while a task is open, words are typed, and no passage is quoted (which is never an answer).
+      ...(props.taskOpen && typed && quote === null
+        ? [{ id: "send-talk", label: "Send without a mark", keys: "⌥↩", group: "send", run: () => send(true) }]
+        : []),
+      { id: "attach", label: "Attach a photo or PDF", keys: key("attach"), group: "line", run: () => (setMenu(null), void pick()) },
+      { id: "symbols", label: symbols ? "Hide symbols" : "Symbols", keys: key("symbols"), group: "line", run: () => (closeMenu(true), setSymbols((open) => !open)) },
+      ...(props.more ?? []).map((row) => ({ ...row, run: () => (setMenu(null), row.run()) })),
+    ];
+    const word = (which: "stuck" | "more", label: string, ref: React.RefObject<HTMLButtonElement>, held = false) => (
+      <button
+        key={which}
+        ref={ref}
+        type="button"
+        className={`quiet-act${menu === which || held ? " open" : ""}`}
+        data-drive={which}
+        aria-haspopup="menu"
+        aria-expanded={menu === which}
+        onMouseDown={keep_}
+        onClick={() => setMenu((open) => (open === which ? null : which))}
+      >
+        {label}
       </button>
     );
-    const symbolsButton = (
-      <button key="symbols" type="button" className="quiet-act" data-drive="symbols" aria-expanded={symbols} onMouseDown={keep_} onClick={() => setSymbols((open) => !open)}>
-        Symbols
-      </button>
-    );
-    let tools: React.ReactNode[];
-    if (stuck) {
-      tools = [
-        <button key="help" type="button" className="quiet-act" data-drive="help" disabled={props.busy} onMouseDown={keep_} onClick={() => help(HELP.lost)}>
-          Help me
-        </button>,
-        <button key="dont-know" type="button" className="quiet-act" data-drive="dont-know" disabled={props.busy} onMouseDown={keep_} onClick={() => help(HELP.unknown)}>
-          I don’t know
-        </button>,
-      ];
-    } else if (props.busy && props.onStop) {
-      tools = [
-        typed ? symbolsButton : attach,
+    const tools: React.ReactNode[] = [];
+    if (props.busy && props.onStop)
+      tools.push(
         <button key="stop" type="button" className="quiet-act" data-drive="stop" onMouseDown={keep_} onClick={() => latest.current.onStop?.()}>
           <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
         </button>,
-      ];
-    } else if (typed || symbols) {
-      tools = [
-        symbolsButton,
-        props.taskOpen && quote === null ? (
-          <button key="talk" type="button" className="quiet-act" data-drive="send-talk" title="Send it as talk: it is not marked" onMouseDown={keep_} onClick={() => send(true)}>
-            <span className="keys">⌥↩</span> don’t mark
-          </button>
-        ) : (
-          attach
-        ),
-      ];
-    } else {
-      tools = props.taskOpen && props.onHelp
-        ? [
-            <button key="stuck" type="button" className="quiet-act" data-drive="stuck" aria-expanded={false} onMouseDown={keep_} onClick={() => setStuck(true)}>
-              Stuck
-            </button>,
-            attach,
-          ]
-        : [attach];
-    }
-    // The session's own tool joins the line while it is idle, before the line's own tools: the words being typed,
-    // a stuck question and a reply being written keep the room. Opened from the menu, it stays while its list is open.
-    const idle = !typed && !symbols && !stuck && !(props.busy && props.onStop);
-    if (props.tool && (idle || props.toolHeld)) tools = [props.tool, ...tools];
+      );
+    if (props.onHelp) tools.push(word("stuck", "Stuck", stuckRef));
+    tools.push(word("more", "More", moreRef, props.moreHeld));
 
     return (
       <div className={`line lesson${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line="lesson">
@@ -509,10 +506,12 @@ export const Composer = memo(
             onPaste={onPaste}
             onBlur={onBlur}
           />
-          <span className="line-tools" role="group" aria-label={stuck ? "Help with the task" : "The line's tools"}>
+          <span className="line-tools" role="group" aria-label="The line's tools">
             {tools}
           </span>
         </div>
+        {menu === "stuck" && <LineMenu label="Stuck" rows={stuckRows} opener={stuckRef} onClose={closeMenu} />}
+        {menu === "more" && <LineMenu label="More" rows={moreRows} opener={moreRef} onClose={closeMenu} />}
         {props.toolBeside}
         {(confidence || queued) && (
           <p className="with">

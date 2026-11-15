@@ -76,6 +76,7 @@
 
 /* The key-hint lines, off when the learner says so. */
 :root[data-hints="off"] .row-key,
+:root[data-hints="off"] .line-menu-key,
 :root[data-hints="off"] .keys,
 :root[data-hints="off"] .keyhint,
 :root[data-hints="off"] .record-keys,
@@ -771,6 +772,51 @@ button.line-end:hover { color: var(--text); }
 .line.lesson .line-tools { position: static; flex: none; gap: 1.1rem; padding-bottom: 0.2rem; }
 .line.lesson .line-tools .quiet-act { color: var(--hint); white-space: nowrap; }
 .line.lesson .line-tools .quiet-act:hover:not(:disabled) { color: var(--text); }
+.line.lesson .line-tools .quiet-act.open { color: var(--text); }
+
+/* Stuck and More: a short menu over the line, at its right end, under the word that opened it. */
+.line-menu {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 21;
+  min-width: 15rem;
+  padding: 0.3rem 0;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.line-menu.below { top: calc(100% + 0.6rem); bottom: auto; }
+.line-menu-row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  padding: 0.36rem 1.1rem 0.36rem calc(1.1rem + var(--hang) + 0.25rem);
+  font: 400 0.882rem/1.5 var(--app);
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+.line-menu-row:hover:not(:disabled) { background: var(--tint); }
+.line-menu-row:disabled { color: var(--faint); }
+/* A rule between groups, on the labels' column. */
+.line-menu-row.parted { margin-top: 0.55rem; }
+.line-menu-row.parted::before {
+  content: "";
+  position: absolute;
+  top: -0.3rem;
+  left: calc(1.1rem + var(--hang) + 0.25rem);
+  right: 1.1rem;
+  border-top: 1px solid var(--line);
+}
+.line-menu-key,
+.line-menu-detail { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+:root[data-input="key"] .line-menu-row:focus-visible { outline: none; background: var(--tint); }
 .line.lesson .line-tools .keys { margin-right: 0.15em; }
 /* Files going with the next message sit on the row, before the words. */
 .line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.15rem; }

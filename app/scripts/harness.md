@@ -36,7 +36,8 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - A workspace's page: `home`, `new-session`, `add-material`, `read-<paper>`, `paper-<paper>`
 - ⌘K: `layer`, `command-home`, `command-switch`, `command-new-session`, `command-close-session`, `command-settings`, `command-plan`, `switch-<workspace>`
 - A session: `composer`, `start-session`, `open-task`, `allow`, `start-again`
-- The line's tools: `attach`, `stuck`, `help`, `dont-know`, `symbols`, `send-talk`, `stop`
-- The start line's model: `model`; in its list, `model-row` (with `data-value`), `model-effort` (with `data-level`), `model-older`, `model-current`
+- The start line's tools: `attach`, `model`
+- The lesson's line: `stuck` and `more`, and `stop` while the tutor writes. Under Stuck: `hint`, `help`, `dont-know`. Under More: `send-talk` (typing, with a task open), `attach`, `symbols`, `model`
+- The model's list, from either line: `model-row` (with `data-value`), `model-effort` (with `data-level`), `model-older`, `model-current`
 - The panel: `side-plan`, `plan-<item id>`, `doc-<title>`, `close-doc-<title>`, `open-document`, `open-<title>`, `zoom-in`, `zoom-out`, `zoom-fit`, `share-document`, `panel-expand`, `panel-grip`, `doc-pages`, `doc-flow`
 - Settings: `colour-<kind>-<light|dark>`, `glass` (the slider for the window's ground, -10 to 10)

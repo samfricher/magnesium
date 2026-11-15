@@ -16,7 +16,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 
 import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
-import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
+import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
@@ -29,6 +29,7 @@ import { SidePanel } from "./SidePanel";
 import type { DocHandle } from "./DocView";
 import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, type Docs } from "../docs";
 import { Line } from "./Rich";
+import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 
 /** What a session tab starts with, once, when it is opened. */
@@ -1156,6 +1157,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const shownFrom = Math.max(sittingStart, turns.length - 150);
   const sittingTurns = phase === "lesson" ? turns.slice(shownFrom) : [];
   const stopKey = keyName(props.prefs.keys["stop-reply"]) || "esc";
+  const keys = props.prefs.keys;
+  const keyFor = useCallback((action: KeyAction) => keyName(keys[action]), [keys]);
+  // The session's own rows under More on the lesson's line.
+  const moreRows = useMemo<LineRow[]>(
+    () => [{ id: "model", label: "Model", detail: picker.name ?? undefined, leads: true, group: "session", run: () => pickerRef.current.toggle() }],
+    [picker.name],
+  );
   const paused = props.covered || !props.active || session.cards.length > 0;
   // The record's latest fact is said once, beside what it marks. The foot repeats it only while that line is out of view, and never under an open task.
   const footFact = fact && task === null && !factSeen ? fact : null;
@@ -1218,7 +1226,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
                     tool={picker.word}
                     toolBeside={picker.list}
-                    toolHeld={picker.open}
                     active
                     busy={false}
                     paused={paused}
@@ -1320,9 +1327,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       paused={paused}
                       taskOpen={task !== null}
                       stopKey={stopKey}
-                      tool={picker.word}
                       toolBeside={picker.list}
-                      toolHeld={picker.open}
+                      more={moreRows}
+                      moreHeld={picker.open}
+                      keyFor={keyFor}
                       onSend={onSend}
                       onNote={note}
                       onAttach={onAttach}
