@@ -679,10 +679,13 @@ dialog.layer::backdrop { background: transparent; }
 /* Settings keeps one column whatever line width is chosen in it: a column that followed the Line width slider moved
    the slider under the pointer while it was dragged. */
 .settings-page .page-column { width: min(31rem, calc(100% - 2 * var(--hang) - 40px)); }
-/* The page keeps every page's left edge; its rows reach 3rem further right, so the choices keep the room they had
-   beside the wider label column. */
+/* The page keeps every page's left edge; its rows reach up to 3rem further right, so the choices keep the room they
+   had beside the wider label column. Only as far as the room right of the column, less the page's own margin, so at a
+   large text size in a narrow window the rows stay inside it and the page does not scroll sideways. */
 .settings-page .setting,
-.settings-page .sample { margin-right: -3rem; }
+.settings-page .sample {
+  margin-right: calc(-1 * clamp(0px, (100vw - min(31rem, 100vw - 2 * var(--hang) - 40px)) / 2 - var(--hang) - 20px, 3rem));
+}
 /* A section named from Help opens with its heading clear of the page's top fade. */
 .settings-page section[id^="settings-"] { scroll-margin-top: calc(var(--head-room) + 1rem); }
 
