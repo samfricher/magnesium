@@ -454,7 +454,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   content: "›";
   position: absolute;
   left: 1.1rem;
-  font: 400 0.882rem/1.6 var(--mono);
+  /* On the input's own line box (0.941rem × 1.6) and at its size, so the mark sits on the words' middle. */
+  top: calc(0.85rem + 1.5px);
+  font: 400 0.941rem/1.506rem var(--mono);
   color: var(--ink);
 }
 .layer-line input {
