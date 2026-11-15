@@ -331,7 +331,8 @@ button.home-row:focus:hover { background: var(--tint); }
 .text-field:focus { border-bottom-color: var(--ink); }
 .text-field.number { min-width: 0; width: 3.4rem; }
 .text-field::placeholder { color: var(--quiet); opacity: 1; }
-.font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; }
+/* In by a choice's own padding, so its words start where the choices' words above it start. */
+.font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; margin-left: 0.1rem; }
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
