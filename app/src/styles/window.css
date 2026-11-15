@@ -518,7 +518,8 @@ input[type="range"]::-webkit-slider-thumb {
   min-width: 1.75rem;
   padding: 0.05rem 0.35rem;
   border-radius: 4px;
-  font: 400 0.882rem/1.5 var(--read);
+  /* The line's own face: each symbol looks as it will once on the line, and ₂ reads as a subscript. */
+  font: 400 0.882rem/1.5 var(--you);
   color: var(--text);
   text-align: center;
 }
