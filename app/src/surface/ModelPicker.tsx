@@ -143,16 +143,21 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     return () => document.removeEventListener("keydown", escape, true);
   }, [open, close]);
 
-  // A press anywhere else closes it.
+  // A press anywhere else closes it, and so does the keyboard moving elsewhere (Tab, or the line taking the focus):
+  // left open over the lesson's line, it would sit over the words being typed.
   useEffect(() => {
     if (!open) return;
-    const away = (event: MouseEvent) => {
+    const away = (event: Event) => {
       const target = event.target as Node;
       if (listRef.current?.contains(target) || wordRef.current?.contains(target)) return;
       close(false);
     };
     document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
+    document.addEventListener("focusin", away);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("focusin", away);
+    };
   }, [open, close]);
 
   if (!choice) return { word: null, list: null, open, toggle };
