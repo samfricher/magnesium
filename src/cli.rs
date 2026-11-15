@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 11] = [
+const PUBLIC_COMMANDS: [(&str, &str); 12] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -16,6 +16,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 11] = [
     (
         "attempts",
         "List every answer the tutor marked, with its question, mark, date, help and confidence",
+    ),
+    (
+        "lesson",
+        "Show the lesson a conversation is in: its goal, steps, status and the task open now",
     ),
     (
         "progress",
@@ -99,6 +103,20 @@ pub(crate) fn command() -> ClapCommand {
                         })
                         .action(ArgAction::SetTrue),
                 )
+            } else if name == "lesson" {
+                subcommand
+                    .arg(
+                        Arg::new("conversation")
+                            .long("conversation")
+                            .value_name("ID")
+                            .help("The Claude Code conversation's id; without it, the folder's most recently changed lesson"),
+                    )
+                    .arg(
+                        Arg::new("json")
+                            .long("json")
+                            .help("Print the lesson as JSON instead of text")
+                            .action(ArgAction::SetTrue),
+                    )
             } else if name == "searchable" {
                 subcommand
                     .arg(

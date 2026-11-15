@@ -1690,10 +1690,11 @@ struct ClaudeConversation {
     shared: Arc<Shared>,
 }
 
-/// The plain words put before a message the learner sent as talk. The
-/// plugin's teaching files record an attempt only for a first try at a task
-/// the tutor set, so a message that says it is none is left unmarked; code
-/// cannot hold the tutor to it on this engine (Magnesium issue 65).
+/// The plain words put before a message the learner sent as talk. The tutor
+/// reads them as words; the runtime's prompt hook reads this exact line as
+/// the window saying the message is talk, keeps the message without it, and
+/// refuses an attempt on it (Magnesium issue 65). The runtime's copy is
+/// `TALK_LEAD` in `src/adapter/native_capture.rs`.
 pub const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
 
 impl Conversation for ClaudeConversation {

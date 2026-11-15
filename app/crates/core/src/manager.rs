@@ -85,6 +85,9 @@ struct Watch {
     /// none when the runtime cannot list them.
     marks_before: Option<HashSet<String>>,
     intent: Option<Intent>,
+    /// When the message was sent: a task the record says was posed since
+    /// then was posed by this turn's reply.
+    sent_ms: i64,
 }
 
 /// The last reading of a folder's plan, which the next turn is compared with.
@@ -1051,6 +1054,12 @@ impl Manager {
             if live && ended {
                 settling.turn_running.store(false, Ordering::SeqCst);
                 let waiter = lock(&waiter).clone();
+                // The plugin engine's tutor keeps the record itself, so the
+                // open task is read from it. The direct engine says its own.
+                let task_of = match engine {
+                    Engine::Plugin => lock(&buffer).session.clone(),
+                    Engine::Direct => None,
+                };
                 settle(
                     settling.clone(),
                     folder.clone(),
@@ -1059,6 +1068,7 @@ impl Manager {
                     Arc::clone(&current),
                     generation,
                     kept_turn.map(|(session, ms)| (Arc::clone(&store), session, ms)),
+                    task_of,
                 );
             }
         })
@@ -1285,6 +1295,7 @@ impl Manager {
                 watch.seq += 1;
                 watch.marks_before = before;
                 watch.intent = intent;
+                watch.sent_ms = Local::now().timestamp_millis();
             }
             let mut seen = lock(&self.settling.seen);
             if seen.as_ref().is_none_or(|seen| &seen.folder != folder) {
@@ -1584,8 +1595,11 @@ impl Manager {
 /// the last reading, and the record's marks, compared with those before the
 /// message. Sends `plan_changed` and `marked` while the conversation is still
 /// the page's, and keeps the new marks' ids beside `turn` (the store, and the
-/// conversation and time of the turn the message ended in). Runs on its own
-/// thread, so the page is never held up.
+/// conversation and time of the turn the message ended in). With
+/// `task_of`, a conversation whose tutor keeps the record itself, it also
+/// reads the task the record says is open, and sends `open_task`. Runs on
+/// its own thread, so the page is never held up.
+#[allow(clippy::too_many_arguments)]
 fn settle(
     settling: Settling,
     folder: PathBuf,
@@ -1594,10 +1608,16 @@ fn settle(
     current: Arc<Mutex<u64>>,
     generation: u64,
     turn: Option<(Arc<Store>, String, i64)>,
+    task_of: Option<String>,
 ) {
-    let (seq, before, intent) = {
+    let (seq, before, intent, sent_ms) = {
         let mut watch = lock(&settling.watch);
-        (watch.seq, watch.marks_before.take(), watch.intent)
+        (
+            watch.seq,
+            watch.marks_before.take(),
+            watch.intent,
+            watch.sent_ms,
+        )
     };
     settling.pending.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
@@ -1685,6 +1705,24 @@ fn settle(
         // answers can share.
         if let (Some(ids), Some((store, session, ms))) = (&found, &turn) {
             store.note_marks(&folder, session, *ms, ids);
+        }
+        // The open task, once the marks are in: an answer the tutor recorded
+        // closes its task. A runtime that cannot say leaves the page to find
+        // the task as before.
+        if let Some(conversation) = task_of.filter(|_| lock(&settling.watch).seq == seq && live()) {
+            if let Some(lesson) = runtime::lesson(&folder, Some(&conversation)) {
+                let open = lesson.and_then(|lesson| lesson.open_task);
+                let posed = open
+                    .as_ref()
+                    .is_some_and(|task| task.posed_at_ms >= sent_ms);
+                let task = open.map(|task| task.text);
+                if let Some((store, session, ms)) = &turn {
+                    store.note_task(&folder, session, *ms, task.as_deref(), posed);
+                }
+                if lock(&settling.watch).seq == seq && live() {
+                    out(AgentEvent::OpenTask { task, posed });
+                }
+            }
         }
         // The record has been read for this message: say so, unless the
         // learner has written again since.

@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::gaplog::{self, Table};
-use crate::peek::{self, Step};
-use crate::runtime;
+use crate::runtime::{self, Step};
 use crate::study;
 
 /// The largest plan file read, as the runtime's digest reads it.
@@ -83,6 +82,16 @@ fn text(value: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The steps of the goal of the folder's most recently changed lesson, as
+/// the record holds them. None known gives none, and then the rail shows the
+/// goal alone.
+pub fn goal_steps(root: &Path) -> Vec<Step> {
+    runtime::lesson(root, None)
+        .flatten()
+        .map(|lesson| lesson.steps.into_iter().take(12).collect())
+        .unwrap_or_default()
+}
+
 /// The open folder's plan, read fresh: the nearest dated plan the digest
 /// lists (as the course page chooses its exam), the goal of the record's
 /// last lesson and its steps.
@@ -97,7 +106,7 @@ pub fn read(folder: &Path) -> Plan {
     let root = study::root_of(&digest, folder);
     let mut plan = Plan {
         goal: text(&digest["record"]["sessions"][0]["goal"]),
-        steps: peek::goal_steps(&root),
+        steps: goal_steps(&root),
         ..Plan::default()
     };
     let plans = digest["plans"].as_array().cloned().unwrap_or_default();

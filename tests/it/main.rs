@@ -43,6 +43,7 @@ mod source_catch_up;
 mod source_search_concurrency;
 mod sources_view;
 mod support_environment;
+mod talk_and_lesson;
 mod tool_contract_recipes;
 mod tool_recipe_examples;
 mod tutor_guidance;

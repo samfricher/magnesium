@@ -98,6 +98,7 @@ protocol_enum!(ChangeKind { NewObservation => "new_observation", Reinterpretatio
 protocol_enum!(Disposition { Processed => "processed", NoChange => "no_change" });
 protocol_enum!(ReviewStatus { Suggested => "suggested", Done => "done", Dismissed => "dismissed" });
 protocol_enum!(Delivery { Proposed => "proposed", Observed => "observed", Unknown => "unknown" });
+protocol_enum!(MessageIntent { Talk => "talk" });
 protocol_enum!(FirstTry { Right => "right", Partly => "partly", Wrong => "wrong", Declined => "declined" });
 protocol_enum!(Confidence { Sure => "sure", Unsure => "unsure", Guess => "guess" });
 protocol_enum!(GoalStepStatus { Todo => "todo", Doing => "doing", Done => "done" });
@@ -795,6 +796,12 @@ pub struct EventMetadata {
     pub attachments: Vec<AttachmentRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coverage: Option<String>,
+    /// Set by the host alone, from how the learner sent the message: talk is
+    /// never an answer, so no attempt may cite it. Absent from the tool
+    /// schema, and refused on a model-reported event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub intent: Option<MessageIntent>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

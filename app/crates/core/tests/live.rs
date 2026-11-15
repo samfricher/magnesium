@@ -439,7 +439,7 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
         .unwrap();
     let third = live.turn(minutes(10), None);
     show("3. an answer", &third);
-    let steps = mg_core::peek::goal_steps(&folder);
+    let steps = mg_core::plan::goal_steps(&folder);
     println!("goal steps: {steps:?}");
     assert!(!steps.is_empty(), "the tutor saved no steps for the goal");
     drop(live);
@@ -621,4 +621,109 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
         }
     }
     panic!("no turn saved its notes after its reply in five turns");
+}
+
+impl Live {
+    /// After a turn has ended: what the window then reads from the record,
+    /// until it says it has read it. The open task, if the window sent one,
+    /// and the marks.
+    fn settled(&self, limit: Duration) -> (Option<(Option<String>, bool)>, Vec<String>) {
+        let deadline = Instant::now() + limit;
+        let (mut task, mut marks) = (None, Vec::new());
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.events.recv_timeout(left).expect("the turn settles") {
+                AgentEvent::OpenTask { task: open, posed } => task = Some((open, posed)),
+                AgentEvent::Marked { mark } => marks.push(format!("{} {}", mark.mark, mark.label)),
+                AgentEvent::Settled => return (task, marks),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Issues 65 and 66 on Claude Code's engine: the open task comes from the
+/// record, and a message sent as talk while it is open is not marked.
+///
+/// Run it with this checkout's runtime first on PATH, so Claude Code's
+/// plugin hooks and tool server run it too, and a model picked in
+/// MAGNESIUM_LIVE_MODEL (for example claude-haiku-5-5) at medium effort.
+#[test]
+#[ignore = "starts Claude Code on your own subscription; run it yourself"]
+fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
+    let scratch =
+        std::env::temp_dir().join(format!("magnesium-window-live-66-{}", std::process::id()));
+    let folder = scratch.join("Factorising");
+    let home = scratch.join("window");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    println!("study folder: {}", folder.display());
+    println!(
+        "runtime: {:?}, version {:?}",
+        runtime::program(),
+        runtime::version()
+    );
+    runtime::init(&folder).expect("magnesium sets the folder up");
+    let minutes = |n: u64| Duration::from_secs(60 * n);
+    let live = Live::new(&folder, &home);
+    if let Some(model) = std::env::var_os("MAGNESIUM_LIVE_MODEL") {
+        live.manager.store().set_pick(mg_core::models::Pick {
+            model: model.to_string_lossy().into_owned(),
+            name: None,
+            effort: Some("medium".into()),
+        });
+    }
+    live.manager
+        .open_session(false)
+        .expect("Claude Code starts");
+
+    // Ask for a task that is not written with a bold word.
+    live.manager
+        .send_new_lesson("Factorising quadratics like x² + 5x + 6. Teach one short idea, then set me one problem to solve. Write the problem as a plain sentence, with no bold heading or label.")
+        .unwrap();
+    let report = live.turn(minutes(10), None);
+    println!("\n== 1. the lesson starts ==\n{}", report.text);
+    let (task, marks) = live.settled(minutes(2));
+    println!("open task from the record: {task:?}; marks: {marks:?}");
+    println!(
+        "lesson: {:?}",
+        runtime::lesson(
+            &folder,
+            live.manager.store().folder(&folder).session_id.as_deref()
+        )
+    );
+    let Some((Some(posed), true)) = task.clone() else {
+        panic!("the record names no task posed by this reply: {task:?}")
+    };
+
+    // Talk while it is open: not marked, and the task stays open.
+    live.manager
+        .send_with(
+            "Before I try: why do we look for two numbers that multiply to the last term?",
+            Some(mg_core::agent::Intent::Talk),
+        )
+        .unwrap();
+    let report = live.turn(minutes(10), None);
+    println!("\n== 2. talk ==\n{}", report.text);
+    let (task, marks) = live.settled(minutes(2));
+    println!("open task from the record: {task:?}; marks: {marks:?}");
+    assert!(marks.is_empty(), "talk was marked: {marks:?}");
+    assert_eq!(
+        task.and_then(|(open, _)| open).as_deref(),
+        Some(posed.as_str()),
+        "talk closed the task"
+    );
+
+    // An answer: marked, and the task closes or a new one is posed.
+    live.manager
+        .send_with(
+            "I'd need the actual problem numbers, but for x² + 5x + 6 it's (x + 2)(x + 3).",
+            Some(mg_core::agent::Intent::Answer),
+        )
+        .unwrap();
+    let report = live.turn(minutes(10), None);
+    println!("\n== 3. the answer ==\n{}", report.text);
+    let (task, marks) = live.settled(minutes(2));
+    println!("open task from the record: {task:?}; marks: {marks:?}");
+    println!("\nLook in: {}", folder.display());
 }
