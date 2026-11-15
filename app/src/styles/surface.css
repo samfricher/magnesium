@@ -665,7 +665,9 @@ button.line-end:hover { color: var(--text); }
   color: var(--quiet);
 }
 .model-effort .segment { font-size: 0.765rem; padding: 0; }
-.model-effort-name { margin-right: 0.1rem; }
+/* The row's name, set apart from the choices after it so it is not read as the first of them. */
+.model-effort-name { margin-right: 0.45rem; color: var(--hint); }
+.model-effort-name::after { content: ":"; }
 .model-fold .row-label,
 .model-back .row-label { font: 400 0.824rem/1.5 var(--app); color: var(--quiet); }
 .model-fold .row-hint { color: var(--quiet); }
