@@ -296,6 +296,9 @@ button.home-row:focus:hover { background: var(--tint); }
 .setting-control { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; min-width: 0; }
 .setting-value { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); font-variant-numeric: tabular-nums; }
 .setting-note { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* Words that are not a choice start where the choices' words start, inside their 0.1rem padding. */
+.settings-page .setting-note,
+.settings-page .glass-ends { margin-left: 0.1rem; }
 .setting-note.wide { display: block; margin: 0.3rem 0 0.4rem; max-width: 36em; }
 .segments { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
 .segment {
