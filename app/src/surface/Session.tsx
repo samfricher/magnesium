@@ -388,11 +388,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (tab.session) {
         const [saved, marks] = await Promise.all([api.lessonTurns(folder, tab.session).catch(() => [] as SavedTurn[]), api.marks(folder).catch(() => null)]);
         if (!alive) return;
-        // The open task: what the engine said after the last turn it noted, else the one kept with the place.
+        // The open task: what the engine said after the last turn it noted. An engine that never says it (Claude
+        // Code's) has it found in the turns, as while the lesson runs. A task kept with the place was once given here
+        // as the engine's word: nothing ever replaced it, so it stayed open after it was answered, was pinned over the
+        // line, and every later task was drawn as closed.
         const noted = [...saved].reverse().find((turn) => turn.noted);
-        const open = noted ? (noted.task ?? null) : kept.task;
         const shown = rebuild(saved, marks, tab.session);
-        dispatch({ type: "shown", turns: shown, ...(noted || kept.task ? { task: { text: open } } : {}) });
+        dispatch({ type: "shown", turns: shown, ...(noted ? { task: { text: noted.task ?? null } } : {}) });
         setSittingStart(0);
         if (!tab.title && opened?.last?.goal) setSittingTitle(opened.last.goal);
         restoring.current = kept.seenMs > 0 ? kept.fromFoot : 0;
@@ -910,10 +912,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const task = useMemo(() => openTaskOf(session, turns), [session, turns]);
   const openAt = task?.at ?? -1;
   now.current.task = task;
-  // The open task is kept with where the learner was, so a reopened window has it as a task.
   const taskText_ = task?.text ?? null;
   useEffect(() => {
-    if (phase === "lesson") keepPlace(now.current.place, { task: taskText_ });
     props.onTaskChange(tab.key, taskText_ !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskText_, phase]);
