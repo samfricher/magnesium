@@ -270,10 +270,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
-  // The model the session runs on, or starts on, named on its line. One control for both: the line it sits on is
-  // the start line before the lesson and the lesson's line after.
+  // The model the session runs on, or starts on: More's Model row names it, on the first line and in the lesson.
   const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
-  const picker = useModelPicker({ api, at: modelAt, place: phase === "rest" ? "rest" : "lesson", onClose: () => lineRef.current?.focus() });
+  const picker = useModelPicker({ api, at: modelAt, onClose: () => lineRef.current?.focus() });
   const stuck = useRef(true);
   // Where the lesson was scrolled at the last scroll event: only a move up lets it go of its foot.
   const lastTop = useRef(0);
@@ -1159,7 +1158,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const stopKey = keyName(props.prefs.keys["stop-reply"]) || "esc";
   const keys = props.prefs.keys;
   const keyFor = useCallback((action: KeyAction) => keyName(keys[action]), [keys]);
-  // The session's own rows under More on the lesson's line.
+  // The session's own rows under More, on its first line and in the lesson.
   const moreRows = useMemo<LineRow[]>(
     () => [{ id: "model", label: "Model", detail: picker.name ?? undefined, leads: true, group: "session", run: () => pickerRef.current.toggle() }],
     [picker.name],
@@ -1224,8 +1223,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     initial={draft}
                     placeholder={rest.start ? "↩ to start, or say what to work on" : undefined}
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
-                    tool={picker.word}
                     toolBeside={picker.list}
+                    more={moreRows}
+                    moreHeld={picker.open}
+                    keyFor={keyFor}
                     active
                     busy={false}
                     paused={paused}
