@@ -524,6 +524,7 @@ input[type="range"]::-webkit-slider-thumb {
   text-align: center;
 }
 .symbol:hover { background: var(--tint); }
+.symbol .overline { text-decoration: overline; text-decoration-thickness: 1px; text-underline-offset: 0; }
 .sent-files { margin: 0.15rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 /* Files sent with talk sit with the words they went with, not nearer the reply under them. */
 .you.talk + .sent-files { margin: -0.9rem 0 1.1rem; }
