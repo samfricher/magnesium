@@ -310,6 +310,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
 
 .you {
+  /* No word left alone on a line of its own. */
+  text-wrap: pretty;
   margin: 1.5rem 0 1.1rem;
   font: 400 0.941rem/1.6 var(--you);
   color: var(--text);
