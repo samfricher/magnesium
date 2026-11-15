@@ -454,7 +454,8 @@ input[type="range"]::-webkit-slider-thumb {
 .panel-items li.current .panel-mark { color: var(--ink); }
 .panel-day { display: block; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .panel-items li.changed .panel-day { color: var(--quiet); }
-.panel-items li.changed { animation: changed 2.4s ease-out 1; }
+/* The flash stays inside each row's padding, so two changed rows next to each other read as two. */
+.panel-items li.changed { animation: changed 2.4s ease-out 1; background-clip: content-box; }
 /* This session's steps, under the plan's item in hand. The item's dot says where the learner is. */
 .panel-item .panel-items.steps { margin: 0.3rem 0 0.15rem; }
 .panel-items.steps li { padding: 0.1rem 0; }
