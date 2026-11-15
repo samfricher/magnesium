@@ -282,6 +282,12 @@ try {
   await step(w, "close Stuck again", { op: "key", key: "Escape" });
   await step(w, "close the symbols on the bare line", { op: "key", key: "Escape" });
   await step(w, "clear the line", { op: "type", text: "", replace: true });
+  // Before a lesson the line ends in More alone.
+  await step(w, "a new session on the bare line", { op: "click", target: "new-session", by: "drive" });
+  await settle(w, 800);
+  await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
+  await step(w, "close the new session", { op: "key", key: "w", meta: true });
+  await settle(w, 300);
   await step(w, "settings again", { op: "click", target: "settings", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
   await settle(w, 300);
