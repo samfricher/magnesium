@@ -764,8 +764,10 @@ button.line-end:hover { color: var(--text); }
 .you.talk::before { color: var(--hint); }
 /* While a card waits on the learner, the line under it sits at a turn's gap. */
 .foot.asking { margin-top: 0.4rem; }
-/* The soft field is a shape of its own: under a card it keeps a line's room from the card's rule. */
+/* The soft field is a shape of its own: under a card it keeps a line's room from the card's rule, and while the card
+   waits it is drawn at half its shade, as the bare line puts its "›" away: the card's choice is the answer now. */
 :root[data-field="soft"] .foot.asking { margin-top: 1.1rem; }
+:root[data-field="soft"] .foot.asking .line.lesson { background: color-mix(in srgb, var(--well) 50%, transparent); }
 /* An empty font field draws no rule until it has the focus or words. */
 .text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
 
