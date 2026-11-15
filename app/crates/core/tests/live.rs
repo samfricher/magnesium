@@ -679,7 +679,7 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
 
     // Ask for a task that is not written with a bold word.
     live.manager
-        .send_new_lesson("Factorising quadratics like x² + 5x + 6. Teach one short idea, then set me one problem to solve. Write the problem as a plain sentence, with no bold heading or label.")
+        .send_new_lesson("Factorising quadratics like x² + 5x + 6. Teach one short idea, then set me x² + 7x + 12 to factorise. Write the problem as a plain sentence, with no bold heading or label.")
         .unwrap();
     let report = live.turn(minutes(10), None);
     println!("\n== 1. the lesson starts ==\n{}", report.text);
@@ -714,10 +714,10 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
         "talk closed the task"
     );
 
-    // An answer: marked, and the task closes or a new one is posed.
+    // An answer to the task: marked, and the task closes or another is posed.
     live.manager
         .send_with(
-            "I'd need the actual problem numbers, but for x² + 5x + 6 it's (x + 2)(x + 3).",
+            "The numbers are 3 and 4, so x² + 7x + 12 = (x + 3)(x + 4).",
             Some(mg_core::agent::Intent::Answer),
         )
         .unwrap();
@@ -725,5 +725,11 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
     println!("\n== 3. the answer ==\n{}", report.text);
     let (task, marks) = live.settled(minutes(2));
     println!("open task from the record: {task:?}; marks: {marks:?}");
+    assert!(!marks.is_empty(), "the answer was not marked");
+    assert_ne!(
+        task.and_then(|(open, _)| open).as_deref(),
+        Some(posed.as_str()),
+        "the answered task is still open"
+    );
     println!("\nLook in: {}", folder.display());
 }
