@@ -84,6 +84,10 @@
 .side-close:focus-visible { visibility: visible; }
 .side-close:hover { color: var(--text); }
 .side-tools { flex: none; display: flex; align-items: center; gap: 2px; margin-left: auto; }
+/* The panel's tools in the type and padding of its tabs, so both sit on one line; the head keeps the height the
+   taller tools gave it, so the tabs do not sit on its rule. */
+.side-tools .bar-act { padding: 3px 8px; font-size: 12.5px; }
+.side-head { padding-bottom: 9px; }
 .side-zoom { display: inline-flex; align-items: center; }
 .side-zoom .zoom-now { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; }
 
