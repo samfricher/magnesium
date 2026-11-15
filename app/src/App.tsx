@@ -888,6 +888,7 @@ export function App() {
                 refresh={materialChanged}
                 onBack={() => goWorkspace(null)}
                 onNewSession={(folder) => newSession(folder)}
+                onStartSession={(folder) => newSession(folder, { kind: "start" })}
                 onOpenSession={(folder, session, title) => openSession(folder, session, title)}
                 onHandedIn={(folder, words, title) => addSession({ folder, session: null, title, pending: { kind: "paper", shown: words.shown, sent: words.sent } })}
                 onForget={(folder) =>

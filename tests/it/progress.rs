@@ -178,6 +178,38 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!(today.checked_add_days(Days::new(1)).unwrap().to_string()),
         "{hinted}"
     );
+    // Each pass names the answer that earned it, by the record's own id, so
+    // a window can say which day of three an answer was.
+    let listed = e.command().args(["attempts", "--json"]).output().unwrap();
+    let listed: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let id_of = |question: &str| {
+        listed["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["question"] == question)
+            .map(|row| row["attempt_id"].clone())
+            .unwrap_or_else(|| panic!("no answer to {question} in {listed}"))
+    };
+    assert_eq!(
+        skill(&value, "units of a rate")["passed_by"],
+        json!([
+            id_of("What are the units of Vmax?"),
+            id_of("What are the units of a rate?")
+        ]),
+        "{value}"
+    );
+    assert_eq!(
+        sign["passed_by"],
+        json!([id_of("In 3x² − 5x − 2 = 0, what is b?")]),
+        "{sign}"
+    );
+    assert_eq!(hinted["passed_by"], json!([]), "{hinted}");
+    assert_eq!(
+        hinted["last_answer"],
+        id_of("What happens to Km?"),
+        "{hinted}"
+    );
 
     // Three skills in no plan: counts, and no level.
     assert_eq!(

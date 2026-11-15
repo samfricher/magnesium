@@ -327,7 +327,9 @@ fn search_line(saved: &Saved, verdict: &Value) -> Option<String> {
 }
 
 /// How many names a listing carries. The count of files is always whole.
-const NAMES_LISTED: usize = 20;
+/// The workspace page opens the whole list in place, so this is a guard
+/// against a huge folder, not a page's length.
+const NAMES_LISTED: usize = 500;
 /// The most entries a listing looks at, so a huge folder cannot hold it up.
 const MAX_LOOKED_AT: usize = 5000;
 
@@ -599,13 +601,14 @@ mod tests {
     #[test]
     fn a_long_listing_names_the_newest_and_counts_them_all() {
         let root = root();
-        for n in 0..30 {
-            put(root.path(), &format!("part{n:02}.txt"), n + 1);
+        let files = NAMES_LISTED + 3;
+        for n in 0..files {
+            put(root.path(), &format!("part{n:03}.txt"), n as u64 + 1);
         }
         let listed = list(root.path());
-        assert_eq!(listed.files, 30);
+        assert_eq!(listed.files, files);
         assert_eq!(listed.names.len(), NAMES_LISTED);
-        assert_eq!(listed.names[0], "part00.txt");
+        assert_eq!(listed.names[0], "part000.txt");
     }
 
     #[test]
