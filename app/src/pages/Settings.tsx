@@ -197,7 +197,7 @@ function ColourField(props: { label: string; value: string; dark: boolean; fallb
       </button>
       {props.own && props.value !== "" && (
         <button type="button" className="plain" onClick={() => props.onPick("")}>
-          the window's own
+          the window’s own
         </button>
       )}
       {open && (
@@ -557,7 +557,7 @@ export function SettingsPage(props: Props) {
             <Setting name="The magnesium program">
               <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app’s copy` : "Kept over this app’s copy"}</span>
               <button className="plain" onClick={props.onReplaceRuntime}>
-                use this app's {runtime.bundled.version.split("+")[0]}
+                use this app’s {runtime.bundled.version.split("+")[0]}
               </button>
             </Setting>
           )}
