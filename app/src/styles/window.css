@@ -254,7 +254,7 @@ button.home-row:focus:hover { background: var(--tint); }
   margin: 0 0 0.6rem calc(-1 * var(--hang));
   padding: 0.38rem var(--hang);
   border-radius: 4px;
-  font: 400 1rem/1.45 var(--read);
+  font: 400 0.941rem/1.55 var(--app);
   color: var(--text);
 }
 .new-session { position: relative; }
