@@ -28,9 +28,9 @@ export function setupStep(
   if (runtime.state === "different" && runtime.installed && runtime.bundled) {
     return {
       next: "Another magnesium program is on this Mac",
-      where: `This Mac has version ${versionNumber(runtime.installed.version)}, and this app carries ${versionNumber(runtime.bundled.version)}. A newer program upgrades each study folder's record when it opens it, after keeping a copy.`,
+      where: `This Mac has version ${versionNumber(runtime.installed.version)}, and this app carries ${versionNumber(runtime.bundled.version)}. A newer program upgrades each study folder’s record when it opens it, after keeping a copy.`,
       choices: [
-        { label: `Use this app's ${versionNumber(runtime.bundled.version)}`, run: act.replace },
+        { label: `Use this app’s ${versionNumber(runtime.bundled.version)}`, run: act.replace },
         { label: `Keep ${versionNumber(runtime.installed.version)}`, run: act.keep },
       ],
     };
@@ -41,7 +41,7 @@ export function setupStep(
       next: runtime.state === "too_old" ? "The magnesium program on this Mac is too old for this window" : "The magnesium program could not be set up",
       where: runtime.state === "too_old" ? "Lessons need a newer magnesium program." : "Lessons need the magnesium program, which this window could not put in place.",
       choices: [
-        ...(runtime.bundled && runtime.state === "too_old" ? [{ label: "Replace it with this app's copy", run: act.replace }] : []),
+        ...(runtime.bundled && runtime.state === "too_old" ? [{ label: "Replace it with this app’s copy", run: act.replace }] : []),
         ...(!runtime.bundled ? [{ label: "Open the install guide", run: () => act.openUrl(guide) }] : []),
         { label: "Check again", run: act.checkAgain },
       ],
@@ -52,7 +52,7 @@ export function setupStep(
       next: `Install ${account.name}`,
       where: `Magnesium teaches through ${account.name}, which this window cannot find on this Mac. It needs a paid Claude plan or an Anthropic Console account.`,
       choices: [
-        ...(account.install_page ? [{ label: "Open Anthropic's install page", run: () => act.openUrl(account.install_page!) }] : []),
+        ...(account.install_page ? [{ label: "Open Anthropic’s install page", run: () => act.openUrl(account.install_page!) }] : []),
         { label: "Check again", run: act.checkAgain },
       ],
     };
@@ -60,7 +60,7 @@ export function setupStep(
   if (!account.signed_in) {
     return {
       next: `Sign in to ${account.name}`,
-      where: signingIn ? "Waiting for the sign-in to finish in your browser." : (account.problem ?? `${account.name}'s own sign-in opens Anthropic's page in your browser. This window never sees your password.`),
+      where: signingIn ? "Waiting for the sign-in to finish in your browser." : (account.problem ?? `${account.name}’s own sign-in opens Anthropic’s page in your browser. This window never sees your password.`),
       choices: [
         { label: "Sign in", run: act.signIn },
         { label: "Check again", run: act.checkAgain },

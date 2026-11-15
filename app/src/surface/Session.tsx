@@ -972,7 +972,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       return {
         ...base,
         next: home.sitting.name,
-        where: `Started at ${at}, for ${home.sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace's page.`,
+        where: `Started at ${at}, for ${home.sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace’s page.`,
       };
     }
     if (home.state === "needs_upgrade") return { ...base, next: "This folder needs an upgrade", where: withoutPaths(`${home.message ?? ""} Its page on Home has the upgrade.`.trim()) };

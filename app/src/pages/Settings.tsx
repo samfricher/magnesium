@@ -538,7 +538,7 @@ export function SettingsPage(props: Props) {
               type="number"
               min={5}
               max={240}
-              aria-label="A paper's time in minutes"
+              aria-label="A paper’s time in minutes"
               placeholder="other"
               value={minutes}
               onChange={(event) => setMinutes(event.target.value)}
@@ -553,7 +553,7 @@ export function SettingsPage(props: Props) {
           {/* Which program runs lessons is said under About; here only while there is a choice to make. */}
           {runtime?.state === "kept" && runtime.bundled && (
             <Setting name="The magnesium program">
-              <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app's copy` : "Kept over this app's copy"}</span>
+              <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app’s copy` : "Kept over this app’s copy"}</span>
               <button className="plain" onClick={props.onReplaceRuntime}>
                 use this app's {runtime.bundled.version.split("+")[0]}
               </button>
