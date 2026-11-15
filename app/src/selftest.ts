@@ -314,7 +314,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const waiting = [...document.querySelectorAll<HTMLButtonElement>(".session.in-front .line-menu .line-menu-row")].every((row) => row.disabled);
     press("Escape");
     await wait(150);
-    const beforeWord = await openModelRow("More's Model row, named from the list the window asked for", (word) => word !== "Default", 20_000);
+    const beforeWord = await openModelRow("More's Model row, named from the list the window asked for", (word) => word !== "Default model", 20_000);
     modelRow()!.click();
     await until("the list of models, before any lesson", () => document.querySelectorAll('.session.in-front [data-drive="model-row"]').length > 0, 5000);
     const firstRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
@@ -384,7 +384,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       };
       await choose("haiku", "low");
       await openMore();
-      // The row reads "Haiku 5.5 · low ›"; the arrow is drawn, not said.
+      // The row reads "Haiku 5.5 · Low ›", joined by no-break spaces; the arrow is drawn, not said.
       const changedWord = lessonWord()?.firstChild?.textContent ?? null;
       press("Escape");
       await wait(150);
@@ -392,7 +392,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       await choose("opus", "usual");
       const back = await ranOn();
       steps.lessonModel = { word: changedWord, changed, back, focus: document.activeElement?.getAttribute("data-drive") ?? null };
-      if (changedWord !== "Haiku 5.5 · low" || changed !== "On claude-haiku-5-5 at low." || back !== "On claude-opus-5-5 at medium.")
+      if (changedWord !== "Haiku 5.5\u00a0·\u00a0Low" || changed !== "On claude-haiku-5-5 at low." || back !== "On claude-opus-5-5 at medium.")
         throw new Error(`the running session did not change its model: ${JSON.stringify(steps.lessonModel)}`);
     }
 
