@@ -15,7 +15,7 @@ import { attachedWords, splitAttached, tutorText, type LessonTurn } from "./less
 import { tinyPdf } from "./demoPdf";
 import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
-import { comboOf, keyName, parseCombo } from "./prefs";
+import { comboOf, keyName, parseCombo, keepPlace, placeKey, type Place } from "./prefs";
 import { sourceRef } from "./sources";
 import { rebuild } from "./surface/Session";
 import type { Core, Mark, Turn as SavedTurn } from "./types";
@@ -496,6 +496,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const progress = await api.progress(null, folder);
     steps.progress = { confirmed: progress.confirmed.length, message: progress.message };
 
+    // Left with a task open, for the reopened session below.
+    await actions.session()!.say("One more.\n\n**Task.** What is 3 + 3?", "talk");
+    await until("the task the session is left with", () => idle() && actions.session()?.probe().task?.includes("3 + 3") === true, 10_000);
+
     // Close the session: its tab goes, and the lesson is kept for the next sitting.
     actions.run("close-session");
     await until("the session's tab to close", () => actions.session() === null && actions.tabs().length === 1, 10_000);
@@ -510,6 +514,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!turns.some((turn) => turn.intent === "talk")) throw new Error("a kept turn does not say it was sent as talk");
 
     // Opened again, it is as it was left: its heading at the top, its turns under it, and nothing is sent.
+    // A window quit with the task open kept the task's words with the session's place, and windows before this one
+    // read them back: the place here is as such a window left it.
+    const leftByOlderWindow: Record<string, unknown> = { task: "**Task.** What is 3 + 3?" };
+    keepPlace(placeKey(folder, sessions[0].session, ""), leftByOlderWindow as Partial<Place>);
     actions.openSession(folder, sessions[0].session, sessions[0].title ?? "");
     await until("the session again", () => document.querySelector(".session.in-front .now.lesson article") !== null, 10_000);
     await wait(1500);
@@ -523,6 +531,18 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const probe = actions.session()?.probe();
     steps.reopened = { ...(steps.reopened as object), line: probe?.line, task: probe?.task !== null };
     if (probe?.line === "raised") throw new Error("a reopened session opened with its line raised over the page");
+    // The task it was left with is open again, and goes when it is answered. Claude Code's engine never says which
+    // task is open, so the window finds it in the turns: the next task the tutor poses is then the open one.
+    await actions.session()!.say("6", "answer");
+    await until("the reply to the reopened session's answer", () => idle() && session().live?.learner.includes("6") === true, 15_000);
+    const afterAnswer = actions.session()?.probe().task ?? null;
+    await actions.session()!.say("Another.\n\n**Task.** What is 5 + 5?", "talk");
+    await until("the reply that poses the next task", () => idle() && session().live?.learner.includes("Another") === true, 15_000);
+    const nextTask = actions.session()?.probe().task ?? null;
+    steps.reopenedTask = { left: probe?.task ?? null, afterAnswer, next: nextTask };
+    if (!probe?.task?.includes("3 + 3")) throw new Error(`a reopened session did not have the task it was left with: ${JSON.stringify(steps.reopenedTask)}`);
+    if (afterAnswer !== null) throw new Error(`a task answered in a reopened session stayed open: ${JSON.stringify(steps.reopenedTask)}`);
+    if (!nextTask?.includes("5 + 5")) throw new Error(`the task posed in a reopened session is not the open one: ${JSON.stringify(steps.reopenedTask)}`);
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
 
