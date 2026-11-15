@@ -395,8 +395,10 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .act:focus::before {
   content: "›";
   position: absolute;
-  left: -0.45rem;
-  font: 400 0.882rem/1.4 var(--mono);
+  left: -0.6rem;
+  top: 0.3rem;
+  /* The label's own line box (0.941rem × 1.4), so the mark sits on its middle. */
+  font: 400 0.882rem/1.317rem var(--mono);
   color: var(--ink);
 }
 :root[data-input="key"] .act:focus-visible { outline: none; }
