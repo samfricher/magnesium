@@ -209,7 +209,6 @@ button.home-row:focus:hover { background: var(--tint); }
   font: 400 1rem/1.45 var(--read);
   color: var(--text);
 }
-.row-name.file-name { font: 400 0.882rem/1.5 var(--app); }
 .row-when { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .home-row.static .quiet-act { margin-left: 0.4rem; }
 
@@ -591,9 +590,6 @@ dialog.layer {
 dialog.layer:not([open]) { display: none; }
 dialog.layer::backdrop { background: transparent; }
 
-/* A note of the course's material, drawn as prose in the source viewer. */
-.sheet-body.prose-body { display: block; padding: 1.2rem 2rem 2rem; }
-.source-prose { max-width: var(--measure); margin: 0 auto; font-size: 1rem; line-height: 1.62; color: var(--text); }
 
 /* A colour's well keeps its column on every row; light and dark are named on the first. */
 .setting:has(.colour-field) { align-items: start; }

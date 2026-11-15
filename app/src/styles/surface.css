@@ -82,10 +82,8 @@
 :root[data-hints="off"] .row-key,
 :root[data-hints="off"] .line-menu-key,
 :root[data-hints="off"] .keys,
-:root[data-hints="off"] .keyhint,
 :root[data-hints="off"] .record-keys,
 :root[data-hints="off"] .layer-keys,
-:root[data-hints="off"] .foot-keys,
 :root[data-hints="off"] .line-end { display: none; }
 
 * { box-sizing: border-box; }
@@ -252,8 +250,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .line .field::placeholder { color: var(--quiet); opacity: 1; }
 
 /* The conversation's line: a prompt hung in the margin. */
-.you.talk::before,
-.aside-line .prompt {
+.you.talk::before {
   content: "›";
   position: absolute;
   left: calc(-1 * var(--hang));
@@ -261,23 +258,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   width: var(--hang);
   font: 400 0.882rem/1.6 var(--mono);
   color: var(--ink);
-}
-.aside-line .prompt { position: static; display: inline-block; margin-left: calc(-1 * var(--hang)); }
-
-.foot-keys {
-  margin: 0.7rem 0 0;
-  font: 400 0.765rem/1.5 var(--app);
-  color: var(--quiet);
-  white-space: pre;
-}
-
-.line .keyhint {
-  position: absolute;
-  right: 0;
-  bottom: 0.3rem;
-  font: 400 0.765rem/1.6 var(--app);
-  color: var(--quiet);
-  pointer-events: none;
 }
 .line .with {
   margin: 0.25rem 0 0;
@@ -290,17 +270,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* A quiet word that does something: as Hint and dismiss are, no underline. */
 .plain { color: var(--quiet); font: inherit; margin-left: 0.4rem; }
 .plain:hover { color: var(--text); }
-
-/* Under the line: the way to the other line. */
-.aside-line {
-  display: block;
-  margin-top: 0.7rem;
-  font: 400 0.765rem/1.6 var(--app);
-  color: var(--quiet);
-}
-.aside-line:hover { color: var(--text); }
-.aside-line .keyname { font-family: var(--app); }
-.aside-line.tether .line { color: inherit; }
 
 /* ------------------------------------------------------------------ */
 /* The lesson                                                          */
@@ -569,11 +538,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   font: 400 1rem/1.4 var(--read);
   color: var(--text);
 }
-.sheet-body { flex: 1; overflow: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; mask-image: linear-gradient(to bottom, black calc(100% - 1.6rem), transparent); }
-.sheet-note { padding: 1rem 1.1rem 1rem calc(1.1rem + var(--hang)); color: var(--quiet); font: 400 0.824rem/1.5 var(--app); }
-.source-page { background: white; box-shadow: 0 0 0 1px var(--edge); }
-.source-text { margin: 0; width: 100%; white-space: pre-wrap; font: 400 0.824rem/1.6 var(--mono); color: var(--text); }
-.source-image { max-width: 100%; }
 .paste-field {
   flex: 1;
   margin: 0;
@@ -590,7 +554,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 /* A sheet's name and its notes start where its text does: on the reading column. */
 .layer.sheet .sheet-name,
-.layer.sheet .sheet-note,
 .layer.sheet .layer-keys { padding-left: max(calc(1.1rem + var(--hang)), calc((100% - var(--measure-rem)) / 2)); padding-right: max(1.1rem, calc((100% - var(--measure-rem)) / 2)); }
 
 @media (prefers-reduced-motion: reduce) {
