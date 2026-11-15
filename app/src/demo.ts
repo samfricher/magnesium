@@ -551,7 +551,7 @@ export function demoCore(): Core {
     selftest: async () => false,
     selftestReport: async () => {},
     // A browser has nothing behind its page to frost: the demo's window stays solid.
-    glassState: async () => ({ can: false, reduce: false }),
+    glassState: async () => ({ can: false, liquid: false, reduce: false }),
     setGlass: async () => {},
   };
 }

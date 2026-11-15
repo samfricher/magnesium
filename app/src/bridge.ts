@@ -102,7 +102,7 @@ async function tauriCore(): Promise<Core> {
     selftest: () => invoke("selftest"),
     selftestReport: (report) => invoke("selftest_report", { report }),
     glassState: () => invoke("glass_state"),
-    setGlass: (on, dark) => invoke("set_glass", { on, dark }),
+    setGlass: (material, dark) => invoke("set_glass", { material, dark }),
   };
 }
 

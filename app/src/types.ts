@@ -475,10 +475,12 @@ export interface Core {
   onEvent(handler: (event: AgentEvent) => void): Promise<() => void>;
   selftest(): Promise<boolean>;
   selftestReport(report: unknown): Promise<void>;
-  /** Whether this Mac can draw frosted glass behind the window, and whether the learner asked it to reduce transparency. */
+  /** Whether this Mac can draw glass behind the window, which kinds, and whether the learner asked it to reduce transparency. */
   glassState(): Promise<GlassState>;
-  /** Put the Mac's glass under the page, or take it away; `dark` is the page's scheme when one is chosen. */
-  setGlass(on: boolean, dark: boolean | null): Promise<void>;
+  /** Put one of the Mac's materials under the page, or with null take it away; `dark` is the page's scheme when one is chosen. */
+  setGlass(material: GlassMaterial | null, dark: boolean | null): Promise<void>;
 }
 
-export type GlassState = { can: boolean; reduce: boolean };
+export type GlassState = { can: boolean; liquid: boolean; reduce: boolean };
+/** Frosted is the Mac's matte material; liquid is Liquid Glass, which lets colour through. */
+export type GlassMaterial = "frosted" | "liquid";

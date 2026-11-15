@@ -87,6 +87,12 @@ function Choice<T extends string | number | boolean>(props: { name: string; opti
   );
 }
 
+/** The window's ground as words, for a reader that cannot see where the slider stands. */
+function glassWords(level: number): string {
+  if (level === 0) return "Solid";
+  return level < 0 ? `Frosted glass, ${-level} of 10` : `Liquid Glass, ${level} of 10`;
+}
+
 /** One setting: its visible name names the group of controls that set it. */
 function Setting(props: { name: string; id?: string; className?: string; children: ReactNode; action?: string }) {
   const made = useId();
@@ -327,6 +333,8 @@ export function SettingsPage(props: Props) {
     change({ keys });
   };
   const glass = useGlassState();
+  // Until the Mac has answered, the whole scale is shown: only an older Mac loses the Liquid Glass half.
+  const liquid = glass?.liquid !== false;
   const account = props.setup?.account ?? null;
   const runtime = props.setup?.runtime ?? null;
   const built = props.about ? `${props.about.version.split("+")[0]}${props.about.commit ? `, built from ${props.about.commit.slice(0, 7)}` : ", built from source"}` : "";
@@ -401,20 +409,29 @@ export function SettingsPage(props: Props) {
           <Setting name="Light or dark">
             <Choice name="Light or dark" options={SCHEMES} value={prefs.scheme} onPick={(scheme) => change({ scheme })} />
           </Setting>
-          <Setting name="The window">
-            <Choice
-              name="The window"
-              options={[
-                ["off", "Solid"],
-                ["frosted", "Frosted glass"],
-              ]}
-              value={prefs.glass}
-              onPick={(glass) => change({ glass })}
-              disabled={glass !== null && !glass.can}
-            />
+          <Setting name="The window" id="setting-glass">
+            <span className={`glass-scale${liquid ? "" : " half"}`}>
+              <input
+                type="range"
+                min={-10}
+                max={liquid ? 10 : 0}
+                step={1}
+                value={liquid ? prefs.glass : Math.min(prefs.glass, 0)}
+                aria-labelledby="setting-glass"
+                data-drive="glass"
+                aria-valuetext={glassWords(prefs.glass)}
+                disabled={glass !== null && !glass.can}
+                onChange={(event) => change({ glass: Number(event.target.value) })}
+              />
+              <span className="glass-ends" aria-hidden="true">
+                <span>Frosted</span>
+                <span>Solid</span>
+                {liquid && <span>Liquid Glass</span>}
+              </span>
+            </span>
             {glass && !glass.can ? (
               <span className="setting-note">This window cannot draw glass here, so it stays solid.</span>
-            ) : glass?.reduce && prefs.glass === "frosted" ? (
+            ) : glass?.reduce && prefs.glass !== 0 ? (
               <span className="setting-note">Solid while the Mac is set to reduce transparency or increase contrast.</span>
             ) : null}
           </Setting>

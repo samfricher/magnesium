@@ -120,7 +120,7 @@ export function App() {
 
   useLayoutEffect(() => {
     applyPrefs(prefs);
-    wantGlass(prefs.glass === "frosted");
+    wantGlass(prefs.glass);
   }, [prefs]);
 
   const changePrefs = useCallback((change: Partial<Prefs>) => {

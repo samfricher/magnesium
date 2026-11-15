@@ -1,24 +1,36 @@
-//! Frosted glass behind the page, when the learner chooses it in Settings.
+//! Glass behind the page, when the learner chooses it in Settings.
 //!
 //! The window opens opaque, exactly as it always has. Only when the page asks
 //! for glass does it turn the window clear, stop the web view painting a
-//! ground of its own, and put the Mac's own glass under the page; the page
-//! then paints its ground part-way see-through (`data-glass` in the styles).
-//! Turning it off puts every one of those back.
+//! ground of its own, and put one of the Mac's own materials under the page;
+//! the page then paints its ground part-way see-through (`data-glass` in the
+//! styles), and how far is the page's alone. Turning it off puts every one of
+//! those back.
 //!
-//! The blur itself is AppKit's: on macOS 26 and later an `NSGlassEffectView`
-//! (Liquid Glass, regular), and before that an `NSVisualEffectView` with the
-//! under-window material, both through Tauri's window effects (the
-//! `window-vibrancy` crate). The window server draws it, not the page, so the
-//! page's scrolling and typing do no more work than over an opaque ground.
+//! The blur itself is AppKit's, through Tauri's window effects (the
+//! `window-vibrancy` crate). Frosted is an `NSVisualEffectView` with the
+//! under-window material: matte, and close to opaque. Liquid Glass is an
+//! `NSGlassEffectView` (regular), which lets colour through; it needs macOS
+//! 26. The window server draws either, not the page, so the page's scrolling
+//! and typing do no more work than over an opaque ground.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Which of the Mac's materials goes under the page.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Material {
+    Frosted,
+    Liquid,
+}
 
 /// What this Mac can do, as the page needs to know it before it asks.
 #[derive(Serialize)]
 pub struct GlassState {
     /// The window can be made see-through here.
     can: bool,
+    /// This Mac has Liquid Glass (macOS 26 and later). Without it the page offers frosted glass only.
+    liquid: bool,
     /// The learner asked the Mac to reduce transparency or increase contrast
     /// (System Settings, Accessibility, Display). Glass is not drawn then, as
     /// AppKit's own materials turn opaque under Reduce transparency.
@@ -29,37 +41,44 @@ pub struct GlassState {
 pub fn glass_state() -> GlassState {
     GlassState {
         can: cfg!(target_os = "macos"),
+        liquid: has_liquid_glass(),
         reduce: reduce_transparency(),
     }
 }
 
-/// Put glass under the page, or take it away. `dark` is the page's scheme
-/// when the learner chose one; with none the glass follows the Mac.
+/// Put a material under the page, or with none take the glass away. `dark` is
+/// the page's scheme when the learner chose one; with none the glass follows
+/// the Mac.
 #[tauri::command]
-pub fn set_glass(window: tauri::WebviewWindow, on: bool, dark: Option<bool>) -> Result<(), String> {
+pub fn set_glass(
+    window: tauri::WebviewWindow,
+    material: Option<Material>,
+    dark: Option<bool>,
+) -> Result<(), String> {
     use tauri::window::{Effect, EffectsBuilder};
     use tauri::Theme;
 
-    if on {
-        // The glass is tinted by the window's appearance: it has to match the page's scheme, not the Mac's.
-        window
-            .set_theme(dark.map(|dark| if dark { Theme::Dark } else { Theme::Light }))
-            .map_err(|e| e.to_string())?;
-        clear(&window, true)?;
-        // Liquid Glass where the Mac has it; Tauri falls back to the second effect on macOS 15 and earlier.
-        window
-            .set_effects(
-                EffectsBuilder::new()
-                    .effect(Effect::LiquidGlassRegular)
-                    .effect(Effect::UnderWindowBackground)
-                    .build(),
-            )
-            .map_err(|e| e.to_string())
-    } else {
+    let Some(material) = material else {
         window.set_effects(None).map_err(|e| e.to_string())?;
         clear(&window, false)?;
-        window.set_theme(None).map_err(|e| e.to_string())
-    }
+        return window.set_theme(None).map_err(|e| e.to_string());
+    };
+    // The glass is tinted by the window's appearance: it has to match the page's scheme, not the Mac's.
+    window
+        .set_theme(dark.map(|dark| if dark { Theme::Dark } else { Theme::Light }))
+        .map_err(|e| e.to_string())?;
+    clear(&window, true)?;
+    let effects = match material {
+        Material::Frosted => EffectsBuilder::new().effect(Effect::UnderWindowBackground),
+        // Tauri falls back to the second effect on macOS 15 and earlier.
+        Material::Liquid => EffectsBuilder::new()
+            .effect(Effect::LiquidGlassRegular)
+            .effect(Effect::UnderWindowBackground),
+    };
+    // Setting effects takes away the ones set before, so one material replaces the other.
+    window
+        .set_effects(effects.build())
+        .map_err(|e| e.to_string())
 }
 
 /// Make the window and its web view see-through, or opaque as they open.
@@ -97,6 +116,16 @@ fn clear(window: &tauri::WebviewWindow, see_through: bool) -> Result<(), String>
 #[cfg(not(target_os = "macos"))]
 fn clear(_window: &tauri::WebviewWindow, _see_through: bool) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn has_liquid_glass() -> bool {
+    objc2::runtime::AnyClass::get(c"NSGlassEffectView").is_some()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn has_liquid_glass() -> bool {
+    false
 }
 
 #[cfg(target_os = "macos")]
