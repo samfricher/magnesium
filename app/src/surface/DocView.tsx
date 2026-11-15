@@ -350,7 +350,8 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     const root = box.current;
     if (!root || root.clientWidth === 0) return;
     // The page at the view's top, measured from its top: a short page (a slide) is not counted before it is reached.
-    const top = root.scrollTop + PAD;
+    // Measured as goToPlace goes back to it, so a fitted page, gone to with no pad, does not move down a pad each time.
+    const top = root.scrollTop + (fitting ? 0 : PAD);
     let n = 1;
     pages.current.forEach((page, at) => {
       if (page && page.offsetTop <= top + 1) n = at + 1;
