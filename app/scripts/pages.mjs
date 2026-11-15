@@ -255,6 +255,13 @@ try {
   await step(w, "settings: the end", { op: "scroll", to: "bottom" });
   await settle(w, 300);
   await shoot(w, "settings-about", "Settings: Lessons and About, at the end");
+  // A colour well's grid open, under the ground and text rows with their light and dark columns.
+  await step(w, "settings: Appearance again", { op: "scroll", target: "Appearance" });
+  await w.op({ op: "scroll", by: -40 });
+  await step(w, "open the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "settings-colour", "Settings: the ground's colours open");
+  await step(w, "close the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
 
   // The line drawn bare. A new window draws it as a soft field, so every photograph above has that look;
   // these are the same session with the other one, chosen in Settings as a learner chooses it.
@@ -271,7 +278,8 @@ try {
   await shoot(w, "session-bare-stuck", "Session: Stuck open on the bare line");
   await step(w, "close Stuck", { op: "key", key: "Escape" });
   await step(w, "clear the line", { op: "type", text: "", replace: true });
-  await step(w, "settings again", { op: "click", target: "settings", by: "drive" });
+  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
+  await step(w, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
   await settle(w, 300);
 

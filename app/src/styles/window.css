@@ -101,8 +101,6 @@
 }
 .bar-act:hover { color: var(--text); }
 .bar-act.on { color: var(--text); background: var(--tint); }
-/* Settings while its tab is in front: said in the text's colour, without a second pill beside the tab's. */
-.bar-act.current { color: var(--text); }
 
 /* ------------------------------------------------------------------ */
 /* What is under the bar: one view in front.                          */
@@ -344,9 +342,11 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .text-field.number { min-width: 0; width: 3.4rem; }
 .text-field::placeholder { color: var(--quiet); opacity: 1; }
 /* In by a choice's own padding, so its words start where the choices' words above it start. */
-.font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; margin-left: 0.1rem; max-width: calc(100% - 0.1rem); }
-/* The field narrows to the row's room at a large text size, where 12rem ran past the window's edge. */
-.font-other .text-field { min-width: min(12rem, 100%); max-width: 100%; }
+/* A box of its own width that the field fills: inside an inline-flex box sized by its content, a min-width in %
+   resolved in a circle and left the field at WebKit's default ~135px, cutting its placeholder off. min() keeps it
+   inside the row at a large text size, where a fixed width ran past the window's edge. */
+.font-other { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; margin-left: 0.1rem; width: min(15rem, calc(100% - 0.1rem)); }
+.font-other .text-field { flex: 1 1 100%; width: 100%; min-width: 0; }
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -363,7 +363,8 @@ input[type="range"]:disabled + .glass-ends,
 /* 17rem, or the room the row has left when a large text size makes 17rem wider than it: past it, the page scrolled sideways. */
 .glass-scale { display: inline-grid; gap: 0.35rem; width: min(17rem, 100%); }
 .glass-scale input[type="range"] { width: 100%; }
-.glass-ends { display: grid; grid-template-columns: 1fr auto 1fr; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* The gap keeps "Solid" and "Liquid Glass" apart where a large text size leaves the scale too short for both. */
+.glass-ends { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 0.6rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .glass-ends > :last-child { text-align: right; }
 .glass-scale.half .glass-ends { grid-template-columns: 1fr auto; }
 input[type="range"]::-webkit-slider-thumb {
@@ -595,10 +596,8 @@ dialog.layer:not([open]) { display: none; }
 dialog.layer::backdrop { background: transparent; }
 
 
-/* A colour's well keeps its column on every row; light and dark are named on the first. */
 .setting:has(.colour-field) { align-items: start; }
 .setting:has(.colour-field) .setting-name { padding-top: 0.1rem; }
-.colour-well .unnamed { visibility: hidden; }
 
 /* A row of past work with no action of its own: its date ends at the column's edge, as every row's does. */
 .home-row.static:not(:has(.quiet-act)) { grid-template-columns: minmax(0, 1fr) max-content; }
