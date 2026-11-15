@@ -482,5 +482,5 @@ export interface Core {
 }
 
 export type GlassState = { can: boolean; liquid: boolean; reduce: boolean };
-/** Frosted is the Mac's matte material; liquid is Liquid Glass, which lets colour through. */
+/** Both are the Mac's glass: frosted blurs what is behind the window, liquid leaves it close to sharp. */
 export type GlassMaterial = "frosted" | "liquid";

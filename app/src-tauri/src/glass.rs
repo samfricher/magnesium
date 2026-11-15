@@ -7,12 +7,14 @@
 //! styles), and how far is the page's alone. Turning it off puts every one of
 //! those back.
 //!
-//! The blur itself is AppKit's, through Tauri's window effects (the
-//! `window-vibrancy` crate). Frosted is an `NSVisualEffectView` with the
-//! under-window material: matte, and close to opaque. Liquid Glass is an
-//! `NSGlassEffectView` (regular), which lets colour through; it needs macOS
-//! 26. The window server draws either, not the page, so the page's scrolling
-//! and typing do no more work than over an opaque ground.
+//! The glass itself is AppKit's, through Tauri's window effects (the
+//! `window-vibrancy` crate): an `NSGlassEffectView`, on macOS 26 and later.
+//! Frosted is its regular style, which blurs what is behind the window;
+//! Liquid Glass is its clear style, which leaves it close to sharp. Before
+//! macOS 26 there is one material for both, an `NSVisualEffectView` with the
+//! under-window material. The window server draws any of them, not the page,
+//! so the page's scrolling and typing do no more work than over an opaque
+//! ground.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +31,8 @@ pub enum Material {
 pub struct GlassState {
     /// The window can be made see-through here.
     can: bool,
-    /// This Mac has Liquid Glass (macOS 26 and later). Without it the page offers frosted glass only.
+    /// This Mac has the new glass (macOS 26 and later). Without it there is one older material, and the page
+    /// offers the frosted half only.
     liquid: bool,
     /// The learner asked the Mac to reduce transparency or increase contrast
     /// (System Settings, Accessibility, Display). Glass is not drawn then, as
@@ -68,13 +71,14 @@ pub fn set_glass(
         .set_theme(dark.map(|dark| if dark { Theme::Dark } else { Theme::Light }))
         .map_err(|e| e.to_string())?;
     clear(&window, true)?;
-    let effects = match material {
-        Material::Frosted => EffectsBuilder::new().effect(Effect::UnderWindowBackground),
-        // Tauri falls back to the second effect on macOS 15 and earlier.
-        Material::Liquid => EffectsBuilder::new()
-            .effect(Effect::LiquidGlassRegular)
-            .effect(Effect::UnderWindowBackground),
+    let glass = match material {
+        Material::Frosted => Effect::LiquidGlassRegular,
+        Material::Liquid => Effect::LiquidGlassClear,
     };
+    // Tauri falls back to the second effect on macOS 15 and earlier.
+    let effects = EffectsBuilder::new()
+        .effect(glass)
+        .effect(Effect::UnderWindowBackground);
     // Setting effects takes away the ones set before, so one material replaces the other.
     window
         .set_effects(effects.build())

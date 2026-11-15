@@ -34,7 +34,7 @@ function pageDark(): boolean | null {
 function sync(): void {
   const root = document.documentElement;
   const on = level !== 0 && state !== null && state.can && !state.reduce;
-  // A Mac without Liquid Glass draws the frosted material for either side of the scale.
+  // A Mac without the new glass has one older material, drawn for either side of the scale.
   const material: GlassMaterial | null = !on ? null : level < 0 || !state?.liquid ? "frosted" : "liquid";
   if (material) {
     root.dataset.glass = material;

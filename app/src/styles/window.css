@@ -649,8 +649,8 @@ dialog.layer::backdrop { background: transparent; }
    with a mask instead, so no second layer of ground darkens a band. */
 
 :root[data-glass] {
-  /* How much of the ground is laid over the blur. `--glass` is the learner's strength, from 0 to 1 (glass.ts):
-     the ground thins from nearly whole to 40% over Liquid Glass, which lets the desktop's colour through. */
+  /* How much of the ground is laid over the glass. `--glass` is the learner's strength, from 0 to 1 (glass.ts):
+     the ground thins from nearly whole to 40% over frosted glass, which blurs the desktop behind it. */
   --frost: calc(94% - 54% * var(--glass, 0.4));
   --pane: color-mix(in srgb, var(--ground) var(--frost), transparent);
   /* The soft field: a shade of the text over the glass, not of an opaque ground. */
@@ -659,8 +659,8 @@ dialog.layer::backdrop { background: transparent; }
      than the solid one, and the window's small words have to stay readable on it. */
   --quiet: color-mix(in srgb, var(--text) calc(64% + 24% * var(--glass, 0.4)), var(--ground));
 }
-/* The frosted material is matte and close to opaque on its own, so the ground can thin almost to nothing over it. */
-:root[data-glass="frosted"] { --frost: calc(92% - 84% * var(--glass, 0.4)); }
+/* Liquid Glass leaves the desktop close to sharp and does not dim it, so more ground stays over it. */
+:root[data-glass="liquid"] { --frost: calc(94% - 44% * var(--glass, 0.4)); }
 @media (prefers-color-scheme: dark) {
   :root[data-glass]:not([data-scheme="light"]) { --well: color-mix(in srgb, var(--text) 8%, transparent); }
 }
