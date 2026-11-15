@@ -286,7 +286,8 @@ button.home-row:focus:hover { background: var(--tint); }
 .settings-page section:first-of-type .section-head { margin-top: 0; }
 .setting {
   display: grid;
-  grid-template-columns: 9rem minmax(0, 1fr);
+  /* Wide enough for the longest key's name ("Fit the document to the panel"), so the whole page has one column edge. */
+  grid-template-columns: 12rem minmax(0, 1fr);
   column-gap: 1.2rem;
   align-items: baseline;
   padding: 0.5rem 0;
@@ -390,7 +391,7 @@ input[type="range"]::-webkit-slider-thumb {
 .colour-picker .swatches { flex-wrap: wrap; }
 .colour-picker .plain { font: 400 0.765rem/1.5 var(--app); margin-left: 0; }
 .text-field.hex { min-width: 0; width: 5.5rem; font-size: 0.765rem; font-variant-numeric: tabular-nums; }
-.sample { margin: 0.6rem 0 0.6rem 10.2rem; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
+.sample { margin: 0.6rem 0 0.6rem 13.2rem; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
 .sample sub { font-size: 0.68em; }
 .sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
 .sample-you::before { content: "›"; position: absolute; left: calc(-1 * var(--hang)); font: 400 0.882rem/1.6 var(--mono); color: var(--hint); }
@@ -410,8 +411,6 @@ input[type="range"]::-webkit-slider-thumb {
 .key-cap.unset { color: var(--quiet); }
 .key-cap.static { display: inline; min-width: 0; cursor: default; padding: 0; margin: 0; border: 0; color: var(--quiet); }
 .key-row { padding: 0.28rem 0; }
-/* A key's name is a phrase ("Fit the document to the panel"): its column is wider than a setting's, so it stays on one line. */
-.setting.key-row { grid-template-columns: 13.5rem minmax(0, 1fr); }
 .fixed-keys { margin: 0.9rem 0 0; font: 400 0.765rem/1.9 var(--app); color: var(--quiet); }
 .fixed-keys p { margin: 0; }
 
@@ -655,7 +654,8 @@ dialog.layer::backdrop { background: transparent; }
 
 /* Settings keeps one column whatever line width is chosen in it: a column that followed the Line width slider moved
    the slider under the pointer while it was dragged. */
-.settings-page .page-column { width: min(31rem, calc(100% - 2 * var(--hang) - 40px)); }
+/* 3rem wider than the label column took, so the choices keep the room they had beside it. */
+.settings-page .page-column { width: min(34rem, calc(100% - 2 * var(--hang) - 40px)); }
 
 /* ------------------------------------------------------------------ */
 /* Glass (glass.ts): the Mac blurs what is behind the window,
