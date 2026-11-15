@@ -293,6 +293,12 @@ button.home-row:focus:hover { background: var(--tint); }
   padding: 0.5rem 0;
 }
 .setting-name { margin: 0; font: 400 0.824rem/1.5 var(--app); color: var(--text); }
+/* A slider has no baseline of its own but its foot, so a row that starts with one is set on centres: the name on
+   the track. The glass slider has its ends' names under it: its name is set on the track alone. */
+.setting:has(> .setting-control > input[type="range"]:first-child) { align-items: center; }
+/* The name is raised onto the track; the row is lowered by as much, so it keeps the pitch of the rows around it. */
+.setting:has(.glass-scale) { align-items: start; padding-top: calc(0.5rem + 0.618rem - 1px); }
+.setting:has(.glass-scale) .setting-name { margin-top: calc(1px - 0.618rem); }
 .setting-control { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; min-width: 0; }
 .setting-value { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); font-variant-numeric: tabular-nums; }
 .setting-note { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
