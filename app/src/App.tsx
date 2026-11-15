@@ -359,6 +359,7 @@ export function App() {
         case "lost":
         case "unknown":
         case "symbols":
+        case "model":
           if (inFront) inFront.command(command);
           else note("Open a session first.");
           return;
@@ -627,7 +628,7 @@ export function App() {
   }, [tabs, homeTabName]);
   const spec = useMemo((): MenuSpec => {
     const disabled: string[] = [];
-    if (!inSession) disabled.push("attach", "symbols", "hint", "lost", "unknown");
+    if (!inSession) disabled.push("attach", "symbols", "model", "hint", "lost", "unknown");
     else if (!taskOpen[activeTab.key]) disabled.push("hint", "lost", "unknown");
     if (activeTab.kind === "home") disabled.push("close-session");
     if (!inSession) disabled.push("plan");
@@ -981,7 +982,7 @@ export function App() {
       {overlay?.kind === "commands" ? (
         <Commands
           workspaces={workspaces ?? []}
-          keys={{ home: k("home"), newSession: k("new-session"), closeSession: k("close-session"), settings: k("settings"), plan: k("plan"), openWorkspace: k("open-workspace") }}
+          keys={{ home: k("home"), newSession: k("new-session"), closeSession: k("close-session"), settings: k("settings"), plan: k("plan"), openWorkspace: k("open-workspace"), model: k("model") }}
           inSession={inSession}
           planShown={panel}
           onClose={() => setOverlay(null)}

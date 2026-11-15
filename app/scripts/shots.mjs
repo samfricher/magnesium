@@ -48,10 +48,20 @@ const shots = [
   ["panel", "panel", 400],
   ["panel-changed", "panel-changed", 500],
   ["panel-narrow", "panel", 400, { width: 720, height: 560 }],
-  // The line: Stuck and Attach with a task open, symbols, a file on the line.
+  // The lesson's line: Stuck · More with a task open, each menu open, More while typing, symbols, a file on the line.
   ["help-row", "help-row", 300],
+  ["line-stuck", "line-stuck", 300],
+  ["line-more", "line-more", 300],
+  ["line-more-typing", "line-more-typing", 300],
   ["symbols", "symbols", 300],
   ["attach", "attach", 400],
+  // The model: on the start line, and on the lesson's line once the session runs.
+  ["model-list", "model-list", 300],
+  ["model-effort", "model-effort", 300],
+  ["model-lesson", "model-lesson", 400],
+  ["model-lesson-effort", "model-lesson-effort", 500],
+  ["model-lesson-refused", "model-lesson-refused", 600],
+  ["model-lesson-narrow", "model-lesson", 400, { width: 720, height: 560 }],
   // Tabs, ⌘K and the rest.
   ["tabs", "tabs", 500],
   ["commands", "commands", 300],

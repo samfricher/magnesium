@@ -334,6 +334,49 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
 
+    // The model on the lesson's line: under More, the same list as the start line, now changing the running session.
+    // A change goes to the agent at once; its next reply says what it ran on. It is set back so later steps see the pick.
+    {
+      const more = () => document.querySelector<HTMLElement>('.session.in-front .line.lesson [data-drive="more"]');
+      const lessonWord = () => document.querySelector<HTMLElement>('.session.in-front .line-menu [data-drive="model"] .line-menu-detail');
+      await until("More on the lesson's line", () => more() !== null, 5000);
+      const openMore = async () => {
+        if (lessonWord() === null) more()!.click();
+        await until("the model under More", () => lessonWord() !== null, 3000);
+      };
+      const choose = async (value: string, level: string) => {
+        if (document.querySelector(".session.in-front .model-list") === null) {
+          await openMore();
+          document.querySelector<HTMLElement>('.session.in-front .line-menu [data-drive="model"]')!.click();
+        }
+        await until("the list over the lesson's line", () => document.querySelector(".session.in-front .model-list.lesson") !== null, 3000);
+        document.querySelector<HTMLElement>(`.session.in-front [data-drive="model-row"][data-value="${value}"]`)!.click();
+        await until(`${value} chosen`, () => document.querySelector<HTMLElement>('.session.in-front [data-drive="model-row"].on')?.dataset.value === value, 5000);
+        document.querySelector<HTMLElement>(`.session.in-front [data-drive="model-effort"][data-level="${level}"]`)!.click();
+        await until(`${level} effort chosen`, () => document.querySelector(`.session.in-front [data-drive="model-effort"][data-level="${level}"].chosen`) !== null, 5000);
+        press("Escape");
+        await wait(150);
+      };
+      const ranOn = async () => {
+        const before = session().earlier.length;
+        await actions.session()!.say("RUNS_ON", "talk");
+        await until("the reply naming the model", () => session().earlier.length > before && idle());
+        return tutorText(session().live!);
+      };
+      await choose("haiku", "low");
+      await openMore();
+      // The row reads "Haiku 5.5 · low ›"; the arrow is drawn, not said.
+      const changedWord = lessonWord()?.firstChild?.textContent ?? null;
+      press("Escape");
+      await wait(150);
+      const changed = await ranOn();
+      await choose("opus", "usual");
+      const back = await ranOn();
+      steps.lessonModel = { word: changedWord, changed, back, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+      if (changedWord !== "Haiku 5.5 · low" || changed !== "On claude-haiku-5-5 at low." || back !== "On claude-opus-5-5 at medium.")
+        throw new Error(`the running session did not change its model: ${JSON.stringify(steps.lessonModel)}`);
+    }
+
     await actions.session()!.say("PERMISSION", "talk");
     await until("the permission card", () => session().cards.length > 0);
     steps.card = document.querySelector(".card .record-head")?.textContent ?? null;
@@ -404,7 +447,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.drift = drift;
 
     // The quiet controls, and the plan beside the lesson, shown and hidden.
-    steps.controls = ["attach", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
+    steps.controls = ["more", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
     actions.run("plan");
     await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);

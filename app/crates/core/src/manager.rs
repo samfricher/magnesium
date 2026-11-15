@@ -161,6 +161,21 @@ pub struct ModelChoice {
     /// The pick is not on the list now: a new session starts on the agent's
     /// default, and the pick stays as the learner left it.
     pub not_offered: bool,
+    /// What the session in the tab asked about is on; none for a tab whose
+    /// session has not started.
+    pub on: Option<On>,
+}
+
+/// What one session is on.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct On {
+    /// The model's full id.
+    pub model: String,
+    /// The effort the learner picked; none for the agent's own.
+    pub effort: Option<String>,
+    /// The session runs in the window now, so a change applies at once.
+    /// Otherwise it applies when the session next runs.
+    pub live: bool,
 }
 
 /// The engine the learner picked for new conversations, and the engine of
@@ -265,6 +280,7 @@ impl Manager {
             failed: list.failed,
             pick,
             not_offered,
+            on: None,
         }
     }
 
@@ -272,6 +288,15 @@ impl Manager {
     /// model must be on it and the effort one it takes; the name kept is the
     /// one the list shows. A running conversation goes on with its own.
     pub fn set_pick(&self, model: &str, effort: Option<&str>) -> AgentResult<ModelChoice> {
+        let pick = self.checked_pick(model, effort)?;
+        self.store.set_pick(pick);
+        Ok(self.models())
+    }
+
+    /// A model and effort the learner chose, checked against the agent's
+    /// list, as a pick: by the model's full id, so a later change of what
+    /// an alias stands for does not change it.
+    fn checked_pick(&self, model: &str, effort: Option<&str>) -> AgentResult<Pick> {
         let effort = effort.filter(|e| !e.is_empty());
         if !models::usable_model(model) || effort.is_some_and(|e| !models::usable_effort(e)) {
             return Err(AgentError("That model cannot be picked.".into()));
@@ -291,8 +316,6 @@ impl Manager {
                 )));
             }
         }
-        // Kept by its full id, so a later change of what an alias stands for
-        // does not change the pick.
         let id = row.map_or(model, ModelOption::id).to_owned();
         // The name the start line shows: a pick of the default row shows as
         // the current model it stands for.
@@ -305,12 +328,169 @@ impl Manager {
                     .filter(|p| p.model == id)
                     .and_then(|p| p.name)
             });
-        self.store.set_pick(Pick {
+        Ok(Pick {
             model: id,
             name,
             effort: effort.map(str::to_owned),
-        });
-        Ok(self.models())
+        })
+    }
+
+    /// The agent's models, the pick, and what the session in a tab is on.
+    /// `session` is the tab's conversation, once the agent has named it;
+    /// `live` says the tab holds the window's running conversation. A
+    /// running one is asked what it is on, and what it says is kept.
+    pub fn models_at(
+        &self,
+        folder: Option<&Path>,
+        session: Option<&str>,
+        live: bool,
+    ) -> ModelChoice {
+        let mut choice = self.models();
+        let Ok(folder) = self.at(folder) else {
+            return choice;
+        };
+        let session = session.filter(|id| !id.is_empty());
+        {
+            let mut inner = lock(&self.inner);
+            if let Some(conversation) = Self::running_for(&mut inner, &folder, session, live) {
+                let applied = conversation.applied();
+                let buffer = Arc::clone(&inner.buffer);
+                let mut buffer = lock(&buffer);
+                if let Ok(applied) = applied {
+                    buffer.model = Some(self.list_id(&applied.model));
+                }
+                if let Some(model) = buffer.model.clone() {
+                    choice.on = Some(On {
+                        model,
+                        effort: buffer.effort.clone(),
+                        live: true,
+                    });
+                }
+                let kept = (
+                    buffer.session.clone(),
+                    buffer.model.clone(),
+                    buffer.effort.clone(),
+                );
+                drop(buffer);
+                drop(inner);
+                if let (Some(id), Some(model)) = (kept.0, kept.1) {
+                    self.store.note_session(&folder, &id, |note| {
+                        note.model = Some(model);
+                        note.effort = kept.2;
+                    });
+                }
+                return choice;
+            }
+        }
+        if let Some(id) = session {
+            let saved = self.store.folder(&folder);
+            if let Some(note) = saved.sessions.get(id) {
+                choice.on = Some(On {
+                    model: note.model.clone().unwrap_or_else(|| models::EARLIER.into()),
+                    effort: note.effort.clone(),
+                    live: false,
+                });
+            }
+        }
+        choice
+    }
+
+    /// Change the model and effort of the session in a tab, and make them
+    /// the pick new sessions start on. A running conversation changes at
+    /// once, from its next request to the model; one not running continues
+    /// on them when it next runs. A tab with no session yet changes the pick
+    /// alone.
+    pub fn set_model_at(
+        &self,
+        folder: Option<&Path>,
+        session: Option<&str>,
+        live: bool,
+        model: &str,
+        effort: Option<&str>,
+    ) -> AgentResult<ModelChoice> {
+        let pick = self.checked_pick(model, effort)?;
+        let folder = self.at(folder)?;
+        let session = session.filter(|id| !id.is_empty());
+        let mut changed_live = false;
+        {
+            let mut inner = lock(&self.inner);
+            if let Some(conversation) = Self::running_for(&mut inner, &folder, session, live) {
+                let result = conversation.change_model(&pick.model, pick.effort.as_deref());
+                // On a refusal, what it runs on now is read back, so the line
+                // names that and not the model asked for.
+                let applied = match &result {
+                    Ok(applied) => Some(applied.clone()),
+                    Err(_) => conversation.applied().ok(),
+                };
+                let buffer = Arc::clone(&inner.buffer);
+                let mut buffer = lock(&buffer);
+                if let Some(applied) = applied {
+                    buffer.model = Some(self.list_id(&applied.model));
+                }
+                if result.is_ok() {
+                    buffer.effort.clone_from(&pick.effort);
+                }
+                let kept = (
+                    buffer.session.clone(),
+                    buffer.model.clone(),
+                    buffer.effort.clone(),
+                );
+                drop(buffer);
+                drop(inner);
+                if let (Some(id), Some(model)) = (kept.0, kept.1) {
+                    self.store.note_session(&folder, &id, |note| {
+                        note.model = Some(model);
+                        note.effort = kept.2;
+                    });
+                }
+                result?;
+                changed_live = true;
+            }
+        }
+        if !changed_live {
+            if let Some(id) = session {
+                self.store.note_session(&folder, id, |note| {
+                    note.model = Some(pick.model.clone());
+                    note.effort.clone_from(&pick.effort);
+                });
+            }
+        }
+        self.store.set_pick(pick);
+        Ok(self.models_at(Some(&folder), session, live))
+    }
+
+    /// The window's conversation, when it is the one in this tab and still
+    /// runs: in `folder`, and the tab's session, or the tab holds it before
+    /// the agent has named it.
+    fn running_for<'a>(
+        inner: &'a mut Inner,
+        folder: &Path,
+        session: Option<&str>,
+        live: bool,
+    ) -> Option<&'a mut Box<dyn Conversation>> {
+        if inner.folder.as_deref() != Some(folder) {
+            return None;
+        }
+        let ours = {
+            let buffer = lock(&inner.buffer);
+            !buffer.ended
+                && match (session, buffer.session.as_deref()) {
+                    (Some(id), Some(running)) => id == running,
+                    (None, _) => live,
+                    (Some(_), None) => false,
+                }
+        };
+        if ours {
+            inner.conversation.as_mut()
+        } else {
+            None
+        }
+    }
+
+    /// A model the agent named, by the full id its list gives it.
+    fn list_id(&self, model: &str) -> String {
+        let list = self.store.models().models;
+        models::find(&list, model).map_or_else(|| model.to_owned(), |row| row.id().to_owned())
     }
 
     /// The model and effort a conversation starts on. One continued keeps

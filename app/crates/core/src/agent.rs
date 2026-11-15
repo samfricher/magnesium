@@ -203,6 +203,16 @@ pub struct StartOptions {
     pub effort: Option<String>,
 }
 
+/// What a running conversation is on, as the agent reports it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Applied {
+    /// The model's full id.
+    pub model: String,
+    /// The effort it runs at, as the agent names it; none for a model that
+    /// takes none. With no effort picked, this is the agent's own level.
+    pub effort: Option<String>,
+}
+
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 
 /// Waits, at most the given time, until what the agent keeps after a reply
@@ -258,6 +268,21 @@ pub trait Conversation: Send {
     fn interrupt(&mut self) -> AgentResult<()>;
     fn decide(&mut self, id: &str, decision: Decision) -> AgentResult<()>;
     fn answer(&mut self, id: &str, answers: &[Answer]) -> AgentResult<()>;
+    /// Change the model and effort while the conversation runs, from its
+    /// next request to the model on; `effort` none for the agent's own.
+    /// Answers what the agent then reports it is on.
+    fn change_model(&mut self, model: &str, effort: Option<&str>) -> AgentResult<Applied> {
+        let _ = (model, effort);
+        Err(AgentError(
+            "This tutor cannot change its model while it runs.".into(),
+        ))
+    }
+    /// What the agent reports the conversation is on now.
+    fn applied(&mut self) -> AgentResult<Applied> {
+        Err(AgentError(
+            "This tutor does not say which model it runs on.".into(),
+        ))
+    }
     /// End the process. The conversation can be continued later by its id.
     fn close(&mut self);
     /// Wait, at most `limit`, until what the agent keeps after a reply has

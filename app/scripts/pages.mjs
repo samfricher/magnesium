@@ -174,9 +174,11 @@ try {
   await step(w, "send", { op: "key", key: "Enter" });
   await step(w, "marked", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(w, "session-marked", "Session: an answer marked by the record, the next task open");
+  await step(w, "more", { op: "click", target: "more", by: "drive" });
   await step(w, "symbols", { op: "click", target: "symbols", by: "drive" });
   await settle(w, 300);
   await shoot(w, "session-symbols", "Session: the symbol row under the answer line");
+  await step(w, "more again", { op: "click", target: "more", by: "drive" });
   await step(w, "close the symbols", { op: "click", target: "symbols", by: "drive" });
 
   // The plan beside the lesson, then changed by the tutor.

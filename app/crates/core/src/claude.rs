@@ -376,9 +376,10 @@ impl Harness for ClaudeCode {
                 })
                 .map(Mutex::new),
             started: Instant::now(),
+            asked: crate::models::Asked::default(),
             opening: Opening {
                 new: options.resume.is_none(),
-                effort: options.effort.clone().filter(|_| options.resume.is_none()),
+                effort: Mutex::new(options.effort.clone().filter(|_| options.resume.is_none())),
                 ..Opening::default()
             },
         });
@@ -561,6 +562,8 @@ struct Shared {
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
     opening: Opening,
+    /// Control requests the window sent and waits on.
+    asked: crate::models::Asked,
 }
 
 /// What the window watches for while a conversation opens.
@@ -571,7 +574,7 @@ struct Opening {
     /// A new lesson, whose first reply is watched. A resumed one is not.
     new: bool,
     /// The effort the learner picked for it; none for Claude Code's own.
-    effort: Option<String>,
+    effort: Mutex<Option<String>>,
     /// The model Claude Code says it runs on, from its first message.
     model: Mutex<Option<String>>,
     /// The list from the reply to `initialize`, to name that model.
@@ -640,6 +643,12 @@ impl Shared {
             .map_err(|e| AgentError(format!("The tutor stopped listening: {e}.")))
     }
 
+    /// Send a control request and wait for its answer.
+    fn ask(&self, request: Value) -> Result<Value, String> {
+        self.asked
+            .ask(self.next_id(), request, |line| self.write(line))
+    }
+
     fn respond(&self, request_id: &str, response: Value) -> AgentResult<()> {
         self.write(&json!({
             "type": "control_response",
@@ -699,6 +708,7 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
     };
     *lock(&shared.stdin) = None;
     lock(&shared.pending).clear();
+    shared.asked.drop_all();
     let expected = shared.closing.load(Ordering::SeqCst);
     let tail = lock(&shared.stderr_tail).trim().to_owned();
     let detail = (!expected).then(|| {
@@ -778,8 +788,11 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
 }
 
 /// The reply to `initialize` lists the models Claude Code offers. A reply
-/// to any other request the window sent needs nothing more.
+/// the window waits on goes to it; any other needs nothing more.
 fn on_control_response(shared: &Arc<Shared>, value: &Value) {
+    if shared.asked.deliver(value) {
+        return;
+    }
     let response = &value["response"];
     let asked = lock(&shared.opening.initialize).clone();
     if asked.is_none() || response["request_id"].as_str() != asked.as_deref() {
@@ -1425,7 +1438,8 @@ fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
         "This lesson started without opening your record, so its answers may not be marked.";
     // Each names what most likely kept the record shut: the effort the
     // learner picked, or else the model.
-    let (kind, text) = match opening.effort.as_deref() {
+    let effort = lock(&opening.effort).clone();
+    let (kind, text) = match effort.as_deref() {
         Some(effort) => (
             NoticeKind::RecordUnopenedAtEffort,
             format!("{unopened} It ran at {} effort.", effort_words(effort)),
@@ -1765,6 +1779,24 @@ impl Conversation for ClaudeConversation {
             .respond(id, json!({"behavior": "allow", "updatedInput": input}))
     }
 
+    fn change_model(
+        &mut self,
+        model: &str,
+        effort: Option<&str>,
+    ) -> AgentResult<crate::agent::Applied> {
+        let shared = &self.shared;
+        let changed = crate::models::change(|request| shared.ask(request), model, effort)?;
+        // A notice on a new lesson's first reply names what it ran on.
+        *lock(&shared.opening.model) = Some(changed.model.clone());
+        *lock(&shared.opening.effort) = effort.map(str::to_owned);
+        Ok(changed)
+    }
+
+    fn applied(&mut self) -> AgentResult<crate::agent::Applied> {
+        let shared = &self.shared;
+        crate::models::applied(|request| shared.ask(request))
+    }
+
     fn close(&mut self) {
         self.shared.closing.store(true, Ordering::SeqCst);
         // Once the reply is on screen, what is left of the turn is the save
@@ -1971,6 +2003,7 @@ mod tests {
             payment: Payment::Plan,
             trace: None,
             started: Instant::now(),
+            asked: crate::models::Asked::default(),
             opening: Opening::default(),
         });
         let mut conversation = ClaudeConversation {
@@ -2244,7 +2277,7 @@ mod tests {
             let shared = Arc::new(Shared {
                 opening: Opening {
                     new,
-                    effort: effort.map(str::to_owned),
+                    effort: Mutex::new(effort.map(str::to_owned)),
                     ..Opening::default()
                 },
                 ..Arc::try_unwrap(shared).ok().unwrap()
@@ -2359,6 +2392,7 @@ mod tests {
             payment: Payment::Plan,
             trace: None,
             started: Instant::now(),
+            asked: crate::models::Asked::default(),
             opening: Opening::default(),
         });
         (shared, seen)

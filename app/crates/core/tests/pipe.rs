@@ -764,6 +764,129 @@ fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_r
 }
 
 #[test]
+fn a_running_session_changes_its_model_and_effort_at_once_and_keeps_them() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    let folder = bench.folder.canonicalize().unwrap();
+    manager.open_session(false).unwrap();
+    manager.send("first").unwrap();
+    let AgentEvent::Ready { session_id, .. } =
+        events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }))
+    else {
+        unreachable!()
+    };
+    events.turn_end();
+    events.seen.clear();
+
+    // The tab's session is asked what it runs on, and says.
+    let choice = manager.models_at(Some(&folder), Some(&session_id), true);
+    let on = choice.on.unwrap();
+    assert_eq!(on.model, "claude-opus-5-5");
+    assert!(on.live);
+    assert_eq!(on.effort, None);
+
+    // Changed while it runs: the next reply is on the new model and effort,
+    // with no new process.
+    let choice = manager
+        .set_model_at(Some(&folder), Some(&session_id), true, "haiku", Some("low"))
+        .unwrap();
+    let on = choice.on.unwrap();
+    assert_eq!(on.model, "claude-haiku-5-5");
+    assert_eq!(on.effort.as_deref(), Some("low"));
+    assert_eq!(
+        choice.pick.as_ref().unwrap().model,
+        "claude-haiku-5-5",
+        "new sessions start on it too"
+    );
+    manager.send("RUNS_ON").unwrap();
+    events.turn_end();
+    assert_eq!(events.take_text(), "On claude-haiku-5-5 at low.");
+    assert_eq!(bench.logged("start").len(), 1, "the same process");
+    let asked: Vec<String> = bench
+        .logged("received")
+        .iter()
+        .filter_map(|m| m["request"]["subtype"].as_str().map(str::to_owned))
+        .collect();
+    for subtype in ["set_model", "apply_flag_settings", "get_settings"] {
+        assert!(asked.iter().any(|a| a == subtype), "{subtype} in {asked:?}");
+    }
+
+    // Back to the agent's own effort: the level set before is taken away.
+    let choice = manager
+        .set_model_at(Some(&folder), Some(&session_id), true, "sonnet", None)
+        .unwrap();
+    assert_eq!(choice.on.as_ref().unwrap().effort, None);
+    manager.send("RUNS_ON").unwrap();
+    events.turn_end();
+    assert_eq!(events.take_text(), "On claude-sonnet-5-5 at medium.");
+
+    // An effort the model does not take is refused before it is sent.
+    assert!(manager
+        .set_model_at(Some(&folder), Some(&session_id), true, "haiku", Some("max"))
+        .is_err());
+
+    // The session is kept with what it was changed to, and resumes on it.
+    let note = manager.store().folder(&folder).sessions[&session_id].clone();
+    assert_eq!(note.model.as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(note.effort, None);
+    manager.open_session(false).unwrap();
+    manager.send("second").unwrap();
+    events.turn_end();
+
+    // Changed while it does not run: kept, and it resumes on it.
+    let choice = manager
+        .set_model_at(
+            Some(&folder),
+            Some(&session_id),
+            false,
+            "opus",
+            Some("high"),
+        )
+        .unwrap();
+    assert!(!choice.on.as_ref().unwrap().live);
+    assert_eq!(choice.on.as_ref().unwrap().model, "claude-opus-5-5");
+    manager
+        .open_session_at(Some(&folder), true, Some(&session_id), None)
+        .unwrap();
+    events.seen.clear();
+    manager.send("RUNS_ON").unwrap();
+    events.turn_end();
+    assert_eq!(events.take_text(), "On claude-opus-5-5 at high.");
+    let starts = bench.logged("start");
+    let args: Vec<String> = starts.last().unwrap()["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().map(str::to_owned))
+        .collect();
+    let at = args.iter().position(|a| a == "--model").unwrap();
+    assert_eq!(args[at + 1], "claude-opus-5-5");
+}
+
+#[test]
+fn a_change_the_agent_refuses_leaves_the_session_on_what_it_runs() {
+    let bench = Bench::new(&[("STAND_IN_REFUSE_MODEL", "1")]);
+    let (manager, mut events) = bench.manager();
+    let folder = bench.folder.canonicalize().unwrap();
+    manager.open_session(false).unwrap();
+    manager.send("first").unwrap();
+    let AgentEvent::Ready { session_id, .. } =
+        events.until("ready", |e| matches!(e, AgentEvent::Ready { .. }))
+    else {
+        unreachable!()
+    };
+    events.turn_end();
+    let error = manager
+        .set_model_at(Some(&folder), Some(&session_id), true, "haiku", None)
+        .unwrap_err();
+    assert!(error.0.contains("did not change the model"), "{error}");
+    let choice = manager.models_at(Some(&folder), Some(&session_id), true);
+    assert_eq!(choice.on.unwrap().model, "claude-opus-5-5");
+    let note = manager.store().folder(&folder).sessions[&session_id].clone();
+    assert_eq!(note.model.as_deref(), Some("claude-opus-5-5"));
+}
+
+#[test]
 fn a_list_that_does_not_come_leaves_the_pick_alone_and_the_session_keeps_the_model_it_ran_on() {
     let bench = Bench::new(&[("STAND_IN_NO_MODELS", "1")]);
     let (manager, mut events) = bench.manager();

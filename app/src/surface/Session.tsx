@@ -16,7 +16,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 
 import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
-import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type Prefs } from "../prefs";
+import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
@@ -29,6 +29,7 @@ import { SidePanel } from "./SidePanel";
 import type { DocHandle } from "./DocView";
 import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, type Docs } from "../docs";
 import { Line } from "./Rich";
+import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 
 /** What a session tab starts with, once, when it is opened. */
@@ -269,8 +270,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
-  // The model a new session starts on, named on its first line.
-  const picker = useModelPicker({ api, onClose: () => lineRef.current?.focus() });
+  // The model the session runs on, or starts on, named on its line. One control for both: the line it sits on is
+  // the start line before the lesson and the lesson's line after.
+  const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
+  const picker = useModelPicker({ api, at: modelAt, place: phase === "rest" ? "rest" : "lesson", onClose: () => lineRef.current?.focus() });
   const stuck = useRef(true);
   // Where the lesson was scrolled at the last scroll event: only a move up lets it go of its foot.
   const lastTop = useRef(0);
@@ -713,6 +716,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         lineRef.current?.toggleSymbols();
         return true;
       }
+      if (command === "model") {
+        pickerRef.current.toggle();
+        return true;
+      }
       if (command === "stop-reply") {
         if (isBusyNow(now.current.session)) interrupt();
         return true;
@@ -753,6 +760,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       return { phase, line: raised ? "raised" : atEnd ? "end" : "away", task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
     },
   };
+  const pickerRef = useRef(picker);
+  pickerRef.current = picker;
   const handleRef = useRef(handle);
   handleRef.current = handle;
   useEffect(() => {
@@ -1148,6 +1157,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const shownFrom = Math.max(sittingStart, turns.length - 150);
   const sittingTurns = phase === "lesson" ? turns.slice(shownFrom) : [];
   const stopKey = keyName(props.prefs.keys["stop-reply"]) || "esc";
+  const keys = props.prefs.keys;
+  const keyFor = useCallback((action: KeyAction) => keyName(keys[action]), [keys]);
+  // The session's own rows under More on the lesson's line.
+  const moreRows = useMemo<LineRow[]>(
+    () => [{ id: "model", label: "Model", detail: picker.name ?? undefined, leads: true, group: "session", run: () => pickerRef.current.toggle() }],
+    [picker.name],
+  );
   const paused = props.covered || !props.active || session.cards.length > 0;
   // The record's latest fact is said once, beside what it marks. The foot repeats it only while that line is out of view, and never under an open task.
   const footFact = fact && task === null && !factSeen ? fact : null;
@@ -1208,8 +1224,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     initial={draft}
                     placeholder={rest.start ? "↩ to start, or say what to work on" : undefined}
                     end={restVerb ? { keys: "↩", what: restVerb } : null}
-                    restTool={picker.word}
-                    restBelow={picker.list}
+                    tool={picker.word}
+                    toolBeside={picker.list}
                     active
                     busy={false}
                     paused={paused}
@@ -1311,6 +1327,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       paused={paused}
                       taskOpen={task !== null}
                       stopKey={stopKey}
+                      toolBeside={picker.list}
+                      more={moreRows}
+                      moreHeld={picker.open}
+                      keyFor={keyFor}
                       onSend={onSend}
                       onNote={note}
                       onAttach={onAttach}

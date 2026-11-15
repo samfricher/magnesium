@@ -60,7 +60,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// The keys the window starts with, as the page's own defaults.
-const DEFAULT_KEYS: [(&str, &str); 22] = [
+const DEFAULT_KEYS: [(&str, &str); 23] = [
     ("home", "cmd+1"),
     ("commands", "cmd+k"),
     ("new-session", "cmd+n"),
@@ -74,6 +74,7 @@ const DEFAULT_KEYS: [(&str, &str); 22] = [
     ("lost", "cmd+shift+l"),
     ("unknown", "cmd+shift+d"),
     ("symbols", "cmd+shift+m"),
+    ("model", "cmd+shift+j"),
     ("bigger", "cmd+="),
     ("smaller", "cmd+-"),
     ("actual-size", "cmd+0"),
@@ -318,6 +319,7 @@ fn build<R: Runtime>(
             &command(table, "unknown", "I Don’t Know")?,
             &separator()?,
             &command(table, "symbols", "Symbols")?,
+            &command(table, "model", "Model and Effort…")?,
             &separator()?,
             &command(table, "stop-reply", "Stop the Reply")?,
         ],

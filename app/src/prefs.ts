@@ -27,6 +27,7 @@ export type KeyAction =
   | "lost"
   | "unknown"
   | "symbols"
+  | "model"
   | "bigger"
   | "smaller"
   | "actual-size"
@@ -91,6 +92,7 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["lost", "I’m lost"],
   ["unknown", "I don’t know"],
   ["symbols", "Symbols"],
+  ["model", "Model and effort"],
   ["stop-reply", "Stop the reply"],
   ["bigger", "Bigger text"],
   ["smaller", "Smaller text"],
@@ -126,6 +128,7 @@ export const DEFAULTS: Prefs = {
     lost: "cmd+shift+l",
     unknown: "cmd+shift+d",
     symbols: "cmd+shift+m",
+    model: "cmd+shift+j",
     bigger: "cmd+=",
     smaller: "cmd+-",
     "actual-size": "cmd+0",

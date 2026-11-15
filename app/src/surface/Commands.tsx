@@ -12,7 +12,7 @@ import { Layer, type Row } from "./Layer";
 
 type Props = {
   workspaces: Workspace[];
-  keys: { home: string; newSession: string; closeSession: string; settings: string; plan: string; openWorkspace: string };
+  keys: { home: string; newSession: string; closeSession: string; settings: string; plan: string; openWorkspace: string; model: string };
   /** A session is in front, so it can be closed and its plan shown. */
   inSession: boolean;
   planShown: boolean;
@@ -42,6 +42,9 @@ export function Commands(props: Props) {
     { id: "home", label: "Home", text: "home start workspaces library", hint: props.keys.home, drive: "command-home", run: act("home") },
     { id: "switch", label: "Switch workspace…", text: "switch workspace course folder open another go", drive: "command-switch", run: () => setSwitching(true) },
     { id: "new", label: "New session", text: "new session lesson start", hint: props.keys.newSession, drive: "command-new-session", run: act("new-session") },
+    ...(props.inSession
+      ? [{ id: "model", label: "Model and effort…", text: "model effort opus sonnet haiku fable claude change switch", hint: props.keys.model, drive: "command-model", run: act("model") }]
+      : []),
     ...(props.inSession ? [{ id: "close", label: "Close session", text: "close session stop end tab", hint: props.keys.closeSession, drive: "command-close-session", run: act("close-session") }] : []),
     { id: "settings", label: "Settings", text: "settings preferences font size colour keys engine", hint: props.keys.settings, drive: "command-settings", run: act("settings") },
     ...(props.inSession
