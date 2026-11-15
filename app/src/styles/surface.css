@@ -702,17 +702,20 @@ button.line-end:hover { color: var(--text); }
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(124px - var(--tabs-h));
+  height: calc(108px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  /* Solid a little past the foot of the step's name, then an eased fade: a straight fade left the line just under
-     the name at half strength, read as glyphs sliced through. */
+  /* Solid just past the foot of the step's name, then a smooth fade about a line and a half deep: a straight fade
+     left the line under the name at half strength, read as glyphs sliced through, and a deeper one greyed a whole
+     first line at rest. */
   background: linear-gradient(
     to bottom,
-    var(--ground) calc(72px - var(--tabs-h)),
-    color-mix(in srgb, var(--ground) 82%, transparent) calc(84px - var(--tabs-h)),
-    color-mix(in srgb, var(--ground) 45%, transparent) calc(98px - var(--tabs-h)),
-    color-mix(in srgb, var(--ground) 14%, transparent) calc(112px - var(--tabs-h)),
+    var(--ground) calc(68px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 95%, transparent) calc(74px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 80%, transparent) calc(80px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 50%, transparent) calc(88px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 20%, transparent) calc(96px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 5%, transparent) calc(102px - var(--tabs-h)),
     transparent
   );
 }

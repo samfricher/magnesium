@@ -857,7 +857,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!el || now.current.phase !== "lesson") return;
     const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
-    if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
+    // The name takes over once the heading's last line reaches the top edge's fade (surface.css .top-edge), so there
+    // is no stretch where the heading is under the edge and nothing names the lesson.
+    if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
     // At the foot within a few pixels: any scroll up to read lets the lesson go, so a resize does not pull it back.
     // Only a move up does. A scroll event is delivered a frame late, and a reply still coming can have grown the
