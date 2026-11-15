@@ -518,8 +518,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .row.changed .row-hint { color: var(--ink); }
 .row.changed .row-mark { color: var(--ink); }
 .row.changed { animation: changed 2.4s ease-out 1; }
+/* The colour alone, so a row's own background-clip holds through the flash (the shorthand resets it). */
 @keyframes changed {
-  from { background: var(--ink-soft); }
+  from { background-color: var(--ink-soft); }
 }
 .row.empty { display: block; color: var(--quiet); font: 400 0.765rem/1.6 var(--app); padding: 0.6rem 1.1rem 0.6rem calc(1.1rem + var(--hang) + 0.25rem); }
 
