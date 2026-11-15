@@ -185,7 +185,7 @@ export function HomePage(props: Props) {
                 <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
                   <span className="row-name">{displayName(workspace.name)}</span>
                   {/* The session carried on says when; its workspace's row does not say it again. */}
-                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest ? "" : whenOpened(workspace.opened_ms)}</span>
+                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest && !props.step ? "" : whenOpened(workspace.opened_ms)}</span>
                 </button>
               ))}
             </section>
