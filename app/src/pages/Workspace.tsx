@@ -311,7 +311,8 @@ export function WorkspacePage(props: Props) {
           <section aria-label="The paper running">
             <p className="list-head">A paper is running</p>
             <p className="page-text">
-              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each
+              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes, until{" "}
+              {new Date(sitting.started_ms + sitting.minutes * 60_000).toTimeString().slice(0, 5)}. Write ? where you are stuck, and S, U or G after each
               answer for sure, unsure or a guess. The tutor is out of reach until it is handed in.
             </p>
             <p className="page-acts">

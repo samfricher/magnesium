@@ -968,11 +968,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!home) return { ...base, next: "Reading this workspace…", where: null };
     if (home.sitting) {
       const startedAt = new Date(home.sitting.started_ms);
-      const at = `${String(startedAt.getHours()).padStart(2, "0")}:${String(startedAt.getMinutes()).padStart(2, "0")}`;
+      const clock = (when: Date) => `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+      const ends = new Date(home.sitting.started_ms + home.sitting.minutes * 60_000);
       return {
         ...base,
         next: home.sitting.name,
-        where: `Started at ${at}, for ${home.sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace’s page.`,
+        where: `Started at ${clock(startedAt)}, for ${home.sitting.minutes} minutes, until ${clock(ends)}. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace’s page.`,
       };
     }
     if (home.state === "needs_upgrade") return { ...base, next: "This folder needs an upgrade", where: withoutPaths(`${home.message ?? ""} Its page on Home has the upgrade.`.trim()) };
