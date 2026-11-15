@@ -264,10 +264,30 @@ export function WorkspacePage(props: Props) {
         <header className="page-head">
           <h1 className="page-title">{name}</h1>
           {home?.message && home.state !== "ready" && <p className="where">{withoutPaths(home.message)}</p>}
+          {/* What the folder needs before study, under the words that ask for it, drawn as Home draws a step's choices. */}
+          {home && ["not_set_up", "needs_upgrade", "no_runtime", "unreadable"].includes(home.state) && (
+            <div className="choices-rest" role="group">
+              {home.state === "not_set_up" && (
+                <button className="choice-rest" autoFocus={props.focus} disabled={busy} onClick={() => void setUp()}>
+                  Set it up for Magnesium
+                </button>
+              )}
+              {home.state === "needs_upgrade" && (
+                <button className="choice-rest" autoFocus={props.focus} disabled={busy} onClick={() => void upgrade()}>
+                  Upgrade it
+                </button>
+              )}
+              {(home.state === "no_runtime" || home.state === "unreadable") && (
+                <button className="choice-rest" autoFocus={props.focus} onClick={() => void read()}>
+                  Check again
+                </button>
+              )}
+            </div>
+          )}
         </header>
 
         <section aria-label="Sessions">
-          <button className="new-session" data-drive="new-session" autoFocus={props.focus} disabled={!ready || sitting !== null} onClick={() => props.onNewSession(folder)}>
+          <button className="new-session" data-drive="new-session" autoFocus={props.focus && ready} disabled={!ready || sitting !== null} onClick={() => props.onNewSession(folder)}>
             New session
           </button>
           {sessions === null || sessions.length === 0 ? null : (
@@ -291,7 +311,8 @@ export function WorkspacePage(props: Props) {
           <section aria-label="The paper running">
             <p className="list-head">A paper is running</p>
             <p className="page-text">
-              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each
+              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes, until{" "}
+              {new Date(sitting.started_ms + sitting.minutes * 60_000).toTimeString().slice(0, 5)}. Write ? where you are stuck, and S, U or G after each
               answer for sure, unsure or a guess. The tutor is out of reach until it is handed in.
             </p>
             <p className="page-acts">
@@ -364,7 +385,7 @@ export function WorkspacePage(props: Props) {
                     {paper.name}
                   </button>
                   <span className="row-when">{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} minutes` : ""}</span>
-                  <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy} onClick={() => void sit(paper)}>
+                  <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy || !ready} onClick={() => void sit(paper)}>
                     Sit it
                   </button>
                 </div>
@@ -402,21 +423,6 @@ export function WorkspacePage(props: Props) {
 
         <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
-            {home?.state === "not_set_up" && (
-              <button className="quiet-act" disabled={busy} onClick={() => void setUp()}>
-                Set it up for Magnesium
-              </button>
-            )}
-            {home?.state === "needs_upgrade" && (
-              <button className="quiet-act strong" disabled={busy} onClick={() => void upgrade()}>
-                Upgrade it
-              </button>
-            )}
-            {(home?.state === "no_runtime" || home?.state === "unreadable") && (
-              <button className="quiet-act" onClick={() => void read()}>
-                Check again
-              </button>
-            )}
             <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
             </button>

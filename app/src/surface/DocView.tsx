@@ -306,11 +306,13 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
       const holder = pages.current[page - 1];
       const root = box.current;
       if (!holder || !root) return;
-      root.scrollTop = holder.offsetTop + within * holder.offsetHeight - PAD;
+      // Fitted, the pages start at the head's rule with no room above them (side.css): a page is gone to at its top,
+      // so no strip of the page before it shows over it.
+      root.scrollTop = holder.offsetTop + within * holder.offsetHeight - (fitting ? 0 : PAD);
       place.current = { page, within };
       alignAcross();
     },
-    [alignAcross],
+    [alignAcross, fitting],
   );
 
   // Opened where it was left, once the column has its height.
@@ -348,7 +350,8 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     const root = box.current;
     if (!root || root.clientWidth === 0) return;
     // The page at the view's top, measured from its top: a short page (a slide) is not counted before it is reached.
-    const top = root.scrollTop + PAD;
+    // Measured as goToPlace goes back to it, so a fitted page, gone to with no pad, does not move down a pad each time.
+    const top = root.scrollTop + (fitting ? 0 : PAD);
     let n = 1;
     pages.current.forEach((page, at) => {
       if (page && page.offsetTop <= top + 1) n = at + 1;

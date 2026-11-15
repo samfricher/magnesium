@@ -661,6 +661,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       actions.run("settings");
       await wait(150);
       document.querySelector<HTMLElement>("[data-drive='colour-ink-light']")?.click();
+      await wait(100);
+      document.querySelector<HTMLElement>(".colour-picker")?.scrollIntoView({ block: "center" });
       return wait(100);
     case "material":
       actions.goWorkspace(FOLDER);
@@ -759,10 +761,14 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       actions.run("settings");
       return actions.run("tab", actions.tabs()[1].key);
     case "source":
-      await lesson(actions);
-      await session(actions).say("V_max = 4 µM/s", "answer");
+      // The opening reply cites the slides: a new session, so the citation is on the page to open.
+      actions.newSession(FOLDER, { kind: "start" });
+      await wait(200);
       await settle();
-      document.querySelector<HTMLElement>(".tutor a[href*='Week']")?.click();
+      // A citation opens once the task near it is answered.
+      await session(actions).say("V_max = 4 µM/s", "answer");
+      await settle(700);
+      document.querySelector<HTMLElement>(".tutor a.source[href*='Week']")?.click();
       return wait(300);
     case "s3-before":
       return changed(actions, true);
@@ -775,8 +781,10 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await session(actions).say("OK, back to the task", "talk");
       return settle();
     case "working":
-      actions.continueRecent();
-      return wait(300);
+      await lesson(actions);
+      // The tutor's reply never comes, so the page stays on "working".
+      void session(actions).say("Why is the intercept the reciprocal?", "talk");
+      return wait(900);
     case "permission":
       await lesson(actions);
       await session(actions).say("Can you write the lab report into my plan for Friday?", "talk");

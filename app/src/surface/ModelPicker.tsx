@@ -27,12 +27,13 @@ export function rowFor(models: ModelOption[], model: string): ModelOption | null
   return matches.find((row) => row.current && row.value !== "default") ?? matches.find((row) => row.value === "default") ?? matches[0] ?? null;
 }
 
-const withEffort = (name: string, effort?: string | null) => (effort ? `${name} · ${effortWord(effort).toLowerCase()}` : name);
+// No-break spaces: a model and its effort are one name, never split across lines ("Opus 4.6 /· Low").
+const withEffort = (name: string, effort?: string | null) => (effort ? `${name}\u00a0·\u00a0${effortWord(effort)}` : name);
 
 /** What the start line names: the model a session started now runs on, and its effort when one was picked. */
 export function startWord(choice: ModelChoice): string {
   const fallback = choice.models.find((row) => row.value === "default");
-  const fallbackName = fallback ? (rowFor(choice.models, idOf(fallback)) ?? fallback).name : "Default";
+  const fallbackName = fallback ? (rowFor(choice.models, idOf(fallback)) ?? fallback).name : "Default model";
   if (!choice.pick) return fallbackName;
   // Not on the list now: this session runs on the agent's default, and the pick stays as the learner left it.
   if (choice.not_offered) return `${fallbackName}, for now`;
@@ -74,7 +75,9 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const [problem, setProblem] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
   // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
-  const [room, setRoom] = useState<{ below: boolean; height: number } | null>(null);
+  const [room, setRoom] = useState<{ below: boolean; height: number; scrolls: boolean } | null>(null);
+  // Scrolled to its end, the list has nothing more below, so its foot is not faded over the last words.
+  const [atEnd, setAtEnd] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const where = useRef(at);
   where.current = at;
@@ -135,12 +138,17 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
     if (!open || !list || !line) return setRoom(null);
     const box = line.getBoundingClientRect();
     const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
-    const above = box.top - top - 16;
+    // Clear of the step's name under the tabs by about a line.
+    const above = box.top - top - 40;
     const below = window.innerHeight - box.bottom - 16;
     const wanted = Math.min(list.scrollHeight, window.innerHeight * 0.62);
     // Under a session's first line, as the line's menus open there.
     const down = line.classList.contains("first") || (above < wanted && below > above);
-    setRoom({ below: down, height: Math.max(160, Math.min(window.innerHeight * 0.62, down ? below : above)) });
+    // All the room on its side of the line: a list cut short at a set share of a short window hid its last rows with
+    // nothing to say it scrolls (WebKit's scrollbar shows only while scrolling).
+    const height = Math.max(160, down ? below : above);
+    setRoom({ below: down, height, scrolls: list.scrollHeight > height + 1 });
+    setAtEnd(false);
   }, [open, older, choice]);
 
   // Esc closes it wherever the keyboard is. A list with no rows yet (before
@@ -191,7 +199,16 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       setChoice(await api.setSessionModel(where.current, model, effort));
       setProblem(null);
     } catch (error) {
-      setProblem(String(error).replace(/^Error: /, ""));
+      // Said in the list's own names first; Claude Code's reason, which may carry a model's id, after it.
+      // The name asked for is kept on one line: "Opus 4.6 · Low" read wrong broken at any of its spaces.
+      const asked = withEffort(rowFor(choice.models, model)?.name ?? model, effort).replace(/ /g, "\u00a0");
+      const why = String(error)
+        .replace(/^Error: /, "")
+        .replace(/^Claude Code did not change the (model|effort):\s*/, "")
+        .replace(/\.$/, "")
+        // A model's id ("claude-opus-4-6") is not broken across lines at its hyphens.
+        .replace(/-/g, "\u2011");
+      setProblem(`Claude Code didn’t move this session to ${asked}.${why ? ` It said: ${why}.` : ""}`);
       // What the session is on after a refusal is Claude Code's to say.
       read();
     } finally {
@@ -285,8 +302,12 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const label = on ? "The model this session runs on" : "The model this session starts on";
   const list = open ? (
     <div
-      className={`model-list${room?.below ? " below" : ""}`}
+      className={`model-list${room?.below ? " below" : ""}${room?.scrolls && !atEnd ? " scrolls" : ""}`}
       ref={listRef}
+      onScroll={(e) => {
+        const l = e.currentTarget;
+        setAtEnd(l.scrollTop + l.clientHeight >= l.scrollHeight - 1);
+      }}
       style={room ? { maxHeight: room.height } : undefined}
       role="dialog"
       aria-label={label}
@@ -296,8 +317,10 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       {older ? (
         <>
           <button type="button" className="row model-back" data-nav data-drive="model-current" onClick={() => setOlder(false)}>
-            <span className="row-mark" aria-hidden="true" />
-            <span className="row-label">‹ Current models</span>
+            <span className="row-mark" aria-hidden="true">
+              ‹
+            </span>
+            <span className="row-label">Current models</span>
           </button>
           <div role="group" aria-label="Older models">
             {earlier.map(modelRow)}

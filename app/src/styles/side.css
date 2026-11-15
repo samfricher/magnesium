@@ -47,7 +47,8 @@
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  padding: calc(var(--head-room) - 14px) 12px 6px 14px;
+  /* Its tabs' words (8px into each tab) start on the plan's own left edge, 18px in. */
+  padding: calc(var(--head-room) - 14px) 12px 6px 10px;
   border-bottom: 1px solid var(--edge);
 }
 .side-switch {
@@ -84,6 +85,10 @@
 .side-close:focus-visible { visibility: visible; }
 .side-close:hover { color: var(--text); }
 .side-tools { flex: none; display: flex; align-items: center; gap: 2px; margin-left: auto; }
+/* The panel's tools in the type and padding of its tabs, so both sit on one line; the head keeps the height the
+   taller tools gave it, so the tabs do not sit on its rule. */
+.side-tools .bar-act { padding: 3px 8px; font-size: 12.5px; }
+.side-head { padding-bottom: 9px; }
 .side-zoom { display: inline-flex; align-items: center; }
 .side-zoom .zoom-now { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; }
 
@@ -109,6 +114,8 @@
 .doc-pdf { position: relative; padding: 16px 0 24vh; }
 /* Fitted, the pages are set so their drawing fills the panel: the sheet's blank margins fall outside it. */
 .doc-pdf.fitted { overflow-x: hidden; }
+/* Fitted, the first page starts at the head's rule: a strip of ground between them drew the rule twice. */
+.doc-pdf.fitted { padding-top: 0; }
 .doc-page {
   position: relative;
   margin: 0 auto 12px;

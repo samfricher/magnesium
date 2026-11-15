@@ -857,7 +857,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!el || now.current.phase !== "lesson") return;
     const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
-    if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 40);
+    // The name takes over once the heading's last line reaches the top edge's fade (surface.css .top-edge), so there
+    // is no stretch where the heading is under the edge and nothing names the lesson.
+    if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
     // At the foot within a few pixels: any scroll up to read lets the lesson go, so a resize does not pull it back.
     // Only a move up does. A scroll event is delivered a frame late, and a reply still coming can have grown the
@@ -968,11 +970,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!home) return { ...base, next: "Reading this workspace…", where: null };
     if (home.sitting) {
       const startedAt = new Date(home.sitting.started_ms);
-      const at = `${String(startedAt.getHours()).padStart(2, "0")}:${String(startedAt.getMinutes()).padStart(2, "0")}`;
+      const clock = (when: Date) => `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+      const ends = new Date(home.sitting.started_ms + home.sitting.minutes * 60_000);
       return {
         ...base,
         next: home.sitting.name,
-        where: `Started at ${at}, for ${home.sitting.minutes} minutes. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace's page.`,
+        where: `Started at ${clock(startedAt)}, for ${home.sitting.minutes} minutes, until ${clock(ends)}. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace’s page.`,
       };
     }
     if (home.state === "needs_upgrade") return { ...base, next: "This folder needs an upgrade", where: withoutPaths(`${home.message ?? ""} Its page on Home has the upgrade.`.trim()) };
@@ -1265,7 +1268,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
               </>
             ) : (
               <>
-                <header className={`head${titleIsFirstWords ? " bare" : ""}`}>
+                <header className={`head${titleIsFirstWords ? " bare" : ""}${headGone ? " gone" : ""}`}>
                   {home && <p className="course">{displayName(home.name)}</p>}
                   {/* A session named by the learner's first words is headed by its course alone: the words follow just under it, and the tab names it. */}
                   {titleIsFirstWords ? (

@@ -6,6 +6,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useGlassState } from "../glass";
+import { Line } from "../surface/Rich";
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
 import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
 
@@ -196,7 +197,7 @@ function ColourField(props: { label: string; value: string; dark: boolean; fallb
       </button>
       {props.own && props.value !== "" && (
         <button type="button" className="plain" onClick={() => props.onPick("")}>
-          the window's own
+          the window’s own
         </button>
       )}
       {open && (
@@ -253,7 +254,7 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
         <button
           type="button"
           ref={button}
-          className={listening ? "key-cap listening" : "key-cap"}
+          className={listening ? "key-cap listening" : props.combo === "none" || !keyName(props.combo) ? "key-cap unset" : "key-cap"}
           aria-label={`${props.what}: ${listening ? "press the new keys" : keyName(props.combo) || "no key"}. Choose to change it.`}
           onClick={() => {
             setSaid(null);
@@ -372,10 +373,11 @@ export function SettingsPage(props: Props) {
             <span className="setting-value">{prefs.measure} characters</span>
           </Setting>
           <p className="sample" style={{ fontFamily: faceCss(prefs.face) }}>
-            The line meets the y-axis at 1/V<sub>max</sub>.
+            {/* Through the lesson's own maths, so the sample shows what a lesson draws. */}
+            <Line text={"The line meets the y-axis at $\\frac{1}{V_{max}}$."} />
             {/* The tutor's words, then the learner's, on a line of their own as in a lesson. */}
             <span className="sample-you" style={{ fontFamily: prefs.voice === "reading" ? faceCss(prefs.face) : faceCss(prefs.voice, faceCss("system")) }}>
-              Vmax = 4 µM/s
+              <Line text={"$V_{max}$ = 4 µM/s"} />
             </span>
           </p>
           <Setting name="Lines that name keys">
@@ -538,7 +540,7 @@ export function SettingsPage(props: Props) {
               type="number"
               min={5}
               max={240}
-              aria-label="A paper's time in minutes"
+              aria-label="A paper’s time in minutes"
               placeholder="other"
               value={minutes}
               onChange={(event) => setMinutes(event.target.value)}
@@ -553,9 +555,9 @@ export function SettingsPage(props: Props) {
           {/* Which program runs lessons is said under About; here only while there is a choice to make. */}
           {runtime?.state === "kept" && runtime.bundled && (
             <Setting name="The magnesium program">
-              <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app's copy` : "Kept over this app's copy"}</span>
+              <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app’s copy` : "Kept over this app’s copy"}</span>
               <button className="plain" onClick={props.onReplaceRuntime}>
-                use this app's {runtime.bundled.version.split("+")[0]}
+                use this app’s {runtime.bundled.version.split("+")[0]}
               </button>
             </Setting>
           )}

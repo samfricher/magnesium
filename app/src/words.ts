@@ -185,7 +185,8 @@ export function whenOpened(ms: number | null | undefined, now = new Date()): str
 export function sessionName(info: { title: string | null; opening: string }, fallback: string | null): string {
   if (info.title) return info.title;
   const topic = opening(info.opening)?.topic;
-  if (topic) return topic;
+  // The topic is cut from the middle of a sentence ("Let's work on taking reciprocals…"); as a name it starts with a capital.
+  if (topic) return topic.replace(/^[a-z]/, (letter) => letter.toUpperCase());
   const plain = info.opening.trim();
   if (plain && !saidByTheWindow(plain)) return firstWords(plain, 80);
   return fallback ?? "A session";

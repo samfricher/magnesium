@@ -11,7 +11,7 @@ import type { Plan } from "../types";
 import { shortDay, type PlanDiff } from "../words";
 import { Line } from "./Rich";
 
-const MOVED_WORDS: Record<string, string> = { up: "moved", down: "moved", new: "new", day: "day moved" };
+const MOVED_WORDS: Record<string, string> = { up: "moved up", down: "moved down", new: "new", day: "day moved" };
 
 /** This session's steps, under the plan's item in hand: done, the one in hand (in ink), to do. */
 function Steps({ steps }: { steps: Plan["steps"] }) {
@@ -68,7 +68,7 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan
                     aria-current={here ? "step" : undefined}
                     data-drive={`plan-${item.id}`}
                   >
-                    <span className="panel-mark" aria-hidden="true">
+                    <span className={here && item.status !== "done" ? "panel-mark here" : "panel-mark"} aria-hidden="true">
                       {item.status === "done" ? "✓" : here ? "●" : ""}
                     </span>
                     <span className="panel-item">

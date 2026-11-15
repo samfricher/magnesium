@@ -212,7 +212,7 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     case "exited": {
       const ended = { ...state, open: false, cards: [], live: state.live ? { ...live, status: "idle" as Status } : null };
       if (event.expected) return ended;
-      const text = `The tutor's program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
+      const text = `The tutor’s program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
       return { ...ended, notices: addNotice(state.notices, { kind: "turn", text }) };
     }
     // A mark belongs to the last message the learner sent. The plan is read by the page, which then says what changed.

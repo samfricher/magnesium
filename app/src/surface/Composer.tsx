@@ -482,7 +482,8 @@ export const Composer = memo(
           <p className="symbols" role="group" aria-label="Symbols">
             {SYMBOLS.map((symbol) => (
               <button key={symbol.name} className="symbol" title={symbol.name} aria-label={symbol.name} onMouseDown={keep_} onClick={() => insert(symbol)}>
-                {symbol.show}
+                {/* The system face sets a combining bar off its x: the button draws the bar itself. */}
+                {symbol.show === "x̄" ? <span className="overline">x</span> : symbol.show}
               </button>
             ))}
           </p>
