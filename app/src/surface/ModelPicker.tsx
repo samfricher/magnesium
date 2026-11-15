@@ -191,7 +191,13 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       setChoice(await api.setSessionModel(where.current, model, effort));
       setProblem(null);
     } catch (error) {
-      setProblem(String(error).replace(/^Error: /, ""));
+      // Said in the list's own names first; Claude Code's reason, which may carry a model's id, after it.
+      const asked = withEffort(rowFor(choice.models, model)?.name ?? model, effort);
+      const why = String(error)
+        .replace(/^Error: /, "")
+        .replace(/^Claude Code did not change the (model|effort):\s*/, "")
+        .replace(/\.$/, "");
+      setProblem(`Claude Code didn’t move this session to ${asked}.${why ? ` It said: ${why}.` : ""}`);
       // What the session is on after a refusal is Claude Code's to say.
       read();
     } finally {
