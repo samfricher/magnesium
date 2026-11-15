@@ -12,7 +12,7 @@
   overflow-wrap: break-word;
 }
 .prose > :first-child { margin-top: 0; }
-.prose p { margin: 0 0 0.85em; text-wrap: pretty; }
+.prose p { margin: 0 0 0.85em; }
 /* Headings in the reading face's own weight: the title leads by its size, never by bold. */
 .prose h1,
 .prose h2,
