@@ -74,7 +74,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const [problem, setProblem] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
   // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
-  const [room, setRoom] = useState<{ below: boolean; height: number } | null>(null);
+  const [room, setRoom] = useState<{ below: boolean; height: number; scrolls: boolean } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const where = useRef(at);
   where.current = at;
@@ -140,7 +140,10 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
     const wanted = Math.min(list.scrollHeight, window.innerHeight * 0.62);
     // Under a session's first line, as the line's menus open there.
     const down = line.classList.contains("first") || (above < wanted && below > above);
-    setRoom({ below: down, height: Math.max(160, Math.min(window.innerHeight * 0.62, down ? below : above)) });
+    // All the room on its side of the line: a list cut short at a set share of a short window hid its last rows with
+    // nothing to say it scrolls (WebKit's scrollbar shows only while scrolling).
+    const height = Math.max(160, down ? below : above);
+    setRoom({ below: down, height, scrolls: list.scrollHeight > height + 1 });
   }, [open, older, choice]);
 
   // Esc closes it wherever the keyboard is. A list with no rows yet (before
@@ -291,7 +294,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const label = on ? "The model this session runs on" : "The model this session starts on";
   const list = open ? (
     <div
-      className={`model-list${room?.below ? " below" : ""}`}
+      className={`model-list${room?.below ? " below" : ""}${room?.scrolls ? " scrolls" : ""}`}
       ref={listRef}
       style={room ? { maxHeight: room.height } : undefined}
       role="dialog"
