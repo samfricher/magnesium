@@ -127,6 +127,9 @@ pub struct Manager {
     /// still runs for a while, and its events must not reach the page.
     current: Arc<Mutex<u64>>,
     settling: Settling,
+    /// Held while the agent is asked for its list of models without a
+    /// lesson, so two askers at once start one agent.
+    asking_models: Mutex<()>,
 }
 
 /// What this Mac has for lessons: the `magnesium` program, the agent and how
@@ -151,7 +154,7 @@ pub struct Opened {
 /// the start line.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ModelChoice {
-    /// The list as the agent last sent it: empty before the first lesson.
+    /// The list as the agent last sent it: empty until it has sent one.
     pub models: Vec<ModelOption>,
     /// The last time the agent was asked, it sent no list.
     pub failed: bool,
@@ -218,6 +221,7 @@ impl Manager {
                 turn_running: Arc::new(AtomicBool::new(false)),
                 pending: Arc::new(AtomicUsize::new(0)),
             },
+            asking_models: Mutex::new(()),
         }
     }
 
@@ -282,6 +286,25 @@ impl Manager {
             not_offered,
             on: None,
         }
+    }
+
+    /// Ask the agent for its list of models now, without a lesson, and keep
+    /// what it says: the list, or that it sent none. A list that came in the
+    /// last half minute is not asked for again, so the window opening and
+    /// the list being opened at the same moment ask once.
+    pub fn ask_models(&self) -> ModelChoice {
+        let _one = lock(&self.asking_models);
+        let kept = self.store.models();
+        let fresh = !kept.models.is_empty()
+            && !kept.failed
+            && kept
+                .at_ms
+                .is_some_and(|at| Local::now().timestamp_millis() - at < 30_000);
+        if !fresh {
+            let listed = self.harness_for(self.chosen()).models(self.store.payment());
+            self.store.received_models(listed.ok().flatten());
+        }
+        self.models()
     }
 
     /// Pick the model and effort new sessions start on. With a list, the

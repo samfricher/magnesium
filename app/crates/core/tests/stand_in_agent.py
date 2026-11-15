@@ -131,8 +131,11 @@ if args[:2] == ["auth", "login"]:
 if "--bare" in args:
     sys.stderr.write("stand-in: --bare would skip the plugin\n")
     sys.exit(2)
+# A start that keeps no session is the window asking for the list of models: it is sent no words, so nothing
+# there can ask for permission.
+LISTING = "--no-session-persistence" in args
 for needed in ("-p", "--input-format", "--output-format", "--verbose", "--permission-prompt-tool"):
-    if needed not in args:
+    if needed not in args and not (LISTING and needed == "--permission-prompt-tool"):
         sys.stderr.write(f"error: missing required argument {needed}\n")
         sys.exit(2)
 

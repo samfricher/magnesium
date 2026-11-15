@@ -58,6 +58,8 @@ const shots = [
   // The model: on the start line, and on the lesson's line once the session runs.
   ["model-list", "model-list", 300],
   ["model-effort", "model-effort", 300],
+  ["model-asking", "model-asking", 300],
+  ["model-list-failed", "model-list-failed", 900],
   ["model-lesson", "model-lesson", 400],
   ["model-lesson-effort", "model-lesson-effort", 500],
   ["model-lesson-refused", "model-lesson-refused", 600],

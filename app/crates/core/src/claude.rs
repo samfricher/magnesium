@@ -431,6 +431,31 @@ impl Harness for ClaudeCode {
         format!("/magnesium:papers {}", request.trim())
     }
 
+    fn models(&self, payment: Payment) -> AgentResult<Option<Vec<crate::models::ModelOption>>> {
+        let program = self.locate()?;
+        let mut command = paths::command(&program);
+        apply_payment(&mut command, payment);
+        // Not a study folder: the list is the account's, and this reads nothing of the learner's. Nothing is
+        // kept of a conversation that never starts.
+        let folder = env::temp_dir();
+        command
+            .current_dir(&folder)
+            .env("PWD", &folder)
+            .env(CONNECTORS_ENV, "false")
+            .args([
+                "-p",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--setting-sources",
+                "project,local",
+                "--no-session-persistence",
+            ]);
+        crate::models::list(command)
+    }
+
     fn account(&self, payment: Payment) -> Account {
         let Ok(program) = self.locate() else {
             return Account {

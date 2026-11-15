@@ -3,12 +3,17 @@
 //!
 //! The list is the agent's own: Claude Code sends it in its reply to the
 //! `initialize` request that opens every conversation, and the window keeps
-//! the last one it was sent. Magnesium keeps no list of models of its own,
-//! and adds nothing to what the agent says about each one.
+//! the last one it was sent. The window also asks for it without a lesson,
+//! when it opens and when the list is wanted and missing, from a Claude Code
+//! started for that alone and sent no message. Magnesium keeps no list of
+//! models of its own, and adds nothing to what the agent says about each one.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Command, Stdio};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
+use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -176,6 +181,70 @@ pub fn usable_effort(level: &str) -> bool {
     (1..=16).contains(&level.len()) && level.chars().all(|c| c.is_ascii_lowercase())
 }
 
+/// How long the window waits for an agent started only to list its models.
+/// Claude Code 2.1.322 answers in under a second on a warm Mac.
+const LIST_LIMIT: Duration = Duration::from_secs(20);
+const LIST_ID: &str = "models_1";
+
+/// Start the agent, ask for its list of models, and stop it. The agent
+/// answers `initialize` before it is sent anything to work on, and it is
+/// sent nothing, so no request reaches a model. None when it answered with
+/// no list. `command` is the agent on its stream-json pipes.
+pub(crate) fn list(mut command: Command) -> AgentResult<Option<Vec<ModelOption>>> {
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| AgentError(format!("The window could not start Claude Code: {e}.")))?;
+    let (tell, answer) = channel();
+    if let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) {
+        let request = json!({
+            "type": "control_request",
+            "request_id": LIST_ID,
+            "request": {"subtype": "initialize", "hooks": null},
+        });
+        thread::spawn(move || {
+            if writeln!(stdin, "{request}")
+                .and_then(|()| stdin.flush())
+                .is_err()
+            {
+                return;
+            }
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let Ok(value) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                let response = &value["response"];
+                if value["type"] == "control_response" && response["request_id"] == LIST_ID {
+                    let _ = tell.send(response.clone());
+                    break;
+                }
+            }
+            // The agent stops when its input ends, so the pipe is held open until its answer is in.
+            drop(stdin);
+        });
+    }
+    let response = answer.recv_timeout(LIST_LIMIT);
+    let _ = child.kill();
+    let _ = child.wait();
+    match response {
+        Ok(response) if response["subtype"] == "success" => Ok(parse(&response["response"])),
+        Ok(response) => Err(AgentError(format!(
+            "Claude Code did not list its models: {}.",
+            response["error"]
+                .as_str()
+                .map_or_else(|| "it refused".to_owned(), |why| clip(why.trim(), 300))
+        ))),
+        Err(RecvTimeoutError::Timeout) => Err(AgentError(
+            "Claude Code did not list its models in time.".into(),
+        )),
+        Err(RecvTimeoutError::Disconnected) => Err(AgentError(
+            "Claude Code stopped before it listed its models.".into(),
+        )),
+    }
+}
+
 /// How long the window waits for the agent to answer one control request.
 /// Claude Code answers these between its own work, in milliseconds.
 const ASK_LIMIT: Duration = Duration::from_secs(8);
@@ -233,13 +302,11 @@ impl Asked {
         }
         match answer.recv_timeout(ASK_LIMIT) {
             Ok(answer) => answer,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err(RecvTimeoutError::Timeout) => {
                 self.lock().remove(&id);
                 Err("it did not answer in time".into())
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                Err("it stopped before it answered".into())
-            }
+            Err(RecvTimeoutError::Disconnected) => Err("it stopped before it answered".into()),
         }
     }
 }

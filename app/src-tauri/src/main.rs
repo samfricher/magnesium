@@ -238,6 +238,12 @@ fn models(shell: State<'_, Shell>) -> ModelChoice {
     shell.manager.models()
 }
 
+/// Ask the agent for its list of models now, without a lesson.
+#[tauri::command(async)]
+fn ask_models(shell: State<'_, Shell>) -> ModelChoice {
+    shell.manager.ask_models()
+}
+
 /// Pick the model and effort new sessions start on.
 #[tauri::command(async)]
 fn set_pick(shell: State<'_, Shell>, model: String, effort: Option<String>) -> Reply<ModelChoice> {
@@ -592,6 +598,12 @@ fn main() {
             )
             .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
+            // The list of models is the account's, and it changes as Claude Code does: ask for it as the window
+            // opens, off the main thread, so the first line already has it.
+            let asker = app.handle().clone();
+            std::thread::spawn(move || {
+                asker.state::<Shell>().manager.ask_models();
+            });
             // The menu bar, at first with the window's own keys; the page
             // fills in the workspaces, the tabs and the learner's keys.
             let bar = menu::MenuBar::default();
@@ -657,6 +669,7 @@ fn main() {
             engine,
             set_engine,
             models,
+            ask_models,
             set_pick,
             session_models,
             set_session_model,
