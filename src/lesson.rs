@@ -135,10 +135,12 @@ fn read(
     })))
 }
 
-/// A task as one of the tutor's captured messages posed it.
+/// A task as one of the tutor's captured messages posed it: the task's own
+/// words where the record can find them in the reply, else the whole reply.
 struct Posed {
     text: String,
     at_ms: i64,
+    whole_reply: bool,
 }
 
 impl Posed {
@@ -148,6 +150,7 @@ impl Posed {
             "text": self.text,
             "posed_at": local_time(self.at_ms),
             "posed_at_ms": self.at_ms,
+            "whole_reply": self.whole_reply,
         });
         if let (Some(object), Some(Value::Object(check))) = (value.as_object_mut(), check) {
             object.extend(check);
@@ -156,8 +159,10 @@ impl Posed {
     }
 }
 
-/// The task the checkpoint names, in the words of the message that posed
-/// it, while no answer since then has been recorded in this lesson.
+/// The task the checkpoint names, while no answer since then has been
+/// recorded in this lesson. Its words are the checkpoint's `conditions` when
+/// the reply that posed it holds them exactly, and that whole reply when it
+/// does not: a host marks only words the learner was shown.
 fn pending_task(
     conn: &Connection,
     session: &str,
@@ -184,7 +189,44 @@ fn pending_task(
         params![session, at_ms],
         |r| r.get(0),
     )?;
-    Ok((!answered).then_some(Posed { text, at_ms }))
+    let words = checkpoint["pending_task"]["conditions"]
+        .as_str()
+        .and_then(|words| words_in(&text, words));
+    Ok((!answered).then_some(match words {
+        Some(words) => Posed {
+            text: words,
+            at_ms,
+            whole_reply: false,
+        },
+        None => Posed {
+            text,
+            at_ms,
+            whole_reply: true,
+        },
+    }))
+}
+
+/// `words` as they stand in `reply`, when the reply holds them exactly. Ends
+/// of lines may differ, as a tutor's copy and the kept reply can.
+fn words_in(reply: &str, words: &str) -> Option<String> {
+    let words = words.replace("\r\n", "\n");
+    let words = words.trim();
+    (!words.is_empty() && reply.replace("\r\n", "\n").contains(words)).then(|| words.to_owned())
+}
+
+/// The words of a reply from where it says "Quick check n" to its end, with
+/// the bold or italic marks just before them, or None when it does not say it.
+fn check_words(reply: &str, number: i64) -> Option<&str> {
+    let needle = format!("quick check {number}");
+    let bytes = reply.as_bytes();
+    let start = reply.char_indices().map(|(at, _)| at).find(|&at| {
+        bytes
+            .get(at..at + needle.len())
+            .is_some_and(|here| here.eq_ignore_ascii_case(needle.as_bytes()))
+            && !bytes.get(at + needle.len()).is_some_and(u8::is_ascii_digit)
+    })?;
+    let start = reply[..start].trim_end_matches(['*', '_']).len();
+    Some(reply[start..].trim_end())
 }
 
 /// The latest tutor message in these conversations that says "Quick check
@@ -206,7 +248,18 @@ fn posed_check(
             let (text, at_ms) = row?;
             if crate::sittings::says_check(&text.to_lowercase(), number) {
                 if found.as_ref().is_none_or(|f| at_ms > f.at_ms) {
-                    found = Some(Posed { text, at_ms });
+                    found = Some(match check_words(&text, number) {
+                        Some(words) => Posed {
+                            text: words.to_owned(),
+                            at_ms,
+                            whole_reply: false,
+                        },
+                        None => Posed {
+                            text,
+                            at_ms,
+                            whole_reply: true,
+                        },
+                    });
                 }
                 break;
             }
@@ -299,5 +352,44 @@ pub(crate) fn print_lesson(conversation: Option<&str>, as_json: bool) -> ExitCod
             eprintln!("magnesium: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_words, words_in};
+
+    #[test]
+    fn only_words_the_reply_holds_exactly_are_the_task() {
+        let reply = "Correct: 3 × 4 = 12.\r\n\r\nNow a step up. Factorise x² − 8x + 15.";
+        assert_eq!(
+            words_in(reply, " Factorise x² − 8x + 15.\n").as_deref(),
+            Some("Factorise x² − 8x + 15.")
+        );
+        assert_eq!(
+            words_in(reply, "Correct: 3 × 4 = 12.\n\nNow a step up.").as_deref(),
+            Some("Correct: 3 × 4 = 12.\n\nNow a step up.")
+        );
+        // Words the reply does not hold, or not exactly: the whole reply is the task.
+        assert_eq!(words_in(reply, "Factorise x^2 - 8x + 15."), None);
+        assert_eq!(words_in(reply, "No help"), None);
+        assert_eq!(words_in(reply, "  "), None);
+    }
+
+    #[test]
+    fn a_quick_check_is_its_reply_from_its_own_words() {
+        assert_eq!(
+            check_words(
+                "Welcome back.\n\n**Quick check 2:** What is b in x² − 5x?",
+                2
+            ),
+            Some("**Quick check 2:** What is b in x² − 5x?")
+        );
+        assert_eq!(check_words("Quick check 12: hi", 1), None);
+        assert_eq!(
+            check_words("İ quick CHECK 1: hi ", 1),
+            Some("quick CHECK 1: hi")
+        );
+        assert_eq!(check_words("no check here", 1), None);
     }
 }

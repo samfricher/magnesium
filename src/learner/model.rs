@@ -639,7 +639,10 @@ pub struct PendingTask {
     /// invent an ID or use a learner request as a tutor proposal. A proposal
     /// reference alone does not show that the learner received the task.
     pub proposal_event_ref: String,
-    /// Known task instructions and constraints; state unknown conditions.
+    /// The task's own words, copied exactly from the reply that posed it:
+    /// the question and what it states, not the feedback or teaching before
+    /// it. The study window marks them as the task. Other constraints go in
+    /// plan_text.
     pub conditions: String,
     #[serde(default)]
     /// Captured event IDs of actual observed delivery, not planned future

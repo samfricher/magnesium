@@ -136,6 +136,10 @@ pub struct OpenTask {
     pub kind: String,
     pub text: String,
     pub posed_at_ms: i64,
+    /// True when the record could not find the task's own words in the
+    /// reply, so `text` is the whole reply.
+    #[serde(default)]
+    pub whole_reply: bool,
 }
 
 /// A lesson as `magnesium lesson --json` prints it.

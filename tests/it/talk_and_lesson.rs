@@ -200,6 +200,8 @@ fn the_lesson_command_prints_goal_steps_and_the_open_task_and_writes_nothing() {
             .ends_with(TASK)
     );
     assert!(printed["open_task"]["posed_at_ms"].as_i64().is_some());
+    // "No help" is not in the reply, so the whole reply is the task.
+    assert_eq!(printed["open_task"]["whole_reply"], true);
     // Without a conversation, the most recently changed lesson.
     assert_eq!(lesson(&e, &[])["session_id"], printed["session_id"]);
     // A conversation the record has no lesson for.
@@ -214,4 +216,42 @@ fn the_lesson_command_prints_goal_steps_and_the_open_task_and_writes_nothing() {
         before,
         "the command changed the record"
     );
+}
+
+#[test]
+fn the_task_is_the_words_the_tutor_copied_when_the_reply_holds_them_exactly() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    lesson_with_a_task(&e);
+    let tutor: String = store(&e)
+        .query_row(
+            "SELECT event_id FROM learning_events WHERE speaker='tutor'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let save = |id: &str, words: &str| {
+        let (session, revision): (String, i64) = store(&e)
+            .query_row(
+                "SELECT session_id,revision FROM learning_sessions",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let saved = step(
+            &e,
+            json!({"schema":"learner-model/v2","action":"update","request_id":id,
+                "session":{"operation":"use","session_id":session,"expected_revision":revision},
+                "checkpoint":{"current_problem":"Factorising","working_diagnosis":"New","next_action":"Wait for the answer",
+                    "pending_task":{"proposal_event_ref":tutor,"conditions":words}}}),
+        );
+        assert_eq!(saved["update_status"], "committed", "{saved}");
+        lesson(&e, &["--conversation", "conv"])["open_task"].clone()
+    };
+    let exact = save("exact", TASK);
+    assert_eq!(exact["text"], TASK);
+    assert_eq!(exact["whole_reply"], false);
+    // Words close to the reply's but not the same are not marked.
+    let near = save("near", "Task: solve x^2 - 7x + 10 = 0.");
+    assert_eq!(near["text"], format!("Let's begin.\n\n{TASK}"));
+    assert_eq!(near["whole_reply"], true);
 }

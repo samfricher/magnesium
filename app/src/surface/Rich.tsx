@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
 import { holdBack, markTask, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { splitAtTask } from "../taskSplit";
 import { docTitle } from "../docs";
 import { sourceRef, type SourceRef } from "../sources";
 
@@ -306,7 +307,7 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
   // is held back keeps a line's room, so what follows does not jump when it closes.
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
   const html = useMemo(() => {
-    const whole = renderMarkdown(held.text);
+    const whole = renderMarkdown(task && final ? splitAtTask(held.text, task) : held.text);
     const drawn = task && final ? markTask(whole, task) : whole;
     const linked = onSource ? setSourcesApart(drawn, linksOpen, opensNow) : drawn;
     return caret ? withCaret(linked) : linked;

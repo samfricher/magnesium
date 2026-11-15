@@ -651,7 +651,7 @@ fn dispatch_inner(
         // Without this, a tutor often writes the same reply again as text.
         let next = match (request.save_after, &event) {
             (true, Some(event)) => format!(
-                "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply. If this reply set a task, the checkpoint's pending_task names it, with proposal_event_ref {event}."
+                "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply. If this reply set a task, the checkpoint's pending_task names it: proposal_event_ref {event}, and conditions the task's words copied exactly from your reply."
             ),
             (true, None) => "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply.".to_owned(),
             (false, _) => "End the turn now, with no text: the learner already has your reply.".to_owned(),
