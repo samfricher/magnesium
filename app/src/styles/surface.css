@@ -847,7 +847,7 @@ button.line-end:hover { color: var(--text); }
 :root[data-input="key"] .line-menu-row:focus-visible { outline: none; background: var(--tint); }
 .line.lesson .line-tools .keys { margin-right: 0.15em; }
 /* Files going with the next message sit on the row, before the words. */
-.line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.15rem; }
+.line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.22rem; }
 .line.lesson .attached:empty { display: none; }
 /* The passage the words are about, quoted above them. */
 .line.lesson .quote {
