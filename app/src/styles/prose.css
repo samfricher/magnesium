@@ -71,6 +71,11 @@
 .prose .diagram svg { max-width: 100%; height: auto; }
 
 .prose .katex { font-size: 1.06em; }
+/* An inline fraction hangs a little below the line box and pushed the next line about 1px down; it may hang into the
+   leading instead, so every line of a paragraph keeps one pitch. */
+.prose p .katex .base { margin-bottom: -0.3em; }
+/* Not in a task: its rule runs the height of its lines, and a hanging fraction would end below it. */
+.prose div.task p .katex .base { margin-bottom: 0; }
 .prose .katex-display { margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
 .line .katex,
 .you .katex { font-size: 1em; }
