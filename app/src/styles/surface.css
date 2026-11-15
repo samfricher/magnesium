@@ -49,6 +49,8 @@
   --measure-rem: 31rem;
   /* How far the task's rule and the prompt hang left of the column. */
   --hang: 20px;
+  /* How far the soft field reaches past the column: to the open task's 2px rule, which hangs at the hang. */
+  --field-in: calc(var(--hang) - 2px);
 
   color-scheme: light;
 }
@@ -659,12 +661,12 @@ button.line-end:hover { color: var(--text); }
 :root[data-field="soft"] .model-list { left: 0; right: 0; }
 .foot:has(.model-list) .parked,
 .surface:has(.model-list) .turn.open .prose div.task { border-left-color: transparent; }
-/* Its words start where the field's words start, 18px in, as Stuck and More's do. */
-:root[data-field="soft"] .model-list .row { padding-left: 0; grid-template-columns: 18px minmax(0, 1fr) minmax(0, max-content); column-gap: 0; }
+/* Its words start where the field's words start, as Stuck and More's do. */
+:root[data-field="soft"] .model-list .row { padding-left: 0; grid-template-columns: var(--field-in) minmax(0, 1fr) minmax(0, max-content); column-gap: 0; }
 /* The back row's "‹" in the middle of that gutter, not against the list's edge. */
 :root[data-field="soft"] .model-list .model-back .row-mark { text-align: center; }
-:root[data-field="soft"] .model-list .model-effort { padding-left: 18px; }
-:root[data-field="soft"] .model-list .model-note { margin-left: 18px; }
+:root[data-field="soft"] .model-list .model-effort { padding-left: var(--field-in); }
+:root[data-field="soft"] .model-list .model-note { margin-left: var(--field-in); }
 /* A list taller than its room fades at its foot, as the layer's lists do, so a cut row reads as more to scroll to.
    Drawn over the rows rather than as a mask, which would fade the list's own edge and shadow too. */
 .model-list.scrolls::after {
@@ -889,8 +891,8 @@ button.line-end:hover { color: var(--text); }
 
 /* The soft field: one row in a shade of the page, the words at the column's edge. */
 :root[data-field="soft"] .line.lesson {
-  margin: 0 -18px;
-  padding: 10px 18px;
+  margin: 0 calc(-1 * var(--field-in));
+  padding: 10px var(--field-in);
   border-radius: 13px;
   background: var(--well);
 }
