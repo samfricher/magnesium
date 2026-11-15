@@ -668,6 +668,8 @@ dialog.layer::backdrop { background: transparent; }
    beside the wider label column. */
 .settings-page .setting,
 .settings-page .sample { margin-right: -3rem; }
+/* A section named from Help opens with its heading clear of the page's top fade. */
+.settings-page section[id^="settings-"] { scroll-margin-top: calc(var(--head-room) + 1rem); }
 
 /* ------------------------------------------------------------------ */
 /* Glass (glass.ts): the Mac blurs what is behind the window,
