@@ -32,7 +32,7 @@ const withEffort = (name: string, effort?: string | null) => (effort ? `${name} 
 /** What the start line names: the model a session started now runs on, and its effort when one was picked. */
 export function startWord(choice: ModelChoice): string {
   const fallback = choice.models.find((row) => row.value === "default");
-  const fallbackName = fallback ? (rowFor(choice.models, idOf(fallback)) ?? fallback).name : "Default";
+  const fallbackName = fallback ? (rowFor(choice.models, idOf(fallback)) ?? fallback).name : "Default model";
   if (!choice.pick) return fallbackName;
   // Not on the list now: this session runs on the agent's default, and the pick stays as the learner left it.
   if (choice.not_offered) return `${fallbackName}, for now`;
