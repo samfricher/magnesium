@@ -344,7 +344,9 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .text-field.number { min-width: 0; width: 3.4rem; }
 .text-field::placeholder { color: var(--quiet); opacity: 1; }
 /* In by a choice's own padding, so its words start where the choices' words above it start. */
-.font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; margin-left: 0.1rem; }
+.font-other { display: inline-flex; align-items: baseline; gap: 0.6rem; margin-left: 0.1rem; max-width: calc(100% - 0.1rem); }
+/* The field narrows to the row's room at a large text size, where 12rem ran past the window's edge. */
+.font-other .text-field { min-width: min(12rem, 100%); max-width: 100%; }
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -358,8 +360,9 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--off); }
 input[type="range"]:disabled + .glass-ends,
 .glass-scale:has(input:disabled) .glass-ends { color: var(--off); }
 /* The window's ground on one scale: solid in the middle, a kind of glass towards each end, named under it. */
-.glass-scale { display: inline-grid; gap: 0.35rem; }
-.glass-scale input[type="range"] { width: 17rem; }
+/* 17rem, or the room the row has left when a large text size makes 17rem wider than it: past it, the page scrolled sideways. */
+.glass-scale { display: inline-grid; gap: 0.35rem; width: min(17rem, 100%); }
+.glass-scale input[type="range"] { width: 100%; }
 .glass-ends { display: grid; grid-template-columns: 1fr auto 1fr; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .glass-ends > :last-child { text-align: right; }
 .glass-scale.half .glass-ends { grid-template-columns: 1fr auto; }
