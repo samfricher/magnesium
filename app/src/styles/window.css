@@ -339,7 +339,10 @@ input[type="range"] {
   border-radius: 1px;
   background: var(--faint);
 }
-input[type="range"]:disabled { opacity: 0.5; }
+/* Off, a slider is drawn in the one colour every control that cannot be used is drawn in. */
+input[type="range"]:disabled::-webkit-slider-thumb { background: var(--off); }
+input[type="range"]:disabled + .glass-ends,
+.glass-scale:has(input:disabled) .glass-ends { color: var(--off); }
 /* The window's ground on one scale: solid in the middle, a kind of glass towards each end, named under it. */
 .glass-scale { display: inline-grid; gap: 0.35rem; }
 .glass-scale input[type="range"] { width: 17rem; }
