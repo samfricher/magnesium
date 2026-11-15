@@ -6,6 +6,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useGlassState } from "../glass";
+import { Line } from "../surface/Rich";
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
 import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
 
@@ -372,10 +373,11 @@ export function SettingsPage(props: Props) {
             <span className="setting-value">{prefs.measure} characters</span>
           </Setting>
           <p className="sample" style={{ fontFamily: faceCss(prefs.face) }}>
-            The line meets the y-axis at 1/V<sub>max</sub>.
+            {/* Through the lesson's own maths, so the sample shows what a lesson draws. */}
+            <Line text={"The line meets the y-axis at $\\frac{1}{V_{max}}$."} />
             {/* The tutor's words, then the learner's, on a line of their own as in a lesson. */}
             <span className="sample-you" style={{ fontFamily: prefs.voice === "reading" ? faceCss(prefs.face) : faceCss(prefs.voice, faceCss("system")) }}>
-              Vmax = 4 µM/s
+              <Line text={"$V_{max}$ = 4 µM/s"} />
             </span>
           </p>
           <Setting name="Lines that name keys">
