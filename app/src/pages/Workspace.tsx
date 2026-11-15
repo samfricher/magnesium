@@ -384,7 +384,7 @@ export function WorkspacePage(props: Props) {
                     {paper.name}
                   </button>
                   <span className="row-when">{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} minutes` : ""}</span>
-                  <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy} onClick={() => void sit(paper)}>
+                  <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy || !ready} onClick={() => void sit(paper)}>
                     Sit it
                   </button>
                 </div>
