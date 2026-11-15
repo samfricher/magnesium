@@ -665,6 +665,8 @@ button.line-end:hover { color: var(--text); }
 :root[data-field="soft"] .model-list .row { padding-left: 0; padding-right: var(--field-in); grid-template-columns: var(--field-in) minmax(0, 1fr) minmax(0, max-content); column-gap: 0; }
 /* The back row's "‹" in the middle of that gutter, not against the list's edge. */
 :root[data-field="soft"] .model-list .model-back .row-mark { text-align: center; }
+/* Over the bare line the back row's "‹" hangs where the line's "›" hangs, in its face. */
+:root:not([data-field="soft"]) .model-list .model-back .row-mark { padding-left: 0.25rem; font-family: var(--mono); }
 :root[data-field="soft"] .model-list .model-effort { padding-left: var(--field-in); padding-right: var(--field-in); }
 :root[data-field="soft"] .model-list .model-note { margin-left: var(--field-in); margin-right: var(--field-in); }
 /* A list taller than its room fades at its foot, as the layer's lists do, so a cut row reads as more to scroll to.
