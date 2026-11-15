@@ -3,9 +3,9 @@
 # (python3 ci/check.py) neither builds nor tests the window, so run this after
 # a change under app/, or after a change to what the runtime writes.
 #
-#   scripts/check.sh            the pages, Rust format and lints, the core
-#                               tests, and the readers against the runtime
-#                               built from this checkout
+#   scripts/check.sh            the pages and their checks, Rust format and
+#                               lints, the core tests, and the readers against
+#                               the runtime built from this checkout
 #   scripts/check.sh --window   all of that, then the real window against
 #                               the stand-in agent (scripts/selftest.sh)
 #
@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.."
 [ -d node_modules ] || npm ci
 # The shell embeds the built pages, so they are built before any Rust check.
 npm run build
+node scripts/test-task-split.mjs
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked -p mg-core

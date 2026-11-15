@@ -1660,6 +1660,44 @@ fn settle(
         // times more. A message sent meanwhile ends the looking.
         // `found` is the new rows' ids: empty when the record was read and
         // had none, and none when the looking was cut short or never read it.
+        // The open task, read as soon as the turn ends: the plugin's tutor
+        // records an answer before its reply and saves the task with the turn's
+        // last write, so the record has both by now. Waiting for the marks
+        // below would hold the line back for up to their last look. A runtime
+        // that cannot say leaves the page to find the task as before.
+        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
+        let read_task = |told: &Mutex<Option<Option<String>>>| {
+            let Some(conversation) = task_of.as_deref() else {
+                return;
+            };
+            if lock(&settling.watch).seq != seq || !live() {
+                return;
+            }
+            let Some(lesson) = runtime::lesson(&folder, Some(conversation)) else {
+                return;
+            };
+            let open = lesson.and_then(|lesson| lesson.open_task);
+            let posed = open
+                .as_ref()
+                .is_some_and(|task| task.posed_at_ms >= sent_ms);
+            let task = open.map(|task| task.text);
+            let mut told = lock(told);
+            if told.as_ref() == Some(&task) {
+                return;
+            }
+            if let Some((store, session, ms)) = &turn {
+                store.note_task(&folder, session, *ms, task.as_deref(), posed);
+            }
+            if lock(&settling.watch).seq == seq && live() {
+                out(AgentEvent::OpenTask {
+                    task: task.clone(),
+                    posed,
+                });
+            }
+            *told = Some(task);
+        };
+        read_task(&told);
+        let mut marked_late = false;
         let mut found: Option<Vec<String>> = None;
         if let Some(before) = before {
             let once = kept == Some(true) || (intent == Some(Intent::Talk) && kept.is_some());
@@ -1684,6 +1722,7 @@ fn settle(
                     .filter(|row| !before.contains(&row.id))
                     .collect();
                 if !fresh.is_empty() {
+                    marked_late = look > 0;
                     found = Some(fresh.iter().map(|mark| mark.id.clone()).collect());
                     if live() {
                         for mark in fresh {
@@ -1706,23 +1745,10 @@ fn settle(
         if let (Some(ids), Some((store, session, ms))) = (&found, &turn) {
             store.note_marks(&folder, session, *ms, ids);
         }
-        // The open task, once the marks are in: an answer the tutor recorded
-        // closes its task. A runtime that cannot say leaves the page to find
-        // the task as before.
-        if let Some(conversation) = task_of.filter(|_| lock(&settling.watch).seq == seq && live()) {
-            if let Some(lesson) = runtime::lesson(&folder, Some(&conversation)) {
-                let open = lesson.and_then(|lesson| lesson.open_task);
-                let posed = open
-                    .as_ref()
-                    .is_some_and(|task| task.posed_at_ms >= sent_ms);
-                let task = open.map(|task| task.text);
-                if let Some((store, session, ms)) = &turn {
-                    store.note_task(&folder, session, *ms, task.as_deref(), posed);
-                }
-                if lock(&settling.watch).seq == seq && live() {
-                    out(AgentEvent::OpenTask { task, posed });
-                }
-            }
+        // A mark that turned up only on a later look may have closed the task
+        // read at the turn's end: read it again.
+        if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
+            read_task(&told);
         }
         // The record has been read for this message: say so, unless the
         // learner has written again since.
