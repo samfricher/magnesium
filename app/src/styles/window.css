@@ -231,7 +231,7 @@ button.home-row:focus:hover { background: var(--tint); }
   padding: 0;
 }
 .quiet-act:hover:not(:disabled) { color: var(--text); }
-.quiet-act:disabled { color: var(--faint); cursor: default; }
+.quiet-act:disabled { color: var(--off); cursor: default; }
 .quiet-act.strong { color: var(--text); }
 
 /* Where a workspace's page sits, said as a session says its course: one small line over the heading. */
@@ -259,7 +259,7 @@ button.home-row:focus:hover { background: var(--tint); }
 .new-session:hover:not(:disabled) { background: var(--tint); }
 .new-session:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
 :root[data-input="key"] .new-session:focus-visible { outline: none; }
-.new-session:disabled { color: var(--quiet); cursor: default; }
+.new-session:disabled { color: var(--off); cursor: default; }
 
 .your-work { margin-top: 1.8rem; }
 .your-work summary { cursor: pointer; list-style: none; margin-top: 0; }
@@ -592,7 +592,7 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .layer[tabindex]:focus-visible { outline: none; }
 /* A short paragraph does not end on one word alone. */
 .page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
-.tab-new:disabled { color: var(--faint); cursor: default; background: none; }
+.tab-new:disabled { color: var(--off); cursor: default; background: none; }
 
 /* "Your work" shows the keyboard's place as the other quiet actions do. */
 :root[data-input="key"] .your-work summary:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }

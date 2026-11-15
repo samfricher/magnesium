@@ -28,6 +28,8 @@
   --hint: var(--quiet);
   --line: color-mix(in srgb, var(--text) 50%, var(--ground));
   --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
+  /* A control that cannot be used now: still legible, plainly not the quiet grey of words that can be. */
+  --off: color-mix(in srgb, var(--text) 36%, var(--ground));
   --edge: color-mix(in srgb, var(--text) 11%, transparent);
   --tint: color-mix(in srgb, var(--text) 5.5%, transparent);
   --scrim: color-mix(in srgb, var(--ground) 62%, transparent);
@@ -796,7 +798,7 @@ button.line-end:hover { color: var(--text); }
   cursor: default;
 }
 .line-menu-row:hover:not(:disabled) { background: var(--tint); }
-.line-menu-row:disabled { color: var(--faint); }
+.line-menu-row:disabled { color: var(--off); }
 /* A rule between groups, on the labels' column. */
 .line-menu-row.parted { margin-top: 0.55rem; }
 .line-menu-row.parted::before {
