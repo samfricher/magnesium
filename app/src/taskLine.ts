@@ -18,12 +18,14 @@ export type Found = { start: { piece: number; at: number }; end: { piece: number
 const ENVIRONMENT = /^\\begin\{([A-Za-z]+\*?)\}/;
 
 /**
- * A formula's TeX as it is compared: no spaces, and `\text{…}` as its words.
- * The page sets some subscripts upright before typesetting (V_{max} becomes
- * V_{\text{max}}), so the TeX KaTeX keeps can differ from the tutor's in that.
+ * A formula's TeX as it is compared: no spaces, no braces, and `\text{…}` as
+ * its words. The page sets some subscripts upright before typesetting (V_max
+ * and V_{max} both become V_{\text{max}}), so the TeX KaTeX keeps can differ
+ * from the tutor's in that. Both sides lose the same things, so two formulas
+ * that differ only there compare as one.
  */
 export function texKey(tex: string): string {
-  return tex.replace(/\\text\{([^{}]*)\}/g, "$1").replace(/\s+/g, "");
+  return tex.replace(/\\text\{([^{}]*)\}/g, "$1").replace(/[\s{}]+/g, "");
 }
 
 /**

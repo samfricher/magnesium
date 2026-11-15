@@ -20,14 +20,21 @@ const at = (piece, offset) => ({ piece, at: offset });
 // The plain form of a task in markdown.
 assert.equal(taskPlain("Now expand $(x + 4)(x + 5)$ and simplify."), "Now expand (x+4)(x+5) and simplify.");
 assert.equal(taskPlain("**Expand** \\((x+1)^2\\), then *check* it."), "Expand (x+1)^2, then check it.");
-assert.equal(taskPlain("Read [the notes](notes.md) and find $V_{max}$."), "Read the notes and find V_{max}.");
+assert.equal(taskPlain("Read [the notes](notes.md) and find $V_{max}$."), "Read the notes and find V_max.");
 assert.equal(taskPlain("Expand\n\n$$\n(x+1)(x+2)\n$$\n\nand simplify."), "Expand (x+1)(x+2) and simplify.");
-assert.equal(taskPlain("Solve \\begin{cases} x+y=3 \\\\ x-y=1 \\end{cases} for both."), "Solve \\begin{cases}x+y=3\\\\x-y=1\\end{cases} for both.");
+assert.equal(taskPlain("Solve \\begin{cases} x+y=3 \\\\ x-y=1 \\end{cases} for both."), "Solve \\begincasesx+y=3\\\\x-y=1\\endcases for both.");
 assert.equal(taskPlain("It costs $5 and $10 here, so 2\\*3 is `a_b`."), "It costs $5 and $10 here, so 2*3 is a_b.");
 assert.equal(taskPlain("**Quick check 2:** What is $b$ in $x^2 - 5x$?"), "What is b in x^2-5x?");
 assert.equal(taskPlain("factorise $x^2 + 7x + 12$.**"), "factorise x^2+7x+12.", "a bold mark left open at the end");
 assert.equal(taskPlain("snake_case stays as it is"), "snake_case stays as it is");
-assert.equal(texKey("V_{\\text{max}} = 2 \\cdot x"), "V_{max}=2\\cdotx", "the page's upright subscripts compare as written");
+assert.equal(texKey("V_{\\text{max}} = 2 \\cdot x"), "V_max=2\\cdotx", "the page's upright subscripts compare as written");
+
+// V_max as a tutor may write it, against what the page typesets: V_{\text{max}} for all three.
+for (const written of ["$V_max$", "$V_{max}$", "$V_\\text{max}$", "$V_{\\text{max}}$"]) {
+  const drawn = [t("Find "), f("V_{\\text{max}}"), t(" from the intercept.")];
+  assert.deepEqual(find(drawn, `Find ${written} from the intercept.`), { start: at(0, 0), end: at(2, 20) }, written);
+}
+assert.deepEqual(find([t("So "), f("K_{\\text{m}}=2"), t(". Now find "), f("V_{\\text{max}}"), t(".")], "Now find $V_max$."), { start: at(2, 2), end: at(4, 1) });
 
 // A task with maths that starts partway through a line of teaching.
 const teaching = [
