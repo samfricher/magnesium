@@ -164,6 +164,11 @@ button {
 }
 .now.loading { padding-top: 30vh; }
 
+/* Once the step's name over the lesson stands for it, the heading under the top edge's fade goes out with it, so
+   no sliced line of it shows under the name. */
+.head { transition: opacity 160ms ease-out; }
+.head.gone { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .head { transition: none; } }
 .head .course {
   margin: 0 0 0.35rem;
   font: 400 0.765rem/1.4 var(--app);

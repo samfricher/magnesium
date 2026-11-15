@@ -1268,7 +1268,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
               </>
             ) : (
               <>
-                <header className={`head${titleIsFirstWords ? " bare" : ""}`}>
+                <header className={`head${titleIsFirstWords ? " bare" : ""}${headGone ? " gone" : ""}`}>
                   {home && <p className="course">{displayName(home.name)}</p>}
                   {/* A session named by the learner's first words is headed by its course alone: the words follow just under it, and the tab names it. */}
                   {titleIsFirstWords ? (
