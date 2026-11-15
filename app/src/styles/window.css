@@ -334,7 +334,7 @@ input[type="range"] {
   width: 11rem;
   height: 2px;
   border-radius: 1px;
-  background: var(--line);
+  background: var(--faint);
 }
 input[type="range"]:disabled { opacity: 0.5; }
 /* The window's ground on one scale: solid in the middle, a kind of glass towards each end, named under it. */
