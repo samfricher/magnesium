@@ -27,7 +27,7 @@ export function rowFor(models: ModelOption[], model: string): ModelOption | null
   return matches.find((row) => row.current && row.value !== "default") ?? matches.find((row) => row.value === "default") ?? matches[0] ?? null;
 }
 
-const withEffort = (name: string, effort?: string | null) => (effort ? `${name} · ${effortWord(effort).toLowerCase()}` : name);
+const withEffort = (name: string, effort?: string | null) => (effort ? `${name} · ${effortWord(effort)}` : name);
 
 /** What the start line names: the model a session started now runs on, and its effort when one was picked. */
 export function startWord(choice: ModelChoice): string {
