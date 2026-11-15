@@ -9,7 +9,7 @@
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
 //   #permission  #paper  #upgrade  #help-row  #symbols
-//   #line-stuck  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
+//   #line-stuck  #line-stuck-typing  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
 //   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
 
@@ -691,14 +691,22 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await wait(150);
       if (has("model-older")) document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
       return wait(150);
-    case "first-stuck":
     case "first-more":
       actions.newSession(FOLDER);
       await wait(300);
-      document.querySelector<HTMLElement>(`.line.lesson [data-drive='${has("first-stuck") ? "stuck" : "more"}']`)?.click();
+      document.querySelector<HTMLElement>(".line.lesson [data-drive='more']")?.click();
       return wait(150);
     case "line-stuck":
+    case "line-stuck-typing":
       await answered(actions);
+      if (has("line-stuck-typing")) {
+        const field = document.querySelector<HTMLTextAreaElement>(".line.lesson [data-drive='composer']");
+        if (field) {
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Kₘ = 4 × 0.5 =");
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        await wait(100);
+      }
       document.querySelector<HTMLElement>(".line.lesson [data-drive='stuck']")?.click();
       return wait(150);
     case "line-more-typing": {

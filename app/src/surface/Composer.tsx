@@ -8,8 +8,10 @@
 //   the learner had selected. Both go as talk, which code never marks.
 //
 // Both are the same line, drawn the same way: one row, the learner's words,
-// then two quiet words, Stuck and More, each opening a short menu by the line.
-// Before a lesson there is nothing to be stuck on, so Stuck's rows wait for it.
+// then two quiet words at its end. More opens a short menu over the line.
+// Stuck, in a lesson, opens its three rows above the words, in the line's own
+// flow, so the question the learner is stuck on stays in view. Before a lesson
+// there is nothing to be stuck on, and the line ends in More alone.
 //
 // The line takes files too: Attach opens a picker for photos and PDFs, and a
 // file dropped on the session or an image pasted in joins it. Each shows on
@@ -148,7 +150,7 @@ export const Composer = memo(
     const [files, setFiles] = useState<string[]>([]);
     const [queued, setQueued] = useState<null | { talk: boolean }>(null);
     const [symbols, setSymbols] = useState(false);
-    // Stuck and More each open a short menu over the line.
+    // Stuck opens a row above the words; More, a short menu over the line.
     const [menu, setMenu] = useState<"stuck" | "more" | null>(null);
     const stuckRef = useRef<HTMLButtonElement>(null);
     const moreRef = useRef<HTMLButtonElement>(null);
@@ -384,11 +386,11 @@ export const Composer = memo(
       if (back) box.current?.focus({ preventScroll: true });
     };
     const rest = place === "rest";
-    // Help is about the lesson's work: its rows wait while the tutor writes, and before a lesson has begun.
-    const noHelp = props.busy || rest;
+    // Help is about the lesson's work: its rows wait while the tutor writes.
+    const noHelp = props.busy;
     const stuckRows: LineRow[] = [
       { id: "hint", label: "Hint", keys: key("hint"), group: "help", disabled: noHelp, run: () => help(HELP.hint) },
-      { id: "help", label: "Help me", keys: key("lost"), group: "help", disabled: noHelp, run: () => help(HELP.lost) },
+      { id: "lost", label: "I’m lost", keys: key("lost"), group: "help", disabled: noHelp, run: () => help(HELP.lost) },
       { id: "dont-know", label: "I don’t know", keys: key("unknown"), group: "help", disabled: noHelp, run: () => help(HELP.unknown) },
     ];
     const moreRows: LineRow[] = [
@@ -429,11 +431,12 @@ export const Composer = memo(
           <span className="keys">{props.end.keys}</span> {props.end.what}
         </span>,
       );
-    if (props.onHelp || rest) tools.push(word("stuck", "Stuck", stuckRef));
+    if (props.onHelp && !rest) tools.push(word("stuck", "Stuck", stuckRef));
     tools.push(word("more", "More", moreRef, props.moreHeld));
 
     return (
       <div className={`line lesson${rest ? " first" : ""}${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line={place}>
+        {menu === "stuck" && <LineMenu label="Stuck" rows={stuckRows} opener={stuckRef} onClose={closeMenu} inline />}
         {quote !== null && (
           <p className="quote" title="⌫ on an empty line takes it off">
             “{quote}”
@@ -469,7 +472,6 @@ export const Composer = memo(
             {tools}
           </span>
         </div>
-        {menu === "stuck" && <LineMenu label="Stuck" rows={stuckRows} opener={stuckRef} onClose={closeMenu} />}
         {menu === "more" && <LineMenu label="More" rows={moreRows} opener={moreRef} onClose={closeMenu} />}
         {props.toolBeside}
         {(confidence || queued) && (

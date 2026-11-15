@@ -292,7 +292,8 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.library = { workspaces: listed.length, first: listed[0]?.name, plan: { items: plan.items.length } };
     if (!listed.some((each) => each.folder === home.folder)) throw new Error("the open folder is not in the library");
 
-    // A session's first line is the lesson's line: it ends in Stuck and More, and Stuck's rows wait for the lesson.
+    // A session's first line is the lesson's line. Before a lesson there is nothing to be stuck on: it ends in More
+    // alone, and the help keys do nothing.
     // Before the first lesson the window has the list: it asked Claude Code as it opened, with no lesson started.
     // More's Model row names the default a new window took from it, the list has its rows, and Esc closes it.
     const front = <T extends Element = HTMLElement>(what: string) => document.querySelector<T>(`.session.in-front ${what}`);
@@ -308,20 +309,20 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       return word as string | null;
     };
     actions.newSession(folder);
-    await until("a new session's first line, ending in Stuck and More", () => front('[data-line="rest"] [data-drive="stuck"]') !== null && front('[data-line="rest"] [data-drive="more"]') !== null, 10_000);
-    front('[data-drive="stuck"]')!.click();
-    await until("Stuck's rows on the first line", () => front('.line-menu [data-drive="hint"]') !== null, 3000);
-    const waiting = [...document.querySelectorAll<HTMLButtonElement>(".session.in-front .line-menu .line-menu-row")].every((row) => row.disabled);
-    press("Escape");
-    await wait(150);
+    await until("a new session's first line, ending in More", () => front('[data-line="rest"] [data-drive="more"]') !== null, 10_000);
+    const noStuck = front('[data-line="rest"] [data-drive="stuck"]') === null;
+    actions.run("hint");
+    await wait(300);
+    const stillRest = front('[data-line="rest"]') !== null && !session().open;
     const beforeWord = await openModelRow("More's Model row, named from the list the window asked for", (word) => word !== "Default model", 20_000);
     modelRow()!.click();
     await until("the list of models, before any lesson", () => document.querySelectorAll('.session.in-front [data-drive="model-row"]').length > 0, 5000);
     const firstRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
     press("Escape");
     await wait(150);
-    steps.listBeforeLesson = { word: beforeWord, rows: firstRows, stuckWaits: waiting, closed: front(".model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
-    if (!waiting) throw new Error("Stuck's rows can be pressed before a lesson has begun");
+    steps.listBeforeLesson = { word: beforeWord, rows: firstRows, noStuck, hintKeyIdle: stillRest, closed: front(".model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    if (!noStuck) throw new Error("Stuck is on the line before a lesson has begun");
+    if (!stillRest) throw new Error("the hint key did something before a lesson had begun");
     if (beforeWord !== "Opus 5.5" || firstRows !== 5) throw new Error(`a new window did not have Claude Code's list before a lesson: ${JSON.stringify(steps.listBeforeLesson)}`);
     if (front(".model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close the list of models: ${JSON.stringify(steps.listBeforeLesson)}`);
     actions.run("close-session");
@@ -352,6 +353,27 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.diagram = document.querySelectorAll(".session.in-front .tutor .diagram svg").length;
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
+
+    // Stuck in a lesson: its rows open in the line, above the words, not over the page; Esc puts them away and
+    // the keyboard goes back to the line.
+    {
+      const line = () => document.querySelector<HTMLElement>(".session.in-front .line.lesson");
+      document.querySelector<HTMLElement>('.session.in-front .line.lesson [data-drive="stuck"]')!.click();
+      await until("Stuck's row in the line", () => line()?.querySelector('.line-menu [data-drive="hint"]') != null, 3000);
+      const row = line()!.querySelector<HTMLElement>(".line-menu")!;
+      const words = line()!.querySelector<HTMLElement>(".field-row")!;
+      const labels = [...row.querySelectorAll(".line-menu-label")].map((label) => label.textContent);
+      const above = row.getBoundingClientRect().bottom <= words.getBoundingClientRect().top + 1;
+      const inFlow = getComputedStyle(row).position !== "absolute";
+      const focused = document.activeElement?.getAttribute("data-drive");
+      press("Escape");
+      await wait(150);
+      steps.stuckInLesson = { labels, above, inFlow, focused, closed: line()?.querySelector(".line-menu") == null, back: document.activeElement?.getAttribute("data-drive") ?? null };
+      if (labels.join(" / ") !== "Hint / I’m lost / I don’t know") throw new Error(`Stuck's rows are not named as the keys are: ${labels.join(" / ")}`);
+      if (!above || !inFlow) throw new Error(`Stuck's rows are not a row above the words: ${JSON.stringify(steps.stuckInLesson)}`);
+      if (focused !== "hint") throw new Error(`the keyboard did not go to Stuck's first row: ${focused}`);
+      if (line()?.querySelector(".line-menu") != null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not put Stuck's rows away: ${JSON.stringify(steps.stuckInLesson)}`);
+    }
 
     // The model on the lesson's line: under More, the same list as the start line, now changing the running session.
     // A change goes to the agent at once; its next reply says what it ran on. It is set back so later steps see the pick.

@@ -833,6 +833,39 @@ button.line-end:hover { color: var(--text); }
 .line-menu-key,
 .line-menu-detail { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
 :root[data-input="key"] .line-menu-row:focus-visible { outline: none; background: var(--tint); }
+
+/* Stuck: its rows in the line's own flow, above the words, drawn as a card's choices are, the labels on the
+   column's edge. The line grows by this one row, so the question above it is not covered. */
+.line-menu.inline {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 0.6rem;
+  min-width: 0;
+  margin: 0 -0.5rem 0.45rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.line-menu.inline .line-menu-row {
+  width: auto;
+  gap: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  justify-content: flex-start;
+}
+/* In the soft field, a hairline parts the row from the words under it, on the words' own column. */
+:root[data-field="soft"] .line-menu.inline { margin-bottom: 0.6rem; padding-bottom: 0.45rem; }
+:root[data-field="soft"] .line-menu.inline::after {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0;
+  border-top: 1px solid var(--edge);
+}
 .line.lesson .line-tools .keys { margin-right: 0.15em; }
 /* Files going with the next message sit on the row, before the words. */
 .line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.22rem; }

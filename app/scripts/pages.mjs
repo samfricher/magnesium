@@ -169,6 +169,10 @@ try {
   await step(w, "start", { op: "key", key: "Enter" });
   await step(w, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   await shoot(w, "session-task", "Session: the tutor's first task, the answer line open");
+  await step(w, "stuck", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "session-stuck", "Session: Stuck's row open in the line, under the open task");
+  await step(w, "close Stuck", { op: "key", key: "Escape" });
   // The open task's line is the composer itself.
   await step(w, "focus the answer", { op: "focus", target: "composer", by: "drive" });
   await step(w, "type the answer", { op: "type", text: ANSWER });
@@ -270,6 +274,13 @@ try {
   await settle(w, 300);
   await shoot(w, "session-bare-stuck", "Session: Stuck open on the bare line");
   await step(w, "close Stuck", { op: "key", key: "Escape" });
+  await step(w, "more on the bare line", { op: "click", target: "more", by: "drive" });
+  await step(w, "symbols on the bare line", { op: "click", target: "symbols", by: "drive" });
+  await step(w, "stuck with the symbols open", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "session-bare-stuck-symbols", "Session: Stuck open on the bare line, the symbols open under it");
+  await step(w, "close Stuck again", { op: "key", key: "Escape" });
+  await step(w, "close the symbols on the bare line", { op: "key", key: "Escape" });
   await step(w, "clear the line", { op: "type", text: "", replace: true });
   await step(w, "settings again", { op: "click", target: "settings", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
