@@ -264,6 +264,26 @@ export function WorkspacePage(props: Props) {
         <header className="page-head">
           <h1 className="page-title">{name}</h1>
           {home?.message && home.state !== "ready" && <p className="where">{withoutPaths(home.message)}</p>}
+          {/* What the folder needs before study, under the words that ask for it. */}
+          {home && ["not_set_up", "needs_upgrade", "no_runtime", "unreadable"].includes(home.state) && (
+            <p className="page-acts">
+              {home.state === "not_set_up" && (
+                <button className="quiet-act strong" disabled={busy} onClick={() => void setUp()}>
+                  Set it up for Magnesium
+                </button>
+              )}
+              {home.state === "needs_upgrade" && (
+                <button className="quiet-act strong" disabled={busy} onClick={() => void upgrade()}>
+                  Upgrade it
+                </button>
+              )}
+              {(home.state === "no_runtime" || home.state === "unreadable") && (
+                <button className="quiet-act strong" onClick={() => void read()}>
+                  Check again
+                </button>
+              )}
+            </p>
+          )}
         </header>
 
         <section aria-label="Sessions">
@@ -402,21 +422,6 @@ export function WorkspacePage(props: Props) {
 
         <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
-            {home?.state === "not_set_up" && (
-              <button className="quiet-act" disabled={busy} onClick={() => void setUp()}>
-                Set it up for Magnesium
-              </button>
-            )}
-            {home?.state === "needs_upgrade" && (
-              <button className="quiet-act strong" disabled={busy} onClick={() => void upgrade()}>
-                Upgrade it
-              </button>
-            )}
-            {(home?.state === "no_runtime" || home?.state === "unreadable") && (
-              <button className="quiet-act" onClick={() => void read()}>
-                Check again
-              </button>
-            )}
             <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
             </button>
