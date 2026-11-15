@@ -1,5 +1,5 @@
-// The model and effort of the session in a tab, named on its line (on the start
-// line as a word, in a lesson as More's Model row), and the agent's own list. One control for the whole session: before
+// The model and effort of the session in a tab, named in More's Model row on
+// its line, and the agent's own list. One control for the whole session: before
 // it starts it sets what it starts on; once it runs, a change goes to Claude
 // Code at once and holds from its next request to the model. Either way it
 // becomes the pick new sessions start on.
@@ -52,26 +52,22 @@ type Props = {
   api: Core;
   /** The session's tab. */
   at: ModelAt;
-  /** Which line the word sits on: the start line opens the list under it, the lesson's line over it. */
-  place: "rest" | "lesson";
   /** The list closed; the keyboard goes back to the line. */
   onClose: () => void;
 };
 
 export type ModelPicker = {
-  /** The word, for the start line's tools. Null until the window has read the choice. */
-  word: ReactNode;
-  /** What the session is on, or starts on, in words: More's Model row names it. */
+  /** What the session is on, or starts on, in words: More's Model row names it. Null until the window has read the choice. */
   name: string | null;
   /** The list, for the line to place; null while it is shut. */
   list: ReactNode;
   open: boolean;
-  /** Open or shut the list, as pressing the word does. */
+  /** Open or shut the list, as More's Model row does. */
   toggle: () => void;
 };
 
-/** The model of the session in a tab: a quiet word among the line's tools, and the list it opens. */
-export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker {
+/** The model of the session in a tab: its name for More's Model row, and the list that row opens. */
+export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [open, setOpen] = useState(false);
   const [older, setOlder] = useState(false);
@@ -80,7 +76,6 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
   const [room, setRoom] = useState<{ below: boolean; height: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const wordRef = useRef<HTMLButtonElement>(null);
   const where = useRef(at);
   where.current = at;
 
@@ -137,15 +132,16 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   useLayoutEffect(() => {
     const list = listRef.current;
     const line = list?.parentElement;
-    if (!open || place !== "lesson" || !list || !line) return setRoom(null);
+    if (!open || !list || !line) return setRoom(null);
     const box = line.getBoundingClientRect();
     const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
     const above = box.top - top - 16;
     const below = window.innerHeight - box.bottom - 16;
     const wanted = Math.min(list.scrollHeight, window.innerHeight * 0.62);
-    const down = above < wanted && below > above;
+    // Under a session's first line, as the line's menus open there.
+    const down = line.classList.contains("first") || (above < wanted && below > above);
     setRoom({ below: down, height: Math.max(160, Math.min(window.innerHeight * 0.62, down ? below : above)) });
-  }, [open, older, place, choice]);
+  }, [open, older, choice]);
 
   // Esc closes it wherever the keyboard is. A list with no rows yet (before
   // the first lesson, or when the agent sent none) has nothing to move the
@@ -168,7 +164,7 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     if (!open) return;
     const away = (event: Event) => {
       const target = event.target as Node;
-      if (listRef.current?.contains(target) || wordRef.current?.contains(target)) return;
+      if (listRef.current?.contains(target)) return;
       close(false);
     };
     document.addEventListener("mousedown", away);
@@ -179,7 +175,7 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     };
   }, [open, close]);
 
-  if (!choice) return { word: null, name: null, list: null, open, toggle };
+  if (!choice) return { name: null, list: null, open, toggle };
 
   const on = choice.on ?? null;
   const chosenModel = on?.model ?? choice.pick?.model ?? null;
@@ -289,7 +285,7 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   const label = on ? "The model this session runs on" : "The model this session starts on";
   const list = open ? (
     <div
-      className={`model-list ${place}${room?.below ? " below" : ""}`}
+      className={`model-list${room?.below ? " below" : ""}`}
       ref={listRef}
       style={room ? { maxHeight: room.height } : undefined}
       role="dialog"
@@ -332,22 +328,5 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
     </div>
   ) : null;
 
-  const word = (
-    <button
-      key="model"
-      ref={wordRef}
-      type="button"
-      className={`${place === "rest" ? "clip" : "quiet-act"} model-word${open ? " open" : ""}`}
-      data-drive="model"
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      title={label}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={toggle}
-    >
-      {lineWord(choice)}
-    </button>
-  );
-
-  return { word, name: lineWord(choice), list, open, toggle };
+  return { name: lineWord(choice), list, open, toggle };
 }

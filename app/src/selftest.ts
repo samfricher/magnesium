@@ -292,23 +292,38 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.library = { workspaces: listed.length, first: listed[0]?.name, plan: { items: plan.items.length } };
     if (!listed.some((each) => each.folder === home.folder)) throw new Error("the open folder is not in the library");
 
+    // A session's first line is the lesson's line: it ends in Stuck and More, and Stuck's rows wait for the lesson.
     // Before the first lesson the window has the list: it asked Claude Code as it opened, with no lesson started.
-    // The line names the default a new window took from it, the list has its rows, and Esc closes it.
+    // More's Model row names the default a new window took from it, the list has its rows, and Esc closes it.
+    const front = <T extends Element = HTMLElement>(what: string) => document.querySelector<T>(`.session.in-front ${what}`);
+    const modelRow = () => front('.line-menu [data-drive="model"]');
+    const openModelRow = async (what: string, named: (word: string) => boolean, limit: number) => {
+      let word: string | null = null;
+      await until(what, () => {
+        if (!modelRow()) front('[data-drive="more"]')?.click();
+        // The row ends in "›", for what it opens.
+        word = modelRow()?.querySelector(".line-menu-detail")?.textContent?.replace(/\s*›$/, "") ?? null;
+        return word !== null && named(word);
+      }, limit);
+      return word as string | null;
+    };
     actions.newSession(folder);
-    await until("a new session's model, named from the list the window asked for", () => {
-      const word = document.querySelector('.session.in-front [data-drive="model"]')?.textContent;
-      return word != null && word !== "Default";
-    }, 20_000);
-    const before = document.querySelector<HTMLElement>('.session.in-front [data-drive="model"]')!;
-    const beforeWord = before.textContent;
-    before.click();
+    await until("a new session's first line, ending in Stuck and More", () => front('[data-line="rest"] [data-drive="stuck"]') !== null && front('[data-line="rest"] [data-drive="more"]') !== null, 10_000);
+    front('[data-drive="stuck"]')!.click();
+    await until("Stuck's rows on the first line", () => front('.line-menu [data-drive="hint"]') !== null, 3000);
+    const waiting = [...document.querySelectorAll<HTMLButtonElement>(".session.in-front .line-menu .line-menu-row")].every((row) => row.disabled);
+    press("Escape");
+    await wait(150);
+    const beforeWord = await openModelRow("More's Model row, named from the list the window asked for", (word) => word !== "Default", 20_000);
+    modelRow()!.click();
     await until("the list of models, before any lesson", () => document.querySelectorAll('.session.in-front [data-drive="model-row"]').length > 0, 5000);
     const firstRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
     press("Escape");
     await wait(150);
-    steps.listBeforeLesson = { word: beforeWord, rows: firstRows, closed: document.querySelector(".session.in-front .model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    steps.listBeforeLesson = { word: beforeWord, rows: firstRows, stuckWaits: waiting, closed: front(".model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    if (!waiting) throw new Error("Stuck's rows can be pressed before a lesson has begun");
     if (beforeWord !== "Opus 5.5" || firstRows !== 5) throw new Error(`a new window did not have Claude Code's list before a lesson: ${JSON.stringify(steps.listBeforeLesson)}`);
-    if (document.querySelector(".session.in-front .model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close the list of models: ${JSON.stringify(steps.listBeforeLesson)}`);
+    if (front(".model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close the list of models: ${JSON.stringify(steps.listBeforeLesson)}`);
     actions.run("close-session");
     await until("the unstarted session's tab to close", () => actions.session() === null, 10_000);
 
@@ -353,7 +368,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
           await openMore();
           document.querySelector<HTMLElement>('.session.in-front .line-menu [data-drive="model"]')!.click();
         }
-        await until("the list over the lesson's line", () => document.querySelector(".session.in-front .model-list.lesson") !== null, 3000);
+        await until("the list over the lesson's line", () => document.querySelector(".session.in-front .model-list") !== null, 3000);
         document.querySelector<HTMLElement>(`.session.in-front [data-drive="model-row"][data-value="${value}"]`)!.click();
         await until(`${value} chosen`, () => document.querySelector<HTMLElement>('.session.in-front [data-drive="model-row"].on')?.dataset.value === value, 5000);
         document.querySelector<HTMLElement>(`.session.in-front [data-drive="model-effort"][data-level="${level}"]`)!.click();
@@ -511,12 +526,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
 
-    // A new session's first line names its model and opens the agent's list; Esc gives the keyboard back to the line.
+    // A new session's first line names its model under More and opens the agent's list; Esc gives the keyboard back to the line.
     actions.newSession(folder);
-    await until("a new session's model", () => document.querySelector('.session.in-front [data-drive="model"]') !== null, 10_000);
-    const named = document.querySelector<HTMLElement>('.session.in-front [data-drive="model"]')!;
-    const word = named.textContent;
-    named.click();
+    const word = await openModelRow("a new session's model, under More", () => true, 10_000);
+    modelRow()!.click();
     await until("the list of models", () => document.querySelector(".session.in-front .model-list") !== null, 3000);
     const rows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
     const chosen = document.querySelector<HTMLElement>('.session.in-front [data-drive="model-row"].on')?.dataset.value ?? null;

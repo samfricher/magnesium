@@ -31,7 +31,8 @@ type Props = {
 
 export function LineMenu({ label, rows, opener, onClose }: Props) {
   const menu = useRef<HTMLDivElement>(null);
-  // Over the line, unless the line sits too high on the page for the menu to fit above it.
+  // Over the line, unless the line sits too high on the page for the menu to fit above it. Under a session's
+  // first line, which has the next thing's name above it and the page's empty ground below.
   const [below, setBelow] = useState(false);
   const close = useRef(onClose);
   close.current = onClose;
@@ -41,7 +42,7 @@ export function LineMenu({ label, rows, opener, onClose }: Props) {
     const line = el?.closest(".line");
     if (!el || !line) return;
     const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
-    setBelow(line.getBoundingClientRect().top - top - 16 < el.offsetHeight);
+    setBelow(line.classList.contains("first") || line.getBoundingClientRect().top - top - 16 < el.offsetHeight);
     el.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus();
   }, []);
 

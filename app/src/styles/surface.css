@@ -243,7 +243,6 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .line .field::placeholder { color: var(--quiet); opacity: 1; }
 
 /* The conversation's line: a prompt hung in the margin. */
-.line.rest::before,
 .you.talk::before,
 .aside-line .prompt {
   content: "›";
@@ -614,24 +613,19 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .line-end .keys { color: var(--hint); }
 button.line-end:hover { color: var(--text); }
-.line.rest .field { padding-right: 9rem; }
-
-/* At rest the line is the one action: it has an edge, and its end says what Return does. */
-.line.rest .field { border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
-.line.rest .field:focus { border-bottom-color: var(--ink); }
-.line.rest .line-tools { bottom: 0.35rem; }
-.line.rest .line-end { color: var(--quiet); }
-.line.rest .line-end .keys { color: var(--quiet); }
+/* A session's first line is the lesson's line, under the next thing: its end says what Return does with words typed. */
+.now.rest .line.lesson,
+:root[data-field="soft"] .now.rest .line.lesson { margin-top: 1.6rem; }
+.line.first .line-end { color: var(--quiet); }
+.line.first .line-end .keys { color: var(--quiet); }
 .now > .keys { color: var(--hint); }
 
-/* The model the session runs on: a quiet word among the line's tools, and the
-   agent's list beside the line, its text on the line's column. Under the
-   start line; over the lesson's line, which sits at the foot of the page. */
-.model-word.open,
-.line.lesson .line-tools .model-word.open { color: var(--text); }
+/* The model the session runs on: the agent's list beside the line, its text on
+   the line's column. Over the line, which sits at the foot of a lesson's page;
+   under it where the line sits high, as a session's first line does. */
 .model-list {
   position: absolute;
-  top: calc(100% + 0.6rem);
+  bottom: calc(100% + 0.6rem);
   left: calc(-1 * (1.1rem + var(--hang) + 0.25rem));
   right: -1.1rem;
   z-index: 21;
@@ -643,11 +637,10 @@ button.line-end:hover { color: var(--text); }
   border-radius: 10px;
   box-shadow: var(--shadow);
 }
-.model-list.lesson { top: auto; bottom: calc(100% + 0.6rem); }
-/* Over a line that sits high on a short page there is more room below it. */
-.model-list.lesson.below { top: calc(100% + 0.6rem); bottom: auto; }
+/* Over a line that sits high on the page there is more room below it. */
+.model-list.below { top: calc(100% + 0.6rem); bottom: auto; }
 /* The soft field reaches 18px past the column on each side: the list's text stays on the column. */
-:root[data-field="soft"] .model-list.lesson {
+:root[data-field="soft"] .model-list {
   left: calc(18px - (1.1rem + var(--hang) + 0.25rem));
   right: calc(18px - 1.1rem);
 }

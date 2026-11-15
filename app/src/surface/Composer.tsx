@@ -2,18 +2,21 @@
 //
 // - "rest": under the next thing, before a lesson. Return starts it; words
 //   typed first start it with those words.
-// - "lesson": the one line of a lesson, one row: the learner's words, then two
-//   quiet words, Stuck and More, each opening a short menu over the line. Every message goes the same way, and the record
-//   decides whether it was an answer. Two ways of sending say "this is not an
-//   answer" for sure: ⌥↩, and a message that quotes a passage the learner had
-//   selected. Both go as talk, which code never marks.
+// - "lesson": the one line of a lesson. Every message goes the same way, and
+//   the record decides whether it was an answer. Two ways of sending say
+//   "this is not an answer" for sure: ⌥↩, and a message that quotes a passage
+//   the learner had selected. Both go as talk, which code never marks.
+//
+// Both are the same line, drawn the same way: one row, the learner's words,
+// then two quiet words, Stuck and More, each opening a short menu by the line.
+// Before a lesson there is nothing to be stuck on, so Stuck's rows wait for it.
 //
 // The line takes files too: Attach opens a picker for photos and PDFs, and a
 // file dropped on the session or an image pasted in joins it. Each shows on
 // the line by its name, can be taken off, and goes with the next message.
 //
-// The session adds its own tools: at rest a word before Attach, in a lesson rows
-// under More. Either way, what the tool opens sits beside the line.
+// The session adds its own rows under More, and what a row opens sits beside
+// the line.
 
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -106,11 +109,9 @@ type Props = {
   placeholder?: string;
   /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
   end?: { keys: string; what: string } | null;
-  /** At rest, a tool before Attach. */
-  tool?: ReactNode;
-  /** What the session's tool opens, placed beside the line. */
+  /** What a session's row under More opens, placed beside the line. */
   toolBeside?: ReactNode;
-  /** In a lesson, the session's rows under More, after the line's own. */
+  /** The session's rows under More, after the line's own. */
   more?: LineRow[];
   /** What a session's row opened is open: More reads as open while it is. */
   moreHeld?: boolean;
@@ -152,29 +153,12 @@ export const Composer = memo(
     const stuckRef = useRef<HTMLButtonElement>(null);
     const moreRef = useRef<HTMLButtonElement>(null);
     const box = useRef<HTMLTextAreaElement>(null);
-    const restRef = useRef<HTMLDivElement>(null);
     const length = useRef(props.initial.length);
     const caretAt = useRef<number | null>(null);
     const latest = useRef(props);
     latest.current = props;
     const held = useRef({ text, quote, files });
     held.current = { text, quote, files };
-
-    // At rest the tools sit over the end of the field, and their words vary
-    // (the model's name, "↩ start"): the field's words stop short of them.
-    useLayoutEffect(() => {
-      const line = restRef.current;
-      const tools = line?.querySelector<HTMLElement>(".line-tools");
-      const field = box.current;
-      if (!line || !tools || !field) return;
-      const fit = () => {
-        field.style.paddingRight = `${Math.ceil(tools.getBoundingClientRect().width) + 16}px`;
-      };
-      fit();
-      const watch = new ResizeObserver(fit);
-      watch.observe(tools);
-      return () => watch.disconnect();
-    }, [props.place]);
 
     // The line grows with what is typed. It is measured only when it may have
     // to grow, or after text was taken away, so most keys cost one read.
@@ -394,50 +378,18 @@ export const Composer = memo(
     };
     const keep_ = (event: React.MouseEvent) => event.preventDefault();
 
-    if (place === "rest") {
-      return (
-        <div className={`line rest${props.active ? " on" : ""}${text.trim() !== "" ? " typed" : ""}`} data-line="rest" ref={restRef}>
-          <div className="field-row">
-            <textarea
-              ref={box}
-              className="field"
-              data-drive="composer"
-              aria-label="Start, or say what to work on"
-              rows={1}
-              value={text}
-              spellCheck
-              placeholder={props.placeholder ?? ""}
-              onChange={(event) => change(event.target.value)}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-            />
-            <span className="line-tools">
-              {props.tool}
-              <button type="button" className="clip" data-drive="attach" aria-label="Attach a photo or PDF" title="Attach a photo or PDF" onMouseDown={keep_} onClick={() => void pick()}>
-                Attach
-              </button>
-              {/* With words on the line, its end says what Return does with them. */}
-              {text.trim() !== "" && props.end && (
-                <span className="line-end" aria-hidden="true">
-                  <span className="keys">{props.end.keys}</span> {props.end.what}
-                </span>
-              )}
-            </span>
-          </div>
-          {props.toolBeside}
-        </div>
-      );
-    }
-
     const key = (action: KeyAction) => props.keyFor?.(action) || undefined;
     const closeMenu = (back: boolean) => {
       setMenu(null);
       if (back) box.current?.focus({ preventScroll: true });
     };
+    const rest = place === "rest";
+    // Help is about the lesson's work: its rows wait while the tutor writes, and before a lesson has begun.
+    const noHelp = props.busy || rest;
     const stuckRows: LineRow[] = [
-      { id: "hint", label: "Hint", keys: key("hint"), group: "help", disabled: props.busy, run: () => help(HELP.hint) },
-      { id: "help", label: "Help me", keys: key("lost"), group: "help", disabled: props.busy, run: () => help(HELP.lost) },
-      { id: "dont-know", label: "I don’t know", keys: key("unknown"), group: "help", disabled: props.busy, run: () => help(HELP.unknown) },
+      { id: "hint", label: "Hint", keys: key("hint"), group: "help", disabled: noHelp, run: () => help(HELP.hint) },
+      { id: "help", label: "Help me", keys: key("lost"), group: "help", disabled: noHelp, run: () => help(HELP.lost) },
+      { id: "dont-know", label: "I don’t know", keys: key("unknown"), group: "help", disabled: noHelp, run: () => help(HELP.unknown) },
     ];
     const moreRows: LineRow[] = [
       // Said for sure to be no answer: only while a task is open, words are typed, and no passage is quoted (which is never an answer).
@@ -470,11 +422,18 @@ export const Composer = memo(
           <span className="keys">{props.stopKey ?? "esc"}</span> {props.stopWords ?? "stop the reply"}
         </button>,
       );
-    if (props.onHelp) tools.push(word("stuck", "Stuck", stuckRef));
+    // Before a lesson, with words on the line, its end says what Return does with them.
+    if (rest && text.trim() !== "" && props.end)
+      tools.push(
+        <span key="end" className="line-end" aria-hidden="true">
+          <span className="keys">{props.end.keys}</span> {props.end.what}
+        </span>,
+      );
+    if (props.onHelp || rest) tools.push(word("stuck", "Stuck", stuckRef));
     tools.push(word("more", "More", moreRef, props.moreHeld));
 
     return (
-      <div className={`line lesson${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line="lesson">
+      <div className={`line lesson${rest ? " first" : ""}${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line={place}>
         {quote !== null && (
           <p className="quote" title="⌫ on an empty line takes it off">
             “{quote}”
@@ -496,7 +455,7 @@ export const Composer = memo(
             ref={box}
             className="field"
             data-drive="composer"
-            aria-label={quote !== null ? "Say something about the passage" : props.taskOpen ? "Your answer, or anything else to say" : "Say something to the tutor"}
+            aria-label={rest ? "Start, or say what to work on" : quote !== null ? "Say something about the passage" : props.taskOpen ? "Your answer, or anything else to say" : "Say something to the tutor"}
             rows={1}
             value={text}
             spellCheck

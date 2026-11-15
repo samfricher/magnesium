@@ -50,6 +50,8 @@ const shots = [
   ["panel-narrow", "panel", 400, { width: 720, height: 560 }],
   // The lesson's line: Stuck · More with a task open, each menu open, More while typing, symbols, a file on the line.
   ["help-row", "help-row", 300],
+  ["first-stuck", "first-stuck", 300],
+  ["first-more", "first-more", 300],
   ["line-stuck", "line-stuck", 300],
   ["line-more", "line-more", 300],
   ["line-more-typing", "line-more-typing", 300],

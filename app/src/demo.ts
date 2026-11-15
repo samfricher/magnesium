@@ -683,9 +683,17 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "model-asking":
       actions.newSession(FOLDER);
       await wait(300);
-      document.querySelector<HTMLElement>("[data-drive='model']")?.click();
+      document.querySelector<HTMLElement>(".line.lesson [data-drive='more']")?.click();
+      await wait(100);
+      document.querySelector<HTMLElement>(".line-menu [data-drive='model']")?.click();
       await wait(150);
       if (has("model-older")) document.querySelector<HTMLElement>("[data-drive='model-older']")?.click();
+      return wait(150);
+    case "first-stuck":
+    case "first-more":
+      actions.newSession(FOLDER);
+      await wait(300);
+      document.querySelector<HTMLElement>(`.line.lesson [data-drive='${has("first-stuck") ? "stuck" : "more"}']`)?.click();
       return wait(150);
     case "line-stuck":
       await answered(actions);
