@@ -384,12 +384,12 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 0.5rem 0.9rem;
   margin: 0.2rem 0 0.4rem;
   padding: 0.6rem 0.7rem;
-  border: 1px solid var(--faint);
-  border-radius: 6px;
+  border-radius: 10px;
+  background: var(--tint);
 }
 .colour-picker .swatches { flex-wrap: wrap; }
 .colour-picker .plain { font: 400 0.765rem/1.5 var(--app); margin-left: 0; }
-.text-field.hex { min-width: 0; width: 5.5rem; font-variant-numeric: tabular-nums; }
+.text-field.hex { min-width: 0; width: 5.5rem; font-size: 0.765rem; font-variant-numeric: tabular-nums; }
 .sample { margin: 0.6rem 0 0.6rem 10.2rem; padding: 0; font-size: 1rem; line-height: 1.62; color: var(--text); }
 .sample sub { font-size: 0.68em; }
 .sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
