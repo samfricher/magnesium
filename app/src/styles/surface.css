@@ -704,7 +704,7 @@ button.line-end:hover { color: var(--text); }
 .model-fold .row-label,
 .model-back .row-label { font: 400 0.824rem/1.5 var(--app); color: var(--quiet); }
 .model-fold .row-hint { color: var(--quiet); }
-.model-note { margin: 0.45rem 1.1rem 0.15rem calc(1.1rem + var(--hang) + 0.25rem); font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
+.model-note { margin: 0.45rem 1.1rem 0.15rem calc(1.1rem + var(--hang) + 0.25rem); font: 400 0.765rem/1.55 var(--app); color: var(--quiet); text-wrap: balance; }
 /* A change Claude Code turned down: in the text's colour, so it is not skimmed past. */
 .model-note[role="alert"] { color: var(--text); }
 :root[data-input="key"] .model-list .row:focus-visible { outline: none; background: var(--tint); }

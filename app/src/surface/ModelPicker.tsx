@@ -27,7 +27,8 @@ export function rowFor(models: ModelOption[], model: string): ModelOption | null
   return matches.find((row) => row.current && row.value !== "default") ?? matches.find((row) => row.value === "default") ?? matches[0] ?? null;
 }
 
-const withEffort = (name: string, effort?: string | null) => (effort ? `${name} · ${effortWord(effort)}` : name);
+// No-break spaces: a model and its effort are one name, never split across lines ("Opus 4.6 /· Low").
+const withEffort = (name: string, effort?: string | null) => (effort ? `${name}\u00a0·\u00a0${effortWord(effort)}` : name);
 
 /** What the start line names: the model a session started now runs on, and its effort when one was picked. */
 export function startWord(choice: ModelChoice): string {
@@ -196,7 +197,8 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       setProblem(null);
     } catch (error) {
       // Said in the list's own names first; Claude Code's reason, which may carry a model's id, after it.
-      const asked = withEffort(rowFor(choice.models, model)?.name ?? model, effort);
+      // The name asked for is kept on one line: "Opus 4.6 · Low" read wrong broken at any of its spaces.
+      const asked = withEffort(rowFor(choice.models, model)?.name ?? model, effort).replace(/ /g, "\u00a0");
       const why = String(error)
         .replace(/^Error: /, "")
         .replace(/^Claude Code did not change the (model|effort):\s*/, "")
