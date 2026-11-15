@@ -403,6 +403,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .key-cap:hover { background: var(--tint); }
 .key-cap.listening { color: var(--ink); border-color: var(--ink); background: none; }
+/* An action with no key says "none" in the quiet grey, not in a shortcut's colour. */
+.key-cap.unset { color: var(--quiet); }
 .key-cap.static { display: inline; min-width: 0; cursor: default; padding: 0; margin: 0; border: 0; color: var(--quiet); }
 .key-row { padding: 0.28rem 0; }
 /* A key's name is a phrase ("Fit the document to the panel"): its column is wider than a setting's, so it stays on one line. */

@@ -253,7 +253,7 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
         <button
           type="button"
           ref={button}
-          className={listening ? "key-cap listening" : "key-cap"}
+          className={listening ? "key-cap listening" : props.combo === "none" || !keyName(props.combo) ? "key-cap unset" : "key-cap"}
           aria-label={`${props.what}: ${listening ? "press the new keys" : keyName(props.combo) || "no key"}. Choose to change it.`}
           onClick={() => {
             setSaid(null);
