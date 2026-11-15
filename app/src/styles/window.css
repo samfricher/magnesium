@@ -230,6 +230,9 @@ button.home-row:focus:hover { background: var(--tint); }
 
 .page-acts { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; margin: 0.8rem 0 0; }
 .home-page .page-acts { margin-top: 2.2rem; }
+/* A section that ends in its actions keeps the room a row leaves under it, so the gap to the next section's name is
+   the same after a list and after actions. */
+section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .quiet-act {
   font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
