@@ -505,7 +505,12 @@ export function WorkspacePage(props: Props) {
           ) : record === null ? (
             <p className="page-note">The record could not be read.</p>
           ) : work.length === 0 ? (
-            <p className="page-note">{record.progress.message ? withoutPaths(record.progress.message) : "Nothing marked yet. Each skill you answer on is kept here."}</p>
+            <p className="page-note">
+              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
+              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
+                ? withoutPaths(record.progress.message)
+                : "Nothing marked yet. Each skill you answer on is kept here."}
+            </p>
           ) : (
             <div className="list" role="list">
               {work.map(({ row, last }) => (
