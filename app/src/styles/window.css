@@ -216,12 +216,15 @@ button.home-row:focus:hover { background: var(--tint); }
 /* Home's first row: the most recent session, Return away. */
 .home-first { margin-bottom: 1.6rem; }
 .home-row.first {
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) max-content;
   padding-top: 0.55rem;
   padding-bottom: 0.55rem;
 }
 .home-row.first .next-name { font-size: 1.235rem; line-height: 1.35; white-space: normal; }
-.home-row.first .row-key { font: 400 0.824rem/1 var(--app); color: var(--quiet); padding-left: 0.2rem; visibility: hidden; }
+/* The ↩ hangs past the column, as the learner's "›" hangs before it, so this row's date ends on the edge the
+   dates under it end on. Set on the first line's baseline. */
+.home-row.first .row-key { position: absolute; left: calc(100% + 0.55rem); top: 1.2rem; font: 400 0.824rem/1 var(--app); color: var(--quiet); visibility: hidden; }
 /* Return carries on from the row that has the focus: its mark goes with the focus. */
 .home-row.first:focus .row-key { visibility: visible; }
 
