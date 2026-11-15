@@ -846,7 +846,9 @@ button.line-end:hover { color: var(--text); }
   cursor: default;
 }
 .line-menu-row:hover:not(:disabled) { background: var(--tint); }
-.line-menu-row:disabled { color: var(--off); }
+.line-menu-row:disabled,
+.line-menu-row:disabled .line-menu-key,
+.line-menu-row:disabled .line-menu-detail { color: var(--off); }
 /* A rule between groups, on the labels' column, as light as the menu's own edge. */
 .line-menu-row.parted { margin-top: 0.55rem; }
 .line-menu-row.parted::before {
