@@ -605,7 +605,7 @@ dialog.layer::backdrop { background: transparent; }
 /* The step in hand: its mark in the ink. */
 .panel-items li.current .panel-items.steps li.current .panel-mark { color: var(--ink); }
 /* The steps' marks: one size and one width, in the column the items' marks use. */
-.panel-items.steps .panel-mark { font: 400 0.765rem/1 var(--app); text-align: center; width: 0.8rem; }
+.panel-items.steps .panel-mark { font: 400 0.765rem/1 var(--app); }
 
 /* Small quiet actions show the keyboard's place by an ink underline, as a chosen word is marked; no ring. */
 :root[data-input="key"] .quiet-act:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
