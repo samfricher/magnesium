@@ -308,8 +308,10 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       {older ? (
         <>
           <button type="button" className="row model-back" data-nav data-drive="model-current" onClick={() => setOlder(false)}>
-            <span className="row-mark" aria-hidden="true" />
-            <span className="row-label">‹ Current models</span>
+            <span className="row-mark" aria-hidden="true">
+              ‹
+            </span>
+            <span className="row-label">Current models</span>
           </button>
           <div role="group" aria-label="Older models">
             {earlier.map(modelRow)}
