@@ -100,6 +100,23 @@ Each answer the tutor marks, in chat or on a paper, is kept as its own row: the 
 
 Add `--json` for the rows as data. They are also in an export.
 
+In the study window, only what you write in the open task is sent as an answer. Anything else you write is talk: a question, a change to the plan, something off the plan. The window says so at the start of the message, and the runtime refuses to mark a message sent that way, so talk is never counted, whichever engine runs the lesson.
+
+## See the lesson you are in
+
+From the study folder, `magnesium lesson` prints the lesson you were last in: its goal, its steps, whether learning and recording are on, and the task open now, in the tutor's words, for example:
+
+```text
+Factorising quadratics
+    active, learning on, recording on. Last changed 2026-11-15 16:40.
+  [x] Find two numbers that multiply to c
+  [>] Write the factors
+Open task, posed 2026-11-15 16:40:
+Factorise x² + 7x + 12.
+```
+
+A task is open from the reply that set it until an answer to it is marked. A quick check counts as open once a reply poses it. Add `--json` for the same as data, and `--conversation <id>` for the lesson of one Claude Code conversation. The study window reads it there after each turn. The command changes nothing in the folder.
+
 ## See how far each skill is proved
 
 `magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new. It counts each skill at the most passes it has held, so it never falls when you miss either. The dots still show the passes you hold now: a miss after a pass starts that skill's passes again. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. For example:
