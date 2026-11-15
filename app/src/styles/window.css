@@ -402,6 +402,8 @@ input[type="range"]::-webkit-slider-thumb {
 .key-cap.listening { color: var(--ink); border-color: var(--ink); background: none; }
 .key-cap.static { display: inline; min-width: 0; cursor: default; padding: 0; margin: 0; border: 0; color: var(--quiet); }
 .key-row { padding: 0.28rem 0; }
+/* A key's name is a phrase ("Fit the document to the panel"): its column is wider than a setting's, so it stays on one line. */
+.setting.key-row { grid-template-columns: 13.5rem minmax(0, 1fr); }
 .fixed-keys { margin: 0.9rem 0 0; font: 400 0.765rem/1.9 var(--app); color: var(--quiet); }
 .fixed-keys p { margin: 0; }
 
