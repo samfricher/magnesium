@@ -502,7 +502,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .take-off { padding: 0 0.4rem; color: var(--hint); font: inherit; }
 .take-off:hover { color: var(--text); }
-.symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.75rem, 1fr)); gap: 2px; margin: 0.35rem -0.35rem 0; }
+.symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.75rem, 1fr)); gap: 2px; margin: 0.35rem -0.55rem 0; }
 .symbol {
   min-width: 1.75rem;
   padding: 0.05rem 0.35rem;
