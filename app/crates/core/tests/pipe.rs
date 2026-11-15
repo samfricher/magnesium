@@ -557,6 +557,50 @@ fn a_usage_limit_is_one_plain_line() {
 }
 
 #[test]
+fn a_sign_in_that_ran_out_is_a_notice_and_never_the_tutors_reply() {
+    let bench = Bench::new(&[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(true).unwrap();
+    manager.send("first").unwrap();
+    assert!(ended_well(&events.turn_end()));
+    events.take_text();
+    let folder = bench.folder.canonicalize().unwrap();
+    let session = manager.store().folder(&folder).session_id.unwrap();
+
+    manager
+        .send_with("EXPIRED answer", Some(mg_core::agent::Intent::Answer))
+        .unwrap();
+    let end = events.turn_end();
+    assert!(
+        matches!(
+            end,
+            AgentEvent::TurnEnded {
+                ok: false,
+                interrupted: false,
+                error: None,
+            }
+        ),
+        "{end:?}"
+    );
+    assert!(
+        events
+            .seen
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Notice { kind: NoticeKind::SignIn, text } if text.contains("signed out"))),
+        "{:#?}",
+        events.seen
+    );
+    // Claude Code's line is not the tutor's words, on screen or kept, and
+    // the message that reached no tutor is not kept as a turn.
+    let shown = format!("{:?}", events.seen);
+    assert!(!shown.contains("Failed to authenticate"), "{shown}");
+    assert_eq!(events.take_text(), "");
+    let turns = manager.store().turns(&folder, &session);
+    assert_eq!(turns.len(), 1, "{turns:#?}");
+    assert_eq!(turns[0].learner, "first");
+}
+
+#[test]
 fn a_program_that_is_missing_gives_a_plain_message() {
     let bench = Bench::new(&[]);
     let (sender, _receiver) = channel::<AgentEvent>();

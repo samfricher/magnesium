@@ -984,7 +984,9 @@ impl Manager {
                     buffer.writing.clear();
                     buffer.tutor.push(text.clone());
                 }
-                AgentEvent::TurnEnded { interrupted, .. } => {
+                AgentEvent::TurnEnded {
+                    ok, interrupted, ..
+                } => {
                     let mut buffer = lock(&buffer);
                     let unfinished = std::mem::take(&mut buffer.writing);
                     if !unfinished.trim().is_empty() {
@@ -993,11 +995,19 @@ impl Manager {
                     let tutor = buffer.tutor.join("\n\n");
                     let learner = std::mem::take(&mut buffer.learner);
                     buffer.tutor.clear();
-                    if std::mem::take(&mut buffer.typed) && !learner.trim().is_empty() {
+                    // A message whose reply failed before its first word
+                    // reached no tutor. The window gives it back to the
+                    // line; kept as a turn, an answer sent while signed out
+                    // closed its task when the session was opened again.
+                    let unanswered = !*ok && !*interrupted && tutor.trim().is_empty();
+                    if std::mem::take(&mut buffer.typed)
+                        && !learner.trim().is_empty()
+                        && !unanswered
+                    {
                         store.count_turn(study::today());
                     }
                     let intent = buffer.intent.take();
-                    if let Some(session) = buffer.session.clone() {
+                    if let Some(session) = buffer.session.clone().filter(|_| !unanswered) {
                         if !tutor.trim().is_empty() || !learner.trim().is_empty() {
                             let ms = Local::now().timestamp_millis();
                             store.append_turn(

@@ -537,6 +537,54 @@ fn stop_part_way(manager: &Manager, events: &mut Events, words: &str) {
 }
 
 #[test]
+fn a_sign_in_that_ran_out_is_a_notice_and_the_answer_is_not_kept() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    let folder = bench.folder.canonicalize().unwrap();
+    let session = manager.store().folder(&folder).session_id.unwrap();
+    events.seen.clear();
+
+    manager
+        .send_with("EXPIRED b = -5", Some(Intent::Answer))
+        .unwrap();
+    let end = events.turn_end();
+    assert!(
+        matches!(
+            end,
+            AgentEvent::TurnEnded {
+                ok: false,
+                interrupted: false,
+                error: None,
+            }
+        ),
+        "{end:?}"
+    );
+    assert!(
+        events.seen.iter().any(
+            |e| matches!(e, AgentEvent::Notice { kind: NoticeKind::SignIn, text } if text.contains("signed out"))
+        ),
+        "{:#?}",
+        events.seen
+    );
+    // Claude Code's line is not the tutor's words, while it is written or
+    // once it is whole; nothing is marked, and the answer is not a turn.
+    let shown = format!("{:?}", events.seen);
+    assert!(!shown.contains("Failed to authenticate"), "{shown}");
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    let turns = manager.store().turns(&folder, &session);
+    assert_eq!(turns.len(), 1, "{turns:#?}");
+
+    // Sent again, signed in, it is the answer to the task still open.
+    events.seen.clear();
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(bench.attempts().len(), 1, "{:#?}", bench.attempts());
+}
+
+#[test]
 fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();

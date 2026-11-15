@@ -14,6 +14,8 @@ What a turn does is chosen by words in the learner's message (inside
   NOBLOCK      reply with no record block; the hidden request then gets one
   NEVERBLOCK   reply with no record block, and none when asked again
   SLOW         write slowly, so the reply can be interrupted
+  EXPIRED      the sign-in ran out: Claude Code's own line comes in the
+               reply's place, as 2.1.322 sent it on 2026-11-15
   BACK         (or the window's "I'm back") pose quick check 1 when the
                state lists one or says it is still due, or else the first
                paper redo it lists
@@ -574,6 +576,14 @@ def turn(content):
     state = state.group(1) if state else ""
     log("message", {"learner": learner, "state": state})
     init()
+    if "EXPIRED" in learner:
+        said = "Failed to authenticate: OAuth session expired and could not be refreshed"
+        emit({"type": "assistant", "session_id": session, "parent_tool_use_id": None,
+              "message": {"id": "synthetic-1", "model": "<synthetic>", "content": [{"type": "text", "text": said}]},
+              "error": "authentication_failed", "is_api_error_message": True, "api_error_status": 401})
+        emit({"type": "result", "subtype": "success", "is_error": True, "api_error_status": 401, "result": said,
+              "session_id": session})
+        return
     last_kind[0] = None
     reply, slow = reply_for(learner, state)
     posed = re.search(r"<record>\n(.*)\n</record>", reply, re.S)

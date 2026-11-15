@@ -543,6 +543,53 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!probe?.task?.includes("3 + 3")) throw new Error(`a reopened session did not have the task it was left with: ${JSON.stringify(steps.reopenedTask)}`);
     if (afterAnswer !== null) throw new Error(`a task answered in a reopened session stayed open: ${JSON.stringify(steps.reopenedTask)}`);
     if (!nextTask?.includes("5 + 5")) throw new Error(`the task posed in a reopened session is not the open one: ${JSON.stringify(steps.reopenedTask)}`);
+
+    // Claude Code's sign-in runs out while the lesson is open. An answer sent then reaches no tutor: Claude Code's
+    // own line for it is not drawn or kept as the tutor's reply, the answer is back on the line, its task stays
+    // open, and Home asks for the sign-in. Signed in from the notice, Return sends the answer.
+    const keptTurns = async () => (await api.lessonTurns(folder, sessions[0].session)).length;
+    const keptBefore = await keptTurns();
+    const lessonLine = () => document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+    lessonLine().focus();
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(lessonLine(), "EXPIRED 10");
+    lessonLine().dispatchEvent(new Event("input", { bubbles: true }));
+    lessonLine().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await until("the notice that Claude Code is signed out", () => actions.session()?.probe().busy === false && session().notices.some((notice) => notice.kind === "sign_in"), 15_000);
+    await wait(300);
+    const signedOut = {
+      shownAsReply: document.querySelector(".session.in-front .now.lesson")?.textContent?.includes("Failed to authenticate") ?? true,
+      onLine: lessonLine().value,
+      task: actions.session()?.probe().task ?? null,
+      kept: (await keptTurns()) - keptBefore,
+      signIn: document.querySelector('.session.in-front [data-drive="sign-in"]') !== null,
+      home: "",
+    };
+    const lessonTab = actions.active();
+    actions.run("home");
+    await until("Home to ask for the sign-in", () => document.querySelector('[data-page="home"] .page-next')?.textContent?.includes("Sign in") === true, 10_000).catch(() => {});
+    signedOut.home = document.querySelector('[data-page="home"] .page-next')?.textContent ?? "";
+    actions.run("tab", lessonTab);
+    await until("the session in front again", () => actions.active() === lessonTab, 3000);
+    steps.signedOut = signedOut;
+    if (signedOut.shownAsReply) throw new Error("Claude Code's line for a sign-in that ran out was drawn in the lesson");
+    if (signedOut.onLine !== "EXPIRED 10") throw new Error(`an answer that reached no tutor is not back on the line: ${JSON.stringify(signedOut)}`);
+    if (!signedOut.task?.includes("5 + 5")) throw new Error(`an answer that reached no tutor closed its task: ${JSON.stringify(signedOut)}`);
+    if (signedOut.kept !== 0) throw new Error(`an answer that reached no tutor was kept as a turn: ${JSON.stringify(signedOut)}`);
+    if (!signedOut.signIn) throw new Error("the notice that Claude Code is signed out has no Sign in");
+    if (!signedOut.home.includes("Sign in")) throw new Error(`Home still took Claude Code as signed in: ${signedOut.home}`);
+    document.querySelector<HTMLElement>('.session.in-front [data-drive="sign-in"]')!.click();
+    let signedIn = false;
+    for (let tries = 0; tries < 100 && !signedIn; tries++) {
+      signedIn = (await api.account()).signed_in;
+      if (!signedIn) await wait(150);
+    }
+    if (!signedIn) throw new Error("Sign in on the notice did not start Claude Code's sign-in");
+    lessonLine().focus();
+    lessonLine().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await until("the reply to the answer sent again", () => idle() && session().live?.learner === "EXPIRED 10" && (session().live?.done.join(" ").includes("You said") ?? false), 15_000);
+    const sentAgain = { kept: (await keptTurns()) - keptBefore, task: actions.session()?.probe().task ?? null, onLine: lessonLine().value };
+    steps.sentAgain = sentAgain;
+    if (sentAgain.kept !== 1 || sentAgain.task !== null || sentAgain.onLine !== "") throw new Error(`the answer sent again after the sign-in was not taken as one answer: ${JSON.stringify(sentAgain)}`);
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
 

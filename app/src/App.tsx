@@ -543,6 +543,15 @@ export function App() {
   onEventRef.current = (event: AgentEvent) => {
     const key = now.current.liveKey;
     if (key) handles.current[key]?.event(event);
+    // Claude Code was asked whether it is signed in when the window opened. A lesson that says it is signed out
+    // knows better: ask again, so Home and Settings stop saying it is signed in.
+    if (event.type === "notice" && event.kind === "sign_in") {
+      const { api } = now.current;
+      void api?.account().then((account) => {
+        const { setup } = now.current;
+        if (setup) setSetup({ ...setup, account });
+      }, () => {});
+    }
   };
 
   const claim = useCallback((key: string) => {
@@ -600,6 +609,12 @@ export function App() {
     });
   }, []);
   const onEngine = useCallback(() => void loadEngine(), [loadEngine]);
+  const onSignIn = useCallback(() => {
+    void now.current.api?.signIn().then(
+      () => setSigningIn(true),
+      (problem) => note(String(problem)),
+    );
+  }, [note]);
 
   // ---------------------------------------------------------------------------
   // The menu bar: what it holds follows the window, and a choice runs the same command
@@ -964,6 +979,7 @@ export function App() {
                 onBusy={onBusy}
                 onAsking={onAsking}
                 onEngine={onEngine}
+                onSignIn={onSignIn}
                 panelWidth={panelWidth}
                 onPanelWidth={onPanelWidth}
                 onShowPanel={onShowPanel}

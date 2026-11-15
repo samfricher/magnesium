@@ -594,6 +594,7 @@ impl Store {
         };
         text.lines()
             .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
+            .filter(|turn| !reached_no_tutor(turn))
             .collect()
     }
 
@@ -605,7 +606,7 @@ impl Store {
         let mut turns: Vec<Turn> = text
             .lines()
             .filter_map(|line| serde_json::from_str::<Turn>(line).ok())
-            .filter(|turn| turn.session == session)
+            .filter(|turn| turn.session == session && !reached_no_tutor(turn))
             .collect();
         let extra = turns.len().saturating_sub(400);
         turns.drain(..extra);
@@ -648,6 +649,18 @@ impl Store {
         }
         turns
     }
+}
+
+/// A turn a window before 2026-11-15 kept for a message that reached no
+/// tutor: Claude Code was signed out, and its own line saying so was kept as
+/// the reply. Such a turn is no longer kept, and one kept then is left out
+/// when the turns are read: drawn again, it showed that line as the tutor's
+/// words and closed the task the message answered.
+fn reached_no_tutor(turn: &Turn) -> bool {
+    let reply = turn.tutor.trim();
+    reply.starts_with("Failed to authenticate")
+        || reply.starts_with("Invalid API key ·")
+        || reply.starts_with("Not logged in ·")
 }
 
 /// Add one line of JSON to the end of a file of the window's own, making its
@@ -780,6 +793,30 @@ mod tests {
         assert_eq!(turns[0].intent, Some(Intent::Answer));
         assert_eq!(turns[0].task.as_deref(), Some("What is b?"));
         assert!(turns[0].posed && turns[0].noted);
+    }
+
+    #[test]
+    fn a_turn_kept_for_a_message_sent_while_signed_out_is_not_read_back() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let turn = |ms: i64, tutor: &str| Turn {
+            session: "abc".into(),
+            ms,
+            learner: "6".into(),
+            tutor: tutor.into(),
+            intent: Some(Intent::Answer),
+            ..Turn::default()
+        };
+        store.append_turn(folder.path(), &turn(1, "**Your turn.** What is 3 + 3?"));
+        // As a window before 2026-11-15 kept them, twice in one session.
+        let said = "Failed to authenticate: OAuth session expired and could not be refreshed";
+        store.append_turn(folder.path(), &turn(2, said));
+        store.append_turn(folder.path(), &turn(3, said));
+        let turns = store.turns(folder.path(), "abc");
+        assert_eq!(turns.len(), 1, "{turns:#?}");
+        assert_eq!(turns[0].ms, 1);
+        assert_eq!(store.all_turns(folder.path()).len(), 1);
     }
 
     #[test]
