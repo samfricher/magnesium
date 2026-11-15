@@ -925,6 +925,45 @@ fn a_list_that_does_not_come_leaves_the_pick_alone_and_the_session_keeps_the_mod
 }
 
 #[test]
+fn the_list_is_asked_for_without_a_lesson_and_no_message_is_sent() {
+    let bench = Bench::new(&[]);
+    let (manager, _events) = bench.manager();
+    assert!(manager.models().models.is_empty());
+    let choice = manager.ask_models();
+    assert_eq!(choice.models.len(), 7);
+    assert!(!choice.failed);
+    // A new window takes the agent's default from the list, as it does from a lesson's.
+    assert_eq!(choice.pick.unwrap().model, "claude-opus-5-5");
+    // The agent was started in no study folder, was sent the one request, and no words.
+    let starts = bench.logged("start");
+    assert_eq!(starts.len(), 1);
+    assert_ne!(
+        Path::new(starts[0]["cwd"].as_str().unwrap())
+            .canonicalize()
+            .ok(),
+        bench.folder.canonicalize().ok()
+    );
+    let received = bench.logged("received");
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0]["request"]["subtype"], "initialize");
+    // Asked again at once, the list just kept is given back and no agent is started.
+    assert_eq!(manager.ask_models().models.len(), 7);
+    assert_eq!(bench.logged("start").len(), 1);
+    // The window keeps it: a window opened later has it before it asks.
+    let later = Store::at(bench.home.clone());
+    assert_eq!(later.models().models.len(), 7);
+}
+
+#[test]
+fn asked_without_a_lesson_an_agent_with_no_list_is_noted_and_the_pick_is_left_alone() {
+    let bench = Bench::new(&[("STAND_IN_NO_MODELS", "1")]);
+    let (manager, _events) = bench.manager();
+    let choice = manager.ask_models();
+    assert!(choice.failed && choice.models.is_empty());
+    assert_eq!(choice.pick, None);
+}
+
+#[test]
 fn a_new_lesson_that_never_opens_the_record_says_so_at_any_effort() {
     let bench = Bench::new(&[]);
     let (manager, mut events) = bench.manager();

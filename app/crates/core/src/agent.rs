@@ -250,6 +250,11 @@ pub trait Harness: Send + Sync {
     /// maker's page in the browser, and the window sees nothing typed there.
     /// It returns while the sign-in waits; `account` then shows the result.
     fn sign_in(&self, payment: Payment) -> AgentResult<()>;
+    /// The agent's list of models, asked without a lesson: of an agent
+    /// started for that alone and sent no message. None when it has no list.
+    fn models(&self, _payment: Payment) -> AgentResult<Option<Vec<crate::models::ModelOption>>> {
+        Err(AgentError("This agent does not list its models.".into()))
+    }
 }
 
 /// One running conversation with the tutor.

@@ -4,10 +4,11 @@
 // Code at once and holds from its next request to the model. Either way it
 // becomes the pick new sessions start on.
 //
-// The list is the one Claude Code sent when the last lesson started, kept by
-// the window: Magnesium keeps no list of models of its own and adds nothing to
-// what the agent says about each one. What a running session is on is asked of
-// Claude Code each time the list opens, not remembered by the page.
+// The list is the one Claude Code last sent, kept by the window: Magnesium
+// keeps no list of models of its own and adds nothing to what the agent says
+// about each one. The window asks for it as it opens; a tab that finds none
+// kept asks again, and so does opening the list. What a running session is on
+// is asked of Claude Code each time the list opens, not remembered by the page.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -83,10 +84,24 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   const where = useRef(at);
   where.current = at;
 
+  // No list kept: Claude Code is asked for it now, with no lesson started and no message sent.
+  const [asking, setAsking] = useState(false);
+  const asked = useRef(false);
   const read = useCallback(() => {
     api
       .sessionModels(where.current)
-      .then(setChoice)
+      .then((now) => {
+        setChoice(now);
+        if (now.models.length > 0 || asked.current) return;
+        asked.current = true;
+        setAsking(true);
+        api
+          .askModels()
+          .then(() => api.sessionModels(where.current))
+          .then(setChoice)
+          .catch(() => {})
+          .finally(() => setAsking(false));
+      })
       .catch(() => setChoice(null));
   }, [api]);
   // Read again when the tab's session gets its id, or starts or stops running here.
@@ -105,17 +120,19 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   const toggle = useCallback(() => {
     if (open) close(true);
     else {
+      // Opening the list asks again for one that did not come.
+      if (!asking) asked.current = false;
       read();
       setOpen(true);
     }
-  }, [open, close, read]);
+  }, [open, close, read, asking]);
 
   // The keyboard goes to the chosen row when the list opens, or its first.
   useLayoutEffect(() => {
     if (!open) return;
     const list = listRef.current;
     (list?.querySelector<HTMLElement>("[data-nav].on") ?? list?.querySelector<HTMLElement>("[data-nav]"))?.focus();
-  }, [open, older, choice === null]);
+  }, [open, older, choice === null, choice?.models.length]);
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -255,13 +272,8 @@ export function useModelPicker({ api, at, place, onClose }: Props): ModelPicker 
   const earlier = choice.models.filter((row) => !row.current);
   const notes: string[] = [];
   if (choice.models.length === 0) {
-    notes.push(
-      on
-        ? `Claude Code sends its list of models when a lesson starts. This session is on ${lineWord(choice)}.`
-        : choice.failed
-          ? `Claude Code didn’t send its list of models when the last lesson started. ↩ starts on ${startWord(choice)}.`
-          : `Claude Code sends its list of models when a lesson starts. ↩ starts this one on ${choice.pick ? startWord(choice) : "its default"}, and the next can be chosen here.`,
-    );
+    const now = on ? `This session is on ${lineWord(choice)}.` : `↩ starts on ${choice.pick ? startWord(choice) : "its default"}.`;
+    notes.push(asking || !choice.failed ? `Asking Claude Code for its models… ${now}` : `Claude Code didn’t send its list of models. ${now} Open this again to ask once more.`);
   } else if (on && !chosenRow) {
     notes.push(`This session is on ${on.model}, which isn’t on Claude Code’s list now. Pick another to go on with that.`);
   } else if (!on && choice.not_offered && choice.pick) {

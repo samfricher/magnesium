@@ -35,8 +35,8 @@ const firstOpen = has("s1-cold-first");
 let signedIn = !has("setup-signed-out");
 let payment: Payment = "plan";
 let engineChosen: Engine = "direct";
-// The list Claude Code sends when a lesson starts, as stand-in data in its own words. A new window has none
-// before its first lesson; "model-failed" is one whose last lesson start sent none.
+// The list Claude Code sends, as stand-in data in its own words. A new window has none kept and asks for it:
+// "model-first-run" gets it a moment later, "model-asking" is still waiting, and "model-failed" is sent none ("model-list-failed" with its list open).
 const ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODEL_LIST: ModelOption[] = [
   { value: "default", resolved: "claude-opus-5-5", name: "Default (recommended)", description: "Use the default model (currently Opus 5.5)", efforts: ALL_EFFORTS, current: true },
@@ -48,9 +48,10 @@ const MODEL_LIST: ModelOption[] = [
   { value: "claude-opus-4-6", resolved: "claude-opus-4-6", name: "Opus 4.6", description: "Newer version available · select opus for Opus 5.5", efforts: ["low", "medium", "high", "max"], current: false },
   { value: "claude-haiku-4-5", resolved: "claude-haiku-4-5", name: "Haiku 4.5", description: "Newer version available · select haiku for Haiku 5.5", current: false },
 ];
-const modelsNone = has("model-first-run", "model-list-first-run", "model-failed");
-const modelsFailed = has("model-failed");
-let pick: Pick | null = has("model-first-run", "model-list-first-run")
+// Asked without a lesson, the demo's agent sends its list, except in "model-failed", where it sends none.
+let modelsNone = has("model-first-run", "model-list-first-run", "model-failed", "model-list-failed", "model-asking");
+const modelsFailed = has("model-failed", "model-list-failed");
+let pick: Pick | null = has("model-first-run", "model-list-first-run", "model-asking")
   ? null
   : has("model-not-offered")
     ? { model: "claude-fable-4", name: "Fable 4" }
@@ -456,6 +457,15 @@ export function demoCore(): Core {
     },
     engine: async () => ({ chosen: engineChosen, conversation: engineChosen }),
     models: async () => modelChoice(),
+    askModels: async () => {
+      await wait(has("model-asking") ? 600_000 : 400);
+      if (!modelsFailed) {
+        modelsNone = false;
+        // A window with no pick yet takes the agent's default from its first list.
+        pick ??= { model: "claude-opus-5-5", name: "Opus 5.5" };
+      }
+      return modelChoice();
+    },
     setPick: async (model, effort) => {
       const row = MODEL_LIST.find((m) => m.value === model || m.resolved === model);
       pick = { model: row?.resolved ?? model, name: row?.name ?? pick?.name, ...(effort ? { effort } : {}) };
@@ -669,6 +679,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "model-effort":
     case "model-older":
     case "model-list-first-run":
+    case "model-list-failed":
+    case "model-asking":
       actions.newSession(FOLDER);
       await wait(300);
       document.querySelector<HTMLElement>("[data-drive='model']")?.click();

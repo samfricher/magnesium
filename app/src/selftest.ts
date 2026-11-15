@@ -292,19 +292,23 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.library = { workspaces: listed.length, first: listed[0]?.name, plan: { items: plan.items.length } };
     if (!listed.some((each) => each.folder === home.folder)) throw new Error("the open folder is not in the library");
 
-    // Before the first lesson the agent has sent no list: the line names Claude Code's default, the list says why it is empty, and Esc closes it from the line.
+    // Before the first lesson the window has the list: it asked Claude Code as it opened, with no lesson started.
+    // The line names the default a new window took from it, the list has its rows, and Esc closes it.
     actions.newSession(folder);
-    await until("a new session's model, before any list", () => document.querySelector('.session.in-front [data-drive="model"]') !== null, 10_000);
+    await until("a new session's model, named from the list the window asked for", () => {
+      const word = document.querySelector('.session.in-front [data-drive="model"]')?.textContent;
+      return word != null && word !== "Default";
+    }, 20_000);
     const before = document.querySelector<HTMLElement>('.session.in-front [data-drive="model"]')!;
     const beforeWord = before.textContent;
     before.click();
-    await until("the empty list of models", () => document.querySelector(".session.in-front .model-list") !== null, 3000);
-    const emptyRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
+    await until("the list of models, before any lesson", () => document.querySelectorAll('.session.in-front [data-drive="model-row"]').length > 0, 5000);
+    const firstRows = document.querySelectorAll('.session.in-front [data-drive="model-row"]').length;
     press("Escape");
     await wait(150);
-    steps.emptyList = { word: beforeWord, rows: emptyRows, closed: document.querySelector(".session.in-front .model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
-    if (beforeWord !== "Default" || emptyRows !== 0) throw new Error(`a new window's start line is not Claude Code's default: ${JSON.stringify(steps.emptyList)}`);
-    if (document.querySelector(".session.in-front .model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close an empty list of models: ${JSON.stringify(steps.emptyList)}`);
+    steps.listBeforeLesson = { word: beforeWord, rows: firstRows, closed: document.querySelector(".session.in-front .model-list") === null, focus: document.activeElement?.getAttribute("data-drive") ?? null };
+    if (beforeWord !== "Opus 5.5" || firstRows !== 5) throw new Error(`a new window did not have Claude Code's list before a lesson: ${JSON.stringify(steps.listBeforeLesson)}`);
+    if (document.querySelector(".session.in-front .model-list") !== null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not close the list of models: ${JSON.stringify(steps.listBeforeLesson)}`);
     actions.run("close-session");
     await until("the unstarted session's tab to close", () => actions.session() === null, 10_000);
 

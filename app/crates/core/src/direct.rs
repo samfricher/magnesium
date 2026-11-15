@@ -297,6 +297,10 @@ impl Harness for DirectTutor {
         self.claude.locate()
     }
 
+    fn models(&self, payment: Payment) -> AgentResult<Option<Vec<crate::models::ModelOption>>> {
+        self.claude.models(payment)
+    }
+
     fn start(&self, options: StartOptions, sink: EventSink) -> AgentResult<Box<dyn Conversation>> {
         let program = self.locate()?;
         let runtime = self.runtime()?;

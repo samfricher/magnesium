@@ -418,6 +418,8 @@ export interface Core {
   setEngine(engine: Engine): Promise<EngineChoice>;
   /** The agent's models, as it last listed them, and the model and effort new sessions start on. */
   models(): Promise<ModelChoice>;
+  /** Ask the agent for its list now, without a lesson; the answer is what the window then keeps. */
+  askModels(): Promise<ModelChoice>;
   /** Pick the model and effort new sessions start on; `effort` null for the agent's own. Saved at once. */
   setPick(model: string, effort: string | null): Promise<ModelChoice>;
   /** The models, the pick, and what the session in a tab is on; a running one is asked. */
