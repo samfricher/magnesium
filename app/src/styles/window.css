@@ -171,7 +171,8 @@
   line-height: 1.5;
   color: var(--quiet);
 }
-.step { margin-bottom: 2.4rem; }
+/* The gap under a step is the one a workspace's page leaves under its own step. */
+.step { margin-bottom: 1.8rem; }
 .page-text { margin: 0.2rem 0 0.6rem; font: 400 0.882rem/1.55 var(--app); color: var(--text); max-width: 34em; }
 .page-note { margin: 0.35rem 0 0.4rem; font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
 .page-notes { position: absolute; left: 50%; bottom: 1.2rem; transform: translateX(-50%); width: min(34rem, calc(100% - 80px)); }
