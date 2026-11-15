@@ -135,7 +135,8 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
     if (!open || !list || !line) return setRoom(null);
     const box = line.getBoundingClientRect();
     const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
-    const above = box.top - top - 16;
+    // Clear of the step's name under the tabs by about a line.
+    const above = box.top - top - 40;
     const below = window.innerHeight - box.bottom - 16;
     const wanted = Math.min(list.scrollHeight, window.innerHeight * 0.62);
     // Under a session's first line, as the line's menus open there.
