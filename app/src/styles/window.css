@@ -679,8 +679,8 @@ dialog.layer::backdrop { background: transparent; }
 /* A lesson scrolled under its top edge: the same fade as the edge's ground had. */
 :root[data-glass] .top-edge { background: none; }
 :root[data-glass] .surface.scrolled {
-  -webkit-mask-image: linear-gradient(to bottom, transparent calc(64px - var(--tabs-h)), #000 calc(110px - var(--tabs-h)));
-  mask-image: linear-gradient(to bottom, transparent calc(64px - var(--tabs-h)), #000 calc(110px - var(--tabs-h)));
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(72px - var(--tabs-h)), rgb(0 0 0 / 0.18) calc(84px - var(--tabs-h)), rgb(0 0 0 / 0.55) calc(98px - var(--tabs-h)), rgb(0 0 0 / 0.86) calc(112px - var(--tabs-h)), #000 calc(124px - var(--tabs-h)));
+  mask-image: linear-gradient(to bottom, transparent calc(72px - var(--tabs-h)), rgb(0 0 0 / 0.18) calc(84px - var(--tabs-h)), rgb(0 0 0 / 0.55) calc(98px - var(--tabs-h)), rgb(0 0 0 / 0.86) calc(112px - var(--tabs-h)), #000 calc(124px - var(--tabs-h)));
 }
 
 /* The line risen over the page: the reading under it is blurred away, as the Mac does under a bar. */

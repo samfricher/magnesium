@@ -685,11 +685,19 @@ button.line-end:hover { color: var(--text); }
 .top-edge {
   position: absolute;
   inset: 0 0 auto 0;
-  height: calc(110px - var(--tabs-h));
+  height: calc(124px - var(--tabs-h));
   z-index: 4;
   pointer-events: none;
-  /* Solid to the foot of the step's name, then a fade a line and a half deep. */
-  background: linear-gradient(to bottom, var(--ground) calc(64px - var(--tabs-h)), transparent);
+  /* Solid a little past the foot of the step's name, then an eased fade: a straight fade left the line just under
+     the name at half strength, read as glyphs sliced through. */
+  background: linear-gradient(
+    to bottom,
+    var(--ground) calc(72px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 82%, transparent) calc(84px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 45%, transparent) calc(98px - var(--tabs-h)),
+    color-mix(in srgb, var(--ground) 14%, transparent) calc(112px - var(--tabs-h)),
+    transparent
+  );
 }
 
 .top-edge .inner {
