@@ -36,7 +36,8 @@ type Props = {
 
 export function StudyTimes({ planned, busy, onAdd }: Props) {
   const { sessions, unreadable } = planned;
-  if (sessions.length === 0 && unreadable === 0) return null;
+  const unreadablePlans = planned.unreadable_plans ?? 0;
+  if (sessions.length === 0 && unreadable === 0 && unreadablePlans === 0) return null;
   // With two plans, each row says which plan its time is for.
   const plans = new Set(sessions.map((session) => session.plan));
   return (
@@ -59,6 +60,13 @@ export function StudyTimes({ planned, busy, onAdd }: Props) {
           {unreadable === 1
             ? "One session in your plan could not be read and is left out. Ask the tutor to fix it."
             : `${unreadable} sessions in your plan could not be read and are left out. Ask the tutor to fix them.`}
+        </p>
+      )}
+      {unreadablePlans > 0 && (
+        <p className="page-note">
+          {unreadablePlans === 1
+            ? "One of your plans could not be read, so its sessions are left out. Ask the tutor to fix it."
+            : `${unreadablePlans} of your plans could not be read, so their sessions are left out. Ask the tutor to fix them.`}
         </p>
       )}
       {sessions.length > 0 && (

@@ -16,6 +16,7 @@ fn sessions_of(target: &str, text: &str) -> PlanSessions {
         date: fact(text, "When")
             .as_deref()
             .and_then(super::super::first_date),
+        modified: Some(Utc.with_ymd_and_hms(2026, 11, 16, 9, 0, 0).unwrap()),
         lines: sessions::lines(FILE, text),
     }
 }
@@ -30,8 +31,8 @@ fn now() -> DateTime<Utc> {
 }
 
 fn file_for(plans: &[PlanSessions]) -> (String, Vec<String>) {
-    let (events, left_out) = events(plans, today());
-    (ics("folder-1", &events, today(), now()), left_out.notes())
+    let (events, left_out) = events(plans, Vec::new(), today());
+    (ics("folder-1", &events, now()), left_out.notes())
 }
 
 /// The file's content lines, unfolded, after checking every physical line.
@@ -166,7 +167,7 @@ fn backups_none_planned_and_the_template_make_no_event_and_no_note() {
     ] {
         let text = plan("", lines);
         let plans = [sessions_of("midterm-1", &text)];
-        let (found, left_out) = events(&plans, today());
+        let (found, left_out) = events(&plans, Vec::new(), today());
         assert!(found.is_empty(), "{lines:?}");
         assert!(left_out.notes().is_empty(), "{lines:?}");
     }
@@ -180,7 +181,7 @@ fn a_line_it_cannot_read_is_a_note_with_its_line_and_never_an_event() {
          - If it is Wednesday at 07:00, then I do the due cold redos.\n",
     );
     let plans = [sessions_of("midterm-1", &text)];
-    let (found, left_out) = events(&plans, today());
+    let (found, left_out) = events(&plans, Vec::new(), today());
     let notes = left_out.notes();
     assert_eq!(found.len(), 1);
     let line = text.lines().position(|l| l.contains("8am")).unwrap() + 1;
@@ -200,7 +201,7 @@ fn a_plan_whose_date_has_passed_is_left_out_with_a_note() {
         "- If it is Monday at 08:00, then I do the due cold redos.\n",
     );
     let plans = [sessions_of("midterm-1", &text)];
-    let (found, left_out) = events(&plans, today());
+    let (found, left_out) = events(&plans, Vec::new(), today());
     assert!(found.is_empty());
     assert_eq!(
         left_out.notes(),
@@ -208,14 +209,22 @@ fn a_plan_whose_date_has_passed_is_left_out_with_a_note() {
     );
     let on_the_day = plan(
         "| When | 2026-11-17 |\n",
-        "- If it is Monday at 08:00, then I do the due cold redos.\n",
+        "- If it is Tuesday at 08:00, then I do the due cold redos.\n",
     );
     let plans = [sessions_of("midterm-1", &on_the_day)];
     assert_eq!(
-        events(&plans, today()).0.len(),
+        events(&plans, Vec::new(), today()).0.len(),
         1,
         "the test's own day still counts"
     );
+}
+
+fn uids_of(plans: &[PlanSessions], folder: &str, day: NaiveDate) -> Vec<String> {
+    let (events, _) = events(plans, Vec::new(), day);
+    property(&unfolded(&ics(folder, &events, now())), "UID")
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[test]
@@ -225,53 +234,158 @@ fn the_same_session_keeps_its_uid_from_one_file_to_the_next() {
         "- If it is Monday at 08:00, then I do the due cold redos.\n- If it is Friday at 17:00, then I sit a paper.\n",
     );
     let plans = [sessions_of("midterm-1", &text)];
-    let (events_now, _) = events(&plans, today());
-    let first = ics("folder-1", &events_now, today(), now());
-    let later_day = today() + Duration::days(9);
-    let (events_later, _) = events(&plans, later_day);
-    let second = ics(
-        "folder-1",
-        &events_later,
-        later_day,
-        now() + Duration::days(9),
+    let first = uids_of(&plans, "folder-1", today());
+    assert_eq!(
+        first,
+        uids_of(&plans, "folder-1", today() + Duration::days(9))
     );
-    let uids = |file: &str| {
-        property(&unfolded(file), "UID")
+    assert_eq!(first.len(), 2);
+    assert_ne!(first[0], first[1]);
+    // Reworded, the same session keeps its UID, so its event is renamed.
+    let reworded = plan(
+        "",
+        "- If it is Monday at 08:00, then I redo the gap log at the library.\n- If it is Friday at 17:00, then I sit a paper.\n",
+    );
+    assert_eq!(
+        uids_of(&[sessions_of("midterm-1", &reworded)], "folder-1", today()),
+        first
+    );
+    // Another plan, or another study folder, never shares one.
+    assert!(
+        uids_of(&[sessions_of("final", &text)], "folder-1", today())
             .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(uids(&first), uids(&second));
-    assert_eq!(uids(&first).len(), 2);
-    assert_ne!(uids(&first)[0], uids(&first)[1]);
-    // The times changed, the session did not: the same UID updates it.
+            .all(|u| !first.contains(u))
+    );
+    assert!(
+        uids_of(&plans, "folder-2", today())
+            .iter()
+            .all(|u| !first.contains(u))
+    );
+    let (events_now, _) = events(&plans, Vec::new(), today());
+    assert!(
+        !ics("folder-1", &events_now, now()).contains("folder-1"),
+        "the folder's id is not in the file"
+    );
+}
+
+#[test]
+fn a_line_taken_out_or_put_in_above_a_session_leaves_its_uid_alone() {
+    let both = plan(
+        "",
+        "- If it is Monday at 08:00, then I do the due cold redos.\n- If it is Friday at 17:00, then I sit a paper.\n",
+    );
+    let before = uids_of(&[sessions_of("midterm-1", &both)], "folder-1", today());
+    // Monday's line taken out: Friday's event is the same event, and no event takes Monday's UID.
+    let friday = plan("", "- If it is Friday at 17:00, then I sit a paper.\n");
+    assert_eq!(
+        uids_of(&[sessions_of("midterm-1", &friday)], "folder-1", today()),
+        [before[1].clone()]
+    );
+    // A line put in first: both earlier sessions keep theirs, and the new one has its own.
+    let three = plan(
+        "",
+        "- If it is Sunday at 19:00, then I read the gap log.\n- If it is Monday at 08:00, then I do the due cold redos.\n- If it is Friday at 17:00, then I sit a paper.\n",
+    );
+    let after = uids_of(&[sessions_of("midterm-1", &three)], "folder-1", today());
+    assert_eq!(&after[1..], &before[..]);
+    assert!(!before.contains(&after[0]));
+    // A session moved to another time is another event; the old one is not changed into it.
     let moved = plan(
         "",
         "- If it is Monday at 07:30, then I do the due cold redos.\n- If it is Friday at 17:00, then I sit a paper.\n",
     );
-    let moved_plans = [sessions_of("midterm-1", &moved)];
-    let (moved_events, _) = events(&moved_plans, today());
+    let moved_uids = uids_of(&[sessions_of("midterm-1", &moved)], "folder-1", today());
+    assert_ne!(moved_uids[0], before[0]);
+    assert_eq!(moved_uids[1], before[1]);
+    // Two lines on the same days at the same times are two events.
+    let twice = plan(
+        "",
+        "- If it is Monday at 08:00, then I do the due cold redos.\n- If it is Monday at 08:00, then I bring the gap log.\n",
+    );
+    let twins = uids_of(&[sessions_of("midterm-1", &twice)], "folder-1", today());
+    assert_eq!(twins.len(), 2);
+    assert_ne!(twins[0], twins[1]);
+    assert_eq!(twins[0], before[0]);
+}
+
+#[test]
+fn a_session_whose_first_day_comes_after_the_plan_s_date_is_left_out() {
+    // Today is Tuesday the 17th and the test is Wednesday the 18th: Saturday's session would come after it.
+    let text = plan(
+        "| When | 2026-11-18 |\n",
+        "- If it is Saturday at 10:00, then I sit the next block.\n- If it is Wednesday at 07:00, then I do the due cold redos.\n",
+    );
+    let plans = [sessions_of("midterm-1", &text)];
+    let (found, left_out) = events(&plans, Vec::new(), today());
+    assert_eq!(found.len(), 1);
     assert_eq!(
-        uids(&ics("folder-1", &moved_events, today(), now())),
-        uids(&first)
+        found[0].first,
+        NaiveDate::from_ymd_opt(2026, 11, 18).unwrap()
     );
-    // Another plan, or another study folder, never shares one.
-    let other = [sessions_of("final", &text)];
-    let (other_events, _) = events(&other, today());
+    assert_eq!(
+        left_out.notes(),
+        [
+            "Study/midterm-1/plan.md: \"Sit the next block\" left out, because its first day, 2026-11-21, comes after the plan's date, 2026-11-18"
+        ]
+    );
+    let lines = unfolded(&ics("folder-1", &found, now()));
+    let start = property(&lines, "DTSTART")[0].to_owned();
+    let rule = property(&lines, "RRULE")[0].to_owned();
+    let until = rule.split("UNTIL=").nth(1).unwrap();
     assert!(
-        uids(&ics("folder-1", &other_events, today(), now()))
-            .iter()
-            .all(|u| !uids(&first).contains(u))
+        start.as_str() <= until,
+        "DTSTART {start} is not after UNTIL {until}"
     );
+}
+
+#[test]
+fn a_plan_whose_date_has_passed_says_nothing_of_its_unreadable_lines() {
+    let old = plan(
+        "| When | 2026-10-01 |\n",
+        "- If it is Monday at 8am, then I do the due cold redos.\n",
+    );
+    let plans = [sessions_of("midterm-1", &old)];
+    let (found, left_out) = events(&plans, Vec::new(), today());
+    assert!(found.is_empty());
     assert!(
-        uids(&ics("folder-2", &events_now, today(), now()))
-            .iter()
-            .all(|u| !uids(&first).contains(u))
+        left_out.unreadable.is_empty(),
+        "a line in an ended plan cannot matter"
     );
+    let value = listed(&found, &left_out);
+    assert_eq!(value["unreadable"], json!([]));
+}
+
+#[test]
+fn a_plan_file_that_cannot_be_read_is_said_in_the_json_too() {
+    let (found, left_out) = events(&[], vec!["Study/huge/plan.md".to_owned()], today());
+    assert!(found.is_empty());
+    assert_eq!(
+        listed(&found, &left_out)["unreadable_plans"],
+        json!(["Study/huge/plan.md"])
+    );
+    assert_eq!(
+        left_out.notes(),
+        ["Study/huge/plan.md: not read, because it is too large, not text, or not a regular file"]
+    );
+}
+
+#[test]
+fn each_file_is_a_later_revision_and_says_when_the_plan_changed() {
+    let text = plan(
+        "",
+        "- If it is Monday at 08:00, then I do the due cold redos.\n",
+    );
+    let plans = [sessions_of("midterm-1", &text)];
+    let (found, _) = events(&plans, Vec::new(), today());
+    let first = unfolded(&ics("folder-1", &found, now()));
+    let later = unfolded(&ics("folder-1", &found, now() + Duration::minutes(5)));
+    let seq = |lines: &[String]| property(lines, "SEQUENCE")[0].parse::<i64>().unwrap();
+    assert!(seq(&later) > seq(&first));
     assert!(
-        !first.contains("folder-1"),
-        "the folder's id is not in the file"
+        seq(&first) < i64::from(i32::MAX),
+        "SEQUENCE is an INTEGER (RFC 5545, 3.3.8)"
     );
+    assert_eq!(property(&first, "LAST-MODIFIED"), ["20261116T090000Z"]);
 }
 
 #[test]

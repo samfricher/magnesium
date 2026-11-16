@@ -390,11 +390,11 @@ Your learning history stays the same.
 
 ## Put your planned sessions in your calendar
 
-1. Run `magnesium calendar > sessions.ics` in your study folder.
-2. Open `sessions.ics`, and choose a calendar.
-
+In the study window, open the study folder's page.
+Choose **Add to Calendar…** under When you study.
+In a terminal, run `magnesium calendar --open` in your study folder.
+Your calendar app then asks which calendar to use.
 Each session in your plan repeats every week at its time.
-Adding them again updates the same events.
 
 ## For LaTeX papers
 

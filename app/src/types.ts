@@ -406,7 +406,7 @@ export type RuntimeSetup = {
 /** One planned session, as the runtime reads it from a plan's Sessions section. */
 export type PlannedSession = { plan: string; title: string | null; action: string; days: string[]; start: string; end: string | null };
 /** A folder's planned sessions, and how many session lines could not be read. */
-export type Planned = { sessions: PlannedSession[]; unreadable: number };
+export type Planned = { sessions: PlannedSession[]; unreadable: number; unreadable_plans?: number };
 
 /** Who decides on a tool the tutor wants: Claude Code's auto mode, or the learner each time. */
 export type Permissions = "auto" | "ask";
