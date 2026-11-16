@@ -123,7 +123,9 @@ fn each_session_line_is_one_weekly_event_on_its_days_at_its_start() {
         "{:?}",
         property(&lines, "DESCRIPTION")
     );
-    assert!(property(&lines, "DESCRIPTION")[0].ends_with("\\nFrom your Magnesium plan for Midterm 1."));
+    assert!(
+        property(&lines, "DESCRIPTION")[0].ends_with("\\nFrom your Magnesium plan for Midterm 1.")
+    );
 }
 
 #[test]
