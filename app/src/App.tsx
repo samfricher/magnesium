@@ -95,9 +95,6 @@ export function App() {
   const panelWidth = fitPanelWidth(panelWanted, room);
   // Bumped when a panel's documents change, so the menu's titles and what it enables follow.
   const [docsSeen, setDocsSeen] = useState(0);
-  /** The workspace whose page shows planned sessions to add to a calendar, for the menu. */
-  const [studyTimes, setStudyTimes] = useState<string | null>(null);
-  const onStudyTimes = useCallback((folder: string, any: boolean) => setStudyTimes((old) => (any ? folder : old === folder ? null : old)), []);
   const onDocsChange = useCallback(() => setDocsSeen((n) => n + 1), []);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [liveKey, setLiveKey] = useState<string | null>(null);
@@ -399,11 +396,6 @@ export function App() {
         case "model":
           if (inFront) inFront.command(command);
           else note("Open a session first.");
-          return;
-        case "add-to-calendar":
-          // A workspace's page holds the sessions; anywhere else the key says where they are.
-          if (tab?.kind === "home" && now.current.homeFolder && workspaceDocs.current?.(command)) return;
-          note("Add to Calendar is on a workspace’s page, under When you study.");
           return;
         case "expand-panel":
         case "flip-panel":
@@ -714,7 +706,6 @@ export function App() {
     if (busyKey === null) disabled.push("stop-reply");
     const front = inSession ? activeTab.folder : (homeFolder ?? (workspaces ? (mostRecent(workspaces) ?? workspaces[0])?.folder : undefined));
     if (!front || checksDue[front] === 0) disabled.push("just-checks");
-    if (!(activeTab.kind === "home" && homeFolder && studyTimes === homeFolder)) disabled.push("add-to-calendar");
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
@@ -734,7 +725,7 @@ export function App() {
         ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
       },
     };
-  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, answerPages, busyKey, panel, homeFolder, docsSeen, checksDue, studyTimes]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, answerPages, busyKey, panel, homeFolder, docsSeen, checksDue]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -991,7 +982,6 @@ export function App() {
                 onSessionRenamed={onSessionRenamed}
                 onDocsChange={onDocsChange}
                 registerPanel={registerWorkspacePanel}
-                onStudyTimes={onStudyTimes}
                 onPaper={onPaper}
                 onNote={note}
               />

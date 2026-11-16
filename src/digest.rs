@@ -15,10 +15,7 @@ use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 
-mod calendar;
 mod sessions;
-
-pub(crate) use calendar::print_calendar;
 
 const MAX_LISTED_FILES: usize = 60;
 const MAX_SCANNED_ENTRIES: usize = 2000;

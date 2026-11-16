@@ -103,8 +103,6 @@ async function tauriCore(): Promise<Core> {
     setMenu: (spec) => invoke("set_menu", { spec }),
     onMenu: (handler) => listen("menu", (event) => handler(event.payload as never)),
     onEvent: (handler) => listen("agent", (event) => handler(event.payload as never)),
-    plannedSessions: (folder) => invoke("planned_sessions", { folder }),
-    addToCalendar: (folder) => invoke("add_to_calendar", { folder }),
     selftest: () => invoke("selftest"),
     selftestReport: (report) => invoke("selftest_report", { report }),
     glassState: () => invoke("glass_state"),
