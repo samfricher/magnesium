@@ -341,4 +341,61 @@ mod tests {
         assert!(checks(dir.path()).is_none());
         assert_eq!(checks_due(dir.path(), today), None);
     }
+
+    /// The sitting's rule here is the runtime's, copied by hand: the gap that
+    /// begins a sitting, the checks one sitting takes, and the column that
+    /// says when the runtime last heard the learner. This reads them out of
+    /// the runtime's own source in this checkout, so a change there fails
+    /// here until this file follows it.
+    #[test]
+    fn the_sitting_rule_is_the_runtimes_own() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/sittings.rs");
+        let text = std::fs::read_to_string(&source).unwrap_or_else(|problem| {
+            panic!(
+                "the runtime's {} could not be read: {problem}",
+                source.display()
+            )
+        });
+        let constant = |name: &str| -> i64 {
+            let line = text
+                .lines()
+                .find(|line| line.contains(&format!("const {name}:")))
+                .unwrap_or_else(|| panic!("the runtime has no constant named {name} now"));
+            let value = line
+                .split('=')
+                .nth(1)
+                .unwrap_or_else(|| panic!("no value on: {line}"))
+                .trim()
+                .trim_end_matches(';');
+            value
+                .split('*')
+                .map(|part| {
+                    part.trim()
+                        .replace('_', "")
+                        .parse::<i64>()
+                        .unwrap_or_else(|_| {
+                            panic!("{name} is no longer a product of whole numbers: {line}")
+                        })
+                })
+                .product()
+        };
+        assert_eq!(
+            constant("SITTING_GAP_MS"),
+            SITTING_GAP_MS,
+            "the gap that begins a sitting"
+        );
+        assert_eq!(
+            constant("MAX_CHECKS_PER_SITTING"),
+            i64::from(CHECKS_PER_SITTING),
+            "the checks one sitting takes"
+        );
+        assert!(
+            text.contains("last_learner_ms INTEGER"),
+            "the runtime's meta table has no last_learner_ms column now"
+        );
+        assert!(
+            text.contains("SELECT last_learner_ms FROM meta"),
+            "the runtime no longer reads last_learner_ms from meta"
+        );
+    }
 }
