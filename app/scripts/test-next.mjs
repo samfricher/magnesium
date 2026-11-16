@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { namedSessions, nextOf, planDay } = await import("../src/next.ts");
+const { firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -48,5 +48,16 @@ assert.equal(planDay("2026-11-16", now), "today");
 assert.equal(planDay("2026-11-17", now), "tomorrow");
 assert.equal(planDay("2026-11-19", now), "Thu 19 Nov");
 assert.equal(planDay(null, now), "");
+
+// What the session opens with, from the record's reading: nothing unless the next message begins a sitting.
+const opens = (checks, redos, sitting = null) => ({ opening: { checks, redos }, sitting });
+assert.equal(firstStep(opens(1, 0)), "Starts with 1 quick check · about a minute");
+assert.equal(firstStep(opens(3, 0)), "Starts with 3 quick checks · about 3 minutes");
+assert.equal(firstStep(opens(0, 2)), "Starts with 2 paper redos");
+assert.equal(firstStep(opens(1, 1)), "Starts with 1 quick check and 1 paper redo");
+assert.equal(firstStep(opens(0, 0)), null);
+assert.equal(firstStep({ opening: null, sitting: null }), null, "a sitting carried on opens with nothing");
+assert.equal(firstStep(opens(1, 0, { name: "Midterm 2023" })), null, "no tutor while a paper runs");
+assert.equal(firstStep(null), null);
 
 console.log("next checks passed");

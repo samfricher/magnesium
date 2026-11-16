@@ -32,6 +32,12 @@ export type Home = {
   /** null when the window cannot tell: the runtime keeps the checks where only it works out what is due. */
   checks_due: number | null;
   redos_due: number;
+  /**
+   * What the learner's next message in the folder opens with, when it begins a sitting: the quick checks the runtime
+   * takes into it (three at most) and the paper redos due. Null when it carries a sitting on, the opener is off, or
+   * nothing is due.
+   */
+  opening: { checks: number; redos: number } | null;
   first_redo: string | null;
   papers: Paper[];
   can_resume: boolean;

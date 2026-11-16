@@ -258,6 +258,8 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .next-row { text-align: left; }
 .next-what { display: flex; flex-direction: column; min-width: 0; }
 .next-note { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* What the session starts with, from the record, between the item's name and the plan's words about it. */
+.next-first { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--text); }
 .next .next-due { margin-top: 0.5rem; }
 .next .next-acts { margin-top: 0.5rem; }
 /* A choice about this Mac that lessons do not wait on, under Home's first row (or the step in its place). */
