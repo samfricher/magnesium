@@ -894,7 +894,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const section = nowRef.current;
     if (!el || !section || phase !== "lesson") return;
     const pin = () => {
-      if (stuck.current) el.scrollTop = el.scrollHeight;
+      if (stuck.current) {
+        el.scrollTop = el.scrollHeight;
+        lastTop.current = el.scrollTop;
+      }
     };
     const watch = new ResizeObserver(pin);
     watch.observe(section);
@@ -903,6 +906,22 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     pin();
     return () => watch.disconnect();
   }, [phase]);
+
+  // The same, in the commit that changes the lesson's height (a reply's words, the page folding or opening, the
+  // task's copy over the line coming or going), with the place kept as the last one seen. The resize above is only
+  // delivered with the next frame, and so is a scroll event. A page that shrank and then grew between two frames
+  // (a send from the folded page draws the task's copy over the line for one commit, then the reply's first words
+  // come) reached `onScroll` as a move up with the foot out of reach: the lesson was let go, and stayed short by the
+  // height of that reply (91 px in the self-test, one run in six on a busy Mac).
+  // A place above both the last one seen and the end is the learner's own move, its scroll event still to come: it
+  // is left alone. A tab behind another measures nothing and says nothing.
+  useLayoutEffect(() => {
+    const el = surface.current;
+    if (!el || phase !== "lesson" || !stuck.current || el.clientHeight === 0) return;
+    if (el.scrollTop < Math.min(lastTop.current, el.scrollHeight - el.clientHeight) - 1) return;
+    el.scrollTop = el.scrollHeight;
+    lastTop.current = el.scrollTop;
+  });
 
   // The conversation left, above the first screen and out of view, is drawn after it.
   useEffect(() => {
@@ -1046,18 +1065,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     props.onAnswerPage(tab.key, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
-  // A reply has just ended, or the page has just turned: the lesson's height changed by the window's own doing. The
-  // resize that keeps a lesson at its end (above) is only delivered with the next frame, and at the end of a reply
-  // this page has more to do first (its state, the menu's words), so under load that frame came late: until it did,
-  // the line sat below its place, and the self-test read it 91 px short. So the lesson is put at its end here, in
-  // the commit that ends the reply or turns the page. The place is also kept as the last one seen, so the scroll
-  // event this causes is not read as the learner moving up to read.
-  useLayoutEffect(() => {
-    const el = surface.current;
-    if (!el || phase !== "lesson") return;
-    if (stuck.current) el.scrollTop = el.scrollHeight;
-    lastTop.current = el.scrollTop;
-  }, [page, ownBusy, phase]);
   // The page changed its height under the line: whether the line is in view is read again.
   useEffect(() => {
     if (!props.active) return;
