@@ -306,9 +306,13 @@ pub(crate) fn dispatch_with_host(
         };
         return Ok(crate::just_checks::from_tool(cwd, by, asker, start));
     }
-    if let Some(refusal) = crate::just_checks::refusal(cwd, operation, &request) {
-        return Ok(refusal);
-    }
+    // A stage for more than the checks: the learner asked for it.
+    let lifted = crate::just_checks::lift_on_stage(
+        cwd,
+        operation,
+        &request,
+        caller.as_ref().map(|host| host.host_thread_id.as_str()),
+    );
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
@@ -327,6 +331,18 @@ pub(crate) fn dispatch_with_host(
         && request.get("action").and_then(serde_json::Value::as_str) == Some("status");
     let ends = (operation == "learning_step").then(|| request.clone());
     let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
+    if lifted && result.is_object() {
+        result["sitting_note"] = crate::just_checks::LIFTED_NOTE.into();
+    }
+    if ends
+        .as_ref()
+        .is_some_and(|request| crate::just_checks::lifts_on_control(request, &result))
+    {
+        crate::just_checks::lift(
+            cwd,
+            caller.as_ref().map(|host| host.host_thread_id.as_str()),
+        );
+    }
     // A pause or a stop the learner asked for ends the sitting.
     if ends.is_some_and(|request| crate::closing::ends_on_control(&request, &result))
         && let Ok(Some(workspace)) = Workspace::discover(cwd)
@@ -536,14 +552,34 @@ fn open_sitting(
         let _ = sittings.settle(&outcomes);
         // The last check of a sitting of checks alone ends it.
         let by = caller.map(|host| host.host_thread_id.as_str());
-        if !outcomes.is_empty() && sittings.end_checks_only_when_done(by, now).unwrap_or(false) {
+        if (practice_change || !outcomes.is_empty())
+            && sittings
+                .end_checks_only_when_done(&workspace, by, now)
+                .unwrap_or(false)
+        {
             result["sitting_ended"] = true.into();
             result["sitting_note"] = crate::just_checks::ENDED_NOTE.into();
         }
-        let alone = sittings.checks_only().ok().flatten().is_some();
-        if records && (alone || workspace.opener() != crate::workspace::OpenerMode::Off) {
+        // The checks alone go to the conversation that asked, once, even
+        // when another conversation had the sitting's usual opener.
+        let alone = records
+            .then(|| {
+                sittings
+                    .take_checks_only_opener(&workspace, by, now)
+                    .ok()
+                    .flatten()
+            })
+            .flatten();
+        if records && (alone.is_some() || workspace.opener() != crate::workspace::OpenerMode::Off) {
             let mut synced = crate::practice::GapLogReport::default();
-            if let Ok(Some(opener)) = sittings.take_opener(&workspace, now, &mut synced) {
+            let opener = match alone {
+                Some(alone) => Some(alone),
+                None => sittings
+                    .take_opener(&workspace, now, &mut synced)
+                    .ok()
+                    .flatten(),
+            };
+            if let Some(opener) = opener {
                 result["sitting_opener"] = opener.text.into();
                 if crate::sittings::checks_wanted() {
                     result["sitting_checks"] = opener.checks;
@@ -1061,7 +1097,7 @@ pub(crate) fn host_user_prompt_submit(
             let _ = sittings.ask_checks_only(&workspace, Some(&context.host_thread_id), now);
         }
     }
-    let sitting = crate::sittings::notice_clause(&workspace);
+    let sitting = crate::sittings::notice_clause(&workspace, Some(&context.host_thread_id));
     if !active && recording {
         match native_capture::issue(
             &workspace,

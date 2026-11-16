@@ -8,8 +8,9 @@
 //! tells the runtime of any other with `learning_step`
 //! `{"schema":"learner-model/v2","action":"just_checks"}`. Both make the same
 //! sitting through [`crate::sittings::Sittings::ask_checks_only`], so a
-//! lesson in the window and one in a terminal pose the same checks, are
-//! refused the same stages, and end at the same answer.
+//! lesson in the window and one in a terminal pose the same checks and end at
+//! the same answer. A request for anything else is the learner's to make: the
+//! tutor loading a stage for it makes the sitting an ordinary one.
 
 use std::path::Path;
 
@@ -42,8 +43,8 @@ const ASKS: [&str; 8] = [
     "quick checks only",
 ];
 
-/// Stages that bring new material, a plan or a paper. While the checks alone
-/// are under way they wait; marking an answer and closing do not.
+/// Stages that bring new material, a plan or a paper: the tutor loads one
+/// when the learner asks for more than the checks.
 const NEW_WORK: [&str; 5] = [
     "orient_and_probe",
     "plan_and_route",
@@ -175,14 +176,18 @@ pub(crate) fn from_tool(
         out["next_due"] = next.map(|day| day.to_string()).into();
         return out;
     }
-    // The sitting's opener goes out here when it has not yet, so the usual
-    // one, with its paper redos, is not given later in the sitting.
-    let mut report = crate::practice::GapLogReport::default();
+    // The opener goes out here when it has not yet, and claims the usual
+    // one, so its paper redos are not given later in the sitting.
     let opener = sittings
-        .take_opener(&workspace, now, &mut report)
+        .take_checks_only_opener(&workspace, by, now)
         .ok()
         .flatten()
-        .or_else(|| sittings.checks_only_opener(&workspace).ok().flatten());
+        .or_else(|| {
+            sittings
+                .checks_only_opener(&workspace, by, now)
+                .ok()
+                .flatten()
+        });
     let Some(opener) = opener else {
         return json!({"error": {"code": "sittings_unavailable", "message": "the sitting's checks could not be read"}});
     };
@@ -220,41 +225,52 @@ fn next_check_day(workspace: &Workspace, today: chrono::NaiveDate) -> Option<chr
         .min()
 }
 
-/// While the checks alone are under way, a stage that brings new material, a
-/// plan or a paper is refused, with the checks left to pose.
-pub(crate) fn refusal(cwd: &Path, operation: &str, request: &Value) -> Option<Value> {
-    let stage = request.get("stage")?.as_str()?;
+/// What the tutor is told when a stage it loads makes a sitting of checks
+/// alone an ordinary one.
+pub(crate) const LIFTED_NOTE: &str = "The learner asked for more than the quick checks, so this is an ordinary sitting now. The checks not yet answered stay due.";
+
+/// The conversation `by` loads a stage that brings new material, a plan or a
+/// paper: the learner asked for more than the checks, so its sitting of
+/// checks alone becomes an ordinary one. Returns whether it was one.
+pub(crate) fn lift_on_stage(
+    cwd: &Path,
+    operation: &str,
+    request: &Value,
+    by: Option<&str>,
+) -> bool {
+    let stage = request.get("stage").and_then(Value::as_str);
     if operation != "context"
         || request
             .get("action")
             .is_some_and(|action| action != "instructions")
-        || !NEW_WORK.contains(&stage)
+        || !stage.is_some_and(|stage| NEW_WORK.contains(&stage))
     {
-        return None;
+        return false;
     }
-    let workspace = Workspace::discover(cwd).ok()??;
-    crate::adapter::check_workspace_binding(&workspace).ok()?;
-    let sittings = Sittings::open_existing(&workspace).ok()??;
-    let left = sittings.checks_only_left().ok()??;
-    let mut refusal = json!({
-        "status": "unavailable",
-        "recommended_stage": "review_and_transfer",
-        "error": {
-            "code": "quick_checks_alone",
-            "message": format!(
-                "The learner asked for the quick checks alone, and {left} {} left. This stage brings new material, a plan or a paper, so it waits until the sitting ends. Pose the next check, or record the learner's decline. If they asked for something else instead, record a decline for each check not yet answered; the sitting then ends, and this stage opens.",
-                if left == 1 { "is" } else { "are" }
-            ),
-        },
-    });
-    if let Ok(Some(opener)) = sittings.checks_only_opener(&workspace) {
-        refusal["sitting_opener"] = opener.text.into();
-        if crate::sittings::checks_wanted() {
-            refusal["sitting_checks"] = opener.checks;
-            refusal["sitting_redos"] = opener.redos;
-        }
+    lift(cwd, by)
+}
+
+/// Recording off in a conversation: no answer there can be recorded, so its
+/// checks could never settle, and its sitting is an ordinary one again.
+pub(crate) fn lifts_on_control(request: &Value, result: &Value) -> bool {
+    request.get("action").and_then(Value::as_str) == Some("control")
+        && request.get("control").and_then(Value::as_str) == Some("recording_off")
+        && result.get("durable") == Some(&Value::Bool(true))
+}
+
+/// Make the sitting of checks alone for the conversation `by` an ordinary
+/// one. Returns whether it was one.
+pub(crate) fn lift(cwd: &Path, by: Option<&str>) -> bool {
+    let Some(workspace) = Workspace::discover(cwd).ok().flatten() else {
+        return false;
+    };
+    if crate::adapter::check_workspace_binding(&workspace).is_err() {
+        return false;
     }
-    Some(refusal)
+    Sittings::open_existing(&workspace)
+        .ok()
+        .flatten()
+        .is_some_and(|mut sittings| sittings.lift_checks_only(by).unwrap_or(false))
 }
 
 #[cfg(test)]

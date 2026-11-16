@@ -14,7 +14,11 @@ const LABELS: [&str; 3] = [
 ];
 
 fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
-    let input = json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":prompt_id,"prompt":text});
+    prompt_in(e, "conv", prompt_id, text)
+}
+
+fn prompt_in(e: &TestEnvironment, conversation: &str, prompt_id: &str, text: &str) -> String {
+    let input = json!({"session_id":conversation,"cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":prompt_id,"prompt":text});
     v2::context(&run_hook_with_host_flag(
         e,
         &e.workspace,
@@ -63,10 +67,14 @@ fn answer(e: &TestEnvironment, id: &str, event: &str, label: &str, first_try: &s
 }
 
 fn load(e: &TestEnvironment, stage: &str) -> Value {
+    load_in(e, "conv", stage)
+}
+
+fn load_in(e: &TestEnvironment, conversation: &str, stage: &str) -> Value {
     let output = v2::tool_output(
         e,
         "claude",
-        "conv",
+        conversation,
         "context",
         json!({"action":"instructions","host":"claude","stage":stage}),
     );
@@ -128,12 +136,12 @@ fn the_plugin_command_poses_the_due_checks_alone_and_the_last_answer_ends_the_si
         assert!(opener.contains(text), "{text}\n{opener}");
     }
 
-    // New material waits; marking and closing stay open.
-    let refused = load(&e, "teach_and_practice");
-    assert_eq!(refused["error"]["code"], "quick_checks_alone", "{refused}");
-    assert!(refused["sitting_opener"].is_string(), "{refused}");
-    assert!(load(&e, "interpret_and_repair").get("error").is_none());
-    assert!(load(&e, "review_and_transfer").get("error").is_none());
+    // Marking and closing are part of the checks: they leave it as it is.
+    for stage in ["interpret_and_repair", "review_and_transfer"] {
+        let loaded = load(&e, stage);
+        assert!(loaded.get("error").is_none(), "{loaded}");
+        assert!(loaded.get("sitting_note").is_none(), "{loaded}");
+    }
 
     // Right, wrong, declined: the last one ends the sitting, and the result
     // says so before the reply is written.
@@ -200,10 +208,6 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
     );
     assert_eq!(again["checks"], 3, "{again}");
     assert_eq!(again["sitting_opener"], asked["sitting_opener"]);
-    assert_eq!(
-        load(&e, "orient_and_probe")["error"]["code"],
-        "quick_checks_alone"
-    );
     // In a conversation with no lesson active, an answer could not be
     // recorded: asking starts one, and the next answer is captured in it.
     let elsewhere = v2::tool(
@@ -254,4 +258,79 @@ fn with_no_check_due_the_tutor_says_when_the_next_is() {
     assert!(asked.get("sitting_opener").is_none(), "{asked}");
     // Nothing is held back.
     assert!(load(&e, "teach_and_practice").get("error").is_none());
+}
+
+/// The rows that make a sitting checks alone, for any conversation.
+fn alone_rows(e: &TestEnvironment) -> i64 {
+    Connection::open(e.workspace.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .query_row("SELECT count(*) FROM checks_alone", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn asking_for_a_lesson_part_way_makes_it_an_ordinary_sitting() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    three_checks_due(&e);
+    prompt(&e, "p-1", "/magnesium:checks");
+    let event = event_of(&prompt(&e, "p-2", "-5"));
+    answer(&e, "right", &event, LABELS[0], "right");
+    // The learner asks for a lesson; the tutor loads its stage, which is
+    // never refused.
+    prompt(&e, "p-3", "actually, can you teach me the slope first?");
+    let loaded = load(&e, "teach_and_practice");
+    assert!(loaded.get("error").is_none(), "{loaded}");
+    assert!(
+        loaded["sitting_note"]
+            .as_str()
+            .unwrap()
+            .contains("ordinary sitting"),
+        "{loaded}"
+    );
+    assert_eq!(alone_rows(&e), 0);
+    let notice = prompt(&e, "p-4", "ok, what next?");
+    assert!(!notice.contains("quick checks alone"), "{notice}");
+    // The checks not yet answered stay due, and answering them later does
+    // not end the sitting under the lesson.
+    let event = event_of(&prompt(&e, "p-5", "metres"));
+    let wrong = answer(&e, "wrong", &event, LABELS[1], "wrong");
+    assert!(wrong.get("sitting_ended").is_none(), "{wrong}");
+    let event = event_of(&prompt(&e, "p-6", "skip"));
+    let declined = answer(&e, "decline", &event, LABELS[2], "declined");
+    assert!(declined.get("sitting_ended").is_none(), "{declined}");
+}
+
+#[test]
+fn a_second_conversation_in_the_folder_goes_on_as_in_any_sitting() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    three_checks_due(&e);
+    let notice = prompt(&e, "p-1", "/magnesium:checks");
+    assert!(notice.contains("quick checks alone: 3 left"), "{notice}");
+    // Another tab, mid-lesson, in the same folder and sitting.
+    let notice = prompt_in(&e, "conv-2", "q-1", "teach me the slope");
+    assert!(!notice.contains("quick checks alone"), "{notice}");
+    let loaded = load_in(&e, "conv-2", "teach_and_practice");
+    assert!(loaded.get("error").is_none(), "{loaded}");
+    assert!(loaded.get("sitting_note").is_none(), "{loaded}");
+    // The checks are still the first conversation's.
+    assert_eq!(alone_rows(&e), 1);
+    let notice = prompt(&e, "p-2", "-5");
+    assert!(notice.contains("quick checks alone: 3 left"), "{notice}");
+}
+
+#[test]
+fn recording_off_part_way_makes_it_an_ordinary_sitting() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    three_checks_due(&e);
+    prompt(&e, "p-1", "/magnesium:checks");
+    let event = event_of(&prompt(&e, "p-2", "turn recording off"));
+    let off = step(
+        &e,
+        json!({"schema":"learner-model/v2","action":"control","request_id":"off-1","control":"recording_off","turn_ref":event}),
+    );
+    assert_eq!(off["durable"], true, "{off}");
+    // No answer here could be recorded, so nothing waits on the checks.
+    assert_eq!(alone_rows(&e), 0);
+    let loaded = load(&e, "teach_and_practice");
+    assert!(loaded.get("error").is_none(), "{loaded}");
 }

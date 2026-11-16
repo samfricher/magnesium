@@ -27,7 +27,7 @@ const STORE_VERSION: i64 = 2;
 /// About three hours without a learner message ends a sitting.
 pub(crate) const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
 /// About a minute each, so about three minutes at the start of a sitting.
-const MAX_CHECKS_PER_SITTING: usize = 3;
+pub(crate) const MAX_CHECKS_PER_SITTING: usize = 3;
 const MAX_MISS_CHARS: usize = 240;
 const MAX_QUESTION_CHARS: usize = 400;
 const MAX_LOGGED_SITTINGS: i64 = 1000;
@@ -63,10 +63,11 @@ CREATE TABLE IF NOT EXISTS sitting_ends(
   ended_by TEXT,
   shown_ms INTEGER
 );
-CREATE TABLE IF NOT EXISTS sitting_checks_only(
+CREATE TABLE IF NOT EXISTS checks_alone(
   sitting_id TEXT PRIMARY KEY REFERENCES sittings(sitting_id),
   asked_ms INTEGER NOT NULL,
-  asked_by TEXT
+  asked_by TEXT,
+  shown_ms INTEGER
 );
 ";
 
@@ -432,11 +433,7 @@ impl Sittings {
             )
             .map_err(error)?;
         tx.commit().map_err(error)?;
-        let opener = match self.checks_only_opener(workspace)? {
-            Some(alone) => Some(alone),
-            None => Opener::new(&checks, &items, today),
-        }
-        .filter(|_| claimed > 0);
+        let opener = Opener::new(&checks, &items, today).filter(|_| claimed > 0);
         if opener.is_some() {
             self.write_log();
         }
@@ -452,9 +449,6 @@ impl Sittings {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
         };
-        if let Some(alone) = self.checks_only_opener(workspace)? {
-            return Ok(Some(alone));
-        }
         let items = items_now(workspace);
         let checks = self.checks(&sitting, &items)?;
         Ok(Opener::new(&checks, &items, local_day(now)))
@@ -511,11 +505,8 @@ impl Sittings {
         .map_err(error)?;
         // Any end lifts a sitting of checks alone for good: the learner who
         // carries on after it is taught as in any sitting.
-        tx.execute(
-            "DELETE FROM sitting_checks_only WHERE sitting_id=?1",
-            [&sitting],
-        )
-        .map_err(error)?;
+        tx.execute("DELETE FROM checks_alone WHERE sitting_id=?1", [&sitting])
+            .map_err(error)?;
         tx.commit().map_err(error)?;
         Ok(Some(sitting))
     }
@@ -970,11 +961,12 @@ pub(crate) fn carries_learner_message(request: &Value, result: &Value) -> bool {
                 .is_some_and(|events| events.iter().any(|e| e["speaker"] == "learner")))
 }
 
-/// The clause a turn's notice carries while a quick check is open.
-pub(crate) fn notice_clause(workspace: &Workspace) -> Option<String> {
+/// The clause a turn's notice carries while a quick check is open, for the
+/// conversation `by`.
+pub(crate) fn notice_clause(workspace: &Workspace, by: Option<&str>) -> Option<String> {
     let sittings = Sittings::open_existing(workspace).ok()??;
     // A sitting of checks alone was asked for, so it holds with the opener off.
-    if let Ok(Some(left)) = sittings.checks_only_left() {
+    if let Ok(Some(left)) = sittings.checks_only_left(workspace, by, now_ms()) {
         return Some(checks_only::notice_clause(left));
     }
     if workspace.opener() == OpenerMode::Off {
