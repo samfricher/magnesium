@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
-import { namedSessions, nextOf, planDay } from "../next";
+import { firstStep, namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
@@ -466,7 +466,11 @@ export function WorkspacePage(props: Props) {
   const earlier = named.filter((each) => each !== carried);
   // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
   const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;
-  const due = home ? dueLine(home) : null;
+  // What the session Next opens starts with, from the record's reading, said on its row. When the next message would
+  // not begin a sitting (one carries on, or the opener is off), what is due is said under the row instead, with no
+  // promise of when it comes.
+  const first = firstStep(home);
+  const due = home && !first ? dueLine(home) : null;
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
@@ -551,6 +555,7 @@ export function WorkspacePage(props: Props) {
                   <span className="row-name next-name">
                     <Line text={current.title} />
                   </span>
+                  {first && <span className="next-first">{first}</span>}
                   {current.note && (
                     <span className="next-note">
                       <Line text={current.note} />
@@ -566,7 +571,10 @@ export function WorkspacePage(props: Props) {
               <>
                 {items.length > 0 && <p className="page-note">Everything on the plan is done.</p>}
                 <button className="home-row first next-row" data-drive="new-session" autoFocus={props.focus} onClick={() => props.onNewSession(folder)}>
-                  <span className="row-name next-name">New session</span>
+                  <span className="next-what">
+                    <span className="row-name next-name">New session</span>
+                    {first && <span className="next-first">{first}</span>}
+                  </span>
                   <span className="row-when" />
                   <span className="row-key" aria-hidden="true">
                     ↩

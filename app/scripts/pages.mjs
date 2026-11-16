@@ -133,6 +133,118 @@ async function closeDocument(window, title) {
   await settle(window, 300);
 }
 
+/**
+ * Next's line saying what the session starts with, from the record (PAGES_ONLY=due): on a course with nothing due; over
+ * a record with a quick check due, while its sitting carries on and once three hours have passed; with a paper redo
+ * due too; with a long item; with every item done; at 720 by 560 and the largest text; and back on Home after a lesson
+ * has begun the sitting.
+ */
+async function dueStates() {
+  const shotsOf = async (window, stem, what) => {
+    await step(window, `${stem}: Home`, { op: "click", target: "home", by: "drive" });
+    await settle(window, 800);
+    await shoot(window, `home-${stem}`, `Home: ${what}`);
+    await step(window, `${stem}: the workspace`, { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+    await settle(window, 800);
+    await shoot(window, `workspace-${stem}`, `Workspace: ${what}`);
+    await step(window, `${stem}: ‹ Home`, { op: "click", target: "‹ Home" });
+    await settle(window, 600);
+  };
+  const says = async (window, label, line) => {
+    const read = await window.op({ op: "text" });
+    const text = String(read.text ?? "");
+    run.steps.push({ label, line, found: text.includes(line ?? "Starts with") });
+    if (line && !text.includes(line)) problem(`${label}: "${line}" is not on the page`);
+    if (!line && text.includes("Starts with")) problem(`${label}: the page says what the session starts with, and should not`);
+  };
+
+  // Nothing due: the scratch course, never studied in.
+  const plain = await launch("due-none", join(scratch, "window"));
+  await says(plain, "nothing due, Home", null);
+  await shotsOf(plain, "nothing-due", "nothing due, so the row says nothing more");
+  await quit(plain);
+
+  // A record with a quick check due (scripts/scratch-record.py), its last answer a moment ago.
+  const dir = join(scratch, "due-record");
+  mkdirSync(dir, { recursive: true });
+  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), dir], { encoding: "utf8" });
+  execFileSync("python3", [join(APP, "scripts/scratch-record.py"), dir], { encoding: "utf8" });
+  const course = join(dir, "Intro-Statistics");
+  const listed = JSON.parse(readFileSync(join(dir, "window", "state.json"), "utf8"));
+  const recordWindow = (name) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ ...listed, folders: {} }, null, 2));
+    return launch(name, home, agent, { MAGNESIUM_APP_RUNTIME: join(dir, "magnesium") });
+  };
+  // The runtime's note of the learner's last message, moved back: past three hours, the next message begins a sitting.
+  const hoursAgo = (hours) =>
+    execFileSync("python3", ["-I", "-c", "import sqlite3,sys,time; c=sqlite3.connect(sys.argv[1]); c.execute('UPDATE meta SET last_learner_ms=?', (int((time.time()-float(sys.argv[2])*3600)*1000),)); c.commit()", join(course, ".magnesium", "sittings.sqlite"), String(hours)]);
+  const same = await recordWindow("due-same-sitting");
+  await says(same, "a check due, the sitting carrying on", null);
+  await shotsOf(same, "due-same-sitting", "a quick check due while the sitting carries on: the row says nothing, the page says it is due");
+  await quit(same);
+
+  hoursAgo(4);
+  const k = await recordWindow("due-check");
+  await says(k, "a check due, a new sitting", "Starts with 1 quick check · about a minute");
+  await shotsOf(k, "due-check", "a quick check due and a new sitting next");
+  await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await k.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(k, 400);
+  await shotsOf(k, "due-check-big", "a quick check due, at 720 by 560 and the largest text");
+  await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(k);
+
+  // A long item and note, and a paper redo due as well.
+  const planFile = join(course, "Study", "midterm-2", "plan.md");
+  const planText = readFileSync(planFile, "utf8");
+  writeFileSync(
+    planFile,
+    planText.replace(
+      /\| 1 \| Sampling distributions \|[^|]*\|/,
+      "| 1 | Sampling distributions of a mean and of a proportion, from a small sample | the standard error of a mean, when x̄ is normal, and why the sample size matters more than the population's |",
+    ),
+  );
+  const day = (offset) => {
+    const at = new Date(Date.now() + offset * 86_400_000);
+    return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+  };
+  writeFileSync(
+    join(course, "Study", "midterm-2", "gap-log.md"),
+    `## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|\n| 1 | ${day(-3)} | Midterm 2023 | Q1 | standard error | used s for the standard error | A | tighten | | ${day(-1)} | open |\n`,
+  );
+  const r = await recordWindow("due-redo");
+  await says(r, "a check and a redo due", "Starts with 1 quick check and 1 paper redo");
+  await shotsOf(r, "due-redo-long", "a quick check and a paper redo due, under a long item");
+  await quit(r);
+  writeFileSync(planFile, planText.replace(/\| todo \|/g, "| done |"));
+  const d = await recordWindow("due-all-done");
+  await says(d, "every item done", "Starts with 1 quick check and 1 paper redo");
+  await shotsOf(d, "due-all-done", "every item done: New session, and what it starts with");
+  await quit(d);
+  writeFileSync(planFile, planText);
+
+  // A lesson begun from Next: its first message begins the sitting, so back on Home the row says nothing more.
+  const s = await recordWindow("due-begun");
+  await step(s, "start from Next", { op: "click", target: "start", by: "drive" });
+  await step(s, "the first reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  await shoot(s, "session-due-begun", "Session: begun from Next with a quick check and a paper redo due");
+  await step(s, "Home after the lesson began", { op: "click", target: "home", by: "drive" });
+  await settle(s, 800);
+  await says(s, "Home after the lesson began", null);
+  await shoot(s, "home-due-begun", "Home after a lesson began the sitting: the row says nothing more");
+  await quit(s);
+}
+
+if (process.env.PAGES_ONLY === "due") {
+  await dueStates().catch((error) => problem(`stopped: ${error?.stack ?? error}`));
+  run.finished = new Date().toISOString();
+  save();
+  console.log(run.problems.length === 0 ? `pages: ${run.shots.length} pages in ${out}` : `pages: ${run.problems.length} problem(s); see ${join(out, "run.json")}`);
+  process.exit(run.problems.length === 0 ? 0 : 1);
+}
+
 /** The workspace page over a record of several skills, each with its own next day: at the window's size, at 720 by
  * 560, and at 720 by 560 with the largest text. */
 async function workRecord() {

@@ -2,7 +2,7 @@
 // carries it on. Home's first row and the workspace page's Next both take it
 // from here, so the two screens never offer different things to start.
 
-import type { LessonInfo, PlanItem } from "./types";
+import type { Home, LessonInfo, PlanItem } from "./types";
 import { sessionName, shortDay } from "./words";
 
 /** A session with the name the window shows for it. */
@@ -28,6 +28,25 @@ export function nextOf(items: PlanItem[], named: Named[]): Next | null {
   const item = items.find((each) => each.status === "doing") ?? items.find((each) => each.status !== "done") ?? null;
   if (!item) return null;
   return { item, carried: named.find((each) => each.title.trim() === item.title.trim()) ?? null };
+}
+
+/**
+ * What the session Next starts or carries on opens with, from the record's reading, as the row says it: "Starts with
+ * 1 quick check · about a minute". A quick check is a one-minute question; a paper redo has no set length, so none is
+ * said with one. Null when the next message opens with nothing: it carries a sitting on, the opener is off, nothing is
+ * due, or a timed paper is running.
+ */
+export function firstStep(home: Pick<Home, "opening" | "sitting"> | null): string | null {
+  const opening = home?.opening;
+  if (!opening || home.sitting) return null;
+  const { checks, redos } = opening;
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const parts = [checks > 0 ? count(checks, "quick check", "quick checks") : null, redos > 0 ? count(redos, "paper redo", "paper redos") : null].filter(
+    (part): part is string => part !== null,
+  );
+  if (parts.length === 0) return null;
+  const time = redos === 0 ? ` · about ${checks === 1 ? "a minute" : `${checks} minutes`}` : "";
+  return `Starts with ${parts.join(" and ")}${time}`;
 }
 
 /** The day the plan puts an item on, as the window says it: "today", "tomorrow", else "Tue 17 Nov". */
