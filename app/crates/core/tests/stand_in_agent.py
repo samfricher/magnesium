@@ -12,6 +12,8 @@ real program behaves the same.
 
 What a turn does is chosen by a word in the learner's message:
   PERMISSION  ask to run a command, then say what was decided
+  PLANEDIT    ask to edit Study/midterm-2/plan.md, then say what was decided
+              (it changes nothing)
   QUESTION    ask the learner to choose, then say what was chosen
   SLOW        write slowly, so the reply can be interrupted
   WAIT        think for a while before the first word
@@ -425,7 +427,21 @@ def turn(text):
                 "delta": {"type": "text_delta", "text": "SECRET HELPER TEXT"}}, parent="toolu_helper")
         assistant([{"type": "text", "text": "SECRET HELPER TEXT"}], "msg_helper", parent="toolu_helper")
 
-    if "PERMISSION" in text:
+    if "PLANEDIT" in text:
+        # As Claude Code 2.1.322 asked on 2026-11-15 for an edit to a plan
+        # its rules did not cover: its one suggestion is the mode that
+        # accepts every edit for the rest of the sitting.
+        plan = os.path.join(os.getcwd(), "Study", "midterm-2", "plan.md")
+        reply = ask_permission(
+            "Edit",
+            {"file_path": plan, "old_string": "todo", "new_string": "doing", "replace_all": False},
+            [{"type": "setMode", "mode": "acceptEdits", "destination": "session"}],
+        )
+        if reply is None:
+            stopped()
+            return
+        answer = "The plan was changed." if reply.get("behavior") == "allow" else "The plan was left as it was."
+    elif "PERMISSION" in text:
         reply = ask_permission(
             "Bash",
             {"command": "tectonic paper.tex", "description": "Build the paper as a PDF"},
