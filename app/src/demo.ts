@@ -648,18 +648,6 @@ export function demoCore(): Core {
         emit = () => {};
       };
     },
-    // The demo's course has the plan's two sessions; the others have none.
-    plannedSessions: async (folder) =>
-      folder === FOLDER
-        ? {
-            sessions: [
-              { plan: "midterm-2", title: "Midterm 2", action: "Do the due quick checks and cold redos at my desk before class", days: ["MO", "TU", "WE", "TH", "FR"], start: "08:00", end: null },
-              { plan: "midterm-2", title: "Midterm 2", action: "Sit the next block at the library", days: ["SA"], start: "10:00", end: "11:30" },
-            ],
-            unreadable: 0,
-          }
-        : { sessions: [], unreadable: 0 },
-    addToCalendar: async () => {},
     selftest: async () => false,
     selftestReport: async () => {},
     // A browser has nothing behind its page to frost: the demo's window stays solid.

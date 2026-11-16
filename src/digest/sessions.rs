@@ -32,29 +32,8 @@ enum Line {
     Blank,
     /// A line that holds no session: a backup, "none planned" or the template's own.
     Other,
-    Session(WeekdaySet, Clock),
+    Session(WeekdaySet, NaiveTime),
     Unreadable(&'static str),
-}
-
-/// A session's start, and its end when the line gives a range such as 08:00 to 09:00.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Clock {
-    pub(super) start: NaiveTime,
-    pub(super) end: Option<NaiveTime>,
-}
-
-/// A line of the Sessions section that holds a session, with what it says.
-pub(super) struct PlannedLine {
-    pub(super) days: WeekdaySet,
-    pub(super) clock: Clock,
-    /// The line as Markdown shows it, without its list marker or emphasis marks.
-    pub(super) text: String,
-}
-
-/// Every session line of a plan, and a note for each line that could not be read.
-pub(super) struct SessionLines {
-    pub(super) planned: Vec<PlannedLine>,
-    pub(super) unreadable: Vec<Unreadable>,
 }
 
 const NOT_A_SESSION: &str = "the line is not a session (\"If it is <days> at HH:MM, then I ...\"), a backup (\"If I miss ...\") or \"none planned\"";
@@ -64,59 +43,31 @@ const BAD_DAYS: &str =
 const BAD_TIME: &str = "the start time is not a 24-hour HH:MM such as 08:00";
 
 pub(super) fn read(file: &str, plan: &str, today: NaiveDate) -> PlannedSessions {
-    let SessionLines {
-        planned,
-        unreadable,
-    } = lines(file, plan);
-    let mut today = planned
-        .iter()
-        .filter(|session| session.days.contains(today.weekday()))
-        .map(|session| session.clock.start.format("%H:%M").to_string())
-        .collect::<Vec<_>>();
-    today.sort();
-    today.dedup();
-    PlannedSessions { today, unreadable }
-}
-
-/// The plan's session lines in the order it gives them. Backups, "none
-/// planned", the template's own line and blanks are neither sessions nor
-/// unreadable.
-pub(super) fn lines(file: &str, plan: &str) -> SessionLines {
     let rendered = rendered(plan);
     let sessions = section(&rendered, "Sessions");
-    let mut found = SessionLines {
-        planned: Vec::new(),
+    let mut found = PlannedSessions {
+        today: Vec::new(),
         unreadable: Vec::new(),
     };
     for (index, text) in sessions.text.lines().enumerate() {
-        let line = sessions.first_line + index;
         match classify(text) {
             Line::Blank | Line::Other => {}
-            Line::Session(days, clock) => found.planned.push(PlannedLine {
-                days,
-                clock,
-                text: shown(text),
-            }),
-            Line::Unreadable(reason) => {
-                found
-                    .unreadable
-                    .push(Unreadable::at(file, "Sessions", line, reason.to_owned()))
+            Line::Session(days, start) => {
+                if days.contains(today.weekday()) {
+                    found.today.push(start.format("%H:%M").to_string());
+                }
             }
+            Line::Unreadable(reason) => found.unreadable.push(Unreadable::at(
+                file,
+                "Sessions",
+                sessions.first_line + index,
+                reason.to_owned(),
+            )),
         }
     }
+    found.today.sort();
+    found.today.dedup();
     found
-}
-
-/// A line as it reads, without its list marker or emphasis marks.
-fn shown(line: &str) -> String {
-    let line = line.replace(['*', '_'], "");
-    let line = line.trim();
-    line.strip_prefix('-')
-        .or_else(|| line.strip_prefix('+'))
-        .unwrap_or(line)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 fn classify(line: &str) -> Line {
@@ -134,7 +85,7 @@ fn classify(line: &str) -> Line {
         Line::Other
     } else {
         match planned_session(line) {
-            Ok((days, clock)) => Line::Session(days, clock),
+            Ok((days, start)) => Line::Session(days, start),
             Err(reason) => Line::Unreadable(reason),
         }
     }
@@ -183,7 +134,7 @@ fn rendered(text: &str) -> String {
 }
 
 /// `line` is lowercase, with its list marker and emphasis marks taken off.
-fn planned_session(line: &str) -> Result<(WeekdaySet, Clock), &'static str> {
+fn planned_session(line: &str) -> Result<(WeekdaySet, NaiveTime), &'static str> {
     let cue = ["if it is ", "if it's ", "if it\u{2019}s "]
         .iter()
         .find_map(|start| line.strip_prefix(start))
@@ -197,16 +148,10 @@ fn planned_session(line: &str) -> Result<(WeekdaySet, Clock), &'static str> {
     Ok((days, start_time(time.trim()).ok_or(BAD_TIME)?))
 }
 
-fn start_time(text: &str) -> Option<Clock> {
+fn start_time(text: &str) -> Option<NaiveTime> {
     match text.split_once(" to ").or_else(|| text.split_once('-')) {
-        Some((start, end)) => Some(Clock {
-            start: clock(start.trim())?,
-            end: Some(clock(end.trim())?),
-        }),
-        None => Some(Clock {
-            start: clock(text)?,
-            end: None,
-        }),
+        Some((start, end)) => clock(end.trim()).and(clock(start.trim())),
+        None => clock(text),
     }
 }
 

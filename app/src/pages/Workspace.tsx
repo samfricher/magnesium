@@ -14,8 +14,7 @@ import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
-import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Planned, Progress, Row } from "../types";
-import { StudyTimes } from "./StudyTimes";
+import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
 import { displayName, fromToday, goalName, markShort, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
@@ -55,8 +54,6 @@ type Props = {
   onNote: (text: string) => void;
   /** Bumped when the material changes from outside the page, as by a drop. */
   refresh: number;
-  /** Whether the page shows planned sessions to add to a calendar: the menu's item follows. */
-  onStudyTimes?: (folder: string, any: boolean) => void;
 };
 
 /** "Midterm 1, Tue 17 Nov · 5 days", or null for a plan with no date ahead. */
@@ -275,9 +272,6 @@ export function WorkspacePage(props: Props) {
   const [record, setRecord] = useState<{ progress: Progress; marks: Mark[] } | null | "unread">("unread");
   const [materialOpen, setMaterialOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  /** The plans' planned sessions; null until read, or when the runtime cannot say. */
-  const [planned, setPlanned] = useState<Planned | null>(null);
-  const [adding, setAdding] = useState(false);
 
   // Material opens beside the page, as a document opens beside a lesson, and stays open with the page.
   const docsKey = workspaceDocsKey(folder);
@@ -308,26 +302,8 @@ export function WorkspacePage(props: Props) {
     setGoTo((n) => n + 1);
     props.onShowPanel();
   };
-  const addToCalendar = async () => {
-    if (adding) return;
-    setAdding(true);
-    try {
-      await api.addToCalendar(folder);
-    } catch (problem) {
-      props.onNote(String(problem).replace(/^Error: /, ""));
-    } finally {
-      setAdding(false);
-    }
-  };
   const panelRun = useRef<(command: string) => boolean>(() => false);
   panelRun.current = (command) => {
-    if (command === "add-to-calendar") {
-      // The key works where the control is drawn, and says why where it is not.
-      if (sitting) props.onNote("Your sessions can go in your calendar once the paper is handed in or ended.");
-      else if (!anyTimes) props.onNote("This workspace’s plan has no session times to add. Tell the tutor when you study, and it adds them.");
-      else void addToCalendar();
-      return true;
-    }
     const docs = docsNow.current;
     if (command === "open-document") {
       // The panel first: in front of the page if it fills it.
@@ -384,26 +360,17 @@ export function WorkspacePage(props: Props) {
   const withDocs = docs.open.length > 0 || picking;
 
   const read = useCallback(async () => {
-    const [opened, listed, held, planned, times] = await Promise.all([
+    const [opened, listed, held, planned] = await Promise.all([
       api.visitFolder(folder).catch(() => null),
       api.lessons(folder).catch(() => [] as LessonInfo[]),
       api.materialList(folder).catch(() => "none" as const),
       api.plan(folder).catch(() => null),
-      api.plannedSessions(folder).catch(() => null),
     ]);
     setHome(opened);
     setSessions(listed);
     setMaterials(held);
     setPlan(planned);
-    setPlanned(times);
   }, [api, folder]);
-
-  const { onStudyTimes } = props;
-  const anyTimes = (planned?.sessions.length ?? 0) > 0 && (home?.state === "ready" || home?.state === "empty") && !home?.sitting;
-  useEffect(() => {
-    onStudyTimes?.(folder, anyTimes);
-    return () => onStudyTimes?.(folder, false);
-  }, [onStudyTimes, folder, anyTimes]);
 
   useEffect(() => {
     void read();
@@ -679,8 +646,6 @@ export function WorkspacePage(props: Props) {
             </>
           )}
         </section>}
-
-        {planned && !sitting && home && (home.state === "ready" || home.state === "empty") && <StudyTimes planned={planned} busy={adding} onAdd={() => void addToCalendar()} />}
 
         {earlier.length > 0 && !sitting && (
           <section aria-label="Earlier sessions">

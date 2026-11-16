@@ -54,9 +54,6 @@ pub fn run() -> ExitCode {
             diagnostics::print_info(json)
         }
         Some(("digest", _)) => digest::print_digest(),
-        Some(("calendar", matches)) => {
-            digest::print_calendar(matches.get_flag("json"), matches.get_flag("open"))
-        }
         Some(("attempts", matches)) => attempts::print_attempts(matches.get_flag("json")),
         Some(("lesson", matches)) => lesson::print_lesson(
             matches

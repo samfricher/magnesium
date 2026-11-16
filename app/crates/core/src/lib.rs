@@ -11,8 +11,7 @@
 //! - [`material`] copies course material the learner adds into the study
 //!   folder and words what search can and cannot read of it.
 //! - [`plan`] reads the open folder's study plan and says what a turn
-//!   changed in it, and [`calendar`] hands its planned sessions to the
-//!   learner's calendar.
+//!   changed in it.
 //! - [`workspace`] lists a folder's sessions and the library's workspaces,
 //!   from the window's own store.
 //! - [`manager`] holds one open study folder and its one conversation.
@@ -23,7 +22,6 @@
 pub mod activity;
 pub mod agent;
 pub mod asks;
-pub mod calendar;
 pub mod claude;
 pub mod direct;
 pub mod files;

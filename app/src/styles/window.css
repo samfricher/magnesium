@@ -210,9 +210,6 @@ button.home-row:focus:hover { background: var(--tint); }
 }
 .row-when { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .home-row.static .quiet-act { margin-left: 0.4rem; }
-/* A planned session's words are the learner's own, and wrap rather than lose their end. */
-.study-time { grid-template-columns: minmax(0, 1fr) max-content; }
-.study-time-what { white-space: normal; overflow: visible; text-wrap: pretty; }
 
 /* Home's first row: the most recent session, Return away. */
 .home-first { margin-bottom: 1.6rem; }
