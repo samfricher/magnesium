@@ -80,9 +80,7 @@ pub fn planned_from(printed: &str) -> Option<Planned> {
             })
             .collect(),
         unreadable: value["unreadable"].as_array().map_or(0, Vec::len),
-        unreadable_plans: value["unreadable_plans"]
-            .as_array()
-            .map_or(0, Vec::len),
+        unreadable_plans: value["unreadable_plans"].as_array().map_or(0, Vec::len),
     })
 }
 
@@ -217,7 +215,10 @@ mod tests {
         }
         remove_old(dir.path());
         assert!(!old.exists());
-        assert!(new.exists(), "a file the calendar app may still be reading stays");
+        assert!(
+            new.exists(),
+            "a file the calendar app may still be reading stays"
+        );
         assert!(other.exists(), "only calendar files are taken away");
     }
 
