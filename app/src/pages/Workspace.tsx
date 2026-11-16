@@ -2,12 +2,14 @@
 // as the page's one main action, the earlier sessions, the papers, the
 // material, where each skill stands in the record, and the folder itself
 // (take it off the list, upgrade it, set it up). File names are shown; paths
-// are not.
+// are not. While a timed paper runs there is no tutor and nothing to add, so
+// the page is that paper alone until it is handed in or ended; the rest comes
+// back as it was.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
-import { namedSessions, nextOf, planDay } from "../next";
+import { firstStep, namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
@@ -41,6 +43,8 @@ type Props = {
   onDocsChange: () => void;
   /** The page takes the panel's commands (expand, flip, close, zoom) while it is in front. */
   registerPanel: (run: ((command: string) => boolean) | null) => void;
+  /** Whether a timed paper runs in this folder, as the page shows it: a file dropped then is not added as material. */
+  onPaper?: (folder: string, running: boolean) => void;
   onNote: (text: string) => void;
   /** Bumped when the material changes from outside the page, as by a drop. */
   refresh: number;
@@ -454,8 +458,13 @@ export function WorkspacePage(props: Props) {
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const exam = examLine(home?.exam ?? null);
-  // Off the list, a running paper's clock would go on with nothing to show it or hand it in.
-  const held = props.running ? "Close its running session first" : sitting ? "Hand in or end the paper first" : null;
+  const held = props.running ? "Close its running session first" : null;
+  const { onPaper } = props;
+  const paperRunning = sitting !== null;
+  useEffect(() => {
+    onPaper?.(folder, paperRunning);
+    return () => onPaper?.(folder, false);
+  }, [onPaper, folder, paperRunning]);
 
   // The plan's item in hand, by the rule Home's first row uses too (src/next.ts).
   const items = plan?.items ?? [];
@@ -466,7 +475,11 @@ export function WorkspacePage(props: Props) {
   const earlier = named.filter((each) => each !== carried);
   // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
   const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;
-  const due = home ? dueLine(home) : null;
+  // What the session Next opens starts with, from the record's reading, said on its row. When the next message would
+  // not begin a sitting (one carries on, or the opener is off), what is due is said under the row instead, with no
+  // promise of when it comes.
+  const first = firstStep(home);
+  const due = home && !first ? dueLine(home) : null;
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
@@ -551,6 +564,7 @@ export function WorkspacePage(props: Props) {
                   <span className="row-name next-name">
                     <Line text={current.title} />
                   </span>
+                  {first && <span className="next-first">{first}</span>}
                   {current.note && (
                     <span className="next-note">
                       <Line text={current.note} />
@@ -566,7 +580,10 @@ export function WorkspacePage(props: Props) {
               <>
                 {items.length > 0 && <p className="page-note">Everything on the plan is done.</p>}
                 <button className="home-row first next-row" data-drive="new-session" autoFocus={props.focus} onClick={() => props.onNewSession(folder)}>
-                  <span className="row-name next-name">New session</span>
+                  <span className="next-what">
+                    <span className="row-name next-name">New session</span>
+                    {first && <span className="next-first">{first}</span>}
+                  </span>
                   <span className="row-when" />
                   <span className="row-key" aria-hidden="true">
                     ↩
@@ -585,7 +602,7 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
-        <section aria-label="Your work" className="your-work">
+        {!sitting && <section aria-label="Your work" className="your-work">
           <p className="list-head">Your work</p>
           {record === "unread" ? (
             <p className="page-note">Reading the record…</p>
@@ -608,9 +625,9 @@ export function WorkspacePage(props: Props) {
               <p className="page-note work-key">Each ring is a day you got it right on your own, from memory. Three prove a skill.</p>
             </>
           )}
-        </section>
+        </section>}
 
-        {earlier.length > 0 && (
+        {earlier.length > 0 && !sitting && (
           <section aria-label="Earlier sessions">
             <p className="list-head">Earlier</p>
             <div className="list" role="list">
@@ -653,7 +670,7 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
-        <section aria-label="Material">
+        {!sitting && <section aria-label="Material">
           {listed ? (
             <button className="list-head fold" data-drive="material" aria-expanded={materialOpen} onClick={() => setMaterialOpen((open) => !open)}>
               Material <span className="fold-count">{plural(listed.files, "file", "files")}</span>
@@ -678,20 +695,20 @@ export function WorkspacePage(props: Props) {
             <>
               {materials.keys > 0 && <p className="page-note">{materials.keys === 1 ? "One answer key is" : `${materials.keys} answer keys are`} kept out of sight.</p>}
               <p className="page-acts">
-                <button className="quiet-act" data-drive="add-material" disabled={!ready || sitting !== null || busy} onClick={() => void addFiles()}>
+                <button className="quiet-act" data-drive="add-material" disabled={!ready || busy} onClick={() => void addFiles()}>
                   Add files…
                 </button>
-                <button className="quiet-act" disabled={!ready || sitting !== null} onClick={() => props.onPaste(folder)}>
+                <button className="quiet-act" disabled={!ready} onClick={() => props.onPaste(folder)}>
                   Paste text…
                 </button>
               </p>
-              {/* Files to hand during a paper are most likely its working, which goes in by handing in, not here. */}
-              {sitting && <p className="page-note">While a paper runs, your working is handed in above, not added here.</p>}
             </>
           )}
-        </section>
+        </section>}
 
-        <section aria-label="This folder" className="folder-acts">
+        {/* Off the list, a running paper's clock would go on with nothing to show it or hand it in: the action waits
+            for the paper, and is not drawn while it runs. */}
+        {!sitting && <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
             <button className="quiet-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
@@ -699,7 +716,7 @@ export function WorkspacePage(props: Props) {
           </p>
           {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
           {held && <p className="page-note">{held}.</p>}
-        </section>
+        </section>}
       </div>
       </div>
       {withDocs && (

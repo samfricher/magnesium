@@ -258,10 +258,13 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .next-row { text-align: left; }
 .next-what { display: flex; flex-direction: column; min-width: 0; }
 .next-note { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* What the session starts with, from the record, between the item's name and the plan's words about it. */
+.next-first { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--text); }
 .next .next-due { margin-top: 0.5rem; }
 .next .next-acts { margin-top: 0.5rem; }
-/* A choice about this Mac that lessons do not wait on, under Home's first row (or the step in its place). */
-.home-note { margin-top: 1rem; }
+/* A choice about this Mac that lessons do not wait on, at the foot of Home: as far under the folder actions as they
+   are under the list. */
+.home-note { margin-top: 2.2rem; }
 .home-note .page-note { margin: 0; max-width: 34em; }
 .home-page .home-note .page-acts { margin-top: 0.3rem; }
 
@@ -784,8 +787,9 @@ dialog.layer::backdrop { background: transparent; }
   /* The soft field: a shade of the text over the glass, not of an opaque ground. */
   --well: color-mix(in srgb, var(--text) 6%, transparent);
   /* The quiet grey nearer the text as more shows through: over a dark desktop the thinned ground is darker
-     than the solid one, and the window's small words have to stay readable on it. */
-  --quiet: color-mix(in srgb, var(--text) calc(64% + 24% * var(--glass, 0.4)), var(--ground));
+     than the solid one, and the window's small words have to stay readable on it. It starts from the solid
+     ground's grey in light (surface.css) and reaches 88% at full strength. */
+  --quiet: color-mix(in srgb, var(--text) calc(var(--quiet-glass) + (88% - var(--quiet-glass)) * var(--glass, 0.4)), var(--ground));
 }
 /* Liquid Glass leaves the desktop close to sharp and does not dim it, so more ground stays over it. */
 :root[data-glass="liquid"] { --frost: calc(94% - 44% * var(--glass, 0.4)); }

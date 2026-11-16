@@ -5,7 +5,7 @@
 // alike, and only a mark under one says the record took it as an answer.
 // Nothing here reads a mark or a change from the tutor's words.
 
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 
 import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
 import { renderPlain } from "../render";
@@ -245,55 +245,97 @@ export function Notices({
   );
 }
 
+// A card that arrives while the learner is typing would catch their next Space or Return and allow, or answer,
+// without their meaning to. So it takes the keyboard only from nowhere, or from a line that is empty and has had no
+// key for this long; otherwise the keyboard stays where it is, and ⇧⇥ from the line goes to the card.
+const TYPING_MS = 2000;
+let lastKeyAt = -Infinity;
+if (typeof window !== "undefined") window.addEventListener("keydown", () => (lastKeyAt = performance.now()), true);
+
+function mayTakeKeys(): boolean {
+  if (performance.now() - lastKeyAt < TYPING_MS) return false;
+  const at = document.activeElement;
+  if (!at || at === document.body) return true;
+  if (!(at instanceof HTMLTextAreaElement) || at.dataset.drive !== "composer") return false;
+  return at.value.trim() === "" && !at.closest(".line")?.querySelector(".attached .file");
+}
+
+/** The card's first choice, given the keyboard as the card arrives when the learner is not typing. */
+function useFirstChoice() {
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (mayTakeKeys()) first.current?.focus();
+  }, []);
+  return first;
+}
+
 /** A request from the tutor that waits on the learner: a permission, or a question with choices. */
 export function Cards(props: { cards: Card[]; onDecide: (id: string, decision: Decision) => void; onAnswer: (id: string, answers: Answer[]) => void }) {
   return (
     <>
       {props.cards.map((card) =>
         card.kind === "permission" ? (
-          <div key={card.id} className="card" role="group" aria-label={card.title}>
-            <p className="record-head">{card.title}</p>
-            {card.detail && <p className="card-what">{withoutPaths(card.detail)}</p>}
-            {/* The command or call itself, whole: the learner allows what it does, not what it is said to do. */}
-            {card.exact && <p className="card-detail">{card.exact}</p>}
-            <p className="card-acts">
-              <button className="act" data-drive="allow" onClick={() => props.onDecide(card.id, "allow_once")} autoFocus>
-                Allow once
-              </button>
-              {card.canAlways && (
-                <button className="act" data-drive="allow-always" onClick={() => props.onDecide(card.id, "allow_always")}>
-                  {card.always ?? "Always allow"}
-                </button>
-              )}
-              <button className="act" onClick={() => props.onDecide(card.id, "refuse")}>
-                Refuse
-              </button>
-            </p>
-          </div>
+          <PermissionCard key={card.id} card={card} onDecide={props.onDecide} />
         ) : (
-          <div key={card.id} className="card" role="group" aria-label="The tutor asks">
-            {card.questions.map((question, index) => (
-              <div key={index} className="card-q">
-                <p className="record-head">{question.header ?? "The tutor asks"}</p>
-                <p className="card-question">{question.question}</p>
-                <p className="card-acts">
-                  {question.options.map((option, n) => (
-                    <button
-                      key={option.label}
-                      className="act"
-                      autoFocus={index === 0 && n === 0}
-                      title={option.description ?? undefined}
-                      onClick={() => props.onAnswer(card.id, card.questions.map((q, i) => ({ question: q.question, chosen: i === index ? [option.label] : [] })))}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </p>
-              </div>
-            ))}
-          </div>
+          <QuestionCard key={card.id} card={card} onAnswer={props.onAnswer} />
         ),
       )}
     </>
+  );
+}
+
+function PermissionCard({ card, onDecide }: { card: Extract<Card, { kind: "permission" }>; onDecide: (id: string, decision: Decision) => void }) {
+  const first = useFirstChoice();
+  const always = card.always ?? "Always allow";
+  return (
+    <div className="card" role="group" aria-label={card.title}>
+      <p className="record-head">{card.title}</p>
+      {card.detail && <p className="card-what">{withoutPaths(card.detail)}</p>}
+      {/* The command or call itself, whole: the learner allows what it does, not what it is said to do. */}
+      {card.exact && <p className="card-detail">{card.exact}</p>}
+      <p className="card-acts">
+        <button ref={first} className="act" data-drive="allow" onClick={() => onDecide(card.id, "allow_once")}>
+          Allow once
+        </button>
+        <button className="act" onClick={() => onDecide(card.id, "refuse")}>
+          Refuse
+        </button>
+      </p>
+      {card.canAlways && (
+        // The engine's own words for what the grant covers ("Always allow tectonic commands"), after an "or".
+        <p className="card-always">
+          <button className="act" data-drive="allow-always" onClick={() => onDecide(card.id, "allow_always")}>
+            or {always.charAt(0).toLowerCase() + always.slice(1)}
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function QuestionCard({ card, onAnswer }: { card: Extract<Card, { kind: "question" }>; onAnswer: (id: string, answers: Answer[]) => void }) {
+  const first = useFirstChoice();
+  return (
+    <div className="card" role="group" aria-label="The tutor asks">
+      {card.questions.map((question, index) => (
+        <div key={index} className="card-q">
+          <p className="record-head">{question.header ?? "The tutor asks"}</p>
+          <p className="card-question">{question.question}</p>
+          <p className="card-acts">
+            {question.options.map((option, n) => (
+              <button
+                key={option.label}
+                ref={index === 0 && n === 0 ? first : undefined}
+                className="act"
+                title={option.description ?? undefined}
+                onClick={() => onAnswer(card.id, card.questions.map((q, i) => ({ question: q.question, chosen: i === index ? [option.label] : [] })))}
+              >
+                {option.label}
+              </button>
+            ))}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }

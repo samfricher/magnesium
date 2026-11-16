@@ -12,6 +12,7 @@
 //! row says either. The window does not work them out itself, because that
 //! rule belongs to the runtime. Against that runtime it says it cannot tell.
 
+use std::fs;
 use std::path::Path;
 
 use chrono::NaiveDate;
@@ -123,9 +124,149 @@ pub fn goal_of_conversation(root: &Path, conversation: &str) -> Option<String> {
     .filter(|goal| !goal.trim().is_empty())
 }
 
+/// How long without a learner message ends a sitting, as the runtime counts
+/// it (`SITTING_GAP_MS` in the runtime's `src/sittings.rs`).
+const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
+/// The most quick checks the runtime takes into one sitting
+/// (`MAX_CHECKS_PER_SITTING` there); the rest wait for a later one.
+const CHECKS_PER_SITTING: u32 = 3;
+
+/// What the learner's next message in this folder opens with, when it begins
+/// a sitting: the quick checks the runtime takes into it and the paper redos
+/// due.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Opening {
+    pub checks: u32,
+    pub redos: u32,
+}
+
+/// What the next learner message here opens with, or None when it opens with
+/// nothing: it would not begin a sitting (the runtime heard the learner less
+/// than three hours ago), the folder has the opener off, nothing is due, or
+/// the runtime's sitting store cannot be read. The runtime begins a sitting on
+/// the first learner message after the gap and gives the tutor what is due
+/// to open it with, before new material.
+pub fn opening(root: &Path, checks_due: u32, redos_due: u32, now_ms: i64) -> Option<Opening> {
+    let checks = checks_due.min(CHECKS_PER_SITTING);
+    if checks + redos_due == 0 || opener_off(root) {
+        return None;
+    }
+    let begins = match last_learner_ms(root)? {
+        None => true,
+        Some(last) => now_ms - last >= SITTING_GAP_MS,
+    };
+    begins.then_some(Opening {
+        checks,
+        redos: redos_due,
+    })
+}
+
+/// When the runtime last noted a learner message in this folder: None when
+/// its sitting store cannot be read, Some(None) when it has noted none (no
+/// store yet, or no message yet).
+fn last_learner_ms(root: &Path) -> Option<Option<i64>> {
+    let path = root.join(".magnesium/sittings.sqlite");
+    if !path.exists() {
+        return Some(None);
+    }
+    let conn = open(&path)?;
+    match conn.query_row("SELECT last_learner_ms FROM meta", [], |row| {
+        row.get::<_, Option<i64>>(0)
+    }) {
+        Ok(last) => Some(last),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Some(None),
+        Err(_) => None,
+    }
+}
+
+/// Whether the folder's config turns the sitting opener off
+/// (`magnesium opener off`): a top-level `opener = "off"` in
+/// `.magnesium/config.toml`. Anything else, or no file, leaves it on, as the
+/// runtime reads it.
+fn opener_off(root: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(root.join(".magnesium/config.toml")) else {
+        return false;
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        // Keys after the first table header belong to that table.
+        if line.starts_with('[') {
+            break;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() == "opener" {
+            let value = value.split('#').next().unwrap_or("").trim();
+            return value.trim_matches(|c| c == '"' || c == '\'') == "off";
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_next_message_opens_with_what_is_due_only_when_it_begins_a_sitting() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let now = 10 * SITTING_GAP_MS;
+        // No store yet: the first message begins one. At most three checks go in.
+        assert_eq!(
+            opening(root, 5, 0, now),
+            Some(Opening {
+                checks: 3,
+                redos: 0
+            })
+        );
+        assert_eq!(opening(root, 0, 0, now), None);
+        let control = root.join(".magnesium");
+        std::fs::create_dir_all(&control).unwrap();
+        let conn = Connection::open(control.join("sittings.sqlite")).unwrap();
+        conn.execute_batch("CREATE TABLE meta(singleton INTEGER PRIMARY KEY, version INTEGER, last_learner_ms INTEGER);")
+            .unwrap();
+        assert_eq!(
+            opening(root, 1, 2, now),
+            Some(Opening {
+                checks: 1,
+                redos: 2
+            })
+        );
+        // Heard an hour ago: the message carries the sitting on, and opens with nothing.
+        conn.execute(
+            "INSERT INTO meta VALUES(1, 2, ?1)",
+            [now - SITTING_GAP_MS / 3],
+        )
+        .unwrap();
+        assert_eq!(opening(root, 1, 2, now), None);
+        // Heard three hours ago: it begins a new one.
+        conn.execute("UPDATE meta SET last_learner_ms=?1", [now - SITTING_GAP_MS])
+            .unwrap();
+        assert_eq!(
+            opening(root, 1, 0, now),
+            Some(Opening {
+                checks: 1,
+                redos: 0
+            })
+        );
+        // The opener off: a sitting opens with nothing.
+        std::fs::write(control.join("config.toml"), "opener = \"off\"\n").unwrap();
+        assert_eq!(opening(root, 1, 0, now), None);
+        std::fs::write(
+            control.join("config.toml"),
+            "opener = \"block\"\n[other]\nopener = \"off\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            opening(root, 1, 0, now),
+            Some(Opening {
+                checks: 1,
+                redos: 0
+            })
+        );
+    }
 
     #[test]
     fn a_missing_store_gives_nothing_and_creates_nothing() {
@@ -199,5 +340,62 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
         assert!(checks(dir.path()).is_none());
         assert_eq!(checks_due(dir.path(), today), None);
+    }
+
+    /// The sitting's rule here is the runtime's, copied by hand: the gap that
+    /// begins a sitting, the checks one sitting takes, and the column that
+    /// says when the runtime last heard the learner. This reads them out of
+    /// the runtime's own source in this checkout, so a change there fails
+    /// here until this file follows it.
+    #[test]
+    fn the_sitting_rule_is_the_runtimes_own() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/sittings.rs");
+        let text = std::fs::read_to_string(&source).unwrap_or_else(|problem| {
+            panic!(
+                "the runtime's {} could not be read: {problem}",
+                source.display()
+            )
+        });
+        let constant = |name: &str| -> i64 {
+            let line = text
+                .lines()
+                .find(|line| line.contains(&format!("const {name}:")))
+                .unwrap_or_else(|| panic!("the runtime has no constant named {name} now"));
+            let value = line
+                .split('=')
+                .nth(1)
+                .unwrap_or_else(|| panic!("no value on: {line}"))
+                .trim()
+                .trim_end_matches(';');
+            value
+                .split('*')
+                .map(|part| {
+                    part.trim()
+                        .replace('_', "")
+                        .parse::<i64>()
+                        .unwrap_or_else(|_| {
+                            panic!("{name} is no longer a product of whole numbers: {line}")
+                        })
+                })
+                .product()
+        };
+        assert_eq!(
+            constant("SITTING_GAP_MS"),
+            SITTING_GAP_MS,
+            "the gap that begins a sitting"
+        );
+        assert_eq!(
+            constant("MAX_CHECKS_PER_SITTING"),
+            i64::from(CHECKS_PER_SITTING),
+            "the checks one sitting takes"
+        );
+        assert!(
+            text.contains("last_learner_ms INTEGER"),
+            "the runtime's meta table has no last_learner_ms column now"
+        );
+        assert!(
+            text.contains("SELECT last_learner_ms FROM meta"),
+            "the runtime no longer reads last_learner_ms from meta"
+        );
     }
 }

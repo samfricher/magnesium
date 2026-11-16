@@ -86,6 +86,10 @@ pub struct Home {
     /// None when the window cannot tell how many are due (see `peek`).
     pub checks_due: Option<u32>,
     pub redos_due: u32,
+    /// What the learner's next message here opens with, when it begins a
+    /// sitting: None when it carries one on, the opener is off, or nothing
+    /// is due (see `peek::opening`).
+    pub opening: Option<peek::Opening>,
     pub first_redo: Option<String>,
     pub papers: Vec<Paper>,
     pub can_resume: bool,
@@ -299,6 +303,7 @@ fn blank_home(folder: &Path, store: &Store) -> Home {
         last: None,
         checks_due: Some(0),
         redos_due: 0,
+        opening: None,
         first_redo: None,
         papers: Vec::new(),
         can_resume: remembered.session_id.is_some(),
@@ -374,6 +379,12 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         Some(record) => Some(record["due"]["checks"].as_u64().unwrap_or(0) as u32),
         None => peek::checks_due(&root, today()),
     };
+    home.opening = peek::opening(
+        &root,
+        home.checks_due.unwrap_or(0),
+        home.redos_due,
+        Local::now().timestamp_millis(),
+    );
 
     // The most recently changed lesson is where the learner stopped.
     home.last = sessions.first().and_then(|session| {
