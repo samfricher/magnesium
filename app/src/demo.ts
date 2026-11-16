@@ -8,7 +8,7 @@
 // and the new screens of the combined window:
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
-//   #permission  #paper  #upgrade  #help-row  #symbols
+//   #permission  #paper  #paper-over  #paper-long  #upgrade  #help-row  #symbols
 //   #line-stuck  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
 //   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
@@ -75,7 +75,16 @@ const modelChoice = (): ModelChoice => {
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
   return { models, failed: modelsFailed, pick, not_offered: !offered };
 };
-let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
+// #paper-over has run past its end, as a paper does when the window was closed and opened again later; #paper-long has a long name.
+let sitting: PaperSitting | null = has("paper", "paper-over", "paper-long")
+  ? {
+      target: "midterm-1",
+      name: has("paper-long") ? "Paper B, the full midterm from last year with every part of question four" : "Paper B",
+      path: paperB.path,
+      minutes: 50,
+      started_ms: Date.now() - (has("paper-over") ? 64 : 12) * 60_000,
+    }
+  : null;
 let upgraded = !has("upgrade");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
 let open: string | null = FOLDER;
@@ -756,6 +765,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await wait(200);
       return settle();
     case "paper":
+    case "paper-over":
+    case "paper-long":
       return actions.goWorkspace(FOLDER);
     case "upgrade":
       return actions.goWorkspace(FOLDER);

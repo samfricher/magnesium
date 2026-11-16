@@ -4,14 +4,14 @@
 // (take it off the list, upgrade it, set it up). File names are shown; paths
 // are not.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
-import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, Plan, Progress, Row } from "../types";
+import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
 import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
@@ -86,6 +86,134 @@ function Days({ row }: { row: Row }) {
         <span key={at} className={dot === 2 ? "work-day earned" : "work-day"} />
       ))}
     </span>
+  );
+}
+
+const MINUTE = 60_000;
+const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+const dayOf = (ms: number) => new Date(ms).toDateString();
+const isoDay = (ms: number) => {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+/** How long past its end a paper has run, said coarsely: minutes, then hours, then days. */
+function overBy(ms: number): string {
+  const minutes = Math.floor(ms / MINUTE);
+  if (minutes < 60) return minutes < 1 ? "just over" : plural(minutes, "minute", "minutes") + " over";
+  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " over";
+  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " over";
+}
+
+/** The time now, read again only when the paper's count of whole minutes left would change, so nothing moves in between. */
+function useMinuteOf(end: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    // The count changes as end - now crosses a whole minute; the timer is set just past that moment.
+    const left = end - now;
+    const wait = (((left % MINUTE) + MINUTE) % MINUTE || MINUTE) + 50;
+    const timer = window.setTimeout(() => setNow(Date.now()), wait);
+    return () => window.clearTimeout(timer);
+  }, [end, now]);
+  return now;
+}
+
+type Running = {
+  sitting: PaperSitting;
+  busy: boolean;
+  focus: boolean;
+  onHandIn: () => void;
+  onOpen: (() => void) | null;
+  onEnd: () => Promise<void>;
+};
+
+/** A timed paper while it runs: the page's lead, with its end, its actions and the paper's two marks. */
+function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running) {
+  const end = sitting.started_ms + sitting.minutes * MINUTE;
+  const now = useMinuteOf(end);
+  const [confirming, setConfirming] = useState(false);
+  const said = useId();
+  const endButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  const over = now >= end;
+  const left = Math.ceil((end - now) / MINUTE);
+  // A paper started on an earlier day says the day, so a window opened the next morning does not read as today.
+  const today = dayOf(now);
+  const when = (ms: number) => (dayOf(ms) === today ? clock(ms) : `${shortDay(isoDay(ms))}, ${clock(ms)}`);
+
+  useEffect(() => {
+    if (confirming) keepButton.current?.focus();
+  }, [confirming]);
+  const keepGoing = () => {
+    setConfirming(false);
+    // Back on the action that asked, so a second Tab or Return is where it was.
+    window.requestAnimationFrame(() => endButton.current?.focus());
+  };
+
+  return (
+    <section
+      aria-label="The paper running"
+      className="running-paper"
+      onKeyDown={(event) => {
+        // Esc puts the paper back as it was before it leaves the page.
+        if (confirming && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          keepGoing();
+        }
+      }}
+    >
+      <p className="list-head">A paper is running</p>
+      <div className="paper-head">
+        <div className="paper-what">
+          <h2 className="paper-name">{sitting.name}</h2>
+          <p className="paper-note">
+            Started {when(sitting.started_ms)} · {plural(sitting.minutes, "minute", "minutes")} · no tutor until you hand in
+          </p>
+        </div>
+        <div className="paper-when">
+          <p className="paper-end">{over ? `time up at ${when(end)}` : `until ${when(end)}`}</p>
+          <p className="paper-left" data-drive="sitting-left">
+            {over ? overBy(now - end) : `${plural(left, "minute", "minutes")} left`}
+          </p>
+        </div>
+      </div>
+      {confirming ? (
+        <div className="paper-confirm" role="group" aria-label="End without handing in" aria-describedby={said}>
+          <p className="paper-confirm-text" id={said}>
+            The paper ends: nothing is handed in or marked, your record stays as it was, and you can sit it again from the start.
+          </p>
+          <p className="page-acts">
+            <button ref={keepButton} className="quiet-act strong" data-drive="sitting-keep" disabled={busy} onClick={keepGoing}>
+              Keep going
+            </button>
+            <button className="quiet-act" data-drive="sitting-end-now" disabled={busy} onClick={() => void onEnd()}>
+              End the paper
+            </button>
+          </p>
+        </div>
+      ) : (
+        <p className="page-acts">
+          <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+            Hand in your work…
+          </button>
+          {onOpen && (
+            <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
+              Open the paper again
+            </button>
+          )}
+          <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
+            End without handing in
+          </button>
+        </p>
+      )}
+      <dl className="paper-marks">
+        <dt>?</dt>
+        <dd>where you are stuck, instead of looking it up</dd>
+        <dt>S U G</dt>
+        <dd>after each answer: sure, unsure or a guess</dd>
+      </dl>
+    </section>
   );
 }
 
@@ -265,7 +393,19 @@ export function WorkspacePage(props: Props) {
       if (words) props.onHandedIn(folder, words, name);
     });
 
-  const endPaper = () => act(() => api.paperEnd([], folder));
+  const endPaper = async () => {
+    setBusy(true);
+    try {
+      await api.paperEnd([], folder);
+    } catch (problem) {
+      props.onNote(String(problem).replace(/^Error: /, ""));
+    } finally {
+      setBusy(false);
+      await read();
+    }
+    // The block the keyboard was in is gone: the keyboard goes to what leads the page now.
+    window.requestAnimationFrame(() => column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus());
+  };
   const upgrade = () =>
     act(async () => {
       setHome(await api.upgradeFolder(folder));
@@ -342,33 +482,21 @@ export function WorkspacePage(props: Props) {
         </header>
 
         {sitting && (
-          <section aria-label="The paper running">
-            <p className="list-head">A paper is running</p>
-            <p className="page-text">
-              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes, until{" "}
-              {new Date(sitting.started_ms + sitting.minutes * 60_000).toTimeString().slice(0, 5)}. Write ? where you are stuck, and S, U or G after each
-              answer for sure, unsure or a guess. The tutor is out of reach until it is handed in.
-            </p>
-            <p className="page-acts">
-              <button className="quiet-act strong" disabled={busy} onClick={() => void handIn()}>
-                Hand in your work…
-              </button>
-              {sitting.path && (
-                <button
-                  className="quiet-act"
-                  onClick={() =>
+          <RunningPaper
+            key={`${sitting.name}@${sitting.started_ms}`}
+            sitting={sitting}
+            busy={busy}
+            focus={props.focus}
+            onHandIn={() => void handIn()}
+            onOpen={
+              sitting.path
+                ? () =>
                     // The paper opens beside the page, as the material does; a kind the window does not show goes to the Mac.
                     sourceRef(sitting.path!) ? openMaterial(sitting.path!) : void api.openFile(sitting.path!, folder).catch((problem) => props.onNote(String(problem)))
-                  }
-                >
-                  Open the paper again
-                </button>
-              )}
-              <button className="quiet-act" disabled={busy} onClick={() => void endPaper()}>
-                End without handing in
-              </button>
-            </p>
-          </section>
+                : null
+            }
+            onEnd={endPaper}
+          />
         )}
 
         {showNext && (

@@ -81,6 +81,8 @@ const shots = [
   ["working", "working", 700],
   ["permission", "permission", 500],
   ["paper", "paper", 300],
+  ["paper-over", "paper-over", 300],
+  ["paper-long", "paper-long", 300, { width: 720, height: 560 }],
   ["upgrade", "upgrade", 300],
   ["setup-signed-out", "setup-signed-out", 300],
   ["setup-no-claude", "setup-no-claude", 300],
