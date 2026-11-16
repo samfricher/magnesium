@@ -144,10 +144,11 @@ let task: "vmax" | "km" = week ? "km" : "vmax";
 
 // Tasks are written in prose, as the tutor on Magnesium writes them; the
 // engine names each one in its record, and says so with open_task.
-const VMAX_TASK = "The line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
-const KM_TASK = "The slope of the same line is $0.5$ s. What is $K_m$?";
+const VMAX_TASK = "A Lineweaver-Burk line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
+const KM_TASK = "A Lineweaver-Burk line meets the y-axis at $0.25$ s/µM, so $V_{max} = 4$ µM/s, and its slope is $0.5$ s. What is $K_m$?";
 const CHECK_TASK = "A line meets the y-axis at $0.2$ s/µM. What is $V_{max}$?";
-const TASKS = [VMAX_TASK, KM_TASK, CHECK_TASK, "A second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?"];
+const NEXT_TASK = "A Lineweaver-Burk line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?";
+const TASKS = [VMAX_TASK, KM_TASK, CHECK_TASK, NEXT_TASK];
 
 const OPENING =
   "You had the reciprocal form last time:\n\n$$\\frac{1}{v} = \\frac{K_m}{V_{max}}\\cdot\\frac{1}{[S]} + \\frac{1}{V_{max}}$$\n\n" +
@@ -164,7 +165,7 @@ const RIGHT =
 const WRONG =
   "Not quite. The intercept is $\\frac{1}{V_{max}}$, not $V_{max}$ itself, so take the reciprocal: $V_{max} = \\frac{1}{0.25}$.\n\n" + KM_TASK;
 
-const KM_RIGHT = "Yes: $K_m = 0.5 \\times 4 = 2$ µM. You read both constants off one line.\n\nA second line meets the y-axis at $0.5$ s/µM. What is its $V_{max}$?";
+const KM_RIGHT = "Yes: $K_m = 0.5 \\times 4 = 2$ µM. You read both constants off one line.\n\n" + NEXT_TASK;
 
 const HINT = "The slope is $\\frac{K_m}{V_{max}}$, and you have $V_{max}$ already. What do you multiply the slope by?";
 

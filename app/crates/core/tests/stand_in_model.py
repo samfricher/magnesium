@@ -368,7 +368,10 @@ def change_plan():
 
 
 STATS_FIRST = "A sample of 25 students has mean study time 52 minutes and s = 10 minutes. What is the standard error of the mean?"
-STATS_SECOND = "With t* = 2.064 for 24 degrees of freedom, what is the margin of error of a 95% interval for the mean?"
+# Each task restates what its answer needs, as the tutor's rules ask: the
+# window can show the open task's words alone.
+STATS_SECOND = ("A sample of 25 students has s = 10 minutes, so the standard error of the mean is 2 minutes. "
+                "With t* = 2.064 for 24 degrees of freedom, what is the margin of error of a 95% interval for the mean?")
 STATS_STEPS = [{"step": "The standard error", "status": "doing"}, {"step": "A 95% interval", "status": "todo"},
                {"step": "A test of the mean", "status": "todo"}]
 STATS_DONE = [{"step": "The standard error", "status": "done"}, {"step": "A 95% interval", "status": "doing"},
@@ -385,7 +388,7 @@ def redo_question(number):
     return f"A Lineweaver-Burk plot crosses the x axis at −{number / 2}: what is Km?"
 
 
-NEXT_REDO = {"question": "A second plot crosses at −0.25: what is Km?", "key": "4"}
+NEXT_REDO = {"question": "A Lineweaver-Burk plot crosses the x axis at −0.25: what is Km?", "key": "4"}
 # The numbers of the paper redos the state listed and this model has not posed.
 redos_listed = []
 # The numbers of the repairs the state listed, first listed first.
@@ -537,8 +540,8 @@ def reply_for(learner, state):
                 task=redo_question(number), **marked), False
         return f"Right: Km is 2. {THIRD}" + block(task=THIRD, **marked), False
     if "REWORD" in learner:
-        return "Paper redo 1: Read Km off the plot that crosses the x axis at −0.5." + block(
-            task="Read Km off the plot that crosses the x axis at −0.5."), False
+        return "Paper redo 1: Read Km off a Lineweaver-Burk plot that crosses the x axis at −0.5." + block(
+            task="Read Km off a Lineweaver-Burk plot that crosses the x axis at −0.5."), False
     if "MENTION" in learner:
         return f"First a warm-up, then paper redo 2. {FIRST}" + block(task=FIRST), False
     if "Km = 0.5" in learner:

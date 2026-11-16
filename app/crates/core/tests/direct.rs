@@ -1231,7 +1231,7 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    let next = Some("A second plot crosses at −0.25: what is Km?".to_owned());
+    let next = Some("A Lineweaver-Burk plot crosses the x axis at −0.25: what is Km?".to_owned());
     assert_eq!(stored, [next.clone(), next, None]);
     let checks: i64 = store
         .query_row(
@@ -1273,7 +1273,7 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
     assert!(
-        state.contains("1. Tag \"km\", from Diagnostic Q3 and Diagnostic Q5. What went wrong: slope read as intercept | sign of the intercept lost. Stored question: A second plot crosses at −0.25: what is Km? Key, for you alone until they answer: 4"),
+        state.contains("1. Tag \"km\", from Diagnostic Q3 and Diagnostic Q5. What went wrong: slope read as intercept | sign of the intercept lost. Stored question: A Lineweaver-Burk plot crosses the x axis at −0.25: what is Km? Key, for you alone until they answer: 4"),
         "{state}"
     );
     // The failed row is no redo: it waits for its repair, and is listed so.
