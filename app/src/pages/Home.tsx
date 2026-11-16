@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
-import { namedSessions, nextOf, planDay, type Next } from "../next";
+import { firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, sessionName, whenOpened } from "../words";
@@ -133,8 +133,11 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
   return best;
 }
 
-/** What Home last read of a workspace: its Next, and its last goal (the name of a session an earlier window kept). */
-type Read = { next: Next | null; goal: string | null };
+/**
+ * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
+ * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
+ */
+type Read = { next: Next | null; goal: string | null; first: string | null; at: number };
 
 /**
  * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
@@ -147,9 +150,10 @@ export const PLAN_WAIT_MS = 400;
 const known = new Map<string, Read>();
 
 async function readNext(api: Core, folder: string): Promise<Read> {
-  const [plan, sessions] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => [])]);
-  const goal = sessions.some((info) => !info.title) ? await api.home(folder).then((home) => home.last?.goal ?? null, () => null) : null;
-  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal };
+  const at = Date.now();
+  const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
+  const goal = sessions.some((info) => !info.title) ? (home?.last?.goal ?? null) : null;
+  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), at };
 }
 
 function NoteBlock({ note }: { note: Note }) {
@@ -173,9 +177,10 @@ export function HomePage(props: Props) {
   const recent = mostRecent(workspaces);
   // The workspace studied in most recently; in a library with no session yet, the one opened most recently.
   const lead = recent ?? workspaces[0] ?? null;
-  const [read, setRead] = useState<{ folder: string; read: Read } | null>(() => {
+  // `here`: read on this visit, rather than kept from an earlier one.
+  const [read, setRead] = useState<{ folder: string; read: Read; here: boolean } | null>(() => {
     const kept = lead ? known.get(lead.folder) : undefined;
-    return lead && kept ? { folder: lead.folder, read: kept } : null;
+    return lead && kept ? { folder: lead.folder, read: kept, here: false } : null;
   });
   // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its first row is drawn without it.
   const [gaveUp, setGaveUp] = useState<string | null>(null);
@@ -192,16 +197,23 @@ export function HomePage(props: Props) {
     void readNext(props.api, folder).then((fresh) => {
       known.set(folder, fresh);
       // A row already drawn without the plan stays as it is, rather than changing under the learner.
-      if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh });
+      if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh, here: true });
     });
     return () => {
       live = false;
       window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null } : null;
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
+
+  // What the session Return opens starts with. A read kept from an earlier visit is not trusted for it once a lesson
+  // in that folder has moved since (its first message may have begun the sitting, and its checks been answered). The
+  // line is drawn only with the row's first drawing on this visit: a later read may take it away, never put it there.
+  const trusted = read !== null && read.read === now && (read.here || !lead?.latest || lead.latest.last_ms <= read.read.at);
+  const firstNow = trusted ? (now?.first ?? null) : null;
+  const firstDrawn = useRef<{ folder: string; line: boolean } | null>(null);
 
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>("button.home-row") ?? []);
   useEffect(() => {
@@ -222,6 +234,9 @@ export function HomePage(props: Props) {
   // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
   // for PLAN_WAIT_MS at most, rather than drawing one row and putting another in its place.
   const waiting = lead !== null && now === null && !props.step;
+  if (lead && !waiting && props.workspaces !== null && firstDrawn.current?.folder !== lead.folder) firstDrawn.current = { folder: lead.folder, line: firstNow !== null };
+  const first = lead && firstDrawn.current?.folder === lead.folder && firstDrawn.current.line ? firstNow : null;
+  const firstLine = first ? <span className="next-first">{first}</span> : null;
   const note = props.note ? <NoteBlock note={props.note} /> : null;
   // For the harness: when Home mounted, and when its column showed.
   mark("home");
@@ -282,6 +297,7 @@ export function HomePage(props: Props) {
                     <span className="row-name next-name">
                       <Line text={next.item.title} />
                     </span>
+                    {firstLine}
                     {next.item.note && (
                       <span className="next-note">
                         <Line text={next.item.note} />
@@ -304,7 +320,10 @@ export function HomePage(props: Props) {
                   data-drive="start"
                   onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(lead.folder))}
                 >
-                  <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
+                  <span className="next-what">
+                    <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
+                    {firstLine}
+                  </span>
                   <span className="row-when">
                     {displayName(lead.name)}
                     {recent?.latest ? `, ${whenOpened(recent.latest.opened_ms)}` : ""}
