@@ -208,14 +208,43 @@ pub(crate) fn invalidate(workspace: &Workspace, host: &HostContext) -> Result<()
 /// alone; both now give the same text. What is kept is still exactly what the
 /// learner typed after the command. A command with nothing after it is kept
 /// whole.
+///
+/// A message the study window sent as talk opens with [`TALK_LEAD`] on its own
+/// line. The lead is the window's words, not the learner's, so it is left
+/// out too; [`intent`] keeps what it said.
 pub(crate) fn learner_text<'a>(host: &HostContext, text: &'a str) -> Cow<'a, str> {
     if host.host_kind != "claude" {
         return Cow::Borrowed(text);
     }
+    let text = without_talk_lead(text).unwrap_or(text);
     match without_paste_tags(text) {
         Cow::Borrowed(text) => Cow::Borrowed(without_magnesium_command(text)),
         Cow::Owned(text) => Cow::Owned(without_magnesium_command(&text).to_owned()),
     }
+}
+/// The line the study window puts before a message the learner sent as talk:
+/// a question, a change to the plan, anything but an answer to the task. The
+/// tutor reads it as plain words. The runtime reads it as the host saying the
+/// message is not an answer, and refuses an attempt on it (issue 65). Text
+/// that only claims to be talk can only keep a message from being marked.
+pub(crate) const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
+
+/// The message after a leading [`TALK_LEAD`] line, or None when it has none.
+fn without_talk_lead(text: &str) -> Option<&str> {
+    let rest = text.trim_start().strip_prefix(TALK_LEAD)?;
+    let words = rest.trim_start_matches([' ', '\t']);
+    let words = words
+        .strip_prefix("\r\n")
+        .or_else(|| words.strip_prefix('\n'))
+        .or_else(|| words.is_empty().then_some(words))?;
+    Some(trim_blank_lines(words))
+}
+
+/// How the host says a Claude learner message was sent: talk when it opens
+/// with [`TALK_LEAD`]. Other hosts say nothing this way.
+pub(crate) fn intent(host: &HostContext, text: &str) -> Option<crate::learner::MessageIntent> {
+    (host.host_kind == "claude" && without_talk_lead(text).is_some())
+        .then_some(crate::learner::MessageIntent::Talk)
 }
 /// The words after a leading `/magnesium:<skill>` command, or the text as it
 /// is. Applying it twice changes nothing more, unless the learner typed the
@@ -344,6 +373,7 @@ pub(crate) fn verify(
     text: &str,
     now: i64,
 ) -> Result<RawEvent, String> {
+    let raw = text;
     let text = learner_text(host, text);
     if host.host_kind == "tool_only" || text.len() > crate::learner::limits::EVENT_BYTES {
         return Err(failure());
@@ -368,7 +398,10 @@ pub(crate) fn verify(
         speaker: crate::learner::Speaker::Learner,
         kind: "message".into(),
         text: text.into_owned(),
-        metadata: Some(crate::learner::EventMetadata::default()),
+        metadata: Some(crate::learner::EventMetadata {
+            intent: intent(host, raw),
+            ..Default::default()
+        }),
         occurred_at_ms: None,
     })
 }

@@ -7,7 +7,8 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { core } from "../bridge";
-import { holdBack, markTask, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
+import { drawTaskRule } from "../taskRule";
 import { docTitle } from "../docs";
 import { sourceRef, type SourceRef } from "../sources";
 
@@ -282,7 +283,7 @@ type Props = {
   onSource?: (source: SourceRef, from?: HTMLElement) => void;
   /** The reply was stopped part way: what it ends inside of is left out, as while it is written. */
   stopped?: boolean;
-  /** The task this reply posed, as the engine read it: the part of the reply that holds it is set apart. */
+  /** The task this reply posed, as the engine read it: a line is drawn beside its words. */
   task?: string;
   /** The reply is being written: a caret stands after its last word. */
   caret?: boolean;
@@ -306,11 +307,12 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
   // is held back keeps a line's room, so what follows does not jump when it closes.
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
   const html = useMemo(() => {
+    // The task is not drawn into the reply's text: the reply stays laid out
+    // as it was before the record said which task is open.
     const whole = renderMarkdown(held.text);
-    const drawn = task && final ? markTask(whole, task) : whole;
-    const linked = onSource ? setSourcesApart(drawn, linksOpen, opensNow) : drawn;
+    const linked = onSource ? setSourcesApart(whole, linksOpen, opensNow) : whole;
     return caret ? withCaret(linked) : linked;
-  }, [held.text, linksOpen, onSource, opensNow, task, final, caret]);
+  }, [held.text, linksOpen, onSource, opensNow, caret]);
   const ref = useRef<HTMLDivElement>(null);
 
   // A diagram already drawn goes back before the page is painted; one not yet
@@ -323,6 +325,14 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     const open = !final && (held.text.match(/^ {0,3}(?:```|~~~)/gm)?.length ?? 0) % 2 === 1;
     void drawDiagrams(root, waiting.filter((block) => !(open && block.parentElement === root.lastElementChild)));
   }, [html, final]);
+
+  // The line beside the task the record names, over the reply as laid out.
+  // A reply that opens its task with a bold word already sets it apart.
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root || !task || !final || root.querySelector("div.task")) return;
+    return drawTaskRule(root, task);
+  }, [html, task, final]);
 
   useEffect(() => {
     const root = ref.current;

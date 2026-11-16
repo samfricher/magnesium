@@ -85,6 +85,9 @@ struct Watch {
     /// none when the runtime cannot list them.
     marks_before: Option<HashSet<String>>,
     intent: Option<Intent>,
+    /// When the message was sent: a task the record says was posed since
+    /// then was posed by this turn's reply.
+    sent_ms: i64,
 }
 
 /// The last reading of a folder's plan, which the next turn is compared with.
@@ -1029,7 +1032,7 @@ impl Manager {
                 }
                 // The engine says which task is open once the turn's record
                 // is kept: it is kept beside the turn, for a reopened lesson.
-                AgentEvent::OpenTask { task, posed } if live => {
+                AgentEvent::OpenTask { task, posed, .. } if live => {
                     let buffer = lock(&buffer);
                     if let (Some(session), Some(ms)) = (buffer.session.clone(), buffer.last_ms) {
                         store.note_task(&folder, &session, ms, task.as_deref(), *posed);
@@ -1051,6 +1054,12 @@ impl Manager {
             if live && ended {
                 settling.turn_running.store(false, Ordering::SeqCst);
                 let waiter = lock(&waiter).clone();
+                // The plugin engine's tutor keeps the record itself, so the
+                // open task is read from it. The direct engine says its own.
+                let task_of = match engine {
+                    Engine::Plugin => lock(&buffer).session.clone(),
+                    Engine::Direct => None,
+                };
                 settle(
                     settling.clone(),
                     folder.clone(),
@@ -1059,6 +1068,7 @@ impl Manager {
                     Arc::clone(&current),
                     generation,
                     kept_turn.map(|(session, ms)| (Arc::clone(&store), session, ms)),
+                    task_of,
                 );
             }
         })
@@ -1285,6 +1295,7 @@ impl Manager {
                 watch.seq += 1;
                 watch.marks_before = before;
                 watch.intent = intent;
+                watch.sent_ms = Local::now().timestamp_millis();
             }
             let mut seen = lock(&self.settling.seen);
             if seen.as_ref().is_none_or(|seen| &seen.folder != folder) {
@@ -1584,8 +1595,11 @@ impl Manager {
 /// the last reading, and the record's marks, compared with those before the
 /// message. Sends `plan_changed` and `marked` while the conversation is still
 /// the page's, and keeps the new marks' ids beside `turn` (the store, and the
-/// conversation and time of the turn the message ended in). Runs on its own
-/// thread, so the page is never held up.
+/// conversation and time of the turn the message ended in). With
+/// `task_of`, a conversation whose tutor keeps the record itself, it also
+/// reads the task the record says is open, and sends `open_task`. Runs on
+/// its own thread, so the page is never held up.
+#[allow(clippy::too_many_arguments)]
 fn settle(
     settling: Settling,
     folder: PathBuf,
@@ -1594,10 +1608,16 @@ fn settle(
     current: Arc<Mutex<u64>>,
     generation: u64,
     turn: Option<(Arc<Store>, String, i64)>,
+    task_of: Option<String>,
 ) {
-    let (seq, before, intent) = {
+    let (seq, before, intent, sent_ms) = {
         let mut watch = lock(&settling.watch);
-        (watch.seq, watch.marks_before.take(), watch.intent)
+        (
+            watch.seq,
+            watch.marks_before.take(),
+            watch.intent,
+            watch.sent_ms,
+        )
     };
     settling.pending.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
@@ -1640,6 +1660,53 @@ fn settle(
         // times more. A message sent meanwhile ends the looking.
         // `found` is the new rows' ids: empty when the record was read and
         // had none, and none when the looking was cut short or never read it.
+        // The open task, read as soon as the turn ends: the plugin's tutor
+        // records an answer before its reply and saves the task with the turn's
+        // last write, so the record has both by now. Waiting for the marks
+        // below would hold the line back for up to their last look. A runtime
+        // that cannot say leaves the page to find the task as before.
+        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
+        let read_task = |told: &Mutex<Option<Option<String>>>| {
+            let Some(conversation) = task_of.as_deref() else {
+                return;
+            };
+            if lock(&settling.watch).seq != seq || !live() {
+                return;
+            }
+            // A record with no lesson for this conversation says nothing of
+            // its tasks (the tutor never started one), so the page goes on
+            // finding the task as it did before the record could say.
+            let Some(Some(lesson)) = runtime::lesson(&folder, Some(conversation)) else {
+                return;
+            };
+            let open = lesson.open_task;
+            let posed = open
+                .as_ref()
+                .is_some_and(|task| task.posed_at_ms >= sent_ms);
+            let task = open.map(|task| task.text);
+            let mut told = lock(told);
+            if told.as_ref() == Some(&task) {
+                return;
+            }
+            if let Some((store, session, ms)) = &turn {
+                store.note_task(&folder, session, *ms, task.as_deref(), posed);
+            }
+            if lock(&settling.watch).seq == seq && live() {
+                // Options under trial for a task the tutor set and did not
+                // save: MAGNESIUM_APP_TASK_FALLBACK=bold lets the page take a
+                // bold-word task when the record names none.
+                let fallback = task.is_none()
+                    && std::env::var("MAGNESIUM_APP_TASK_FALLBACK").is_ok_and(|how| how == "bold");
+                out(AgentEvent::OpenTask {
+                    task: task.clone(),
+                    posed,
+                    fallback,
+                });
+            }
+            *told = Some(task);
+        };
+        read_task(&told);
+        let mut marked_late = false;
         let mut found: Option<Vec<String>> = None;
         if let Some(before) = before {
             let once = kept == Some(true) || (intent == Some(Intent::Talk) && kept.is_some());
@@ -1664,6 +1731,7 @@ fn settle(
                     .filter(|row| !before.contains(&row.id))
                     .collect();
                 if !fresh.is_empty() {
+                    marked_late = look > 0;
                     found = Some(fresh.iter().map(|mark| mark.id.clone()).collect());
                     if live() {
                         for mark in fresh {
@@ -1685,6 +1753,11 @@ fn settle(
         // answers can share.
         if let (Some(ids), Some((store, session, ms))) = (&found, &turn) {
             store.note_marks(&folder, session, *ms, ids);
+        }
+        // A mark that turned up only on a later look may have closed the task
+        // read at the turn's end: read it again.
+        if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
+            read_task(&told);
         }
         // The record has been read for this message: say so, unless the
         // learner has written again since.

@@ -35,7 +35,7 @@ pub(crate) fn get_tool(name: &str) -> Option<Tool> {
 fn tool_for(name: &str, window: bool) -> Option<Tool> {
     let (description, schema) = match name {
         REPLY_TOOL if window => (
-            "Show your reply to the learner. In this session the learner sees only what this tool sends, as you write it. Record the answer's observation and attempt first; then put the whole reply, task included, in text, as you would write it in chat. When a memory edit or a checkpoint is due, set save_after and send them in one learning_step after this call; otherwise the turn ends here. Write no other text. One call per turn.",
+            "Show your reply to the learner. In this session the learner sees only what this tool sends, as you write it. Record the answer's observation and attempt first; then put the whole reply, task included, in text, as you would write it in chat. When a memory edit or a checkpoint is due, set save_after and send them in one learning_step after this call; otherwise the turn ends here. A reply that sets a task, or sets a new one, makes a checkpoint due: its pending_task has this call's event_id as proposal_event_ref and the task's words, copied exactly from text, as conditions. Write no other text. One call per turn.",
             generated_schema::<crate::adapter::ReplyRequest>(),
         ),
         "context" => (

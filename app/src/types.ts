@@ -297,7 +297,7 @@ export type AgentEvent =
    * when this turn's reply asked for it. Sent by an engine that knows its
    * open task (Magnesium's). The window puts the field for an answer inside it.
    */
-  | { type: "open_task"; task: string | null; posed: boolean }
+  | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 

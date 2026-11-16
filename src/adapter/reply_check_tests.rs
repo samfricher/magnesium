@@ -329,7 +329,24 @@ fn a_reply_from_the_window_tool_is_kept_once_and_answers_its_prompt() {
     assert!(second.contains(" Previous reply: 300 words."), "{second}");
 
     // Text written besides the reply is kept as well, so nothing is lost.
-    host_reply(&root, &context, "Right. Now: what is c?").unwrap();
+    // The reply's id comes back, for a checkpoint to name the task it set.
+    let id = host_reply(&root, &context, "Right. Now: what is c?")
+        .unwrap()
+        .expect("the reply was kept");
+    let kept_text: String = store
+        .conn
+        .query_row(
+            "SELECT text FROM learning_events WHERE event_id=?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept_text, "Right. Now: what is c?");
+    // The same reply again is not kept twice, and has no new id.
+    assert_eq!(
+        host_reply(&root, &context, "Right. Now: what is c?").unwrap(),
+        None
+    );
     claude_stop(&root, &host, "two", "One more line the tutor wrote.").unwrap();
     let kept = deliveries(&store, &host);
     assert_eq!(kept.len(), 3, "{kept:?}");
