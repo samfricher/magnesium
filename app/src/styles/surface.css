@@ -8,9 +8,14 @@
 
 /* Each colour has a light and a dark value (-l, -d); the learner's own,
    from their settings, are set on the page over these. The quiet text, the
-   rules and the raised ground are mixed from the text and the ground, so a
-   colour of their own keeps every pair readable: quiet text is 5:1 or more
-   on its ground, and the line an answer is written on 3:1. */
+   rules and the raised ground are mixed from the text and the ground, so they
+   move with a colour of the learner's own. The quiet text, by WCAG's formula
+   on the window's own colours: in light 5.9:1 on the page and 5.6:1 in the
+   soft field (mixed there for the field's shade); in dark 5.8:1 and 5.7:1.
+   With any ground and text Settings offers it stays 4.5:1 or more on the page
+   in both schemes. In the field it goes to 4.32:1 with the palest light text
+   (#3a3530) and 4.47:1 with some dark pairs. A colour typed in as #rrggbb can
+   go lower. The line an answer is written on is 3:1. */
 :root {
   --ground-l: #fafaf8;
   --ground-d: #1c1d20;
@@ -23,8 +28,12 @@
   --text: var(--text-l);
   --ink: var(--ink-l);
   --raised: color-mix(in srgb, var(--ground), white 70%);
-  --quiet: color-mix(in srgb, var(--text) 64%, var(--ground));
-  /* The window's own words: one grey with the material's secondary text, 5:1 or more. */
+  /* At 64% the light grey measured 4.86:1 on the page. */
+  --quiet: color-mix(in srgb, var(--text) 70%, var(--ground));
+  /* How much text the soft field's own mix of the grey takes (below), and where glass's starts (window.css). */
+  --quiet-field: 70%;
+  --quiet-glass: 70%;
+  /* The window's own words: one grey with the material's secondary text. */
   --hint: var(--quiet);
   --line: color-mix(in srgb, var(--text) 50%, var(--ground));
   --faint: color-mix(in srgb, var(--text) 20%, var(--ground));
@@ -62,6 +71,8 @@
     --ink: var(--ink-d);
     --raised: color-mix(in srgb, var(--ground), white 6%);
     --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+    --quiet-field: 66%;
+    --quiet-glass: 64%;
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     --well: color-mix(in srgb, var(--ground), white 6%);
     color-scheme: dark;
@@ -73,6 +84,8 @@
   --ink: var(--ink-d);
   --raised: color-mix(in srgb, var(--ground), white 6%);
   --quiet: color-mix(in srgb, var(--text) 62%, var(--ground));
+  --quiet-field: 66%;
+  --quiet-glass: 64%;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   --well: color-mix(in srgb, var(--ground), white 6%);
   color-scheme: dark;
@@ -300,6 +313,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 }
 .record.mark:is([data-mark="wrong"], [data-mark="partly"], [data-mark="declined"]) { color: var(--text); }
 .record-pass { color: var(--quiet); }
+/* The mark on an answer: its words a step larger than the record's other lines, the count of days on its own line under them. */
+.record.mark { font-size: 0.882rem; }
+.record.mark .record-pass { display: block; font-size: 0.765rem; }
 /* A notice's dismiss is a quiet word, as the other actions in a lesson are. */
 .record.note .plain { text-decoration: none; color: var(--quiet); }
 .record.note .plain:hover { color: var(--text); }
@@ -913,9 +929,9 @@ button.line-end:hover { color: var(--text); }
   padding: 10px var(--field-in);
   border-radius: 13px;
   background: var(--well);
-  /* The quiet grey is mixed for the page's ground; on the field's shade it came to 4.4:1 in light, under the 5:1 the
-     grey is meant to keep. Mixed for the shade here, it is about 5:1 in light and dark. */
-  --quiet: color-mix(in srgb, var(--text) 66%, var(--well));
+  /* The quiet grey is mixed for the page's ground, and is lighter against the field's shade: mixed for the shade
+     here, it is 5.6:1 in light and 5.7:1 in dark. */
+  --quiet: color-mix(in srgb, var(--text) var(--quiet-field), var(--well));
   --hint: var(--quiet);
 }
 
