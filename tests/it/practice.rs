@@ -264,6 +264,61 @@ fn breaking_the_markdown_table_by_hand_changes_nothing_about_what_is_due() {
 }
 
 #[test]
+fn a_due_redo_answered_today_without_a_pass_is_not_due_again_until_tomorrow() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    plan(
+        &e,
+        "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | km | slope read as intercept | K | S | taught the slope | | 2026-10-25 | open |\n",
+    );
+    v2::tool(
+        &e,
+        "claude",
+        THREAD,
+        "context",
+        json!({"action":"instructions","host":"claude","stage":"papers_loop"}),
+    );
+    assert_eq!(digest(&e)["plans"][0]["redos_due"], 1);
+    v2::start(&e, "claude", THREAD);
+    // Right, alone, but not cold: no pass, and the row keeps its date.
+    answer(
+        &e,
+        "redo-1",
+        "Km is 2",
+        json!({"label":"km","question":"Find Km from the plot.","first_try":"right","help":"none","cold":false,
+            "counts_for":["midterm-1#1"]}),
+    );
+    // No answer on it later today can be cold, so nothing counts it due today.
+    let digest = digest(&e);
+    assert_eq!(digest["plans"][0]["redos_due"], 0, "{digest}");
+    assert_eq!(digest["plans"][0]["unfixed_gaps"], 1, "{digest}");
+    let output = e.command().args(["progress", "--json"]).output().unwrap();
+    let progress: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(progress["due"]["redos"], 0, "{progress}");
+    // The row was not failed: it keeps its passes and can pass from tomorrow.
+    let km = progress["plans"][0]["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|skill| skill["skill"] == "km")
+        .unwrap_or_else(|| panic!("no km in {progress}"));
+    let tomorrow = chrono::Local::now()
+        .date_naive()
+        .succ_opt()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        (
+            km["due"].clone(),
+            km["next_on"].clone(),
+            km["needs_repair"].clone()
+        ),
+        (json!(false), json!(tomorrow), json!(false)),
+        "{km}"
+    );
+}
+
+#[test]
 fn a_gap_log_from_an_earlier_template_is_brought_in_with_its_rows_and_dates() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
