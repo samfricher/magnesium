@@ -15,6 +15,7 @@
 //!   learner's calendar.
 //! - [`workspace`] lists a folder's sessions and the library's workspaces,
 //!   from the window's own store.
+//! - [`reminder`] works out the daily notification from the record.
 //! - [`manager`] holds one open study folder and its one conversation.
 //!
 //! No teaching rule lives here. The runtime and its plugin hold them all, so
@@ -39,6 +40,7 @@ pub mod paths;
 pub mod peek;
 pub mod plan;
 pub mod record;
+pub mod reminder;
 pub mod runtime;
 pub mod store;
 pub mod study;

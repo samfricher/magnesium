@@ -26,6 +26,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `scroll {target?, to?, by?}`
 - `menu`
 - `menu_click {path}`
+- `notification_click {folder}`: what a click on the daily notification for that workspace does
 - `frame {width?, height?, x?, y?, on_top?}`
 - `quit`
 

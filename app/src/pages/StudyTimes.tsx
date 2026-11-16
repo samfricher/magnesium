@@ -5,7 +5,8 @@
 // page shows what the file holds. A plan with no session lines shows nothing.
 
 import { Line } from "../surface/Rich";
-import type { Planned, PlannedSession } from "../types";
+import type { Core, Planned, PlannedSession } from "../types";
+import { useReminder } from "./Notification";
 
 const DAY_ORDER = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const SHORT: Record<string, string> = { MO: "Mon", TU: "Tue", WE: "Wed", TH: "Thu", FR: "Fri", SA: "Sat", SU: "Sun" };
@@ -29,14 +30,18 @@ export function whenWords(session: PlannedSession): string {
 }
 
 type Props = {
+  api: Core;
   planned: Planned;
   busy: boolean;
   onAdd: () => void;
 };
 
-export function StudyTimes({ planned, busy, onAdd }: Props) {
+export function StudyTimes({ api, planned, busy, onAdd }: Props) {
   const { sessions, unreadable } = planned;
+  // The daily notification, offered where its times are.
+  const { reminder, asking, change } = useReminder(api);
   if (sessions.length === 0 && unreadable === 0) return null;
+  const offer = reminder !== null && !reminder.on && reminder.permission !== "unavailable" && reminder.permission !== "denied";
   // With two plans, each row says which plan its time is for.
   const plans = new Set(sessions.map((session) => session.plan));
   return (
@@ -66,8 +71,14 @@ export function StudyTimes({ planned, busy, onAdd }: Props) {
           <button className="quiet-act" data-drive="add-to-calendar" disabled={busy} onClick={onAdd}>
             Add to Calendar…
           </button>
+          {offer && (
+            <button className="quiet-act" data-drive="notify-me" disabled={asking} onClick={() => void change(true)}>
+              Notify me on days work is due
+            </button>
+          )}
         </p>
       )}
+      {sessions.length > 0 && reminder?.on && <p className="page-note">On a day work is due, a notification comes at these times.</p>}
     </section>
   );
 }

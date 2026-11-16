@@ -63,6 +63,12 @@ impl GlobalPaths {
     pub(crate) fn claude_plugin(&self) -> PathBuf {
         self.root.join("claude-plugin")
     }
+
+    /// Names the study window's program while its daily notification is on
+    /// (`crate::window_notifier`).
+    pub(crate) fn window_notifier(&self) -> PathBuf {
+        self.root.join("window-notifier")
+    }
 }
 
 /// Reject symlinks only in the managed portion of a path. Platform aliases

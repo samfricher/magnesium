@@ -408,6 +408,11 @@ export type PlannedSession = { plan: string; title: string | null; action: strin
 /** A folder's planned sessions, and how many session lines could not be read. */
 export type Planned = { sessions: PlannedSession[]; unreadable: number };
 
+/** What the Mac allows the window's notifications: "quiet" delivers to Notification Center only. */
+export type ReminderPermission = "not_asked" | "allowed" | "quiet" | "denied" | "unavailable";
+/** The daily notification: on or off, its time on a day with no planned session, and the next one waiting. */
+export type Reminder = { on: boolean; time: string; permission: ReminderPermission; next: { at_ms: number; title: string; body: string } | null };
+
 /** Who decides on a tool the tutor wants: Claude Code's auto mode, or the learner each time. */
 export type Permissions = "auto" | "ask";
 
@@ -531,6 +536,12 @@ export interface Core {
   plannedSessions(folder: string): Promise<Planned | null>;
   /** Write a folder's planned sessions as a calendar file outside the folder and open it in the learner's calendar app. */
   addToCalendar(folder: string): Promise<void>;
+  /** The daily notification as it stands. */
+  reminder(): Promise<Reminder>;
+  /** Turn it on or off, or set its time; turning it on asks the Mac's permission the first time. */
+  setReminder(on: boolean, time: string | null): Promise<Reminder>;
+  /** Open the Mac's notification settings for Magnesium. */
+  openNotificationSettings(): Promise<void>;
   selftest(): Promise<boolean>;
   selftestReport(report: unknown): Promise<void>;
   /** Whether this Mac can draw glass behind the window, which kinds, and whether the learner asked it to reduce transparency. */

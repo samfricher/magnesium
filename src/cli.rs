@@ -234,6 +234,13 @@ pub(crate) fn command() -> ClapCommand {
                 )
                 .subcommand(ClapCommand::new("extract-pdf"))
                 .subcommand(
+                    ClapCommand::new("window-notifier")
+                        .about("Name the study window's program to start after each change to the record, or forget it")
+                        .arg(Arg::new("program").value_name("PROGRAM").required_unless_present("off"))
+                        .arg(Arg::new("home").long("home").value_name("DIR").help("The folder the window keeps its own files in"))
+                        .arg(Arg::new("off").long("off").action(ArgAction::SetTrue).conflicts_with("program")),
+                )
+                .subcommand(
                     ClapCommand::new("hook")
                         .arg(Arg::new("plugin-version").long("plugin-version"))
                         .arg(Arg::new("adapter-protocol-version").long("adapter-protocol-version"))

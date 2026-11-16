@@ -658,7 +658,7 @@ export function WorkspacePage(props: Props) {
           )}
         </section>}
 
-        {planned && !sitting && home && (home.state === "ready" || home.state === "empty") && <StudyTimes planned={planned} busy={adding} onAdd={() => void addToCalendar()} />}
+        {planned && !sitting && home && (home.state === "ready" || home.state === "empty") && <StudyTimes api={api} planned={planned} busy={adding} onAdd={() => void addToCalendar()} />}
 
         {earlier.length > 0 && !sitting && (
           <section aria-label="Earlier sessions">

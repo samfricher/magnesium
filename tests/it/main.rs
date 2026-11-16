@@ -49,4 +49,5 @@ mod tool_contract_recipes;
 mod tool_recipe_examples;
 mod tutor_guidance;
 mod update_protocol;
+mod window_notifier;
 mod workspace_ownership;

@@ -719,6 +719,7 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
             "progress": counts(other.iter()),
         },
         "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
+        "due_ahead": crate::practice::due_ahead(&items, today, 7),
         "days": answered_days(&answers),
         "today_counts": today_counts(&items, &answers, today),
     }))

@@ -17,11 +17,16 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 mg-core = { path = "../crates/core" }
 
 # The Mac's share sheet (AirDrop, Mail) for a document, and the window made see-through for frosted glass: the same
 # AppKit bindings the window's web view is built on.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSString", "NSURL", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSCalendar", "NSDate", "NSDictionary", "NSEnumerator", "NSObject", "NSError", "NSGeometry", "NSString", "NSURL", "NSValue"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAccessibility", "NSColor", "NSResponder", "NSSharingService", "NSView", "NSWindow", "NSWorkspace"] }
+# The daily notification: the Mac's own notification centre, which delivers a scheduled notification with the window
+# closed.
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "bitflags", "UNUserNotificationCenter", "UNNotificationRequest", "UNNotificationContent", "UNNotificationTrigger", "UNNotification", "UNNotificationResponse", "UNNotificationSettings"] }
+block2 = "0.6"

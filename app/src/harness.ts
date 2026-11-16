@@ -669,6 +669,15 @@ async function run(op: Op): Promise<Result> {
         return { ok: false, error: String(error) };
       }
     }
+    case "notification_click": {
+      try {
+        await invoke("harness_notification_click", { folder: String(op.folder ?? "") });
+        await nextPaint();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
     case "menu_click": {
       const path = Array.isArray(op.path) ? op.path.map(String) : [];
       try {

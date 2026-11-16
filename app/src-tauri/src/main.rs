@@ -28,6 +28,7 @@ use tauri::{Emitter, Manager as _, State, WindowEvent};
 mod glass;
 mod harness;
 mod menu;
+mod notify;
 mod occlusion;
 mod share;
 
@@ -38,6 +39,7 @@ const FOLDER_ENV: &str = "MAGNESIUM_APP_FOLDER";
 
 pub(crate) struct Shell {
     manager: Manager,
+    store: Arc<Store>,
 }
 
 type Reply<T> = Result<T, String>;
@@ -55,8 +57,10 @@ fn named(folder: &Option<String>) -> Option<&Path> {
 /// once. With none named, the window opens on the library.
 #[tauri::command(async)]
 fn initial_folder() -> Option<String> {
-    std::env::args()
-        .skip(1)
+    // A notification clicked to start the window names its workspace first.
+    notify::take_opened()
+        .into_iter()
+        .chain(std::env::args().skip(1))
         .chain(std::env::var(FOLDER_ENV).ok())
         .find(|arg| !arg.starts_with('-') && Path::new(arg).is_dir())
 }
@@ -585,6 +589,72 @@ fn add_to_calendar(folder: String) -> Reply<()> {
     mg_core::calendar::add_to_calendar(Path::new(&folder)).map(|_| ())
 }
 
+/// The daily notification: whether it is on, its time, what the Mac allows,
+/// and the next one scheduled.
+#[tauri::command(async)]
+fn reminder(shell: State<'_, Shell>) -> notify::State {
+    notify::current(shell.store.root())
+}
+
+/// Turn the daily notification on or off, or change its time. Turning it on
+/// asks the learner's permission the first time, through the Mac's own
+/// prompt. While it is on, the runtime is told to start this program after
+/// each change to the record, so the notification is scheduled again.
+#[tauri::command(async)]
+fn set_reminder(shell: State<'_, Shell>, on: bool, time: Option<String>) -> notify::State {
+    let root = shell.store.root().to_path_buf();
+    let time = time.filter(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").is_ok());
+    // Asked first, outside the schedule's lock: the learner may take a while
+    // over the Mac's prompt.
+    let on = on
+        && match notify::permission() {
+            notify::Permission::NotAsked => {
+                matches!(
+                    notify::ask(),
+                    notify::Permission::Allowed | notify::Permission::Quiet
+                )
+            }
+            notify::Permission::Allowed | notify::Permission::Quiet => true,
+            notify::Permission::Denied | notify::Permission::Unavailable => false,
+        };
+    name_this_program(on, &root);
+    notify::change(&root, &shell.store.recent(), on, time)
+}
+
+/// Tell the runtime which program to start after a change to the record,
+/// or that none should start. Only an app bundle's own program is named.
+fn name_this_program(on: bool, home: &Path) {
+    let program = std::env::current_exe().ok();
+    // The command reads no study folder; it runs anywhere.
+    let folder = std::env::temp_dir();
+    let mut args: Vec<std::ffi::OsString> = vec!["_internal".into(), "window-notifier".into()];
+    match (program, on && notify::packaged()) {
+        (Some(program), true) => {
+            args.push(program.into());
+            // The program schedules from this window's own library.
+            args.push("--home".into());
+            args.push(home.as_os_str().to_owned());
+        }
+        _ => args.push("--off".into()),
+    }
+    let args: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
+    let _ = mg_core::runtime::run_in(&folder, &args, Duration::from_secs(10));
+}
+
+/// Open the Mac's notification settings for this app, where the learner
+/// allows what they refused.
+#[tauri::command(async)]
+fn open_notification_settings() -> Reply<()> {
+    let id = notify::bundle_id().unwrap_or_default();
+    let url =
+        format!("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={id}");
+    std::process::Command::new("/usr/bin/open")
+        .arg(url)
+        .status()
+        .map_err(|e| e.to_string())
+        .map(|_| ())
+}
+
 #[tauri::command]
 fn selftest() -> bool {
     std::env::var_os(SELFTEST_ENV).is_some_and(|path| !path.is_empty())
@@ -600,6 +670,31 @@ fn selftest_report(app: tauri::AppHandle, report: serde_json::Value) {
 }
 
 fn main() {
+    // Started by the runtime after a change to the record: schedule the
+    // daily notification again from the record, with no window, and end.
+    if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--refresh-due-notifications")
+    {
+        // The runtime names the window's own folder, as the window gave it.
+        let named = std::env::args()
+            .skip_while(|arg| arg != "--refresh-due-notifications")
+            .nth(1)
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir());
+        let store = named.map_or_else(Store::open, Store::at);
+        notify::refresh(store.root(), &store.recent());
+        return;
+    }
+    // For a check: what is pending and delivered, which only this app's own
+    // bundle can read.
+    if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--list-notifications")
+    {
+        println!("{}", notify::listing());
+        return;
+    }
     // Startup is timed from here, for the evidence harness.
     harness::mark_start();
     tauri::Builder::default()
@@ -617,8 +712,22 @@ fn main() {
                     let _ = handle.emit("agent", event);
                 }),
             )
-            .with_direct(Arc::new(DirectTutor::new().with_store(store)));
-            app.manage(Shell { manager });
+            .with_direct(Arc::new(DirectTutor::new().with_store(Arc::clone(&store))));
+            app.manage(Shell {
+                manager,
+                store: Arc::clone(&store),
+            });
+            // Clicks on the daily notification are heard from the start, and
+            // the schedule is made again for today, off the main thread.
+            notify::listen(app.handle().clone());
+            std::thread::spawn(move || {
+                let kept = mg_core::reminder::Kept::read(store.root());
+                if kept.on {
+                    // The app may have moved since: name where it is now.
+                    name_this_program(true, store.root());
+                }
+                notify::refresh(store.root(), &store.recent());
+            });
             // The list of models is the account's, and it changes as Claude Code does: ask for it as the window
             // opens, off the main thread, so the first line already has it.
             let asker = app.handle().clone();
@@ -723,6 +832,9 @@ fn main() {
             paper_end,
             planned_sessions,
             add_to_calendar,
+            reminder,
+            set_reminder,
+            open_notification_settings,
             selftest,
             selftest_report,
             glass::glass_state,
@@ -735,6 +847,7 @@ fn main() {
             harness::harness_quit,
             harness::harness_menu,
             harness::harness_menu_click,
+            harness::harness_notification_click,
             harness::harness_frame,
         ])
         .run(tauri::generate_context!())

@@ -316,6 +316,7 @@ impl LearnerStore {
         }
         #[cfg(test)]
         crate::request::test_checkpoint("after_commit");
+        crate::window_notifier::record_changed();
         Ok(result)
     }
 }

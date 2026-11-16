@@ -289,6 +289,11 @@ impl Store {
         }
     }
 
+    /// The folder the window keeps its own files in.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Data> {
         self.data.lock().unwrap_or_else(|p| p.into_inner())
     }

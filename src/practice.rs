@@ -26,6 +26,26 @@ use crate::workspace::{Workspace, reject_symlink_components};
 const MAX_LISTED_ROWS: usize = 3;
 const MAX_TODO: usize = 12;
 
+/// How many quick checks and paper redos are due on each of the `days` days
+/// after `today`, if no answer is marked before then: what is due stays due,
+/// and an item whose next day comes falls due on it. The study window
+/// schedules its daily notification ahead from this, and schedules it again
+/// whenever an answer is marked.
+pub(crate) fn due_ahead(items: &[Item], today: NaiveDate, days: u64) -> Vec<Value> {
+    (1..=days)
+        .filter_map(|n| today.checked_add_days(chrono::Days::new(n)))
+        .map(|day| {
+            let due = |origin: Origin| {
+                items
+                    .iter()
+                    .filter(|item| item.facts.origin == origin && item.state.due_on(day))
+                    .count()
+            };
+            json!({"day": day.to_string(), "checks": due(Origin::Chat), "redos": due(Origin::Paper)})
+        })
+        .collect()
+}
+
 /// An item with its state worked out.
 #[derive(Clone, Debug)]
 pub(crate) struct Item {

@@ -26,6 +26,7 @@ const state = address();
 const has = (...names: string[]) => names.includes(state);
 
 const FOLDER = "/Users/you/Study/Biochemistry";
+let reminderState: import("./types").Reminder = { on: false, time: "09:00", permission: "not_asked", next: null };
 const GOAL = "Reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot";
 const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/Paper B.pdf", minutes: 50, sat: false };
 const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midterm-1/papers/Paper A.pdf", minutes: 50, sat: true };
@@ -653,6 +654,13 @@ export function demoCore(): Core {
           }
         : { sessions: [], unreadable: 0 },
     addToCalendar: async () => {},
+    // A browser has no notification centre: the demo says what the window would.
+    reminder: async () => reminderState,
+    setReminder: async (on, time) => {
+      reminderState = { ...reminderState, on, time: time ?? reminderState.time, next: on ? { at_ms: Date.now() + 14 * 3_600_000, title: "Biochemistry", body: "Your 08:00 session. 2 quick checks are due." } : null };
+      return reminderState;
+    },
+    openNotificationSettings: async () => {},
     selftest: async () => false,
     selftestReport: async () => {},
     // A browser has nothing behind its page to frost: the demo's window stays solid.

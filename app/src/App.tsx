@@ -1000,6 +1000,7 @@ export function App() {
         {activeTab.kind === "settings" && (
           <div className="view" role="tabpanel" aria-labelledby={tabId("settings")}>
             <SettingsPage
+              api={api}
               prefs={prefs}
               change={changePrefs}
               setup={setup}

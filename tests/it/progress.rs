@@ -310,6 +310,16 @@ fn a_due_check_answered_today_without_a_pass_is_counted_due_tomorrow_not_today()
         "{sign}"
     );
     assert_eq!(value["today_counts"]["due_tomorrow"], 1, "{value}");
+    // What is due on each of the next seven days, if nothing is answered
+    // first: the check tomorrow, and still due on each day after it.
+    let ahead = value["due_ahead"].as_array().unwrap();
+    assert_eq!(ahead.len(), 7, "{value}");
+    assert_eq!(
+        ahead[0],
+        json!({"day": tomorrow, "checks": 1, "redos": 0}),
+        "{value}"
+    );
+    assert!(ahead.iter().all(|day| day["checks"] == 1), "{value}");
 }
 
 const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax from the double reciprocal plot\n    kind: course\n    needs: [reciprocals]\n    key_need: [reciprocals]\n    contains: [reciprocals]\n    touches: []\n  reciprocals:\n    covers: 1/x and its inverse\n    kind: foundation\n    needs: []\n    key_need: []\n    contains: []\n    touches: []\n";

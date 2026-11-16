@@ -23,6 +23,7 @@ mod request;
 mod retrieval;
 mod sittings;
 mod update;
+mod window_notifier;
 mod workspace;
 
 use std::path::PathBuf;
@@ -149,6 +150,13 @@ pub fn run() -> ExitCode {
                 matches.get_one::<String>("host-kind").cloned(),
             ),
             Some(("extract-pdf", _)) => retrieval::run_pdf_extractor(),
+            Some(("window-notifier", matches)) => window_notifier::print_set(
+                matches
+                    .get_one::<String>("program")
+                    .map(String::as_str)
+                    .filter(|_| !matches.get_flag("off")),
+                matches.get_one::<String>("home").map(String::as_str),
+            ),
             Some(("hook", hook_matches)) => {
                 let event = hook_matches
                     .get_one::<String>("event")

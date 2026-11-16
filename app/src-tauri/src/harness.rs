@@ -205,6 +205,17 @@ pub fn harness_menu_click(app: tauri::AppHandle, path: Vec<String>) -> Result<St
     crate::menu::click(&app, &path)
 }
 
+/// Do what a click on the daily notification for `folder` does: the Mac's
+/// own click cannot be made from a check.
+#[tauri::command(async)]
+pub fn harness_notification_click(folder: String) -> Result<(), String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    crate::notify::open_as_if_clicked(folder);
+    Ok(())
+}
+
 /// Size and place the window, as a learner dragging its corner or its title
 /// bar would, so a check can see the page refit, and let it fall behind
 /// others or not; with nothing asked, only say where it is. Logical points,

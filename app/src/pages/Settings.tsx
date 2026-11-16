@@ -6,9 +6,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useGlassState } from "../glass";
+import { Permission as NotificationPermission, useReminder, whenWords } from "./Notification";
 import { Line } from "../surface/Rich";
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
-import type { About, Engine, EngineChoice, Payment, Permissions, Setup } from "../types";
+import type { About, Core, Engine, EngineChoice, Payment, Permissions, Setup } from "../types";
 
 const ENGINE_NAMES: Record<Engine, string> = { plugin: "Claude Code", direct: "Magnesium" };
 
@@ -292,7 +293,62 @@ function KeyRow(props: { action: KeyAction; what: string; combo: string; taken: 
   );
 }
 
+/** The daily notification: on or off, its time, and what is waiting. */
+function NotificationSettings({ api }: { api: Core | null }) {
+  const { reminder, asking, change } = useReminder(api);
+  const [time, setTime] = useState("");
+  useEffect(() => setTime(reminder?.time ?? ""), [reminder?.time]);
+  if (!api || !reminder) return null;
+  const next = reminder.next;
+  return (
+    <section id="settings-notification" aria-labelledby="h-notification">
+      <h2 className="section-head" id="h-notification">
+        Notification
+      </h2>
+      <Setting name="On days work is due">
+        <Choice
+          name="On days work is due"
+          options={[
+            [false, "Off"],
+            [true, "Notify me"],
+          ]}
+          value={reminder.on}
+          disabled={asking || reminder.permission === "unavailable"}
+          onPick={(on) => void change(on)}
+        />
+        <span className="setting-note" role="status">
+          {asking
+            ? "Waiting for your answer to the Mac’s question…"
+            : reminder.on
+              ? next
+                ? `Next, ${whenWords(next.at_ms)}: “${next.title}. ${next.body}”`
+                : "Nothing is due in the next three days, so none is waiting."
+              : "One notification on a day when quick checks or paper redos are due, naming them. None on other days. It comes even when Magnesium is closed."}
+        </span>
+        <NotificationPermission api={api} reminder={reminder} />
+      </Setting>
+      {reminder.on && (
+        <Setting name="On a day with no session">
+          <input
+            className="text-field time"
+            type="time"
+            aria-label="The notification’s time on a day with no planned session"
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+            onBlur={() => {
+              if (/^\d{2}:\d{2}$/.test(time) && time !== reminder.time) void change(true, time);
+              else setTime(reminder.time);
+            }}
+          />
+          <span className="setting-note">On a day your plan has a session, it comes at the session’s start.</span>
+        </Setting>
+      )}
+    </section>
+  );
+}
+
 type Props = {
+  api: Core | null;
   prefs: Prefs;
   change: (change: Partial<Prefs>) => void;
   setup: Setup | null;
@@ -580,6 +636,8 @@ export function SettingsPage(props: Props) {
             </Setting>
           )}
         </section>
+
+        <NotificationSettings api={props.api} />
 
         <section id="settings-about" aria-labelledby="h-about">
           <h2 className="section-head" id="h-about">
