@@ -17,6 +17,8 @@
 //
 // PAGES_ONLY=work photographs only the workspace page over a record of
 // several skills (scripts/scratch-record.py), in a few minutes.
+// PAGES_ONLY=note photographs only Home with the note about which copy of the
+// program lessons use, under each kind of first row.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -359,6 +361,74 @@ async function workRecord() {
   await quit(k);
 }
 
+/** Home with the note about which copy of the program lessons use, in each place Home's first block can be: Next, a
+ * session to carry on, New session, a step this Mac needs, and an empty library; small and with the largest text. */
+async function noteStates() {
+  const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
+  const never = { MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") };
+  const fake = (name, body) => {
+    const path = join(scratch, name);
+    writeFileSync(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return path;
+  };
+  const newer = fake("bundled-newer", `[ "$1" = "--version" ] && { echo "magnesium 99.0.0"; exit 0; }\nexec '${runtime}' "$@"`);
+  const older = fake("bundled-older", `[ "$1" = "--version" ] && { echo "magnesium 0.0.1"; exit 0; }\nexec '${runtime}' "$@"`);
+  const sameNumber = fake("bundled-same", `[ "$1" = "--version" ] && { '${runtime}' --version | sed 's/+.*//; s/$/+0000000/'; exit 0; }\nexec '${runtime}' "$@"`);
+  const signedOut = fake("claude-signed-out", `[ "$1 $2" = "auth status" ] && { echo '{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}'; exit 0; }\nexec '${agent}' "$@"`);
+  const open = async (name, { withAgent = agent, bundled = newer, recent = kept.recent } = {}) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ recent, folders: {}, engine: "direct" }, null, 2));
+    const h = await launch(name, home, withAgent, { ...never, MAGNESIUM_APP_BUNDLED: bundled });
+    await settle(h, 800);
+    return h;
+  };
+  const focused = async (h, label) => {
+    const where = await step(h, label, { op: "key", key: "Shift" });
+    run.steps.push({ label: `${label}: the keyboard is on`, focused: where.focused ?? null });
+    return String(where.focused ?? "");
+  };
+
+  const n = await open("note-newer");
+  await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
+  if (!/data-drive=start\b/.test(await focused(n, "where the keyboard is on Home"))) problem("note: the keyboard is not on Home's first row");
+  await step(n, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(n, 400);
+  await shoot(n, "home-newer-program-narrow", "Home with the note, at 720 by 560");
+  for (let at = 0; at < 11; at++) await n.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(n, 400);
+  await step(n, "to the foot", { op: "scroll", to: "bottom" });
+  await settle(n, 300);
+  await shoot(n, "home-newer-program-big", "Home with the note, at 720 by 560, the largest text, at its foot");
+  await step(n, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(n);
+  for (const [name, bundled, stem, what] of [
+    ["note-older", older, "home-older-program", "Home: this Mac has a newer magnesium program than this app"],
+    ["note-same", sameNumber, "home-same-program", "Home: this app carries another build of the same version"],
+  ]) {
+    const h = await open(name, { bundled });
+    await shoot(h, stem, what);
+    await quit(h);
+  }
+  // One workspace with no plan, never studied in: its first row is New session. Then a lesson in it, so the first row
+  // carries it on.
+  const one = await open("note-one", { recent: [kept.recent[1]] });
+  await shoot(one, "home-newer-new-session", "Home with the note: the first row is New session");
+  await step(one, "start a session", { op: "key", key: "Enter" });
+  await step(one, "the first reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  await step(one, "Home", { op: "click", target: "home", by: "drive" });
+  await settle(one, 800);
+  await shoot(one, "home-newer-carry-on", "Home with the note: the first row carries a session on");
+  if (!/data-drive=start\b/.test(await focused(one, "where the keyboard is on Home, carrying on"))) problem("note: the keyboard is not on the Carry on row");
+  await quit(one);
+  const signed = await open("note-signed-out", { withAgent: signedOut });
+  await shoot(signed, "home-signed-out-newer", "Home: not signed in, and this app carries a newer program");
+  await quit(signed);
+  const none = await open("note-empty", { recent: [] });
+  await shoot(none, "home-empty-newer", "Home with no workspace yet, and this app carries a newer program");
+  await quit(none);
+}
+
 try {
   if (process.env.PAGES_ONLY === "paper") {
     await paperStates();
@@ -367,6 +437,10 @@ try {
 
   if (process.env.PAGES_ONLY === "work") {
     await workRecord();
+    throw "only";
+  }
+  if (process.env.PAGES_ONLY === "note") {
+    await noteStates();
     throw "only";
   }
   // Home on a Mac with no study folder yet.

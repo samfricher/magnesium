@@ -7,7 +7,8 @@
 //
 // A step this Mac needs before any lesson can run takes the first row's
 // place. A choice that leaves lessons running (which copy of the program to
-// keep) is a note under the first row instead, so it never takes Return.
+// keep) is a note at the foot of the page instead, under the workspaces and
+// the folder actions: it never takes Return, and lessons do not wait on it.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -161,8 +162,9 @@ function NoteBlock({ note }: { note: Note }) {
     <div className="home-note" role="group" aria-label="Which Magnesium lessons use">
       <p className="page-note">{note.text}</p>
       <p className="page-acts">
-        {note.choices.map((choice) => (
-          <button key={choice.label} className="quiet-act" onClick={choice.run}>
+        {/* programNote puts the choice it recommends first: it is in the text's colour, the other in the quiet grey. */}
+        {note.choices.map((choice, at) => (
+          <button key={choice.label} className={at === 0 ? "quiet-act strong" : "quiet-act"} onClick={choice.run}>
             {choice.label}
           </button>
         ))}
@@ -261,7 +263,6 @@ export function HomePage(props: Props) {
                 </button>
               ))}
             </div>
-            {note}
           </section>
         )}
         {props.workspaces === null ? null : workspaces.length === 0 ? (
@@ -280,7 +281,6 @@ export function HomePage(props: Props) {
                   Find folders on this Mac
                 </button>
               </div>
-              {note}
             </section>
           )
         ) : (
@@ -309,7 +309,6 @@ export function HomePage(props: Props) {
                     ↩
                   </span>
                 </button>
-                {note}
               </section>
             )}
             {lead && !props.step && !next && (
@@ -332,7 +331,6 @@ export function HomePage(props: Props) {
                     ↩
                   </span>
                 </button>
-                {note}
               </section>
             )}
             <section className="home-list" aria-label="Workspaces">
@@ -359,6 +357,7 @@ export function HomePage(props: Props) {
             </button>
           </p>
         )}
+        {note}
         {props.notes.length > 0 && (
           <div className="notices">
             {props.notes.map((text) => (
