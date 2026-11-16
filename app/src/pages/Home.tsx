@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
-import { firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
+import { checksAlone, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, sessionName, whenOpened } from "../words";
@@ -160,7 +160,7 @@ async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
   const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
   const goal = sessions.some((info) => !info.title) ? (home?.last?.goal ?? null) : null;
-  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), checks: home?.checks_due ?? 0, at };
+  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), checks: checksAlone(home), at };
 }
 
 function NoteBlock({ note }: { note: Note }) {

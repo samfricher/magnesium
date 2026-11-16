@@ -65,6 +65,9 @@ const NO_CHECKS: &str = "No checks right now. Let's continue where I stopped.";
 /// The window's "just the quick checks". The runtime's prompt hook takes the
 /// same words as the ask (`src/just_checks.rs`).
 const CHECKS: &str = "Just the quick checks.";
+/// How the runtime's turn notice says a sitting of checks alone goes on in
+/// this conversation (`src/sittings/checks_only.rs`).
+const CHECKS_ALONE_CLAUSE: &str = " Sitting of quick checks alone: ";
 const WORK_ON: &str = "Let's work on ";
 
 /// Magnesium's tools the model may not see: the record is the engine's.
@@ -1435,7 +1438,8 @@ fn prepare(
     };
     let opened = from_window.then(|| opening(words)).flatten();
     facts.skip_checks = opened.as_ref().is_some_and(|(skip, _)| *skip);
-    facts.checks_only = from_window && words == CHECKS;
+    let asked_alone = from_window && words == CHECKS;
+    facts.checks_only = asked_alone;
     if facts.skip_checks {
         state.skip_turn = Some(state.turn);
     }
@@ -1466,6 +1470,9 @@ fn prepare(
         }
     };
     shared.trace("@", &format!("user-prompt-submit: {notice}"));
+    // A sitting of checks alone goes on past its first turn, until the
+    // runtime ends it or the learner asks for something else.
+    facts.checks_only |= notice.contains(CHECKS_ALONE_CLAUSE);
     // Recording is off for this conversation in the runtime, as a control
     // from another process can leave it: keep nothing.
     if notice.contains("recording false") {
@@ -1651,6 +1658,24 @@ fn prepare(
         }
     }
     state.checks_asked = true;
+    // Asked for the checks alone: the runtime says which, whether or not a
+    // result of this turn carried the sitting's opener. An earlier "No
+    // checks right now", or the opener going to another conversation, would
+    // otherwise leave none here.
+    if asked_alone {
+        match host.call(
+            "learning_step",
+            json!({"schema": "learner-model/v2", "action": "just_checks"}),
+        ) {
+            Ok(result) => {
+                found = Some(due_of(&result).unwrap_or_else(|| {
+                    facts.checks_none = true;
+                    (Vec::new(), json!([]))
+                }));
+            }
+            Err(why) => shared.note(&format!("just_checks failed: {why}")),
+        }
+    }
     if let Some((checks, rows)) = found {
         if facts.skip_checks {
             state.lesson.checks.clear();
@@ -3256,6 +3281,11 @@ mod tests {
             );
         }
         // The opening lines, from openingWords in lesson.ts.
+        assert!(
+            include_str!("../../../../src/sittings/checks_only.rs")
+                .contains(&format!("format!(\"{CHECKS_ALONE_CLAUSE}{{left}} left.\")")),
+            "the runtime no longer says a sitting of checks alone goes on as direct.rs reads it"
+        );
         for words in [BACK, NO_CHECKS, CHECKS, WORK_ON] {
             assert!(
                 lesson.contains(words),

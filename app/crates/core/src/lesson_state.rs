@@ -25,6 +25,8 @@ pub struct Facts {
     /// The learner asked for the quick checks due and nothing else: the
     /// runtime ends the sitting after the last of them.
     pub checks_only: bool,
+    /// They asked for the checks alone, and none is due.
+    pub checks_none: bool,
     /// The quick checks newly due, to list in this turn.
     pub new_checks: Vec<DueCheck>,
     /// The paper redos newly due, to list in this turn.
@@ -65,6 +67,8 @@ pub struct Facts {
 /// The learner asked for the quick checks alone, as the runtime's opener for
 /// such a sitting says it to a tutor (`src/sittings/checks_only.rs`).
 const CHECKS_ONLY: &str = "The learner asked for the quick checks that are due and nothing else. Pose only these, one at a time: no paper redo, no new material, no plan and no other task. Each reply is only what the learner reads: the feedback on their answer, then the next check in its own words, never a word about posing, saving, recording, declining or waiting. After each answer, show the lettered options, say in a line which is right and why, and pose the next check in the same reply. Teach no repair and set no task for it: a check answered wrong comes back on its next day. A decline costs nothing, and the check stays due. When the last of them is answered or declined, the sitting ends and the window shows the learner what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked. Quick checks:";
+/// The same, on the turns after the checks were listed.
+const CHECKS_GOING: &str = "This sitting is quick checks alone, as the learner asked. Each reply is the feedback on their answer and the next check in its own words; after the last, close in a line with no task. If the learner asks for something else, do it: the checks not yet answered stay due.";
 /// The same, with none due.
 const CHECKS_NONE: &str = "The learner asked for the quick checks alone, and none is due now. Say so in a line, set no task and ask no question.";
 
@@ -236,11 +240,13 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
                 .to_owned(),
         );
     } else if facts.checks_only {
-        if facts.new_checks.is_empty() {
-            lines.push(CHECKS_NONE.to_owned());
-        } else {
+        if !facts.new_checks.is_empty() {
             lines.push(CHECKS_ONLY.to_owned());
             lines.extend(facts.new_checks.iter().map(check_line));
+        } else if facts.checks_none {
+            lines.push(CHECKS_NONE.to_owned());
+        } else {
+            lines.push(CHECKS_GOING.to_owned());
         }
     } else {
         if !facts.new_checks.is_empty() {
@@ -498,10 +504,21 @@ mod tests {
             &lesson,
             &Facts {
                 checks_only: true,
+                checks_none: true,
                 ..Facts::default()
             },
         );
         assert!(none.contains(CHECKS_NONE), "{none}");
+        // A later turn of the same sitting keeps to the checks.
+        let going = text(
+            &lesson,
+            &Facts {
+                checks_only: true,
+                ..Facts::default()
+            },
+        );
+        assert!(going.contains(CHECKS_GOING), "{going}");
+        assert!(!going.contains(CHECKS_NONE), "{going}");
         assert!(later.contains("\"discrete expected value\" (level full): if the learner is stuck on a new one: a partly worked example"), "{later}");
         assert_eq!(
             message("Now: x", "hello"),

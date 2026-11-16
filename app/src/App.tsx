@@ -17,6 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
 import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
+import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
@@ -329,12 +330,12 @@ export function App() {
   const justChecks = async (folder: string | null) => {
     const { api, workspaces } = now.current;
     if (!api || !folder) return note("Open a workspace first: a folder your course is in.");
-    const due = await api
-      .home(folder)
-      .then((home) => home.checks_due ?? 0)
-      .catch(() => 0);
+    const home = await api.home(folder).catch(() => null);
+    const due = checksAlone(home);
     onChecksDue(folder, due);
     const name = displayName(workspaces?.find((each) => each.folder === folder)?.name ?? folder.split("/").pop() ?? "");
+    if (home?.sitting) return note(`A paper is running in ${name}. Hand it in or end it first.`);
+    if (home && home.checks_alone == null) return note("The magnesium program on this Mac cannot give the quick checks alone. A newer one can.");
     if (due === 0) return note(`No quick check is due in ${name} now.`);
     newSession(folder, { kind: "checks" });
   };

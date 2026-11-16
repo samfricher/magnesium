@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
-import { firstStep, namedSessions, nextOf, planDay } from "../next";
+import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
@@ -377,7 +377,7 @@ export function WorkspacePage(props: Props) {
   }, [read, props.refresh]);
   const { onChecksDue } = props;
   useEffect(() => {
-    if (home) onChecksDue?.(folder, home.checks_due ?? 0);
+    if (home) onChecksDue?.(folder, checksAlone(home));
   }, [home, folder, onChecksDue]);
 
   // The record is read apart from the rest, so the page does not wait on it.
@@ -491,7 +491,8 @@ export function WorkspacePage(props: Props) {
   const first = firstStep(home);
   const due = home && !first ? dueLine(home) : null;
   // The quick checks due can be taken alone, in a session of their own.
-  const checksDue = (home?.checks_due ?? 0) > 0;
+  const alone = checksAlone(home);
+  const checksDue = alone > 0;
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
@@ -608,7 +609,7 @@ export function WorkspacePage(props: Props) {
               <p className="page-acts next-acts">
                 {checksDue && (
                   <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(folder)}>
-                    {home?.checks_due === 1 ? "Just the quick check" : "Just the quick checks"}
+                    {alone === 1 ? "Just the quick check" : "Just the quick checks"}
                   </button>
                 )}
                 {current && (

@@ -334,3 +334,66 @@ fn recording_off_part_way_makes_it_an_ordinary_sitting() {
     let loaded = load(&e, "teach_and_practice");
     assert!(loaded.get("error").is_none(), "{loaded}");
 }
+
+/// A learning_step from a caller that runs the lesson itself and asks for
+/// the checks as data, as Magnesium's own engine does.
+fn step_with_checks(e: &TestEnvironment, conversation: &str, request: Value) -> Value {
+    use std::io::Write;
+    let mut child = e
+        .command()
+        .env("CLAUDE_CODE_SESSION_ID", conversation)
+        .env("MAGNESIUM_SITTING_CHECKS", "1")
+        .args([
+            "adapter",
+            "call",
+            "learning_step",
+            "--protocol-version",
+            "2",
+            "--json-input",
+            "-",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&request).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn magnesiums_engine_gets_the_checks_after_the_opener_went_elsewhere() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    three_checks_due(&e);
+    // An ordinary lesson in one tab begins the sitting and has its opener.
+    prompt(&e, "p-1", "hi, let's carry on");
+    let status = v2::tool(
+        &e,
+        "claude",
+        "conv",
+        "context",
+        json!({"schema":"learner-model/v2","action":"status"}),
+    );
+    assert!(status["sitting_opener"].is_string(), "{status}");
+    // Then the control, in a new tab run by Magnesium's own engine.
+    prompt_in(&e, "direct", "d-1", "Just the quick checks.");
+    let asked = step_with_checks(
+        &e,
+        "direct",
+        json!({"schema":"learner-model/v2","action":"just_checks"}),
+    );
+    assert_eq!(asked["checks"], 3, "{asked}");
+    assert_eq!(
+        asked["sitting_checks"].as_array().map(Vec::len),
+        Some(3),
+        "{asked}"
+    );
+    assert_eq!(asked["sitting_redos"], json!([]), "{asked}");
+}

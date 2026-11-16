@@ -49,6 +49,15 @@ export function firstStep(home: Pick<Home, "opening" | "sitting"> | null): strin
   return `Starts with ${parts.join(" and ")}${time}`;
 }
 
+/**
+ * How many quick checks the control "Just the quick checks" would take: none while a timed paper runs (no tutor until
+ * it is handed in), and none from a runtime that cannot run a sitting of checks alone, which says nothing of them.
+ */
+export function checksAlone(home: Pick<Home, "checks_alone" | "sitting"> | null): number {
+  if (!home || home.sitting) return 0;
+  return home.checks_alone ?? 0;
+}
+
 /** The day the plan puts an item on, as the window says it: "today", "tomorrow", else "Tue 17 Nov". */
 export function planDay(day: string | null, now = new Date()): string {
   if (!day) return "";

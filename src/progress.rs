@@ -765,7 +765,13 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
             "skills": other.iter().map(Skill::to_json).collect::<Vec<_>>(),
             "progress": counts(other.iter()),
         },
-        "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
+        // `checks_alone`: how many checks "just the checks" would pose now.
+        // The window offers it only when this runtime says so.
+        "due": {
+            "redos": due(Origin::Paper),
+            "checks": due(Origin::Chat),
+            "checks_alone": due(Origin::Chat).min(crate::sittings::MAX_CHECKS_PER_SITTING),
+        },
         "days": answered_days(&answers),
         "today_counts": today_counts(&items, &answers, today),
     }))
