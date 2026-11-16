@@ -85,6 +85,10 @@ pub struct Home {
     pub last: Option<Last>,
     /// None when the window cannot tell how many are due (see `peek`).
     pub checks_due: Option<u32>,
+    /// How many quick checks "just the checks" would pose now. None when the
+    /// runtime cannot run a sitting of checks alone, as one older than it
+    /// cannot: the window then offers none.
+    pub checks_alone: Option<u32>,
     pub redos_due: u32,
     /// What the learner's next message here opens with, when it begins a
     /// sitting: None when it carries one on, the opener is off, or nothing
@@ -95,6 +99,14 @@ pub struct Home {
     pub can_resume: bool,
     pub sitting: Option<PaperSitting>,
     pub block_minutes: u32,
+}
+
+/// How many checks a sitting of checks alone would pose, from what
+/// `magnesium progress --json` printed; None from a runtime that has none.
+pub fn checks_alone(progress: &Value) -> Option<u32> {
+    progress["due"]["checks_alone"]
+        .as_u64()
+        .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
 }
 
 pub fn today() -> NaiveDate {
@@ -302,6 +314,7 @@ fn blank_home(folder: &Path, store: &Store) -> Home {
         exam: None,
         last: None,
         checks_due: Some(0),
+        checks_alone: None,
         redos_due: 0,
         opening: None,
         first_redo: None,
@@ -375,6 +388,7 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         });
     // The runtime counts what is due. An earlier runtime leaves the window
     // to look for the quick checks itself, and it cannot always tell.
+    home.checks_alone = record.as_ref().and_then(checks_alone);
     home.checks_due = match &record {
         Some(record) => Some(record["due"]["checks"].as_u64().unwrap_or(0) as u32),
         None => peek::checks_due(&root, today()),
@@ -1057,6 +1071,19 @@ pub fn rail(folder: &Path) -> Rail {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn just_the_checks_is_offered_only_by_a_runtime_that_can_run_it() {
+        assert_eq!(
+            checks_alone(&serde_json::json!({"due": {"checks": 5, "checks_alone": 3}})),
+            Some(3)
+        );
+        // An older runtime counts the checks but cannot pose them alone.
+        assert_eq!(
+            checks_alone(&serde_json::json!({"due": {"checks": 5}})),
+            None
+        );
+    }
 
     #[test]
     fn the_nearest_exam_that_is_not_past_is_chosen() {

@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
+const { checksAlone, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -59,5 +59,15 @@ assert.equal(firstStep(opens(0, 0)), null);
 assert.equal(firstStep({ opening: null, sitting: null }), null, "a sitting carried on opens with nothing");
 assert.equal(firstStep(opens(1, 0, { name: "Midterm 2023" })), null, "no tutor while a paper runs");
 assert.equal(firstStep(null), null);
+
+// Just the quick checks: offered from what the runtime says it would pose, never while a paper runs, and never by a
+// runtime that cannot run them alone.
+const paper = { target: "midterm-2", name: "Midterm 2023", path: null, minutes: 75, started_ms: 1 };
+assert.equal(checksAlone({ checks_alone: 3, sitting: null }), 3);
+assert.equal(checksAlone({ checks_alone: 0, sitting: null }), 0);
+assert.equal(checksAlone({ checks_alone: 3, sitting: paper }), 0, "a paper is running");
+assert.equal(checksAlone({ sitting: null }), 0, "an older runtime says nothing of them");
+assert.equal(checksAlone({ checks_alone: null, sitting: null }), 0);
+assert.equal(checksAlone(null), 0);
 
 console.log("next checks passed");

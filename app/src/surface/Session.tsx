@@ -14,7 +14,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
-import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
+import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
@@ -37,6 +37,8 @@ import { useModelPicker } from "./ModelPicker";
 export type Pending =
   /** Start the plan's next thing, in a session not yet begun. */
   | { kind: "start" }
+  /** Just the quick checks that are due, in a session not yet begun. */
+  | { kind: "checks" }
   /** Ask the tutor to mark a paper that was handed in. */
   | { kind: "paper"; shown: string; sent: string };
 
@@ -64,6 +66,8 @@ export type SessionHandle = {
   state: () => SessionState;
   say: (text: string, said?: Said) => Promise<void>;
   start: (words?: string) => Promise<boolean>;
+  /** Just the quick checks that are due, in this session not yet begun. */
+  checks: () => Promise<boolean>;
   taskOpen: () => boolean;
   /** The page with a task open: folded to the task, opened on the whole lesson, or null when there is no such page. */
   answerPage: () => AnswerPage;
@@ -572,6 +576,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return begin(continuing, shown, "opening", title, (api) => api.sendNewLesson(shown));
   };
 
+  /**
+   * Just the quick checks that are due. The runtime takes the words as the ask, poses the checks alone and ends the
+   * sitting after the last, as it does for the same words in a terminal.
+   */
+  const checks = async (): Promise<boolean> => {
+    if (!now.current.home) return false;
+    return begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
+  };
+
   /** Send the learner's words, with what they are. With nothing said of them, the tutor decides. */
   const say = async (text: string, said?: Said, question?: string) => {
     const { session, props } = now.current;
@@ -645,6 +658,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     started.current = true;
     props.onStarted(tab.key);
     if (pending.kind === "start") void start();
+    else if (pending.kind === "checks") void checks();
     else if (pending.kind === "paper") void begin(true, pending.shown, "talk", sittingTitle || "The paper", (api) => api.sendShown(pending.shown, pending.sent));
     // Runs once the tab has read its folder.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -827,6 +841,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     state: () => now.current.session,
     say: (text, said) => say(text, said ?? "talk"),
     start: (words) => start(words),
+    checks: () => checks(),
     taskOpen: () => now.current.task !== null,
     answerPage: () => now.current.page,
     docClosed: () => docClosedNow.current,
@@ -852,6 +867,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       state: () => handleRef.current.state(),
       say: (t, s) => handleRef.current.say(t, s),
       start: (w) => handleRef.current.start(w),
+      checks: () => handleRef.current.checks(),
       taskOpen: () => handleRef.current.taskOpen(),
       answerPage: () => handleRef.current.answerPage(),
       docClosed: () => handleRef.current.docClosed(),

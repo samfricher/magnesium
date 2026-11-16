@@ -17,6 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
 import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
+import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
@@ -111,6 +112,10 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [blockMinutes, setBlockMinutes] = useState(50);
   const [materialChanged, setMaterialChanged] = useState(0);
+  // The quick checks due in each folder, as Home and a workspace's page last read them: the menu offers Just the
+  // Quick Checks where some are.
+  const [checksDue, setChecksDue] = useState<Record<string, number>>({});
+  const onChecksDue = useCallback((folder: string, due: number) => setChecksDue((old) => (old[folder] === due ? old : { ...old, [folder]: due })), []);
   const handles = useRef<Record<string, SessionHandle>>({});
   // The workspace page in front takes the panel's commands for the material open beside it.
   const workspaceDocs = useRef<((command: string) => boolean) | null>(null);
@@ -220,6 +225,7 @@ export function App() {
       if (waiting) {
         activate(waiting.key);
         if (pending?.kind === "start") void handles.current[waiting.key]?.start();
+        else if (pending?.kind === "checks") void handles.current[waiting.key]?.checks();
         return;
       }
       const name = now.current.workspaces?.find((each) => each.folder === where)?.name ?? where.split("/").pop() ?? "";
@@ -320,6 +326,20 @@ export function App() {
     }
   };
 
+  /** Just the quick checks due in a folder, in a session of their own; read again first, so a stale count starts nothing. */
+  const justChecks = async (folder: string | null) => {
+    const { api, workspaces } = now.current;
+    if (!api || !folder) return note("Open a workspace first: a folder your course is in.");
+    const home = await api.home(folder).catch(() => null);
+    const due = checksAlone(home);
+    onChecksDue(folder, due);
+    const name = displayName(workspaces?.find((each) => each.folder === folder)?.name ?? folder.split("/").pop() ?? "");
+    if (home?.sitting) return note(`A paper is running in ${name}. Hand it in or end it first.`);
+    if (home && home.checks_alone == null) return note("The magnesium program on this Mac cannot give the quick checks alone. A newer one can.");
+    if (due === 0) return note(`No quick check is due in ${name} now.`);
+    newSession(folder, { kind: "checks" });
+  };
+
   const run = useCallback(
     (command: string, arg?: string | null) => {
       const { tabs, active, prefs } = now.current;
@@ -334,6 +354,8 @@ export function App() {
           return void pickFolder();
         case "new-session":
           return newSession(arg ?? undefined);
+        case "just-checks":
+          return void justChecks(arg ?? folderInFront());
         case "close-session":
           return tab && tab.kind !== "home" ? void closeTab(tab.key) : undefined;
         case "settings":
@@ -682,6 +704,8 @@ export function App() {
     if (!withDoc || !/\.pdf$/i.test(docs?.shown ?? "")) disabled.push("zoom-in-document", "zoom-out-document", "zoom-fit-document");
     if (!inSession && !(activeTab.kind === "home" && homeFolder)) disabled.push("open-document");
     if (busyKey === null) disabled.push("stop-reply");
+    const front = inSession ? activeTab.folder : (homeFolder ?? (workspaces ? (mostRecent(workspaces) ?? workspaces[0])?.folder : undefined));
+    if (!front || checksDue[front] === 0) disabled.push("just-checks");
     return {
       keys: Object.fromEntries(Object.entries(prefs.keys)),
       workspaces: (workspaces ?? []).map((each) => ({ id: each.folder, title: displayName(each.name) })),
@@ -701,7 +725,7 @@ export function App() {
         ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
       },
     };
-  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, answerPages, busyKey, panel, homeFolder, docsSeen]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, answerPages, busyKey, panel, homeFolder, docsSeen, checksDue]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -937,6 +961,9 @@ export function App() {
                 onBack={() => goWorkspace(null)}
                 onNewSession={(folder) => newSession(folder)}
                 onStartSession={(folder) => newSession(folder, { kind: "start" })}
+                onChecks={(folder) => newSession(folder, { kind: "checks" })}
+                onChecksDue={onChecksDue}
+                checksKey={k("just-checks")}
                 onOpenSession={(folder, session, title) => openSession(folder, session, title)}
                 onHandedIn={(folder, words, title) => addSession({ folder, session: null, title, pending: { kind: "paper", shown: words.shown, sent: words.sent } })}
                 onForget={(folder) =>
@@ -968,6 +995,9 @@ export function App() {
                 notes={notes}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}
                 onStartIn={(folder) => newSession(folder, { kind: "start" })}
+                onChecks={(folder) => newSession(folder, { kind: "checks" })}
+                onChecksDue={onChecksDue}
+                checksKey={k("just-checks")}
                 onWorkspace={(folder) => goWorkspace(folder)}
                 onPickFolder={() => void pickFolder()}
                 onNewFolder={() => void newFolder()}

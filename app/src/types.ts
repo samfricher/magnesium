@@ -31,6 +31,8 @@ export type Home = {
   last: Last | null;
   /** null when the window cannot tell: the runtime keeps the checks where only it works out what is due. */
   checks_due: number | null;
+  /** How many quick checks "just the checks" would pose now; absent or null from a runtime that cannot run them alone. */
+  checks_alone?: number | null;
   redos_due: number;
   /**
    * What the learner's next message in the folder opens with, when it begins a sitting: the quick checks the runtime

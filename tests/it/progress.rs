@@ -116,7 +116,7 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(
         first_day["due"],
-        json!({"redos": 0, "checks": 0}),
+        json!({"redos": 0, "checks": 0, "checks_alone": 0}),
         "{first_day}"
     );
     // Each skill names the first day its next pass can count: no answer
@@ -138,6 +138,8 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     days_pass(&e, 1);
     let due = progress(&e);
     assert_eq!(due["due"]["checks"], 1, "{due}");
+    // How many the checks alone would pose, which the window offers.
+    assert_eq!(due["due"]["checks_alone"], 1, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
     // A skill with no check has no schedule: it can pass again today, and
     // nothing asks for it.
@@ -243,7 +245,11 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!({"skills": 3, "proven": 0, "in_progress": 3}),
         "{value}"
     );
-    assert_eq!(value["due"], json!({"redos": 0, "checks": 0}), "{value}");
+    assert_eq!(
+        value["due"],
+        json!({"redos": 0, "checks": 0, "checks_alone": 0}),
+        "{value}"
+    );
     assert_eq!(value["plans"], json!([]), "{value}");
     let yesterday = today.checked_sub_days(Days::new(1)).unwrap();
     assert_eq!(
@@ -299,7 +305,11 @@ fn a_due_check_answered_today_without_a_pass_is_counted_due_tomorrow_not_today()
         .checked_add_days(Days::new(1))
         .unwrap()
         .to_string();
-    assert_eq!(value["due"], json!({"redos": 0, "checks": 0}), "{value}");
+    assert_eq!(
+        value["due"],
+        json!({"redos": 0, "checks": 0, "checks_alone": 0}),
+        "{value}"
+    );
     assert_eq!(
         (
             sign["due"].clone(),
