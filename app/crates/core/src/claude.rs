@@ -105,8 +105,7 @@ fn plugin_dir() -> Option<PathBuf> {
 ///   hooks, skills and tool server load as in a terminal. Its tools are in
 ///   the session from the first turn, as there are too few to defer.
 /// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
-///   `.magnesium/`. A course's answer keys are never read, in either
-///   permission mode: see [`crate::study::key_rules`].
+///   `.magnesium/`.
 /// - Edit and Write on the study root's plan files (`Study/<plan>/plan.md`
 ///   and `graph.yaml`) are allowed, so "change the plan" asks nothing.
 /// - With [`Permissions::Auto`], Claude Code's auto mode decides on every
@@ -163,7 +162,6 @@ pub fn lesson_args(
             let rule = format!("/{}/.magnesium/**", folder.display());
             [format!("Write({rule})"), format!("Edit({rule})")]
         })
-        .chain(roots.iter().flat_map(|root| crate::study::key_rules(root)))
         .collect();
     let allow: Vec<String> = roots
         .iter()
@@ -2360,14 +2358,6 @@ mod tests {
         assert_eq!(after("--permission-mode"), "auto");
         assert!(!asking.iter().any(|a| a == "--permission-mode"));
         assert!(!args.iter().any(|a| a.contains("bypassPermissions")));
-        // A course's answer key is closed in either mode.
-        assert!(
-            deny.contains(&"Read(//study/stats/*[kK][eE][yY]*)"),
-            "{deny:?}"
-        );
-        assert!(asking
-            .iter()
-            .any(|a| a.contains("Read(//study/stats/*[kK][eE][yY]*)")));
     }
 
     #[test]

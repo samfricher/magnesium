@@ -96,8 +96,7 @@ pub fn study_root(folder: &Path) -> PathBuf {
 ///   allowed inside the study root, and Edit and Write on its plan files
 ///   only (`Study/<plan>/plan.md` and `graph.yaml`), so the tutor can change
 ///   the plan as the plugin engine's tutor does; `.magnesium/` is denied
-///   outright, and so is a course's answer key
-///   ([`crate::study::key_rules`]). Magnesium's tool server is the only one
+///   outright. Magnesium's tool server is the only one
 ///   (`--strict-mcp-config`), and its three record tools are disallowed,
 ///   which takes their definitions out of the model's context.
 /// - Nothing ever asks the learner for permission (`--permission-prompts
@@ -153,7 +152,6 @@ pub fn direct_args(
                     .iter()
                     .map(|tool| format!("{tool}(/{}/.magnesium/**)", root.display())),
             )
-            .chain(crate::study::key_rules(root))
             .collect::<Vec<_>>()
             .join(","),
     );
@@ -3052,18 +3050,10 @@ mod tests {
         assert_eq!(after("--tools"), "Read,Edit,Write");
         assert_eq!(after("--permission-prompts"), "none");
         assert_eq!(after("--add-dir"), "/study");
-        let disallowed = after("--disallowedTools");
-        assert!(
-            disallowed.starts_with(
-                "mcp__magnesium__context,mcp__magnesium__learning_step,mcp__magnesium__memory,\
-                 Edit(//study/.magnesium/**),Write(//study/.magnesium/**),"
-            ),
-            "{disallowed}"
-        );
-        // A course's answer key is never read, though Read reaches the root.
-        assert!(
-            disallowed.contains("Read(//study/*[kK][eE][yY]*)"),
-            "{disallowed}"
+        assert_eq!(
+            after("--disallowedTools"),
+            "mcp__magnesium__context,mcp__magnesium__learning_step,mcp__magnesium__memory,\
+             Edit(//study/.magnesium/**),Write(//study/.magnesium/**)"
         );
         assert_eq!(
             after("--allowedTools"),
