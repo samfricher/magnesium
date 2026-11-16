@@ -431,6 +431,13 @@ async function respond(text: string, intent: Intent | undefined) {
   return reply(`You said: ${text}\n\nThat is talk, so nothing is marked. Say when you want to go on.`);
 }
 
+/** The stand-in runtime's receipt: the y-intercept was not right on Thu 5 Nov (m4), and nothing on it since. */
+function demoReceipt(): { receipt?: string } {
+  if (task !== "km") return {};
+  const days = Math.max(1, Math.round((Date.now() - new Date(2026, 10, 5, 12).getTime()) / 86_400_000));
+  return { receipt: `Not right on Thu 5 Nov: reading $V_{max}$ from the y-intercept. It held through the ${days === 1 ? "day" : `${days} days`} since you last answered it.` };
+}
+
 function addMark(mark: Mark["mark"]) {
   window.setTimeout(() => {
     markCount += 1;
@@ -443,7 +450,7 @@ function addMark(mark: Mark["mark"]) {
       cold: !helpAsked,
       paper: null,
       // The stand-in record: a right answer alone is the skill's first day, and the next one the same day earns none.
-      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1, next_day: dayFromNow(1) } : {}),
+      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1, next_day: dayFromNow(1), ...demoReceipt() } : {}),
     };
     helpAsked = false;
     marks.push(row);

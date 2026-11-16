@@ -31,6 +31,8 @@ export type LessonTurn = Omit<Turn, "posed"> & {
   posed?: string;
   /** For an answer: the task it answered, as it stood when it was sent. */
   question?: string;
+  /** The runtime's closing lines, when this turn ended the sitting. */
+  closing?: string[];
 };
 
 /** The exchange on screen: what the learner said and the tutor's reply to it. */
@@ -51,6 +53,7 @@ export type Live = {
   change?: PlanDiff;
   posed?: string;
   question?: string;
+  closing?: string[];
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -133,6 +136,7 @@ function asTurn(live: Live): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
+    ...(live.closing ? { closing: live.closing } : {}),
   };
 }
 
@@ -237,6 +241,9 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       const marks = [...(state.live.marks ?? []).filter((mark) => mark.id !== event.mark.id), event.mark];
       return { ...state, live: { ...state.live, marks } };
     }
+    // Closing lines belong to the reply that ended the sitting.
+    case "closing":
+      return state.live ? { ...state, live: { ...state.live, closing: event.lines } } : state;
     case "plan_changed":
     case "settled":
       return state;
@@ -283,6 +290,7 @@ export function reduce(state: SessionState, action: Action): SessionState {
               ...(last.change ? { change: last.change } : {}),
               ...(last.posed ? { posed: last.posed } : {}),
               ...(last.question ? { question: last.question } : {}),
+              ...(last.closing ? { closing: last.closing } : {}),
             }
           : null,
       };
@@ -370,7 +378,14 @@ export function openingWords(last: { stoppedAt: string | null; studiedBefore: bo
   return `Let's work on ${last.title}.`;
 }
 
-const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Let's work on ([\s\S]+)\.)$/;
+/**
+ * The words the window sends for "just the quick checks": a session of the due quick checks alone, which the runtime
+ * ends after the last of them. The runtime and the direct engine know the same words (src/just_checks.rs,
+ * crates/core/src/direct.rs).
+ */
+export const CHECKS_WORDS = "Just the quick checks.";
+
+const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Just the quick checks\.|Let's work on ([\s\S]+)\.)$/;
 
 /**
  * Whether a line is one of those opening lines, the stop line it quotes, and

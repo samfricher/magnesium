@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 13] = [
+const PUBLIC_COMMANDS: [(&str, &str); 14] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -28,6 +28,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 13] = [
     (
         "progress",
         "Show each skill's passes, the level, what is due, and the days with a marked answer",
+    ),
+    (
+        "closing",
+        "Show what today earned and when each skill answered today can count next, as a sitting's end shows it",
     ),
     (
         "searchable",
@@ -111,13 +115,14 @@ pub(crate) fn command() -> ClapCommand {
                             .conflicts_with("json")
                             .action(ArgAction::SetTrue),
                     )
-            } else if name == "info" || name == "attempts" || name == "progress" {
+            } else if name == "info" || name == "attempts" || name == "progress" || name == "closing" {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")
                         .help(match name {
                             "info" => "Print the status as JSON on one line instead of pretty-printed",
                             "attempts" => "Print the answers as JSON instead of text",
+                            "closing" => "Print the lines, their facts and the current sitting as JSON instead of text",
                             _ => "Print the skills, the level and the days as JSON instead of text",
                         })
                         .action(ArgAction::SetTrue),

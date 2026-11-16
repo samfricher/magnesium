@@ -36,9 +36,26 @@ function Marks({ marks }: { marks: Mark[] }) {
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
           {markWords(mark)}
           {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
+          {passWords(mark) && mark.receipt && (
+            <span className="record-receipt" data-role="receipt">
+              {" "}
+              <Line text={mark.receipt} />
+            </span>
+          )}
         </p>
       ))}
     </>
+  );
+}
+
+/** The sitting's closing lines, as the runtime worked them out from the record: drawn as they are, never reworded. */
+function Closing({ lines }: { lines: string[] }) {
+  return (
+    <div className="record closing" data-role="closing">
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
   );
 }
 
@@ -159,6 +176,7 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
       )}
       {turn.interrupted && <p className="record quiet">Stopped.</p>}
       {turn.change && <PlanChange change={turn.change} brief={settled} planKey={planKey} />}
+      {turn.closing && <Closing lines={turn.closing} />}
     </article>
   );
 });

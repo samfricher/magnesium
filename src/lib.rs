@@ -9,13 +9,16 @@
 mod adapter;
 mod attempts;
 mod cli;
+mod closing;
 mod diagnostics;
 mod digest;
 mod export;
 mod hooks;
+mod just_checks;
 pub(crate) mod learner;
 mod lesson;
 mod mcp;
+mod pass_receipts;
 mod practice;
 mod progress;
 mod readings;
@@ -62,6 +65,7 @@ pub fn run() -> ExitCode {
             matches.get_flag("json"),
         ),
         Some(("progress", matches)) => progress::print_progress(matches.get_flag("json")),
+        Some(("closing", matches)) => closing::print_closing(matches.get_flag("json")),
         Some(("searchable", matches)) => {
             let paths: Vec<PathBuf> = matches
                 .get_many::<PathBuf>("paths")

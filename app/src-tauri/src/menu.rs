@@ -60,10 +60,11 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// The keys the window starts with, as the page's own defaults.
-const DEFAULT_KEYS: [(&str, &str); 25] = [
+const DEFAULT_KEYS: [(&str, &str); 26] = [
     ("home", "cmd+1"),
     ("commands", "cmd+k"),
     ("new-session", "cmd+n"),
+    ("just-checks", "cmd+shift+n"),
     ("open-workspace", "cmd+o"),
     ("close-session", "cmd+w"),
     ("attach", "cmd+u"),
@@ -241,6 +242,7 @@ fn build<R: Runtime>(
         true,
         &[
             &command(table, "new-session", "New Session")?,
+            &command(table, "just-checks", "Just the Quick Checks")?,
             &command(table, "open-workspace", "Open a Folder…")?,
             &separator()?,
             &command(table, "close-session", "Close Session")?,

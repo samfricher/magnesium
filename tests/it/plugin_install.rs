@@ -178,6 +178,7 @@ fn magnesium_rules(report: &Value) -> Vec<Value> {
         json!(format!("Read(/{plugin_dir}/**)")),
         json!("Skill(magnesium:learn)"),
         json!("Skill(magnesium:papers)"),
+        json!("Skill(magnesium:checks)"),
         json!("Skill(magnesium:help)"),
         json!("Bash(magnesium digest)"),
     ]
@@ -223,6 +224,7 @@ fn init_enables_the_claude_plugin_for_this_folder_only() {
         "skills/papers/templates/preamble.tex",
         "skills/papers/templates/build.sh",
         "skills/papers/templates/paper.md",
+        "skills/checks/SKILL.md",
         "skills/help/SKILL.md",
     ] {
         assert_eq!(

@@ -879,6 +879,7 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
             Some("hook_response") => on_hook(shared, value),
             _ => {}
         },
+        Some("user") => on_tool_results(shared, value),
         Some("stream_event") => on_stream(shared, value),
         Some("assistant") => on_assistant(shared, value),
         Some("result") => on_result(shared, value),
@@ -893,6 +894,30 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
             }
         }
         _ => {}
+    }
+}
+
+/// A tool result that says a sitting ended, from the runtime's JSON in the
+/// result's text: the window then reads the closing lines.
+fn on_tool_results(shared: &Arc<Shared>, value: &Value) {
+    if value["message"]["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|part| part["type"] == "tool_result")
+        .any(|part| says_sitting_ended(&part["content"]))
+    {
+        shared.emit(AgentEvent::SittingEnded);
+    }
+}
+
+fn says_sitting_ended(content: &Value) -> bool {
+    match content {
+        Value::String(text) => {
+            serde_json::from_str::<Value>(text).is_ok_and(|parsed| parsed["sitting_ended"] == true)
+        }
+        Value::Array(parts) => parts.iter().any(|part| says_sitting_ended(&part["text"])),
+        _ => false,
     }
 }
 
@@ -1475,7 +1500,7 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
             }
             Some("tool_use" | "server_tool_use") => {
                 begin_turn(shared);
-                if block["name"].as_str().is_some_and(is_context_tool) {
+                if block["name"].as_str().is_some_and(is_context_tool) || asks_for_checks(block) {
                     shared.opening.record_opened.store(true, Ordering::SeqCst);
                 }
                 shared.emit(AgentEvent::Working {
@@ -1549,6 +1574,15 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
 /// learner's record at the start of a lesson.
 fn is_context_tool(name: &str) -> bool {
     name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__context")
+}
+
+/// `learning_step` `just_checks` reads the record's due checks and starts the
+/// lesson their answers are recorded in, so a lesson of quick checks alone
+/// opens the record with it, and needs no context read.
+fn asks_for_checks(block: &Value) -> bool {
+    block["name"].as_str().is_some_and(|name| {
+        name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__learning_step")
+    }) && block["input"]["action"] == "just_checks"
 }
 
 /// After a new lesson's first reply, at an effort the learner picked: a
@@ -1945,6 +1979,34 @@ impl Drop for ClaudeConversation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asking_for_the_checks_alone_opens_the_record() {
+        let tool = format!("mcp__{PLUGIN}__learning_step");
+        assert!(asks_for_checks(
+            &json!({"name": tool, "input": {"schema": "learner-model/v2", "action": "just_checks"}})
+        ));
+        assert!(!asks_for_checks(
+            &json!({"name": tool, "input": {"schema": "learner-model/v2", "action": "update"}})
+        ));
+        assert!(!asks_for_checks(
+            &json!({"name": "Bash", "input": {"action": "just_checks"}})
+        ));
+    }
+
+    #[test]
+    fn a_tool_result_that_says_a_sitting_ended_is_noticed() {
+        let text = |body: &str| json!([{"type": "text", "text": body}]);
+        assert!(says_sitting_ended(&text(
+            r#"{"action":"end_sitting","sitting_ended":true}"#
+        )));
+        assert!(says_sitting_ended(&json!(
+            r#"{"update_status":"committed","sitting_ended":true}"#
+        )));
+        assert!(!says_sitting_ended(&text(r#"{"sitting_ended":false}"#)));
+        assert!(!says_sitting_ended(&text("the sitting_ended: true")));
+        assert!(!says_sitting_ended(&json!(null)));
+    }
 
     #[test]
     fn the_account_is_read_from_claude_codes_own_words() {
@@ -2430,6 +2492,22 @@ mod tests {
             lock(&seen).last(),
             Some(&AgentEvent::Models { models: None })
         );
+    }
+
+    #[test]
+    fn a_hooks_message_to_the_terminal_is_not_drawn_on_the_page() {
+        // Claude Code 2.1.227 and later pass a hook's systemMessage on as an
+        // informational line. In a terminal the runtime's PostToolUse hook
+        // says a pass's receipt this way; the window draws it from the record
+        // under the answer, so a line like this must add nothing.
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "informational", "level": "info",
+                "content": "PostToolUse:mcp__plugin_magnesium_magnesium__learning_step says: First of three days. Not right on Fri 13 Nov: sign of b. It held through the 3 days since you last answered it.",
+                "session_id": "s1", "uuid": "u1"}),
+        );
+        assert!(lock(&seen).is_empty(), "{:?}", lock(&seen));
     }
 
     #[test]

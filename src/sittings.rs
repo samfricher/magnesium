@@ -27,7 +27,7 @@ const STORE_VERSION: i64 = 2;
 /// About three hours without a learner message ends a sitting.
 pub(crate) const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
 /// About a minute each, so about three minutes at the start of a sitting.
-const MAX_CHECKS_PER_SITTING: usize = 3;
+pub(crate) const MAX_CHECKS_PER_SITTING: usize = 3;
 const MAX_MISS_CHARS: usize = 240;
 const MAX_QUESTION_CHARS: usize = 400;
 const MAX_LOGGED_SITTINGS: i64 = 1000;
@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS sitting_items(
   posed INTEGER NOT NULL DEFAULT 0,
   outcome TEXT CHECK (outcome IN ('passed','failed','helped','declined','answered')),
   PRIMARY KEY (sitting_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS sitting_ends(
+  sitting_id TEXT PRIMARY KEY REFERENCES sittings(sitting_id),
+  ended_ms INTEGER NOT NULL,
+  ended_by TEXT,
+  shown_ms INTEGER
+);
+CREATE TABLE IF NOT EXISTS checks_alone(
+  sitting_id TEXT PRIMARY KEY REFERENCES sittings(sitting_id),
+  asked_ms INTEGER NOT NULL,
+  asked_by TEXT,
+  shown_ms INTEGER
 );
 ";
 
@@ -140,6 +152,60 @@ fn checks_json(checks: &[Check]) -> Value {
             })
             .collect(),
     )
+}
+
+/// The current sitting, and its end once one is recorded (see
+/// [`crate::closing`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SittingNow {
+    pub(crate) id: String,
+    pub(crate) started_ms: i64,
+    pub(crate) ended_ms: Option<i64>,
+    /// The conversation that ended it, as the record names hosts.
+    pub(crate) ended_by: Option<String>,
+    pub(crate) shown_ms: Option<i64>,
+}
+
+/// The current sitting, read without opening the store for writing: a store
+/// an earlier version made, with no table of ends, is left as it is.
+pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<SittingNow>, String> {
+    let path = workspace.control().join(STORE_FILE);
+    if !path.try_exists().map_err(error)? {
+        return Ok(None);
+    }
+    crate::workspace::reject_symlink_components(&path, workspace.control()).map_err(error)?;
+    let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(error)?;
+    conn.busy_timeout(Duration::from_secs(2)).map_err(error)?;
+    let has = |table: &str| -> Result<bool, String> {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(error)
+    };
+    if !has("sittings")? {
+        return Ok(None);
+    }
+    let query = if has("sitting_ends")? {
+        "SELECT s.sitting_id, s.started_ms, e.ended_ms, e.ended_by, e.shown_ms
+         FROM sittings s LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
+         ORDER BY s.sitting_no DESC LIMIT 1"
+    } else {
+        "SELECT sitting_id, started_ms, NULL, NULL, NULL FROM sittings ORDER BY sitting_no DESC LIMIT 1"
+    };
+    conn.query_row(query, [], |r| {
+        Ok(SittingNow {
+            id: r.get(0)?,
+            started_ms: r.get(1)?,
+            ended_ms: r.get(2)?,
+            ended_by: r.get(3)?,
+            shown_ms: r.get(4)?,
+        })
+    })
+    .optional()
+    .map_err(error)
 }
 
 /// One quick check as the opener states it.
@@ -420,6 +486,79 @@ impl Sittings {
                 }
             })
             .collect())
+    }
+
+    /// End the current sitting at `now`, for the conversation `by` that
+    /// ended it. Returns the sitting's id, or none when no sitting has begun.
+    /// Ending it again moves its end, so a learner who carries on and stops
+    /// again is shown the lines again.
+    pub(crate) fn end(&mut self, by: Option<&str>, now: i64) -> Result<Option<String>, String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(None);
+        };
+        let tx = self.write()?;
+        tx.execute(
+            "INSERT INTO sitting_ends(sitting_id,ended_ms,ended_by) VALUES(?1,?2,?3)
+             ON CONFLICT(sitting_id) DO UPDATE SET ended_ms=excluded.ended_ms, ended_by=excluded.ended_by",
+            params![sitting, now, by],
+        )
+        .map_err(error)?;
+        // Any end lifts a sitting of checks alone for good: the learner who
+        // carries on after it is taught as in any sitting.
+        tx.execute("DELETE FROM checks_alone WHERE sitting_id=?1", [&sitting])
+            .map_err(error)?;
+        tx.commit().map_err(error)?;
+        Ok(Some(sitting))
+    }
+
+    /// The current sitting: when it began, and when and by whom it ended.
+    pub(crate) fn now_state(&self) -> Result<Option<SittingNow>, String> {
+        self.conn
+            .query_row(
+                "SELECT s.sitting_id, s.started_ms, e.ended_ms, e.ended_by, e.shown_ms
+                 FROM sittings s LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
+                 ORDER BY s.sitting_no DESC LIMIT 1",
+                [],
+                |r| {
+                    Ok(SittingNow {
+                        id: r.get(0)?,
+                        started_ms: r.get(1)?,
+                        ended_ms: r.get(2)?,
+                        ended_by: r.get(3)?,
+                        shown_ms: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(error)
+    }
+
+    /// The learner wrote again after the end: the sitting goes on. An end a
+    /// Stop hook never claimed (the goodbye was stopped part way, or the
+    /// hook failed) is set aside here, so its lines never show later under
+    /// another reply. A learner who stops again ends it again.
+    pub(crate) fn reopen(&mut self) -> Result<(), String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(());
+        };
+        let tx = self.write()?;
+        tx.execute("DELETE FROM sitting_ends WHERE sitting_id=?1", [&sitting])
+            .map_err(error)?;
+        tx.commit().map_err(error)
+    }
+
+    /// Claim the showing of a sitting's end that has not been shown yet.
+    /// Only one caller gets true for each end.
+    pub(crate) fn claim_end_shown(&mut self, sitting: &str, now: i64) -> Result<bool, String> {
+        let tx = self.write()?;
+        let changed = tx
+            .execute(
+                "UPDATE sitting_ends SET shown_ms=?2 WHERE sitting_id=?1 AND (shown_ms IS NULL OR shown_ms < ended_ms)",
+                params![sitting, now],
+            )
+            .map_err(error)?;
+        tx.commit().map_err(error)?;
+        Ok(changed > 0)
     }
 
     /// The tutor's reply poses check n when it says "Quick check n".
@@ -775,7 +914,9 @@ fn opener_text_with(checks: &[Check], redos: &[DueRedos], unlisted: &[DueRedos])
                 }
             }
         }
-        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is the check's next problem, made the same way: it asks for a result and never names or points at the skill, the label, the method, the step or the earlier mistake, and each earlier miss gives it a different answer from the right one. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
+        let first = checks[0].number;
+        text.push_str(&format!("\nYour first reply of this sitting begins with the words \"Quick check {first}:\", with no greeting or recap before them, and poses check {first}."));
+        text.push_str(" Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is the check's next problem, made the same way: it asks for a result and never names or points at the skill, the label, the method, the step or the earlier mistake, and each earlier miss gives it a different answer from the right one. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
     }
     if !redos.is_empty() || !unlisted.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -820,15 +961,18 @@ pub(crate) fn carries_learner_message(request: &Value, result: &Value) -> bool {
                 .is_some_and(|events| events.iter().any(|e| e["speaker"] == "learner")))
 }
 
-/// The clause a turn's notice carries while a quick check is open.
-pub(crate) fn notice_clause(workspace: &Workspace) -> Option<String> {
+/// The clause a turn's notice carries while a quick check is open, for the
+/// conversation `by`.
+pub(crate) fn notice_clause(workspace: &Workspace, by: Option<&str>) -> Option<String> {
+    let sittings = Sittings::open_existing(workspace).ok()??;
+    // A sitting of checks alone was asked for, so it holds with the opener off.
+    if let Ok(Some(left)) = sittings.checks_only_left(workspace, by, now_ms()) {
+        return Some(checks_only::notice_clause(left));
+    }
     if workspace.opener() == OpenerMode::Off {
         return None;
     }
-    let counts = Sittings::open_existing(workspace)
-        .ok()??
-        .open_counts()
-        .ok()??;
+    let counts = sittings.open_counts().ok()??;
     Some(format!(
         " Sitting quick checks: due {}, posed {}.",
         counts.due, counts.posed
@@ -867,6 +1011,8 @@ pub(crate) fn set_opener(mode: OpenerMode) -> std::process::ExitCode {
         }
     }
 }
+
+pub(crate) mod checks_only;
 
 #[cfg(test)]
 mod tests;

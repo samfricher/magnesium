@@ -31,6 +31,8 @@ export type Home = {
   last: Last | null;
   /** null when the window cannot tell: the runtime keeps the checks where only it works out what is due. */
   checks_due: number | null;
+  /** How many quick checks "just the checks" would pose now; absent or null from a runtime that cannot run them alone. */
+  checks_alone?: number | null;
   redos_due: number;
   /**
    * What the learner's next message in the folder opens with, when it begins a sitting: the quick checks the runtime
@@ -88,6 +90,8 @@ export type Turn = {
   posed?: boolean;
   noted?: boolean;
   mark_ids?: string[] | null;
+  /** The closing lines drawn under this turn's reply, when it ended a sitting. */
+  closing?: string[] | null;
 };
 
 /**
@@ -314,6 +318,8 @@ export type AgentEvent =
    * the page may still take a task a reply opens with a bold word.
    */
   | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
+  /** The turn ended the sitting: the runtime's closing lines, drawn under the reply as they are. */
+  | { type: "closing"; lines: string[] }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 
@@ -355,6 +361,11 @@ export type Mark = {
    * Absent otherwise, or when the runtime does not say.
    */
   next_day?: string | null;
+  /**
+   * On an answer that earned a pass, the runtime's line of evidence from the record: the last miss on the skill before
+   * it, and the days since the learner last answered it. A terminal shows the same line. Absent otherwise.
+   */
+  receipt?: string | null;
 };
 
 /**

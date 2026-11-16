@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
-import { firstStep, namedSessions, nextOf, planDay } from "../next";
+import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
@@ -30,6 +30,12 @@ type Props = {
   /** Start a session on the plan's next item, as Home's first row starts one. */
   onStartSession: (folder: string) => void;
   onOpenSession: (folder: string, session: string, title: string) => void;
+  /** Just the quick checks due here, in a session of their own. */
+  onChecks: (folder: string) => void;
+  /** How many quick checks are due here, as the page read it. */
+  onChecksDue?: (folder: string, due: number) => void;
+  /** The key for Just the quick checks, as the learner set it. */
+  checksKey?: string;
   onHandedIn: (folder: string, words: { shown: string; sent: string }, title: string) => void;
   onForget: (folder: string) => void;
   onPaste: (folder: string) => void;
@@ -402,6 +408,10 @@ export function WorkspacePage(props: Props) {
   useEffect(() => {
     void read();
   }, [read, props.refresh]);
+  const { onChecksDue } = props;
+  useEffect(() => {
+    if (home) onChecksDue?.(folder, checksAlone(home));
+  }, [home, folder, onChecksDue]);
 
   // The record is read apart from the rest, so the page does not wait on it.
   useEffect(() => {
@@ -513,6 +523,9 @@ export function WorkspacePage(props: Props) {
   // promise of when it comes.
   const first = firstStep(home);
   const due = home && !first ? dueLine(home) : null;
+  // The quick checks due can be taken alone, in a session of their own.
+  const alone = checksAlone(home);
+  const checksDue = alone > 0;
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
@@ -625,11 +638,18 @@ export function WorkspacePage(props: Props) {
               </>
             )}
             {due && <p className="page-note next-due">{due}</p>}
-            {current && (
+            {(current || checksDue) && (
               <p className="page-acts next-acts">
-                <button className="quiet-act" data-drive="new-session" onClick={() => props.onNewSession(folder)}>
-                  Something else…
-                </button>
+                {checksDue && (
+                  <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(folder)}>
+                    {alone === 1 ? "Just the quick check" : "Just the quick checks"}
+                  </button>
+                )}
+                {current && (
+                  <button className="quiet-act" data-drive="new-session" onClick={() => props.onNewSession(folder)}>
+                    Something else…
+                  </button>
+                )}
               </p>
             )}
           </section>

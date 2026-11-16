@@ -74,7 +74,22 @@ When the tutor stores the next question for a check or a redo, the sitting start
 
 You can decline any of it. A decline costs nothing: it is recorded as your choice, and the check stays due for the next sitting. "Skip", "no quiz" and "stop" still win. Each sitting adds one line to `.magnesium/sittings.log`: what was due, what was posed, answered or declined, what passed or failed, and how many more checks were due than the sitting had room for.
 
+**Just the checks.** To take only the quick checks that are due, with nothing new after them, type `/magnesium:checks` in Claude Code, or say "just the checks". In the study window, choose Just the quick checks under Next, on Home or on the workspace's page, or File > Just the Quick Checks (⌘⇧N). It is there only while a check is due, and not while a timed paper runs. The sitting poses up to three, one at a time, with no paper redo, no new material and no other task. After each answer the tutor shows the options and says which is right and why; a check you got wrong comes back on its next day. When the last one is answered or declined, Magnesium ends the sitting itself, and its closing lines show under that reply, as in [End a sitting](#end-a-sitting), or nothing when no answer was marked. No task follows. A paper redo that is due stays on the workspace's page and opens your next sitting. If you ask for something else part-way, a lesson, a change to the plan or a paper, you get it: the sitting becomes an ordinary one, and the checks not yet answered stay due. If you ask for more afterwards, the lesson goes on as usual. A lesson in another tab of the same folder is not affected.
+
 To turn this off for a study folder, run `magnesium opener off` there. Checks are still scheduled, but sittings no longer open with them. `magnesium opener on` turns it back on. `magnesium opener block` also makes the tutor wait to teach new material until each quick check has been asked or declined.
+
+## End a sitting
+
+When you are stopping, say so in your own words: "that's enough for today", "I have to go". The tutor tells Magnesium, closes in a line and sets no task. Under its reply you then see at most two lines, worked out from your learning history and never from the tutor's words: the passes you earned today, and the first day a skill you answered today can count again. For example:
+
+```text
+Earned today: a pass on slope and Km and 1 more.
+Can count from tomorrow: units of a rate.
+```
+
+Each line is kept short enough to fit on one line: when there are more skills than fit, the rest are counted ("and 2 more"), and a name too long for the line is cut at a word and ends in "…". A skill proved today leads the first line ("Proven today: rate equation."). A wrong or partly right answer earns no pass, so it is never named as earned, but its skill can be named in the second line. If no answer was marked today, nothing is shown: a declined question is your choice, not an answer. Asking to pause or stop the lesson ends the sitting the same way. In Claude Code in a terminal the lines come from Claude Code itself, after the reply. In the study window they sit under the reply, and stay there when you open the lesson again. Closing the window or the terminal without saying so shows nothing. If you write again after stopping, the sitting carries on, and stopping again shows the lines again. After `/clear` in Claude Code nothing is shown until you start a new session, as Magnesium records nothing there. The workspace's page shows when each of your skills can count again.
+
+From the study folder, `magnesium closing` prints the lines for today as they would show if the sitting ended now, and `--json` the same as data with when the current sitting ended. The command changes nothing in the folder.
 
 ## Your gap log
 
@@ -136,6 +151,14 @@ Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 ```
 
 Add `--json` for the same facts as data. The study window reads them from there. The data also counts what you did today: the answers you gave, the skills you answered for the first time, the passes you earned and the checks due tomorrow. The command changes nothing in the folder.
+
+When an answer earns a pass, Magnesium shows one more line from the record: the last time you got that skill wrong, with its day and label, and how many days the answer came after your last answer on the skill. The study window shows it under the mark. Claude Code in a terminal shows it once the tutor has recorded the answer. For example:
+
+```text
+Not right on Fri 13 Nov: sign of b. It held through the 3 days since you last answered it.
+```
+
+A skill you never got wrong gets only the days, and your first answer on a skill gets no line. A lost mark on a paper says the paper: "Lost marks on Midterm 2023, Mon 2 Nov: slope and Km." The `--json` data has these lines under `pass_receipts`.
 
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 

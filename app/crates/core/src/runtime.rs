@@ -83,6 +83,11 @@ pub struct Mark {
     /// learner is past, so only the latest carries it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_day: Option<String>,
+    /// On an answer that earned a pass, the runtime's line of evidence from
+    /// the record: the last miss on the skill before it and the days since
+    /// the learner last answered it. A terminal shows the same line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<String>,
 }
 
 /// Each answer that earned a pass a skill holds now, by the record's id, and
@@ -128,6 +133,21 @@ pub fn next_days_from(progress: &Value) -> HashMap<String, String> {
         .collect()
 }
 
+/// The runtime's line of evidence for each answer that earned a pass the
+/// skill holds now, by the record's id, from what `magnesium progress`
+/// printed. A runtime from before it wrote them gives none.
+pub fn receipts_from(progress: &Value) -> HashMap<String, String> {
+    progress["pass_receipts"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, receipt)| {
+            let text = receipt["text"].as_str()?.trim();
+            (!text.is_empty()).then(|| (id.clone(), text.to_owned()))
+        })
+        .collect()
+}
+
 /// Say which pass each mark earned, as the runtime counts it now, and on the
 /// latest pass of a skill, the day its next can count.
 pub fn note_passes(marks: &mut [Mark], folder: &Path) {
@@ -143,9 +163,11 @@ pub fn note_passes(marks: &mut [Mark], folder: &Path) {
     };
     let passes = passes_from(&progress);
     let next_days = next_days_from(&progress);
+    let receipts = receipts_from(&progress);
     for mark in marks {
         mark.pass = passes.get(&mark.id).copied();
         mark.next_day = next_days.get(&mark.id).cloned();
+        mark.receipt = mark.pass.and_then(|_| receipts.get(&mark.id).cloned());
     }
 }
 
@@ -177,6 +199,7 @@ pub fn marks_from(printed: &str) -> Option<Vec<Mark>> {
                     paper: text("paper"),
                     pass: None,
                     next_day: None,
+                    receipt: None,
                 })
             })
             .collect(),
@@ -202,6 +225,39 @@ pub fn progress(folder: &Path) -> Option<Value> {
         && value["upgrade_needed"].as_bool() != Some(true)
         && value["days"].is_array())
     .then_some(value)
+}
+
+/// What `magnesium closing --json` says: the closing lines for today, as
+/// the runtime words them, and when the current sitting ended.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Closing {
+    /// Empty when no answer was marked today.
+    pub lines: Vec<String>,
+    pub ended_ms: Option<i64>,
+}
+
+/// `magnesium closing --json`, read without changing anything. None when this
+/// version of the runtime has no such command, or the folder is not set up.
+pub fn closing(folder: &Path) -> Option<Closing> {
+    let out = run(folder, &["closing", "--json"], Duration::from_secs(10)).ok()?;
+    closing_from(&out)
+}
+
+pub fn closing_from(printed: &str) -> Option<Closing> {
+    let value: Value = serde_json::from_str(printed).ok()?;
+    if value["active"].as_bool() != Some(true) {
+        return None;
+    }
+    let lines = value["closing"]["lines"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|line| line.as_str().map(str::to_owned))
+        .collect();
+    Some(Closing {
+        lines,
+        ended_ms: value["sitting"]["ended_ms"].as_i64(),
+    })
 }
 
 /// A step of the lesson's goal, as the record's checkpoint holds it.
@@ -373,6 +429,7 @@ mod tests {
                 paper: None,
                 pass: None,
                 next_day: None,
+                receipt: None,
             }
         );
         assert_eq!(
@@ -421,6 +478,21 @@ mod tests {
         let days = next_days_from(&printed);
         assert_eq!(days.get("a-3").map(String::as_str), Some("2026-11-19"));
         assert_eq!(days.len(), 1, "{days:?}");
+    }
+
+    #[test]
+    fn an_answer_that_earned_a_pass_carries_the_runtimes_receipt() {
+        let printed = json!({
+            "pass_receipts": {
+                "a-3": {"text": "Not right on Tue 10 Nov: sign of b. It held through the 4 days since you last answered it."},
+                "a-4": {"text": "  "}
+            }
+        });
+        let receipts = receipts_from(&printed);
+        assert!(receipts["a-3"].starts_with("Not right on Tue 10 Nov"));
+        assert_eq!(receipts.len(), 1);
+        // A runtime from before it wrote them.
+        assert!(receipts_from(&json!({"plans": []})).is_empty());
     }
 
     #[test]

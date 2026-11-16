@@ -112,7 +112,13 @@ fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
     let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut data = serde_json::Map::new();
     // Table identifiers come from this fixed list, as for the learner tables.
-    for table in ["items", "attempts", "sittings", "sitting_items"] {
+    for table in [
+        "items",
+        "attempts",
+        "sittings",
+        "sitting_items",
+        "sitting_ends",
+    ] {
         let exists: bool = snapshot
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
