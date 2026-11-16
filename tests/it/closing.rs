@@ -74,7 +74,8 @@ fn a_sitting_the_learner_ends_shows_its_two_lines_once_under_the_reply() {
     assert_eq!(stop(&e, "p-3"), json!({}));
     let lines = json!([
         format!("Earned today: a pass on {RIGHT}."),
-        format!("Can count next: from tomorrow, {RIGHT} and {WRONG}."),
+        // Both names do not fit on one line: the first is cut at a word.
+        "Can count from tomorrow: roots of a factored… and 1 more.".to_owned(),
     ]);
     let read = closing_json(&e);
     assert_eq!(read["closing"]["lines"], lines, "{read}");
@@ -156,6 +157,6 @@ fn a_stop_the_learner_asks_for_ends_the_sitting_too() {
     assert_eq!(stopped["durable"], true, "{stopped}");
     assert_eq!(
         stop(&e, "p-3")["systemMessage"],
-        format!("Can count next: from tomorrow, {WRONG}.")
+        format!("Can count from tomorrow: {WRONG}.")
     );
 }

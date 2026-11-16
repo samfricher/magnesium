@@ -78,14 +78,14 @@ To turn this off for a study folder, run `magnesium opener off` there. Checks ar
 
 ## End a sitting
 
-When you are stopping, say so in your own words: "that's enough for today", "I have to go". The tutor tells Magnesium, closes in a line and sets no task. Under its reply you then see at most two lines, worked out from your learning history and never from the tutor's words: the passes you earned today, and when each skill you answered today can count next. For example:
+When you are stopping, say so in your own words: "that's enough for today", "I have to go". The tutor tells Magnesium, closes in a line and sets no task. Under its reply you then see at most two lines, worked out from your learning history and never from the tutor's words: the passes you earned today, and the first day a skill you answered today can count again. For example:
 
 ```text
-Earned today: a pass on slope and Km.
-Can count next: from tomorrow, units of a rate; from Thu 19 Nov, slope and Km.
+Earned today: a pass on slope and Km and 1 more.
+Can count from tomorrow: units of a rate.
 ```
 
-A pass that proves a skill says so ("the pass that proves rate equation"). A wrong or partly right answer earns no pass, so it is never named as earned, but its skill's next day is. If no answer was marked today, nothing is shown: a declined question is your choice, not an answer. Asking to pause or stop the lesson ends the sitting the same way. In Claude Code in a terminal the lines come from Claude Code itself, after the reply, each starting "Stop says:". In the study window they sit under the reply, and stay there when you open the lesson again. Closing the window or the terminal without saying so shows nothing.
+Each line is kept short enough to fit on one line: when there are more skills than fit, the rest are counted ("and 2 more"), and a name too long for the line is cut at a word and ends in "…". A skill proved today leads the first line ("Proven today: rate equation."). A wrong or partly right answer earns no pass, so it is never named as earned, but its skill can be named in the second line. If no answer was marked today, nothing is shown: a declined question is your choice, not an answer. Asking to pause or stop the lesson ends the sitting the same way. In Claude Code in a terminal the lines come from Claude Code itself, after the reply. In the study window they sit under the reply, and stay there when you open the lesson again. Closing the window or the terminal without saying so shows nothing. The workspace's page shows when each of your skills can count again.
 
 From the study folder, `magnesium closing` prints the lines for today as they would show if the sitting ended now, and `--json` the same as data with when the current sitting ended. The command changes nothing in the folder.
 

@@ -3235,7 +3235,7 @@ fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply
     });
     match closing {
         AgentEvent::Closing { lines } => {
-            assert_eq!(lines, ["Can count next: from tomorrow, sign of b."]);
+            assert_eq!(lines, ["Can count from tomorrow: sign of b."]);
         }
         _ => unreachable!(),
     }
@@ -3244,7 +3244,7 @@ fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply
     let turns = manager.lesson_turns(None, &session).unwrap();
     assert_eq!(
         turns.last().unwrap().closing.as_deref(),
-        Some(&["Can count next: from tomorrow, sign of b.".to_owned()][..])
+        Some(&["Can count from tomorrow: sign of b.".to_owned()][..])
     );
     manager.shut_down();
 }

@@ -31,6 +31,7 @@ fn record(plan: Vec<Value>, other: Vec<Value>) -> Value {
 }
 
 const TODAY: &str = "2026-11-16";
+const LONG: &str = "when to use the t distribution rather than the normal, for a small sample whose standard deviation is not known";
 
 #[test]
 fn nothing_shows_when_no_answer_was_marked_today() {
@@ -48,7 +49,7 @@ fn nothing_shows_when_no_answer_was_marked_today() {
 }
 
 #[test]
-fn a_pass_today_and_its_next_day_make_two_lines() {
+fn a_pass_today_and_the_first_day_another_can_count_make_two_lines() {
     let progress = record(
         vec![
             skill("slope and Km", &["a0", "a1"], false, Some("2026-11-19")),
@@ -63,13 +64,16 @@ fn a_pass_today_and_its_next_day_make_two_lines() {
         answered("w1", "rate equation", TODAY, false),
     ];
     let closing = from_record(&progress, &answers, day(TODAY)).unwrap();
+    // The next line names the first day only; slope and Km's later day is
+    // on the workspace's page.
     assert_eq!(
         closing.lines(),
         [
             "Earned today: a pass on slope and Km.",
-            "Can count next: from tomorrow, rate equation; from Thu 19 Nov, slope and Km.",
+            "Can count from tomorrow: rate equation.",
         ]
     );
+    assert_eq!(closing.next.len(), 2, "the data keeps every day");
 }
 
 #[test]
@@ -82,12 +86,12 @@ fn a_wrong_answer_earns_nothing_but_names_its_next_day() {
     let closing = from_record(&progress, &answers, day(TODAY)).unwrap();
     assert_eq!(
         closing.lines(),
-        ["Can count next: from tomorrow, units of a rate."]
+        ["Can count from tomorrow: units of a rate."]
     );
 }
 
 #[test]
-fn a_pass_that_proves_a_skill_says_so_and_names_no_next_day() {
+fn a_skill_proved_today_leads_and_the_other_passes_are_counted() {
     let progress = record(
         vec![
             skill("rate equation", &["p1", "p2", "p3"], true, None),
@@ -96,8 +100,8 @@ fn a_pass_that_proves_a_skill_says_so_and_names_no_next_day() {
         vec![],
     );
     let answers = [
-        answered("p3", "rate equation", TODAY, false),
         answered("s1", "slope and km", TODAY, false),
+        answered("p3", "rate equation", TODAY, false),
     ];
     let lines = from_record(&progress, &answers, day(TODAY))
         .unwrap()
@@ -105,8 +109,8 @@ fn a_pass_that_proves_a_skill_says_so_and_names_no_next_day() {
     assert_eq!(
         lines,
         [
-            "Earned today: a pass on slope and Km, and the pass that proves rate equation.",
-            "Can count next: from tomorrow, slope and Km.",
+            "Proven today: rate equation, and a pass on 1 more.",
+            "Can count from tomorrow: slope and Km.",
         ]
     );
     // Proven alone: one line.
@@ -114,10 +118,10 @@ fn a_pass_that_proves_a_skill_says_so_and_names_no_next_day() {
         vec![skill("rate equation", &["p1", "p2", "p3"], true, None)],
         vec![],
     );
-    let lines = from_record(&progress, &answers[..1], day(TODAY))
+    let lines = from_record(&progress, &answers[1..], day(TODAY))
         .unwrap()
         .lines();
-    assert_eq!(lines, ["Earned today: the pass that proves rate equation."]);
+    assert_eq!(lines, ["Proven today: rate equation."]);
 }
 
 #[test]
@@ -134,39 +138,91 @@ fn a_pass_lost_to_a_later_miss_today_is_not_named() {
     let lines = from_record(&progress, &answers, day(TODAY))
         .unwrap()
         .lines();
-    assert_eq!(lines, ["Can count next: from tomorrow, units of a rate."]);
+    assert_eq!(lines, ["Can count from tomorrow: units of a rate."]);
 }
 
 #[test]
-fn many_skills_are_named_three_at_a_time_and_the_rest_counted() {
-    let names = ["a", "b", "c", "d", "e"];
-    let other: Vec<Value> = names
-        .iter()
-        .enumerate()
-        .map(|(at, name)| {
-            skill(
-                name,
-                &[&format!("x{at}")],
-                false,
-                Some(&format!("2026-11-{}", 17 + at)),
-            )
-        })
-        .collect();
-    let answers: Vec<Answered> = names
-        .iter()
-        .enumerate()
-        .map(|(at, name)| answered(&format!("x{at}"), name, TODAY, false))
-        .collect();
-    let lines = from_record(&record(vec![], other), &answers, day(TODAY))
-        .unwrap()
-        .lines();
+fn every_line_fits_whatever_the_names_and_their_number() {
+    let names = [
+        "pooled variance",
+        "degrees of freedom of a t statistic",
+        LONG,
+        "margin of error",
+        "sign of b in the quadratic formula",
+        "reading a confidence interval",
+    ];
+    for count in 1..=names.len() {
+        for start in 0..names.len() {
+            let chosen: Vec<&str> = (0..count)
+                .map(|at| names[(start + at) % names.len()])
+                .collect();
+            let other: Vec<Value> = chosen
+                .iter()
+                .enumerate()
+                .map(|(at, name)| {
+                    skill(
+                        name,
+                        &[&format!("x{at}")],
+                        at == 0,
+                        (at > 0).then_some("2026-11-17"),
+                    )
+                })
+                .collect();
+            let answers: Vec<Answered> = chosen
+                .iter()
+                .enumerate()
+                .map(|(at, name)| answered(&format!("x{at}"), &label_key(name), TODAY, false))
+                .collect();
+            let closing = from_record(&record(vec![], other), &answers, day(TODAY)).unwrap();
+            for line in closing.lines() {
+                assert!(
+                    line.chars().count() <= LINE_CHARS,
+                    "{} chars: {line}",
+                    line.chars().count()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn names_that_fit_are_named_and_the_rest_counted() {
+    let short = |names: &[&str]| -> Vec<String> { names.iter().map(|n| (*n).to_owned()).collect() };
     assert_eq!(
-        lines,
-        [
-            "Earned today: a pass on a, b, c and 2 more.",
-            "Can count next: from tomorrow, a; from Wed 18 Nov, b; from Thu 19 Nov, c; 2 more on later days.",
-        ]
+        fit(
+            "Earned today: a pass on ",
+            &short(&["pooled variance", "margin of error"]),
+            "."
+        ),
+        "Earned today: a pass on pooled variance and margin of error."
     );
+    assert_eq!(
+        fit(
+            "Earned today: a pass on ",
+            &short(&[
+                "pooled variance",
+                "margin of error",
+                "reading a confidence interval"
+            ]),
+            "."
+        ),
+        "Earned today: a pass on pooled variance and 2 more."
+    );
+    // A name too long for the line is cut at a word, and says so.
+    assert_eq!(
+        fit(
+            "Earned today: a pass on ",
+            &short(&[LONG, "margin of error"]),
+            "."
+        ),
+        "Earned today: a pass on when to use the t… and 1 more."
+    );
+    assert_eq!(
+        fit("Can count from Thu 19 Nov: ", &short(&[LONG]), "."),
+        "Can count from Thu 19 Nov: when to use the t distribution…"
+    );
+    assert_eq!(clip_at_word("supercalifragilistic", 5), "super");
+    assert_eq!(clip_at_word("normal, for a small", 8), "normal");
 }
 
 #[test]
@@ -187,7 +243,7 @@ fn a_skill_in_a_plan_and_out_of_one_is_named_once_and_a_file_plan_is_skipped() {
         lines,
         [
             "Earned today: a pass on Slope and Km.",
-            "Can count next: from Wed 18 Nov, Slope and Km.",
+            "Can count from Wed 18 Nov: Slope and Km.",
         ]
     );
 }

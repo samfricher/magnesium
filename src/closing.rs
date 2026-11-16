@@ -1,7 +1,8 @@
 //! The closing lines: what a sitting leaves the learner with when it ends.
 //!
 //! At most two lines, worked out here from the record and nowhere else: the
-//! passes earned today, and when each skill answered today can count next.
+//! passes earned today, and the first day a skill answered today can count
+//! again, with the skills that can count then.
 //! Nothing at all when no answer was marked today. A declined question is not
 //! an answer (as in `magnesium progress`), so a day of declines ends with
 //! nothing. A wrong or partly right answer is an answer: it earns no pass, so
@@ -30,10 +31,13 @@ pub(crate) const END_ACTION: &str = "end_sitting";
 /// What a lesson's session-start notice says of the end of a sitting.
 pub(crate) const END_GUIDANCE: &str = " When the learner says they are stopping for now, send learning_step {\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"} before your reply, and set no task.";
 
+/// The longest a line may be. At the window's usual measure and text size the
+/// reading column shows about 78 characters of this text on one line, and
+/// about 66 with the plan beside the lesson in a window 1100 points wide (the
+/// photographs of 2026-11-16); a few fewer leave room for wide letters.
+const LINE_CHARS: usize = 64;
 /// How many skills a line names before it counts the rest.
 const NAMES_IN_LINE: usize = 3;
-/// How many days the second line names before it counts the rest.
-const DAYS_IN_LINE: usize = 3;
 
 /// `learning_step` `{"schema":"learner-model/v2","action":"end_sitting"}`.
 #[allow(dead_code)]
@@ -66,45 +70,33 @@ pub(crate) struct Closing {
 
 impl Closing {
     /// The lines, in the order they are shown.
+    /// The lines, in the order they are shown. Each fits in
+    /// [`LINE_CHARS`], whatever the names, so that it is one line in the
+    /// window at its usual measure and text size, and the terminal says the
+    /// same words.
     pub(crate) fn lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         let first = match (self.earned.is_empty(), self.proved.is_empty()) {
             (true, true) => None,
-            (false, true) => Some(format!("Earned today: a pass on {}.", names(&self.earned))),
-            (true, false) => Some(format!(
-                "Earned today: the {} that {} {}.",
-                plural(self.proved.len(), "pass", "passes"),
-                plural(self.proved.len(), "proves", "prove"),
-                names(&self.proved)
-            )),
-            (false, false) => Some(format!(
-                "Earned today: a pass on {}, and the {} that {} {}.",
-                names(&self.earned),
-                plural(self.proved.len(), "pass", "passes"),
-                plural(self.proved.len(), "proves", "prove"),
-                names(&self.proved)
+            (false, true) => Some(fit("Earned today: a pass on ", &self.earned, ".")),
+            (true, false) => Some(fit("Proven today: ", &self.proved, ".")),
+            // A skill proved today leads, as the larger step; the other
+            // passes are counted, so the line keeps to its length.
+            (false, false) => Some(fit(
+                "Proven today: ",
+                &self.proved,
+                &format!(", and a pass on {} more.", self.earned.len()),
             )),
         };
         lines.extend(first);
-        if !self.next.is_empty() {
-            let mut parts: Vec<String> = self
-                .next
-                .iter()
-                .take(DAYS_IN_LINE)
-                .map(|(day, skills)| format!("from {}, {}", self.day_words(*day), names(skills)))
-                .collect();
-            let more: usize = self
-                .next
-                .iter()
-                .skip(DAYS_IN_LINE)
-                .map(|(_, skills)| skills.len())
-                .sum();
-            if more > 0 {
-                parts.push(format!("{more} more on later days"));
-            }
-            // The day leads each part and parts end with a semicolon, so a
-            // skill's name with a comma or an "and" in it stays readable.
-            lines.push(format!("Can count next: {}.", parts.join("; ")));
+        // The first day any skill answered today can count again, and the
+        // skills that can count then. Later days are on the workspace's page.
+        if let Some((day, skills)) = self.next.first() {
+            lines.push(fit(
+                &format!("Can count from {}: ", self.day_words(*day)),
+                skills,
+                ".",
+            ));
         }
         lines
     }
@@ -131,14 +123,8 @@ impl Closing {
     }
 }
 
-fn plural<'a>(count: usize, one: &'a str, many: &'a str) -> &'a str {
-    if count == 1 { one } else { many }
-}
-
-/// "a", "a and b", "a, b and c", "a, b, c and 2 more".
-fn names(skills: &[String]) -> String {
-    let shown = &skills[..skills.len().min(NAMES_IN_LINE)];
-    let rest = skills.len() - shown.len();
+/// "a", "a and b", "a, b and c"; with names left out, "a, b and 2 more".
+fn names(shown: &[String], rest: usize) -> String {
     match (shown, rest) {
         ([], _) => String::new(),
         ([one], 0) => one.clone(),
@@ -149,6 +135,59 @@ fn names(skills: &[String]) -> String {
         ),
         (shown, rest) => format!("{} and {rest} more", shown.join(", ")),
     }
+}
+
+/// `prefix`, then as many of `skills` as fit in [`LINE_CHARS`] with the
+/// rest counted, then `suffix`. When even the first name does not fit, it is
+/// cut at a word and ends in "…": the record's own words, shortened.
+fn fit(prefix: &str, skills: &[String], suffix: &str) -> String {
+    let length = |text: &str| text.chars().count();
+    let most = skills.len().min(NAMES_IN_LINE);
+    for shown in (1..=most).rev() {
+        let line = format!(
+            "{prefix}{}{suffix}",
+            names(&skills[..shown], skills.len() - shown)
+        );
+        if length(&line) <= LINE_CHARS {
+            return line;
+        }
+    }
+    let Some(first) = skills.first() else {
+        return format!("{prefix}{suffix}");
+    };
+    let rest = match skills.len() - 1 {
+        0 => String::new(),
+        more => format!(" and {more} more"),
+    };
+    // A cut name ends the sentence with its "…", not "….".
+    let suffix = if rest.is_empty() && suffix == "." {
+        ""
+    } else {
+        suffix
+    };
+    let room = LINE_CHARS.saturating_sub(length(prefix) + length(&rest) + length(suffix) + 1);
+    format!("{prefix}{}…{rest}{suffix}", clip_at_word(first, room))
+}
+
+/// The longest start of `name` of at most `room` characters that ends at
+/// the end of a word, or its first `room` characters when one word is longer.
+fn clip_at_word(name: &str, room: usize) -> String {
+    let mut kept = String::new();
+    for word in name.split_whitespace() {
+        let next = if kept.is_empty() {
+            word.to_owned()
+        } else {
+            format!("{kept} {word}")
+        };
+        if next.chars().count() > room {
+            break;
+        }
+        kept = next;
+    }
+    if kept.is_empty() {
+        kept = name.chars().take(room).collect();
+    }
+    kept.trim_end_matches([',', ';', ':']).to_owned()
 }
 
 /// One marked answer, as the closing lines need it.
