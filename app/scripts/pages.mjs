@@ -457,6 +457,19 @@ try {
   const n = await launch("replace", replaceHome, agent, { MAGNESIUM_APP_BUNDLED: newer, MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") });
   await settle(n, 800);
   await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
+  // Before the learner chooses, a lesson runs on the copy already on this Mac, as Home says.
+  await step(n, "open the workspace before choosing", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(n, 800);
+  await step(n, "a new session before choosing", { op: "click", target: "new-session", by: "drive" });
+  await settle(n, 800);
+  await step(n, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(n, "start the lesson", { op: "key", key: "Enter" });
+  await step(n, "the first task, on the installed copy", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  const before = await n.op({ op: "text" });
+  if (/not set up for lessons/.test(String(before.text ?? ""))) problem("replace: the lesson did not start before choosing a copy");
+  const opened = await n.op({ op: "session" });
+  if (!opened.ok || opened.phase !== "lesson" || !opened.task) problem(`replace: no task in the lesson before choosing a copy: ${JSON.stringify(opened)}`);
+  await shoot(n, "session-different-program", "Session: a lesson on the copy already on this Mac, before choosing");
   await quit(n);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);

@@ -18,6 +18,7 @@ import { busy as isBusyNow, emptySession, isHelp, openingWords, opening, pickedW
 import { marksOfTurns } from "../marks";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
+import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
 import { displayName, firstWords, goalName, markWords, namedByItsWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
@@ -103,12 +104,7 @@ type Props = {
   onStarted: (key: string) => void;
 };
 
-/** Lessons start only when this Mac is set up: the program is usable and Claude Code is signed in. */
-export function setupReady(setup: Setup | null): boolean {
-  if (!setup) return false;
-  const runtime = setup.runtime.state === "ready" || setup.runtime.state === "kept";
-  return runtime && setup.account.installed && setup.account.signed_in;
-}
+export { setupReady };
 
 /**
  * Where the open task is: the last reply that set one, unless an answer was

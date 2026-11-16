@@ -21,6 +21,7 @@ cd "$(dirname "$0")/.."
 # The shell embeds the built pages, so they are built before any Rust check.
 npm run build
 node scripts/test-task-line.mjs
+node scripts/test-setup.mjs
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked -p mg-core
