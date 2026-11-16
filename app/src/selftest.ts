@@ -424,8 +424,15 @@ export async function run(api: Core, actions: Actions): Promise<void> {
         throw new Error(`the running session did not change its model: ${JSON.stringify(steps.lessonModel)}`);
     }
 
+    // A card that arrives over an empty line no key has touched for a while takes the keyboard on its first choice.
+    const writing = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+    writing.focus();
+    await wait(2100);
     await actions.session()!.say("PERMISSION", "talk");
     await until("the permission card", () => session().cards.length > 0);
+    await wait(100);
+    steps.cardTookKeys = document.activeElement?.getAttribute("data-drive") ?? null;
+    if (steps.cardTookKeys !== "allow") throw new Error(`a card over an idle, empty line did not take the keyboard: ${steps.cardTookKeys}`);
     steps.card = document.querySelector(".card .record-head")?.textContent ?? null;
     // The card says what the tutor asks in the learner's words, shows the command itself, and names what "always"
     // would allow by the rule the agent suggests saving.
@@ -436,10 +443,33 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       always: document.querySelector('.card [data-drive="allow-always"]')?.textContent ?? null,
     };
     steps.cardWords = card;
-    if (card.head !== "The tutor asks to run a command" || card.what !== "Build the paper as a PDF" || card.exact !== "tectonic paper.tex" || card.always !== "Always allow tectonic commands")
+    if (card.head !== "The tutor asks to run a command" || card.what !== "Build the paper as a PDF" || card.exact !== "tectonic paper.tex" || card.always !== "or always allow tectonic commands")
       throw new Error(`the permission card is not in the learner's words: ${JSON.stringify(card)}`);
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
+
+    // One that arrives while there are words on the line leaves the keyboard there, so Space or Return cannot allow
+    // by accident; ⇧⇥ from the line goes to the card's first choice.
+    const writeOn = (value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(writing, value);
+      writing.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    writing.focus();
+    writeOn("and the second part");
+    await actions.session()!.say("PERMISSION", "talk");
+    await until("the second permission card", () => session().cards.length > 0);
+    await wait(100);
+    steps.cardKeys = { stayed: document.activeElement === writing, words: writing.value };
+    if (document.activeElement !== writing || writing.value !== "and the second part")
+      throw new Error(`a card took the keyboard from words on the line: ${JSON.stringify(steps.cardKeys)}`);
+    press("Tab", { shift: true });
+    if (document.activeElement?.getAttribute("data-drive") !== "allow") throw new Error(`⇧⇥ from the line did not reach the card: ${document.activeElement?.outerHTML.slice(0, 80)}`);
+    writeOn("");
+    await api.decide(session().cards[0].id, "refuse");
+    await until("the reply after the refusal", () => session().cards.length === 0 && idle());
+    // With no card waiting, the line's way to a card is out of the page, not only hidden.
+    await wait(100);
+    if (document.querySelector(".session.in-front .to-card")) throw new Error("the way to a card is still under the line after the card was answered");
 
     // The learner's own line on screen draws its mathematics too, and a file sent with it is named, not its path.
     await actions.session()!.say(`my answer is $x^2$\n\n${toRead}`, "talk");

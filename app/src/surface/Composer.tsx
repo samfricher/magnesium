@@ -134,6 +134,8 @@ type Props = {
   onStop?: () => void;
   /** What stopping does now: "stop the reply", or "stop the tutor" while it waits on a card. */
   stopWords?: string;
+  /** A card waits on the learner: the line can say how the keyboard reaches it. */
+  cardWaits?: boolean;
   /** Return on an empty line: what the line's end names, when there is something to carry on. */
   onEmptyReturn?: () => void;
   /** Words were typed, a file joined or a tool was used: the learner is writing now. */
@@ -340,6 +342,16 @@ export const Composer = memo(
         send(place === "lesson" && event.altKey && (taskOpen || taskUnseen === true));
         return;
       }
+      // While a card waits above the line, ⇧⇥ goes to its first choice. In the page's order the nearest choice is the
+      // card's last, the standing grant, which is the one a learner should never land on by going back.
+      if (event.key === "Tab" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && el.closest(".foot.asking")) {
+        const choice = el.closest(".session")?.querySelector<HTMLElement>(".card .act");
+        if (choice) {
+          event.preventDefault();
+          choice.focus();
+          return;
+        }
+      }
       // Esc closes what is open on the line, and then puts the line away with its words kept.
       // While the tutor writes, Esc stops the reply instead, and the window handles it.
       if (event.key === "Escape" && plain && !latest.current.busy && (symbols || menu || place === "lesson")) {
@@ -481,6 +493,15 @@ export const Composer = memo(
           <p className="with">
             {confidence && <span className="said-sure">{confidence}</span>}
             {queued && <span className="queued">goes when the tutor finishes</span>}
+          </p>
+        )}
+        {/* How the keyboard reaches a card that arrived while the learner was typing. Under the words, so the line
+            keeps its width at 720 by 560; shown only while a card waits and the keyboard is on this line (surface.css,
+            by the foot's "asking"). It is in the page only while a card waits: the Mac's WebKit kept it drawn after
+            the foot lost "asking", until something else made it work the styles out again. */}
+        {!rest && props.cardWaits && (
+          <p className="with to-card" aria-hidden="true">
+            <span className="keys">⇧⇥</span> answer the tutor
           </p>
         )}
         {symbols && (
