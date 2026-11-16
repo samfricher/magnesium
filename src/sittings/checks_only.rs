@@ -238,7 +238,9 @@ impl Sittings {
 
     /// The conversation `by` asked for something besides the checks: its
     /// sitting is an ordinary one again, and the checks not yet answered stay
-    /// due. Returns whether it was one of checks alone.
+    /// due. A check posed and not answered is set aside, so it is no longer
+    /// the open task over the learner's line; a reply that poses it again
+    /// opens it again. Returns whether it was one of checks alone.
     pub(crate) fn lift_checks_only(&mut self, by: Option<&str>) -> Result<bool, String> {
         let Some(sitting) = self.checks_only(by)? else {
             return Ok(false);
@@ -246,6 +248,11 @@ impl Sittings {
         let tx = self.write()?;
         tx.execute("DELETE FROM checks_alone WHERE sitting_id=?1", [&sitting])
             .map_err(error)?;
+        tx.execute(
+            "UPDATE sitting_items SET posed=0 WHERE sitting_id=?1 AND outcome IS NULL",
+            [&sitting],
+        )
+        .map_err(error)?;
         tx.commit().map_err(error)?;
         Ok(true)
     }

@@ -275,6 +275,7 @@ fn asking_for_a_lesson_part_way_makes_it_an_ordinary_sitting() {
     prompt(&e, "p-1", "/magnesium:checks");
     let event = event_of(&prompt(&e, "p-2", "-5"));
     answer(&e, "right", &event, LABELS[0], "right");
+    stop(&e, "p-2", "Right. Quick check 2: what are its units?");
     // The learner asks for a lesson; the tutor loads its stage, which is
     // never refused.
     prompt(&e, "p-3", "actually, can you teach me the slope first?");
@@ -288,6 +289,17 @@ fn asking_for_a_lesson_part_way_makes_it_an_ordinary_sitting() {
         "{loaded}"
     );
     assert_eq!(alone_rows(&e), 0);
+    // The check posed before the request is no longer the open task.
+    let lesson = e
+        .command()
+        .args(["lesson", "--json", "--conversation", "conv"])
+        .output()
+        .unwrap();
+    let lesson: Value = serde_json::from_slice(&lesson.stdout).unwrap();
+    assert_ne!(
+        lesson["lesson"]["open_task"]["kind"], "quick_check",
+        "{lesson}"
+    );
     let notice = prompt(&e, "p-4", "ok, what next?");
     assert!(!notice.contains("quick checks alone"), "{notice}");
     // The checks not yet answered stay due, and answering them later does

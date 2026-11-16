@@ -158,8 +158,12 @@ fn the_checks_alone_belong_to_the_conversation_that_asked() {
             .unwrap()
             .is_some()
     );
-    // A asks for something else: an ordinary sitting, its checks still due.
+    // A poses a check, then asks for something else: an ordinary sitting,
+    // its checks still due, and the check no longer the open task.
+    s.note_reply("Quick check 1: ...").unwrap();
+    assert!(s.open_check().unwrap().is_some());
     assert!(s.lift_checks_only(A).unwrap());
+    assert!(s.open_check().unwrap().is_none());
     assert!(s.checks_only(A).unwrap().is_none());
     assert!(s.now_state().unwrap().unwrap().ended_ms.is_none());
     std::fs::remove_dir_all(root).unwrap();
