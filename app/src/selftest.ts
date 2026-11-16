@@ -546,11 +546,37 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "W", bubbles: true, cancelable: true }));
     await until("the line to quote the passage", () => document.querySelector(".session.in-front .line.lesson .quote") !== null, 3000);
     setField("Why?");
+    // A scroll event reaches the page a frame late, and later still on a busy Mac. This send is from the folded page,
+    // which opens and changes its height twice before the reply's first words. The lesson's scroll events are held
+    // back here until the page has grown: the order that let the lesson go of its end one run in six under load.
+    const lessonPage = document.querySelector<HTMLElement>(".session.in-front main.surface")!;
+    const late = { held: 0, released: 0 };
+    let heldAt: number | null = null;
+    const hold = (event: Event) => {
+      if (event.target !== lessonPage || !event.isTrusted) return;
+      event.stopImmediatePropagation();
+      late.held += 1;
+      heldAt ??= lessonPage.scrollHeight;
+    };
+    const release = () => {
+      heldAt = null;
+      late.released += 1;
+      lessonPage.dispatchEvent(new Event("scroll"));
+    };
+    const grown = new MutationObserver(() => {
+      if (heldAt !== null && lessonPage.scrollHeight > heldAt + 6) release();
+    });
+    window.addEventListener("scroll", hold, true);
+    grown.observe(lessonPage, { childList: true, subtree: true, characterData: true });
     onField({ key: "Enter" });
     await until("the quoted words sent", () => (session().live?.learner ?? "").startsWith("> "), 3000);
     steps.quoted = { said: session().live?.said, drawn: document.querySelector(".session.in-front .said-quote") !== null };
     if (session().live?.said !== "talk") throw new Error("a message quoting a passage was not sent as talk");
     await until("the reply to the quoted words", () => idle(), 10_000);
+    window.removeEventListener("scroll", hold, true);
+    grown.disconnect();
+    if (heldAt !== null) release();
+    steps.lateScroll = late;
     setField("");
 
     // How far the lesson is from its end after each step that changes its layout: the line is its last line.
@@ -618,6 +644,20 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     actions.openSession(folder, sessions[0].session, sessions[0].title ?? "");
     await until("the session again", () => document.querySelector(".session.in-front .now.lesson article") !== null, 10_000);
     await wait(1500);
+    // With its task open and nothing new to read, the page is the task: its own words over the line, the lesson
+    // folded away. ⌘↑ opens the lesson, and nothing of that is sent.
+    const folded = {
+      page: actions.session()?.probe().page ?? null,
+      words: document.querySelector(".session.in-front .answer-task")?.textContent ?? null,
+      lessonHidden: (document.querySelector<HTMLElement>(".session.in-front .now.lesson article")?.offsetHeight ?? -1) === 0,
+      line: document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null,
+    };
+    steps.reopenedFolded = folded;
+    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("the lesson so far"))
+      throw new Error(`a session opened again with its task open is not the task alone: ${JSON.stringify(folded)}`);
+    press("ArrowUp", { meta: true });
+    await until("⌘↑ to open the lesson over the task", () => actions.session()?.probe().page === "open", 3000);
+    await wait(300);
     const head = document.querySelector(".session.in-front .now.lesson .head")!.getBoundingClientRect().top;
     const first = document.querySelector(".session.in-front .now.lesson article")!.getBoundingClientRect().top;
     const again = await api.lessonTurns(folder, sessions[0].session);

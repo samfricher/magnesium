@@ -24,7 +24,7 @@ import { wantGlass } from "./glass";
 import { actionOf, applyPrefs, flushPlaces, keepPanelWidth, keyName, loadPrefs, panelWidthKept, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
 import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
 import { Commands } from "./surface/Commands";
-import { Session, setupReady, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
+import { Session, setupReady, type AnswerPage, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
 import { PasteSheet } from "./surface/Sheets";
 import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Permissions, Setup, Workspace } from "./types";
 import { displayName, withoutPaths } from "./words";
@@ -99,6 +99,8 @@ export function App() {
   const [liveKey, setLiveKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<Record<string, boolean>>({});
+  // Each session's page while a task is open: folded to the task, or the whole lesson opened over it.
+  const [answerPages, setAnswerPages] = useState<Record<string, AnswerPage>>({});
   const [notes, setNotes] = useState<string[]>([]);
   const [signingIn, setSigningIn] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -364,6 +366,7 @@ export function App() {
         }
         case "attach":
         case "photo":
+        case "look-back":
         case "hint":
         case "lost":
         case "unknown":
@@ -608,6 +611,7 @@ export function App() {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" && each.pending ? { ...each, pending: undefined } : each)));
   }, []);
   const onTaskChange = useCallback((key: string, open: boolean) => setTaskOpen((old) => (old[key] === open ? old : { ...old, [key]: open })), []);
+  const onAnswerPage = useCallback((key: string, page: AnswerPage) => setAnswerPages((old) => (old[key] === page ? old : { ...old, [key]: page })), []);
   const onPanelWidth = useCallback((width: number) => {
     const fitted = fitPanelWidth(width);
     setPanelWanted(fitted);
@@ -663,6 +667,8 @@ export function App() {
     const disabled: string[] = [];
     if (!inSession) disabled.push("attach", "symbols", "model", "hint", "lost", "unknown");
     else if (!taskOpen[activeTab.key]) disabled.push("hint", "lost", "unknown");
+    const page = inSession ? (answerPages[activeTab.key] ?? null) : null;
+    if (!page) disabled.push("look-back");
     if (activeTab.kind === "home") disabled.push("close-session");
     if (!inSession) disabled.push("plan");
     // The panel's commands work in a session, and on a workspace's page with material open beside it.
@@ -684,11 +690,18 @@ export function App() {
       titles: {
         plan: panel ? "Hide Panel" : "Show Panel",
         "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
-        "flip-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Switch to the Lesson" : "Switch to the Page") : "Switch to the Document",
+        // A document that filled the session and stepped aside for the task is switched to as if the lesson were in front.
+        "flip-panel":
+          docs?.expanded && !docs.lessonFront && !(page === "folded" && handles.current[activeTab.key]?.docClosed())
+            ? inSession
+              ? "Switch to the Lesson"
+              : "Switch to the Page"
+            : "Switch to the Document",
+        "look-back": page === "open" ? "Only the Task" : "The Lesson So Far",
         ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
       },
     };
-  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, busyKey, panel, homeFolder, docsSeen]);
+  }, [prefs.keys, workspaces, tabs, tabTitles, inSession, activeTab, taskOpen, answerPages, busyKey, panel, homeFolder, docsSeen]);
   useEffect(() => {
     if (!api || isDemo) return;
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
@@ -738,6 +751,11 @@ export function App() {
       if (action) {
         // ⌘K is the one command a layer over the window leaves to the window.
         if (overlay && action !== "commands") return;
+        // Where no task's page can be turned, its key (⌘↑ at first) moves the caret or the page as it always did.
+        if (action === "look-back") {
+          const tab = tabs.find((each) => each.key === active);
+          if (tab?.kind !== "session" || handles.current[tab.key]?.answerPage() == null) return;
+        }
         event.preventDefault();
         pressed.current[action] = Date.now();
         runRef.current(action);
@@ -875,7 +893,13 @@ export function App() {
   void docsSeen;
   const frontDocs = activeTab.kind === "session" ? (panel ? (handles.current[activeTab.key]?.docs() ?? null) : null) : activeTab.kind === "home" && homeFolder ? docsOf(workspaceDocsKey(homeFolder)) : null;
   const flipState: string | null =
-    frontDocs && frontDocs.expanded && (activeTab.kind === "session" || frontDocs.open.length > 0) ? (frontDocs.lessonFront ? "Document" : activeTab.kind === "session" ? "Lesson" : "Page") : null;
+    frontDocs && frontDocs.expanded && (activeTab.kind === "session" || frontDocs.open.length > 0)
+      ? frontDocs.lessonFront || (activeTab.kind === "session" && answerPages[activeTab.key] === "folded" && handles.current[activeTab.key]?.docClosed())
+        ? "Document"
+        : activeTab.kind === "session"
+          ? "Lesson"
+          : "Page"
+      : null;
   const covered = overlay !== null;
   const homeName = homeFolder ? (workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : null;
   const sessionRunning = (folder: string) => tabs.some((tab) => tab.kind === "session" && tab.folder === folder && handles.current[tab.key]?.state().open);
@@ -1014,6 +1038,7 @@ export function App() {
                 onShowPanel={onShowPanel}
                 onDocsChange={onDocsChange}
                 onTaskChange={onTaskChange}
+                onAnswerPage={onAnswerPage}
                 onStarted={onStarted}
               />
             ) : null,

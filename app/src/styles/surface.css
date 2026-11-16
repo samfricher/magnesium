@@ -942,3 +942,46 @@ button.line-end:hover { color: var(--text); }
 .turn > .question + .you,
 .turn > .question + .said-quote { margin-top: 0.3rem; }
 .you + .said-sure { display: block; margin: -0.9rem 0 1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+
+/* ------------------------------------------------------------------ */
+/* The page while a task is open                                       */
+
+/* The one line that turns the page, in the window's quiet voice, its key first as the line's other hints have it. */
+.plain.page-turn {
+  display: block;
+  margin: 0;
+  padding: 0;
+  font: 400 0.765rem/1.15rem var(--app);
+  color: var(--quiet);
+  text-align: left;
+  white-space: nowrap;
+}
+.plain.page-turn:hover { color: var(--text); }
+.page-turn .keys { color: var(--hint); margin-right: 0.15em; }
+/* Under the heading it takes no room of its own: it comes and goes with the task, and nothing under it moves. */
+.head { position: relative; }
+.head .page-turn.at-head { position: absolute; top: calc(100% + 0.35rem); left: 0; }
+.now.lesson.turnable .head.bare { margin-bottom: 1.8rem; }
+/* At the top edge, once the heading has scrolled away: the same line, at the edge's right end. */
+.top-edge .inner > .page-turn.at-top { margin-left: auto; flex: none; pointer-events: auto; color: var(--quiet); }
+
+/* Folded: the lesson stays drawn but out of view, so opening it again is at once. */
+.now.folded > article.turn,
+.now.folded > .earlier-note { display: none; }
+/* The task's own words, one size up in the reading face, on the ink's rule. */
+.answer-task {
+  margin: clamp(2.3rem, calc(13vh - 0.3rem), 5.7rem) 0 0 calc(-1 * var(--hang));
+  padding: 0.1rem 0 0.25rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+  cursor: text;
+  animation: answer-in 180ms ease-out;
+}
+.answer-task .prose { font-size: 1.118rem; line-height: 1.6; text-wrap: pretty; }
+.answer-task .prose div.task { margin: 0; padding: 0; border: 0; }
+.answer-task .prose > :last-child,
+.answer-task .prose div.task > :last-child { margin-bottom: 0; }
+/* The line straight under it, in both looks. */
+.now.folded .foot,
+:root:not([data-field="soft"]) .now.folded .foot:not(.asking) { margin-top: 1.5rem; }
+@keyframes answer-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .answer-task { animation: none; } }

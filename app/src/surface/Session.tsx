@@ -29,7 +29,7 @@ import { PlanPanel } from "./PlanPanel";
 import { SidePanel } from "./SidePanel";
 import type { DocHandle } from "./DocView";
 import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, type Docs } from "../docs";
-import { Line } from "./Rich";
+import { Line, Rich } from "./Rich";
 import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 
@@ -41,6 +41,13 @@ export type Pending =
   | { kind: "paper"; shown: string; sent: string };
 
 export type SessionTab = { key: string; kind: "session"; folder: string; session: string | null; title: string; pending?: Pending };
+
+/**
+ * The page while a task is open, the tutor is not writing and no card waits:
+ * "folded" to the task and the line, or "open" on the whole lesson. Null at
+ * any other time.
+ */
+export type AnswerPage = "folded" | "open" | null;
 
 /** What the window can ask of a session from outside it. */
 export type SessionHandle = {
@@ -58,11 +65,15 @@ export type SessionHandle = {
   say: (text: string, said?: Said) => Promise<void>;
   start: (words?: string) => Promise<boolean>;
   taskOpen: () => boolean;
+  /** The page with a task open: folded to the task, opened on the whole lesson, or null when there is no such page. */
+  answerPage: () => AnswerPage;
+  /** The document in front is closed while the page is the task. */
+  docClosed: () => boolean;
   busy: () => boolean;
   /** The documents open beside the lesson, for the menu. */
   docs: () => Docs;
   /** Where the learner is, for the evidence harness: the phase, where the line is ("end", "raised" over the page, or "away" with the end out of view), the open task. */
-  probe: () => { phase: string; line: "end" | "raised" | "away"; task: string | null; open: boolean; busy: boolean };
+  probe: () => { phase: string; line: "end" | "raised" | "away"; task: string | null; open: boolean; busy: boolean; page: AnswerPage };
 };
 
 type Props = {
@@ -100,6 +111,8 @@ type Props = {
   /** Start Claude Code's own sign-in. */
   onSignIn: () => void;
   onTaskChange: (key: string, open: boolean) => void;
+  /** The page with a task open changed: the menu's item follows. */
+  onAnswerPage: (key: string, page: AnswerPage) => void;
   /** Done with a pending start. */
   onStarted: (key: string) => void;
 };
@@ -275,6 +288,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [fact, setFact] = useState<{ kind: "mark" | "plan"; text: string; title?: string; since: number } | null>(null);
   // The fact's own line is in view: the foot does not repeat it.
   const [factSeen, setFactSeen] = useState(true);
+  // A reply came in this window and the learner has not written since: the page stays whole, so the reply is read
+  // where it was written. Writing on the line turns the page to the task. A session opened from its kept turns has
+  // nothing new to read, so its open task is the page at once.
+  const [reading, setReading] = useState(false);
+  // The learner opened the whole lesson over the task (⌘↑, or "the lesson so far"): it stays open until they fold it,
+  // or the next reply comes. Nothing of it goes to the runtime or the record.
+  const [lookedBack, setLookedBack] = useState(false);
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -324,8 +344,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   docsNow.current = docs;
 
   // The newest values, for handlers that outlive a render.
-  const now = useRef({ props, phase, home, plan, session, raised, atEnd, place, task: null as OpenTask | null });
-  now.current = { props, phase, home, plan, session, raised, atEnd, place, task: now.current?.task ?? null };
+  const now = useRef({ props, phase, home, plan, session, raised, atEnd, place, lookedBack, task: null as OpenTask | null, page: null as AnswerPage });
+  now.current = { props, phase, home, plan, session, raised, atEnd, place, lookedBack, task: now.current?.task ?? null, page: now.current?.page ?? null };
 
   useImperativeHandle(outer, () => box.current!);
 
@@ -442,7 +462,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (event.plugin_missing) void api.interrupt().catch(() => {});
       if (event.session_id && event.session_id !== props.tab.session) props.onSession(props.tab.key, event.session_id);
     }
-    if (event.type === "turn_started") props.onBusy(props.tab.key, true);
+    if (event.type === "turn_started") {
+      props.onBusy(props.tab.key, true);
+      setReading(true);
+      setLookedBack(false);
+    }
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
     if (event.type === "marked") {
@@ -663,9 +687,32 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // ---------------------------------------------------------------------------
   // The panel's commands: expand it, flip between the lesson and the document, close or zoom the document
 
+  /** ⌘↑, or the line under the heading: the whole lesson over the task, or the task alone again. */
+  const turnPage = (): boolean => {
+    const { page } = now.current;
+    if (page === null) return false;
+    if (page === "folded") setLookedBack(true);
+    else {
+      setLookedBack(false);
+      setReading(false);
+    }
+    setRaised(false);
+    // Opened, the lesson shows its end, where the task was set; folded, the task is at the top.
+    stuck.current = true;
+    requestAnimationFrame(() => {
+      lineRef.current?.focus();
+      // Opened, whether the task's reply is in view decides whether its copy is pinned over the line.
+      requestAnimationFrame(() => measureQuestion.current());
+    });
+    return true;
+  };
+
   const panelCommand = (command: string): boolean => {
     const docs = docsNow.current;
     const { props } = now.current;
+    // A document that filled the session stepped aside for the task: switching to it opens the lesson over the task,
+    // which brings the document back.
+    if (command === "flip-panel" && now.current.page === "folded" && props.panel && docs.expanded && !docs.lessonFront && closesDoc(docs)) return turnPage();
     switch (command) {
       case "expand-panel": {
         if (!props.panel) props.onShowPanel();
@@ -749,6 +796,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         if (isBusyNow(now.current.session)) interrupt();
         return true;
       }
+      if (command === "look-back") return turnPage();
       return panelCommand(command);
     },
     escape: () => {
@@ -778,11 +826,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     say: (text, said) => say(text, said ?? "talk"),
     start: (words) => start(words),
     taskOpen: () => now.current.task !== null,
+    answerPage: () => now.current.page,
+    docClosed: () => docClosedNow.current,
     busy: () => isBusyNow(now.current.session),
     docs: () => docsNow.current,
     probe: () => {
-      const { phase, raised, atEnd, task, session } = now.current;
-      return { phase, line: raised ? "raised" : atEnd ? "end" : "away", task: task?.text ?? null, open: session.open, busy: isBusyNow(session) };
+      const { phase, raised, atEnd, task, session, page } = now.current;
+      return { phase, line: raised ? "raised" : atEnd ? "end" : "away", task: task?.text ?? null, open: session.open, busy: isBusyNow(session), page };
     },
   };
   const pickerRef = useRef(picker);
@@ -801,6 +851,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       say: (t, s) => handleRef.current.say(t, s),
       start: (w) => handleRef.current.start(w),
       taskOpen: () => handleRef.current.taskOpen(),
+      answerPage: () => handleRef.current.answerPage(),
+      docClosed: () => handleRef.current.docClosed(),
       busy: () => handleRef.current.busy(),
       docs: () => handleRef.current.docs(),
       probe: () => handleRef.current.probe(),
@@ -842,7 +894,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const section = nowRef.current;
     if (!el || !section || phase !== "lesson") return;
     const pin = () => {
-      if (stuck.current) el.scrollTop = el.scrollHeight;
+      if (stuck.current) {
+        el.scrollTop = el.scrollHeight;
+        lastTop.current = el.scrollTop;
+      }
     };
     const watch = new ResizeObserver(pin);
     watch.observe(section);
@@ -851,6 +906,22 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     pin();
     return () => watch.disconnect();
   }, [phase]);
+
+  // The same, in the commit that changes the lesson's height (a reply's words, the page folding or opening, the
+  // task's copy over the line coming or going), with the place kept as the last one seen. The resize above is only
+  // delivered with the next frame, and so is a scroll event. A page that shrank and then grew between two frames
+  // (a send from the folded page draws the task's copy over the line for one commit, then the reply's first words
+  // come) reached `onScroll` as a move up with the foot out of reach: the lesson was let go, and stayed short by the
+  // height of that reply (91 px in the self-test, one run in six on a busy Mac).
+  // A place above both the last one seen and the end is the learner's own move, its scroll event still to come: it
+  // is left alone. A tab behind another measures nothing and says nothing.
+  useLayoutEffect(() => {
+    const el = surface.current;
+    if (!el || phase !== "lesson" || !stuck.current || el.clientHeight === 0) return;
+    if (el.scrollTop < Math.min(lastTop.current, el.scrollHeight - el.clientHeight) - 1) return;
+    el.scrollTop = el.scrollHeight;
+    lastTop.current = el.scrollTop;
+  });
 
   // The conversation left, above the first screen and out of view, is drawn after it.
   useEffect(() => {
@@ -984,6 +1055,23 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
   const ownBusy = isBusyNow(session);
   const isBusy = ownBusy || props.elsewhereBusy;
+  // With a task open, the page is the task: the lesson folds to one line under the heading, and the task's own words
+  // stand over the line. Only while the tutor is not writing and no card waits, and not while a reply just written
+  // here is still to be read (see `reading`).
+  const page: AnswerPage = phase === "lesson" && task !== null && !ownBusy && session.cards.length === 0 ? (reading || lookedBack ? "open" : "folded") : null;
+  const folded = page === "folded";
+  now.current.page = page;
+  useEffect(() => {
+    props.onAnswerPage(tab.key, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+  // The page changed its height under the line: whether the line is in view is read again.
+  useEffect(() => {
+    if (!props.active) return;
+    const frame = requestAnimationFrame(() => measureEnd());
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folded]);
 
   const rest = restView();
   const currentStep = plan?.steps.find((step) => step.status === "doing")?.step ?? null;
@@ -1070,6 +1158,19 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [props.active, phase, raise]);
+
+  // Writing on the line once the reply is read turns the page to the task, so the answer is written from the task
+  // alone. A lesson the learner opened over the task stays open: they opened it to answer with it in view.
+  const onWrite = useCallback(() => {
+    const { page, lookedBack } = now.current;
+    if (page !== null && !lookedBack) {
+      setReading(false);
+      setRaised(false);
+      stuck.current = true;
+      return;
+    }
+    raise();
+  }, [raise, setRaised]);
 
   // A press on the open task is a start on it: the line takes the keyboard.
   const onHold = useCallback(() => {
@@ -1165,6 +1266,21 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // the task that asks about it: it holds the questions, not their answers.
   const paperPaths = useMemo(() => new Set((home?.papers ?? []).map((paper) => paper.path)), [home?.papers]);
   const isPaper = useCallback((path: string) => paperPaths.has(path) || /(^|\/)papers?\//i.test(path), [paperPaths]);
+  // While the page is the task, a document beside it is closed: all but a past paper, which stays open for the same
+  // reason its links do, and may be the paper the learner is working from.
+  const closesDoc = (open: Docs) => open.shown !== null && !isPaper(open.shown);
+  const docClosed = folded && props.panel && closesDoc(docs);
+  const docClosedNow = useRef(docClosed);
+  docClosedNow.current = docClosed;
+  // A document the learner opens or picks while the page is the task is a look back, as ⌘↑ is: it opens, and the
+  // lesson with it, rather than being closed in their face.
+  const shownBefore = useRef(docs.shown);
+  useEffect(() => {
+    const was = shownBefore.current;
+    shownBefore.current = docs.shown;
+    if (docs.shown !== null && docs.shown !== was && now.current.page === "folded" && closesDoc(docs)) setLookedBack(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs.shown]);
 
   // A file the tutor named opens beside the lesson, at its page; the panel shows if it was hidden.
   // The core reads it first: a file it refuses (an answer key, a path outside the folder) never
@@ -1197,11 +1313,20 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const paused = props.covered || !props.active || session.cards.length > 0;
   // The record's latest fact is said once, beside what it marks. The foot repeats it only while that line is out of view, and never under an open task.
   const footFact = fact && task === null && !factSeen ? fact : null;
+  const lookKey = keyName(props.prefs.keys["look-back"]);
+  // The one line that turns the page: under the heading, and at the top edge once the heading has scrolled away.
+  const turnLine = (where: string) =>
+    page === null ? null : (
+      <button type="button" className={`plain page-turn at-${where}`} data-drive={where === "head" ? "look-back" : `look-back-${where}`} aria-expanded={!folded} onMouseDown={(event) => event.preventDefault()} onClick={() => turnPage()}>
+        {lookKey && <span className="keys">{lookKey}</span>} {folded ? "the lesson so far" : "only the task"}
+      </button>
+    );
+  const closedWords = `Closed while you answer. It opens again when you send your answer, or with ${lookKey || "“the lesson so far”"}.`;
 
   return (
     <div
       ref={box}
-      className={`session${props.active ? " in-front" : ""}${props.panel ? " with-panel" : ""}${props.panel && docs.expanded ? " expanded" : ""}${props.panel && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
+      className={`session${props.active ? " in-front" : ""}${props.panel ? " with-panel" : ""}${props.panel && docs.expanded ? " expanded" : ""}${props.panel && docs.expanded && docs.lessonFront ? " lesson-front" : ""}${docClosed ? " doc-closed" : ""}`}
       style={props.panel ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
       data-phase={phase}
       data-busy={ownBusy ? "yes" : "no"}
@@ -1219,13 +1344,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
             <div className="inner">
               {/* The tab names the session already: the step in hand is what this line adds. */}
               {currentStep && !props.panel ? <Line text={currentStep} className="top-step" /> : !currentStep ? <Line text={sittingTitle} className="top-name" /> : null}
+              {turnLine("top")}
             </div>
           )}
         </div>
       )}
       <main className={scrolled ? "surface scrolled" : "surface"} ref={surface} onScroll={onScroll}>
         <div className="column">
-          <section className={`now ${phase}`} ref={nowRef}>
+          <section className={`now ${phase}${page !== null ? " turnable" : ""}${folded ? " folded" : ""}`} ref={nowRef}>
             {phase === "loading" ? null : rest ? (
               <>
                 <header className="head">
@@ -1308,8 +1434,16 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       <Line text={sittingTitle} />
                     </h1>
                   )}
+                  {turnLine("head")}
                 </header>
                 {shownFrom > 0 && <p className="record quiet earlier-note">Earlier turns of this session are kept, and not drawn here.</p>}
+                {folded && task && (
+                  // The task's own words, as the record keeps them. The lesson under it stays drawn, out of view, so
+                  // opening it again is at once. Its links stay shut, as they are in the reply that set it.
+                  <div className="answer-task" data-role="answer-task" onClick={(event) => !(event.target as HTMLElement).closest("a, button") && lineRef.current?.focus()}>
+                    <Rich text={task.text} final linksOpen={false} opensNow={isPaper} onSource={onSource} onNote={note} />
+                  </div>
+                )}
                 {sittingTurns.map((turn, at) => {
                   const index = shownFrom + at;
                   const live = index === turns.length - 1 && session.live !== null;
@@ -1343,7 +1477,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   // higher up, it rises to the foot of the window over the page, and goes back down when
                   // the words are sent or put away. The record's latest fact sits under it at the end.
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
-                    {task && !raised && !questionInView && (
+                    {task && !raised && !questionInView && !folded && (
                       <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={task.text} />
                       </button>
@@ -1373,7 +1507,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       onStop={ownBusy ? stopReply : undefined}
                       stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
                       cardWaits={session.cards.length > 0}
-                      onWrite={raise}
+                      onWrite={onWrite}
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
                     />
@@ -1407,6 +1541,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           handle={(found) => (docView.current = found)}
           picking={picking && props.active}
           onPicking={setPicking}
+          closed={docClosed ? closedWords : null}
           id={props.active ? "plan-panel" : undefined}
         />
       )}

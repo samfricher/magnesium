@@ -219,3 +219,30 @@
   :root:not([data-scheme="light"]) .doc-page { filter: brightness(0.8) contrast(0.95); }
 }
 :root[data-scheme="dark"] .doc-page { filter: brightness(0.8) contrast(0.95); }
+
+/* A document closed while the learner answers: kept at its page and zoom underneath, out of sight. Its place says so,
+   and how to have it back. The plan is never closed. */
+.side-body { position: relative; }
+.side-doc { display: contents; }
+.side-doc[inert] > * { visibility: hidden; }
+.side-closed {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0 2.4rem;
+  text-align: center;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
+}
+/* A document that filled the session steps aside while the page is the task, as if the lesson were switched to. */
+.session.doc-closed.expanded:not(.lesson-front) .surface,
+.session.doc-closed.expanded:not(.lesson-front) .top-edge { visibility: inherit; right: 0; }
+.session.doc-closed.expanded:not(.lesson-front) .panel.side { display: none; }
+.session.doc-closed.expanded:not(.lesson-front) .column,
+.session.doc-closed.expanded:not(.lesson-front) .top-edge .inner {
+  width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
+  margin-left: auto;
+  margin-right: auto;
+}
