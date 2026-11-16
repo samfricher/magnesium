@@ -299,6 +299,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--ink);
 }
 .record.mark:is([data-mark="wrong"], [data-mark="partly"], [data-mark="declined"]) { color: var(--text); }
+.record-pass { color: var(--quiet); }
 /* A notice's dismiss is a quiet word, as the other actions in a lesson are. */
 .record.note .plain { text-decoration: none; color: var(--quiet); }
 .record.note .plain:hover { color: var(--text); }

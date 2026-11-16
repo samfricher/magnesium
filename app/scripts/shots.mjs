@@ -84,6 +84,8 @@ const shots = [
   ["permission-unknown", "permission-unknown", 500],
   ["model-unavailable", "model-unavailable", 500],
   ["paper", "paper", 300],
+  ["paper-over", "paper-over", 300],
+  ["paper-long", "paper-long", 300, { width: 720, height: 560 }],
   ["upgrade", "upgrade", 300],
   ["not-set-up", "not-set-up", 300],
   ["setup-signed-out", "setup-signed-out", 300],

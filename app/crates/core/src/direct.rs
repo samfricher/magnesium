@@ -2060,7 +2060,11 @@ fn tell_task(shared: &Arc<Shared>, posed: bool) {
         .task
         .as_ref()
         .map(|task| task.text.clone());
-    shared.emit(AgentEvent::OpenTask { task, posed });
+    shared.emit(AgentEvent::OpenTask {
+        task,
+        posed,
+        fallback: false,
+    });
 }
 
 /// The learner's notice for a repair that may have been finished and was

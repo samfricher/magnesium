@@ -91,6 +91,8 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // Settings: a page in its own tab, with its sections, no file and no path.
     press(",", { meta: true });
     await until("the Settings tab", () => document.querySelector('[data-page="settings"]') !== null, 3000);
+    // Settings is named once in the tab bar: its tab, not the bar's button as well.
+    if (document.querySelector('[data-drive="settings"]') !== null) throw new Error("Settings is in the tab bar twice");
     const sections = Array.from(document.querySelectorAll(".settings-page .section-head")).map((head) => head.textContent);
     steps.settings = { sections, keys: document.querySelectorAll(".key-row").length, colours: document.querySelectorAll('input[type="color"]').length };
     for (const wanted of ["Reading", "Appearance", "Keys", "Lessons", "About"]) if (!sections.includes(wanted)) throw new Error(`Settings has no ${wanted} section`);
@@ -235,6 +237,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
     // The workspace lists its material by title, with no extension and no path, and shows it in the window.
     actions.goWorkspace(folder);
+    // The material is folded to its count, and opens in place.
+    await until("the material folded", () => document.querySelector('[data-page="workspace"] [data-drive="material"]') !== null, 10_000);
+    if (document.querySelector('[data-page="workspace"] .file-row') !== null) throw new Error("the material was listed before it was opened");
+    document.querySelector<HTMLElement>('[data-page="workspace"] [data-drive="material"]')!.click();
     await until("the material listed", () => document.querySelector('[data-page="workspace"] .file-row') !== null, 10_000);
     const titles = Array.from(document.querySelectorAll('[data-page="workspace"] .file-row .row-name')).map((row) => row.textContent ?? "");
     steps.materialTitles = titles;

@@ -20,8 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::gaplog::{self, Gap, GapLog};
-use crate::peek::{self, Check, Step};
+use crate::peek::{self, Check};
 use crate::runtime;
+use crate::runtime::Step;
 use crate::store::{PaperSitting, Store};
 
 #[derive(Clone, Debug, Serialize)]
@@ -566,6 +567,9 @@ pub struct Row {
     pub due: bool,
     /// The day the next proof can be earned, as "2026-11-12".
     pub next_day: Option<String>,
+    /// The record's id for the newest answer marked on this skill, as the
+    /// runtime groups answers by skill. None when the runtime does not say.
+    pub last_answer: Option<String>,
     /// Sort key: the day the next proof is due.
     #[serde(skip)]
     order: Option<NaiveDate>,
@@ -688,6 +692,7 @@ fn gap_row(gap: &Gap, today: NaiveDate) -> Row {
         note,
         due: !gap.closed && gap.next_redo.is_some_and(|date| date <= today),
         next_day: next_day(gap.closed, gap.next_redo),
+        last_answer: None,
         order: gap.next_redo,
     }
 }
@@ -707,6 +712,7 @@ fn check_row(check: &Check, today: NaiveDate) -> Row {
         },
         due: !check.closed && check.due.is_some_and(|date| date <= today),
         next_day: next_day(check.closed, check.due),
+        last_answer: None,
         order: check.due,
     }
 }
@@ -796,6 +802,7 @@ fn skill_row(skill: &Value, covers: Option<&str>, today: NaiveDate) -> (Place, R
         note,
         due: skill["due"].as_bool() == Some(true),
         next_day: next.map(|day| day.format("%Y-%m-%d").to_string()),
+        last_answer: text(&skill["last_answer"]),
         order: next,
     };
     (place, row)
@@ -913,6 +920,7 @@ fn board(
                         note: "–".into(),
                         due: false,
                         next_day: None,
+                        last_answer: None,
                         order: None,
                     };
                     (Place::Untested, row)
@@ -1025,7 +1033,7 @@ pub fn rail(folder: &Path) -> Rail {
     let session = &digest["record"]["sessions"][0];
     Rail {
         goal: text(&session["goal"]),
-        steps: peek::goal_steps(&root),
+        steps: crate::plan::goal_steps(&root),
         next_action: text(&session["next_action"]).or_else(|| text(&session["current_problem"])),
     }
 }

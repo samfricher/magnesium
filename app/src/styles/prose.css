@@ -95,6 +95,22 @@
 .prose p.task > strong:first-child { font-weight: 600; }
 .prose p.task > strong:first-child::after { content: "."; }
 
+/* The task the record names, inside a reply that did not set it apart: the line runs beside its own lines, drawn
+   over the reply so no text moves when it appears (taskRule.ts places it). */
+.prose.has-task-rule { position: relative; }
+.prose.has-task-rule::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  top: var(--task-top);
+  height: var(--task-height);
+  width: 2px;
+  background: var(--faint);
+  pointer-events: none;
+}
+.turn.open .prose.has-task-rule::before { background: color-mix(in srgb, var(--ink) 45%, var(--faint)); }
+.turn.held .prose.has-task-rule::before { background: var(--ink); }
+
 /* The open task's rule runs on into its line, under it. */
 .turn.open .tutor { margin-bottom: 0; }
 .turn.open .prose div.task { padding-bottom: 0.2rem; }

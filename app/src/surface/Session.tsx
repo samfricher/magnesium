@@ -129,12 +129,13 @@ export function openTaskAt(turns: LessonTurn[]): number {
 export type OpenTask = { text: string; at: number };
 
 /**
- * The task open now. An engine that knows it (Magnesium's) says so after each
- * turn, in the tutor's own words; otherwise a task is found by the bold word
- * a reply opens it with.
+ * The task open now. The record says so after each turn, in the tutor's own
+ * words: Magnesium's engine keeps it, and on Claude Code's the window reads
+ * it from the runtime. Only with a runtime too old to say is a task found by
+ * the bold word a reply opens it with.
  */
 export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask | null {
-  if (session.task !== undefined) {
+  if (session.task !== undefined && !(session.task.text === null && session.task.fallback)) {
     const text = session.task.text;
     if (!text) return null;
     // The reply that posed it last: the engine says so, or the reply holds
@@ -938,11 +939,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   measureQuestion.current = () => {
     const root = surface.current;
     const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
+    // A task drawn with a line over its reply: the question is the line's height.
+    const ruled = root?.querySelector<HTMLElement>(".turn.open .tutor .prose.has-task-rule");
     if (!root || !asked || task === null) return setQuestionInView(false);
     const foot = root.querySelector<HTMLElement>(".foot");
     const pinned = foot?.querySelector<HTMLElement>(".parked");
     const view = root.getBoundingClientRect();
-    const box = asked.getBoundingClientRect();
+    const whole = asked.getBoundingClientRect();
+    const top = ruled ? ruled.getBoundingClientRect().top + (parseFloat(ruled.style.getPropertyValue("--task-top")) || 0) : whole.top;
+    const box = ruled ? { top, bottom: top + (parseFloat(ruled.style.getPropertyValue("--task-height")) || 0) } : whole;
     // The line's top, as it would be with no question pinned over it.
     const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
     setQuestionInView((was) => (was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24));

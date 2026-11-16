@@ -1,18 +1,18 @@
-// A workspace: one study folder's page, in the Home tab. Its sessions as a
-// plain list (a name and when last opened) under a visible "New session",
-// then what used to sit behind ⌘K: the folder's material, its papers, the
-// record of the learner's marked answers, and the folder itself (take it off
-// the list, upgrade it, set it up). File names are shown; paths are not.
+// A workspace: one study folder's page, in the Home tab. The plan's next item
+// as the page's one main action, the earlier sessions, the papers, the
+// material, where each skill stands in the record, and the folder itself
+// (take it off the list, upgrade it, set it up). File names are shown; paths
+// are not.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
-import type { Core, Home, LessonInfo, Mark, Materials, Paper } from "../types";
-import { displayName, goalName, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
+import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
+import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -23,6 +23,8 @@ type Props = {
   running: boolean;
   onBack: () => void;
   onNewSession: (folder: string) => void;
+  /** Start a session on the plan's next item, as Home's first row starts one. */
+  onStartSession: (folder: string) => void;
   onOpenSession: (folder: string, session: string, title: string) => void;
   onHandedIn: (folder: string, words: { shown: string; sent: string }, title: string) => void;
   onForget: (folder: string) => void;
@@ -43,21 +45,176 @@ type Props = {
   refresh: number;
 };
 
-/** A mark in a few words, for the record of past work. */
-function markShort(mark: Mark): string {
-  const help = mark.help === "hint" ? ", with a hint" : mark.help === "step" ? ", with a step shown" : mark.help === "solution" ? ", after the solution" : "";
-  switch (mark.mark) {
-    case "right":
-      return help ? `right${help}` : mark.cold ? "right, on your own" : "right";
-    case "partly":
-      return `partly right${help}`;
-    case "wrong":
-      return "not right yet";
-    case "declined":
-      return "left for later";
-    default:
-      return mark.mark;
-  }
+/** "Midterm 1, Tue 17 Nov · 5 days", or null for a plan with no date ahead. */
+function examLine(exam: Exam | null): string | null {
+  if (!exam?.day || exam.days_left === null || exam.days_left < 0) return null;
+  const left = exam.days_left === 0 ? "today" : exam.days_left === 1 ? "tomorrow" : `${exam.days_left} days`;
+  return `${exam.title}, ${exam.day} · ${left}`;
+}
+
+/** The day the plan puts an item on, as the page says it: "today", "tomorrow", else "Tue 17 Nov". */
+function planDay(day: string | null, now = new Date()): string {
+  if (!day) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  if (day === iso(now)) return "today";
+  if (day === iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))) return "tomorrow";
+  return shortDay(day);
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** What is due, in one plain line, or null when nothing is. */
+function dueLine(home: Home): string | null {
+  const parts = [home.checks_due ? plural(home.checks_due, "quick check", "quick checks") : null, home.redos_due ? plural(home.redos_due, "paper redo", "paper redos") : null].filter(
+    (part): part is string => part !== null,
+  );
+  if (parts.length === 0) return null;
+  const count = (home.checks_due ?? 0) + home.redos_due;
+  return `${parts.join(" and ")} ${count === 1 ? "is" : "are"} due.`;
+}
+
+/** The passes a skill holds now, as the runtime counts them: a 2 in its dots. */
+const earned = (row: Row) => row.dots.filter((dot) => dot === 2).length;
+
+/** A skill's three days, filled for each the record counts now. A pass made before a later miss no longer counts, and is drawn empty. */
+function Days({ row }: { row: Row }) {
+  const said = `${earned(row)} of the 3 days it needs: right, on your own, from memory`;
+  return (
+    <span className="work-days" role="img" aria-label={said} title={said}>
+      {row.dots.map((dot, at) => (
+        <span key={at} className={dot === 2 ? "work-day earned" : "work-day"} />
+      ))}
+    </span>
+  );
+}
+
+const MINUTE = 60_000;
+const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+const dayOf = (ms: number) => new Date(ms).toDateString();
+const isoDay = (ms: number) => {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+/** How long past its end a paper has run, said coarsely: minutes, then hours, then days. */
+function overBy(ms: number): string {
+  const minutes = Math.floor(ms / MINUTE);
+  if (minutes < 60) return minutes < 1 ? "just over" : plural(minutes, "minute", "minutes") + " over";
+  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " over";
+  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " over";
+}
+
+/** The time now, read again only when the paper's count of whole minutes left would change, so nothing moves in between. */
+function useMinuteOf(end: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    // The count changes as end - now crosses a whole minute; the timer is set just past that moment.
+    const left = end - now;
+    const wait = (((left % MINUTE) + MINUTE) % MINUTE || MINUTE) + 50;
+    const timer = window.setTimeout(() => setNow(Date.now()), wait);
+    return () => window.clearTimeout(timer);
+  }, [end, now]);
+  return now;
+}
+
+type Running = {
+  sitting: PaperSitting;
+  busy: boolean;
+  focus: boolean;
+  onHandIn: () => void;
+  onOpen: (() => void) | null;
+  onEnd: () => Promise<void>;
+};
+
+/** A timed paper while it runs: the page's lead, with its end, its actions and the paper's two marks. */
+function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running) {
+  const end = sitting.started_ms + sitting.minutes * MINUTE;
+  const now = useMinuteOf(end);
+  const [confirming, setConfirming] = useState(false);
+  const said = useId();
+  const endButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  const over = now >= end;
+  const left = Math.ceil((end - now) / MINUTE);
+  // A paper started on an earlier day says the day, so a window opened the next morning does not read as today.
+  const today = dayOf(now);
+  const when = (ms: number) => (dayOf(ms) === today ? clock(ms) : `${shortDay(isoDay(ms))}, ${clock(ms)}`);
+
+  useEffect(() => {
+    if (confirming) keepButton.current?.focus();
+  }, [confirming]);
+  const keepGoing = () => {
+    setConfirming(false);
+    // Back on the action that asked, so a second Tab or Return is where it was.
+    window.requestAnimationFrame(() => endButton.current?.focus());
+  };
+
+  return (
+    <section
+      aria-label="The paper running"
+      className="running-paper"
+      onKeyDown={(event) => {
+        // Esc puts the paper back as it was before it leaves the page.
+        if (confirming && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          keepGoing();
+        }
+      }}
+    >
+      <p className="list-head">A paper is running</p>
+      <div className="paper-head">
+        <div className="paper-what">
+          <h2 className="paper-name">{sitting.name}</h2>
+          <p className="paper-note">
+            Started {when(sitting.started_ms)} · {plural(sitting.minutes, "minute", "minutes")} · no tutor until you hand in
+          </p>
+        </div>
+        <div className="paper-when">
+          <p className="paper-end">{over ? `time up at ${when(end)}` : `until ${when(end)}`}</p>
+          <p className="paper-left" data-drive="sitting-left">
+            {over ? overBy(now - end) : `${plural(left, "minute", "minutes")} left`}
+          </p>
+        </div>
+      </div>
+      {confirming ? (
+        <div className="paper-confirm" role="group" aria-label="End without handing in" aria-describedby={said}>
+          <p className="paper-confirm-text" id={said}>
+            The paper ends: nothing is handed in or marked, your record stays as it was, and you can sit it again from the start.
+          </p>
+          <p className="page-acts">
+            <button ref={keepButton} className="quiet-act strong" data-drive="sitting-keep" disabled={busy} onClick={keepGoing}>
+              Keep going
+            </button>
+            <button className="quiet-act" data-drive="sitting-end-now" disabled={busy} onClick={() => void onEnd()}>
+              End the paper
+            </button>
+          </p>
+        </div>
+      ) : (
+        <p className="page-acts">
+          <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+            Hand in your work…
+          </button>
+          {onOpen && (
+            <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
+              Open the paper again
+            </button>
+          )}
+          <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
+            End without handing in
+          </button>
+        </p>
+      )}
+      <dl className="paper-marks">
+        <dt>?</dt>
+        <dd>where you are stuck, instead of looking it up</dd>
+        <dt>S U G</dt>
+        <dd>after each answer: sure, unsure or a guess</dd>
+      </dl>
+    </section>
+  );
 }
 
 export function WorkspacePage(props: Props) {
@@ -65,7 +222,10 @@ export function WorkspacePage(props: Props) {
   const [home, setHome] = useState<Home | null>(null);
   const [sessions, setSessions] = useState<LessonInfo[] | null>(null);
   const [materials, setMaterials] = useState<Materials | null | "none">(null);
-  const [marks, setMarks] = useState<Mark[] | null | "unread">("unread");
+  /** undefined until read; null when it could not be read, which the page treats as no plan. */
+  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
+  const [record, setRecord] = useState<{ progress: Progress; marks: Mark[] } | null | "unread">("unread");
+  const [materialOpen, setMaterialOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Material opens beside the page, as a document opens beside a lesson, and stays open with the page.
@@ -155,19 +315,33 @@ export function WorkspacePage(props: Props) {
   const withDocs = docs.open.length > 0 || picking;
 
   const read = useCallback(async () => {
-    const [opened, listed, held] = await Promise.all([
+    const [opened, listed, held, planned] = await Promise.all([
       api.visitFolder(folder).catch(() => null),
       api.lessons(folder).catch(() => [] as LessonInfo[]),
       api.materialList(folder).catch(() => "none" as const),
+      api.plan(folder).catch(() => null),
     ]);
     setHome(opened);
     setSessions(listed);
     setMaterials(held);
+    setPlan(planned);
   }, [api, folder]);
 
   useEffect(() => {
     void read();
   }, [read, props.refresh]);
+
+  // The record is read apart from the rest, so the page does not wait on it.
+  useEffect(() => {
+    let live = true;
+    void Promise.all([api.progress(null, folder), api.marks(folder).catch(() => null)]).then(
+      ([progress, marks]) => live && setRecord({ progress, marks: marks ?? [] }),
+      () => live && setRecord(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, folder, props.refresh]);
 
   // A session still named by the words it was started with ("Continue") takes its own lesson's goal, as a new
   // one does: the goal the record binds to that conversation, never the folder's last goal, which a lesson in a
@@ -184,14 +358,6 @@ export function WorkspacePage(props: Props) {
       () => {},
     );
   }, [api, folder, sessions, onSessionRenamed, read]);
-
-  const readMarks = () => {
-    if (marks !== "unread") return;
-    void api.marks(folder).then(
-      (found) => setMarks(found),
-      () => setMarks(null),
-    );
-  };
 
   const act = async (work: () => Promise<unknown>) => {
     setBusy(true);
@@ -227,7 +393,19 @@ export function WorkspacePage(props: Props) {
       if (words) props.onHandedIn(folder, words, name);
     });
 
-  const endPaper = () => act(() => api.paperEnd([], folder));
+  const endPaper = async () => {
+    setBusy(true);
+    try {
+      await api.paperEnd([], folder);
+    } catch (problem) {
+      props.onNote(String(problem).replace(/^Error: /, ""));
+    } finally {
+      setBusy(false);
+      await read();
+    }
+    // The block the keyboard was in is gone: the keyboard goes to what leads the page now.
+    window.requestAnimationFrame(() => column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus());
+  };
   const upgrade = () =>
     act(async () => {
       setHome(await api.upgradeFolder(folder));
@@ -240,14 +418,30 @@ export function WorkspacePage(props: Props) {
   const mixed = materials !== null && materials !== "none" && new Set(materials.names.map(materialKind)).size > 1;
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
-  const bySkill = new Map<string, Mark[]>();
-  if (Array.isArray(marks)) {
-    for (const mark of [...marks].reverse()) {
-      if (mark.paper) continue;
-      const label = mark.label.trim() || "Without a skill named";
-      bySkill.set(label, [...(bySkill.get(label) ?? []), mark]);
-    }
-  }
+  const exam = examLine(home?.exam ?? null);
+
+  // The plan's item in hand: the one it marks doing, else the first not done, as the plan panel and a started
+  // session take it. Its session is carried on when one is named by it; otherwise Return starts one.
+  const items = plan?.items ?? [];
+  const current = items.find((item) => item.status === "doing") ?? items.find((item) => item.status !== "done") ?? null;
+  const named = (sessions ?? []).map((info) => ({ info, title: sessionName(info, info.current ? (home?.last?.goal ?? null) : null) }));
+  const carried = current ? (named.find((each) => each.title.trim() === current.title.trim()) ?? null) : null;
+  const earlier = named.filter((each) => each !== carried);
+  // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
+  const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;
+  const due = home ? dueLine(home) : null;
+
+  const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
+
+  // Each skill the learner has answered on, newest answer first, with the runtime's count of its days.
+  const marksById = new Map(record !== "unread" && record ? record.marks.map((mark) => [mark.id, mark]) : []);
+  const work =
+    record !== "unread" && record
+      ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
+          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null }))
+          .filter(({ row, last }) => last !== null || earned(row) > 0)
+          .sort((a, b) => (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
+      : [];
 
   return (
     <div
@@ -263,6 +457,7 @@ export function WorkspacePage(props: Props) {
         </button>
         <header className="page-head">
           <h1 className="page-title">{name}</h1>
+          {exam && <p className="page-exam">{exam}</p>}
           {home?.message && home.state !== "ready" && <p className="where">{withoutPaths(home.message)}</p>}
           {/* What the folder needs before study, under the words that ask for it, drawn as Home draws a step's choices. */}
           {home && ["not_set_up", "needs_upgrade", "no_runtime", "unreadable"].includes(home.state) && (
@@ -286,86 +481,87 @@ export function WorkspacePage(props: Props) {
           )}
         </header>
 
-        <section aria-label="Sessions">
-          <button className="new-session" data-drive="new-session" autoFocus={props.focus && ready} disabled={!ready || sitting !== null} onClick={() => props.onNewSession(folder)}>
-            New session
-          </button>
-          {sessions === null || sessions.length === 0 ? null : (
-            <div className="list" role="list">
-              {sessions.map((info) => {
-                const title = sessionName(info, info.current ? (home?.last?.goal ?? null) : null);
-                return (
-                  <button key={info.session} role="listitem" className="home-row" onClick={() => props.onOpenSession(folder, info.session, title)}>
-                    <span className="row-name">
-                      <Line text={title} />
-                    </span>
-                    <span className="row-when">{whenOpened(info.opened_ms)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
         {sitting && (
-          <section aria-label="The paper running">
-            <p className="list-head">A paper is running</p>
-            <p className="page-text">
-              {sitting.name}, started at {new Date(sitting.started_ms).toTimeString().slice(0, 5)} for {sitting.minutes} minutes, until{" "}
-              {new Date(sitting.started_ms + sitting.minutes * 60_000).toTimeString().slice(0, 5)}. Write ? where you are stuck, and S, U or G after each
-              answer for sure, unsure or a guess. The tutor is out of reach until it is handed in.
-            </p>
-            <p className="page-acts">
-              <button className="quiet-act strong" disabled={busy} onClick={() => void handIn()}>
-                Hand in your work…
-              </button>
-              {sitting.path && (
-                <button
-                  className="quiet-act"
-                  onClick={() =>
+          <RunningPaper
+            key={`${sitting.name}@${sitting.started_ms}`}
+            sitting={sitting}
+            busy={busy}
+            focus={props.focus}
+            onHandIn={() => void handIn()}
+            onOpen={
+              sitting.path
+                ? () =>
                     // The paper opens beside the page, as the material does; a kind the window does not show goes to the Mac.
                     sourceRef(sitting.path!) ? openMaterial(sitting.path!) : void api.openFile(sitting.path!, folder).catch((problem) => props.onNote(String(problem)))
-                  }
-                >
-                  Open the paper again
-                </button>
-              )}
-              <button className="quiet-act" disabled={busy} onClick={() => void endPaper()}>
-                End without handing in
+                : null
+            }
+            onEnd={endPaper}
+          />
+        )}
+
+        {showNext && (
+          <section aria-label="Next" className="next">
+            <p className="list-head">Next</p>
+            {current ? (
+              <button
+                className="home-row first next-row"
+                data-drive="next"
+                autoFocus={props.focus}
+                onClick={() => (carried ? props.onOpenSession(folder, carried.info.session, carried.title) : props.onStartSession(folder))}
+              >
+                <span className="next-what">
+                  <span className="row-name next-name">
+                    <Line text={current.title} />
+                  </span>
+                  {current.note && (
+                    <span className="next-note">
+                      <Line text={current.note} />
+                    </span>
+                  )}
+                </span>
+                <span className="row-when">{planDay(current.day)}</span>
+                <span className="row-key" aria-hidden="true">
+                  ↩
+                </span>
               </button>
-            </p>
+            ) : (
+              <>
+                {items.length > 0 && <p className="page-note">Everything on the plan is done.</p>}
+                <button className="home-row first next-row" data-drive="new-session" autoFocus={props.focus} onClick={() => props.onNewSession(folder)}>
+                  <span className="row-name next-name">New session</span>
+                  <span className="row-when" />
+                  <span className="row-key" aria-hidden="true">
+                    ↩
+                  </span>
+                </button>
+              </>
+            )}
+            {due && <p className="page-note next-due">{due}</p>}
+            {current && (
+              <p className="page-acts next-acts">
+                <button className="quiet-act" data-drive="new-session" onClick={() => props.onNewSession(folder)}>
+                  Something else…
+                </button>
+              </p>
+            )}
           </section>
         )}
 
-        <section aria-label="Material">
-          <p className="list-head">Material</p>
-          {materials === null ? null : materials === "none" ? (
-            <p className="page-note">The material folder could not be read.</p>
-          ) : materials.files === 0 ? (
-            <p className="page-note">Nothing here yet. Add notes, slides or past papers, or drop them on this page.</p>
-          ) : (
+        {earlier.length > 0 && (
+          <section aria-label="Earlier sessions">
+            <p className="list-head">Earlier</p>
             <div className="list" role="list">
-              {materials.names.map((file) => (
-                <button key={file} role="listitem" className="home-row file-row" aria-current={docs.shown === `Study/materials/${file}` ? "true" : undefined} onClick={() => openMaterial(`Study/materials/${file}`)}>
-                  <span className="row-name">{materialTitle(file)}</span>
-                  {mixed && <span className="row-when">{materialKind(file)}</span>}
+              {earlier.map(({ info, title }) => (
+                <button key={info.session} role="listitem" className="home-row" onClick={() => props.onOpenSession(folder, info.session, title)}>
+                  <span className="row-name">
+                    <Line text={title} />
+                  </span>
+                  <span className="row-when">{whenOpened(info.opened_ms)}</span>
                 </button>
               ))}
-              {materials.files > materials.names.length && <p className="page-note">and {materials.files - materials.names.length} more</p>}
             </div>
-          )}
-          {materials !== null && materials !== "none" && materials.keys > 0 && (
-            <p className="page-note">{materials.keys === 1 ? "One answer key is" : `${materials.keys} answer keys are`} kept out of sight.</p>
-          )}
-          <p className="page-acts">
-            <button className="quiet-act" data-drive="add-material" disabled={!ready || sitting !== null || busy} onClick={() => void addFiles()}>
-              Add files…
-            </button>
-            <button className="quiet-act" disabled={!ready || sitting !== null} onClick={() => props.onPaste(folder)}>
-              Paste text…
-            </button>
-          </p>
-        </section>
+          </section>
+        )}
 
         {home && home.papers.length > 0 && !sitting && (
           <section aria-label="Papers">
@@ -394,32 +590,69 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
-        <details className="your-work" onToggle={(event) => (event.currentTarget.open ? readMarks() : undefined)}>
-          <summary className="list-head">Your work</summary>
-          {marks === "unread" ? (
+        <section aria-label="Material">
+          {listed ? (
+            <button className="list-head fold" data-drive="material" aria-expanded={materialOpen} onClick={() => setMaterialOpen((open) => !open)}>
+              Material <span className="fold-count">{plural(listed.files, "file", "files")}</span>
+            </button>
+          ) : (
+            <p className="list-head">Material</p>
+          )}
+          {materials === "none" && <p className="page-note">The material folder could not be read.</p>}
+          {materials !== null && materials !== "none" && materials.files === 0 && <p className="page-note">Nothing here yet. Add notes, slides or past papers, or drop them on this page.</p>}
+          {listed && materialOpen && (
+            <div className="list" role="list">
+              {listed.names.map((file) => (
+                <button key={file} role="listitem" className="home-row file-row" aria-current={docs.shown === `Study/materials/${file}` ? "true" : undefined} onClick={() => openMaterial(`Study/materials/${file}`)}>
+                  <span className="row-name">{materialTitle(file)}</span>
+                  {mixed && <span className="row-when">{materialKind(file)}</span>}
+                </button>
+              ))}
+              {listed.files > listed.names.length && <p className="page-note">and {listed.files - listed.names.length} more, in the folder</p>}
+            </div>
+          )}
+          {(materialOpen || !listed) && materials !== null && materials !== "none" && (
+            <>
+              {materials.keys > 0 && <p className="page-note">{materials.keys === 1 ? "One answer key is" : `${materials.keys} answer keys are`} kept out of sight.</p>}
+              <p className="page-acts">
+                <button className="quiet-act" data-drive="add-material" disabled={!ready || sitting !== null || busy} onClick={() => void addFiles()}>
+                  Add files…
+                </button>
+                <button className="quiet-act" disabled={!ready || sitting !== null} onClick={() => props.onPaste(folder)}>
+                  Paste text…
+                </button>
+              </p>
+            </>
+          )}
+        </section>
+
+        <section aria-label="Your work" className="your-work">
+          <p className="list-head">Your work</p>
+          {record === "unread" ? (
             <p className="page-note">Reading the record…</p>
-          ) : marks === null ? (
-            <p className="page-note">This runtime keeps no record of marked answers the window can read.</p>
-          ) : bySkill.size === 0 ? (
-            <p className="page-note">Nothing marked yet. Each answer the record marks is kept here.</p>
+          ) : record === null ? (
+            <p className="page-note">The record could not be read.</p>
+          ) : work.length === 0 ? (
+            <p className="page-note">
+              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
+              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
+                ? withoutPaths(record.progress.message)
+                : "Nothing marked yet. Each skill you answer on is kept here."}
+            </p>
           ) : (
             <div className="list" role="list">
-              {[...bySkill].map(([label, kept]) => (
-                <div key={label} role="listitem" className="home-row static">
+              {work.map(({ row, last }) => (
+                <div key={row.name} role="listitem" className="home-row static work-row">
                   <span className="row-name">
-                    <Line text={label} />
+                    <Line text={row.name} />
                   </span>
-                  <span className="row-when">
-                    {kept
-                      .slice(0, 2)
-                      .map((mark) => `${shortDay(mark.at)}, ${markShort(mark)}`)
-                      .join("; ")}
-                  </span>
+                  <span className="row-when">{last ? `${markShort(last)}, ${shortDay(last.at)}` : ""}</span>
+                  <Days row={row} />
                 </div>
               ))}
             </div>
           )}
-        </details>
+        </section>
 
         <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">

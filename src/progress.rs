@@ -103,6 +103,12 @@ struct Skill {
     /// Its gap-log rows, as the tutor names them: "midterm-1#3".
     rows: Vec<String>,
     quick_check: bool,
+    /// The answers that earned the passes it holds now, first pass first.
+    /// None for a pass brought in from a gap log the tutor kept before the
+    /// record did, which no answer in the record made.
+    passed_by: Vec<Option<String>>,
+    /// The newest answer marked on it, whatever its mark.
+    last_answer: Option<String>,
 }
 
 impl Skill {
@@ -128,6 +134,8 @@ impl Skill {
             "what_went_wrong": self.what_went_wrong,
             "rows": self.rows,
             "quick_check": self.quick_check,
+            "passed_by": self.passed_by,
+            "last_answer": self.last_answer,
         })
     }
 }
@@ -167,6 +175,36 @@ fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
         restarted_on,
         last_pass_on,
     )
+}
+
+/// The answers that earned the passes an item holds now, first pass first.
+/// A pass it was brought in with has no answer.
+fn item_passed_by(item: &Item) -> Vec<Option<String>> {
+    let attempt_of = |event_no: i64| {
+        item.facts
+            .events
+            .iter()
+            .find(|event| event.event_no == event_no)
+            .and_then(|event| event.attempt.as_ref())
+            .map(|attempt| attempt.attempt_id.clone())
+    };
+    let base = item.facts.base_passes.clamp(0, PASSES_TO_CLOSE) as usize;
+    let mut by: Vec<Option<String>> = vec![None; base];
+    for (event_no, effect) in &item.state.effects {
+        match effect {
+            Effect::Passed | Effect::Closed => by.push(attempt_of(*event_no)),
+            Effect::Failed | Effect::Restarted | Effect::Made => by.clear(),
+            _ => {}
+        }
+    }
+    // The item's count is the one the record keeps: the list is cut or
+    // filled to it, so a pass is never named that the count does not hold.
+    let passes = item.state.passes.clamp(0, PASSES_TO_CLOSE) as usize;
+    by.truncate(passes);
+    while by.len() < passes {
+        by.insert(0, None);
+    }
+    by
 }
 
 /// The most passes a skill with items has held at one time. Its passes at
@@ -250,6 +288,7 @@ fn from_items(name: &str, items: &[&Item], before: &[&Answer], today: NaiveDate)
             .map(|item| item.name())
             .collect(),
         quick_check: items.iter().any(|item| item.facts.origin == Origin::Chat),
+        passed_by: item_passed_by(weakest),
         best_passes: most_passes_held(items)
             .max(from_answers(name, before).best_passes)
             .max(weakest.state.passes.clamp(0, PASSES_TO_CLOSE)),
@@ -261,6 +300,7 @@ fn from_items(name: &str, items: &[&Item], before: &[&Answer], today: NaiveDate)
 /// check. Its passes are the days with a clean answer since its last miss.
 fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
     let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
+    let mut passed_by: Vec<Option<String>> = Vec::new();
     let mut earlier = 0;
     let mut most = 0;
     let mut restarted_on = None;
@@ -269,8 +309,12 @@ fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
             earlier = days.len().min(PASSES_TO_CLOSE as usize) as i64;
             restarted_on = Some(answer.day);
             days.clear();
+            passed_by.clear();
         } else if answer.clean {
-            days.insert(answer.day);
+            // The first clean answer on a new day is the one that earned it.
+            if days.insert(answer.day) && passed_by.len() < PASSES_TO_CLOSE as usize {
+                passed_by.push(Some(answer.attempt_id.clone()));
+            }
             most = most.max(days.len().min(PASSES_TO_CLOSE as usize) as i64);
         }
     }
@@ -282,6 +326,7 @@ fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
         earlier_passes: if passes == 0 { earlier } else { 0 },
         last_pass_on: days.last().copied(),
         restarted_on: restarted_on.filter(|_| passes == 0),
+        passed_by,
         ..Skill::default()
     }
 }
@@ -344,8 +389,12 @@ fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
 /// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
     let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
+    let last_answer = own.last().map(|answer| answer.attempt_id.clone());
     if items.is_empty() {
-        return from_answers(name, &own);
+        return Skill {
+            last_answer,
+            ..from_answers(name, &own)
+        };
     }
     // The answer that made its first item, and the answers before it.
     let made_by: BTreeSet<&str> = items
@@ -359,7 +408,10 @@ fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: N
         .iter()
         .position(|answer| made_by.contains(answer.attempt_id.as_str()))
         .map_or(&own[..0], |first| &own[..first]);
-    from_items(name, items, before, today)
+    Skill {
+        last_answer,
+        ..from_items(name, items, before, today)
+    }
 }
 
 struct Record<'a> {
@@ -811,6 +863,50 @@ mod tests {
         ]);
         assert_eq!((back.passes, back.earlier_passes), (1, 0));
         assert_eq!(back.restarted_on, None);
+    }
+
+    #[test]
+    fn a_skill_names_the_answer_that_earned_each_pass_it_holds() {
+        let mut second_same_day = answer("2026-11-02", "clean");
+        second_same_day.attempt_id = "later the same day".into();
+        let held = skill(&[
+            answer("2026-11-02", "clean"),
+            second_same_day,
+            answer("2026-11-04", "clean"),
+        ]);
+        assert_eq!(
+            held.passed_by,
+            [
+                Some("2026-11-02-clean".to_owned()),
+                Some("2026-11-04-clean".to_owned())
+            ]
+        );
+        // A miss starts them again: the earlier answers no longer earn one.
+        let missed = skill(&[
+            answer("2026-11-02", "clean"),
+            answer("2026-11-03", "wrong"),
+            answer("2026-11-05", "clean"),
+        ]);
+        assert_eq!(missed.passed_by, [Some("2026-11-05-clean".to_owned())]);
+        // The newest answer is named, whatever its mark.
+        let answers = [
+            answer("2026-11-02", "clean"),
+            answer("2026-11-03", "helped"),
+        ];
+        let of = skill_of("units", "units", &[], &answers, day("2026-11-03"));
+        assert_eq!(of.last_answer.as_deref(), Some("2026-11-03-helped"));
+
+        // A check's passes are the due answers that passed it.
+        let item = check("2026-11-02", &[("2026-11-03", true), ("2026-11-06", true)]);
+        let checked = from_items("units", &[&item], &[], day("2026-11-06"));
+        assert_eq!(checked.passes, 2);
+        assert_eq!(
+            checked.passed_by,
+            [Some("a2".to_owned()), Some("a3".to_owned())]
+        );
+        let failed = check("2026-11-02", &[("2026-11-03", true), ("2026-11-06", false)]);
+        let failed = from_items("units", &[&failed], &[], day("2026-11-06"));
+        assert!(failed.passed_by.is_empty(), "{:?}", failed.passed_by);
     }
 
     #[test]

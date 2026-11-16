@@ -54,6 +54,8 @@ pub(super) fn apply_observations(
         }
         let mut observed = None;
         let mut learner_response = false;
+        // The first learner_response the host marked as talk, by its index.
+        let mut talk = None;
         for (event_index, e) in o.events.iter().enumerate() {
             if e.excerpts.len() > 4 {
                 return Err(LearnerError::new(
@@ -71,6 +73,12 @@ pub(super) fn apply_observations(
                     ));
                 }
                 learner_response = true;
+                if talk.is_none()
+                    && event.metadata.as_ref().and_then(|m| m.intent)
+                        == Some(crate::learner::MessageIntent::Talk)
+                {
+                    talk = Some(event_index);
+                }
             }
             if event.speaker == Speaker::Learner {
                 observed = std::cmp::max(observed, event.occurred_at_ms);
@@ -132,6 +140,13 @@ pub(super) fn apply_observations(
         };
         for (path, attempt) in &attempts {
             check_attempt(path, attempt, host)?;
+            if let Some(event_index) = talk {
+                return Err(field_error(
+                    &format!("observations[{observation_index}].events[{event_index}]"),
+                    "The learner sent this message as talk, not as an answer to the task, so record no attempt on it: leave attempt out, and the task stays open for their answer",
+                    host,
+                ));
+            }
             if !learner_response {
                 return Err(field_error(
                     &format!("observations[{observation_index}].events"),

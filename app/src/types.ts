@@ -224,6 +224,8 @@ export type Row = {
   due: boolean;
   /** The day the next proof can be earned, as "2026-11-12". */
   next_day: string | null;
+  /** The record's id for the newest answer on this skill, as the runtime groups them; absent when it does not say. */
+  last_answer?: string | null;
 };
 
 export type Score = {
@@ -303,7 +305,7 @@ export type AgentEvent =
    * when this turn's reply asked for it. Sent by an engine that knows its
    * open task (Magnesium's). The window puts the field for an answer inside it.
    */
-  | { type: "open_task"; task: string | null; posed: boolean }
+  | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 
@@ -332,6 +334,13 @@ export type Mark = {
   cold: boolean;
   /** The paper it was given on, or null in a lesson. */
   paper: string | null;
+  /**
+   * Which of its skill's three passes this answer earned, 1 to 3, as the
+   * runtime counts them now. Absent when it earned none (help, not cold, a
+   * second answer the same day, a check not due), when a later miss started
+   * the count again, or when the runtime cannot say.
+   */
+  pass?: number | null;
 };
 
 /**

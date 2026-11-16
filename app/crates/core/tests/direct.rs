@@ -422,7 +422,7 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
         session["next_action"],
         "Solve x² − 5x + 6 = 0 with the formula."
     );
-    let steps = mg_core::peek::goal_steps(&bench.root);
+    let steps = mg_core::plan::goal_steps(&bench.root);
     assert_eq!(steps.len(), 2);
     assert_eq!(steps[0].status, "done");
     assert_eq!(steps[1].status, "doing");

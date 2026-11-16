@@ -11,7 +11,7 @@ import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card,
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, withoutPaths, type PlanDiff } from "../words";
+import { firstWords, markWords, passWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
@@ -35,6 +35,7 @@ function Marks({ marks }: { marks: Mark[] }) {
       {marks.map((mark) => (
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
           {markWords(mark)}
+          {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
         </p>
       ))}
     </>
