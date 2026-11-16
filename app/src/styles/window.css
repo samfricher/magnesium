@@ -262,8 +262,9 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .next-first { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--text); }
 .next .next-due { margin-top: 0.5rem; }
 .next .next-acts { margin-top: 0.5rem; }
-/* A choice about this Mac that lessons do not wait on, under Home's first row (or the step in its place). */
-.home-note { margin-top: 1rem; }
+/* A choice about this Mac that lessons do not wait on, at the foot of Home: as far under the folder actions as they
+   are under the list. */
+.home-note { margin-top: 2.2rem; }
 .home-note .page-note { margin: 0; max-width: 34em; }
 .home-page .home-note .page-acts { margin-top: 0.3rem; }
 
