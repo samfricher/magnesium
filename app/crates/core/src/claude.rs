@@ -879,6 +879,7 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
             Some("hook_response") => on_hook(shared, value),
             _ => {}
         },
+        Some("user") => on_tool_results(shared, value),
         Some("stream_event") => on_stream(shared, value),
         Some("assistant") => on_assistant(shared, value),
         Some("result") => on_result(shared, value),
@@ -893,6 +894,30 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
             }
         }
         _ => {}
+    }
+}
+
+/// A tool result that says a sitting ended, from the runtime's JSON in the
+/// result's text: the window then reads the closing lines.
+fn on_tool_results(shared: &Arc<Shared>, value: &Value) {
+    if value["message"]["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|part| part["type"] == "tool_result")
+        .any(|part| says_sitting_ended(&part["content"]))
+    {
+        shared.emit(AgentEvent::SittingEnded);
+    }
+}
+
+fn says_sitting_ended(content: &Value) -> bool {
+    match content {
+        Value::String(text) => {
+            serde_json::from_str::<Value>(text).is_ok_and(|parsed| parsed["sitting_ended"] == true)
+        }
+        Value::Array(parts) => parts.iter().any(|part| says_sitting_ended(&part["text"])),
+        _ => false,
     }
 }
 
@@ -1945,6 +1970,20 @@ impl Drop for ClaudeConversation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tool_result_that_says_a_sitting_ended_is_noticed() {
+        let text = |body: &str| json!([{"type": "text", "text": body}]);
+        assert!(says_sitting_ended(&text(
+            r#"{"action":"end_sitting","sitting_ended":true}"#
+        )));
+        assert!(says_sitting_ended(&json!(
+            r#"{"update_status":"committed","sitting_ended":true}"#
+        )));
+        assert!(!says_sitting_ended(&text(r#"{"sitting_ended":false}"#)));
+        assert!(!says_sitting_ended(&text("the sitting_ended: true")));
+        assert!(!says_sitting_ended(&json!(null)));
+    }
 
     #[test]
     fn the_account_is_read_from_claude_codes_own_words() {

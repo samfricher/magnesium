@@ -74,6 +74,19 @@ You can decline any of it. A decline costs nothing: it is recorded as your choic
 
 To turn this off for a study folder, run `magnesium opener off` there. Checks are still scheduled, but sittings no longer open with them. `magnesium opener on` turns it back on. `magnesium opener block` also makes the tutor wait to teach new material until each quick check has been asked or declined.
 
+## End a sitting
+
+When you are stopping, say so in your own words: "that's enough for today", "I have to go". The tutor tells Magnesium, closes in a line and sets no task. Under its reply you then see at most two lines, worked out from your learning history and never from the tutor's words: the passes you earned today, and the first day a skill you answered today can count again. For example:
+
+```text
+Earned today: a pass on slope and Km and 1 more.
+Can count from tomorrow: units of a rate.
+```
+
+Each line is kept short enough to fit on one line: when there are more skills than fit, the rest are counted ("and 2 more"), and a name too long for the line is cut at a word and ends in "…". A skill proved today leads the first line ("Proven today: rate equation."). A wrong or partly right answer earns no pass, so it is never named as earned, but its skill can be named in the second line. If no answer was marked today, nothing is shown: a declined question is your choice, not an answer. Asking to pause or stop the lesson ends the sitting the same way. In Claude Code in a terminal the lines come from Claude Code itself, after the reply. In the study window they sit under the reply, and stay there when you open the lesson again. Closing the window or the terminal without saying so shows nothing. If you write again after stopping, the sitting carries on, and stopping again shows the lines again. After `/clear` in Claude Code nothing is shown until you start a new session, as Magnesium records nothing there. The workspace's page shows when each of your skills can count again.
+
+From the study folder, `magnesium closing` prints the lines for today as they would show if the sitting ended now, and `--json` the same as data with when the current sitting ended. The command changes nothing in the folder.
+
 ## Your gap log
 
 Magnesium keeps every gap-log row in your learning history and writes the Gaps table of `gap-log.md` from it after each change. It works out each row's passes, status and next redo date itself, with the rule above, and makes the gaps shorter to fit before the date in your plan's When row. If a row is wrong, tell the tutor: it corrects the mark or the row, and the table is written again. If you edit the table by hand, nothing about what is due changes; the next time Magnesium writes the table, it saves your edited file in `.magnesium/backups/gap-logs/` and the tutor asks what you meant.

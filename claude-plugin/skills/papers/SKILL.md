@@ -9,6 +9,8 @@ Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Rea
 
 During this Magnesium session, the prompt notice usually repeats the teaching rule and can say that the previous reply had 200 words or more. The rule is for teaching replies. A build, a marking report or a plan change runs as long as this stage needs and needs no task, so ignore that feedback after one.
 
+When the learner says they are stopping for now (for today, they have to go, that is enough), send learning_step `{"schema":"learner-model/v2","action":"end_sitting"}` once, before your reply, and follow its note. Magnesium then shows the learner, under your reply, what their record says of today; never say it yourself, and set no task.
+
 ## Choose the target and the mode
 
 The target slug is short, given or derived from the request: `midterm-1`, `test-1`, `final`, `ch6-7`, `computability`. If the request names no target and `Study/` holds one plan, use that plan. If it holds several, match the paper or tag the learner names, and ask only when that does not decide it.

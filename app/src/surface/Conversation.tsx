@@ -48,6 +48,17 @@ function Marks({ marks }: { marks: Mark[] }) {
   );
 }
 
+/** The sitting's closing lines, as the runtime worked them out from the record: drawn as they are, never reworded. */
+function Closing({ lines }: { lines: string[] }) {
+  return (
+    <div className="record closing" data-role="closing">
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
+}
+
 /** What changed, one row for each thing that changed: "now before Confidence intervals, on Sun 15 Nov". */
 function byThing(changes: PlanDiff["changes"]): { what: string; detail: string }[] {
   const rows: { what: string; detail: string }[] = [];
@@ -165,6 +176,7 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
       )}
       {turn.interrupted && <p className="record quiet">Stopped.</p>}
       {turn.change && <PlanChange change={turn.change} brief={settled} planKey={planKey} />}
+      {turn.closing && <Closing lines={turn.closing} />}
     </article>
   );
 });

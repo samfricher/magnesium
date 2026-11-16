@@ -221,6 +221,39 @@ pub fn progress(folder: &Path) -> Option<Value> {
     .then_some(value)
 }
 
+/// What `magnesium closing --json` says: the closing lines for today, as
+/// the runtime words them, and when the current sitting ended.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Closing {
+    /// Empty when no answer was marked today.
+    pub lines: Vec<String>,
+    pub ended_ms: Option<i64>,
+}
+
+/// `magnesium closing --json`, read without changing anything. None when this
+/// version of the runtime has no such command, or the folder is not set up.
+pub fn closing(folder: &Path) -> Option<Closing> {
+    let out = run(folder, &["closing", "--json"], Duration::from_secs(10)).ok()?;
+    closing_from(&out)
+}
+
+pub fn closing_from(printed: &str) -> Option<Closing> {
+    let value: Value = serde_json::from_str(printed).ok()?;
+    if value["active"].as_bool() != Some(true) {
+        return None;
+    }
+    let lines = value["closing"]["lines"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|line| line.as_str().map(str::to_owned))
+        .collect();
+    Some(Closing {
+        lines,
+        ended_ms: value["sitting"]["ended_ms"].as_i64(),
+    })
+}
+
 /// A step of the lesson's goal, as the record's checkpoint holds it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {

@@ -83,7 +83,8 @@ End every reply with exactly one record block:
  "next": {"question": "...", "key": "..."} | null,
  "repair": {"number": 1, "done": "what the repair was, in one line", "next": {"question": "...", "key": "..."}} | null,
  "control": "pause" | "stop" | "recording_off" | "recording_on" | null,
- "goal": "the new goal, in a few words" | null}
+ "goal": "the new goal, in a few words" | null,
+ "sitting_ends": false}
 </record>
 
 - `answer` marks the learner's message as a first try at the open task: right (the step done right), partly, wrong, or declined ("I don't know", or the solution asked for before any try). null when it was not an answer: a question, a comment, a guess you asked for, a lesson's start. Every reply chooses.
@@ -97,4 +98,5 @@ End every reply with exactly one record block:
 - `next` is set when the message answered a due quick check or a paper redo, and not when it declined one: the next problem for it and its key, new, and made as a due question is made. Otherwise null.
 - `repair` is set in the reply that finishes a repair the state lists, by its number; otherwise null. Never set it for a repair not finished, or one the state does not list.
 - `goal` is set only when the learner asked to work on something else from now on: the new goal. Otherwise null.
+- `sitting_ends` is true when the learner says they are stopping for now (for today, they have to go, that is enough). Close in a line and set no task: the window then shows them, under your reply, what their record says of today, so say none of it yourself.
 - `control` is set when the learner asks, in their own words, to pause or stop the lesson, or to turn recording off or back on. Say in a line what it means: a pause or stop keeps their record up to here; recording off keeps nothing from here on, answers included, until they ask for it back.

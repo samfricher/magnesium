@@ -261,6 +261,10 @@ pub struct Record {
     /// A new goal for the lesson, when the learner asked to work on
     /// something else. Kept through the runtime's own `session.use` goal.
     pub goal: Option<String>,
+    /// The learner is stopping for now, so this reply ends the sitting: the
+    /// engine tells the runtime, which works out the closing lines.
+    #[serde(default)]
+    pub sitting_ends: bool,
 }
 
 /// A repair the tutor finished: which one, by the number the state gave it,
@@ -451,6 +455,7 @@ pub fn parse(block: &str) -> Result<Record, String> {
         repair,
         repair_unreadable,
         goal: text_of("goal")?.map(|goal| clip(&goal, MAX_GOAL)),
+        sitting_ends: flag("sitting_ends")?,
     })
 }
 

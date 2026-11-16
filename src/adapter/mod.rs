@@ -158,6 +158,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 pub(crate) enum LearningStepRequest {
     Update(Box<crate::learner::UpdateRequest>),
     Control(Box<ControlRequest>),
+    EndSitting(crate::closing::EndSittingRequest),
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -275,6 +276,9 @@ pub(crate) fn dispatch_with_host(
     let caller = native_host
         .clone()
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
+    if operation == "learning_step" && crate::closing::is_end_request(&request) {
+        return crate::closing::end_from_tool(cwd, caller.as_ref());
+    }
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
@@ -291,7 +295,19 @@ pub(crate) fn dispatch_with_host(
         );
     let status = operation == "context"
         && request.get("action").and_then(serde_json::Value::as_str) == Some("status");
+    let ends = (operation == "learning_step").then(|| request.clone());
     let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
+    // A pause or a stop the learner asked for ends the sitting.
+    if ends.is_some_and(|request| crate::closing::ends_on_control(&request, &result))
+        && let Ok(Some(workspace)) = Workspace::discover(cwd)
+    {
+        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
+        if let Ok((Some(_), _)) =
+            crate::closing::end_sitting(&workspace, by, crate::sittings::now_ms())
+        {
+            result["sitting_ended"] = true.into();
+        }
+    }
     open_sitting(
         cwd,
         update.as_ref(),
@@ -388,6 +404,20 @@ fn add_goal_context(
     {
         result["context"] = context;
     }
+}
+/// A Claude MCP server keeps its spawn-time session after /clear or an
+/// in-process /resume; refuse rather than act on the conversation it left.
+pub(crate) fn refuse_changed_conversation(
+    workspace: &Workspace,
+    host: &crate::learner::HostContext,
+) -> Result<(), String> {
+    if host::launch_host() == Some(host::HostKind::Claude)
+        && host.host_kind == "claude"
+        && host::session_ended(workspace, &host.host_thread_id)?
+    {
+        return Err("conversation_changed: this Claude Code conversation was cleared or switched after Magnesium's tool connection started, so Magnesium will not read or record learner state for it. Start a new Claude Code session, or resume this conversation, to continue the lesson.".into());
+    }
+    Ok(())
 }
 /// The study folder's sittings, when this call runs in one it is bound to.
 /// The store is created only for a write, so a read changes no file.
@@ -674,14 +704,7 @@ fn dispatch_inner(
     let Some(resolved) = resolved else {
         return Ok(json!({"schema":crate::learner::SCHEMA,"active":false,"outcome":"inactive"}));
     };
-    // A Claude MCP server keeps its spawn-time session after /clear or an
-    // in-process /resume; refuse rather than act on the conversation it left.
-    if host::launch_host() == Some(host::HostKind::Claude)
-        && host.host_kind == "claude"
-        && host::session_ended(resolved.workspace(), &host.host_thread_id)?
-    {
-        return Err("conversation_changed: this Claude Code conversation was cleared or switched after Magnesium's tool connection started, so Magnesium will not read or record learner state for it. Start a new Claude Code session, or resume this conversation, to continue the lesson.".into());
-    }
+    refuse_changed_conversation(resolved.workspace(), &host)?;
     let store = match open_store(resolved.workspace()) {
         Ok(store) => store,
         Err(error) => {
@@ -870,6 +893,10 @@ fn hook_notice(
             if hook == (NoticeHook::SessionStart { core_rules: false }) {
                 clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
             }
+            // A compaction drops the skill that says how a sitting ends.
+            if matches!(hook, NoticeHook::SessionStart { .. }) {
+                clauses.push((Clause::Required, crate::closing::END_GUIDANCE.into()));
+            }
         }
         (false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
@@ -981,8 +1008,17 @@ pub(crate) fn host_user_prompt_submit(
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
     // A learner message in a conversation that records may begin a sitting.
     // Only its time is kept, never its text.
-    if recording && let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
-        let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
+    // A message after a sitting's end carries the sitting on.
+    let sittings = if recording {
+        crate::sittings::Sittings::open(&workspace).map(Some)
+    } else {
+        crate::sittings::Sittings::open_existing(&workspace)
+    };
+    if let Ok(Some(mut sittings)) = sittings {
+        if recording {
+            let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
+        }
+        let _ = sittings.reopen();
     }
     let sitting = crate::sittings::notice_clause(&workspace);
     if !active && recording {

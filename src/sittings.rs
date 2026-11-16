@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS sitting_items(
   outcome TEXT CHECK (outcome IN ('passed','failed','helped','declined','answered')),
   PRIMARY KEY (sitting_id, item_id)
 );
+CREATE TABLE IF NOT EXISTS sitting_ends(
+  sitting_id TEXT PRIMARY KEY REFERENCES sittings(sitting_id),
+  ended_ms INTEGER NOT NULL,
+  ended_by TEXT,
+  shown_ms INTEGER
+);
 ";
 
 /// Version 1's sitting_items named its own items table. Version 2's names
@@ -140,6 +146,60 @@ fn checks_json(checks: &[Check]) -> Value {
             })
             .collect(),
     )
+}
+
+/// The current sitting, and its end once one is recorded (see
+/// [`crate::closing`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SittingNow {
+    pub(crate) id: String,
+    pub(crate) started_ms: i64,
+    pub(crate) ended_ms: Option<i64>,
+    /// The conversation that ended it, as the record names hosts.
+    pub(crate) ended_by: Option<String>,
+    pub(crate) shown_ms: Option<i64>,
+}
+
+/// The current sitting, read without opening the store for writing: a store
+/// an earlier version made, with no table of ends, is left as it is.
+pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<SittingNow>, String> {
+    let path = workspace.control().join(STORE_FILE);
+    if !path.try_exists().map_err(error)? {
+        return Ok(None);
+    }
+    crate::workspace::reject_symlink_components(&path, workspace.control()).map_err(error)?;
+    let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(error)?;
+    conn.busy_timeout(Duration::from_secs(2)).map_err(error)?;
+    let has = |table: &str| -> Result<bool, String> {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(error)
+    };
+    if !has("sittings")? {
+        return Ok(None);
+    }
+    let query = if has("sitting_ends")? {
+        "SELECT s.sitting_id, s.started_ms, e.ended_ms, e.ended_by, e.shown_ms
+         FROM sittings s LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
+         ORDER BY s.sitting_no DESC LIMIT 1"
+    } else {
+        "SELECT sitting_id, started_ms, NULL, NULL, NULL FROM sittings ORDER BY sitting_no DESC LIMIT 1"
+    };
+    conn.query_row(query, [], |r| {
+        Ok(SittingNow {
+            id: r.get(0)?,
+            started_ms: r.get(1)?,
+            ended_ms: r.get(2)?,
+            ended_by: r.get(3)?,
+            shown_ms: r.get(4)?,
+        })
+    })
+    .optional()
+    .map_err(error)
 }
 
 /// One quick check as the opener states it.
@@ -420,6 +480,75 @@ impl Sittings {
                 }
             })
             .collect())
+    }
+
+    /// End the current sitting at `now`, for the conversation `by` that
+    /// ended it. Returns the sitting's id, or none when no sitting has begun.
+    /// Ending it again moves its end, so a learner who carries on and stops
+    /// again is shown the lines again.
+    pub(crate) fn end(&mut self, by: Option<&str>, now: i64) -> Result<Option<String>, String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(None);
+        };
+        let tx = self.write()?;
+        tx.execute(
+            "INSERT INTO sitting_ends(sitting_id,ended_ms,ended_by) VALUES(?1,?2,?3)
+             ON CONFLICT(sitting_id) DO UPDATE SET ended_ms=excluded.ended_ms, ended_by=excluded.ended_by",
+            params![sitting, now, by],
+        )
+        .map_err(error)?;
+        tx.commit().map_err(error)?;
+        Ok(Some(sitting))
+    }
+
+    /// The current sitting: when it began, and when and by whom it ended.
+    pub(crate) fn now_state(&self) -> Result<Option<SittingNow>, String> {
+        self.conn
+            .query_row(
+                "SELECT s.sitting_id, s.started_ms, e.ended_ms, e.ended_by, e.shown_ms
+                 FROM sittings s LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
+                 ORDER BY s.sitting_no DESC LIMIT 1",
+                [],
+                |r| {
+                    Ok(SittingNow {
+                        id: r.get(0)?,
+                        started_ms: r.get(1)?,
+                        ended_ms: r.get(2)?,
+                        ended_by: r.get(3)?,
+                        shown_ms: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(error)
+    }
+
+    /// The learner wrote again after the end: the sitting goes on. An end a
+    /// Stop hook never claimed (the goodbye was stopped part way, or the
+    /// hook failed) is set aside here, so its lines never show later under
+    /// another reply. A learner who stops again ends it again.
+    pub(crate) fn reopen(&mut self) -> Result<(), String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(());
+        };
+        let tx = self.write()?;
+        tx.execute("DELETE FROM sitting_ends WHERE sitting_id=?1", [&sitting])
+            .map_err(error)?;
+        tx.commit().map_err(error)
+    }
+
+    /// Claim the showing of a sitting's end that has not been shown yet.
+    /// Only one caller gets true for each end.
+    pub(crate) fn claim_end_shown(&mut self, sitting: &str, now: i64) -> Result<bool, String> {
+        let tx = self.write()?;
+        let changed = tx
+            .execute(
+                "UPDATE sitting_ends SET shown_ms=?2 WHERE sitting_id=?1 AND (shown_ms IS NULL OR shown_ms < ended_ms)",
+                params![sitting, now],
+            )
+            .map_err(error)?;
+        tx.commit().map_err(error)?;
+        Ok(changed > 0)
     }
 
     /// The tutor's reply poses check n when it says "Quick check n".

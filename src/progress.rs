@@ -109,6 +109,9 @@ struct Skill {
     passed_by: Vec<Option<String>>,
     /// The newest answer marked on it, whatever its mark.
     last_answer: Option<String>,
+    /// Its passes when today began, counted as `passes` is (the closing
+    /// lines name a skill whose passes rose today).
+    passes_before_today: i64,
 }
 
 impl Skill {
@@ -136,6 +139,7 @@ impl Skill {
             "quick_check": self.quick_check,
             "passed_by": self.passed_by,
             "last_answer": self.last_answer,
+            "passes_before_today": self.passes_before_today,
         })
     }
 }
@@ -418,14 +422,50 @@ fn with_next_pass(
     skill
 }
 
+/// A skill's passes when `today` began, counted as its passes now are: the
+/// weakest of the items it had by then, each where its events before today
+/// left it, or, with no item yet, its clean answers' days before today.
+fn passes_when_today_began(items: &[&Item], own: &[&Answer], today: NaiveDate) -> i64 {
+    let held = items.iter().filter_map(|item| {
+        let day_of = |event_no: i64| {
+            item.facts
+                .events
+                .iter()
+                .find(|event| event.event_no == event_no)
+                .map_or(item.facts.logged_on, |event| event.day)
+        };
+        let first_day = item
+            .facts
+            .events
+            .first()
+            .map_or(item.facts.logged_on, |event| event.day);
+        (first_day < today).then(|| {
+            item.state
+                .passes_after
+                .iter()
+                .filter(|(event_no, _)| day_of(*event_no) < today)
+                .map(|(_, passes)| *passes)
+                .next_back()
+                .unwrap_or(item.facts.base_passes)
+                .clamp(0, PASSES_TO_CLOSE)
+        })
+    });
+    held.min().unwrap_or_else(|| {
+        let before: Vec<&Answer> = own.iter().copied().filter(|a| a.day < today).collect();
+        from_answers("", &before).passes
+    })
+}
+
 /// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
     let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
     let last_answer = own.last().map(|answer| answer.attempt_id.clone());
     let answered_on = own.iter().map(|answer| answer.day).max();
+    let passes_before_today = passes_when_today_began(items, &own, today);
     if items.is_empty() {
         let skill = Skill {
             last_answer,
+            passes_before_today,
             ..from_answers(name, &own)
         };
         return with_next_pass(skill, answered_on, false, today);
@@ -444,6 +484,7 @@ fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: N
         .map_or(&own[..0], |first| &own[..first]);
     let skill = Skill {
         last_answer,
+        passes_before_today,
         ..from_items(name, items, before, today)
     };
     with_next_pass(skill, answered_on, true, today)
@@ -633,6 +674,12 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
         "passes": item_passes + answer_passes,
         "due_tomorrow": due_tomorrow,
     })
+}
+
+/// What `magnesium progress --json` prints, for another part of the runtime
+/// that reads the same facts (the closing lines).
+pub(crate) fn record(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
+    progress(workspace, now_ms)
 }
 
 pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
@@ -1127,6 +1174,44 @@ mod tests {
         second.state = crate::learner::practice::derive(&second.facts, None);
         let both = from_items("units", &[&first, &second], &[], day("2026-11-04"));
         assert_eq!((both.passes, both.best_passes), (0, 1));
+    }
+
+    #[test]
+    fn a_pass_today_is_seen_when_the_skills_tied_items_got_there_on_different_days() {
+        // Item X holds a pass from 11-03; item Y, made on 11-10, earns its
+        // first today. The skill went from none to one today, whichever
+        // tied item its passes are read from.
+        let x = check("2026-11-02", &[("2026-11-03", true)]);
+        let mut y = check("2026-11-10", &[("2026-11-16", true)]);
+        y.facts.item_id = "q2".into();
+        for event in &mut y.facts.events {
+            event.event_no += 10;
+        }
+        y.state = crate::learner::practice::derive(&y.facts, None);
+        let today = day("2026-11-16");
+        for items in [[&x, &y], [&y, &x]] {
+            let skill = skill_of("units", "units", &items, &[], today);
+            assert_eq!((skill.passes, skill.passes_before_today), (1, 0));
+        }
+        // On a later day nothing more was earned.
+        let skill = skill_of("units", "units", &[&x, &y], &[], day("2026-11-17"));
+        assert_eq!((skill.passes, skill.passes_before_today), (1, 1));
+        // An item made today starts the skill again: nothing earned today.
+        let mut z = check("2026-11-16", &[]);
+        z.facts.item_id = "q3".into();
+        for event in &mut z.facts.events {
+            event.event_no += 20;
+        }
+        z.state = crate::learner::practice::derive(&z.facts, None);
+        let skill = skill_of("units", "units", &[&x, &z], &[], today);
+        assert_eq!((skill.passes, skill.passes_before_today), (0, 1));
+    }
+
+    #[test]
+    fn a_skill_with_no_item_counts_its_clean_days_before_today() {
+        let answers = [answer("2026-11-02", "clean"), answer("2026-11-16", "clean")];
+        let skill = skill_of("units", "units", &[], &answers, day("2026-11-16"));
+        assert_eq!((skill.passes, skill.passes_before_today), (2, 1));
     }
 
     #[test]

@@ -215,7 +215,7 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        ["sitting_items", "sittings"]
+        ["sitting_ends", "sitting_items", "sittings"]
     );
     #[cfg(unix)]
     {

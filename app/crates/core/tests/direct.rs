@@ -3209,3 +3209,42 @@ fn a_kept_turn_says_how_it_was_sent_and_which_task_it_left_open() {
     assert_eq!(turns[1].intent, Some(Intent::Answer));
     assert_eq!(turns[2].intent, Some(Intent::Talk));
 }
+
+#[test]
+fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    // A wrong answer: no pass today, and its quick check is due tomorrow.
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "marked", |e| {
+        matches!(e, AgentEvent::Marked { .. })
+    });
+    events.take();
+    // Saying so ends the sitting: the engine tells the runtime, and the
+    // lines come from the record once the turn has settled.
+    manager
+        .send_with("That's me done for today", Some(Intent::Talk))
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let closing = next_event(&mut events, "closing", |e| {
+        matches!(e, AgentEvent::Closing { .. })
+    });
+    match closing {
+        AgentEvent::Closing { lines } => {
+            assert_eq!(lines, ["Can count from tomorrow: sign of b."]);
+        }
+        _ => unreachable!(),
+    }
+    // Kept beside the turn, so a reopened lesson shows them again.
+    let session = manager.lessons(None).unwrap()[0].session.clone();
+    let turns = manager.lesson_turns(None, &session).unwrap();
+    assert_eq!(
+        turns.last().unwrap().closing.as_deref(),
+        Some(&["Can count from tomorrow: sign of b.".to_owned()][..])
+    );
+    manager.shut_down();
+}

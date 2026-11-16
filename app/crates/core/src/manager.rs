@@ -88,6 +88,9 @@ struct Watch {
     /// When the message was sent: a task the record says was posed since
     /// then was posed by this turn's reply.
     sent_ms: i64,
+    /// A tool result in this turn said a sitting ended. Only then is the
+    /// record read for the closing lines, which costs a progress read.
+    sitting_ended: bool,
 }
 
 /// The last reading of a folder's plan, which the next turn is compared with.
@@ -1050,6 +1053,7 @@ impl Manager {
                         }
                     }
                 }
+                AgentEvent::SittingEnded => lock(&settling.watch).sitting_ended = true,
                 // The engine says which task is open once the turn's record
                 // is kept: it is kept beside the turn, for a reopened lesson.
                 AgentEvent::OpenTask { task, posed, .. } if live => {
@@ -1062,7 +1066,7 @@ impl Manager {
             }
             let ended = matches!(event, AgentEvent::TurnEnded { .. });
             if live {
-                if !matches!(event, AgentEvent::Models { .. }) {
+                if !matches!(event, AgentEvent::Models { .. } | AgentEvent::SittingEnded) {
                     out(event);
                 }
                 if let Some(notice) = also {
@@ -1317,6 +1321,7 @@ impl Manager {
                 watch.marks_before = before;
                 watch.intent = intent;
                 watch.sent_ms = Local::now().timestamp_millis();
+                watch.sitting_ended = false;
             }
             let mut seen = lock(&self.settling.seen);
             if seen.as_ref().is_none_or(|seen| &seen.folder != folder) {
@@ -1727,6 +1732,37 @@ fn settle(
             *told = Some(task);
         };
         read_task(&told);
+        // A turn that ended the sitting: the runtime's closing lines, read
+        // only when a tool result of the turn said a sitting ended. The tutor
+        // ends the sitting before its reply, so they are read at once, and
+        // again after the marks, in case an answer in the same message was
+        // recorded late or the end came with the turn's last write.
+        let mut closed: Option<Vec<String>> = None;
+        let read_closing = |closed: &mut Option<Vec<String>>| {
+            {
+                let watch = lock(&settling.watch);
+                if watch.seq != seq || !watch.sitting_ended || !live() {
+                    return;
+                }
+            }
+            let Some(closing) = runtime::closing(&folder) else {
+                return;
+            };
+            if closing.ended_ms.is_none_or(|ended| ended < sent_ms)
+                || closing.lines.is_empty()
+                || closed.as_ref() == Some(&closing.lines)
+            {
+                return;
+            }
+            if let Some((store, session, ms)) = &turn {
+                store.note_closing(&folder, session, *ms, &closing.lines);
+            }
+            out(AgentEvent::Closing {
+                lines: closing.lines.clone(),
+            });
+            *closed = Some(closing.lines);
+        };
+        read_closing(&mut closed);
         let mut marked_late = false;
         let mut found: Option<Vec<String>> = None;
         if let Some(before) = before {
@@ -1780,6 +1816,11 @@ fn settle(
         // read at the turn's end: read it again.
         if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
             read_task(&told);
+        }
+        // Read again only when the lines could have changed: none were shown
+        // yet, or a mark of this message turned up late.
+        if closed.is_none() || marked_late {
+            read_closing(&mut closed);
         }
         // The record has been read for this message: say so, unless the
         // learner has written again since.
