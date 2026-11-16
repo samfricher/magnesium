@@ -605,6 +605,26 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         .map(|m| m.pass)
         .collect();
     assert_eq!(alone, [Some(1), None], "{marks:#?}");
+    // The pass carries the first day its skill's next can count: not today,
+    // which already has an answer on it.
+    let tomorrow = chrono::Local::now()
+        .date_naive()
+        .succ_opt()
+        .unwrap()
+        .to_string();
+    let first = marks
+        .iter()
+        .find(|m| m.label == "units of a concentration" && m.pass == Some(1))
+        .expect("the pass");
+    assert_eq!(
+        first.next_day.as_deref(),
+        Some(tomorrow.as_str()),
+        "{marks:#?}"
+    );
+    assert!(marks
+        .iter()
+        .filter(|m| m.pass.is_none())
+        .all(|m| m.next_day.is_none()));
     assert!(marks
         .iter()
         .filter(|m| m.label != "units of a concentration")

@@ -12,7 +12,7 @@ import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
-import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, fromToday, goalName, markShort, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -86,6 +86,35 @@ function Days({ row }: { row: Row }) {
         <span key={at} className={dot === 2 ? "work-day earned" : "work-day"} />
       ))}
     </span>
+  );
+}
+
+/**
+ * When a skill's next pass can count, from the runtime's day for it and nothing else: "today", "again tomorrow",
+ * "again Thu 19 Nov", "proven", or "" when the record names no day (a paper question waiting for its fix).
+ */
+type Again = { words: string; today: boolean; rank: number; day: string };
+function again(row: Row): Again {
+  // Rank: a check or redo the record asks for today, then a skill that can count today, then by day, then no day, then proven.
+  if (earned(row) >= 3) return { words: "proven", today: false, rank: 4, day: "" };
+  if (row.due) return { words: "today", today: true, rank: 0, day: "" };
+  if (row.next_day && fromToday(row.next_day) === "past") return { words: "today", today: true, rank: 1, day: "" };
+  if (!row.next_day) return { words: "", today: false, rank: 3, day: "" };
+  return { words: fromToday(row.next_day) === "tomorrow" ? "again tomorrow" : `again ${shortDay(row.next_day)}`, today: false, rank: 2, day: row.next_day };
+}
+
+/** One skill of Your work: its name, then its newest mark; when it can count again beside the name, then its days. */
+function WorkRow({ row, last }: { row: Row; last: Mark | null }) {
+  const next = again(row);
+  return (
+    <div role="listitem" className="work-row">
+      <span className="row-name work-name">
+        <Line text={row.name} />
+      </span>
+      <span className={next.today ? "row-when work-when work-today" : "row-when work-when"}>{next.words}</span>
+      <Days row={row} />
+      {last && <span className="work-mark">{`${markShort(last)}, ${shortDay(last.at)}`}</span>}
+    </div>
   );
 }
 
@@ -433,14 +462,15 @@ export function WorkspacePage(props: Props) {
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
-  // Each skill the learner has answered on, newest answer first, with the runtime's count of its days.
+  // Each skill the learner has answered on, with the runtime's count of its days, in the order it can count again:
+  // today, then by its day, then those with no day, then the proven; the newest answer first within each.
   const marksById = new Map(record !== "unread" && record ? record.marks.map((mark) => [mark.id, mark]) : []);
   const work =
     record !== "unread" && record
       ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
-          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null }))
+          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: again(row) }))
           .filter(({ row, last }) => last !== null || earned(row) > 0)
-          .sort((a, b) => (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
+          .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
       : [];
 
   return (
@@ -547,6 +577,31 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
+        <section aria-label="Your work" className="your-work">
+          <p className="list-head">Your work</p>
+          {record === "unread" ? (
+            <p className="page-note">Reading the record…</p>
+          ) : record === null ? (
+            <p className="page-note">The record could not be read.</p>
+          ) : work.length === 0 ? (
+            <p className="page-note">
+              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
+              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
+                ? withoutPaths(record.progress.message)
+                : "Nothing marked yet. Each skill you answer on is kept here."}
+            </p>
+          ) : (
+            <>
+              <div className="list" role="list">
+                {work.map(({ row, last }) => (
+                  <WorkRow key={row.name} row={row} last={last} />
+                ))}
+              </div>
+              <p className="page-note work-key">Each ring is a day you got it right on your own, from memory. Three prove a skill.</p>
+            </>
+          )}
+        </section>
+
         {earlier.length > 0 && (
           <section aria-label="Earlier sessions">
             <p className="list-head">Earlier</p>
@@ -623,34 +678,6 @@ export function WorkspacePage(props: Props) {
                 </button>
               </p>
             </>
-          )}
-        </section>
-
-        <section aria-label="Your work" className="your-work">
-          <p className="list-head">Your work</p>
-          {record === "unread" ? (
-            <p className="page-note">Reading the record…</p>
-          ) : record === null ? (
-            <p className="page-note">The record could not be read.</p>
-          ) : work.length === 0 ? (
-            <p className="page-note">
-              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
-              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
-                ? withoutPaths(record.progress.message)
-                : "Nothing marked yet. Each skill you answer on is kept here."}
-            </p>
-          ) : (
-            <div className="list" role="list">
-              {work.map(({ row, last }) => (
-                <div key={row.name} role="listitem" className="home-row static work-row">
-                  <span className="row-name">
-                    <Line text={row.name} />
-                  </span>
-                  <span className="row-when">{last ? `${markShort(last)}, ${shortDay(last.at)}` : ""}</span>
-                  <Days row={row} />
-                </div>
-              ))}
-            </div>
           )}
         </section>
 

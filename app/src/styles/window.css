@@ -268,10 +268,25 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .list-head.fold[aria-expanded="true"]::after { content: " ⌄"; }
 .fold-count { margin-left: 0.35rem; color: var(--hint); }
 
-/* Each skill's days, as the record counts them: one ring for each of the three, filled for each earned. */
-.work-days { display: inline-flex; gap: 0.24rem; align-self: center; margin-left: 0.2rem; }
+/* A skill in Your work: its name, and under it its newest mark; beside the name's first line, when it can count again
+   and its three days. A long name wraps under itself, so the day and the rings stay on its first line. */
+.work-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  column-gap: 1.2rem;
+  align-items: baseline;
+  padding: 0.38rem 0;
+}
+.work-name { grid-column: 1; white-space: normal; overflow: visible; text-wrap: pretty; }
+.work-when { grid-column: 2; }
+.work-when.work-today { color: var(--ink); }
+.work-mark { grid-column: 1 / -1; margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* Each skill's days, as the record counts them: one ring for each of the three, filled for each earned. The rings sit
+   in a box one name line high, so they are centred on that line at any text size. */
+.work-days { grid-column: 3; display: inline-flex; align-items: center; gap: 0.24rem; align-self: start; height: 1.45rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
-.work-day.earned { background: var(--ink); border-color: var(--ink); }
+.work-day.earned { background: var(--text); border-color: var(--text); }
+.your-work .work-key { margin-top: 0.5rem; max-width: 34em; }
 
 /* A timed paper while it runs: its name and its end on one line, inside the ink rule a card has; its actions and its
    two marks under it. In a narrow column the end goes under the name. */
