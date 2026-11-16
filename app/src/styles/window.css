@@ -784,8 +784,9 @@ dialog.layer::backdrop { background: transparent; }
   /* The soft field: a shade of the text over the glass, not of an opaque ground. */
   --well: color-mix(in srgb, var(--text) 6%, transparent);
   /* The quiet grey nearer the text as more shows through: over a dark desktop the thinned ground is darker
-     than the solid one, and the window's small words have to stay readable on it. */
-  --quiet: color-mix(in srgb, var(--text) calc(64% + 24% * var(--glass, 0.4)), var(--ground));
+     than the solid one, and the window's small words have to stay readable on it. It starts from the solid
+     ground's grey in light (surface.css) and reaches 88% at full strength. */
+  --quiet: color-mix(in srgb, var(--text) calc(var(--quiet-glass) + (88% - var(--quiet-glass)) * var(--glass, 0.4)), var(--ground));
 }
 /* Liquid Glass leaves the desktop close to sharp and does not dim it, so more ground stays over it. */
 :root[data-glass="liquid"] { --frost: calc(94% - 44% * var(--glass, 0.4)); }
