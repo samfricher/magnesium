@@ -17,6 +17,7 @@ use chrono::NaiveDate;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
+use crate::learner::label_key;
 use crate::learner::practice::{EventKind, local_day};
 use crate::practice::Item;
 
@@ -35,11 +36,17 @@ pub(crate) struct Answer {
 pub(crate) struct ItemFacts {
     pub(crate) label: String,
     pub(crate) paper: Option<String>,
+    /// A gap-log row, from a paper, rather than a quick check from chat.
+    pub(crate) from_a_paper: bool,
     /// For a gap-log row brought in from a file, which no answer in the
     /// record made: the day of the paper that lost the mark.
     pub(crate) brought_in_on: Option<NaiveDate>,
-    /// The day of the last pass that row was brought in with.
+    /// The day of the last pass that item was brought in with.
     pub(crate) brought_in_pass_on: Option<NaiveDate>,
+    /// The redos a gap-log file's Passes cell held when the row was brought
+    /// in, "2026-11-03 pass, 2026-11-06 fail": each day, and whether it
+    /// failed.
+    pub(crate) brought_in_redos: Vec<(NaiveDate, bool)>,
 }
 
 /// The miss a receipt names.
@@ -47,8 +54,8 @@ pub(crate) struct ItemFacts {
 pub(crate) struct Miss {
     pub(crate) day: NaiveDate,
     pub(crate) label: String,
-    /// "wrong" or "partly", or "lost" for a gap-log row whose answer is not
-    /// in the record.
+    /// "wrong" or "partly"; "lost" for a gap-log row whose answer is not in
+    /// the record; "failed" for a failed redo a gap-log file held.
     pub(crate) mark: String,
     pub(crate) paper: Option<String>,
 }
@@ -60,20 +67,6 @@ pub(crate) struct Receipt {
     pub(crate) previous: Option<NaiveDate>,
     /// Calendar days from that answer to this one.
     pub(crate) days: Option<i64>,
-}
-
-/// The same name with case, spaces, hyphens and underscores aside, as the
-/// runtime matches a chat label to a course graph's tag
-/// (`plan_tag_named` in `learner::update::observations`). An answer filed
-/// under the graph's name and an earlier one filed under the tutor's own
-/// spelling are then one skill here, so a receipt never claims a longer gap
-/// than the learner had.
-fn loose(label: &str) -> String {
-    label
-        .chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
 }
 
 /// The receipt for each answer in `wanted`. `links` names the practice items
@@ -92,19 +85,23 @@ pub(crate) fn receipts(
             continue;
         }
         let own_items = items_of(&answer.id);
+        // The skill as the pass count takes it: the label's key, under the
+        // name the record filed the answer by (a chat answer on a course
+        // graph's tag is filed under the tag's name), and the practice
+        // items the answer counts for.
         let mut names: BTreeSet<String> = own_items
             .iter()
             .filter_map(|item| items.get(item))
-            .map(|item| loose(&item.label))
+            .map(|item| label_key(&item.label))
             .collect();
-        names.insert(loose(&answer.label));
-        names.remove("");
+        names.insert(label_key(&answer.label));
         // A declined question is not an answer.
         let before: Vec<&Answer> = answers[..at]
             .iter()
             .filter(|other| other.mark != "declined")
             .filter(|other| {
-                names.contains(&loose(&other.label)) || !items_of(&other.id).is_disjoint(own_items)
+                names.contains(&label_key(&other.label))
+                    || !items_of(&other.id).is_disjoint(own_items)
             })
             .collect();
         let mut previous = before.last().map(|other| other.day);
@@ -119,24 +116,35 @@ pub(crate) fn receipts(
                 paper: other.paper.clone(),
             });
         // A row brought in from a gap-log file is a lost mark the record
-        // holds with no answer of its own.
+        // holds with no answer of its own, and the redos its Passes cell
+        // held are answers too: a failed one is the later miss.
         for item in own_items.iter().filter_map(|item| items.get(item)) {
-            for day in [item.brought_in_on, item.brought_in_pass_on]
+            let redos = item.brought_in_redos.iter().copied();
+            let days = [item.brought_in_on, item.brought_in_pass_on]
                 .into_iter()
                 .flatten()
-                .filter(|day| *day < answer.day)
-            {
+                .chain(redos.clone().map(|(day, _)| day));
+            for day in days.filter(|day| *day < answer.day) {
                 previous = Some(previous.map_or(day, |known| known.max(day)));
             }
-            if let Some(day) = item.brought_in_on.filter(|day| *day < answer.day)
-                && miss.as_ref().is_none_or(|known| known.day < day)
-            {
-                miss = Some(Miss {
-                    day,
-                    label: item.label.clone(),
-                    mark: "lost".to_owned(),
-                    paper: item.paper.clone(),
-                });
+            // A quick check an earlier version kept says only the day it was
+            // made, not what the answer was, so it names no miss.
+            let lost = item
+                .brought_in_on
+                .filter(|_| item.from_a_paper)
+                .map(|day| (day, "lost", item.paper.clone()));
+            let failed = redos
+                .filter(|(_, failed)| *failed)
+                .map(|(day, _)| (day, "failed", None));
+            for (day, mark, paper) in lost.into_iter().chain(failed) {
+                if day < answer.day && miss.as_ref().is_none_or(|known| known.day < day) {
+                    miss = Some(Miss {
+                        day,
+                        label: item.label.clone(),
+                        mark: mark.to_owned(),
+                        paper,
+                    });
+                }
             }
         }
         let days = previous
@@ -262,9 +270,11 @@ pub(crate) fn of(conn: &Connection, items: &[Item], wanted: &BTreeSet<String>) -
             ItemFacts {
                 label: item.facts.label.clone(),
                 paper: item.facts.paper.clone(),
+                from_a_paper: item.facts.origin == crate::learner::practice::Origin::Paper,
                 brought_in_on: (!made_by_an_answer && item.facts.logged_on != NaiveDate::MIN)
                     .then_some(item.facts.logged_on),
                 brought_in_pass_on: item.facts.base_last_pass_on,
+                brought_in_redos: redos_in(&item.facts.base_history),
             },
         );
     }
@@ -275,6 +285,19 @@ pub(crate) fn of(conn: &Connection, items: &[Item], wanted: &BTreeSet<String>) -
             .map(|(id, receipt)| (id, receipt.to_json()))
             .collect(),
     )
+}
+
+/// The redos in a gap-log file's Passes cell, "2026-11-03 pass, 2026-11-06
+/// fail", as the runtime brought it in: each dated entry, and whether it
+/// says fail.
+fn redos_in(history: &str) -> Vec<(NaiveDate, bool)> {
+    history
+        .split([',', ';'])
+        .filter_map(|entry| {
+            let day = crate::digest::first_date(entry)?;
+            Some((day, entry.to_lowercase().contains("fail")))
+        })
+        .collect()
 }
 
 /// The ids of the answers that earned the passes each skill holds now, in
@@ -322,7 +345,7 @@ pub(crate) fn terminal_lines(progress: &Value, answers: &BTreeSet<String>) -> Op
             let name = skill["skill"].as_str().unwrap_or_default().trim();
             let named = progress["pass_receipts"][id]["missed"]
                 .as_str()
-                .is_some_and(|missed| loose(missed) == loose(name));
+                .is_some_and(|missed| label_key(missed) == label_key(name));
             lines.push(if named || name.is_empty() {
                 format!("{pass} of three days. {text}")
             } else {

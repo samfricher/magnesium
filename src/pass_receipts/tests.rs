@@ -92,14 +92,32 @@ fn a_declined_question_is_not_an_answer() {
 }
 
 #[test]
-fn an_answer_under_the_graphs_name_finds_the_earlier_one_under_the_tutors_spelling() {
+fn the_skill_is_the_one_the_pass_count_takes_case_and_spaces_aside() {
+    // Case and spaces fold, as the record's label key does.
     let answers = [
-        answer("a1", "Chain rule", "wrong", "2026-11-02"),
-        answer("a2", "chain-rule", "right", "2026-11-04"),
+        answer("a1", "Sign of  b", "wrong", "2026-11-02"),
+        answer("a2", "sign of b", "right", "2026-11-04"),
     ];
     let receipt = of(&answers, "a2").unwrap();
-    assert_eq!(receipt.miss.unwrap().label, "Chain rule");
+    assert_eq!(receipt.miss.unwrap().label, "Sign of  b");
     assert_eq!(receipt.days, Some(2));
+}
+
+#[test]
+fn two_labels_that_differ_by_a_symbol_are_two_skills() {
+    for (missed, passed) in [
+        ("integral of e^{-x}", "integral of e^{x}"),
+        ("a+b", "a-b"),
+        ("x<y", "x>y"),
+        ("f'(x)", "f(x)"),
+        ("Chain rule", "chain-rule"),
+    ] {
+        let answers = [
+            answer("a1", missed, "wrong", "2026-11-10"),
+            answer("a2", passed, "right", "2026-11-14"),
+        ];
+        assert_eq!(of(&answers, "a2"), None, "{missed} / {passed}");
+    }
 }
 
 #[test]
@@ -140,8 +158,9 @@ fn a_row_brought_in_from_a_gap_log_file_is_the_miss_when_no_answer_made_it() {
         ItemFacts {
             label: "slope and Km".into(),
             paper: Some("Midterm 2023".into()),
+            from_a_paper: true,
             brought_in_on: Some(day("2026-11-01")),
-            brought_in_pass_on: None,
+            ..ItemFacts::default()
         },
     )]);
     let receipt = receipts(&answers, &links, &items, &wanted(&["a2"]))
@@ -149,6 +168,56 @@ fn a_row_brought_in_from_a_gap_log_file_is_the_miss_when_no_answer_made_it() {
         .unwrap();
     assert_eq!(receipt.miss.unwrap().mark, "lost");
     assert_eq!(receipt.days, Some(4));
+}
+
+#[test]
+fn a_failed_redo_a_gap_log_file_held_is_the_later_miss() {
+    // Logged on 1 Nov, its Passes cell "2026-11-03 pass, 2026-11-06 fail",
+    // and a pass in the record on 10 Nov.
+    let answers = [answer("a2", "slope and Km", "right", "2026-11-10")];
+    let links = BTreeMap::from([("a2".to_owned(), BTreeSet::from(["g1".to_owned()]))]);
+    let items = BTreeMap::from([(
+        "g1".to_owned(),
+        ItemFacts {
+            label: "slope and Km".into(),
+            paper: Some("Midterm 2023".into()),
+            from_a_paper: true,
+            brought_in_on: Some(day("2026-11-01")),
+            brought_in_pass_on: Some(day("2026-11-03")),
+            brought_in_redos: super::redos_in("2026-11-03 pass, 2026-11-06 fail"),
+        },
+    )]);
+    let receipt = receipts(&answers, &links, &items, &wanted(&["a2"]))
+        .remove("a2")
+        .unwrap();
+    let miss = receipt.miss.as_ref().unwrap();
+    assert_eq!(
+        (miss.day, miss.mark.as_str()),
+        (day("2026-11-06"), "failed")
+    );
+    assert_eq!(receipt.days, Some(4));
+    assert_eq!(
+        receipt.text(),
+        "Not right on Fri 6 Nov: slope and Km. It held through the 4 days since you last answered it."
+    );
+}
+
+#[test]
+fn a_quick_check_an_earlier_version_kept_names_no_miss() {
+    let answers = [answer("a2", "units", "right", "2026-11-10")];
+    let links = BTreeMap::from([("a2".to_owned(), BTreeSet::from(["q1".to_owned()]))]);
+    let items = BTreeMap::from([(
+        "q1".to_owned(),
+        ItemFacts {
+            label: "units".into(),
+            brought_in_on: Some(day("2026-11-07")),
+            ..ItemFacts::default()
+        },
+    )]);
+    let receipt = receipts(&answers, &links, &items, &wanted(&["a2"]))
+        .remove("a2")
+        .unwrap();
+    assert_eq!((receipt.miss, receipt.days), (None, Some(3)));
 }
 
 #[test]
@@ -192,6 +261,19 @@ fn a_terminal_line_says_which_pass_and_the_receipt() {
         Some(
             "First of three days on sign of b. It held through the day since you last answered it."
         )
+    );
+    // A pass brought in from a gap-log file has no answer: it is counted
+    // in which pass the next one is, and says nothing itself.
+    let brought_in = json!({
+        "plans": [{"plan": "midterm-1", "from": "record", "skills": [
+            {"skill": "slope and Km", "passed_by": [null, "r2"]},
+        ]}],
+        "other": {"skills": []},
+        "pass_receipts": {"r2": {"missed": "slope and Km", "text": "Lost marks on Midterm 2023, Mon 2 Nov: slope and Km."}},
+    });
+    assert_eq!(
+        terminal_lines(&brought_in, &wanted(&["r2"])).as_deref(),
+        Some("Second of three days. Lost marks on Midterm 2023, Mon 2 Nov: slope and Km.")
     );
     // A pass with no receipt, and an answer that earned none, say nothing.
     assert_eq!(terminal_lines(&progress, &wanted(&["u1", "x"])), None);
