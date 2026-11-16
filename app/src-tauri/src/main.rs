@@ -606,7 +606,7 @@ fn set_reminder(shell: State<'_, Shell>, on: bool, time: Option<String>) -> noti
     let time = time.filter(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").is_ok());
     // Asked first, outside the schedule's lock: the learner may take a while
     // over the Mac's prompt.
-    let on = on
+    let allowed = on
         && match notify::permission() {
             notify::Permission::NotAsked => {
                 matches!(
@@ -617,28 +617,29 @@ fn set_reminder(shell: State<'_, Shell>, on: bool, time: Option<String>) -> noti
             notify::Permission::Allowed | notify::Permission::Quiet => true,
             notify::Permission::Denied | notify::Permission::Unavailable => false,
         };
-    name_this_program(on, &root);
-    notify::change(&root, &shell.store.recent(), on, time)
+    // On only if the runtime will start this program after each recorded
+    // answer: without that, one could name work already done.
+    let problem = match (allowed, name_this_program(allowed, &root)) {
+        (true, Err(_)) => Some(NOT_KEPT_TRUE.to_owned()),
+        _ => None,
+    };
+    let on = allowed && problem.is_none();
+    notify::change(&root, &shell.store.recent(), on, time, problem)
 }
+
+/// Said in Settings when the window turns the notification off because the
+/// runtime could not be told to keep it up to date.
+const NOT_KEPT_TRUE: &str = "Turned off: the magnesium program on this Mac cannot keep it up to date, so it could name work you have already done. Update Magnesium, then turn it on again.";
 
 /// Tell the runtime which program to start after a change to the record,
 /// or that none should start. Only an app bundle's own program is named.
-fn name_this_program(on: bool, home: &Path) {
-    let program = std::env::current_exe().ok();
-    // The command reads no study folder; it runs anywhere.
-    let folder = std::env::temp_dir();
-    let mut args: Vec<std::ffi::OsString> = vec!["_internal".into(), "window-notifier".into()];
-    match (program, on && notify::packaged()) {
-        (Some(program), true) => {
-            args.push(program.into());
-            // The program schedules from this window's own library.
-            args.push("--home".into());
-            args.push(home.as_os_str().to_owned());
-        }
-        _ => args.push("--off".into()),
+fn name_this_program(on: bool, home: &Path) -> Result<(), String> {
+    if on && notify::packaged() {
+        let program = std::env::current_exe().map_err(|e| e.to_string())?;
+        mg_core::reminder::name_program(Some(&program), home)
+    } else {
+        mg_core::reminder::name_program(None, home)
     }
-    let args: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
-    let _ = mg_core::runtime::run_in(&folder, &args, Duration::from_secs(10));
 }
 
 /// Open the Mac's notification settings for this app, where the learner
@@ -683,7 +684,13 @@ fn main() {
             .map(PathBuf::from)
             .filter(|dir| dir.is_absolute() && dir.is_dir());
         let store = named.map_or_else(Store::open, Store::at);
-        notify::refresh(store.root(), &store.recent());
+        let kept = notify::refresh_once(store.root(), &store.recent());
+        // Started though the notification is off: the runtime still names
+        // this program, as when telling it to stop failed. Tell it again,
+        // through the runtime that started this.
+        if !kept.on {
+            let _ = name_this_program(false, store.root());
+        }
         return;
     }
     // For a check: what is pending and delivered, which only this app's own
@@ -722,11 +729,20 @@ fn main() {
             notify::listen(app.handle().clone());
             std::thread::spawn(move || {
                 let kept = mg_core::reminder::Kept::read(store.root());
-                if kept.on {
-                    // The app may have moved since: name where it is now.
-                    name_this_program(true, store.root());
+                // The app may have moved since: name where it is now. If the
+                // runtime cannot be told, the notification goes off and
+                // Settings says why, rather than go stale.
+                if kept.on && name_this_program(true, store.root()).is_err() {
+                    notify::change(
+                        store.root(),
+                        &store.recent(),
+                        false,
+                        None,
+                        Some(NOT_KEPT_TRUE.to_owned()),
+                    );
+                } else {
+                    notify::refresh(store.root(), &store.recent());
                 }
-                notify::refresh(store.root(), &store.recent());
             });
             // The list of models is the account's, and it changes as Claude Code does: ask for it as the window
             // opens, off the main thread, so the first line already has it.

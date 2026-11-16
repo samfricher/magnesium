@@ -13,7 +13,11 @@ const THREAD: &str = "notifier";
 fn stand_in(e: &TestEnvironment) -> (PathBuf, PathBuf) {
     let contents = e.root.join("Magnesium.app/Contents");
     fs::create_dir_all(contents.join("MacOS")).unwrap();
-    fs::write(contents.join("Info.plist"), "<plist/>").unwrap();
+    fs::write(
+        contents.join("Info.plist"),
+        "<plist><dict><key>CFBundleExecutable</key><string>magnesium-window</string><key>CFBundleIdentifier</key><string>dev.magnesium.window</string></dict></plist>",
+    )
+    .unwrap();
     let marker = e.root.join("started.txt");
     let program = contents.join("MacOS/magnesium-window");
     fs::write(

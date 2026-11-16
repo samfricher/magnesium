@@ -310,6 +310,7 @@ impl LearnerStore {
             // COMMIT may have an uncertain I/O outcome. Only a fresh usable
             // connection's durable receipt can establish success.
             if let Some(result) = self.recover_commit_receipt(host, &r.request_id, &hash)? {
+                crate::window_notifier::record_changed();
                 return Ok(result);
             }
             return Err(error.into());

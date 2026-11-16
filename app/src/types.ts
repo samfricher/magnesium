@@ -411,7 +411,12 @@ export type Planned = { sessions: PlannedSession[]; unreadable: number; unreadab
 /** What the Mac allows the window's notifications: "quiet" delivers to Notification Center only. */
 export type ReminderPermission = "not_asked" | "allowed" | "quiet" | "denied" | "unavailable";
 /** The daily notification: on or off, its time on a day with no planned session, and the next one waiting. */
-export type Reminder = { on: boolean; time: string; permission: ReminderPermission; next: { at_ms: number; title: string; body: string } | null };
+export type ReminderNotice = { at_ms: number; title: string; body: string };
+/**
+ * The daily notification: on or off, its time on a day with no planned session, the next one waiting, one an earlier
+ * build of the app set up that this one cannot reach, and why the window turned it off, when it did.
+ */
+export type Reminder = { on: boolean; time: string; permission: ReminderPermission; next: ReminderNotice | null; held?: ReminderNotice | null; problem?: string | null };
 
 /** Who decides on a tool the tutor wants: Claude Code's auto mode, or the learner each time. */
 export type Permissions = "auto" | "ask";

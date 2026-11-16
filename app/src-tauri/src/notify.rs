@@ -42,9 +42,13 @@ pub struct State {
     /// "HH:MM", the time on a day with no planned session.
     pub time: String,
     pub permission: Permission,
-    /// The next one scheduled: when (ms since the epoch), its words and the
-    /// workspace it opens on.
+    /// The next one scheduled: when (ms since the epoch) and its words.
     pub next: Option<Next>,
+    /// One an earlier build of the app handed over that this one cannot
+    /// reach: it still comes, on or off.
+    pub held: Option<Next>,
+    /// Why the window turned the notification off, when it did.
+    pub problem: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -54,18 +58,22 @@ pub struct Next {
     pub body: String,
 }
 
+fn next_of(notice: &Notice) -> Option<Next> {
+    Some(Next {
+        at_ms: reminder::ms_of(notice.at)?,
+        title: notice.title.clone(),
+        body: notice.body.clone(),
+    })
+}
+
 fn state(kept: &Kept, notices: &[Notice], permission: Permission) -> State {
     State {
         on: kept.on,
         time: kept.time().format("%H:%M").to_string(),
         permission,
-        next: notices.first().and_then(|notice| {
-            Some(Next {
-                at_ms: reminder::ms_of(notice.at)?,
-                title: notice.title.clone(),
-                body: notice.body.clone(),
-            })
-        }),
+        next: notices.first().and_then(next_of),
+        held: kept.held.first().and_then(next_of),
+        problem: kept.problem.clone(),
     }
 }
 
@@ -96,11 +104,29 @@ pub fn refresh(root: &Path, folders: &[String]) -> State {
     locked(root, || refresh_now(root, folders))
 }
 
+/// As `refresh`, for the program the runtime starts after each recorded
+/// answer: a run that finds another at it leaves it a mark and ends, so
+/// runs never queue.
+pub fn refresh_once(root: &Path, folders: &[String]) -> Kept {
+    reminder::coalesce(root, || {
+        refresh_now(root, folders);
+    });
+    Kept::read(root)
+}
+
 /// Turn the notification on or off, or set its time, then schedule again.
-pub fn change(root: &Path, folders: &[String], on: bool, time: Option<String>) -> State {
+/// `problem` says why the window turned it off, when it did.
+pub fn change(
+    root: &Path,
+    folders: &[String],
+    on: bool,
+    time: Option<String>,
+    problem: Option<String>,
+) -> State {
     locked(root, || {
         let mut kept = Kept::read(root);
         kept.on = on;
+        kept.problem = problem;
         if let Some(time) = time {
             kept.time = Some(time);
         }
@@ -117,7 +143,8 @@ fn refresh_now(root: &Path, folders: &[String]) -> State {
     if permission == Permission::Unavailable {
         return state(&Kept::read(root), &[], permission);
     }
-    let (kept, notices) = reminder::plan(root, folders, &build());
+    let pending = pending();
+    let (kept, notices) = reminder::plan(root, folders, &build(), pending.as_deref());
     let handed = match permission {
         Permission::Allowed | Permission::Quiet => &notices[..],
         // Nothing can arrive; anything still pending from before is taken away.
@@ -163,12 +190,19 @@ static APP: OnceLock<AppHandle> = OnceLock::new();
 /// may not be listening yet when a click starts the app, so the folder is
 /// also kept for the page to ask for (`take_opened`).
 fn opened(folder: String) {
-    *lock_opened() = Some(folder.clone());
+    // A workspace gone since the notification was scheduled: the window only
+    // comes to the front, on whatever it shows.
+    let there = Path::new(&folder).is_dir();
+    if there {
+        *lock_opened() = Some(folder.clone());
+    }
     if let Some(app) = APP.get() {
-        let _ = app.emit(
-            "menu",
-            serde_json::json!({ "command": "go", "arg": folder }),
-        );
+        if there {
+            let _ = app.emit(
+                "menu",
+                serde_json::json!({ "command": "go", "arg": folder }),
+            );
+        }
         if let Some(window) = app.webview_windows().values().next() {
             let _ = window.unminimize();
             let _ = window.set_focus();
@@ -276,6 +310,12 @@ mod mac {
         // The learner may take their time over the Mac's prompt.
         let _ = rx.recv_timeout(Duration::from_secs(600));
         permission()
+    }
+
+    /// The identifiers this build finds waiting with the Mac; None outside
+    /// an app bundle.
+    pub fn pending() -> Option<Vec<String>> {
+        center().map(|center| pending_ids(&center))
     }
 
     fn pending_ids(center: &UNUserNotificationCenter) -> Vec<String> {
@@ -435,7 +475,7 @@ mod mac {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::{bundle_id, listing, packaged, permission, replace};
+pub use mac::{bundle_id, listing, packaged, pending, permission, replace};
 
 #[cfg(target_os = "macos")]
 pub fn ask() -> Permission {
@@ -448,6 +488,10 @@ pub fn listen(app: AppHandle) {
     mac::listen();
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn pending() -> Option<Vec<String>> {
+    None
+}
 #[cfg(not(target_os = "macos"))]
 pub fn listing() -> String {
     "no notifications on this system".into()

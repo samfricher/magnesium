@@ -322,10 +322,16 @@ function NotificationSettings({ api }: { api: Core | null }) {
             : reminder.on
               ? next
                 ? `Next, ${whenWords(next.at_ms)}: “${next.title}. ${next.body}”`
-                : "Nothing is due in the next three days, so none is waiting."
+                : "Nothing is due in the coming week, so none is waiting."
               : "One notification on a day when quick checks or paper redos are due, naming them. None on other days. It comes even when Magnesium is closed."}
         </span>
         <NotificationPermission api={api} reminder={reminder} />
+        {reminder.problem && !reminder.on && <span className="setting-note">{reminder.problem}</span>}
+        {reminder.held && (
+          <span className="setting-note">
+            {`One set up before Magnesium was updated still comes ${whenWords(reminder.held.at_ms)}: “${reminder.held.title}. ${reminder.held.body}” It cannot be changed or taken away.`}
+          </span>
+        )}
       </Setting>
       {reminder.on && (
         <Setting name="On a day with no session">

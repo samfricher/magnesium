@@ -26,11 +26,12 @@ use serde_json::Value;
 use crate::calendar::{self, PlannedSession};
 use crate::runtime;
 
-/// How many days are scheduled, today first. Each is redone every time the
-/// record changes. Kept short because a build of the app cannot reach what
-/// an earlier build scheduled (see `Kept::build`): after an update, what the
-/// earlier build left still arrives, unchangeable, for at most these days.
-pub const DAYS_AHEAD: i64 = 3;
+/// How many days ahead the next day with work due is looked for, today
+/// first. Only that next one is handed to the Mac: it is worked out again
+/// every time the window opens or the record changes, and a build of the app
+/// cannot reach what an earlier build handed over (see `Kept::build`), so
+/// after an update at most one can arrive that cannot be changed.
+pub const LOOK_AHEAD: i64 = 7;
 /// Every request this module makes starts with this, so the shell can tell
 /// its own from any other.
 pub const ID_PREFIX: &str = "due-";
@@ -63,6 +64,14 @@ pub struct Kept {
     /// time and the new build listed none.
     #[serde(default)]
     pub build: Option<String>,
+    /// What an earlier build handed to the Mac and this one cannot reach:
+    /// it still arrives, even with the notification turned off.
+    #[serde(default)]
+    pub held: Vec<Notice>,
+    /// Why the notification was turned off by the window rather than the
+    /// learner, said in Settings until they turn it on again.
+    #[serde(default)]
+    pub problem: Option<String>,
 }
 
 impl Kept {
@@ -95,23 +104,48 @@ impl Kept {
     }
 
     /// Note each scheduled notification whose time has come as having
-    /// arrived, and forget days long past.
-    pub fn note_arrived(&mut self, now: NaiveDateTime, build: &str) {
-        // Scheduled by another build, the ones still to come arrive too and
-        // cannot be replaced: their days are taken, so no day has two.
+    /// arrived, and forget days long past. `pending` is what this build
+    /// finds still waiting with the Mac, when it can ask.
+    ///
+    /// Scheduled by another build, a notification still to come is this
+    /// build's to replace only if the Mac lists it as this build's: the
+    /// same signature, as with a stable one. Otherwise (every update of an
+    /// app signed ad hoc) it arrives anyway and nothing can take it away, so
+    /// it is kept as held and its day gets no second one.
+    pub fn note_arrived(&mut self, now: NaiveDateTime, build: &str, pending: Option<&[String]>) {
         let other_build = self
             .build
             .as_deref()
             .is_some_and(|earlier| earlier != build);
-        for notice in &self.scheduled {
-            if notice.at <= now || other_build {
+        for notice in std::mem::take(&mut self.scheduled) {
+            if notice.at <= now {
                 self.fired.insert(notice.at.date());
+            } else if other_build && !pending.is_some_and(|ids| ids.contains(&notice.id)) {
+                self.fired.insert(notice.at.date());
+                self.held.push(notice);
+            } else {
+                self.scheduled.push(notice);
             }
         }
+        self.held.retain(|notice| notice.at > now);
         self.build = Some(build.to_owned());
-        let week_ago = now.date() - Duration::days(DAYS_AHEAD);
-        self.fired.retain(|day| *day >= week_ago);
+        let long_ago = now.date() - Duration::days(LOOK_AHEAD);
+        self.fired.retain(|day| *day >= long_ago);
     }
+}
+
+/// The first time on or after `at` that the local clock shows: a time the
+/// clocks skip when they go forward (02:30 on that night, in many places)
+/// becomes the first that exists after it.
+pub fn existing(at: NaiveDateTime, exists: impl Fn(NaiveDateTime) -> bool) -> NaiveDateTime {
+    (0..=12)
+        .map(|quarter| at + Duration::minutes(15 * quarter))
+        .find(|time| exists(*time))
+        .unwrap_or(at)
+}
+
+fn exists_here(at: NaiveDateTime) -> bool {
+    Local.from_local_datetime(&at).earliest().is_some()
 }
 
 /// One notification to schedule.
@@ -242,17 +276,29 @@ pub fn words(dues: &[Due], session: Option<NaiveTime>) -> (String, String) {
     }
 }
 
-/// The notifications to schedule from now: at most one a day, only on a day
-/// something is due, never on a day one already arrived, never in the past.
+/// The next notification to schedule: the first day of the next week that
+/// has something due and has not had one, at its time if that is still to
+/// come. At most one, so at most one a day, and at most one that an update
+/// can leave out of reach.
 pub fn schedule(now: NaiveDateTime, kept: &Kept, facts: &[Facts]) -> Vec<Notice> {
+    schedule_in(now, kept, facts, exists_here)
+}
+
+/// `schedule`, with the clock's own idea of which local times exist.
+pub fn schedule_in(
+    now: NaiveDateTime,
+    kept: &Kept,
+    facts: &[Facts],
+    exists: impl Fn(NaiveDateTime) -> bool + Copy,
+) -> Vec<Notice> {
     if !kept.on {
         return Vec::new();
     }
     let today = now.date();
-    (0..DAYS_AHEAD)
+    (0..LOOK_AHEAD)
         .map(|n| today + Duration::days(n))
         .filter(|day| !kept.fired.contains(day))
-        .filter_map(|day| {
+        .find_map(|day| {
             let due = facts
                 .iter()
                 .filter_map(|each| {
@@ -278,7 +324,7 @@ pub fn schedule(now: NaiveDateTime, kept: &Kept, facts: &[Facts]) -> Vec<Notice>
                 .iter()
                 .filter_map(|(each, _)| each.session_on(day))
                 .min();
-            let at = day.and_time(session.unwrap_or_else(|| kept.time()));
+            let at = existing(day.and_time(session.unwrap_or_else(|| kept.time())), exists);
             if at <= now {
                 return None;
             }
@@ -297,7 +343,77 @@ pub fn schedule(now: NaiveDateTime, kept: &Kept, facts: &[Facts]) -> Vec<Notice>
                 folder: lead.1.folder.clone(),
             })
         })
+        .into_iter()
         .collect()
+}
+
+/// Tell the runtime to start `program` (the window's own, with the window's
+/// folder `home`) after each change it records, or with None that it should
+/// start none. An error when the runtime cannot be told, as a runtime from
+/// before the command, or none found: the notification must not then stay on.
+pub fn name_program(program: Option<&Path>, home: &Path) -> Result<(), String> {
+    let mut args: Vec<String> = vec!["_internal".into(), "window-notifier".into()];
+    match program {
+        Some(program) => {
+            args.push(program.to_string_lossy().into_owned());
+            args.push("--home".into());
+            args.push(home.to_string_lossy().into_owned());
+        }
+        None => args.push("--off".into()),
+    }
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // The command reads no study folder; it runs anywhere.
+    runtime::run_in(
+        &std::env::temp_dir(),
+        &args,
+        std::time::Duration::from_secs(10),
+    )
+    .map(|_| ())
+}
+
+/// Run `work` alone, or leave it to the run already at it. The runtime may
+/// start the window's program once for every answer it records, faster
+/// than one run ends: a run that finds another holding the schedule's lock
+/// leaves a mark and ends at once, and the holder runs once more before it
+/// lets go. Runs never queue.
+pub fn coalesce(root: &Path, mut work: impl FnMut()) {
+    let _ = fs::create_dir_all(root);
+    let again = root.join("notification.again");
+    loop {
+        let Ok(lock) = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join("notification.lock"))
+        else {
+            work();
+            return;
+        };
+        match lock.try_lock() {
+            Ok(()) => {
+                loop {
+                    let _ = fs::remove_file(&again);
+                    work();
+                    if !again.exists() {
+                        break;
+                    }
+                }
+                let _ = lock.unlock();
+                // A mark left between the last look and letting go: take it up.
+                if !again.exists() {
+                    return;
+                }
+            }
+            Err(fs::TryLockError::WouldBlock) => {
+                let _ = fs::write(&again, b"");
+                return;
+            }
+            Err(fs::TryLockError::Error(_)) => {
+                work();
+                return;
+            }
+        }
+    }
 }
 
 /// What the record and plans say of a workspace, or None when the runtime
@@ -348,10 +464,15 @@ pub fn ms_of(at: NaiveDateTime) -> Option<i64> {
 
 /// Work out the schedule from each workspace in the library, note it as
 /// scheduled, and return it. `folders` are the library's.
-pub fn plan(root: &Path, folders: &[String], build: &str) -> (Kept, Vec<Notice>) {
+pub fn plan(
+    root: &Path,
+    folders: &[String],
+    build: &str,
+    pending: Option<&[String]>,
+) -> (Kept, Vec<Notice>) {
     let mut kept = Kept::read(root);
     let now = now();
-    kept.note_arrived(now, build);
+    kept.note_arrived(now, build, pending);
     let facts = if kept.on {
         folders
             .iter()
@@ -417,17 +538,26 @@ mod tests {
     }
 
     #[test]
-    fn one_a_day_at_the_planned_session_or_the_learner_s_time_naming_the_work() {
+    fn the_next_day_with_work_due_at_its_session_or_the_learner_s_time_naming_the_work() {
         let notices = schedule(at("2026-11-16 07:00"), &on(), &[stats()]);
-        assert_eq!(notices.len(), DAYS_AHEAD as usize);
+        assert_eq!(notices.len(), 1, "only the next one is handed over");
         assert_eq!(notices[0].id, "due-2026-11-16");
         assert_eq!(notices[0].at, at("2026-11-16 08:00"));
         assert_eq!(notices[0].title, "Intro Statistics");
         assert_eq!(notices[0].body, "Your 08:00 session. 1 quick check is due.");
         assert_eq!(notices[0].folder, "/s/Intro-Statistics");
         // Wednesday: a redo falls due as well.
+        let wednesday = schedule(
+            at("2026-11-18 07:00"),
+            &on(),
+            &[Facts {
+                today: Some(day("2026-11-18")),
+                due: (1, 1),
+                ..stats()
+            }],
+        );
         assert_eq!(
-            notices[2].body,
+            wednesday[0].body,
             "Your 08:00 session. 1 quick check and 1 paper redo are due."
         );
         // A day with no planned session: the learner's time, 09:00 unless they set one.
@@ -438,11 +568,6 @@ mod tests {
         let weekend = schedule(at("2026-11-21 07:00"), &on(), &[saturday]);
         assert_eq!(weekend[0].at, at("2026-11-21 09:00"));
         assert_eq!(weekend[0].body, "1 quick check is due.");
-        let ids = notices
-            .iter()
-            .map(|n| n.id.clone())
-            .collect::<BTreeSet<_>>();
-        assert_eq!(ids.len(), notices.len(), "one a day");
     }
 
     #[test]
@@ -475,7 +600,7 @@ mod tests {
         assert_eq!(first[0].at, at("2026-11-16 21:00"));
         // It arrives at 21:00; then the learner moves their time later. Today keeps the one it had.
         kept.scheduled = first;
-        kept.note_arrived(at("2026-11-16 21:05"), "one");
+        kept.note_arrived(at("2026-11-16 21:05"), "one", None);
         kept.time = Some("22:00".into());
         let again = schedule(at("2026-11-16 21:05"), &kept, &[weekend]);
         assert_eq!(
@@ -485,19 +610,102 @@ mod tests {
     }
 
     #[test]
-    fn what_an_earlier_build_scheduled_keeps_its_days() {
+    fn what_an_earlier_build_handed_over_is_held_only_when_this_build_cannot_reach_it() {
         let mut kept = on();
         kept.scheduled = schedule(at("2026-11-16 07:00"), &kept, &[stats()]);
         kept.build = Some("old".into());
-        // Same build: nothing to come is taken.
+        // The same build: nothing to come is taken or held.
         let mut same = kept.clone();
-        same.note_arrived(at("2026-11-16 07:30"), "old");
-        assert!(same.fired.is_empty());
-        // A new build cannot replace them, so their days are not scheduled twice.
-        kept.note_arrived(at("2026-11-16 07:30"), "new");
-        assert_eq!(kept.fired.len(), DAYS_AHEAD as usize);
-        assert!(schedule(at("2026-11-16 07:30"), &kept, &[stats()]).is_empty());
-        assert_eq!(kept.build.as_deref(), Some("new"));
+        same.note_arrived(at("2026-11-16 07:30"), "old", Some(&[]));
+        assert!(same.fired.is_empty() && same.held.is_empty());
+        // A new build with the same signature lists it as its own: it replaces it, and no day goes missing.
+        let mut reachable = kept.clone();
+        reachable.note_arrived(
+            at("2026-11-16 07:30"),
+            "new",
+            Some(&["due-2026-11-16".to_owned()]),
+        );
+        assert!(reachable.fired.is_empty() && reachable.held.is_empty());
+        assert_eq!(
+            schedule(at("2026-11-16 07:30"), &reachable, &[stats()])[0].id,
+            "due-2026-11-16"
+        );
+        // A new build that cannot see it (an update signed ad hoc): it still arrives, so it is held and its day has no second.
+        let mut held = kept.clone();
+        held.note_arrived(at("2026-11-16 07:30"), "new", Some(&[]));
+        assert_eq!(held.held.len(), 1);
+        assert_eq!(
+            schedule(at("2026-11-16 07:30"), &held, &[stats()])[0].id,
+            "due-2026-11-17"
+        );
+        // Turned off then: nothing is scheduled, and the held one is still said to be on its way.
+        held.on = false;
+        assert!(schedule(at("2026-11-16 07:30"), &held, &[stats()]).is_empty());
+        assert_eq!(held.held[0].id, "due-2026-11-16");
+        // Once its time has passed it is no longer held.
+        held.note_arrived(at("2026-11-16 08:05"), "new", Some(&[]));
+        assert!(held.held.is_empty());
+        assert_eq!(held.build.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn a_session_in_the_hour_the_clocks_skip_comes_at_the_first_time_that_exists() {
+        // As where the clocks go from 02:00 to 03:00 on 2027-03-14: 02:00 to 02:59 do not exist.
+        let gap = |t: NaiveDateTime| {
+            !(t.date() == day("2027-03-14") && t.time().format("%H").to_string() == "02")
+        };
+        assert_eq!(
+            existing(at("2027-03-14 02:30"), gap),
+            at("2027-03-14 03:00")
+        );
+        assert_eq!(
+            existing(at("2027-03-15 02:30"), gap),
+            at("2027-03-15 02:30")
+        );
+        let night = Facts {
+            today: Some(day("2027-03-14")),
+            sessions: vec![session(&["SU"], "02:30")],
+            ..stats()
+        };
+        let notices = schedule_in(at("2027-03-14 00:00"), &on(), &[night], gap);
+        assert_eq!(notices[0].at, at("2027-03-14 03:00"));
+        assert_eq!(notices[0].body, "Your 02:30 session. 1 quick check is due.");
+    }
+
+    #[test]
+    fn a_run_that_finds_the_schedule_busy_leaves_a_mark_and_the_holder_runs_once_more() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        // Another run holds the lock.
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join("notification.lock"))
+            .unwrap();
+        lock.lock().unwrap();
+        let mut ran = 0;
+        let started = std::time::Instant::now();
+        coalesce(&root, || ran += 1);
+        assert_eq!(ran, 0, "it does not wait or run");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(root.join("notification.again").exists());
+        lock.unlock().unwrap();
+        // The next run to hold it runs once, takes the mark up, and runs no more.
+        let mut runs = 0;
+        coalesce(&root, || runs += 1);
+        assert_eq!(runs, 1);
+        assert!(!root.join("notification.again").exists());
+        // A mark left while it runs makes it run once more.
+        let mut times = 0;
+        let mark = root.join("notification.again");
+        coalesce(&root, || {
+            times += 1;
+            if times == 1 {
+                fs::write(&mark, b"").unwrap();
+            }
+        });
+        assert_eq!(times, 2);
     }
 
     #[test]

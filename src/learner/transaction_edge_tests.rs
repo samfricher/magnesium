@@ -828,3 +828,17 @@ fn fresh_commit_recovery_rejects_same_payload_receipt_from_another_host() {
         );
     }
 }
+
+#[test]
+fn a_committed_update_in_a_unit_test_reaches_the_window_hook_and_starts_nothing() {
+    use std::sync::atomic::Ordering;
+    let before = crate::window_notifier::ASKED_IN_TESTS.load(Ordering::SeqCst);
+    let f = Fixture::new();
+    let event = f.event("notifier-work", 100);
+    f.store
+        .update(&f.host, learning("notifier", &event))
+        .unwrap();
+    // The commit asked for the window's program; in a unit test that only
+    // counts, and never reads the runner's home or starts a program.
+    assert!(crate::window_notifier::ASKED_IN_TESTS.load(Ordering::SeqCst) > before);
+}
