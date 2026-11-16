@@ -1,13 +1,18 @@
-// Home: what the window opens on. A plain list: first the most recent
-// session, named by its goal, with its workspace, focused so that Return
-// continues it; then every workspace in the library, most recently opened
-// first, with when. No levels, counts, due items or countdowns.
+// Home: what the window opens on. Its first row is what to study next, in the
+// workspace studied in most recently, by the rule that workspace's own page
+// uses (src/next.ts): the plan's item in hand, which Return starts or carries
+// on. With no plan, one that cannot be read, or every item done, the first row
+// carries on the most recent session, else starts a new one. Under it, every
+// workspace in the library, most recently opened first, with when.
 //
-// Before this Mac can run a lesson, the one step it needs is said first, in
-// the same quiet words the surface used before (#67).
+// A step this Mac needs before any lesson can run takes the first row's
+// place. A choice that leaves lessons running (which copy of the program to
+// keep) is a note under the first row instead, so it never takes Return.
 
 import { useEffect, useRef, useState } from "react";
 
+import { mark } from "../harness";
+import { namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, sessionName, whenOpened } from "../words";
@@ -29,37 +34,43 @@ export function later(a: string, b: string): number {
 
 export type Step = { next: string; where: string | null; choices: { label: string; run: () => void }[]; status?: string | null };
 
-/** The one step this Mac needs before a lesson, or null when it needs none. */
+/** A choice about this Mac that lessons do not wait on: what it says, and its two answers. */
+export type Note = { text: string; choices: { label: string; run: () => void }[] };
+
+/**
+ * This app carries another copy of the program than the one installed, and the learner has not chosen. Lessons run
+ * the installed copy meanwhile (src/setup.ts), so this is a note, not a step. The version numbers are in Settings,
+ * under About: here the note says which is newer and what each choice does.
+ */
+export function programNote(setup: Setup | null, act: { replace: () => void; keep: () => void }): Note | null {
+  const runtime = setup?.runtime;
+  if (runtime?.state !== "different" || !runtime.installed || !runtime.bundled) return null;
+  const keep = { label: "Keep the one on this Mac", run: act.keep };
+  const newer = later(runtime.bundled.version, runtime.installed.version);
+  if (newer > 0)
+    return {
+      text: "Lessons use the version of Magnesium already on this Mac. This app comes with a newer one, which updates each workspace’s record the first time it opens it, after keeping a copy.",
+      choices: [{ label: "Use the newer version", run: act.replace }, keep],
+    };
+  if (newer < 0)
+    return {
+      text: "Lessons use the version of Magnesium already on this Mac, which is newer than the one this app comes with. Switching would put the older one in its place for every workspace.",
+      choices: [keep, { label: "Use this app’s older version", run: act.replace }],
+    };
+  return {
+    text: "Lessons use the version of Magnesium already on this Mac. This app comes with another build of the same version, the one it was made with.",
+    choices: [{ label: "Use this app’s build", run: act.replace }, keep],
+  };
+}
+
+/** The one step this Mac needs before a lesson can run, or null when it needs none. */
 export function setupStep(
   setup: Setup | null,
   signingIn: boolean,
-  act: { replace: () => void; keep: () => void; checkAgain: () => void; openUrl: (url: string) => void; signIn: () => void },
+  act: { replace: () => void; checkAgain: () => void; openUrl: (url: string) => void; signIn: () => void },
 ): Step | null {
   if (!setup) return null;
   const { runtime, account } = setup;
-  // The version numbers are in Settings, under About: here the step says which is newer and what each choice does.
-  if (runtime.state === "different" && runtime.installed && runtime.bundled) {
-    const use = { label: "Use this app’s copy", run: act.replace };
-    const keep = { label: "Keep the one on this Mac", run: act.keep };
-    const newer = later(runtime.bundled.version, runtime.installed.version);
-    if (newer > 0)
-      return {
-        next: "This app has a newer magnesium program",
-        where: "Lessons use the one already on this Mac until you replace it. The newer one updates each workspace’s record the first time it opens it, after keeping a copy.",
-        choices: [use, keep],
-      };
-    if (newer < 0)
-      return {
-        next: "This Mac has a newer magnesium program than this app",
-        where: "Lessons can go on using it. This app’s copy is older, and would replace it for every workspace.",
-        choices: [keep, use],
-      };
-    return {
-      next: "Another copy of the magnesium program is on this Mac",
-      where: "Lessons use one copy for every workspace. This app’s is the one it was built with.",
-      choices: [use, keep],
-    };
-  }
   if (runtime.state === "too_old" || runtime.state === "missing" || runtime.state === "failed") {
     const guide = "https://github.com/samfricher/magnesium/blob/main/docs/install.md";
     return {
@@ -100,6 +111,8 @@ type Props = {
   workspaces: Workspace[] | null;
   /** The step this Mac needs first, if any. */
   step: Step | null;
+  /** A choice about this Mac that lessons do not wait on, if any. */
+  note: Note | null;
   /** Home is in front, with nothing over it: the first row takes the focus. */
   focus: boolean;
   notes: string[];
@@ -109,6 +122,8 @@ type Props = {
   onPickFolder: () => void;
   onNewFolder: () => void;
   onFindFolders: () => void;
+  /** Home's column is drawn with its first row: the first screen is ready. */
+  onShown?: () => void;
 };
 
 /** The most recent session in the library, and its workspace. */
@@ -118,25 +133,80 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
   return best;
 }
 
+/** What Home last read of a workspace: its Next, and its last goal (the name of a session an earlier window kept). */
+type Read = { next: Next | null; goal: string | null };
+
+/**
+ * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
+ * through `magnesium digest`, which the core gives ten seconds; past this, Home draws the row it drew before the plan
+ * led (the last session, else New session), keeps it for this visit, and keeps the plan read for the next one.
+ */
+export const PLAN_WAIT_MS = 400;
+
+// What Home read last, by folder, so that coming back to Home draws the first row at once while it reads again.
+const known = new Map<string, Read>();
+
+async function readNext(api: Core, folder: string): Promise<Read> {
+  const [plan, sessions] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => [])]);
+  const goal = sessions.some((info) => !info.title) ? await api.home(folder).then((home) => home.last?.goal ?? null, () => null) : null;
+  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal };
+}
+
+function NoteBlock({ note }: { note: Note }) {
+  return (
+    <div className="home-note" role="group" aria-label="Which Magnesium lessons use">
+      <p className="page-note">{note.text}</p>
+      <p className="page-acts">
+        {note.choices.map((choice) => (
+          <button key={choice.label} className="quiet-act" onClick={choice.run}>
+            {choice.label}
+          </button>
+        ))}
+      </p>
+    </div>
+  );
+}
+
 export function HomePage(props: Props) {
   const list = useRef<HTMLDivElement>(null);
   const workspaces = props.workspaces ?? [];
   const recent = mostRecent(workspaces);
-  const first = recent ?? workspaces[0] ?? null;
-  // A session kept by an earlier window has no name of its own: its folder's last goal stands for it.
-  const [goalOf, setGoalOf] = useState<Record<string, string>>({});
+  // The workspace studied in most recently; in a library with no session yet, the one opened most recently.
+  const lead = recent ?? workspaces[0] ?? null;
+  const [read, setRead] = useState<{ folder: string; read: Read } | null>(() => {
+    const kept = lead ? known.get(lead.folder) : undefined;
+    return lead && kept ? { folder: lead.folder, read: kept } : null;
+  });
+  // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its first row is drawn without it.
+  const [gaveUp, setGaveUp] = useState<string | null>(null);
+  const gaveUpOn = useRef<string | null>(null);
   useEffect(() => {
-    if (!recent?.latest || recent.latest.title || goalOf[recent.folder] !== undefined || !props.api) return;
-    void props.api.home(recent.folder).then(
-      (home) => setGoalOf((old) => ({ ...old, [recent.folder]: home.last?.goal ?? "" })),
-      () => setGoalOf((old) => ({ ...old, [recent.folder]: "" })),
-    );
-  }, [recent, goalOf, props.api]);
+    if (!lead || !props.api) return;
+    let live = true;
+    const folder = lead.folder;
+    const limit = window.setTimeout(() => {
+      if (!live || known.has(folder)) return;
+      gaveUpOn.current = folder;
+      setGaveUp(folder);
+    }, PLAN_WAIT_MS);
+    void readNext(props.api, folder).then((fresh) => {
+      known.set(folder, fresh);
+      // A row already drawn without the plan stays as it is, rather than changing under the learner.
+      if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh });
+    });
+    return () => {
+      live = false;
+      window.clearTimeout(limit);
+    };
+  }, [lead?.folder, props.api, props.workspaces]);
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null } : null;
+  const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
+  const next = now?.next ?? null;
 
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>("button.home-row") ?? []);
   useEffect(() => {
     if (props.focus && !props.step) rows()[0]?.focus({ preventScroll: true });
-  }, [props.focus, props.step, props.workspaces]);
+  }, [props.focus, props.step, props.workspaces, now]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
@@ -148,11 +218,23 @@ export function HomePage(props: Props) {
     all[Math.min(all.length - 1, Math.max(0, at + step))]?.focus();
   };
 
-  const name = recent?.latest ? sessionName(recent.latest, goalOf[recent.folder] || null) : null;
+  const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
+  // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
+  // for PLAN_WAIT_MS at most, rather than drawing one row and putting another in its place.
+  const waiting = lead !== null && now === null && !props.step;
+  const note = props.note ? <NoteBlock note={props.note} /> : null;
+  // For the harness: when Home mounted, and when its column showed.
+  mark("home");
+  const { onShown } = props;
+  useEffect(() => {
+    if (waiting || props.workspaces === null) return;
+    mark("home-shown");
+    onShown?.();
+  }, [waiting, props.workspaces, onShown]);
 
   return (
     <div className="page home-page" data-page="home">
-      <div className="page-column" ref={list} onKeyDown={onKeyDown}>
+      <div className="page-column" ref={list} onKeyDown={onKeyDown} style={waiting ? { visibility: "hidden" } : undefined}>
         {props.step && (
           <section className="step" aria-label="This Mac">
             <h1 className="page-next">{props.step.next}</h1>
@@ -164,6 +246,7 @@ export function HomePage(props: Props) {
                 </button>
               ))}
             </div>
+            {note}
           </section>
         )}
         {props.workspaces === null ? null : workspaces.length === 0 ? (
@@ -182,27 +265,55 @@ export function HomePage(props: Props) {
                   Find folders on this Mac
                 </button>
               </div>
+              {note}
             </section>
           )
         ) : (
           <>
-            {first && !props.step && (
+            {lead && !props.step && next && (
+              <section className="home-first next" aria-label="Next">
+                <p className="list-head">Next</p>
+                <button
+                  className="home-row first next-row"
+                  data-drive="start"
+                  onClick={() => (next.carried ? props.onContinue(lead.folder, next.carried.info.session, next.carried.title) : props.onStartIn(lead.folder))}
+                >
+                  <span className="next-what">
+                    <span className="row-name next-name">
+                      <Line text={next.item.title} />
+                    </span>
+                    {next.item.note && (
+                      <span className="next-note">
+                        <Line text={next.item.note} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="row-when">{[displayName(lead.name), planDay(next.item.day)].filter(Boolean).join(" · ")}</span>
+                  <span className="row-key" aria-hidden="true">
+                    ↩
+                  </span>
+                </button>
+                {note}
+              </section>
+            )}
+            {lead && !props.step && !next && (
               <section className="home-first" aria-label="Carry on">
                 {recent && <p className="list-head">Carry on</p>}
                 <button
                   className="home-row first"
                   data-drive="start"
-                  onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(first.folder))}
+                  onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(lead.folder))}
                 >
                   <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
                   <span className="row-when">
-                    {displayName(first.name)}
+                    {displayName(lead.name)}
                     {recent?.latest ? `, ${whenOpened(recent.latest.opened_ms)}` : ""}
                   </span>
                   <span className="row-key" aria-hidden="true">
                     ↩
                   </span>
                 </button>
+                {note}
               </section>
             )}
             <section className="home-list" aria-label="Workspaces">
@@ -210,24 +321,24 @@ export function HomePage(props: Props) {
                 <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
                   <span className="row-name">{displayName(workspace.name)}</span>
                   {/* The session carried on says when; its workspace's row does not say it again. */}
-                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest && !props.step ? "" : whenOpened(workspace.opened_ms)}</span>
+                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest && !props.step && !next ? "" : whenOpened(workspace.opened_ms)}</span>
                 </button>
               ))}
             </section>
           </>
         )}
         {workspaces.length > 0 && (
-        <p className="page-acts">
-          <button className="quiet-act" data-drive="open-folder" onClick={props.onPickFolder}>
-            Open a folder…
-          </button>
-          <button className="quiet-act" onClick={props.onNewFolder}>
-            Make a new folder…
-          </button>
-          <button className="quiet-act" onClick={props.onFindFolders}>
-            Find folders on this Mac
-          </button>
-        </p>
+          <p className="page-acts">
+            <button className="quiet-act" data-drive="open-folder" onClick={props.onPickFolder}>
+              Open a folder…
+            </button>
+            <button className="quiet-act" onClick={props.onNewFolder}>
+              Make a new folder…
+            </button>
+            <button className="quiet-act" onClick={props.onFindFolders}>
+              Find folders on this Mac
+            </button>
+          </p>
         )}
         {props.notes.length > 0 && (
           <div className="notices">

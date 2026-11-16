@@ -16,7 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
-import { HomePage, mostRecent, setupStep } from "./pages/Home";
+import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
@@ -103,6 +103,9 @@ export function App() {
   const [signingIn, setSigningIn] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [restored, setRestored] = useState(false);
+  // Home holds its column back until its first row is known (PLAN_WAIT_MS at most): the first screen waits for it.
+  const [homeShown, setHomeShown] = useState(false);
+  const onHomeShown = useCallback(() => setHomeShown(true), []);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [blockMinutes, setBlockMinutes] = useState(50);
   const [materialChanged, setMaterialChanged] = useState(0);
@@ -462,8 +465,9 @@ export function App() {
 
   // The first screen is painted with its real content: tell the harness.
   useEffect(() => {
-    if (restored && workspaces !== null) requestAnimationFrame(() => ready());
-  }, [restored, workspaces]);
+    const homeWaits = active === "home" && homeFolder === null && !homeShown;
+    if (restored && workspaces !== null && !homeWaits) requestAnimationFrame(() => ready());
+  }, [restored, workspaces, active, homeFolder, homeShown]);
 
   // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
   useEffect(() => {
@@ -840,10 +844,13 @@ export function App() {
 
   const step_ = setupStep(setup, signingIn, {
     replace: () => void answerRuntime((api) => api.replaceRuntime()),
-    keep: () => void answerRuntime((api) => api.keepRuntime()),
     checkAgain: () => void checkAgain(),
     openUrl: (url) => void api?.openUrl(url),
     signIn: () => void signIn(),
+  });
+  const note_ = programNote(setup, {
+    replace: () => void answerRuntime((api) => api.replaceRuntime()),
+    keep: () => void answerRuntime((api) => api.keepRuntime()),
   });
 
   const tabViews: TabView[] = tabs.map((tab) => ({
@@ -922,6 +929,7 @@ export function App() {
                 api={api}
                 workspaces={workspaces}
                 step={step_}
+                note={note_}
                 focus={!covered && restored}
                 notes={notes}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}
@@ -930,6 +938,7 @@ export function App() {
                 onPickFolder={() => void pickFolder()}
                 onNewFolder={() => void newFolder()}
                 onFindFolders={() => void findFolders()}
+                onShown={onHomeShown}
               />
             )}
             {homeFolder && notes.length > 0 && (
