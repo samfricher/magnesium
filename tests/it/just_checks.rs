@@ -160,7 +160,18 @@ fn the_plugin_command_poses_the_due_checks_alone_and_the_last_answer_ends_the_si
     let shown = stop(&e, "p-4", "That's all three. Well done for showing up.");
     let lines = shown["systemMessage"].as_str().unwrap();
     assert!(lines.starts_with("Earned today: a pass on "), "{lines}");
-    assert!(lines.contains("Can count next: "), "{lines}");
+    // The same lines `magnesium closing` works out, which the window draws.
+    let output = e.command().args(["closing", "--json"]).output().unwrap();
+    let read: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let words: Vec<&str> = read["closing"]["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(words.len(), 2, "{read}");
+    assert_eq!(lines, words.join("\n"));
+    assert!(read["sitting"]["ended_ms"].is_i64(), "{read}");
 
     // Asking for more afterwards is an ordinary lesson again.
     prompt(&e, "p-5", "actually, teach me the slope");
