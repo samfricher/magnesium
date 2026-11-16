@@ -97,12 +97,13 @@ const isoDay = (ms: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-/** How long past its end a paper has run, said coarsely: minutes, then hours, then days. */
-function overBy(ms: number): string {
+/** How long ago a paper's time was up, said coarsely: minutes, then hours, then days. */
+function agoWords(ms: number): string {
   const minutes = Math.floor(ms / MINUTE);
-  if (minutes < 60) return minutes < 1 ? "just over" : plural(minutes, "minute", "minutes") + " over";
-  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " over";
-  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " over";
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return plural(minutes, "minute", "minutes") + " ago";
+  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " ago";
+  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " ago";
 }
 
 /** The time now, read again only when the paper's count of whole minutes left would change, so nothing moves in between. */
@@ -164,19 +165,22 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       }}
     >
       <p className="list-head">A paper is running</p>
+      {/* The time leads, at a size read from the desk where the paper is sat. Its words change only with the
+          minute, and nothing else in the block moves. */}
       <div className="paper-head">
-        <div className="paper-what">
-          <h2 className="paper-name">{sitting.name}</h2>
-          <p className="paper-note">
-            Started {when(sitting.started_ms)} · {plural(sitting.minutes, "minute", "minutes")} · no tutor until you hand in
-          </p>
-        </div>
-        <div className="paper-when">
-          <p className="paper-end">{over ? `time up at ${when(end)}` : `until ${when(end)}`}</p>
-          <p className="paper-left" data-drive="sitting-left">
-            {over ? overBy(now - end) : `${plural(left, "minute", "minutes")} left`}
-          </p>
-        </div>
+        <p className="paper-time" data-drive="sitting-left">
+          {over ? "Time is up" : `${plural(left, "minute", "minutes")} left`}
+        </p>
+        <h2 className="paper-name" title={sitting.name}>
+          {sitting.name}
+        </h2>
+        {/* Past its time the paper's length says nothing new, and leaving it out keeps Hand in on a short window
+            at the largest text. */}
+        <p className="paper-facts">
+          <span>{over ? `Up at ${when(end)}, ${agoWords(now - end)}` : `Until ${when(end)}`}</span>
+          <span>started {when(sitting.started_ms)}</span>
+          {!over && <span>{plural(sitting.minutes, "minute", "minutes")}</span>}
+        </p>
       </div>
       {confirming ? (
         <div className="paper-confirm" role="group" aria-label="End without handing in" aria-describedby={said}>
@@ -193,20 +197,31 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
           </p>
         </div>
       ) : (
-        <p className="page-acts">
-          <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
-            Hand in your work…
-          </button>
-          {onOpen && (
-            <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
-              Open the paper again
+        <>
+          {/* Past its time, handing in is what is left to do, so it stands as a step of its own. */}
+          {over && (
+            <button className="paper-hand-in" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+              Hand in your work…
             </button>
           )}
-          <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
-            End without handing in
-          </button>
-        </p>
+          <p className="page-acts">
+            {!over && (
+              <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+                Hand in your work…
+              </button>
+            )}
+            {onOpen && (
+              <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
+                Open the paper again
+              </button>
+            )}
+            <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
+              End without handing in
+            </button>
+          </p>
+        </>
       )}
+      <p className="paper-rule">No tutor until you hand in.</p>
       <dl className="paper-marks">
         <dt>?</dt>
         <dd>where you are stuck, instead of looking it up</dd>
@@ -419,6 +434,8 @@ export function WorkspacePage(props: Props) {
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const exam = examLine(home?.exam ?? null);
+  // Off the list, a running paper's clock would go on with nothing to show it or hand it in.
+  const held = props.running ? "Close its running session first" : sitting ? "Hand in or end the paper first" : null;
 
   // The plan's item in hand: the one it marks doing, else the first not done, as the plan panel and a started
   // session take it. Its session is carried on when one is named by it; otherwise Return starts one.
@@ -622,6 +639,8 @@ export function WorkspacePage(props: Props) {
                   Paste text…
                 </button>
               </p>
+              {/* Files to hand during a paper are most likely its working, which goes in by handing in, not here. */}
+              {sitting && <p className="page-note">While a paper runs, your working is handed in above, not added here.</p>}
             </>
           )}
         </section>
@@ -656,12 +675,12 @@ export function WorkspacePage(props: Props) {
 
         <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
-            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
+            <button className="quiet-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
             </button>
           </p>
           {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
-          {props.running && <p className="page-note">Close its running session first.</p>}
+          {held && <p className="page-note">{held}.</p>}
         </section>
       </div>
       </div>
