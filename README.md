@@ -16,3 +16,4 @@ This branch holds only images that pull requests and issues show. It is not part
 
 Every image uses made-up data. If this branch is deleted, the images in those pull requests and issues stop loading.
 - `frosted-glass`: the real window with frosted glass chosen, before and after, the options at each fork, the reading check over five backdrops, and the solid fallbacks. Every desktop behind the window is a made-up picture.
+- `critique-1116-changes/<change>`: the seven changes from the design critique of 2026-11-16 (pull requests 107 to 113), before and after in the real window on made-up courses. `hand-*` are from hand tests of each branch's test build.
