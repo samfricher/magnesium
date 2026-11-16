@@ -359,6 +359,11 @@ export type Mark = {
    * Absent otherwise, or when the runtime does not say.
    */
   next_day?: string | null;
+  /**
+   * On an answer that earned a pass, the runtime's line of evidence from the record: the last miss on the skill before
+   * it, and the days since the learner last answered it. A terminal shows the same line. Absent otherwise.
+   */
+  receipt?: string | null;
 };
 
 /**

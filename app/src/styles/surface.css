@@ -316,6 +316,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* The mark on an answer: its words a step larger than the record's other lines, the count of days on its own line under them. */
 .record.mark { font-size: 0.882rem; }
 .record.mark .record-pass { display: block; font-size: 0.765rem; }
+/* What the record shows the pass held through: one more line, as quiet as the count of days. */
+.record-receipt { color: var(--quiet); }
+.record.mark .record-receipt { display: block; font-size: 0.765rem; }
 /* A notice's dismiss is a quiet word, as the other actions in a lesson are. */
 .record.note .plain { text-decoration: none; color: var(--quiet); }
 .record.note .plain:hover { color: var(--text); }

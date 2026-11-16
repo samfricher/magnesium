@@ -682,7 +682,7 @@ pub(crate) fn record(workspace: &Workspace, now_ms: i64) -> Result<Value, String
     progress(workspace, now_ms)
 }
 
-fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
+pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let today = local_day(now_ms);
     let id = workspace.id().map_err(|e| e.to_string())?;
     reject_symlink_components(&workspace.store_path(), workspace.control())
@@ -726,6 +726,17 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
         by_plan.insert(plan, skills);
     }
     let other = other_skills(&record, &in_a_plan);
+    let passing = by_plan
+        .values()
+        .flatten()
+        .flatten()
+        .chain(&other)
+        .map(Skill::to_json);
+    let receipts = crate::pass_receipts::of(
+        &snapshot_of,
+        &items,
+        &crate::pass_receipts::passing_answers(&passing.collect::<Vec<_>>()),
+    );
     drop(snapshot_of);
 
     let plans_json: Vec<Value> = by_plan
@@ -768,6 +779,7 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
         "due": {"redos": due(Origin::Paper), "checks": due(Origin::Chat)},
         "days": answered_days(&answers),
         "today_counts": today_counts(&items, &answers, today),
+        "pass_receipts": receipts,
     }))
 }
 

@@ -17,6 +17,7 @@ mod hooks;
 pub(crate) mod learner;
 mod lesson;
 mod mcp;
+mod pass_receipts;
 mod practice;
 mod progress;
 mod readings;

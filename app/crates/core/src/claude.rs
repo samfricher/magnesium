@@ -2472,6 +2472,22 @@ mod tests {
     }
 
     #[test]
+    fn a_hooks_message_to_the_terminal_is_not_drawn_on_the_page() {
+        // Claude Code 2.1.227 and later pass a hook's systemMessage on as an
+        // informational line. In a terminal the runtime's PostToolUse hook
+        // says a pass's receipt this way; the window draws it from the record
+        // under the answer, so a line like this must add nothing.
+        let (shared, seen) = listening();
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "informational", "level": "info",
+                "content": "PostToolUse:mcp__plugin_magnesium_magnesium__learning_step says: First of three days. Not right on Fri 13 Nov: sign of b. It held through the 3 days since you last answered it.",
+                "session_id": "s1", "uuid": "u1"}),
+        );
+        assert!(lock(&seen).is_empty(), "{:?}", lock(&seen));
+    }
+
+    #[test]
     fn a_new_lessons_first_reply_that_never_opened_the_record_is_said_once() {
         let said = |new: bool, effort: Option<&str>, tools: &[&str]| {
             let (shared, seen) = listening();
