@@ -386,15 +386,49 @@ fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     })
 }
 
+/// The first day a skill's next pass can count, and whether that is today.
+///
+/// The runtime takes an answer as cold only on a later day than every
+/// earlier answer on its label, whatever their marks
+/// (`learner::update::observations`), so no pass counts before the day
+/// after the skill's last answer. A skill with a practice item also waits
+/// for the day its item gives (the next day, then 3 and 7 days on, or the
+/// day after its repair); one waiting for a repair has no day yet. A skill
+/// with no item has no such schedule: any day after its last answer can
+/// count, so the first of those from today is named, and it is never due,
+/// since nothing in the record asks for it.
+fn with_next_pass(
+    mut skill: Skill,
+    answered_on: Option<NaiveDate>,
+    has_items: bool,
+    today: NaiveDate,
+) -> Skill {
+    let after_answer = answered_on.and_then(|day| day.succ_opt());
+    if skill.proven() {
+        skill.next_on = None;
+        skill.due = false;
+    } else if has_items {
+        skill.next_on = skill
+            .next_on
+            .map(|on| after_answer.map_or(on, |after| on.max(after)));
+        skill.due = skill.due && skill.next_on.is_some_and(|on| on <= today);
+    } else {
+        skill.next_on = after_answer.map(|after| after.max(today));
+    }
+    skill
+}
+
 /// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
     let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
     let last_answer = own.last().map(|answer| answer.attempt_id.clone());
+    let answered_on = own.iter().map(|answer| answer.day).max();
     if items.is_empty() {
-        return Skill {
+        let skill = Skill {
             last_answer,
             ..from_answers(name, &own)
         };
+        return with_next_pass(skill, answered_on, false, today);
     }
     // The answer that made its first item, and the answers before it.
     let made_by: BTreeSet<&str> = items
@@ -408,10 +442,11 @@ fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: N
         .iter()
         .position(|answer| made_by.contains(answer.attempt_id.as_str()))
         .map_or(&own[..0], |first| &own[..first]);
-    Skill {
+    let skill = Skill {
         last_answer,
         ..from_items(name, items, before, today)
-    }
+    };
+    with_next_pass(skill, answered_on, true, today)
 }
 
 struct Record<'a> {
@@ -679,7 +714,7 @@ fn dots(skill: &Value) -> String {
     format!("{}{}", "●".repeat(passes), "○".repeat(3 - passes))
 }
 
-fn skill_line(skill: &Value) -> String {
+fn skill_line(skill: &Value, today: &str) -> String {
     let mut line = format!(
         "  {}  {}",
         dots(skill),
@@ -692,7 +727,13 @@ fn skill_line(skill: &Value) -> String {
     } else if skill["needs_repair"] == true {
         Some("waits for its repair".to_owned())
     } else {
-        skill["next_on"].as_str().map(|day| format!("next {day}"))
+        skill["next_on"].as_str().map(|day| {
+            if day == today {
+                "next today".to_owned()
+            } else {
+                format!("next {day}")
+            }
+        })
     };
     if let Some(note) = note {
         line.push_str(&format!(" · {note}"));
@@ -717,6 +758,7 @@ fn render(value: &Value) -> String {
     if value["upgrade_needed"] == true {
         return "An earlier version of Magnesium set this folder up. Run `magnesium init --upgrade-instructions` to upgrade it, then ask again.\n".into();
     }
+    let today = value["today"].as_str().unwrap_or_default();
     let mut text = String::new();
     for plan in value["plans"].as_array().into_iter().flatten() {
         let name = plan["plan"].as_str().unwrap_or("");
@@ -728,7 +770,7 @@ fn render(value: &Value) -> String {
         }
         text.push_str(&format!("{name}: {}\n", progress_line(&plan["progress"])));
         for skill in plan["skills"].as_array().into_iter().flatten() {
-            text.push_str(&skill_line(skill));
+            text.push_str(&skill_line(skill, today));
         }
     }
     let other = value["other"]["skills"]
@@ -742,7 +784,7 @@ fn render(value: &Value) -> String {
             counts["proven"], counts["in_progress"]
         ));
         for skill in &other {
-            text.push_str(&skill_line(skill));
+            text.push_str(&skill_line(skill, today));
         }
     }
     if text.is_empty() {
@@ -1111,6 +1153,95 @@ mod tests {
         assert_eq!(days, ["2026-11-02", "2026-11-05"]);
     }
 
+    /// The day a skill's next pass can count, and whether it is due, as
+    /// `skill_of` works them out on `today` from its answers and items.
+    fn next_pass(items: &[&Item], answers: &[Answer], today: &str) -> (Option<NaiveDate>, bool) {
+        let skill = skill_of("units", "units", items, answers, day(today));
+        (skill.next_on, skill.due)
+    }
+
+    #[test]
+    fn a_skill_never_got_wrong_can_pass_again_from_the_day_after_its_last_answer() {
+        // A right, cold answer today: the next can count from tomorrow.
+        let today = [answer("2026-11-16", "clean")];
+        assert_eq!(
+            next_pass(&[], &today, "2026-11-16"),
+            (Some(day("2026-11-17")), false)
+        );
+        // Answered yesterday or last week: it can count today. Nothing
+        // schedules it, so it is never due.
+        let yesterday = [answer("2026-11-15", "clean")];
+        assert_eq!(
+            next_pass(&[], &yesterday, "2026-11-16"),
+            (Some(day("2026-11-16")), false)
+        );
+        let last_week = [answer("2026-11-09", "clean")];
+        assert_eq!(
+            next_pass(&[], &last_week, "2026-11-16"),
+            (Some(day("2026-11-16")), false)
+        );
+        // Any answer today rules out a cold one later today, a pass or not.
+        for mark in ["wrong", "helped", "declined"] {
+            let answers = [answer("2026-11-12", "clean"), answer("2026-11-16", mark)];
+            assert_eq!(
+                next_pass(&[], &answers, "2026-11-16"),
+                (Some(day("2026-11-17")), false),
+                "{mark}"
+            );
+        }
+        // Proven, or never answered: no day.
+        let proven = [
+            answer("2026-11-02", "clean"),
+            answer("2026-11-05", "clean"),
+            answer("2026-11-09", "clean"),
+        ];
+        assert_eq!(next_pass(&[], &proven, "2026-11-16"), (None, false));
+        assert_eq!(next_pass(&[], &[], "2026-11-16"), (None, false));
+    }
+
+    #[test]
+    fn a_skill_with_a_check_waits_for_its_day_and_for_a_day_after_its_last_answer() {
+        // A check made by a miss on the 2nd is due the next day; untouched
+        // since, it is still due, from its own day.
+        let made = check("2026-11-02", &[]);
+        let miss = [answer("2026-11-02", "wrong")];
+        assert_eq!(
+            next_pass(&[&made], &miss, "2026-11-02"),
+            (Some(day("2026-11-03")), false)
+        );
+        assert_eq!(
+            next_pass(&[&made], &miss, "2026-11-05"),
+            (Some(day("2026-11-03")), true)
+        );
+        // Passed on the 3rd: the next pass is 3 days on, then 7.
+        let once = check("2026-11-02", &[("2026-11-03", true)]);
+        let answers = [answer("2026-11-02", "wrong"), answer("2026-11-03", "clean")];
+        assert_eq!(
+            next_pass(&[&once], &answers, "2026-11-03"),
+            (Some(day("2026-11-06")), false)
+        );
+        // Due today, and answered today without a pass (here with help): the
+        // check is still on its day, but no answer later today can be cold.
+        let helped = [
+            answer("2026-11-02", "wrong"),
+            answer("2026-11-05", "helped"),
+        ];
+        assert_eq!(
+            next_pass(&[&made], &helped, "2026-11-05"),
+            (Some(day("2026-11-06")), false)
+        );
+        // Proven by its checks: no day.
+        let closed = check(
+            "2026-11-02",
+            &[
+                ("2026-11-03", true),
+                ("2026-11-06", true),
+                ("2026-11-13", true),
+            ],
+        );
+        assert_eq!(next_pass(&[&closed], &miss, "2026-11-16"), (None, false));
+    }
+
     #[test]
     fn the_text_form_lists_each_skill_with_its_passes() {
         let value = json!({
@@ -1125,7 +1256,11 @@ mod tests {
                  ]},
                 {"plan": "final", "from": "file"},
             ],
-            "other": {"skills": [], "progress": {}},
+            "other": {"skills": [
+                {"skill": "units of a rate", "passes": 1, "proven": false, "due": false, "next_on": "2026-11-09"},
+                {"skill": "sign of b", "passes": 0, "proven": false, "due": false, "next_on": "2026-11-10"},
+            ], "progress": {"proven": 0, "in_progress": 2}},
+            "today": "2026-11-09",
             "days": ["2026-11-08", "2026-11-09"],
         });
         assert_eq!(
@@ -1135,6 +1270,9 @@ mod tests {
              ●●●  rate equation · proven\n  \
              ○○○  Hill coefficient · waits for its repair\n\
              final: its gap log is not in the record yet. The tutor brings it in at the next marked answer.\n\
+             In no plan: 0 proven, 2 in progress\n  \
+             ●○○  units of a rate · next today\n  \
+             ○○○  sign of b · next 2026-11-10\n\
              Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09\n"
         );
     }

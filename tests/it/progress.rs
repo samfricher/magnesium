@@ -119,6 +119,19 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!({"redos": 0, "checks": 0}),
         "{first_day}"
     );
+    // Each skill names the first day its next pass can count: no answer
+    // later today can be cold, so for both it is tomorrow.
+    let tomorrow = Local::now()
+        .date_naive()
+        .checked_add_days(Days::new(1))
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        (units["next_on"].clone(), units["due"].clone()),
+        (json!(tomorrow), json!(false)),
+        "{units}"
+    );
+    assert_eq!(sign["next_on"], json!(tomorrow), "{sign}");
 
     // Day two. The check is due, and passing it cold earns its first pass.
     // The other skill is answered right again, on its second day.
@@ -126,6 +139,14 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     let due = progress(&e);
     assert_eq!(due["due"]["checks"], 1, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
+    // A skill with no check has no schedule: it can pass again today, and
+    // nothing asks for it.
+    let units = skill(&due, "units of a rate");
+    assert_eq!(
+        (units["next_on"].clone(), units["due"].clone()),
+        (json!(Local::now().date_naive().to_string()), json!(false)),
+        "{units}"
+    );
     answer(
         &e,
         "b-1",
@@ -162,6 +183,11 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(sign["last_pass_on"], json!(today.to_string()), "{sign}");
     assert_eq!(skill(&value, "units of a rate")["passes"], 2, "{value}");
+    assert_eq!(
+        skill(&value, "units of a rate")["next_on"],
+        json!(today.checked_add_days(Days::new(1)).unwrap().to_string()),
+        "{value}"
+    );
     // Right only after a hint: no pass, and a check due the next day.
     let hinted = skill(&value, "competitive inhibition");
     assert_eq!(
