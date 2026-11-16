@@ -255,7 +255,7 @@ export function HomePage(props: Props) {
   const checksAct = checks ? (
     <p className="page-acts next-acts">
       <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(checks)}>
-        Just the quick checks
+        {(now?.checks ?? 0) === 1 ? "Just the quick check" : "Just the quick checks"}
       </button>
     </p>
   ) : null;

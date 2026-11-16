@@ -608,7 +608,7 @@ export function WorkspacePage(props: Props) {
               <p className="page-acts next-acts">
                 {checksDue && (
                   <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(folder)}>
-                    Just the quick checks
+                    {home?.checks_due === 1 ? "Just the quick check" : "Just the quick checks"}
                   </button>
                 )}
                 {current && (
