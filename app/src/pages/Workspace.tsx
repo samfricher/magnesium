@@ -7,12 +7,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
+import { namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
-import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, sessionName, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -50,16 +51,6 @@ function examLine(exam: Exam | null): string | null {
   if (!exam?.day || exam.days_left === null || exam.days_left < 0) return null;
   const left = exam.days_left === 0 ? "today" : exam.days_left === 1 ? "tomorrow" : `${exam.days_left} days`;
   return `${exam.title}, ${exam.day} · ${left}`;
-}
-
-/** The day the plan puts an item on, as the page says it: "today", "tomorrow", else "Tue 17 Nov". */
-function planDay(day: string | null, now = new Date()): string {
-  if (!day) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const iso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  if (day === iso(now)) return "today";
-  if (day === iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))) return "tomorrow";
-  return shortDay(day);
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -420,12 +411,12 @@ export function WorkspacePage(props: Props) {
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const exam = examLine(home?.exam ?? null);
 
-  // The plan's item in hand: the one it marks doing, else the first not done, as the plan panel and a started
-  // session take it. Its session is carried on when one is named by it; otherwise Return starts one.
+  // The plan's item in hand, by the rule Home's first row uses too (src/next.ts).
   const items = plan?.items ?? [];
-  const current = items.find((item) => item.status === "doing") ?? items.find((item) => item.status !== "done") ?? null;
-  const named = (sessions ?? []).map((info) => ({ info, title: sessionName(info, info.current ? (home?.last?.goal ?? null) : null) }));
-  const carried = current ? (named.find((each) => each.title.trim() === current.title.trim()) ?? null) : null;
+  const named = namedSessions(sessions ?? [], home?.last?.goal ?? null);
+  const next = nextOf(items, named);
+  const current = next?.item ?? null;
+  const carried = next?.carried ?? null;
   const earlier = named.filter((each) => each !== carried);
   // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
   const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
-import { HomePage, mostRecent, setupStep } from "./pages/Home";
+import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
 import { SettingsPage } from "./pages/Settings";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
@@ -840,10 +840,13 @@ export function App() {
 
   const step_ = setupStep(setup, signingIn, {
     replace: () => void answerRuntime((api) => api.replaceRuntime()),
-    keep: () => void answerRuntime((api) => api.keepRuntime()),
     checkAgain: () => void checkAgain(),
     openUrl: (url) => void api?.openUrl(url),
     signIn: () => void signIn(),
+  });
+  const note_ = programNote(setup, {
+    replace: () => void answerRuntime((api) => api.replaceRuntime()),
+    keep: () => void answerRuntime((api) => api.keepRuntime()),
   });
 
   const tabViews: TabView[] = tabs.map((tab) => ({
@@ -922,6 +925,7 @@ export function App() {
                 api={api}
                 workspaces={workspaces}
                 step={step_}
+                note={note_}
                 focus={!covered && restored}
                 notes={notes}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}

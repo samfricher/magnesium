@@ -322,6 +322,27 @@ try {
   await shoot(w, "workspace-document", "Workspace: a past paper opened from its name");
   await closeDocument(w, "Midterm 2023");
 
+  // Every item on the plan done: Home and the workspace page fall back to the session carried on, else New session.
+  const planFile = join(scratch, "Intro-Statistics", "Study", "midterm-2", "plan.md");
+  const planText = readFileSync(planFile, "utf8");
+  writeFileSync(planFile, planText.replace(/\| todo \|/g, "| done |"));
+  await step(w, "‹ Home, every item done", { op: "click", target: "‹ Home" });
+  await settle(w, 800);
+  await shoot(w, "home-all-done", "Home when every item on the plan is done: the session carried on");
+  await step(w, "the workspace, every item done", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(w, 800);
+  await shoot(w, "workspace-all-done", "Workspace when every item on the plan is done");
+  writeFileSync(planFile, planText);
+  await step(w, "‹ Home, small window", { op: "click", target: "‹ Home" });
+  await step(w, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(w, 800);
+  await shoot(w, "home-narrow", "Home at 720 by 560");
+  for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(w, 400);
+  await shoot(w, "home-big", "Home at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(w, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+
   const menu = await step(w, "the menu bar", { op: "menu" });
   writeFileSync(join(out, "menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));
   const errors = await step(w, "errors", { op: "errors" });
@@ -471,6 +492,36 @@ try {
   if (!opened.ok || opened.phase !== "lesson" || !opened.task) problem(`replace: no task in the lesson before choosing a copy: ${JSON.stringify(opened)}`);
   await shoot(n, "session-different-program", "Session: a lesson on the copy already on this Mac, before choosing");
   await quit(n);
+
+  // Home as each state of this Mac draws it, on the course with its plan and no session yet.
+  const homeWith = async (name, stem, what, { withAgent = agent, more = {}, recent = kept.recent } = {}) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ recent, folders: {}, engine: "direct" }, null, 2));
+    const h = await launch(name, home, withAgent, more);
+    await settle(h, 800);
+    await shoot(h, stem, what);
+    await quit(h);
+  };
+  const never = { MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") };
+  const fake = (name, body) => {
+    const path = join(scratch, name);
+    writeFileSync(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return path;
+  };
+  const older = fake("bundled-older", `[ "$1" = "--version" ] && { echo "magnesium 0.0.1"; exit 0; }\nexec '${runtime}' "$@"`);
+  const sameNumber = fake("bundled-same", `[ "$1" = "--version" ] && { '${runtime}' --version | sed 's/+.*//; s/$/+0000000/'; exit 0; }\nexec '${runtime}' "$@"`);
+  const tooOld = fake("magnesium-too-old", `[ "$1" = digest ] && [ "$PWD" = / ] && { echo '{"window_features": 1}'; exit 0; }\nexec '${runtime}' "$@"`);
+  const signedOut = fake("claude-signed-out", `[ "$1 $2" = "auth status" ] && { echo '{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}'; exit 0; }\nexec '${agent}' "$@"`);
+  await homeWith("older", "home-older-program", "Home: this Mac has a newer magnesium program than this app", { more: { ...never, MAGNESIUM_APP_BUNDLED: older } });
+  await homeWith("same", "home-same-program", "Home: this app carries another build of the same version", { more: { ...never, MAGNESIUM_APP_BUNDLED: sameNumber } });
+  await homeWith("too-old", "home-too-old", "Home: the program on this Mac is too old for this window", { more: { ...never, MAGNESIUM_APP_RUNTIME: tooOld, MAGNESIUM_APP_BUNDLED: newer } });
+  await homeWith("signed-out", "home-signed-out", "Home: Claude Code is not signed in", { withAgent: signedOut });
+  await homeWith("signed-out-newer", "home-signed-out-newer", "Home: not signed in, and this app carries a newer program", { withAgent: signedOut, more: { ...never, MAGNESIUM_APP_BUNDLED: newer } });
+  await homeWith("no-claude", "home-no-claude", "Home: Claude Code is not on this Mac", { withAgent: join(scratch, "no-claude-here") });
+  // The first open with one workspace: with its plan, and without one.
+  await homeWith("one", "home-one", "Home: one workspace, with a plan, never studied in", { recent: [kept.recent[0]] });
+  await homeWith("one-no-plan", "home-one-no-plan", "Home: one workspace, no plan, never studied in", { recent: [kept.recent[1]] });
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);
 }

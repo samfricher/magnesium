@@ -260,6 +260,10 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .next-note { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 .next .next-due { margin-top: 0.5rem; }
 .next .next-acts { margin-top: 0.5rem; }
+/* A choice about this Mac that lessons do not wait on, under Home's first row (or the step in its place). */
+.home-note { margin-top: 1rem; }
+.home-note .page-note { margin: 0; max-width: 34em; }
+.home-page .home-note .page-acts { margin-top: 0.3rem; }
 
 /* A list folded to its name and count, opened in place. */
 .list-head.fold { display: block; padding: 0; text-align: left; cursor: pointer; color: var(--quiet); }
