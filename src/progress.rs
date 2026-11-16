@@ -635,6 +635,12 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
     })
 }
 
+/// What `magnesium progress --json` prints, for another part of the runtime
+/// that reads the same facts (the closing lines).
+pub(crate) fn record(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
+    progress(workspace, now_ms)
+}
+
 fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let today = local_day(now_ms);
     let id = workspace.id().map_err(|e| e.to_string())?;

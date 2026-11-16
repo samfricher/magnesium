@@ -11,6 +11,7 @@ mod adapter_call;
 mod attempts;
 mod captured_turn_lifecycle;
 mod checkpoint_recovery;
+mod closing;
 mod control_safety_review;
 mod conversation_handoff;
 mod digest;

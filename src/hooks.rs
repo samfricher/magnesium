@@ -349,7 +349,13 @@ fn handle(
                 &stored_turn,
                 input.last_assistant_message.as_deref(),
             )?;
-            Ok(Some(json!({})))
+            // A sitting this turn ended: Claude Code shows the learner its
+            // closing lines under the reply.
+            let closing = crate::closing::stop_hook_lines(workspace, &host.stored_session_id());
+            Ok(Some(closing.map_or_else(
+                || json!({}),
+                |lines| json!({"systemMessage": lines}),
+            )))
         }
         HookEvent::SessionEnd => {
             if matches!(input.reason.as_deref(), Some("clear" | "resume")) {

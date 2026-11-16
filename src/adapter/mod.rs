@@ -158,6 +158,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 pub(crate) enum LearningStepRequest {
     Update(Box<crate::learner::UpdateRequest>),
     Control(Box<ControlRequest>),
+    EndSitting(crate::closing::EndSittingRequest),
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -275,6 +276,10 @@ pub(crate) fn dispatch_with_host(
     let caller = native_host
         .clone()
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
+    if operation == "learning_step" && crate::closing::is_end_request(&request) {
+        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
+        return Ok(crate::closing::end_from_tool(cwd, by));
+    }
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
@@ -291,7 +296,15 @@ pub(crate) fn dispatch_with_host(
         );
     let status = operation == "context"
         && request.get("action").and_then(serde_json::Value::as_str) == Some("status");
+    let ends = (operation == "learning_step").then(|| request.clone());
     let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
+    // A pause or a stop the learner asked for ends the sitting.
+    if ends.is_some_and(|request| crate::closing::ends_on_control(&request, &result))
+        && let Ok(Some(workspace)) = Workspace::discover(cwd)
+    {
+        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
+        let _ = crate::closing::end_sitting(&workspace, by, crate::sittings::now_ms());
+    }
     open_sitting(
         cwd,
         update.as_ref(),
