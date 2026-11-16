@@ -18,7 +18,7 @@ use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::activity;
-use crate::agent::{Intent, Payment};
+use crate::agent::{Intent, Payment, Permissions};
 use crate::models::{ModelOption, Pick};
 use crate::paths;
 
@@ -114,6 +114,9 @@ struct Data {
     days_filled: bool,
     #[serde(default)]
     payment: Option<Payment>,
+    /// Who decides on a tool the tutor wants. None until the learner picks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    permissions: Option<Permissions>,
     /// The engine the learner picked for new conversations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     engine: Option<Engine>,
@@ -460,6 +463,16 @@ impl Store {
     pub fn set_payment(&self, payment: Payment) {
         let mut data = self.lock();
         data.payment = Some(payment);
+        self.save(&data);
+    }
+
+    pub fn permissions(&self) -> Permissions {
+        self.lock().permissions.unwrap_or_default()
+    }
+
+    pub fn set_permissions(&self, permissions: Permissions) {
+        let mut data = self.lock();
+        data.permissions = Some(permissions);
         self.save(&data);
     }
 

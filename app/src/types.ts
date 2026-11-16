@@ -391,7 +391,10 @@ export type RuntimeSetup = {
   message: string | null;
 };
 
-export type Setup = { runtime: RuntimeSetup; account: Account; payment: Payment };
+/** Who decides on a tool the tutor wants: Claude Code's auto mode, or the learner each time. */
+export type Permissions = "auto" | "ask";
+
+export type Setup = { runtime: RuntimeSetup; account: Account; payment: Payment; permissions: Permissions };
 
 /** The window's version, and the commit the download was built from. */
 export type About = { version: string; commit: string | null };
@@ -429,6 +432,8 @@ export interface Core {
   keepRuntime(): Promise<RuntimeSetup>;
   account(): Promise<Account>;
   setPayment(payment: Payment): Promise<Account>;
+  /** Saved at once; a running lesson changes from its next tool on. */
+  setPermissions(permissions: Permissions): Promise<void>;
   /** Which engine runs lessons, and which one the open folder's conversation began on. */
   engine(): Promise<EngineChoice>;
   /** Pick the engine for the next conversation. It is saved at once. */

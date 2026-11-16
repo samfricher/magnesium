@@ -19,7 +19,7 @@ use crate::activity::{self, Activity};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Conversation, Decision, EventSink,
-    Harness, Intent, NoticeKind, Payment, SavedWaiter, StartOptions,
+    Harness, Intent, NoticeKind, Payment, Permissions, SavedWaiter, StartOptions,
 };
 use crate::files;
 use crate::find;
@@ -142,6 +142,7 @@ pub struct Setup {
     pub runtime: RuntimeSetup,
     pub account: Account,
     pub payment: Payment,
+    pub permissions: Permissions,
 }
 
 /// What the session screen needs when it opens.
@@ -860,6 +861,7 @@ impl Manager {
             runtime: install::check(&self.store),
             account: self.harness.account(payment),
             payment,
+            permissions: self.store.permissions(),
         }
     }
 
@@ -883,6 +885,19 @@ impl Manager {
     pub fn set_payment(&self, payment: Payment) -> Account {
         self.store.set_payment(payment);
         self.harness.account(payment)
+    }
+
+    /// Choose who decides on a tool the tutor wants. A running conversation
+    /// changes from its next tool on; when it cannot, the choice still holds
+    /// from the next session.
+    pub fn set_permissions(&self, permissions: Permissions) -> AgentResult<()> {
+        self.store.set_permissions(permissions);
+        let mut inner = lock(&self.inner);
+        let running = !lock(&inner.buffer).ended;
+        match inner.conversation.as_mut() {
+            Some(conversation) if running => conversation.set_permissions(permissions),
+            _ => Ok(()),
+        }
     }
 
     /// Start the agent's own sign-in for the chosen way of paying.
@@ -1233,6 +1248,7 @@ impl Manager {
                 payment: self.store.payment(),
                 model,
                 effort,
+                permissions: self.store.permissions(),
             },
             self.sink_for(
                 folder.clone(),

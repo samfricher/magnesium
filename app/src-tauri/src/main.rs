@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mg_core::activity::Activity;
-use mg_core::agent::{Account, AgentEvent, Answer, Decision, Intent, Payment};
+use mg_core::agent::{Account, AgentEvent, Answer, Decision, Intent, Payment, Permissions};
 use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::files::Source;
@@ -195,6 +195,13 @@ fn account(shell: State<'_, Shell>) -> Account {
 #[tauri::command(async)]
 fn set_payment(shell: State<'_, Shell>, payment: Payment) -> Account {
     shell.manager.set_payment(payment)
+}
+
+/// Choose who decides on a tool the tutor wants: saved at once, and a
+/// running lesson changes from its next tool on.
+#[tauri::command(async)]
+fn set_permissions(shell: State<'_, Shell>, permissions: Permissions) -> Reply<()> {
+    plain(shell.manager.set_permissions(permissions))
 }
 
 #[tauri::command(async)]
@@ -664,6 +671,7 @@ fn main() {
             keep_runtime,
             account,
             set_payment,
+            set_permissions,
             sign_in,
             about,
             engine,

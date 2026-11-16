@@ -17,7 +17,7 @@
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
-import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, ModelAt, ModelChoice, ModelOption, Opened, Paper, PaperSitting, Payment, Pick, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
+import type { Account, Added, AgentEvent, Card, Core, Engine, Home, Intent, LessonInfo, Mark, ModelAt, ModelChoice, ModelOption, Opened, Paper, PaperSitting, Payment, Permissions, Pick, Progress, RuntimeSetup, Setup, Source, Turn, Workspace } from "./types";
 
 const wait = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
 
@@ -35,6 +35,7 @@ const week = has("s5-week", "s5-week-next");
 const firstOpen = has("s1-cold-first");
 let signedIn = !has("setup-signed-out");
 let payment: Payment = "plan";
+let permissions: Permissions = "auto";
 let engineChosen: Engine = "direct";
 // The list Claude Code sends, as stand-in data in its own words. A new window has none kept and asks for it:
 // "model-first-run" gets it a moment later, "model-asking" is still waiting, and "model-failed" is sent none ("model-list-failed" with its list open).
@@ -260,7 +261,7 @@ function account(): Account {
   return base;
 }
 
-const setup = (): Setup => ({ runtime: runtime(), account: account(), payment });
+const setup = (): Setup => ({ runtime: runtime(), account: account(), payment, permissions });
 
 /** The conversation left, as the window keeps it: what `turns` reads at rest. */
 function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
@@ -499,6 +500,9 @@ export function demoCore(): Core {
     setPayment: async (chosen) => {
       payment = chosen;
       return account();
+    },
+    setPermissions: async (chosen) => {
+      permissions = chosen;
     },
     engine: async () => ({ chosen: engineChosen, conversation: engineChosen }),
     models: async () => modelChoice(),

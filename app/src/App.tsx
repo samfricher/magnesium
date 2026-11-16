@@ -26,7 +26,7 @@ import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
 import { Commands } from "./surface/Commands";
 import { Session, setupReady, type Pending, type SessionHandle, type SessionTab } from "./surface/Session";
 import { PasteSheet } from "./surface/Sheets";
-import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Setup, Workspace } from "./types";
+import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Permissions, Setup, Workspace } from "./types";
 import { displayName, withoutPaths } from "./words";
 
 type HomeTab = { key: "home"; kind: "home" };
@@ -510,6 +510,14 @@ export function App() {
     setSetup({ ...setup, payment, account });
   };
 
+  const choosePermissions = async (permissions: Permissions) => {
+    const { api, setup } = now.current;
+    if (!api || !setup) return;
+    setSetup({ ...setup, permissions });
+    // A running lesson that cannot change keeps its way until it ends; the choice is saved either way.
+    await api.setPermissions(permissions).catch(() => undefined);
+  };
+
   const lessonOpen = () => Object.values(handles.current).some((handle) => handle.state().open);
 
   /** Pick the engine for the next lesson. Saved at once; refused while a lesson is open. */
@@ -951,6 +959,7 @@ export function App() {
               section={settingsSection}
               onEngine={(chosen) => void chooseEngine(chosen)}
               onPayment={(payment) => void choosePayment(payment)}
+              onPermissions={(permissions) => void choosePermissions(permissions)}
               onBlock={chooseBlock}
               onSignIn={() => void signIn()}
               onCheckAgain={() => void checkAgain()}

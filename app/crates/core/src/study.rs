@@ -187,6 +187,57 @@ pub fn looks_like_a_key(path: &Path) -> bool {
         })
 }
 
+/// Claude Code rules that keep the tutor from reading a course's answer
+/// keys, by the names [`looks_like_a_key`] goes by, matched in any case.
+///
+/// Read rules also bind Grep, Glob and Claude Code's sandbox, so a shell
+/// command cannot read the file either: a live check on 2026-11-15 found
+/// `cat`, `grep -r` and a Python `open` all refused. Without them the tutor
+/// read a key with Read, Grep and `cat`, in any permission mode.
+///
+/// They cover the course material: files at the top of the study root, in
+/// its folders other than `Study/`, and in `Study/materials`, where the
+/// window adds material. The rest of `Study/` is the tutor's own: it writes
+/// a practice paper's key there and marks the paper against it, and its
+/// build reads files named for the key.
+pub fn key_rules(root: &Path) -> Vec<String> {
+    let root = root.display().to_string();
+    let root = root.trim_end_matches('/');
+    let mut scopes = vec![
+        format!("/{root}/*"),
+        format!("/{root}/{}/**/*", crate::material::MATERIALS),
+    ];
+    if let Ok(entries) = fs::read_dir(root) {
+        let mut folders: Vec<String> = entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "Study" && !name.starts_with('.'))
+            .collect();
+        folders.sort();
+        scopes.extend(folders.iter().map(|name| format!("/{root}/{name}/**/*")));
+    }
+    fn any_case(word: &str) -> String {
+        word.chars()
+            .map(|c| {
+                if c.is_ascii_alphabetic() {
+                    format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase())
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect()
+    }
+    scopes
+        .iter()
+        .flat_map(|scope| {
+            KEY_WORDS
+                .iter()
+                .map(move |word| format!("Read({scope}{}*)", any_case(word)))
+        })
+        .collect()
+}
+
 fn papers(root: &Path, target: &str, log: &GapLog) -> Vec<Paper> {
     let plan =
         fs::read_to_string(root.join("Study").join(target).join("plan.md")).unwrap_or_default();
@@ -1042,6 +1093,35 @@ pub fn rail(folder: &Path) -> Rail {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_course_key_is_closed_in_any_case_and_the_tutors_own_papers_are_not() {
+        let root = tempfile::tempdir().unwrap();
+        for dir in ["Lectures", "Study/stats/papers", ".git"] {
+            fs::create_dir_all(root.path().join(dir)).unwrap();
+        }
+        let rules = key_rules(root.path());
+        let at = root.path().display().to_string();
+        let key = "[kK][eE][yY]";
+        for scope in [
+            format!("/{at}/*"),
+            format!("/{at}/Study/materials/**/*"),
+            format!("/{at}/Lectures/**/*"),
+        ] {
+            let rule = format!("Read({scope}{key}*)");
+            assert!(rules.contains(&rule), "{rule} not in {rules:?}");
+        }
+        assert!(rules.contains(&format!(
+            "Read(/{at}/*[mM][aA][rR][kK]-[sS][cC][hH][eE][mM][eE]*)"
+        )));
+        assert!(
+            !rules
+                .iter()
+                .any(|rule| rule.contains("/Study/stats") || rule.contains("/.git/")),
+            "the tutor's own papers and hidden folders stay open: {rules:?}"
+        );
+        assert_eq!(rules.len(), KEY_WORDS.len() * 3);
+    }
 
     #[test]
     fn the_nearest_exam_that_is_not_past_is_chosen() {

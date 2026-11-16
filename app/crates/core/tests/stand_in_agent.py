@@ -232,6 +232,13 @@ def init_message():
         "plugins": [],
         "slash_commands": ["help"],
         "apiKeySource": key_source(),
+        # As Claude Code reports it: auto when asked for, unless this stand-in
+        # plays an account that cannot have it.
+        "permissionMode": "auto"
+        if "--permission-mode" in args
+        and args[args.index("--permission-mode") + 1] == "auto"
+        and os.environ.get("STAND_IN_NO_AUTO") != "1"
+        else "default",
     }
     if not NO_PLUGIN:
         message["tools"].append("mcp__plugin_magnesium_magnesium__learning_step")

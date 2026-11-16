@@ -193,6 +193,18 @@ pub enum Payment {
     ApiKey,
 }
 
+/// Who decides when the tutor wants a tool that is not already allowed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Permissions {
+    /// Claude Code's auto mode decides, and the learner is asked only when
+    /// it does not.
+    #[default]
+    Auto,
+    /// The learner is asked each time.
+    Ask,
+}
+
 /// The agent on this computer: whether it is there and signed in, and how a
 /// lesson started now would be paid for, as the agent reports it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -225,6 +237,8 @@ pub struct StartOptions {
     pub model: Option<String>,
     /// The effort level to start at; none for the agent's own.
     pub effort: Option<String>,
+    /// Who decides on a tool that is not already allowed.
+    pub permissions: Permissions,
 }
 
 /// What a running conversation is on, as the agent reports it.
@@ -305,6 +319,12 @@ pub trait Conversation: Send {
         Err(AgentError(
             "This tutor cannot change its model while it runs.".into(),
         ))
+    }
+    /// Change who decides on a tool, from the next tool on. An agent that
+    /// never asks has nothing to change.
+    fn set_permissions(&mut self, permissions: Permissions) -> AgentResult<()> {
+        let _ = permissions;
+        Ok(())
     }
     /// What the agent reports the conversation is on now.
     fn applied(&mut self) -> AgentResult<Applied> {

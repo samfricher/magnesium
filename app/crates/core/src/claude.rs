@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 
 use crate::agent::{
     Account, AgentError, AgentEvent, AgentResult, Answer, Choice, Conversation, Decision,
-    EventSink, Harness, Intent, NoticeKind, Payment, Question, StartOptions,
+    EventSink, Harness, Intent, NoticeKind, Payment, Permissions, Question, StartOptions,
 };
 use crate::paths;
 
@@ -40,6 +40,9 @@ pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_AGENT";
 pub const TRACE_ENV: &str = "MAGNESIUM_APP_TRACE";
 
 const PLUGIN: &str = "magnesium";
+/// Claude Code's name for auto mode, as `--permission-mode` and its first
+/// report give it.
+const AUTO: &str = "auto";
 const NAME: &str = "Claude Code";
 /// Anthropic's page for installing Claude Code. The window links to it and
 /// never runs an installer itself.
@@ -102,10 +105,15 @@ fn plugin_dir() -> Option<PathBuf> {
 ///   hooks, skills and tool server load as in a terminal. Its tools are in
 ///   the session from the first turn, as there are too few to defer.
 /// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
-///   `.magnesium/`. Permission cards are unchanged, with one exception: Edit
-///   and Write on the study root's plan files (`Study/<plan>/plan.md` and
-///   `graph.yaml`) are allowed without asking, so "change the plan" asks the
-///   learner nothing. Every other write, and a sandboxed command, still asks.
+///   `.magnesium/`. A course's answer keys are never read, in either
+///   permission mode: see [`crate::study::key_rules`].
+/// - Edit and Write on the study root's plan files (`Study/<plan>/plan.md`
+///   and `graph.yaml`) are allowed, so "change the plan" asks nothing.
+/// - With [`Permissions::Auto`], Claude Code's auto mode decides on every
+///   other tool, and a card comes only when it does not decide: after it has
+///   refused several in a row. With [`Permissions::Ask`], every other write,
+///   and every sandboxed command, asks. The window's card answers either way
+///   (`--permission-prompt-tool stdio`). Never `bypassPermissions`.
 /// - The model and effort are the learner's pick, each left out when it is
 ///   Claude Code's own, as in a terminal. Both are pinned by name, so a
 ///   later change of Claude Code's default cannot change the tutor unseen.
@@ -117,6 +125,7 @@ pub fn lesson_args(
     plugin: Option<&Path>,
     model: Option<&str>,
     effort: Option<&str>,
+    permissions: Permissions,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--setting-sources".into(),
@@ -124,6 +133,10 @@ pub fn lesson_args(
         "--tools".into(),
         TOOLS.join(","),
     ];
+    if permissions == Permissions::Auto {
+        args.push("--permission-mode".into());
+        args.push(AUTO.into());
+    }
     push_pick(&mut args, model, effort);
     if let Some(plugin) = plugin {
         args.push("--plugin-dir".into());
@@ -150,6 +163,7 @@ pub fn lesson_args(
             let rule = format!("/{}/.magnesium/**", folder.display());
             [format!("Write({rule})"), format!("Edit({rule})")]
         })
+        .chain(roots.iter().flat_map(|root| crate::study::key_rules(root)))
         .collect();
     let allow: Vec<String> = roots
         .iter()
@@ -327,6 +341,7 @@ impl Harness for ClaudeCode {
                 plugin_dir().as_deref(),
                 options.model.as_deref(),
                 options.effort.as_deref(),
+                options.permissions,
             ))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -365,6 +380,7 @@ impl Harness for ClaudeCode {
             counter: AtomicU64::new(0),
             interrupts: AtomicU64::new(0),
             payment: options.payment,
+            permissions: Mutex::new(options.permissions),
             trace: env::var_os(TRACE_ENV)
                 .filter(|path| !path.is_empty())
                 .and_then(|path| {
@@ -585,6 +601,9 @@ struct Shared {
     interrupts: AtomicU64,
     /// How the learner chose to pay, to check against what the agent uses.
     payment: Payment,
+    /// Who the learner chose to decide on a tool, for the first report to
+    /// be checked against.
+    permissions: Mutex<Permissions>,
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
     opening: Opening,
@@ -984,6 +1003,12 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
                 text,
             });
         }
+        if let Some(text) = auto_notice(*lock(&shared.permissions), value) {
+            shared.emit(AgentEvent::Notice {
+                kind: NoticeKind::Other,
+                text,
+            });
+        }
         let problems = init_problems(value);
         let model = runs_on(value);
         lock(&shared.opening.model).clone_from(&model);
@@ -996,6 +1021,15 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
             model,
         });
     }
+}
+
+/// Auto mode asked for and not given, in one line. Claude Code turns it off
+/// for some plans and models, and its first report names the mode it runs in.
+pub(crate) fn auto_notice(permissions: Permissions, init: &Value) -> Option<String> {
+    let mode = init["permissionMode"].as_str()?;
+    (permissions == Permissions::Auto && mode != AUTO).then(|| {
+        "Claude Code's auto mode is not available for this lesson, so you are asked before the tutor uses a tool.".to_owned()
+    })
 }
 
 /// The model Claude Code's first message says the conversation runs on.
@@ -1850,6 +1884,18 @@ impl Conversation for ClaudeConversation {
         Ok(changed)
     }
 
+    fn set_permissions(&mut self, permissions: Permissions) -> AgentResult<()> {
+        let mode = match permissions {
+            Permissions::Auto => AUTO,
+            Permissions::Ask => "default",
+        };
+        self.shared
+            .ask(json!({"subtype": "set_permission_mode", "mode": mode}))
+            .map_err(|why| AgentError(format!("Claude Code did not change who decides: {why}.")))?;
+        *lock(&self.shared.permissions) = permissions;
+        Ok(())
+    }
+
     fn applied(&mut self) -> AgentResult<crate::agent::Applied> {
         let shared = &self.shared;
         crate::models::applied(|request| shared.ask(request))
@@ -2090,6 +2136,7 @@ mod tests {
             counter: AtomicU64::new(0),
             interrupts: AtomicU64::new(0),
             payment: Payment::Plan,
+            permissions: Mutex::new(Permissions::Auto),
             trace: None,
             started: Instant::now(),
             asked: crate::models::Asked::default(),
@@ -2247,7 +2294,13 @@ mod tests {
     fn a_lesson_loads_the_nine_tools_magnesiums_plugin_and_nothing_of_the_learners() {
         let folder = Path::new("/study/stats");
         let plugin = Path::new("/home/me/Library/Application Support/magnesium/claude-plugin");
-        let args = lesson_args(folder, Some(plugin), Some("claude-opus-5-5"), None);
+        let args = lesson_args(
+            folder,
+            Some(plugin),
+            Some("claude-opus-5-5"),
+            None,
+            Permissions::Auto,
+        );
         let after = |flag: &str| {
             let at = args
                 .iter()
@@ -2301,23 +2354,52 @@ mod tests {
             ]
         );
         assert!(!args.iter().any(|a| a == "--bare"));
-        assert!(!lesson_args(folder, None, None, None)
+        let asking = lesson_args(folder, None, None, None, Permissions::Ask);
+        assert!(!asking.iter().any(|a| a == "--plugin-dir"));
+        // Auto mode is Claude Code's own; the card answers what it leaves.
+        assert_eq!(after("--permission-mode"), "auto");
+        assert!(!asking.iter().any(|a| a == "--permission-mode"));
+        assert!(!args.iter().any(|a| a.contains("bypassPermissions")));
+        // A course's answer key is closed in either mode.
+        assert!(
+            deny.contains(&"Read(//study/stats/*[kK][eE][yY]*)"),
+            "{deny:?}"
+        );
+        assert!(asking
             .iter()
-            .any(|a| a == "--plugin-dir"));
+            .any(|a| a.contains("Read(//study/stats/*[kK][eE][yY]*)")));
+    }
+
+    #[test]
+    fn auto_mode_not_given_is_said_once_and_asking_is_not() {
+        let init =
+            |mode: &str| json!({"type": "system", "subtype": "init", "permissionMode": mode});
+        assert_eq!(auto_notice(Permissions::Auto, &init("auto")), None);
+        assert!(auto_notice(Permissions::Auto, &init("default"))
+            .is_some_and(|text| text.contains("not available")));
+        assert_eq!(auto_notice(Permissions::Ask, &init("default")), None);
+        // A report that names no mode says nothing about it.
+        assert_eq!(auto_notice(Permissions::Auto, &json!({})), None);
     }
 
     #[test]
     fn a_lesson_starts_on_the_pick_and_never_on_a_word_that_reads_as_a_flag() {
         let folder = Path::new("/study/stats");
-        let args = lesson_args(folder, None, Some("claude-sonnet-4-6"), Some("high"));
+        let args = lesson_args(
+            folder,
+            None,
+            Some("claude-sonnet-4-6"),
+            Some("high"),
+            Permissions::Ask,
+        );
         let at = args.iter().position(|a| a == "--model").unwrap();
         assert_eq!(args[at + 1], "claude-sonnet-4-6");
         let at = args.iter().position(|a| a == "--effort").unwrap();
         assert_eq!(args[at + 1], "high");
         // No pick: Claude Code's own model and effort.
-        let own = lesson_args(folder, None, None, None);
+        let own = lesson_args(folder, None, None, None, Permissions::Ask);
         assert!(!own.iter().any(|a| a == "--model" || a == "--effort"));
-        let odd = lesson_args(folder, None, Some("--bare"), Some("--x"));
+        let odd = lesson_args(folder, None, Some("--bare"), Some("--x"), Permissions::Ask);
         assert!(!odd
             .iter()
             .any(|a| a == "--model" || a == "--effort" || a == "--bare"));
@@ -2480,6 +2562,7 @@ mod tests {
             counter: AtomicU64::new(0),
             interrupts: AtomicU64::new(0),
             payment: Payment::Plan,
+            permissions: Mutex::new(Permissions::Auto),
             trace: None,
             started: Instant::now(),
             asked: crate::models::Asked::default(),
