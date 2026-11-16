@@ -246,7 +246,7 @@ export function HomePage(props: Props) {
   const first = lead && firstDrawn.current?.folder === lead.folder && firstDrawn.current.line ? firstNow : null;
   const firstLine = first ? <span className="next-first">{first}</span> : null;
   // Quick checks due in the lead workspace can be taken alone, in a few minutes, instead of the row above. Shown only
-  // from a read made on this visit, since a kept one may count checks answered since.
+  // from a read the row's own line trusts: a kept one may count checks a lesson has answered since.
   const checks = lead && trusted && (now?.checks ?? 0) > 0 ? lead.folder : null;
   const { onChecksDue } = props;
   useEffect(() => {
