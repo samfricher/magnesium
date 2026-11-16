@@ -44,6 +44,9 @@ pub struct Planned {
     /// How many session lines the runtime could not read. They are not in
     /// the calendar file; the tutor can fix them.
     pub unreadable: usize,
+    /// How many plan files the runtime could not read at all.
+    #[serde(default)]
+    pub unreadable_plans: usize,
 }
 
 /// What `magnesium calendar --json` printed, or None when it is not that
@@ -77,6 +80,7 @@ pub fn planned_from(printed: &str) -> Option<Planned> {
             })
             .collect(),
         unreadable: value["unreadable"].as_array().map_or(0, Vec::len),
+        unreadable_plans: value["unreadable_plans"].as_array().map_or(0, Vec::len),
     })
 }
 
@@ -98,6 +102,29 @@ fn file_name(folder: &Path) -> String {
     format!("{name} sessions.ics")
 }
 
+/// A file written earlier is removed after this long: the calendar app has
+/// read it by then.
+const KEEP_FILE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Take away the calendar files an earlier write left, once the calendar app
+/// has had time to read them.
+fn remove_old(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|time| time.elapsed().ok())
+            .is_some_and(|age| age > KEEP_FILE);
+        if old && entry.path().extension().is_some_and(|ext| ext == "ics") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Ask the runtime for the folder's calendar file, write it to the window's
 /// own temporary folder, and return where.
 pub fn write(folder: &Path) -> Result<PathBuf, String> {
@@ -110,6 +137,7 @@ pub fn write(folder: &Path) -> Result<PathBuf, String> {
         .join("dev.magnesium.window")
         .join("calendar");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    remove_old(&dir);
     let path = dir.join(file_name(folder));
     fs::write(&path, file).map_err(|e| e.to_string())?;
     Ok(path)
@@ -160,10 +188,38 @@ mod tests {
         assert_eq!(planned.sessions[0].days, ["MO", "TU", "WE", "TH", "FR"]);
         assert_eq!(planned.sessions[0].end, None);
         assert_eq!(planned.unreadable, 1);
+        assert_eq!(planned.unreadable_plans, 0);
         assert_eq!(
             planned_from("error: unrecognized subcommand 'calendar'"),
             None
         );
+    }
+
+    #[test]
+    fn an_old_calendar_file_is_removed_and_a_new_one_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("Old sessions.ics");
+        let new = dir.path().join("New sessions.ics");
+        let other = dir.path().join("notes.txt");
+        for file in [&old, &new, &other] {
+            fs::write(file, "x").unwrap();
+        }
+        let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for file in [&old, &other] {
+            fs::File::options()
+                .write(true)
+                .open(file)
+                .unwrap()
+                .set_modified(hour_ago)
+                .unwrap();
+        }
+        remove_old(dir.path());
+        assert!(!old.exists());
+        assert!(
+            new.exists(),
+            "a file the calendar app may still be reading stays"
+        );
+        assert!(other.exists(), "only calendar files are taken away");
     }
 
     #[test]

@@ -316,8 +316,10 @@ export function WorkspacePage(props: Props) {
   const panelRun = useRef<(command: string) => boolean>(() => false);
   panelRun.current = (command) => {
     if (command === "add-to-calendar") {
-      if (!planned || planned.sessions.length === 0) return false;
-      void addToCalendar();
+      // The key works where the control is drawn, and says why where it is not.
+      if (sitting) props.onNote("Your sessions can go in your calendar once the paper is handed in or ended.");
+      else if (!anyTimes) props.onNote("This workspace’s plan has no session times to add. Tell the tutor when you study, and it adds them.");
+      else void addToCalendar();
       return true;
     }
     const docs = docsNow.current;

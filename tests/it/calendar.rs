@@ -123,3 +123,65 @@ fn calendar_with_no_planned_session_prints_nothing_and_says_why() {
     let value: Value = serde_json::from_slice(&listed.stdout).unwrap();
     assert_eq!(value["sessions"], serde_json::json!([]));
 }
+
+#[test]
+fn calendar_open_writes_outside_the_study_folder_and_hands_the_file_on() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    write_plan(
+        &e.workspace,
+        "midterm-1",
+        "- If it is Monday to Friday at 08:00, then I do the due cold redos at my desk.\n",
+    );
+    let before = tree(&e.workspace);
+    // A stand-in for the Mac's `open`: it keeps the path it was handed.
+    let handed = e.root.join("handed.txt");
+    let opener = e.root.join("opener.sh");
+    fs::write(
+        &opener,
+        format!("#!/bin/sh\necho \"$1\" > '{}'\n", handed.display()),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = e
+        .command()
+        .args(["calendar", "--open"])
+        .env("MAGNESIUM_CALENDAR_OPENER", &opener)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        tree(&e.workspace),
+        before,
+        "nothing is written in the study folder"
+    );
+    let path = fs::read_to_string(&handed).unwrap();
+    let path = Path::new(path.trim());
+    assert!(!path.starts_with(&e.workspace), "{path:?}");
+    assert!(
+        fs::read_to_string(path)
+            .unwrap()
+            .starts_with("BEGIN:VCALENDAR\r\n")
+    );
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("1 planned session")
+    );
+
+    // With nothing planned, nothing is written or opened.
+    fs::remove_file(&handed).unwrap();
+    write_plan(&e.workspace, "midterm-1", "- none planned\n");
+    let none = e
+        .command()
+        .args(["calendar", "--open"])
+        .env("MAGNESIUM_CALENDAR_OPENER", &opener)
+        .output()
+        .unwrap();
+    assert!(!none.status.success());
+    assert!(!handed.exists(), "nothing was handed on");
+}

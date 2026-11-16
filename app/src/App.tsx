@@ -379,7 +379,9 @@ export function App() {
           else note("Open a session first.");
           return;
         case "add-to-calendar":
-          if (tab?.kind === "home") workspaceDocs.current?.(command);
+          // A workspace's page holds the sessions; anywhere else the key says where they are.
+          if (tab?.kind === "home" && now.current.homeFolder && workspaceDocs.current?.(command)) return;
+          note("Add to Calendar is on a workspace’s page, under When you study.");
           return;
         case "expand-panel":
         case "flip-panel":

@@ -96,14 +96,28 @@ pub(crate) fn command() -> ClapCommand {
                             .help("Switch a workspace set up by an earlier Magnesium version to this version's teaching instructions; unedited earlier instructions are kept on disk")
                             .action(ArgAction::SetTrue),
                     )
-            } else if name == "info" || name == "attempts" || name == "progress" || name == "calendar" {
+            } else if name == "calendar" {
+                subcommand
+                    .arg(
+                        Arg::new("json")
+                            .long("json")
+                            .help("Print the sessions and what is left out as JSON instead of a calendar file")
+                            .action(ArgAction::SetTrue),
+                    )
+                    .arg(
+                        Arg::new("open")
+                            .long("open")
+                            .help("Open the file in your calendar app instead of printing it; it is written outside the study folder")
+                            .conflicts_with("json")
+                            .action(ArgAction::SetTrue),
+                    )
+            } else if name == "info" || name == "attempts" || name == "progress" {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")
                         .help(match name {
                             "info" => "Print the status as JSON on one line instead of pretty-printed",
                             "attempts" => "Print the answers as JSON instead of text",
-                            "calendar" => "Print the sessions and the lines left out as JSON instead of a calendar file",
                             _ => "Print the skills, the level and the days as JSON instead of text",
                         })
                         .action(ArgAction::SetTrue),
