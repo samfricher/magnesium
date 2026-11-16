@@ -306,7 +306,11 @@ fn handle(
             }
             None => false,
         };
-        return Ok(ends.then(end_turn));
+        let receipt = (tool_kind(tool) == Some(MagnesiumTool::LearningStep)
+            && committed(input.tool_response.as_ref()))
+        .then(|| crate::pass_receipts::for_hook(workspace, input.tool_response.as_ref()))
+        .flatten();
+        return Ok(with_message(ends.then(end_turn), receipt));
     }
     match event {
         HookEvent::SessionStart => {
@@ -411,6 +415,17 @@ fn committed(response: Option<&Value>) -> bool {
         }
     }
     response.is_some_and(|response| walk(response, 0))
+}
+
+/// A line for the learner beside the hook's other output. Claude Code shows a
+/// hook's `systemMessage` to the person at the terminal and not to the model.
+fn with_message(output: Option<Value>, message: Option<String>) -> Option<Value> {
+    let Some(message) = message else {
+        return output;
+    };
+    let mut output = output.unwrap_or_else(|| json!({}));
+    output["systemMessage"] = Value::String(message);
+    Some(output)
 }
 
 fn save_after(input: Option<&Value>) -> bool {

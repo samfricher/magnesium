@@ -36,6 +36,12 @@ function Marks({ marks }: { marks: Mark[] }) {
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
           {markWords(mark)}
           {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
+          {passWords(mark) && mark.receipt && (
+            <span className="record-receipt" data-role="receipt">
+              {" "}
+              <Line text={mark.receipt} />
+            </span>
+          )}
         </p>
       ))}
     </>
