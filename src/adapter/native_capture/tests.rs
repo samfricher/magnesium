@@ -201,3 +201,44 @@ fn claude_paste_markup_is_certified_and_stored_as_the_learner_wrote_it() {
     assert_eq!(learner_text(&tool_only, &pasted), pasted.as_str());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn the_windows_talk_line_says_talk_and_is_not_kept_as_the_learners_words() {
+    let host = HostContext {
+        host_kind: "claude".into(),
+        host_thread_id: "magnesium-h1:claude:conversation".into(),
+    };
+    let talk = format!("{TALK_LEAD}\n\nwhy factorise first?");
+    assert_eq!(learner_text(&host, &talk), "why factorise first?");
+    assert_eq!(
+        intent(&host, &talk),
+        Some(crate::learner::MessageIntent::Talk)
+    );
+    // Twice changes nothing more, so a tutor's echo of either verifies.
+    assert_eq!(
+        learner_text(&host, &learner_text(&host, &talk)),
+        "why factorise first?"
+    );
+    // The line alone, and the line with pasted text after it.
+    assert_eq!(
+        intent(&host, TALK_LEAD),
+        Some(crate::learner::MessageIntent::Talk)
+    );
+    let pasted =
+        format!("{TALK_LEAD}\n<pasted_content id=\"a1\">\nx² + 5x\n</pasted_content id=\"a1\">");
+    assert_eq!(learner_text(&host, &pasted), "x² + 5x");
+    // Words run on from the line, or the line further down, are not the window's.
+    for text in [
+        format!("{TALK_LEAD} and x = 2"),
+        format!("x = 2\n{TALK_LEAD}"),
+        "x = 2".to_owned(),
+    ] {
+        assert_eq!(intent(&host, &text), None, "{text}");
+        assert_eq!(learner_text(&host, &text), text);
+    }
+    let other = HostContext {
+        host_kind: "tool_only".into(),
+        host_thread_id: "t".into(),
+    };
+    assert_eq!(intent(&other, &talk), None);
+}

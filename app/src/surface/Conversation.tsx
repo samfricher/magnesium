@@ -11,7 +11,7 @@ import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card,
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, withoutPaths, type PlanDiff } from "../words";
+import { firstWords, markWords, passWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
@@ -35,6 +35,7 @@ function Marks({ marks }: { marks: Mark[] }) {
       {marks.map((mark) => (
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
           {markWords(mark)}
+          {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
         </p>
       ))}
     </>
@@ -179,11 +180,14 @@ export function Notices({
   onDismiss,
   onStartAgain,
   onSignIn,
+  onPickModel,
 }: {
   notices: Notice[];
   onDismiss: (text: string) => void;
   onStartAgain?: (text: string, atUsualEffort: boolean) => void;
   onSignIn?: () => void;
+  /** Open the session's list of models, as More's Model row does. */
+  onPickModel?: () => void;
 }) {
   if (notices.length === 0) return null;
   return (
@@ -216,6 +220,18 @@ export function Notices({
               </button>
             </span>
           </p>
+        ) : notice.kind === "model_unavailable" && onPickModel ? (
+          <p key={notice.text} className="record note" role="alert">
+            {notice.text}
+            <span className="note-acts">
+              <button className="plain note-act" data-drive="pick-model" onClick={onPickModel}>
+                Pick a model
+              </button>
+              <button className="plain" onClick={() => onDismiss(notice.text)}>
+                Dismiss
+              </button>
+            </span>
+          </p>
         ) : (
           <p key={notice.text} className="record note" role={notice.kind === "usage_limit" || notice.kind === "sign_in" ? "alert" : "status"}>
             {withoutPaths(notice.text)}{" "}
@@ -237,14 +253,16 @@ export function Cards(props: { cards: Card[]; onDecide: (id: string, decision: D
         card.kind === "permission" ? (
           <div key={card.id} className="card" role="group" aria-label={card.title}>
             <p className="record-head">{card.title}</p>
-            <p className="card-detail">{withoutPaths(card.detail)}</p>
+            {card.detail && <p className="card-what">{withoutPaths(card.detail)}</p>}
+            {/* The command or call itself, whole: the learner allows what it does, not what it is said to do. */}
+            {card.exact && <p className="card-detail">{card.exact}</p>}
             <p className="card-acts">
               <button className="act" data-drive="allow" onClick={() => props.onDecide(card.id, "allow_once")} autoFocus>
                 Allow once
               </button>
               {card.canAlways && (
-                <button className="act" onClick={() => props.onDecide(card.id, "allow_always")}>
-                  Always allow
+                <button className="act" data-drive="allow-always" onClick={() => props.onDecide(card.id, "allow_always")}>
+                  {card.always ?? "Always allow"}
                 </button>
               )}
               <button className="act" onClick={() => props.onDecide(card.id, "refuse")}>

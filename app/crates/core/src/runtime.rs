@@ -4,6 +4,7 @@
 //! program the learner installed and reads what it prints, so the runtime
 //! stays small and the two can be updated apart.
 
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -65,6 +66,53 @@ pub struct Mark {
     pub cold: bool,
     /// The paper the answer was given on, or none in a lesson.
     pub paper: Option<String>,
+    /// Which of its skill's passes this answer earned, 1 to 3, as
+    /// `magnesium progress` counts them now. None when it earned none, when
+    /// a later miss started the count again, or when the runtime cannot say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<u8>,
+}
+
+/// Each answer that earned a pass a skill holds now, by the record's id, and
+/// which pass it was, from what `magnesium progress` printed. A runtime from
+/// before it named these answers gives none.
+pub fn passes_from(progress: &Value) -> HashMap<String, u8> {
+    let plans = progress["plans"].as_array().into_iter().flatten();
+    let skills = plans
+        .flat_map(|plan| plan["skills"].as_array().into_iter().flatten())
+        .chain(progress["other"]["skills"].as_array().into_iter().flatten());
+    let mut passes = HashMap::new();
+    for skill in skills {
+        for (at, id) in skill["passed_by"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if let (Some(id), Ok(pass)) = (id.as_str(), u8::try_from(at + 1)) {
+                passes.insert(id.to_owned(), pass);
+            }
+        }
+    }
+    passes
+}
+
+/// Say which pass each mark earned, as the runtime counts it now.
+pub fn note_passes(marks: &mut [Mark], folder: &Path) {
+    // Only a right answer given alone can earn one: the others need no reading.
+    if !marks
+        .iter()
+        .any(|mark| mark.mark == "right" && mark.help == "none")
+    {
+        return;
+    }
+    let Some(progress) = progress(folder) else {
+        return;
+    };
+    let passes = passes_from(&progress);
+    for mark in marks {
+        mark.pass = passes.get(&mark.id).copied();
+    }
 }
 
 /// The marked answers in what `magnesium attempts --json` printed, oldest
@@ -93,6 +141,7 @@ pub fn marks_from(printed: &str) -> Option<Vec<Mark>> {
                     help: text("help").unwrap_or_else(|| "none".to_owned()),
                     cold: row["cold"].as_bool().unwrap_or(false),
                     paper: text("paper"),
+                    pass: None,
                 })
             })
             .collect(),
@@ -120,6 +169,60 @@ pub fn progress(folder: &Path) -> Option<Value> {
     .then_some(value)
 }
 
+/// A step of the lesson's goal, as the record's checkpoint holds it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Step {
+    pub step: String,
+    /// "todo", "doing" or "done".
+    pub status: String,
+}
+
+/// The task open in a lesson, in the words of the tutor's message that
+/// posed it, as the record holds it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct OpenTask {
+    /// "task", or "quick_check" for a sitting's quick check.
+    pub kind: String,
+    pub text: String,
+    pub posed_at_ms: i64,
+    /// True when the record could not find the task's own words in the
+    /// reply, so `text` is the whole reply.
+    #[serde(default)]
+    pub whole_reply: bool,
+}
+
+/// A lesson as `magnesium lesson --json` prints it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Lesson {
+    pub goal: String,
+    #[serde(default)]
+    pub steps: Vec<Step>,
+    pub open_task: Option<OpenTask>,
+}
+
+/// `magnesium lesson --json`: the lesson a conversation is in (or, with no
+/// conversation, the folder's most recently changed one), read from the
+/// record without changing it. None when the runtime could not say: it has no
+/// such command, or the folder is not set up. Some(None) when it has no
+/// lesson for that conversation.
+pub fn lesson(folder: &Path, conversation: Option<&str>) -> Option<Option<Lesson>> {
+    let mut args = vec!["lesson", "--json"];
+    if let Some(conversation) = conversation {
+        args.extend(["--conversation", conversation]);
+    }
+    let out = run(folder, &args, Duration::from_secs(10)).ok()?;
+    lesson_from(&out)
+}
+
+pub fn lesson_from(printed: &str) -> Option<Option<Lesson>> {
+    let value: Value = serde_json::from_str(printed).ok()?;
+    let lesson = value.get("lesson")?;
+    if lesson.is_null() {
+        return Some(None);
+    }
+    serde_json::from_value(lesson.clone()).ok().map(Some)
+}
+
 /// `magnesium init`: set a folder up for study.
 pub fn init(folder: &Path) -> Result<(), String> {
     run(folder, &["init", "--json"], Duration::from_secs(30)).map(|_| ())
@@ -144,8 +247,11 @@ pub fn upgrade(root: &Path) -> Result<(), String> {
 /// whose `progress --json` counts what the learner did today. 2 is the first
 /// that lists a sitting's due paper redos as data, which a lesson on the
 /// direct engine poses. 3 is the first that lists the rows waiting for a
-/// repair, which a lesson on the direct engine records.
-pub const WINDOW_FEATURES_NEEDED: u64 = 3;
+/// repair, which a lesson on the direct engine records. 4 is the first with
+/// `lesson --json`, where the window reads the goal's steps and, on the
+/// plugin engine, the open task, and the first that refuses an attempt on a
+/// message the window sent as talk.
+pub const WINDOW_FEATURES_NEEDED: u64 = 4;
 
 /// The `window_features` number that `magnesium digest` prints: which of the
 /// window's needs this program meets. It is asked at the root of the disk, in
@@ -230,6 +336,7 @@ mod tests {
                 help: "none".into(),
                 cold: true,
                 paper: None,
+                pass: None,
             }
         );
         assert_eq!(
@@ -242,6 +349,24 @@ mod tests {
         );
         assert_eq!(marks[2].paper.as_deref(), Some("Diagnostic"));
         assert_eq!(marks[3].mark, "declined");
+    }
+
+    #[test]
+    fn an_answer_is_told_which_pass_it_earned_from_what_the_runtime_prints() {
+        let printed = json!({
+            "plans": [{"plan": "midterm-1", "from": "record", "skills": [
+                {"skill": "reading Km", "passes": 2, "passed_by": [null, "a-3"]}
+            ]}, {"plan": "old", "from": "file"}],
+            "other": {"skills": [
+                {"skill": "units", "passes": 1, "passed_by": ["a-7"]},
+                // A runtime from before it named them.
+                {"skill": "sign of b", "passes": 1}
+            ]}
+        });
+        let passes = passes_from(&printed);
+        assert_eq!(passes.get("a-3"), Some(&2));
+        assert_eq!(passes.get("a-7"), Some(&1));
+        assert_eq!(passes.len(), 2);
     }
 
     #[test]

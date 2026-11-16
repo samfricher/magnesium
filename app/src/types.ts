@@ -224,6 +224,8 @@ export type Row = {
   due: boolean;
   /** The day the next proof can be earned, as "2026-11-12". */
   next_day: string | null;
+  /** The record's id for the newest answer on this skill, as the runtime groups them; absent when it does not say. */
+  last_answer?: string | null;
 };
 
 export type Score = {
@@ -273,8 +275,9 @@ export type Answer = { question: string; chosen: string[] };
  * "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed.
  * "record_unopened": a new lesson's first reply never opened the record; the window offers to start it again.
  * "record_unopened_at_effort": the same, at an effort the learner picked; the window offers to start again at usual effort.
+ * "model_unavailable": the session's model is one the account cannot use; the window offers the list of models.
  */
-export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened" | "record_unopened_at_effort";
+export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened" | "record_unopened_at_effort" | "model_unavailable";
 
 export type AgentEvent =
   | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean; model?: string | null }
@@ -282,7 +285,12 @@ export type AgentEvent =
   | { type: "text_delta"; text: string }
   | { type: "text_done"; text: string }
   | { type: "working"; doing: string | null }
-  | { type: "permission"; id: string; title: string; detail: string; can_always: boolean }
+  /**
+   * `title` says what the tutor asks and `detail` what it would touch, in plain words. `exact` is the thing itself
+   * when the words cannot show all of it (a command, a tool the window does not know). `always` labels the choice
+   * that saves the agent's own rule, by what it would allow.
+   */
+  | { type: "permission"; id: string; title: string; detail: string; exact?: string | null; can_always: boolean; always?: string | null }
   | { type: "question"; id: string; questions: Question[] }
   | { type: "withdrawn"; id: string }
   | { type: "turn_ended"; ok: boolean; interrupted: boolean; error: string | null }
@@ -297,7 +305,7 @@ export type AgentEvent =
    * when this turn's reply asked for it. Sent by an engine that knows its
    * open task (Magnesium's). The window puts the field for an answer inside it.
    */
-  | { type: "open_task"; task: string | null; posed: boolean }
+  | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 
@@ -326,6 +334,13 @@ export type Mark = {
   cold: boolean;
   /** The paper it was given on, or null in a lesson. */
   paper: string | null;
+  /**
+   * Which of its skill's three passes this answer earned, 1 to 3, as the
+   * runtime counts them now. Absent when it earned none (help, not cold, a
+   * second answer the same day, a check not due), when a later miss started
+   * the count again, or when the runtime cannot say.
+   */
+  pass?: number | null;
 };
 
 /**

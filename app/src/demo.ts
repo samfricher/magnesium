@@ -8,10 +8,11 @@
 // and the new screens of the combined window:
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
-//   #permission  #paper  #upgrade  #help-row  #symbols
+//   #permission  #permission-command  #permission-unknown  #model-unavailable
+//   #paper  #paper-over  #paper-long  #upgrade  #not-set-up  #help-row  #symbols
 //   #line-stuck  #line-stuck-typing  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
 //   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
-//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
+//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-replace-newer  #setup-too-old
 
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
@@ -75,8 +76,18 @@ const modelChoice = (): ModelChoice => {
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
   return { models, failed: modelsFailed, pick, not_offered: !offered };
 };
-let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
+// #paper-over has run past its end, as a paper does when the window was closed and opened again later; #paper-long has a long name.
+let sitting: PaperSitting | null = has("paper", "paper-over", "paper-long")
+  ? {
+      target: "midterm-1",
+      name: has("paper-long") ? "Paper B, the full midterm from last year with every part of question four" : "Paper B",
+      path: paperB.path,
+      minutes: 50,
+      started_ms: Date.now() - (has("paper-over") ? 64 : 12) * 60_000,
+    }
+  : null;
 let upgraded = !has("upgrade");
+let notSetUp = has("not-set-up");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
 let open: string | null = FOLDER;
 const DAY_MS = 86_400_000;
@@ -115,7 +126,7 @@ if (week) demoChangePlan();
 
 // The record's marks, oldest first. An answer sent in the demo adds one a moment later.
 const marks: Mark[] = [
-  { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null, pass: 1 },
   { id: "m2", at: "2026-11-09 18:26", label: "the slope gives $K_m / V_{max}$", mark: "wrong", help: "none", cold: true, paper: null },
   { id: "m3", at: "2026-11-10 17:02", label: "taking reciprocals of the rate equation", mark: "right", help: "hint", cold: false, paper: null },
   { id: "m4", at: "2026-11-05 18:40", label: "reading $V_{max}$ from the y-intercept", mark: "wrong", help: "none", cold: true, paper: null },
@@ -181,10 +192,12 @@ function home(folder: string | null = open): Home {
   return {
     folder: FOLDER,
     name: "Biochemistry",
-    state: upgraded ? "ready" : "needs_upgrade",
-    message: upgraded
-      ? null
-      : "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
+    state: !upgraded ? "needs_upgrade" : notSetUp ? "not_set_up" : "ready",
+    message: !upgraded
+      ? "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
+      : notSetUp
+        ? "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+        : null,
     exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
     last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,
     checks_due: week ? 1 : 0,
@@ -224,6 +237,7 @@ function runtime(): RuntimeSetup {
   const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
   const bundled = program("0.3.0+4f1c2ad9e0b7");
   if (has("setup-replace")) return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  if (has("setup-replace-newer")) return { state: "different", installed: program("0.4.1"), bundled, installed_now: false, message: null };
   if (has("setup-too-old")) {
     return {
       state: "too_old",
@@ -357,7 +371,33 @@ async function respond(text: string, intent: Intent | undefined) {
   const base = demoBaseReply(text);
   if (lower.includes("into my plan")) {
     emit({ type: "turn_started" });
-    emit({ type: "permission", id: "p1", title: "Change a file", detail: "Study/midterm-1/plan.md", can_always: true });
+    // As the core words what Claude Code 2.1.322 sends for each (asks.rs): the plan, a command, a tool it does not know.
+    if (has("permission-command"))
+      emit({
+        type: "permission",
+        id: "p1",
+        title: "The tutor asks to run a command",
+        detail: "Build the lab report as a PDF",
+        exact: "latexmk -pdf Study/midterm-1/lab-report.tex",
+        can_always: true,
+        always: "Always allow latexmk commands",
+      });
+    else if (has("permission-unknown"))
+      emit({
+        type: "permission",
+        id: "p1",
+        title: "The tutor asks to use a tool this window doesn’t know",
+        detail: "Adds an event to your calendar",
+        exact: 'create_event {"title":"Lab report due","date":"2026-11-20"}',
+        can_always: false,
+      });
+    else emit({ type: "permission", id: "p1", title: "The tutor asks to change your plan", detail: "Midterm 1", can_always: true, always: "Allow changes to files this session" });
+    return;
+  }
+  if (lower.includes("nomodel")) {
+    emit({ type: "turn_started" });
+    emit({ type: "notice", kind: "model_unavailable", text: "Opus 4.6 isn’t available to you. Pick another model, then send your message again." });
+    emit({ type: "turn_ended", ok: false, interrupted: false, error: null });
     return;
   }
   if (text.trim() === "Can I have a hint?") {
@@ -394,6 +434,8 @@ function addMark(mark: Mark["mark"]) {
       help: helpAsked ? "hint" : "none",
       cold: !helpAsked,
       paper: null,
+      // The stand-in record: a right answer alone is the skill's first day, and the next one the same day earns none.
+      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1 } : {}),
     };
     helpAsked = false;
     marks.push(row);
@@ -442,7 +484,10 @@ export function demoCore(): Core {
       return home();
     },
     home: async (folder) => home(folder ?? open),
-    setUp: async (folder) => home(folder ?? open),
+    setUp: async (folder) => {
+      notSetUp = false;
+      return home(folder ?? open);
+    },
     upgradeFolder: async (folder) => {
       upgraded = true;
       return home(folder ?? open);
@@ -528,9 +573,13 @@ export function demoCore(): Core {
       targets: [],
       exam: null,
       confirmed: [],
-      in_progress: week
-        ? [{ dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: "due today", due: true, next_day: null }]
-        : [],
+      // The demo record's skills, each with the newest answer on it, as the runtime groups them.
+      in_progress: [
+        { dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: week ? "due today" : "–", due: week, next_day: null, last_answer: "m4" },
+        { dots: [2, 0, 0], name: "units of a rate", what: "", note: "–", due: false, next_day: null, last_answer: "m1" },
+        { dots: [1, 0, 0], name: "the slope gives $K_m / V_{max}$", what: "", note: "–", due: false, next_day: null, last_answer: "m2" },
+        { dots: [0, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "–", due: false, next_day: null, last_answer: "m3" },
+      ],
       untested: [],
       scores: [{ paper: "Paper A", date: "2026-11-07", score: "31/50", sure_right: null, sure_total: null }],
       helped: [],
@@ -667,6 +716,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "material":
       actions.goWorkspace(FOLDER);
       await wait(300);
+      document.querySelector<HTMLElement>("[data-drive='material']")?.click();
+      await wait(50);
       document.querySelector<HTMLElement>(".file-row")?.click();
       return wait(400);
     case "workspace":
@@ -756,6 +807,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await wait(200);
       return settle();
     case "paper":
+    case "paper-over":
+    case "paper-long":
       return actions.goWorkspace(FOLDER);
     case "upgrade":
       return actions.goWorkspace(FOLDER);
@@ -794,9 +847,17 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       void session(actions).say("Why is the intercept the reciprocal?", "talk");
       return wait(900);
     case "permission":
+    case "permission-command":
+    case "permission-unknown":
       await lesson(actions);
       await session(actions).say("Can you write the lab report into my plan for Friday?", "talk");
       return;
+    case "model-unavailable":
+      await lesson(actions);
+      await session(actions).say("NOMODEL Why is the intercept the reciprocal?", "talk");
+      return wait(200);
+    case "not-set-up":
+      return actions.goWorkspace(FOLDER);
     case "commands":
       return actions.run("commands");
     case "switch":

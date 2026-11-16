@@ -409,6 +409,7 @@ impl Harness for DirectTutor {
                 .map(Mutex::new),
             started: Instant::now(),
             initialize: Mutex::new(None),
+            models: Mutex::new(Vec::new()),
             asked: crate::models::Asked::default(),
         });
         if let Some(mut stderr) = stderr {
@@ -738,6 +739,8 @@ struct Shared {
     started: Instant,
     /// The id of the `initialize` request, whose reply lists the models.
     initialize: Mutex<Option<String>>,
+    /// That list, to name a model the account cannot use.
+    models: Mutex<Vec<crate::models::ModelOption>>,
     /// Control requests the window sent and waits on.
     asked: crate::models::Asked,
 }
@@ -921,6 +924,9 @@ fn on_control_response(shared: &Arc<Shared>, value: &Value) {
     let models = (response["subtype"] == "success")
         .then(|| crate::models::parse(&response["response"]))
         .flatten();
+    if let Some(list) = &models {
+        lock(&shared.models).clone_from(list);
+    }
     shared.emit(AgentEvent::Models { models });
 }
 
@@ -1103,6 +1109,8 @@ fn exited(shared: &Arc<Shared>) {
 struct Said {
     cutter: Cutter,
     result: Option<Value>,
+    /// Claude Code's own code for a request that failed ("model_not_found").
+    code: Option<String>,
     /// Claude Code's output closed before the result.
     ended: bool,
 }
@@ -1114,6 +1122,7 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
     let mut said = Said {
         cutter: Cutter::new(),
         result: None,
+        code: None,
         ended: false,
     };
     let mut started = false;
@@ -1167,7 +1176,9 @@ fn listen(shared: &Arc<Shared>, show: bool) -> Said {
             }
             // Claude Code's own line about a request that failed is not the
             // tutor's reply: the result that follows says what went wrong.
-            Some("assistant") if main && claude::is_own_error(&value) => {}
+            Some("assistant") if main && claude::is_own_error(&value) => {
+                said.code = value["error"].as_str().map(str::to_owned);
+            }
             Some("assistant") if main => {
                 let id = value["message"]["id"]
                     .as_str()
@@ -1886,6 +1897,11 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
                 text: claude::limit_words(&why),
             });
             None
+        } else if let Some((kind, text)) =
+            claude::failure_notice(said.code.as_deref(), &why, &lock(&shared.models))
+        {
+            shared.emit(AgentEvent::Notice { kind, text });
+            None
         } else if why.trim().is_empty() {
             Some("The reply ended with an error. Send your message again.".to_owned())
         } else {
@@ -2044,7 +2060,11 @@ fn tell_task(shared: &Arc<Shared>, posed: bool) {
         .task
         .as_ref()
         .map(|task| task.text.clone());
-    shared.emit(AgentEvent::OpenTask { task, posed });
+    shared.emit(AgentEvent::OpenTask {
+        task,
+        posed,
+        fallback: false,
+    });
 }
 
 /// The learner's notice for a repair that may have been finished and was

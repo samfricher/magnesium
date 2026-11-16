@@ -47,11 +47,22 @@ pub enum AgentEvent {
     /// The tutor wants to do something that needs the learner's yes.
     Permission {
         id: String,
-        /// A plain sentence: "Run a command", "Write a file".
+        /// What the tutor asks, as a sentence: "The tutor asks to change
+        /// your plan". Never a path or a tool's name.
         title: String,
-        /// The command, path or address.
+        /// What it would touch, in plain words: the plan's name, a file's
+        /// name, a web site. Empty when there is nothing plainer to say.
         detail: String,
+        /// The exact thing the learner would allow, when the plain words
+        /// cannot show all of it: the command the shell would run, or a tool
+        /// the window has no words for, with what it was given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exact: Option<String>,
         can_always: bool,
+        /// What the second choice allows, as its label: "Always allow pages
+        /// from en.wikipedia.org". None when `can_always` is false.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        always: Option<String>,
     },
     /// The tutor asked the learner to choose.
     Question {
@@ -80,11 +91,21 @@ pub enum AgentEvent {
     /// The runtime's record has a new marked answer for the last message.
     /// The mark is the record's row, never the tutor's words.
     Marked { mark: Mark },
-    /// The task open after a turn, in the tutor's own words as its record
-    /// block wrote it, or none; `posed` when this turn's reply asked for it.
-    /// The window puts the field for an answer inside it. Sent by an engine
-    /// that knows its open task (Magnesium's); never a mark.
-    OpenTask { task: Option<String>, posed: bool },
+    /// The task open after a turn, in the tutor's own words as the record
+    /// holds them, or none; `posed` when this turn's reply asked for it.
+    /// The window puts the field for an answer inside it. Magnesium's engine
+    /// sends it from its record block; on Claude Code's, the window sends it
+    /// once the turn has settled, from `magnesium lesson`. Never a mark.
+    OpenTask {
+        task: Option<String>,
+        posed: bool,
+        /// With no task named: the page may still take a task that a reply
+        /// opens with a bold word, as it did before the record could say.
+        /// Claude Code's tutor can set a task and not save it; Magnesium's
+        /// engine never sends this.
+        #[serde(default)]
+        fallback: bool,
+    },
     /// The record has been read for what the last message changed: any mark
     /// it has for it has been sent. With none, the record kept no mark.
     Settled,
@@ -124,6 +145,9 @@ pub enum NoticeKind {
     /// The same, for a lesson at an effort the learner picked. The window
     /// offers to start it again at the agent's own effort.
     RecordUnopenedAtEffort,
+    /// The model the lesson runs on is one this account cannot use. The
+    /// window offers the list of models.
+    ModelUnavailable,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

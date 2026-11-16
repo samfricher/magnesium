@@ -1,8 +1,8 @@
 //! The window's readers against the runtime built from this same checkout.
 //!
 //! The window reads what the runtime prints: `magnesium digest`, `magnesium
-//! progress --json` and `magnesium attempts --json`, and one fact straight
-//! from its store (the goal's steps, see `peek`). This test builds the
+//! progress --json`, `magnesium attempts --json` and `magnesium lesson
+//! --json`. This test builds the
 //! runtime at the root of the repository, lets it make a scratch study folder
 //! from made-up data, and feeds its real output to those readers. A runtime
 //! change that the readers do not follow fails here.
@@ -537,6 +537,18 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
             ("Check the units".to_owned(), "todo".to_owned()),
         ]
     );
+    // The same lesson, by its conversation, with no task open: the
+    // checkpoint names none.
+    let lesson = mg_core::runtime::lesson(&scratch.folder, Some(THREAD))
+        .expect("the runtime says")
+        .expect("the conversation has a lesson");
+    assert_eq!(lesson.goal, "Read Vmax from a Lineweaver-Burk plot");
+    assert_eq!(lesson.steps, rail.steps);
+    assert_eq!(lesson.open_task, None);
+    assert_eq!(
+        mg_core::runtime::lesson(&scratch.folder, Some("another-conversation")),
+        Some(None)
+    );
 
     // A hand edit that closes a row the record has not closed. The window
     // takes its rows from the record, so the edit changes nothing on screen.
@@ -569,4 +581,44 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     let progress = study::progress(&scratch.folder, None);
     assert_eq!(progress.message, None);
     assert_eq!(names(&progress.confirmed), closed);
+
+    // A right answer given alone and cold earns its skill's first day, and
+    // the lesson's mark says so from the runtime's count. The runtime takes a
+    // second answer on the same skill that day as not cold, so it earns none
+    // and its mark says nothing of the days.
+    for (id, question, cold) in [
+        ("p-2", "Units of Km", true),
+        ("p-3", "Units of Vmax", false),
+    ] {
+        let event = scratch.prompt(id, "per second");
+        scratch.step(json!({"schema": "learner-model/v2", "action": "update", "request_id": id,
+            "observations": [{"client_ref": "alone", "kind": "learner_work", "description": "Gave the units alone.",
+                "events": [{"event_id": event, "role": "learner_response"}],
+                "attempt": {"label": "units of a concentration", "question": question,
+                    "first_try": "right", "help": "none", "cold": cold}}]}));
+    }
+    let mut marks = mg_core::runtime::marks(&scratch.folder).expect("the runtime has attempts");
+    mg_core::runtime::note_passes(&mut marks, &scratch.folder);
+    let alone: Vec<Option<u8>> = marks
+        .iter()
+        .filter(|m| m.label == "units of a concentration")
+        .map(|m| m.pass)
+        .collect();
+    assert_eq!(alone, [Some(1), None], "{marks:#?}");
+    assert!(marks
+        .iter()
+        .filter(|m| m.label != "units of a concentration")
+        .all(|m| m.pass.is_none()));
+    // The skill's row names its newest answer, so the page can say its mark.
+    let progress = study::progress(&scratch.folder, None);
+    let row = progress
+        .in_progress
+        .iter()
+        .find(|row| row.name == "units of a concentration")
+        .expect("the skill's row");
+    assert_eq!(row.dots, [2, 0, 0]);
+    assert_eq!(
+        row.last_answer.as_deref(),
+        marks.last().map(|m| m.id.as_str())
+    );
 }

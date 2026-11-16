@@ -12,6 +12,10 @@ real program behaves the same.
 
 What a turn does is chosen by a word in the learner's message:
   PERMISSION  ask to run a command, then say what was decided
+  PLANEDIT    ask to edit Study/midterm-2/plan.md, then say what was decided
+              (it changes nothing)
+  OUTSIDE     ask to read a made-up file outside the course, then say what
+              was decided (it reads nothing)
   QUESTION    ask the learner to choose, then say what was chosen
   SLOW        write slowly, so the reply can be interrupted
   WAIT        think for a while before the first word
@@ -22,6 +26,9 @@ What a turn does is chosen by a word in the learner's message:
               2.1.322 sent on 2026-11-15 for a key Anthropic refused, and
               `auth status` says signed out, until `auth login` runs. The
               same words sent again after that are answered.
+  NOMODEL     the model is one the account cannot use: Claude Code's own
+              line comes in the reply's place, as 2.1.322 sent it on
+              2026-11-15
   HISTORY     say how many turns this conversation has had
   RUNS_ON     say the model and effort it runs on now
 
@@ -354,6 +361,35 @@ def open_record(text):
           "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "{}"}]}})
 
 
+def own_error(said, code, status):
+    """Claude Code's own line for a request that failed, in the reply's
+    place, then the result: the shape 2.1.322 sent on 2026-11-15."""
+    emit({
+        "type": "assistant",
+        "uuid": str(uuid.uuid4()),
+        "session_id": session,
+        "parent_tool_use_id": None,
+        "message": {"id": str(uuid.uuid4()), "role": "assistant", "model": "<synthetic>",
+                    "content": [{"type": "text", "text": said}]},
+        "error": code,
+        "is_api_error_message": True,
+        "api_error_status": status,
+    })
+    emit({
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+        "api_error_status": status,
+        "duration_ms": 10,
+        "duration_api_ms": 0,
+        "num_turns": 1,
+        "session_id": session,
+        "result": said,
+        "stop_reason": "stop_sequence",
+        "total_cost_usd": 0,
+    })
+
+
 def turn(text):
     emit(init_message())
     history = load_history()
@@ -364,31 +400,12 @@ def turn(text):
         open(os.path.join(STATE, "expired-once"), "w").close()
         open(os.path.join(STATE, "expired"), "w").close()
     if expired():
-        said = "Failed to authenticate: OAuth session expired and could not be refreshed"
-        emit({
-            "type": "assistant",
-            "uuid": str(uuid.uuid4()),
-            "session_id": session,
-            "parent_tool_use_id": None,
-            "message": {"id": str(uuid.uuid4()), "role": "assistant", "model": "<synthetic>",
-                        "content": [{"type": "text", "text": said}]},
-            "error": "authentication_failed",
-            "is_api_error_message": True,
-            "api_error_status": 401,
-        })
-        emit({
-            "type": "result",
-            "subtype": "success",
-            "is_error": True,
-            "api_error_status": 401,
-            "duration_ms": 10,
-            "duration_api_ms": 0,
-            "num_turns": 1,
-            "session_id": session,
-            "result": said,
-            "stop_reason": "stop_sequence",
-            "total_cost_usd": 0,
-        })
+        own_error("Failed to authenticate: OAuth session expired and could not be refreshed",
+                  "authentication_failed", 401)
+        return
+    if "NOMODEL" in text:
+        own_error("There's an issue with the selected model (claude-opus-4-6). It may not exist or you may not "
+                  "have access to it. Run --model to pick a different model.", "model_not_found", 404)
         return
 
     open_record(text)
@@ -412,10 +429,38 @@ def turn(text):
                 "delta": {"type": "text_delta", "text": "SECRET HELPER TEXT"}}, parent="toolu_helper")
         assistant([{"type": "text", "text": "SECRET HELPER TEXT"}], "msg_helper", parent="toolu_helper")
 
-    if "PERMISSION" in text:
+    if "OUTSIDE" in text:
+        # As Claude Code 2.1.322 asked on 2026-11-15 for a read outside the
+        # folder: its suggestion is a rule for that whole folder. The path is
+        # made up.
+        reply = ask_permission(
+            "Read",
+            {"file_path": "/Users/someone/Downloads/reading-list.txt"},
+            [{"type": "addRules", "rules": [{"toolName": "Read", "ruleContent": "//Users/someone/Downloads/**"}],
+              "behavior": "allow", "destination": "session"}],
+        )
+        if reply is None:
+            stopped()
+            return
+        answer = "It was read." if reply.get("behavior") == "allow" else "It was left unread."
+    elif "PLANEDIT" in text:
+        # As Claude Code 2.1.322 asked on 2026-11-15 for an edit to a plan
+        # its rules did not cover: its one suggestion is the mode that
+        # accepts every edit for the rest of the sitting.
+        plan = os.path.join(os.getcwd(), "Study", "midterm-2", "plan.md")
+        reply = ask_permission(
+            "Edit",
+            {"file_path": plan, "old_string": "todo", "new_string": "doing", "replace_all": False},
+            [{"type": "setMode", "mode": "acceptEdits", "destination": "session"}],
+        )
+        if reply is None:
+            stopped()
+            return
+        answer = "The plan was changed." if reply.get("behavior") == "allow" else "The plan was left as it was."
+    elif "PERMISSION" in text:
         reply = ask_permission(
             "Bash",
-            {"command": "tectonic paper.tex"},
+            {"command": "tectonic paper.tex", "description": "Build the paper as a PDF"},
             [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "tectonic:*"}],
               "behavior": "allow", "destination": "localSettings"}],
         )

@@ -60,6 +60,12 @@ impl LearnerStore {
             let metadata = serde_json::to_string(&event.metadata)?;
             limits::text("event.metadata", &metadata, limits::EVENT_METADATA_BYTES)?;
             if let Some(typed) = &event.metadata {
+                if typed.intent.is_some() && origin != "host_observed" {
+                    return Err(LearnerError::new(
+                        "invalid_variant",
+                        "metadata.intent is set by the host from how the learner sent the message; leave it out",
+                    ));
+                }
                 if typed.origin.as_deref().is_some_and(|value| value != origin) {
                     return Err(LearnerError::new(
                         "invalid_variant",

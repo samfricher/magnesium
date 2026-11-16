@@ -16,7 +16,7 @@
 // every step it can.
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,10 +66,10 @@ writeFileSync(
   { mode: 0o755 },
 );
 
-async function launch(name, home, withAgent = agent) {
+async function launch(name, home, withAgent = agent, more = {}) {
   const driveDir = join(scratch, "drive", name);
   mkdirSync(driveDir, { recursive: true });
-  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent };
+  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent, ...more };
   delete env.MAGNESIUM_APP_SELFTEST;
   delete env.MAGNESIUM_APP_FOLDER;
   const log = openSync(join(out, `window-${name}.log`), "w");
@@ -149,6 +149,9 @@ try {
   await step(w, "back home for a note", { op: "click", target: "‹ Home" });
   await step(w, "open Linear Algebra", { op: "click", target: "workspace-Linear Algebra", by: "drive" });
   await settle(w, 800);
+  await shoot(w, "workspace-no-plan", "Workspace with no plan: New session first, the material folded to its count");
+  await step(w, "open the material", { op: "click", target: "material", by: "drive" });
+  await settle(w, 300);
   await step(w, "open its note", { op: "click", target: "Week 3 eigenvalues" });
   await settle(w, 1000);
   await shoot(w, "material", "A note of the material, opened from the workspace");
@@ -259,6 +262,13 @@ try {
   await step(w, "settings: the end", { op: "scroll", to: "bottom" });
   await settle(w, 300);
   await shoot(w, "settings-about", "Settings: Lessons and About, at the end");
+  // A colour well's grid open, under the ground and text rows with their light and dark columns.
+  await step(w, "settings: Appearance again", { op: "scroll", target: "Appearance" });
+  await w.op({ op: "scroll", by: -40 });
+  await step(w, "open the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "settings-colour", "Settings: the ground's colours open");
+  await step(w, "close the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
 
   // The line drawn bare. A new window draws it as a soft field, so every photograph above has that look;
   // these are the same session with the other one, chosen in Settings as a learner chooses it.
@@ -288,7 +298,8 @@ try {
   await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
   await step(w, "close the new session", { op: "key", key: "w", meta: true });
   await settle(w, 300);
-  await step(w, "settings again", { op: "click", target: "settings", by: "drive" });
+  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
+  await step(w, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
   await settle(w, 300);
 
@@ -301,11 +312,10 @@ try {
   await shoot(w, "home-recent", "Home with a session to carry on; three tabs open");
   await step(w, "workspace again", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(w, 800);
-  await step(w, "your work", { op: "click", target: "Your work" });
-  await settle(w, 800);
+  await shoot(w, "workspace-next", "Workspace with a session: the plan's next item, then the earlier sessions");
   await step(w, "to the foot", { op: "scroll", to: "bottom" });
   await settle(w, 300);
-  await shoot(w, "workspace-work", "Workspace with a session, Your work open, at its foot");
+  await shoot(w, "workspace-work", "Workspace with a session, at its foot: each skill's days in Your work");
   await step(w, "back to the top", { op: "scroll", to: "top" });
   await step(w, "open the past paper", { op: "click", target: "Midterm 2023" });
   await settle(w, 1800);
@@ -322,7 +332,11 @@ try {
   const pluginHome = join(scratch, "window-plugin");
   mkdirSync(pluginHome, { recursive: true });
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
-  writeFileSync(join(pluginHome, "state.json"), JSON.stringify({ recent: kept.recent, folders: {}, engine: "plugin" }, null, 2));
+  // A folder of notes that Magnesium was never set up in.
+  const unset = join(scratch, "Reading-Group");
+  mkdirSync(unset, { recursive: true });
+  writeFileSync(join(unset, "chapter-1-notes.md"), "# Chapter 1\n\nMade-up notes.\n");
+  writeFileSync(join(pluginHome, "state.json"), JSON.stringify({ recent: [...kept.recent, unset], folders: {}, engine: "plugin" }, null, 2));
   const p = await launch("plugin", pluginHome, pluginAgent);
   await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(p, 800);
@@ -333,15 +347,117 @@ try {
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
   await shoot(p, "session-permission", "Session: the tutor asks permission (Claude Code engine)");
-  await step(p, "allow once", { op: "click", target: "Allow once" });
+  // The same card on the bare line, chosen in Settings as a learner chooses it, then the soft field again.
+  await step(p, "settings", { op: "click", target: "settings", by: "drive" });
+  await step(p, "your line: bare", { op: "click", target: "Bare line" });
+  await step(p, "the session", { op: "click", target: "tab-2", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-permission-bare", "Session: the tutor asks permission, on the bare line");
+  await step(p, "allow once", { op: "click", target: "allow", by: "drive" });
   await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The tutor asks to change the plan, which its rules did not cover.
+  await step(p, "focus the line for the plan", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask to change the plan", { op: "type", text: "PLANEDIT: move the lab report to Friday" });
+  await step(p, "send the plan change", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission-plan-bare", "Session: the tutor asks to change the plan, on the bare line");
+  await step(p, "refuse the plan change", { op: "click", target: "Refuse" });
+  await step(p, "the plan reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The tutor asks to read a file outside the course.
+  await step(p, "focus the line for outside", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask to read outside", { op: "type", text: "OUTSIDE: read my reading list" });
+  await step(p, "send the outside read", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission-outside-bare", "Session: the tutor asks to read a file outside the course, on the bare line");
+  await step(p, "refuse the outside read", { op: "click", target: "Refuse" });
+  await step(p, "the outside reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // A model the account cannot use: Claude Code's own line for it is a notice, with the list of models one press away.
+  await step(p, "focus the line for the model", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "a model the account cannot use", { op: "type", text: "NOMODEL: and the intercept?" });
+  await step(p, "send it", { op: "key", key: "Enter" });
+  await step(p, "the notice", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable-bare", "Session: a model the account cannot use, on the bare line");
+  await step(p, "pick a model", { op: "click", target: "pick-model", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable-list-bare", "Session: Pick a model opens the list of models");
+  await step(p, "close the list", { op: "key", key: "Escape" });
+  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
+  await step(p, "settings again", { op: "click", target: "tab-3", by: "drive" });
+  await step(p, "your line: soft", { op: "click", target: "Soft field" });
+  await step(p, "the session again", { op: "click", target: "tab-2", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable", "Session: a model the account cannot use");
+  await step(p, "clear the line", { op: "type", text: "", replace: true });
   await step(p, "focus the line again", { op: "focus", target: "composer", by: "drive" });
   await step(p, "hit the usage limit", { op: "type", text: "LIMIT" });
   await step(p, "send it", { op: "key", key: "Enter" });
   await step(p, "the error", { op: "wait_idle", timeout_ms: TURN_MS });
   await settle(p, 500);
   await shoot(p, "session-error", "Session: the reply stopped by an error (a usage limit)");
+  // A folder Magnesium was never set up in: its page says what setting it up does.
+  await step(p, "home for the unset folder", { op: "click", target: "tab-1", by: "drive" });
+  await settle(p, 300);
+  // The Home tab still shows the workspace's page: ‹ Home goes back to Home itself.
+  await step(p, "‹ Home for the unset folder", { op: "click", target: "‹ Home" });
+  await settle(p, 500);
+  await step(p, "open the folder", { op: "click", target: "Reading" });
+  await settle(p, 800);
+  await shoot(p, "workspace-not-set-up", "Workspace: a folder Magnesium is not set up in");
   await quit(p);
+
+  // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
+  // Sitting one from the page would open the paper in the Mac's own viewer, so the sitting is written here.
+  const course = realpathSync(join(scratch, "Intro-Statistics"));
+  const sitting = (minutesAgo, name) => ({ target: "midterm-2", name, path: "Study/midterm-2/papers/Midterm 2023.pdf", minutes: 75, started_ms: Date.now() - minutesAgo * 60_000 });
+  const paperWindow = (name, paper) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ recent: kept.recent, folders: { [course]: { paper } } }, null, 2));
+    return launch(name, home);
+  };
+  const q = await paperWindow("paper", sitting(12, "Midterm 2023"));
+  await step(q, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper", "Workspace: a timed paper running, the page's lead");
+  await step(q, "end without handing in", { op: "click", target: "sitting-end", by: "drive" });
+  await settle(q, 300);
+  await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
+  await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
+  await settle(q, 200);
+  // A key that does nothing, to read where the keyboard is once the block is back.
+  const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
+  if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
+  await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
+  await step(q, "end the paper", { op: "click", target: "sitting-end-now", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper-ended", "Workspace: the paper ended without handing in, the page as before it");
+  await quit(q);
+  const r = await paperWindow("paper-over", sitting(100, "Midterm 2023, all three questions with every part, from the paper the course set last spring"));
+  await step(r, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(r, 800);
+  await shoot(r, "workspace-paper-over", "Workspace: a paper with a long name, past its end");
+  await step(r, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-narrow", "Workspace: the running paper at 720 by 560");
+  for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(r);
+
+  // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
+  // here only answers --version; it is never chosen.
+  const newer = join(scratch, "bundled-magnesium");
+  writeFileSync(newer, `#!/bin/sh\n[ "$1" = "--version" ] && { echo "magnesium 99.0.0"; exit 0; }\nexec '${runtime}' "$@"\n`, { mode: 0o755 });
+  const replaceHome = join(scratch, "window-replace");
+  mkdirSync(replaceHome, { recursive: true });
+  writeFileSync(join(replaceHome, "state.json"), JSON.stringify({ recent: kept.recent, folders: {}, engine: "direct" }, null, 2));
+  const n = await launch("replace", replaceHome, agent, { MAGNESIUM_APP_BUNDLED: newer, MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") });
+  await settle(n, 800);
+  await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
+  await quit(n);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);
 }
