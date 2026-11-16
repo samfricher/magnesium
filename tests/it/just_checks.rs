@@ -103,7 +103,7 @@ fn the_plugin_command_poses_the_due_checks_alone_and_the_last_answer_ends_the_si
     // The command begins the sitting, and its notice says what it is.
     let notice = prompt(&e, "p-1", "/magnesium:checks");
     assert!(
-        notice.contains(" Quick checks alone, as the learner asked: 3 left."),
+        notice.contains(" Sitting of quick checks alone: 3 left."),
         "{notice}"
     );
     assert!(notice.len() <= 512, "{} bytes: {notice}", notice.len());
@@ -183,7 +183,7 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     three_checks_due(&e);
     let notice = prompt(&e, "p-1", "can we only do my quick checks today?");
-    assert!(!notice.contains("Quick checks alone"), "{notice}");
+    assert!(!notice.contains("quick checks alone"), "{notice}");
     let asked = step(
         &e,
         json!({"schema":"learner-model/v2","action":"just_checks"}),
@@ -237,7 +237,7 @@ fn with_no_check_due_the_tutor_says_when_the_next_is() {
     answer(&e, "miss", &event_of(&notice), LABELS[0], "wrong");
     // The check made today is due tomorrow, not now.
     let notice = prompt(&e, "p-2", "just the checks");
-    assert!(!notice.contains("Quick checks alone"), "{notice}");
+    assert!(!notice.contains("quick checks alone"), "{notice}");
     let asked = step(
         &e,
         json!({"schema":"learner-model/v2","action":"just_checks"}),

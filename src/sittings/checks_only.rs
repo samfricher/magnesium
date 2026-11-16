@@ -20,7 +20,7 @@ use crate::workspace::Workspace;
 /// What the tutor reads first, in place of the usual opener's first line.
 const LEAD: &str = "Quick checks alone. The learner asked for the quick checks that are due and nothing else, so this sitting poses only these, one at a time: no paper redo, no new material, no plan and no other task. The learner may decline any check at no cost, and a declined check stays due.";
 /// What the tutor reads last: how the sitting ends.
-const CLOSE: &str = "Each reply is only what the learner reads: the feedback on their answer, then the next check in its own words. Record each answer or decline with one learning_step update, with a request_id, before you reply. The runtime keeps these checks and which one is open, so send no checkpoint in this sitting (in the study window, send the reply without save_after). Write no text before or between tool calls and nothing after your reply, and never a word about posing, saving, recording, declining or waiting. After each answer, show the lettered options, say in a line which is right and why, and pose the next check in the same reply. Teach no repair and set no task for it: a check answered wrong comes back on its next day. When the last check here is answered or declined, Magnesium ends the sitting and shows the learner, under your reply, what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked.";
+const CLOSE: &str = "Each reply is only what the learner reads: the feedback on their answer, then the next check in its own words. Each answer or decline is recorded with one learning_step update, with a request_id, before the reply. The runtime keeps these checks and which one is open, so this sitting needs no checkpoint (in the study window, the reply goes without save_after). Write no text before or between tool calls and nothing after your reply, and never a word about posing, saving, recording, declining or waiting. After each answer, show the lettered options, say in a line which is right and why, and pose the next check in the same reply. Teach no repair and set no task for it: a check answered wrong comes back on its next day. When the last check here is answered or declined, Magnesium ends the sitting and shows the learner, under your reply, what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked.";
 
 /// The usual opener's words for the first reply of a sitting; a sitting of
 /// checks alone may be asked for part-way through one.
@@ -187,14 +187,15 @@ fn checks_only_text(checks: &[Check]) -> String {
 }
 
 /// The clause each turn's notice carries while a sitting of checks alone has
-/// checks left.
+/// checks left. It states the count and asks nothing. In the live runs of
+/// 2026-11-16, Sonnet wrote no process text in an ordinary sitting, whose
+/// clause only counts, and wrote "Record decline." into the reply in this
+/// flow while its clause gave an instruction.
 pub(crate) fn notice_clause(left: i64) -> String {
     if left > 0 {
-        format!(
-            " Quick checks alone, as the learner asked: {left} left. Pose only these, then close with no task."
-        )
+        format!(" Sitting of quick checks alone: {left} left.")
     } else {
-        " Quick checks alone, as the learner asked: none left. Close with no task.".to_owned()
+        " Sitting of quick checks alone: none left.".to_owned()
     }
 }
 
