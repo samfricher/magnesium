@@ -119,6 +119,12 @@ type Props = {
   notes: string[];
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
+  /** Just the quick checks due in a folder, in a session of their own. */
+  onChecks: (folder: string) => void;
+  /** How many quick checks are due in a folder, as Home read it. */
+  onChecksDue?: (folder: string, due: number) => void;
+  /** The key for Just the quick checks, as the learner set it. */
+  checksKey?: string;
   onWorkspace: (folder: string) => void;
   onPickFolder: () => void;
   onNewFolder: () => void;
@@ -138,7 +144,7 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
  * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
  */
-type Read = { next: Next | null; goal: string | null; first: string | null; at: number };
+type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; at: number };
 
 /**
  * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
@@ -154,7 +160,7 @@ async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
   const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
   const goal = sessions.some((info) => !info.title) ? (home?.last?.goal ?? null) : null;
-  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), at };
+  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), checks: home?.checks_due ?? 0, at };
 }
 
 function NoteBlock({ note }: { note: Note }) {
@@ -206,7 +212,7 @@ export function HomePage(props: Props) {
       window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, at: 0 } : null;
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
@@ -239,6 +245,20 @@ export function HomePage(props: Props) {
   if (lead && !waiting && props.workspaces !== null && firstDrawn.current?.folder !== lead.folder) firstDrawn.current = { folder: lead.folder, line: firstNow !== null };
   const first = lead && firstDrawn.current?.folder === lead.folder && firstDrawn.current.line ? firstNow : null;
   const firstLine = first ? <span className="next-first">{first}</span> : null;
+  // Quick checks due in the lead workspace can be taken alone, in a few minutes, instead of the row above. Shown only
+  // from a read made on this visit, since a kept one may count checks answered since.
+  const checks = lead && trusted && (now?.checks ?? 0) > 0 ? lead.folder : null;
+  const { onChecksDue } = props;
+  useEffect(() => {
+    if (read?.here) onChecksDue?.(read.folder, read.read.checks);
+  }, [read, onChecksDue]);
+  const checksAct = checks ? (
+    <p className="page-acts next-acts">
+      <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(checks)}>
+        Just the quick checks
+      </button>
+    </p>
+  ) : null;
   const note = props.note ? <NoteBlock note={props.note} /> : null;
   // For the harness: when Home mounted, and when its column showed.
   mark("home");
@@ -309,6 +329,7 @@ export function HomePage(props: Props) {
                     ↩
                   </span>
                 </button>
+                {checksAct}
               </section>
             )}
             {lead && !props.step && !next && (
@@ -331,6 +352,7 @@ export function HomePage(props: Props) {
                     ↩
                   </span>
                 </button>
+                {checksAct}
               </section>
             )}
             <section className="home-list" aria-label="Workspaces">

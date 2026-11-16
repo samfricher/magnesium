@@ -62,6 +62,9 @@ const TALK_MARK: &str = "\u{1}talk\u{1}";
 /// The lines the window opens a returning sitting with (`app/src/lesson.ts`).
 const BACK: &str = "I'm back. Let's continue.";
 const NO_CHECKS: &str = "No checks right now. Let's continue where I stopped.";
+/// The window's "just the quick checks". The runtime's prompt hook takes the
+/// same words as the ask (`src/just_checks.rs`).
+const CHECKS: &str = "Just the quick checks.";
 const WORK_ON: &str = "Let's work on ";
 
 /// Magnesium's tools the model may not see: the record is the engine's.
@@ -1240,6 +1243,9 @@ fn opening(words: &str) -> Option<(bool, Option<String>)> {
     if words == NO_CHECKS {
         return Some((true, None));
     }
+    if words == CHECKS {
+        return Some((false, Some("Quick checks".to_owned())));
+    }
     if words.starts_with(BACK) {
         return Some((false, None));
     }
@@ -1429,6 +1435,7 @@ fn prepare(
     };
     let opened = from_window.then(|| opening(words)).flatten();
     facts.skip_checks = opened.as_ref().is_some_and(|(skip, _)| *skip);
+    facts.checks_only = from_window && words == CHECKS;
     if facts.skip_checks {
         state.skip_turn = Some(state.turn);
     }
@@ -3226,7 +3233,7 @@ mod tests {
             );
         }
         // The opening lines, from openingWords in lesson.ts.
-        for words in [BACK, NO_CHECKS, WORK_ON] {
+        for words in [BACK, NO_CHECKS, CHECKS, WORK_ON] {
             assert!(
                 lesson.contains(words),
                 "lesson.ts no longer opens a sitting with {words:?}: change direct.rs with it"
@@ -3245,6 +3252,7 @@ mod tests {
             opening("Let's work on Stats 101."),
             Some((false, Some("Stats 101".into())))
         );
+        assert_eq!(opening(CHECKS), Some((false, Some("Quick checks".into()))));
         assert_eq!(opening("Teach me Bayes"), None);
     }
 

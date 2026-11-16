@@ -370,7 +370,14 @@ export function openingWords(last: { stoppedAt: string | null; studiedBefore: bo
   return `Let's work on ${last.title}.`;
 }
 
-const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Let's work on ([\s\S]+)\.)$/;
+/**
+ * The words the window sends for "just the quick checks": a session of the due quick checks alone, which the runtime
+ * ends after the last of them. The runtime and the direct engine know the same words (src/just_checks.rs,
+ * crates/core/src/direct.rs).
+ */
+export const CHECKS_WORDS = "Just the quick checks.";
+
+const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Just the quick checks\.|Let's work on ([\s\S]+)\.)$/;
 
 /**
  * Whether a line is one of those opening lines, the stop line it quotes, and

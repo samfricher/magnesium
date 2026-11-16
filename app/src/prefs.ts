@@ -17,6 +17,7 @@ export type KeyAction =
   | "home"
   | "commands"
   | "new-session"
+  | "just-checks"
   | "open-workspace"
   | "close-session"
   | "attach"
@@ -75,6 +76,7 @@ export type LineLook = "bare" | "soft";
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
   ["new-session", "New session"],
+  ["just-checks", "Just the quick checks"],
   ["open-workspace", "Open a folder"],
   ["close-session", "Close session"],
   ["attach", "Attach a photo or PDF"],
@@ -120,6 +122,7 @@ export const DEFAULTS: Prefs = {
     home: "cmd+1",
     commands: "cmd+k",
     "new-session": "cmd+n",
+    "just-checks": "cmd+shift+n",
     "open-workspace": "cmd+o",
     "close-session": "cmd+w",
     attach: "cmd+u",
