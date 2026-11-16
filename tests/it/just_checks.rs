@@ -208,23 +208,7 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
         "quick_checks_alone"
     );
     // In a conversation with no lesson active, an answer could not be
-    // recorded: the note asks for a start first, in a shape that works.
-    let input = json!({"session_id":"conv-2","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":"q-1","prompt":"just my checks please"});
-    let notice = v2::context(&run_hook_with_host_flag(
-        &e,
-        &e.workspace,
-        "user-prompt-submit",
-        input,
-        "claude",
-    ));
-    let ticket = notice
-        .split_once("native_capture.ticket=")
-        .unwrap()
-        .1
-        .split([';', ' '])
-        .next()
-        .unwrap()
-        .to_owned();
+    // recorded: asking starts one, and the next answer is captured in it.
     let elsewhere = v2::tool(
         &e,
         "claude",
@@ -232,19 +216,21 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
         "learning_step",
         json!({"schema":"learner-model/v2","action":"just_checks"}),
     );
-    let note = elsewhere["note"].as_str().unwrap();
-    assert!(
-        note.starts_with("No lesson is active in this conversation"),
-        "{note}"
+    assert_eq!(elsewhere["lesson_started"], "Quick checks", "{elsewhere}");
+    assert_eq!(
+        elsewhere["note"],
+        "Pose the checks and end as sitting_opener says."
     );
-    let started = v2::tool(
+    let input = json!({"session_id":"conv-2","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":"q-1","prompt":"-5"});
+    let notice = v2::context(&run_hook_with_host_flag(
         &e,
+        &e.workspace,
+        "user-prompt-submit",
+        input,
         "claude",
-        "conv-2",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"update","request_id":"qc-start","session":{"operation":"start","client_ref":"lesson","goal":"Quick checks"},"native_capture":{"ticket":ticket,"text":"just my checks please"}}),
-    );
-    assert_eq!(started["update_status"], "committed", "{started}");
+    ));
+    assert!(notice.contains("learning true"), "{notice}");
+    assert!(!event_of(&notice).starts_with("unavailable"), "{notice}");
 }
 
 #[test]

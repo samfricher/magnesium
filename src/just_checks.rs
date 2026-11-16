@@ -111,11 +111,14 @@ pub(crate) struct Asker {
 
 /// The tool's answer to `just_checks`, asked by the conversation `by`. An
 /// answer is recorded only in a conversation that records and has a lesson
-/// active, and only a recorded answer settles a check.
+/// active, and only a recorded answer settles a check, so with checks to pose
+/// and no lesson active here, `start` starts one, named "Quick checks". The
+/// learner asked for it, which is the explicit start capture needs.
 pub(crate) fn from_tool(
     cwd: &Path,
     by: Option<&str>,
     asker: impl FnOnce(&Workspace) -> Asker,
+    start: impl FnOnce() -> Result<(), String>,
 ) -> Value {
     let workspace = match Workspace::discover(cwd) {
         Ok(Some(workspace)) => workspace,
@@ -183,14 +186,19 @@ pub(crate) fn from_tool(
     let Some(opener) = opener else {
         return json!({"error": {"code": "sittings_unavailable", "message": "the sitting's checks could not be read"}});
     };
-    // In the live runs of 2026-11-16 a tutor told only to follow the opener
-    // posed the checks with no lesson active, so no answer was recorded.
-    let note = if asker.lesson_active {
+    // In the live runs of 2026-11-16 a tutor left to start the lesson itself
+    // once posed the checks with none active, so no answer was recorded, and
+    // once took five tries to start it.
+    let started = !asker.lesson_active && start().is_ok();
+    let note = if asker.lesson_active || started {
         "Pose the checks and end as sitting_opener says.".to_owned()
     } else {
         "No lesson is active in this conversation, and an answer is recorded only in one: before your reply, start one with learning_step {\"schema\":\"learner-model/v2\",\"action\":\"update\",\"request_id\":\"<new>\",\"session\":{\"operation\":\"start\",\"client_ref\":\"lesson\",\"goal\":\"Quick checks\"},\"native_capture\":{\"ticket\":\"<the prompt notice's ticket>\",\"text\":\"<the learner's message, exactly>\"}}, or resume theirs as your instructions say. Then pose the checks and end as sitting_opener says.".to_owned()
     };
     let mut out = answer(checks, note);
+    if started {
+        out["lesson_started"] = "Quick checks".into();
+    }
     out["sitting_opener"] = opener.text.into();
     if crate::sittings::checks_wanted() {
         out["sitting_checks"] = opener.checks;

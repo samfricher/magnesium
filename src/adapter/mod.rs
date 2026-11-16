@@ -283,18 +283,29 @@ pub(crate) fn dispatch_with_host(
     }
     if operation == "learning_step" && crate::just_checks::is_request(&request) {
         let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
-        return Ok(crate::just_checks::from_tool(cwd, by, |workspace| {
-            crate::just_checks::Asker {
-                records: caller
-                    .as_ref()
-                    .is_none_or(|host| records_here(workspace, host)),
-                lesson_active: caller.as_ref().is_some_and(|host| {
-                    open_store(workspace)
-                        .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
-                        .is_ok_and(|(_, active, _)| active)
-                }),
-            }
-        }));
+        let asker = |workspace: &Workspace| crate::just_checks::Asker {
+            records: caller
+                .as_ref()
+                .is_none_or(|host| records_here(workspace, host)),
+            lesson_active: caller.as_ref().is_some_and(|host| {
+                open_store(workspace)
+                    .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
+                    .is_ok_and(|(_, active, _)| active)
+            }),
+        };
+        let start = || {
+            let request = serde_json::json!({
+                "schema": crate::learner::SCHEMA,
+                "action": "update",
+                "request_id": crate::learner::store::new_id("checks").map_err(|e| e.to_string())?,
+                "session": {"operation": "start", "client_ref": "quick-checks", "goal": "Quick checks"},
+            });
+            let result = dispatch_inner(cwd, "learning_step", request, native_host.clone())?;
+            (result["update_status"] == "committed")
+                .then_some(())
+                .ok_or_else(|| result.to_string())
+        };
+        return Ok(crate::just_checks::from_tool(cwd, by, asker, start));
     }
     if let Some(refusal) = crate::just_checks::refusal(cwd, operation, &request) {
         return Ok(refusal);

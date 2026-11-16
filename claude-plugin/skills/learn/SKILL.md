@@ -11,7 +11,7 @@ Use context.prepare and memory search/read/browse for current cross-conversation
 
 When the learner says they are stopping for now (for today, they have to go, that is enough), send learning_step `{"schema":"learner-model/v2","action":"end_sitting"}` once, before your reply, and follow its note. Magnesium then shows the learner, under your reply, what their record says of today; never say it yourself, and set no task. A pause or a stop ends the sitting too.
 
-When the learner asks for just the quick checks that are due and nothing else (just the checks, only my quick checks), send learning_step `{"schema":"learner-model/v2","action":"just_checks"}` once, before your reply, and follow its note: start or resume the session as usual, so each answer is recorded, then pose the checks its `sitting_opener` lists and nothing else. Magnesium ends the sitting after the last check.
+When the learner asks for just the quick checks that are due and nothing else (just the checks, only my quick checks), send learning_step `{"schema":"learner-model/v2","action":"just_checks"}` once, before your reply, and follow its note: pose the checks its `sitting_opener` lists and nothing else. With no lesson active here, Magnesium starts one for them. Magnesium ends the sitting after the last check.
 
 Honor pause/stop/recording controls immediately with a learning_step `action:"control"` request (recipe in the consolidate_and_resume stage), not an update field; it stops this conversation, and `session.pause` then stops the lesson in every conversation. Preserve the existing provider authentication and billing route; no separate model service or credential is required. Inspect actual receipts before claiming a save.
 
