@@ -328,12 +328,17 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
     };
     if digest["active"].as_bool() != Some(true) {
         home.state = HomeState::NotSetUp;
+        // `magnesium init` writes only inside `.magnesium/`.
+        home.message = Some(
+            "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+                .into(),
+        );
         return;
     }
     if upgrade_needed(&digest) {
         home.state = HomeState::NeedsUpgrade;
         home.message = Some(
-            "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it."
+            "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
                 .into(),
         );
         return;

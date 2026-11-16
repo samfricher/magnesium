@@ -233,13 +233,21 @@ fn a_permission_request_is_allowed_once_always_and_refused() {
             matches!(e, AgentEvent::Permission { .. })
         });
         let AgentEvent::Permission {
-            id, title, detail, ..
+            id,
+            title,
+            detail,
+            exact,
+            always,
+            ..
         } = request
         else {
             unreachable!()
         };
-        assert_eq!(title, "Run a command");
-        assert_eq!(detail, "tectonic paper.tex");
+        assert_eq!(title, "The tutor asks to run a command");
+        assert_eq!(detail, "Build the paper as a PDF");
+        assert_eq!(exact.as_deref(), Some("tectonic paper.tex"));
+        // The rule the agent suggests saving, as the choice says it.
+        assert_eq!(always.as_deref(), Some("Always allow tectonic commands"));
         manager.decide(&id, decision).unwrap();
         assert!(ended_well(&events.turn_end()));
         let text = events.take_text();

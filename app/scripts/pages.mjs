@@ -66,10 +66,10 @@ writeFileSync(
   { mode: 0o755 },
 );
 
-async function launch(name, home, withAgent = agent) {
+async function launch(name, home, withAgent = agent, more = {}) {
   const driveDir = join(scratch, "drive", name);
   mkdirSync(driveDir, { recursive: true });
-  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent };
+  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent, ...more };
   delete env.MAGNESIUM_APP_SELFTEST;
   delete env.MAGNESIUM_APP_FOLDER;
   const log = openSync(join(out, `window-${name}.log`), "w");
@@ -315,7 +315,11 @@ try {
   const pluginHome = join(scratch, "window-plugin");
   mkdirSync(pluginHome, { recursive: true });
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
-  writeFileSync(join(pluginHome, "state.json"), JSON.stringify({ recent: kept.recent, folders: {}, engine: "plugin" }, null, 2));
+  // A folder of notes that Magnesium was never set up in.
+  const unset = join(scratch, "Reading-Group");
+  mkdirSync(unset, { recursive: true });
+  writeFileSync(join(unset, "chapter-1-notes.md"), "# Chapter 1\n\nMade-up notes.\n");
+  writeFileSync(join(pluginHome, "state.json"), JSON.stringify({ recent: [...kept.recent, unset], folders: {}, engine: "plugin" }, null, 2));
   const p = await launch("plugin", pluginHome, pluginAgent);
   await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(p, 800);
@@ -326,14 +330,63 @@ try {
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
   await shoot(p, "session-permission", "Session: the tutor asks permission (Claude Code engine)");
-  await step(p, "allow once", { op: "click", target: "Allow once" });
+  // The same card on the bare line, chosen in Settings as a learner chooses it, then the soft field again.
+  await step(p, "settings", { op: "click", target: "settings", by: "drive" });
+  await step(p, "your line: bare", { op: "click", target: "Bare line" });
+  await step(p, "the session", { op: "click", target: "tab-2", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-permission-bare", "Session: the tutor asks permission, on the bare line");
+  await step(p, "allow once", { op: "click", target: "allow", by: "drive" });
   await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The tutor asks to change the plan, which its rules did not cover.
+  await step(p, "focus the line for the plan", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask to change the plan", { op: "type", text: "PLANEDIT: move the lab report to Friday" });
+  await step(p, "send the plan change", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission-plan-bare", "Session: the tutor asks to change the plan, on the bare line");
+  await step(p, "refuse the plan change", { op: "click", target: "Refuse" });
+  await step(p, "the plan reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The tutor asks to read a file outside the course.
+  await step(p, "focus the line for outside", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask to read outside", { op: "type", text: "OUTSIDE: read my reading list" });
+  await step(p, "send the outside read", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission-outside-bare", "Session: the tutor asks to read a file outside the course, on the bare line");
+  await step(p, "refuse the outside read", { op: "click", target: "Refuse" });
+  await step(p, "the outside reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // A model the account cannot use: Claude Code's own line for it is a notice, with the list of models one press away.
+  await step(p, "focus the line for the model", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "a model the account cannot use", { op: "type", text: "NOMODEL: and the intercept?" });
+  await step(p, "send it", { op: "key", key: "Enter" });
+  await step(p, "the notice", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable-bare", "Session: a model the account cannot use, on the bare line");
+  await step(p, "pick a model", { op: "click", target: "pick-model", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable-list-bare", "Session: Pick a model opens the list of models");
+  await step(p, "close the list", { op: "key", key: "Escape" });
+  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
+  await step(p, "settings again", { op: "click", target: "tab-3", by: "drive" });
+  await step(p, "your line: soft", { op: "click", target: "Soft field" });
+  await step(p, "the session again", { op: "click", target: "tab-2", by: "drive" });
+  await settle(p, 500);
+  await shoot(p, "session-model-unavailable", "Session: a model the account cannot use");
+  await step(p, "clear the line", { op: "type", text: "", replace: true });
   await step(p, "focus the line again", { op: "focus", target: "composer", by: "drive" });
   await step(p, "hit the usage limit", { op: "type", text: "LIMIT" });
   await step(p, "send it", { op: "key", key: "Enter" });
   await step(p, "the error", { op: "wait_idle", timeout_ms: TURN_MS });
   await settle(p, 500);
   await shoot(p, "session-error", "Session: the reply stopped by an error (a usage limit)");
+  // A folder Magnesium was never set up in: its page says what setting it up does.
+  await step(p, "home for the unset folder", { op: "click", target: "tab-1", by: "drive" });
+  await settle(p, 300);
+  // The Home tab still shows the workspace's page: ‹ Home goes back to Home itself.
+  await step(p, "‹ Home for the unset folder", { op: "click", target: "‹ Home" });
+  await settle(p, 500);
+  await step(p, "open the folder", { op: "click", target: "Reading" });
+  await settle(p, 800);
+  await shoot(p, "workspace-not-set-up", "Workspace: a folder Magnesium is not set up in");
   await quit(p);
 
   // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
@@ -376,6 +429,18 @@ try {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
+
+  // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
+  // here only answers --version; it is never chosen.
+  const newer = join(scratch, "bundled-magnesium");
+  writeFileSync(newer, `#!/bin/sh\n[ "$1" = "--version" ] && { echo "magnesium 99.0.0"; exit 0; }\nexec '${runtime}' "$@"\n`, { mode: 0o755 });
+  const replaceHome = join(scratch, "window-replace");
+  mkdirSync(replaceHome, { recursive: true });
+  writeFileSync(join(replaceHome, "state.json"), JSON.stringify({ recent: kept.recent, folders: {}, engine: "direct" }, null, 2));
+  const n = await launch("replace", replaceHome, agent, { MAGNESIUM_APP_BUNDLED: newer, MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") });
+  await settle(n, 800);
+  await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
+  await quit(n);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);
 }

@@ -585,6 +585,47 @@ fn a_sign_in_that_ran_out_is_a_notice_and_the_answer_is_not_kept() {
 }
 
 #[test]
+fn a_model_the_account_cannot_use_is_a_notice_by_its_name_and_the_answer_is_not_kept() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    done(&manager, &mut events);
+    let folder = bench.folder.canonicalize().unwrap();
+    let session = manager.store().folder(&folder).session_id.unwrap();
+    events.seen.clear();
+
+    manager
+        .send_with("NOMODEL b = -5", Some(Intent::Answer))
+        .unwrap();
+    let end = events.turn_end();
+    assert!(
+        matches!(
+            end,
+            AgentEvent::TurnEnded {
+                ok: false,
+                interrupted: false,
+                error: None,
+            }
+        ),
+        "{end:?}"
+    );
+    assert!(
+        events.seen.iter().any(
+            |e| matches!(e, AgentEvent::Notice { kind: NoticeKind::ModelUnavailable, text }
+            if text.starts_with("Opus 4.6 isn’t available to you."))
+        ),
+        "{:#?}",
+        events.seen
+    );
+    // Claude Code's own line, which names a flag of its own, is not shown.
+    let shown = format!("{:?}", events.seen);
+    assert!(!shown.contains("--model"), "{shown}");
+    assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
+    assert_eq!(manager.store().turns(&folder, &session).len(), 1);
+}
+
+#[test]
 fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();

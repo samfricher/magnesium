@@ -49,6 +49,38 @@ export function lineWord(choice: ModelChoice): string {
   return withEffort(name, on.effort);
 }
 
+/**
+ * Why Claude Code did not move a session, from the window's own words for it (models.rs): the model refused, the
+ * effort not taken, or no answer. Claude Code's own reason ("Model 'claude-opus-4-6' not found") is never shown.
+ */
+type Why = "unavailable" | "effort" | "no_answer" | "other";
+type Refused = { asked: string | null; effort: string | null; why: Why };
+
+function refusal(error: string): Why {
+  const said = error.replace(/^Error: /, "");
+  if (/(did not answer in time|stopped before it answered|did not say which model)/.test(said)) return "no_answer";
+  if (/^Claude Code did not change the effort|^Claude Code runs this session at /.test(said)) return "effort";
+  if (/^Claude Code did not change the model|^That model cannot be picked/.test(said)) return "unavailable";
+  return "other";
+}
+
+/** What a refusal says, by the list's own names, with what the session is on now. */
+function refusedWords(problem: Refused, now: string): string {
+  // A model and its effort are one name, never broken at its spaces ("Opus 4.6 · Low").
+  const keep = (name: string) => name.replace(/ /g, " ");
+  const asked = problem.asked ? keep(withEffort(problem.asked, problem.why === "effort" ? null : problem.effort)) : "That model";
+  switch (problem.why) {
+    case "unavailable":
+      return `${asked} isn’t available to you. Pick another, or stay on ${keep(now)}.`;
+    case "effort":
+      return `${asked} doesn’t take ${effortWord(problem.effort ?? "").toLowerCase()} effort here. This session is on ${keep(now)}.`;
+    case "no_answer":
+      return `Claude Code didn’t answer, so this session stays on ${keep(now)}. Try again.`;
+    default:
+      return `This session couldn’t move to ${asked}. It stays on ${keep(now)}.`;
+  }
+}
+
 type Props = {
   api: Core;
   /** The session's tab. */
@@ -72,7 +104,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
   const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [open, setOpen] = useState(false);
   const [older, setOlder] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<Refused | null>(null);
   const [changing, setChanging] = useState(false);
   // Over the lesson's line, the list opens up unless the line sits too high for it; its height is what the room allows.
   const [room, setRoom] = useState<{ below: boolean; height: number; scrolls: boolean } | null>(null);
@@ -199,16 +231,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
       setChoice(await api.setSessionModel(where.current, model, effort));
       setProblem(null);
     } catch (error) {
-      // Said in the list's own names first; Claude Code's reason, which may carry a model's id, after it.
-      // The name asked for is kept on one line: "Opus 4.6 · Low" read wrong broken at any of its spaces.
-      const asked = withEffort(rowFor(choice.models, model)?.name ?? model, effort).replace(/ /g, "\u00a0");
-      const why = String(error)
-        .replace(/^Error: /, "")
-        .replace(/^Claude Code did not change the (model|effort):\s*/, "")
-        .replace(/\.$/, "")
-        // A model's id ("claude-opus-4-6") is not broken across lines at its hyphens.
-        .replace(/-/g, "\u2011");
-      setProblem(`Claude Code didn’t move this session to ${asked}.${why ? ` It said: ${why}.` : ""}`);
+      setProblem({ asked: rowFor(choice.models, model)?.name ?? null, effort, why: refusal(String(error)) });
       // What the session is on after a refusal is Claude Code's to say.
       read();
     } finally {
@@ -288,11 +311,14 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
     const now = on ? `This session is on ${lineWord(choice)}.` : `↩ starts on ${choice.pick ? startWord(choice) : "its default"}.`;
     notes.push(asking || !choice.failed ? `Asking Claude Code for its models… ${now}` : `Claude Code didn’t send its list of models. ${now} Open this again to ask once more.`);
   } else if (on && !chosenRow) {
-    notes.push(`This session is on ${on.model}, which isn’t on Claude Code’s list now. Pick another to go on with that.`);
+    // Named as the learner picked it; an id the list no longer names is not shown.
+    const name = choice.pick?.model === on.model ? choice.pick.name : null;
+    notes.push(name ? `This session is on ${name}, which isn’t on Claude Code’s list now. Pick another to go on.` : "This session is on a model that isn’t on Claude Code’s list now. Pick another to go on.");
   } else if (!on && choice.not_offered && choice.pick) {
     notes.push(`${choice.pick.name ?? choice.pick.model} isn’t on Claude Code’s list now, so this session starts on ${fallbackName ?? "its default"}. Your pick stays until you choose another.`);
   }
-  if (problem) notes.push(problem);
+  const refused = problem ? refusedWords(problem, lineWord(choice)) : null;
+  if (refused) notes.push(refused);
   const footing = !on
     ? "Claude Code’s list for your account. Your pick is kept for the next session."
     : on.live
@@ -343,7 +369,7 @@ export function useModelPicker({ api, at, onClose }: Props): ModelPicker {
         </>
       )}
       {notes.map((text) => (
-        <p key={text} className="model-note" role={text === problem ? "alert" : undefined}>
+        <p key={text} className="model-note" role={text === refused ? "alert" : undefined}>
           {text}
         </p>
       ))}

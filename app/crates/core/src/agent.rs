@@ -47,11 +47,22 @@ pub enum AgentEvent {
     /// The tutor wants to do something that needs the learner's yes.
     Permission {
         id: String,
-        /// A plain sentence: "Run a command", "Write a file".
+        /// What the tutor asks, as a sentence: "The tutor asks to change
+        /// your plan". Never a path or a tool's name.
         title: String,
-        /// The command, path or address.
+        /// What it would touch, in plain words: the plan's name, a file's
+        /// name, a web site. Empty when there is nothing plainer to say.
         detail: String,
+        /// The exact thing the learner would allow, when the plain words
+        /// cannot show all of it: the command the shell would run, or a tool
+        /// the window has no words for, with what it was given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exact: Option<String>,
         can_always: bool,
+        /// What the second choice allows, as its label: "Always allow pages
+        /// from en.wikipedia.org". None when `can_always` is false.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        always: Option<String>,
     },
     /// The tutor asked the learner to choose.
     Question {
@@ -134,6 +145,9 @@ pub enum NoticeKind {
     /// The same, for a lesson at an effort the learner picked. The window
     /// offers to start it again at the agent's own effort.
     RecordUnopenedAtEffort,
+    /// The model the lesson runs on is one this account cannot use. The
+    /// window offers the list of models.
+    ModelUnavailable,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

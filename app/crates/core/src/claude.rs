@@ -377,6 +377,7 @@ impl Harness for ClaudeCode {
                 .map(Mutex::new),
             started: Instant::now(),
             asked: crate::models::Asked::default(),
+            failed_code: Mutex::new(None),
             opening: Opening {
                 new: options.resume.is_none(),
                 effort: Mutex::new(options.effort.clone().filter(|_| options.resume.is_none())),
@@ -589,6 +590,9 @@ struct Shared {
     opening: Opening,
     /// Control requests the window sent and waits on.
     asked: crate::models::Asked,
+    /// Claude Code's own code for the request that failed this turn
+    /// ("model_not_found"), from its line in the reply's place.
+    failed_code: Mutex<Option<String>>,
 }
 
 /// What the window watches for while a conversation opens.
@@ -794,6 +798,51 @@ pub(crate) fn ended_signed_out(result: &Value, said: &str) -> bool {
 /// also kept as one, and the message it answered counted as received.
 pub(crate) fn is_own_error(value: &Value) -> bool {
     value["is_api_error_message"].as_bool() == Some(true) || value["error"].is_string()
+}
+
+pub(crate) const BILLING: &str = "Claude Code reports a billing problem on your account. Fix it in a terminal or on the web, then send your message again.";
+
+/// A failed turn in the window's words, from Claude Code's own code for the
+/// failure: the `error` on its line in the reply's place. None for one the
+/// window has no plainer words for, whose own words are then the turn's error.
+pub(crate) fn failure_notice(
+    code: Option<&str>,
+    said: &str,
+    models: &[crate::models::ModelOption],
+) -> Option<(NoticeKind, String)> {
+    match code? {
+        "model_not_found" => Some((
+            NoticeKind::ModelUnavailable,
+            unavailable_words(said, models),
+        )),
+        "overloaded" | "server_error" => Some((
+            NoticeKind::Turn,
+            "Claude couldn’t answer just now. Send your message again in a moment.".into(),
+        )),
+        "billing_error" | "account_on_hold" => Some((NoticeKind::SignIn, BILLING.into())),
+        "verification_required" | "oauth_org_not_allowed" => {
+            Some((NoticeKind::SignIn, SIGN_IN.into()))
+        }
+        _ => None,
+    }
+}
+
+/// A model the account cannot use, by the name Claude Code's list gives it.
+/// Claude Code 2.1.322 names it by id in its own line: "There's an issue with
+/// the selected model (claude-opus-4-6). It may not exist or you may not have
+/// access to it. Run --model to pick a different model."
+pub(crate) fn unavailable_words(said: &str, models: &[crate::models::ModelOption]) -> String {
+    let named = said
+        .split_once("model (")
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .and_then(|(id, _)| crate::models::find(models, id.trim()))
+        .map(|row| row.name.clone());
+    match named {
+        Some(name) => {
+            format!("{name} isn’t available to you. Pick another model, then send your message again.")
+        }
+        None => "This session’s model isn’t available to you. Pick another model, then send your message again.".into(),
+    }
 }
 
 pub(crate) fn looks_like_a_limit(text: &str) -> bool {
@@ -1003,16 +1052,14 @@ fn on_hook(shared: &Arc<Shared>, value: &Value) {
 
 fn on_retry(shared: &Arc<Shared>, value: &Value) {
     let (kind, text) = match value["error"].as_str().unwrap_or_default() {
-        "authentication_failed" | "oauth_org_not_allowed" => (NoticeKind::SignIn, SIGN_IN.to_owned()),
+        "authentication_failed" | "oauth_org_not_allowed" => {
+            (NoticeKind::SignIn, SIGN_IN.to_owned())
+        }
         "rate_limit" => (
             NoticeKind::UsageLimit,
             "Claude Code is at a usage limit and is waiting to try again.".to_owned(),
         ),
-        "billing_error" | "account_on_hold" => (
-            NoticeKind::SignIn,
-            "Claude Code reports a billing problem on your account. Fix it in a terminal or on the web, then send your message again."
-                .to_owned(),
-        ),
+        "billing_error" | "account_on_hold" => (NoticeKind::SignIn, BILLING.to_owned()),
         _ => (
             NoticeKind::Retry,
             format!(
@@ -1324,6 +1371,8 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
         return;
     }
     if is_own_error(value) {
+        // The result that follows says the turn failed; this says why.
+        *lock(&shared.failed_code) = value["error"].as_str().map(str::to_owned);
         match value["error"].as_str() {
             Some("authentication_failed") => shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::SignIn,
@@ -1428,8 +1477,10 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
             .as_str()
             .is_some_and(|subtype| subtype != "success");
     let mut error = None;
+    let code = lock(&shared.failed_code).take();
     if failed && !interrupted {
         let said = what_went_wrong(value);
+        let plain = failure_notice(code.as_deref(), &said, &lock(&shared.opening.models));
         if ended_signed_out(value, &said) {
             shared.emit(AgentEvent::Notice {
                 kind: NoticeKind::SignIn,
@@ -1440,6 +1491,8 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
                 kind: NoticeKind::UsageLimit,
                 text: limit_words(&said),
             });
+        } else if let Some((kind, text)) = plain {
+            shared.emit(AgentEvent::Notice { kind, text });
         } else {
             error = Some(match value["subtype"].as_str() {
                 Some("error_max_turns") => {
@@ -1569,15 +1622,10 @@ fn on_control_request(shared: &Arc<Shared>, value: &Value) {
         let _ = shared.respond(id, json!({"behavior": "allow", "updatedInput": input}));
         return;
     }
-    let (title, mut detail) = describe(&tool, &input);
-    if detail.is_empty() {
-        detail = request["description"]
-            .as_str()
-            .or_else(|| request["title"].as_str())
-            .map(|text| clip(text, 300))
-            .unwrap_or_default();
-    }
-    let suggestions = request["permission_suggestions"].clone();
+    let ask = crate::asks::describe(&tool, &input, request, &shared.folder);
+    // Only what the choice's label says is saved when it is chosen.
+    let grant = crate::asks::grant(request, &shared.folder);
+    let suggestions = Value::Array(grant.as_ref().map(|g| g.rules.clone()).unwrap_or_default());
     lock(&shared.pending).insert(
         id.to_owned(),
         Pending::Permission {
@@ -1588,9 +1636,11 @@ fn on_control_request(shared: &Arc<Shared>, value: &Value) {
     );
     shared.emit(AgentEvent::Permission {
         id: id.to_owned(),
-        title,
-        detail,
-        can_always: true,
+        title: ask.title,
+        detail: ask.detail,
+        exact: ask.exact,
+        can_always: grant.is_some(),
+        always: grant.map(|g| g.label),
     });
 }
 
@@ -1637,43 +1687,6 @@ fn parse_questions(input: &Value) -> Vec<Question> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// A permission request as a plain title and the thing it would touch.
-pub fn describe(tool: &str, input: &Value) -> (String, String) {
-    let field = |name: &str| {
-        input[name]
-            .as_str()
-            .map(|text| clip(text, 400))
-            .unwrap_or_default()
-    };
-    match tool {
-        "Bash" => ("Run a command".into(), field("command")),
-        "Write" => ("Write a file".into(), field("file_path")),
-        "Edit" | "MultiEdit" => ("Change a file".into(), field("file_path")),
-        "NotebookEdit" => ("Change a notebook".into(), field("notebook_path")),
-        "Read" => ("Read a file".into(), field("file_path")),
-        "Glob" | "Grep" => ("Search your files".into(), field("pattern")),
-        "WebFetch" => ("Open a web page".into(), field("url")),
-        "WebSearch" => ("Search the web".into(), field("query")),
-        "Skill" => ("Use a skill".into(), field("skill")),
-        "Agent" | "Task" => ("Start a helper".into(), field("description")),
-        other if other.starts_with("mcp__") => {
-            let mut parts = other.trim_start_matches("mcp__").rsplitn(2, "__");
-            let name = parts.next().unwrap_or(other);
-            let server = parts.next().unwrap_or_default();
-            let server = server.rsplit([':', '_']).next().unwrap_or(server);
-            (
-                "Use a tool".into(),
-                if server.is_empty() {
-                    name.to_owned()
-                } else {
-                    format!("{name}, from {server}")
-                },
-            )
-        }
-        other => (format!("Use {other}"), clip(&input.to_string(), 200)),
-    }
 }
 
 pub(crate) fn clip(text: &str, chars: usize) -> String {
@@ -1991,18 +2004,6 @@ mod tests {
     }
 
     #[test]
-    fn requests_read_as_plain_sentences() {
-        assert_eq!(
-            describe("Bash", &json!({"command": "tectonic paper.tex"})),
-            ("Run a command".into(), "tectonic paper.tex".into())
-        );
-        assert_eq!(
-            describe("mcp__plugin_magnesium_magnesium__learning_step", &json!({})),
-            ("Use a tool".into(), "learning_step, from magnesium".into())
-        );
-    }
-
-    #[test]
     fn the_programs_own_diagnostics_are_not_shown() {
         // As the real program ended a turn interrupted before its first word.
         let ended = json!({
@@ -2015,6 +2016,49 @@ mod tests {
         let plain =
             json!({"subtype": "error_during_execution", "errors": ["API Error: overloaded"]});
         assert_eq!(what_went_wrong(&plain), "API Error: overloaded");
+    }
+
+    #[test]
+    fn a_model_the_account_cannot_use_is_a_notice_in_the_windows_words() {
+        let (shared, seen) = listening();
+        *lock(&shared.opening.models) =
+            crate::models::parse(&crate::models::tests::fourteen()).unwrap();
+        // The two lines Claude Code 2.1.322 sent on 2026-11-15 for a model the
+        // account cannot use, with what they carried that the window reads.
+        let said = "There's an issue with the selected model (claude-opus-4-6). It may not exist or you may not have access to it. Run --model to pick a different model.";
+        handle(
+            &shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "error": "model_not_found",
+                    "is_api_error_message": true, "api_error_status": 404,
+                    "message": {"id": "m1", "model": "<synthetic>", "content": [{"type": "text", "text": said}]}}),
+        );
+        handle(
+            &shared,
+            &json!({"type": "result", "subtype": "success", "is_error": true, "api_error_status": 404, "result": said}),
+        );
+        let seen = lock(&seen);
+        assert!(
+            seen.iter().any(|event| matches!(event, AgentEvent::Notice { kind: NoticeKind::ModelUnavailable, text }
+                if text == "Opus 4.6 isn’t available to you. Pick another model, then send your message again.")),
+            "{seen:#?}"
+        );
+        assert!(
+            seen.iter().any(|event| matches!(
+                event,
+                AgentEvent::TurnEnded {
+                    ok: false,
+                    error: None,
+                    ..
+                }
+            )),
+            "{seen:#?}"
+        );
+        assert!(!format!("{seen:?}").contains("--model"), "{seen:#?}");
+        // A model the list does not name is not named by its id.
+        assert_eq!(
+            unavailable_words("There's an issue with the selected model (claude-nope-1).", &[]),
+            "This session’s model isn’t available to you. Pick another model, then send your message again."
+        );
     }
 
     #[test]
@@ -2049,6 +2093,7 @@ mod tests {
             trace: None,
             started: Instant::now(),
             asked: crate::models::Asked::default(),
+            failed_code: Mutex::new(None),
             opening: Opening::default(),
         });
         let mut conversation = ClaudeConversation {
@@ -2438,6 +2483,7 @@ mod tests {
             trace: None,
             started: Instant::now(),
             asked: crate::models::Asked::default(),
+            failed_code: Mutex::new(None),
             opening: Opening::default(),
         });
         (shared, seen)

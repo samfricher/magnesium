@@ -21,6 +21,7 @@
 
 pub mod activity;
 pub mod agent;
+pub mod asks;
 pub mod claude;
 pub mod direct;
 pub mod files;
