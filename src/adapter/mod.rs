@@ -159,6 +159,7 @@ pub(crate) enum LearningStepRequest {
     Update(Box<crate::learner::UpdateRequest>),
     Control(Box<ControlRequest>),
     EndSitting(crate::closing::EndSittingRequest),
+    JustChecks(crate::just_checks::JustChecksRequest),
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -279,6 +280,17 @@ pub(crate) fn dispatch_with_host(
     if operation == "learning_step" && crate::closing::is_end_request(&request) {
         let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
         return Ok(crate::closing::end_from_tool(cwd, by));
+    }
+    if operation == "learning_step" && crate::just_checks::is_request(&request) {
+        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
+        return Ok(crate::just_checks::from_tool(cwd, by, |workspace| {
+            caller
+                .as_ref()
+                .is_none_or(|host| records_here(workspace, host))
+        }));
+    }
+    if let Some(refusal) = crate::just_checks::refusal(cwd, operation, &request) {
+        return Ok(refusal);
     }
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
@@ -487,7 +499,14 @@ fn open_sitting(
             let _ = sittings.note_learner_message(&workspace, now);
         }
         let _ = sittings.settle(&outcomes);
-        if records && workspace.opener() != crate::workspace::OpenerMode::Off {
+        // The last check of a sitting of checks alone ends it.
+        let by = caller.map(|host| host.host_thread_id.as_str());
+        if !outcomes.is_empty() && sittings.end_checks_only_when_done(by, now).unwrap_or(false) {
+            result["sitting_ended"] = true.into();
+            result["sitting_note"] = crate::just_checks::ENDED_NOTE.into();
+        }
+        let alone = sittings.checks_only().ok().flatten().is_some();
+        if records && (alone || workspace.opener() != crate::workspace::OpenerMode::Off) {
             let mut synced = crate::practice::GapLogReport::default();
             if let Ok(Some(opener)) = sittings.take_opener(&workspace, now, &mut synced) {
                 result["sitting_opener"] = opener.text.into();
@@ -995,7 +1014,11 @@ pub(crate) fn host_user_prompt_submit(
     // A learner message in a conversation that records may begin a sitting.
     // Only its time is kept, never its text.
     if recording && let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
-        let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
+        let now = crate::sittings::now_ms();
+        let _ = sittings.note_learner_message(&workspace, now);
+        if crate::just_checks::asked_in_words(text) {
+            let _ = sittings.ask_checks_only(&workspace, Some(&context.host_thread_id), now);
+        }
     }
     let sitting = crate::sittings::notice_clause(&workspace);
     if !active && recording {

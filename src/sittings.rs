@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS sitting_ends(
   ended_by TEXT,
   shown_ms INTEGER
 );
+CREATE TABLE IF NOT EXISTS sitting_checks_only(
+  sitting_id TEXT PRIMARY KEY REFERENCES sittings(sitting_id),
+  asked_ms INTEGER NOT NULL,
+  asked_by TEXT
+);
 ";
 
 /// Version 1's sitting_items named its own items table. Version 2's names
@@ -385,7 +390,11 @@ impl Sittings {
             )
             .map_err(error)?;
         tx.commit().map_err(error)?;
-        let opener = Opener::new(&checks, &items, today).filter(|_| claimed > 0);
+        let opener = match self.checks_only_opener(workspace)? {
+            Some(alone) => Some(alone),
+            None => Opener::new(&checks, &items, today),
+        }
+        .filter(|_| claimed > 0);
         if opener.is_some() {
             self.write_log();
         }
@@ -401,6 +410,9 @@ impl Sittings {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
         };
+        if let Some(alone) = self.checks_only_opener(workspace)? {
+            return Ok(Some(alone));
+        }
         let items = items_now(workspace);
         let checks = self.checks(&sitting, &items)?;
         Ok(Opener::new(&checks, &items, local_day(now)))
@@ -848,7 +860,9 @@ fn opener_text_with(checks: &[Check], redos: &[DueRedos], unlisted: &[DueRedos])
                 }
             }
         }
-        text.push_str("\nYour first reply of this sitting begins with the words \"Quick check 1:\", with no greeting or recap before them, and poses check 1. Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is the check's next problem, made the same way: it asks for a result and never names or points at the skill, the label, the method, the step or the earlier mistake, and each earlier miss gives it a different answer from the right one. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
+        let first = checks[0].number;
+        text.push_str(&format!("\nYour first reply of this sitting begins with the words \"Quick check {first}:\", with no greeting or recap before them, and poses check {first}."));
+        text.push_str(" Pose any later check the same way, as \"Quick check <number>:\", after the learner answers. Pose a stored question as written, and show none of its key before they answer. Without one, make a new problem the learner has not seen, answered in a line or two, in which they must use the skill without being prompted: the question never names or points at the skill, the label, the step or the earlier mistake. Ask them to solve or decide something, never to state the step itself. Choose it so that each earlier miss would give a different answer from the right one. After their answer, show lettered options for that problem: the right answer, and one wrong option for each earlier miss. Then record their first answer with learning_step: an observation that cites their message as learner_response, with attempt {label: exactly as above, question: the check as you posed it, first_try, help, cold, next: {question, answer_key}}, where next is the check's next problem, made the same way: it asks for a result and never names or points at the skill, the label, the method, the step or the earlier mistake, and each earlier miss gives it a different answer from the right one. cold is true when they answered with no help, and false with any help. first_try is right only when the answer shows that step done right: a result each earlier miss would have changed, and no reason that still holds an earlier miss. Otherwise it is wrong. A decline is recorded the same way with first_try declined and cold false.");
     }
     if !redos.is_empty() || !unlisted.is_empty() {
         text.push_str("\n\nPaper redos due:");
@@ -895,13 +909,15 @@ pub(crate) fn carries_learner_message(request: &Value, result: &Value) -> bool {
 
 /// The clause a turn's notice carries while a quick check is open.
 pub(crate) fn notice_clause(workspace: &Workspace) -> Option<String> {
+    let sittings = Sittings::open_existing(workspace).ok()??;
+    // A sitting of checks alone was asked for, so it holds with the opener off.
+    if let Ok(Some(left)) = sittings.checks_only_left() {
+        return Some(checks_only::notice_clause(left));
+    }
     if workspace.opener() == OpenerMode::Off {
         return None;
     }
-    let counts = Sittings::open_existing(workspace)
-        .ok()??
-        .open_counts()
-        .ok()??;
+    let counts = sittings.open_counts().ok()??;
     Some(format!(
         " Sitting quick checks: due {}, posed {}.",
         counts.due, counts.posed
@@ -940,6 +956,8 @@ pub(crate) fn set_opener(mode: OpenerMode) -> std::process::ExitCode {
         }
     }
 }
+
+pub(crate) mod checks_only;
 
 #[cfg(test)]
 mod tests;

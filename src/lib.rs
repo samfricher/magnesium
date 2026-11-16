@@ -14,6 +14,7 @@ mod diagnostics;
 mod digest;
 mod export;
 mod hooks;
+mod just_checks;
 pub(crate) mod learner;
 mod lesson;
 mod mcp;

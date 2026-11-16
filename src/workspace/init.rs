@@ -738,6 +738,10 @@ const CLAUDE_PLUGIN_FILES: &[(&str, &str)] = &[
         include_str!("../../claude-plugin/skills/papers/templates/paper.md"),
     ),
     (
+        "skills/checks/SKILL.md",
+        include_str!("../../claude-plugin/skills/checks/SKILL.md"),
+    ),
+    (
         "skills/help/SKILL.md",
         include_str!("../../claude-plugin/skills/help/SKILL.md"),
     ),

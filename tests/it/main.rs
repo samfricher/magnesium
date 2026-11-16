@@ -24,6 +24,7 @@ mod init;
 mod instruction_bundle_loading;
 mod instruction_bundle_placeholders;
 mod invariants;
+mod just_checks;
 mod learner_read_surface;
 mod lifecycle;
 mod mcp_headless;
