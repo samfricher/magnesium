@@ -19,7 +19,7 @@ use crate::workspace::Workspace;
 /// What the tutor reads first, in place of the usual opener's first line.
 const LEAD: &str = "Quick checks alone. The learner asked for the quick checks that are due and nothing else, so this sitting poses only these, one at a time: no paper redo, no new material, no plan and no other task. The learner may decline any check at no cost, and a declined check stays due.";
 /// What the tutor reads last: how the sitting ends.
-const CLOSE: &str = "After each answer, show the lettered options and say in a line which is right and why. Teach no repair and set no task for it: a check answered wrong comes back on its next day. When the last check here is answered or declined, Magnesium ends the sitting and shows the learner, under your reply, what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked.";
+const CLOSE: &str = "After each answer, show the lettered options, say in a line which is right and why, and pose the next check in the same reply. Teach no repair and set no task for it: a check answered wrong comes back on its next day. When the last check here is answered or declined, Magnesium ends the sitting and shows the learner, under your reply, what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked.";
 
 /// The usual opener's words for the first reply of a sitting; a sitting of
 /// checks alone may be asked for part-way through one.
