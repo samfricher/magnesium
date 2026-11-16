@@ -123,7 +123,7 @@ fn each_session_line_is_one_weekly_event_on_its_days_at_its_start() {
         "{:?}",
         property(&lines, "DESCRIPTION")
     );
-    assert!(property(&lines, "DESCRIPTION")[0].ends_with("\\nFrom your plan for Midterm 1."));
+    assert!(property(&lines, "DESCRIPTION")[0].ends_with("\\nFrom your Magnesium plan for Midterm 1."));
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn text_is_escaped_and_long_lines_fold_without_splitting_a_character() {
     );
     assert!(
         property(&lines, "DESCRIPTION")[0]
-            .ends_with("From your plan for Chemie\\; Ü-Kurs\\, Teil 2.")
+            .ends_with("From your Magnesium plan for Chemie\\; Ü-Kurs\\, Teil 2.")
     );
 }
 

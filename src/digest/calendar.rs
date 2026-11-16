@@ -313,7 +313,7 @@ fn ics(folder_id: &str, events: &[Event], today: NaiveDate, now: DateTime<Utc>) 
         line(&format!("SUMMARY:{}", text_value(&action(&session.text))));
         line(&format!(
             "DESCRIPTION:{}",
-            text_value(&format!("{}\nFrom your plan for {name}.", session.text))
+            text_value(&format!("{}\nFrom your Magnesium plan for {name}.", session.text))
         ));
         line("END:VEVENT");
     }

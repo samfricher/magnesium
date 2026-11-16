@@ -56,8 +56,9 @@ export function StudyTimes({ planned, busy, onAdd }: Props) {
       )}
       {unreadable > 0 && (
         <p className="page-note">
-          {unreadable === 1 ? "One time in your plan could not be read" : `${unreadable} times in your plan could not be read`}, so{" "}
-          {unreadable === 1 ? "it is" : "they are"} left out. Ask the tutor to fix your plan’s sessions.
+          {unreadable === 1
+            ? "One session in your plan could not be read and is left out. Ask the tutor to fix it."
+            : `${unreadable} sessions in your plan could not be read and are left out. Ask the tutor to fix them.`}
         </p>
       )}
       {sessions.length > 0 && (
@@ -70,3 +71,4 @@ export function StudyTimes({ planned, busy, onAdd }: Props) {
     </section>
   );
 }
+
