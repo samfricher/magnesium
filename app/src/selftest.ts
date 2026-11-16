@@ -467,6 +467,9 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     writeOn("");
     await api.decide(session().cards[0].id, "refuse");
     await until("the reply after the refusal", () => session().cards.length === 0 && idle());
+    // With no card waiting, the line's way to a card is out of the page, not only hidden.
+    await wait(100);
+    if (document.querySelector(".session.in-front .to-card")) throw new Error("the way to a card is still under the line after the card was answered");
 
     // The learner's own line on screen draws its mathematics too, and a file sent with it is named, not its path.
     await actions.session()!.say(`my answer is $x^2$\n\n${toRead}`, "talk");

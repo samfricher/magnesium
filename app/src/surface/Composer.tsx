@@ -134,6 +134,8 @@ type Props = {
   onStop?: () => void;
   /** What stopping does now: "stop the reply", or "stop the tutor" while it waits on a card. */
   stopWords?: string;
+  /** A card waits on the learner: the line can say how the keyboard reaches it. */
+  cardWaits?: boolean;
   /** Return on an empty line: what the line's end names, when there is something to carry on. */
   onEmptyReturn?: () => void;
   /** Words were typed, a file joined or a tool was used: the learner is writing now. */
@@ -495,8 +497,9 @@ export const Composer = memo(
         )}
         {/* How the keyboard reaches a card that arrived while the learner was typing. Under the words, so the line
             keeps its width at 720 by 560; shown only while a card waits and the keyboard is on this line (surface.css,
-            by the foot's "asking"). */}
-        {!rest && (
+            by the foot's "asking"). It is in the page only while a card waits: the Mac's WebKit kept it drawn after
+            the foot lost "asking", until something else made it work the styles out again. */}
+        {!rest && props.cardWaits && (
           <p className="with to-card" aria-hidden="true">
             <span className="keys">⇧⇥</span> answer the tutor
           </p>

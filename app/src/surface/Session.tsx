@@ -1372,6 +1372,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       onHelp={askHelp}
                       onStop={ownBusy ? stopReply : undefined}
                       stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
+                      cardWaits={session.cards.length > 0}
                       onWrite={raise}
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
