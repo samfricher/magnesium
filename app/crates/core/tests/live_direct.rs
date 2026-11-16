@@ -25,7 +25,7 @@ use mg_core::claude::ClaudeCode;
 use mg_core::direct::DirectTutor;
 use mg_core::host_client::{self, HostClient};
 use mg_core::store::Engine;
-use mg_core::{peek, Manager, Store};
+use mg_core::{Manager, Store};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
@@ -269,7 +269,7 @@ fn a_direct_lesson_streams_keeps_its_record_and_resumes() {
     assert!(third.ok && !third.reply.is_empty());
     println!("attempts after the resumed turn: {:#?}", scratch.attempts());
 
-    let steps = peek::goal_steps(&scratch.folder);
+    let steps = mg_core::plan::goal_steps(&scratch.folder);
     println!("steps: {steps:?}");
     assert!(!steps.is_empty(), "the goal's steps are saved");
     // What the record keeps is what was shown.
@@ -320,7 +320,7 @@ fn a_lesson_you_play() {
             "reply": done.reply,
             "notices": done.notices,
             "attempts": scratch.attempts(),
-            "steps": peek::goal_steps(&scratch.folder).iter().map(|s| format!("{} ({})", s.step, s.status)).collect::<Vec<_>>(),
+            "steps": mg_core::plan::goal_steps(&scratch.folder).iter().map(|s| format!("{} ({})", s.step, s.status)).collect::<Vec<_>>(),
             "next_action": scratch.cli(&["digest"])["record"]["sessions"][0]["next_action"],
             "folder": scratch.folder,
         });
@@ -741,7 +741,7 @@ fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
             notes,
         } = traced(&trace, at);
         at = end;
-        let steps: Vec<String> = peek::goal_steps(&scratch.folder)
+        let steps: Vec<String> = mg_core::plan::goal_steps(&scratch.folder)
             .iter()
             .map(|s| format!("{} ({})", s.step, s.status))
             .collect();

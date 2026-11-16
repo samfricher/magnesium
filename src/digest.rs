@@ -35,7 +35,9 @@ const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 /// 2: `sitting_redos`, the due paper redos as data, beside `sitting_checks`.
 /// 3: `repairs_waiting`, the gap-log rows waiting for a repair, in a
 ///    `context status` result.
-pub(crate) const WINDOW_FEATURES: u64 = 3;
+/// 4: `lesson --json`, and talk: a learner message that opens with the
+///    window's talk line is never an attempt.
+pub(crate) const WINDOW_FEATURES: u64 = 4;
 
 /// Every digest says the number, in a study folder or outside one, so the
 /// window can ask without a folder.

@@ -20,8 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::gaplog::{self, Gap, GapLog};
-use crate::peek::{self, Check, Step};
+use crate::peek::{self, Check};
 use crate::runtime;
+use crate::runtime::Step;
 use crate::store::{PaperSitting, Store};
 
 #[derive(Clone, Debug, Serialize)]
@@ -1027,7 +1028,7 @@ pub fn rail(folder: &Path) -> Rail {
     let session = &digest["record"]["sessions"][0];
     Rail {
         goal: text(&session["goal"]),
-        steps: peek::goal_steps(&root),
+        steps: crate::plan::goal_steps(&root),
         next_action: text(&session["next_action"]).or_else(|| text(&session["current_problem"])),
     }
 }

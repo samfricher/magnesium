@@ -14,6 +14,7 @@ mod digest;
 mod export;
 mod hooks;
 pub(crate) mod learner;
+mod lesson;
 mod mcp;
 mod practice;
 mod progress;
@@ -51,6 +52,12 @@ pub fn run() -> ExitCode {
         }
         Some(("digest", _)) => digest::print_digest(),
         Some(("attempts", matches)) => attempts::print_attempts(matches.get_flag("json")),
+        Some(("lesson", matches)) => lesson::print_lesson(
+            matches
+                .get_one::<String>("conversation")
+                .map(String::as_str),
+            matches.get_flag("json"),
+        ),
         Some(("progress", matches)) => progress::print_progress(matches.get_flag("json")),
         Some(("searchable", matches)) => {
             let paths: Vec<PathBuf> = matches

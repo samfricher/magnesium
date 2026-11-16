@@ -1,8 +1,8 @@
 //! The window's readers against the runtime built from this same checkout.
 //!
 //! The window reads what the runtime prints: `magnesium digest`, `magnesium
-//! progress --json` and `magnesium attempts --json`, and one fact straight
-//! from its store (the goal's steps, see `peek`). This test builds the
+//! progress --json`, `magnesium attempts --json` and `magnesium lesson
+//! --json`. This test builds the
 //! runtime at the root of the repository, lets it make a scratch study folder
 //! from made-up data, and feeds its real output to those readers. A runtime
 //! change that the readers do not follow fails here.
@@ -536,6 +536,18 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
             ("Take its reciprocal".to_owned(), "doing".to_owned()),
             ("Check the units".to_owned(), "todo".to_owned()),
         ]
+    );
+    // The same lesson, by its conversation, with no task open: the
+    // checkpoint names none.
+    let lesson = mg_core::runtime::lesson(&scratch.folder, Some(THREAD))
+        .expect("the runtime says")
+        .expect("the conversation has a lesson");
+    assert_eq!(lesson.goal, "Read Vmax from a Lineweaver-Burk plot");
+    assert_eq!(lesson.steps, rail.steps);
+    assert_eq!(lesson.open_task, None);
+    assert_eq!(
+        mg_core::runtime::lesson(&scratch.folder, Some("another-conversation")),
+        Some(None)
     );
 
     // A hand edit that closes a row the record has not closed. The window

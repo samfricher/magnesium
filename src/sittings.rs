@@ -301,6 +301,23 @@ impl Sittings {
             .map_err(error)
     }
 
+    /// The current sitting's quick check that a reply posed and no answer
+    /// has settled yet: its number and label. The lowest number when several
+    /// are.
+    pub(crate) fn open_check(&self) -> Result<Option<(i64, String)>, String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(None);
+        };
+        self.conn
+            .query_row(
+                "SELECT number,label FROM sitting_items WHERE sitting_id=?1 AND posed=1 AND outcome IS NULL ORDER BY number LIMIT 1",
+                [&sitting],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(error)
+    }
+
     /// Quick checks of the current sitting, while any is neither posed nor
     /// declined. An answer counts as posed.
     pub(crate) fn open_counts(&self) -> Result<Option<Counts>, String> {
@@ -650,7 +667,7 @@ fn from_version_1(conn: &mut Connection, workspace: &Workspace) -> Result<(), St
     tx.commit().map_err(error)
 }
 
-fn says_check(reply_lowercase: &str, number: i64) -> bool {
+pub(crate) fn says_check(reply_lowercase: &str, number: i64) -> bool {
     let needle = format!("quick check {number}");
     reply_lowercase.match_indices(&needle).any(|(start, _)| {
         !reply_lowercase[start + needle.len()..]

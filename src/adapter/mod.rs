@@ -647,14 +647,19 @@ fn dispatch_inner(
         let request: ReplyRequest = serde_json::from_value(request)
             .map_err(|e| format!("{e}. reply takes {{\"text\":\"<your whole reply>\"}}"))?;
         let host = native_host.unwrap_or_else(tool_host);
-        host_reply(cwd, &host, &request.text)?;
+        let event = host_reply(cwd, &host, &request.text)?;
         // Without this, a tutor often writes the same reply again as text.
-        let next = if request.save_after {
-            "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply."
-        } else {
-            "End the turn now, with no text: the learner already has your reply."
+        let next = match (request.save_after, &event) {
+            (true, Some(event)) => format!(
+                "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply. If this reply set a task, the checkpoint's pending_task names it: proposal_event_ref {event}, and conditions the task's words copied exactly from your reply."
+            ),
+            (true, None) => "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply.".to_owned(),
+            (false, _) => "End the turn now, with no text: the learner already has your reply.".to_owned(),
         };
-        return Ok(json!({"shown": true, "next": next}));
+        return Ok(match event {
+            Some(event) => json!({"shown": true, "event_id": event, "next": next}),
+            None => json!({"shown": true, "next": next}),
+        });
     }
     if !matches!(operation, "context" | "memory" | "learning_step") {
         return Err(format!("unknown tool: {operation}"));
@@ -967,7 +972,10 @@ pub(crate) fn host_user_prompt_submit(
         speaker: crate::learner::Speaker::Learner,
         kind: "message".into(),
         text: native_capture::learner_text(&context, text).into_owned(),
-        metadata: Some(crate::learner::EventMetadata::default()),
+        metadata: Some(crate::learner::EventMetadata {
+            intent: native_capture::intent(&context, text),
+            ..Default::default()
+        }),
         occurred_at_ms: None,
     };
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
@@ -1150,23 +1158,25 @@ fn tool_replies(
 /// The tutor's reply, from the window's `reply` tool, recorded as it is
 /// delivered: the window shows this text as the tutor writes it. It is kept
 /// as the end-of-turn hook keeps a reply, and only while the lesson records.
+/// Returns the kept event's id, which a checkpoint names as the task it
+/// posed.
 pub(crate) fn host_reply(
     cwd: &Path,
     host: &crate::learner::HostContext,
     text: &str,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     if text.trim().is_empty() {
         return Err("reply text is empty: put the whole reply in text".into());
     }
     crate::learner::limits::text("text", text, crate::learner::limits::EVENT_BYTES)
         .map_err(|e| e.to_string())?;
     let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
-        return Ok(());
+        return Ok(None);
     };
     check_workspace_binding(&workspace)?;
     let safety = control_admission::Admission::new(&workspace, host).capture_guard()?;
     if safety.blocked.is_some() {
-        return Ok(());
+        return Ok(None);
     }
     if let Ok(Some(mut sittings)) = crate::sittings::Sittings::open_existing(&workspace) {
         let _ = sittings.note_reply(text);
@@ -1174,7 +1184,7 @@ pub(crate) fn host_reply(
     let store = open_store(&workspace)?;
     let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
     if !(active && recording) {
-        return Ok(());
+        return Ok(None);
     }
     // The message this reply answers is the conversation's latest learner
     // message.
@@ -1183,7 +1193,7 @@ pub(crate) fn host_reply(
         Some(learner_key) => {
             let earlier = tool_replies(&store, host, &learner_key)?;
             if earlier.iter().any(|said| said == text) {
-                return Ok(());
+                return Ok(None);
             }
             reply_key(&learner_key, earlier.len() + 1)
         }
@@ -1203,10 +1213,10 @@ pub(crate) fn host_reply(
         }),
         occurred_at_ms: None,
     };
-    store
+    let ids = store
         .capture(host, &[event], "host_observed", false)
         .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(ids.into_iter().next())
 }
 
 pub(crate) fn host_response_stop_with_delivery(

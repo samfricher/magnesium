@@ -365,6 +365,8 @@ try {
   for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
   await settle(r, 400);
   await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);

@@ -169,6 +169,60 @@ pub fn progress(folder: &Path) -> Option<Value> {
     .then_some(value)
 }
 
+/// A step of the lesson's goal, as the record's checkpoint holds it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Step {
+    pub step: String,
+    /// "todo", "doing" or "done".
+    pub status: String,
+}
+
+/// The task open in a lesson, in the words of the tutor's message that
+/// posed it, as the record holds it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct OpenTask {
+    /// "task", or "quick_check" for a sitting's quick check.
+    pub kind: String,
+    pub text: String,
+    pub posed_at_ms: i64,
+    /// True when the record could not find the task's own words in the
+    /// reply, so `text` is the whole reply.
+    #[serde(default)]
+    pub whole_reply: bool,
+}
+
+/// A lesson as `magnesium lesson --json` prints it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Lesson {
+    pub goal: String,
+    #[serde(default)]
+    pub steps: Vec<Step>,
+    pub open_task: Option<OpenTask>,
+}
+
+/// `magnesium lesson --json`: the lesson a conversation is in (or, with no
+/// conversation, the folder's most recently changed one), read from the
+/// record without changing it. None when the runtime could not say: it has no
+/// such command, or the folder is not set up. Some(None) when it has no
+/// lesson for that conversation.
+pub fn lesson(folder: &Path, conversation: Option<&str>) -> Option<Option<Lesson>> {
+    let mut args = vec!["lesson", "--json"];
+    if let Some(conversation) = conversation {
+        args.extend(["--conversation", conversation]);
+    }
+    let out = run(folder, &args, Duration::from_secs(10)).ok()?;
+    lesson_from(&out)
+}
+
+pub fn lesson_from(printed: &str) -> Option<Option<Lesson>> {
+    let value: Value = serde_json::from_str(printed).ok()?;
+    let lesson = value.get("lesson")?;
+    if lesson.is_null() {
+        return Some(None);
+    }
+    serde_json::from_value(lesson.clone()).ok().map(Some)
+}
+
 /// `magnesium init`: set a folder up for study.
 pub fn init(folder: &Path) -> Result<(), String> {
     run(folder, &["init", "--json"], Duration::from_secs(30)).map(|_| ())
@@ -193,8 +247,11 @@ pub fn upgrade(root: &Path) -> Result<(), String> {
 /// whose `progress --json` counts what the learner did today. 2 is the first
 /// that lists a sitting's due paper redos as data, which a lesson on the
 /// direct engine poses. 3 is the first that lists the rows waiting for a
-/// repair, which a lesson on the direct engine records.
-pub const WINDOW_FEATURES_NEEDED: u64 = 3;
+/// repair, which a lesson on the direct engine records. 4 is the first with
+/// `lesson --json`, where the window reads the goal's steps and, on the
+/// plugin engine, the open task, and the first that refuses an attempt on a
+/// message the window sent as talk.
+pub const WINDOW_FEATURES_NEEDED: u64 = 4;
 
 /// The `window_features` number that `magnesium digest` prints: which of the
 /// window's needs this program meets. It is asked at the root of the disk, in

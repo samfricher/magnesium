@@ -1,4 +1,4 @@
-//! Two facts the runtime stores and prints through no command yet.
+//! Facts the runtime stores and prints through no command yet.
 //!
 //! The window reads them straight from the runtime's files, read-only. This
 //! ties the window to two table layouts, so every query here fails quietly to
@@ -16,7 +16,6 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 use rusqlite::{Connection, OpenFlags};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 fn open(path: &Path) -> Option<Connection> {
@@ -104,13 +103,6 @@ pub fn checks_due(root: &Path, today: NaiveDate) -> Option<u32> {
     )
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Step {
-    pub step: String,
-    /// "todo", "doing" or "done".
-    pub status: String,
-}
-
 /// The goal of the lesson the record binds to one conversation (a window
 /// session's id: the runtime binds the host thread `…:claude:<id>` to a
 /// lesson). None when the record holds no such binding, or its tables are not
@@ -131,40 +123,6 @@ pub fn goal_of_conversation(root: &Path, conversation: &str) -> Option<String> {
     .filter(|goal| !goal.trim().is_empty())
 }
 
-/// The steps of the current goal, from the most recently saved checkpoint. An
-/// older runtime stores none, and then the rail shows the goal alone.
-pub fn goal_steps(root: &Path) -> Vec<Step> {
-    let Some(conn) = open(&root.join(".magnesium/state.sqlite")) else {
-        return Vec::new();
-    };
-    let checkpoint: Option<String> = conn
-        .query_row(
-            "SELECT checkpoint_json FROM learning_sessions ORDER BY updated_at_ms DESC, session_id LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .ok();
-    let Some(value) = checkpoint.and_then(|text| serde_json::from_str::<Value>(&text).ok()) else {
-        return Vec::new();
-    };
-    value["goal_steps"]
-        .as_array()
-        .map(|steps| {
-            steps
-                .iter()
-                .filter_map(|step| {
-                    Some(Step {
-                        step: step["step"].as_str()?.trim().to_owned(),
-                        status: step["status"].as_str().unwrap_or("todo").to_owned(),
-                    })
-                })
-                .filter(|step| !step.step.is_empty())
-                .take(12)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,12 +131,11 @@ mod tests {
     fn a_missing_store_gives_nothing_and_creates_nothing() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(checks(dir.path()).map(|c| c.len()), Some(0));
-        assert!(goal_steps(dir.path()).is_empty());
         assert!(!dir.path().join(".magnesium").exists());
     }
 
     #[test]
-    fn due_checks_are_counted_and_steps_are_read() {
+    fn due_checks_are_counted() {
         let dir = tempfile::tempdir().unwrap();
         let control = dir.path().join(".magnesium");
         std::fs::create_dir_all(&control).unwrap();
@@ -196,28 +153,6 @@ mod tests {
         let all = checks(dir.path()).unwrap();
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].last_miss.as_deref(), Some("dropped the minus"));
-
-        let conn = Connection::open(control.join("state.sqlite")).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE learning_sessions(session_id TEXT, checkpoint_json TEXT, updated_at_ms INTEGER);
-             INSERT INTO learning_sessions VALUES('s1','{\"goal_steps\":[{\"step\":\"Take reciprocals\",\"status\":\"done\"},{\"step\":\"Read the intercept\",\"status\":\"doing\"}]}',5);
-             INSERT INTO learning_sessions VALUES('s0','{}',1);",
-        )
-        .unwrap();
-        drop(conn);
-        assert_eq!(
-            goal_steps(dir.path()),
-            vec![
-                Step {
-                    step: "Take reciprocals".into(),
-                    status: "done".into()
-                },
-                Step {
-                    step: "Read the intercept".into(),
-                    status: "doing".into()
-                },
-            ]
-        );
     }
 
     #[test]
