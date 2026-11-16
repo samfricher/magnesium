@@ -39,7 +39,7 @@ pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_AGENT";
 /// for. The live check turns it on, to settle what the real program sends.
 pub const TRACE_ENV: &str = "MAGNESIUM_APP_TRACE";
 
-pub(crate) const PLUGIN: &str = "magnesium";
+const PLUGIN: &str = "magnesium";
 const NAME: &str = "Claude Code";
 /// Anthropic's page for installing Claude Code. The window links to it and
 /// never runs an installer itself.

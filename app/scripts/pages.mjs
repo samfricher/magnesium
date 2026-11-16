@@ -336,6 +336,14 @@ try {
   await shoot(p, "session-permission-plan-bare", "Session: the tutor asks to change the plan, on the bare line");
   await step(p, "refuse the plan change", { op: "click", target: "Refuse" });
   await step(p, "the plan reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The tutor asks to read a file outside the course.
+  await step(p, "focus the line for outside", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask to read outside", { op: "type", text: "OUTSIDE: read my reading list" });
+  await step(p, "send the outside read", { op: "key", key: "Enter" });
+  await settle(p, 3000);
+  await shoot(p, "session-permission-outside-bare", "Session: the tutor asks to read a file outside the course, on the bare line");
+  await step(p, "refuse the outside read", { op: "click", target: "Refuse" });
+  await step(p, "the outside reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
   // A model the account cannot use: Claude Code's own line for it is a notice, with the list of models one press away.
   await step(p, "focus the line for the model", { op: "focus", target: "composer", by: "drive" });
   await step(p, "a model the account cannot use", { op: "type", text: "NOMODEL: and the intercept?" });

@@ -7,7 +7,9 @@
 //! what Magnesium knows about the request: the study folder and its plans,
 //! which the runtime's digest lists, and the tools a lesson is given
 //! (`claude::TOOLS`). A tool outside those is said to be one the window does
-//! not know, and what it was given is shown as it is.
+//! not know, and what it was given is shown as it is. Where the words alone
+//! cannot say which thing is allowed (a file outside the course, a web
+//! address, a command), the card shows the thing itself too.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -40,8 +42,9 @@ enum Place {
     Plan(String),
     /// A file in the study folder, by its name.
     Course(String),
-    /// Somewhere else on the Mac: the file's name and its folder's.
-    Outside(String),
+    /// Somewhere else on the Mac: the file's name and its folder's, and the
+    /// whole path, since two places can share both names.
+    Outside(String, String),
 }
 
 /// The study root and the open folder, each as given and as the disk
@@ -57,34 +60,51 @@ fn roots(folder: &Path) -> Vec<PathBuf> {
     all
 }
 
-/// The path inside the study root, if it is in it.
+/// Where a path really is: its nearest part that exists, with every link in
+/// it followed, then the rest as written. A file reached through a link is
+/// where the link points, so one in the course that points out of it is
+/// outside; a file not made yet is found by the nearest folder that is.
+fn resolve(path: &Path) -> Option<PathBuf> {
+    let mut rest = Vec::new();
+    for base in path.ancestors() {
+        if let Ok(real) = std::fs::canonicalize(base) {
+            return Some(rest.iter().rev().fold(real, |at, part| at.join(part)));
+        }
+        rest.push(base.file_name()?.to_os_string());
+    }
+    None
+}
+
+/// The path inside the study root, if it is really in it.
 fn inside(path: &Path, folder: &Path) -> Option<PathBuf> {
     let path = if path.is_absolute() {
         path.to_path_buf()
     } else {
         folder.join(path)
     };
-    // A file that does not exist yet is found by its folder.
-    let real = path
-        .parent()
-        .and_then(|parent| std::fs::canonicalize(parent).ok())
-        .zip(path.file_name())
-        .map(|(parent, name)| parent.join(name));
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return None;
+    }
+    let real = resolve(&path)?;
     let root = crate::direct::study_root(folder);
-    let real_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
-    let relative = [Some(&path), real.as_ref()]
-        .into_iter()
-        .flatten()
-        .find_map(|each| {
-            each.strip_prefix(&root)
-                .or_else(|_| each.strip_prefix(&real_root))
-                .ok()
-                .map(Path::to_path_buf)
-        });
-    relative.filter(|relative| {
-        !relative
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
+    let real_root = std::fs::canonicalize(&root).ok()?;
+    real.strip_prefix(&real_root).ok().map(Path::to_path_buf)
+}
+
+/// The folder a rule's path pattern names, as Claude Code reads one:
+/// `//abs/**` from the root of the disk, `~/…` from the home folder, and any
+/// other from the study folder.
+fn rule_folder(glob: &str, folder: &Path) -> Option<PathBuf> {
+    let dir = glob.strip_suffix("/**")?;
+    Some(if let Some(absolute) = dir.strip_prefix("//") {
+        PathBuf::from(format!("/{absolute}"))
+    } else if let Some(home) = dir.strip_prefix("~/") {
+        crate::paths::home().join(home)
+    } else {
+        folder.join(dir.trim_start_matches('/'))
     })
 }
 
@@ -94,7 +114,8 @@ fn name_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// "other.txt, in Downloads": a file's name and its folder's, never the path.
+/// "other.txt, in Downloads": a file's name and its folder's. The card shows
+/// the whole path under it.
 fn named_with_folder(path: &Path) -> String {
     let name = name_of(path);
     match path
@@ -154,7 +175,27 @@ fn place(path: &str, folder: &Path) -> Place {
             Some(plan) => Place::Plan(plan),
             None => Place::Course(name_of(&relative)),
         },
-        None => Place::Outside(named_with_folder(path)),
+        // Named where it really is: through a link, that is where it points.
+        None => {
+            let absolute = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                folder.join(path)
+            };
+            let real = resolve(&absolute).unwrap_or(absolute);
+            Place::Outside(
+                named_with_folder(&real),
+                clip(&real.display().to_string(), 400),
+            )
+        }
+    }
+}
+
+/// A card that also shows the exact thing it would allow.
+fn with_exact(ask: Ask, exact: String) -> Ask {
+    Ask {
+        exact: Some(exact).filter(|e| !e.is_empty()),
+        ..ask
     }
 }
 
@@ -170,12 +211,13 @@ fn quoted(text: &str) -> String {
     format!("“{}”", clip(text, 200))
 }
 
-/// Magnesium's own tools, from its plugin, by what each does.
+/// Magnesium's own tools, by what each does: from its plugin's server, or
+/// from the server a direct lesson names `magnesium`. Another server whose
+/// name merely contains Magnesium's is not one.
 fn magnesium_tool(tool: &str) -> Option<&'static str> {
-    if !(tool.starts_with("mcp__") && tool.contains(crate::claude::PLUGIN)) {
-        return None;
-    }
-    let name = tool.rsplit("__").next().unwrap_or_default();
+    let name = ["mcp__plugin_magnesium_magnesium__", "mcp__magnesium__"]
+        .iter()
+        .find_map(|prefix| tool.strip_prefix(prefix))?;
     Some(match name {
         "context" | "memory" => "Reading your record",
         "learning_step" => "Saving your work",
@@ -199,14 +241,22 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                 Place::Plan(plan) => ask("change your plan", plan),
                 Place::Course(name) if new => ask("add a file to this course", name),
                 Place::Course(name) => ask("change a file in this course", name),
-                Place::Outside(name) if new => ask("add a file outside this course", name),
-                Place::Outside(name) => ask("change a file outside this course", name),
+                // Outside the course the path is shown whole: "config, in .ssh"
+                // alone does not say which one.
+                Place::Outside(name, path) if new => {
+                    with_exact(ask("add a file outside this course", name), path)
+                }
+                Place::Outside(name, path) => {
+                    with_exact(ask("change a file outside this course", name), path)
+                }
             }
         }
         "Read" => match place(&file(), folder) {
             Place::Plan(plan) => ask("read your plan", plan),
             Place::Course(name) => ask("read a file in this course", name),
-            Place::Outside(name) => ask("read a file outside this course", name),
+            Place::Outside(name, path) => {
+                with_exact(ask("read a file outside this course", name), path)
+            }
         },
         "Grep" | "Glob" => {
             let pattern = quoted(field("pattern"));
@@ -219,14 +269,22 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                 "" => ask(&format!("{looks} your files"), pattern),
                 path => match inside(Path::new(path), folder) {
                     Some(_) => ask(&format!("{looks} your files"), pattern),
-                    None => ask(
-                        &format!("{looks} files outside this course"),
-                        format!("{pattern}, in {}", name_of(Path::new(path))),
+                    None => with_exact(
+                        ask(
+                            &format!("{looks} files outside this course"),
+                            format!("{pattern}, in {}", name_of(Path::new(path))),
+                        ),
+                        clip(path, 400),
                     ),
                 },
             }
         }
-        "WebFetch" => ask("open a web page", site(field("url"))),
+        // The address is shown whole: its path and query are what is fetched,
+        // and a query can carry words out.
+        "WebFetch" => with_exact(
+            ask("open a web page", site(field("url"))),
+            clip(field("url"), 400),
+        ),
         "WebSearch" => ask("search the web", quoted(field("query"))),
         // The command is shown whole: the tutor's own words for it are what it
         // says it does, and the learner allows what it does.
@@ -273,16 +331,20 @@ pub struct Grant {
 
 /// One rule of the agent's, as the thing it allows: "pages from
 /// en.wikipedia.org". None for a rule the window cannot put in words, which
-/// is then never echoed back.
-fn rule_words(rule: &Value) -> Option<String> {
+/// is then never echoed back. A rule for files is put in words only when its
+/// folder is the study folder or in it: named by its last folder alone, one
+/// elsewhere could be any folder of that name.
+fn rule_words(rule: &Value, folder: &Path) -> Option<String> {
     let tool = rule["toolName"].as_str()?;
     let content = rule["ruleContent"].as_str().map(str::trim);
     let folder = |glob: &str| {
-        let dir = glob
-            .trim_end_matches("/**")
-            .trim_end_matches("/*")
-            .trim_start_matches('/');
-        name_of(Path::new(&format!("/{dir}")))
+        let dir = rule_folder(glob, folder)?;
+        let relative = inside(&dir, folder)?;
+        Some(if relative.as_os_str().is_empty() {
+            "this course".to_owned()
+        } else {
+            name_of(&relative)
+        })
     };
     match (tool, content) {
         ("WebFetch", Some(content)) => content
@@ -293,11 +355,11 @@ fn rule_words(rule: &Value) -> Option<String> {
             Some(start) => format!("{} commands", clip(start, 60)),
             None => "this command".into(),
         }),
-        ("Read" | "Grep" | "Glob", Some(glob)) if glob.ends_with("/**") => {
-            Some(format!("reading files in {}", folder(glob)))
+        ("Read" | "Grep" | "Glob", Some(glob)) => {
+            folder(glob).map(|dir| format!("reading files in {dir}"))
         }
-        ("Edit" | "Write" | "MultiEdit", Some(glob)) if glob.ends_with("/**") => {
-            Some(format!("changes to files in {}", folder(glob)))
+        ("Edit" | "Write" | "MultiEdit", Some(glob)) => {
+            folder(glob).map(|dir| format!("changes to files in {dir}"))
         }
         _ => None,
     }
@@ -327,7 +389,7 @@ pub fn grant(request: &Value, folder: &Path) -> Option<Grant> {
             }
             Some("addRules") if suggestion["behavior"] == "allow" => suggestion["rules"]
                 .as_array()
-                .and_then(|list| list.iter().map(rule_words).collect()),
+                .and_then(|list| list.iter().map(|rule| rule_words(rule, folder)).collect()),
             // A folder the agent may reach: said only when it is the study
             // folder, which the agent works in already.
             Some("addDirectories") => suggestion["directories"]
@@ -420,14 +482,27 @@ mod tests {
             said("Edit", json!({"file_path": at("notes.md")})),
             words("The tutor asks to change a file in this course", "notes.md")
         );
+        // Outside the course, and for a web page, the exact place is shown too.
+        let exact = |title: &str, detail: &str, exact: &str| {
+            (title.to_owned(), detail.to_owned(), Some(exact.to_owned()))
+        };
         assert_eq!(
             said(
                 "Read",
                 json!({"file_path": "/Users/someone/Downloads/other.txt"})
             ),
-            words(
+            exact(
                 "The tutor asks to read a file outside this course",
-                "other.txt, in Downloads"
+                "other.txt, in Downloads",
+                "/Users/someone/Downloads/other.txt"
+            )
+        );
+        assert_eq!(
+            said("Edit", json!({"file_path": "/Users/someone/.ssh/config"})),
+            exact(
+                "The tutor asks to change a file outside this course",
+                "config, in .ssh",
+                "/Users/someone/.ssh/config"
             )
         );
         assert_eq!(
@@ -435,17 +510,22 @@ mod tests {
                 "Grep",
                 json!({"pattern": "secret", "path": "/Users/someone/Downloads"})
             ),
-            words(
+            exact(
                 "The tutor asks to search files outside this course",
-                "“secret”, in Downloads"
+                "“secret”, in Downloads",
+                "/Users/someone/Downloads"
             )
         );
         assert_eq!(
             said(
                 "WebFetch",
-                json!({"url": "https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics", "prompt": "summary"})
+                json!({"url": "https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics?q=my+answer", "prompt": "summary"})
             ),
-            words("The tutor asks to open a web page", "en.wikipedia.org")
+            exact(
+                "The tutor asks to open a web page",
+                "en.wikipedia.org",
+                "https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics?q=my+answer"
+            )
         );
         assert_eq!(
             said("WebSearch", json!({"query": "Lineweaver-Burk plot"})),
@@ -471,6 +551,82 @@ mod tests {
             let ask = describe(tool, &json!({}), &json!({}), folder);
             assert!(!ask.title.contains("doesn’t know"), "{tool}: {ask:?}");
         }
+    }
+
+    /// A link in the course that points out of it is where it points.
+    #[test]
+    fn a_file_reached_through_a_link_is_where_the_link_points() {
+        let dir = course();
+        let folder = dir.path();
+        let away = tempfile::tempdir().unwrap();
+        std::fs::write(away.path().join("secrets.txt"), "x").unwrap();
+        std::fs::create_dir_all(away.path().join("elsewhere")).unwrap();
+        std::fs::write(away.path().join("elsewhere/plan.md"), "x").unwrap();
+        std::os::unix::fs::symlink(
+            away.path().join("secrets.txt"),
+            folder.join("notes-link.md"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(away.path().join("elsewhere"), folder.join("Study/linked"))
+            .unwrap();
+        let real = |rest: &str| {
+            std::fs::canonicalize(away.path().join(rest))
+                .unwrap()
+                .display()
+                .to_string()
+        };
+        let read = describe(
+            "Read",
+            &json!({"file_path": folder.join("notes-link.md").display().to_string()}),
+            &json!({}),
+            folder,
+        );
+        assert_eq!(
+            read.title,
+            "The tutor asks to read a file outside this course"
+        );
+        // Named, and shown, where the link points.
+        assert_eq!(
+            read.detail,
+            format!(
+                "secrets.txt, in {}",
+                name_of(&std::fs::canonicalize(away.path()).unwrap())
+            )
+        );
+        assert_eq!(read.exact.as_deref(), Some(real("secrets.txt").as_str()));
+        // A plan's file that is a link out of the course is not the plan.
+        let plan = describe(
+            "Edit",
+            &json!({"file_path": folder.join("Study/linked/plan.md").display().to_string()}),
+            &json!({}),
+            folder,
+        );
+        assert_eq!(
+            plan.title,
+            "The tutor asks to change a file outside this course"
+        );
+        // A new file under a linked folder is found by the folder's real place.
+        let new = describe(
+            "Write",
+            &json!({"file_path": folder.join("Study/linked/new.md").display().to_string()}),
+            &json!({}),
+            folder,
+        );
+        assert_eq!(
+            new.title,
+            "The tutor asks to add a file outside this course"
+        );
+        // Inside, the real file in the course is in the course.
+        let inside = describe(
+            "Edit",
+            &json!({"file_path": folder.join("notes.md").display().to_string()}),
+            &json!({}),
+            folder,
+        );
+        assert_eq!(
+            (inside.title.as_str(), inside.exact),
+            ("The tutor asks to change a file in this course", None)
+        );
     }
 
     #[test]
@@ -506,6 +662,21 @@ mod tests {
                 None
             )
         );
+        // Another server whose name holds Magnesium's is not Magnesium's.
+        let other = describe(
+            "mcp__not_magnesium__learning_step",
+            &json!({}),
+            &json!({}),
+            dir.path(),
+        );
+        assert_eq!(
+            other.title,
+            "The tutor asks to use a tool this window doesn’t know"
+        );
+        assert_eq!(
+            other.exact.as_deref(),
+            Some("mcp__not_magnesium__learning_step")
+        );
     }
 
     /// The suggestions Claude Code 2.1.322 sent with each request on 2026-11-15.
@@ -539,13 +710,21 @@ mod tests {
             .as_deref(),
             Some("Always allow web searches")
         );
+        // A rule for files is offered only for a folder in the course.
+        let real = std::fs::canonicalize(folder).unwrap();
+        assert_eq!(
+            label(json!([{"type": "addRules", "destination": "session", "behavior": "allow",
+                "rules": [{"toolName": "Read", "ruleContent": format!("/{}/Study/**", real.display())}]}]))
+            .as_deref(),
+            Some("Allow reading files in Study this session")
+        );
         assert_eq!(
             label(
                 json!([{"type": "addRules", "destination": "session", "behavior": "allow",
-                "rules": [{"toolName": "Read", "ruleContent": "//Users/someone/Downloads/**"}]}])
+                "rules": [{"toolName": "Edit", "ruleContent": format!("/{}/**", real.display())}]}])
             )
             .as_deref(),
-            Some("Allow reading files in Downloads this session")
+            Some("Allow changes to files in this course this session")
         );
         // A command, and the study folder the agent works in already.
         assert_eq!(
@@ -572,10 +751,18 @@ mod tests {
         let dir = course();
         let folder = dir.path();
         let grant_of = |request: Value| grant(&request, folder);
-        // A folder outside the course, a mode the window has no words for, a
-        // rule for every folder, and nothing at all.
+        // A folder outside the course, a rule for files outside it (as Claude
+        // Code 2.1.322 suggested for a read there), one for a single file, a
+        // mode the window has no words for, a rule for every folder, and
+        // nothing at all.
         for suggestions in [
             json!([{"type": "addDirectories", "destination": "session", "directories": ["/Users/someone"]}]),
+            json!([{"type": "addRules", "destination": "session", "behavior": "allow",
+                "rules": [{"toolName": "Read", "ruleContent": "//Users/someone/Downloads/**"}]}]),
+            json!([{"type": "addRules", "destination": "localSettings", "behavior": "allow",
+                "rules": [{"toolName": "Edit", "ruleContent": "~/notes/**"}]}]),
+            json!([{"type": "addRules", "destination": "session", "behavior": "allow",
+                "rules": [{"toolName": "Read", "ruleContent": "//Users/someone/notes.md"}]}]),
             json!([{"type": "setMode", "mode": "bypassPermissions", "destination": "session"}]),
             json!([{"type": "addRules", "destination": "userSettings", "behavior": "allow", "rules": [{"toolName": "WebSearch"}]}]),
             json!([]),

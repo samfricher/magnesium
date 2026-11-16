@@ -14,6 +14,8 @@ What a turn does is chosen by a word in the learner's message:
   PERMISSION  ask to run a command, then say what was decided
   PLANEDIT    ask to edit Study/midterm-2/plan.md, then say what was decided
               (it changes nothing)
+  OUTSIDE     ask to read a made-up file outside the course, then say what
+              was decided (it reads nothing)
   QUESTION    ask the learner to choose, then say what was chosen
   SLOW        write slowly, so the reply can be interrupted
   WAIT        think for a while before the first word
@@ -427,7 +429,21 @@ def turn(text):
                 "delta": {"type": "text_delta", "text": "SECRET HELPER TEXT"}}, parent="toolu_helper")
         assistant([{"type": "text", "text": "SECRET HELPER TEXT"}], "msg_helper", parent="toolu_helper")
 
-    if "PLANEDIT" in text:
+    if "OUTSIDE" in text:
+        # As Claude Code 2.1.322 asked on 2026-11-15 for a read outside the
+        # folder: its suggestion is a rule for that whole folder. The path is
+        # made up.
+        reply = ask_permission(
+            "Read",
+            {"file_path": "/Users/someone/Downloads/reading-list.txt"},
+            [{"type": "addRules", "rules": [{"toolName": "Read", "ruleContent": "//Users/someone/Downloads/**"}],
+              "behavior": "allow", "destination": "session"}],
+        )
+        if reply is None:
+            stopped()
+            return
+        answer = "It was read." if reply.get("behavior") == "allow" else "It was left unread."
+    elif "PLANEDIT" in text:
         # As Claude Code 2.1.322 asked on 2026-11-15 for an edit to a plan
         # its rules did not cover: its one suggestion is the mode that
         # accepts every edit for the rest of the sitting.
