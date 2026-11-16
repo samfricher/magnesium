@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 13] = [
+const PUBLIC_COMMANDS: [(&str, &str); 14] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -12,6 +12,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 13] = [
     (
         "digest",
         "Summarize this study folder and its learner record without changing them",
+    ),
+    (
+        "calendar",
+        "Print the plans' planned sessions as a calendar file (.ics) to import, without changing anything",
     ),
     (
         "attempts",
@@ -94,6 +98,21 @@ pub(crate) fn command() -> ClapCommand {
                         Arg::new("upgrade-instructions")
                             .long("upgrade-instructions")
                             .help("Switch a workspace set up by an earlier Magnesium version to this version's teaching instructions; unedited earlier instructions are kept on disk")
+                            .action(ArgAction::SetTrue),
+                    )
+            } else if name == "calendar" {
+                subcommand
+                    .arg(
+                        Arg::new("json")
+                            .long("json")
+                            .help("Print the sessions and what is left out as JSON instead of a calendar file")
+                            .action(ArgAction::SetTrue),
+                    )
+                    .arg(
+                        Arg::new("open")
+                            .long("open")
+                            .help("Open the file in your calendar app instead of printing it; it is written outside the study folder")
+                            .conflicts_with("json")
                             .action(ArgAction::SetTrue),
                     )
             } else if name == "info" || name == "attempts" || name == "progress" || name == "closing" {

@@ -14,7 +14,7 @@ Otherwise, choose from the words after `/magnesium:help`:
 | none, or "what should I do next" in any phrasing | the next-steps screen below |
 | `papers`, or a close word such as paper, practice, exam, mock | Topic: papers |
 | `recording`, or a close word such as privacy, pause, export, memory | Topic: recording |
-| `setup`, or a close word such as install, init, upgrade | Topic: setup |
+| `setup`, or a close word such as install, init, upgrade, calendar | Topic: setup |
 | `trouble`, or a close word such as problem, error, broken | Topic: trouble |
 | `overview` | Topic: overview |
 
@@ -387,6 +387,14 @@ Subfolders share the learning history of the study folder.
 2. **Start a new Claude Code session.**
 
 Your learning history stays the same.
+
+## Put your planned sessions in your calendar
+
+In the study window, open the study folder's page.
+Choose **Add to Calendar…** under When you study.
+In a terminal, run `magnesium calendar --open` in your study folder.
+Your calendar app then asks which calendar to use.
+Each session in your plan repeats every week at its time.
 
 ## For LaTeX papers
 

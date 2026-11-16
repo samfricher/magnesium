@@ -414,6 +414,11 @@ export type RuntimeSetup = {
   message: string | null;
 };
 
+/** One planned session, as the runtime reads it from a plan's Sessions section. */
+export type PlannedSession = { plan: string; title: string | null; action: string; days: string[]; start: string; end: string | null };
+/** A folder's planned sessions, and how many session lines could not be read. */
+export type Planned = { sessions: PlannedSession[]; unreadable: number; unreadable_plans?: number };
+
 /** Who decides on a tool the tutor wants: Claude Code's auto mode, or the learner each time. */
 export type Permissions = "auto" | "ask";
 
@@ -533,6 +538,10 @@ export interface Core {
   /** Called when a menu bar item is chosen. */
   onMenu(handler: (choice: MenuChoice) => void): Promise<() => void>;
   onEvent(handler: (event: AgentEvent) => void): Promise<() => void>;
+  /** A folder's planned sessions, or null when the runtime cannot say. */
+  plannedSessions(folder: string): Promise<Planned | null>;
+  /** Write a folder's planned sessions as a calendar file outside the folder and open it in the learner's calendar app. */
+  addToCalendar(folder: string): Promise<void>;
   selftest(): Promise<boolean>;
   selftestReport(report: unknown): Promise<void>;
   /** Whether this Mac can draw glass behind the window, which kinds, and whether the learner asked it to reduce transparency. */

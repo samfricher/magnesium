@@ -571,6 +571,20 @@ fn paper_end(
         .map(|words| words.map(|(shown, sent)| Words { shown, sent }))
 }
 
+/// The folder's planned sessions, as the runtime reads them from its plans.
+/// None when the runtime cannot say.
+#[tauri::command(async)]
+fn planned_sessions(folder: String) -> Option<mg_core::calendar::Planned> {
+    mg_core::calendar::planned(Path::new(&folder))
+}
+
+/// Write the folder's planned sessions as a calendar file outside the study
+/// folder and open it in the learner's calendar app.
+#[tauri::command(async)]
+fn add_to_calendar(folder: String) -> Reply<()> {
+    mg_core::calendar::add_to_calendar(Path::new(&folder)).map(|_| ())
+}
+
 #[tauri::command]
 fn selftest() -> bool {
     std::env::var_os(SELFTEST_ENV).is_some_and(|path| !path.is_empty())
@@ -707,6 +721,8 @@ fn main() {
             open_url,
             paper_start,
             paper_end,
+            planned_sessions,
+            add_to_calendar,
             selftest,
             selftest_report,
             glass::glass_state,
