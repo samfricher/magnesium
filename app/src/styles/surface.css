@@ -748,8 +748,9 @@ button.line-end:hover { color: var(--text); }
 
 /* While a card waits, the line under it shows no prompt of its own, unless the keyboard is still on it. */
 .foot.asking .line.lesson:not(:focus-within) .field-row::before { visibility: hidden; }
-.line-end.to-card { display: none; }
-:root:not([data-hints="off"]) .foot.asking .line.lesson:focus-within .line-end.to-card { display: inline; }
+.line .with.to-card { display: none; }
+.line .with.to-card .keys { color: var(--hint); margin-right: 0.15em; }
+:root:not([data-hints="off"]) .foot.asking .line.lesson:focus-within .with.to-card { display: block; }
 
 /* A notice that stops the lesson (a usage limit, a sign-in): at reading size so it is not skimmed past,
    in the text's colour, as a mark that is not right yet is; the ink would read as a success. */

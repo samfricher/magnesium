@@ -428,14 +428,6 @@ export const Composer = memo(
       </button>
     );
     const tools: React.ReactNode[] = [];
-    // How the keyboard reaches a card that arrived while the learner was typing: shown only while a card waits and
-    // the keyboard is on this line (surface.css, by the foot's "asking").
-    if (!rest)
-      tools.push(
-        <span key="to-card" className="line-end to-card" aria-hidden="true">
-          <span className="keys">⇧⇥</span> answer the tutor
-        </span>,
-      );
     if (props.busy && props.onStop)
       tools.push(
         <button key="stop" type="button" className="quiet-act" data-drive="stop" onMouseDown={keep_} onClick={() => latest.current.onStop?.()}>
@@ -496,6 +488,14 @@ export const Composer = memo(
           <p className="with">
             {confidence && <span className="said-sure">{confidence}</span>}
             {queued && <span className="queued">goes when the tutor finishes</span>}
+          </p>
+        )}
+        {/* How the keyboard reaches a card that arrived while the learner was typing. Under the words, so the line
+            keeps its width at 720 by 560; shown only while a card waits and the keyboard is on this line (surface.css,
+            by the foot's "asking"). */}
+        {!rest && (
+          <p className="with to-card" aria-hidden="true">
+            <span className="keys">⇧⇥</span> answer the tutor
           </p>
         )}
         {symbols && (

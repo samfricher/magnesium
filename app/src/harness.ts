@@ -570,7 +570,8 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
-      return { ok: true, ...(found as object), files, focus: focusName(), document: pdfInView() };
+      // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
+      return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView() };
     }
     case "smooth": {
       // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`
