@@ -16,7 +16,7 @@
 // every step it can.
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -327,6 +327,47 @@ try {
   await settle(p, 500);
   await shoot(p, "session-error", "Session: the reply stopped by an error (a usage limit)");
   await quit(p);
+
+  // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
+  // Sitting one from the page would open the paper in the Mac's own viewer, so the sitting is written here.
+  const course = realpathSync(join(scratch, "Intro-Statistics"));
+  const sitting = (minutesAgo, name) => ({ target: "midterm-2", name, path: "Study/midterm-2/papers/Midterm 2023.pdf", minutes: 75, started_ms: Date.now() - minutesAgo * 60_000 });
+  const paperWindow = (name, paper) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ recent: kept.recent, folders: { [course]: { paper } } }, null, 2));
+    return launch(name, home);
+  };
+  const q = await paperWindow("paper", sitting(12, "Midterm 2023"));
+  await step(q, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper", "Workspace: a timed paper running, the page's lead");
+  await step(q, "end without handing in", { op: "click", target: "sitting-end", by: "drive" });
+  await settle(q, 300);
+  await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
+  await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
+  await settle(q, 200);
+  // A key that does nothing, to read where the keyboard is once the block is back.
+  const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
+  if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
+  await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
+  await step(q, "end the paper", { op: "click", target: "sitting-end-now", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper-ended", "Workspace: the paper ended without handing in, the page as before it");
+  await quit(q);
+  const r = await paperWindow("paper-over", sitting(100, "Midterm 2023, all three questions with every part, from the paper the course set last spring"));
+  await step(r, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(r, 800);
+  await shoot(r, "workspace-paper-over", "Workspace: a paper with a long name, past its end");
+  await step(r, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-narrow", "Workspace: the running paper at 720 by 560");
+  for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(r);
 } catch (error) {
   problem(`stopped: ${error?.stack ?? error}`);
 }

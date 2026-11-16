@@ -275,6 +275,40 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
 .work-day.earned { background: var(--ink); border-color: var(--ink); }
 
+/* A timed paper while it runs: its name and its end on one line, inside the ink rule a card has; its actions and its
+   two marks under it. In a narrow column the end goes under the name. */
+/* The container stops its first margin passing through, so the block keeps the space the name over it would. */
+.running-paper { container-type: inline-size; margin-top: 1.8rem; }
+.running-paper > .list-head { margin-top: 0; }
+.paper-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 1.2rem;
+  margin-left: calc(-1 * var(--hang));
+  padding: 0.2rem 0 0.25rem calc(var(--hang) - 2px);
+  border-left: 2px solid var(--ink);
+}
+.paper-what { flex: 1 1 auto; min-width: 0; }
+.paper-when { flex: none; text-align: right; }
+.paper-name,
+.paper-end { margin: 0; font: 400 1.235rem/1.35 var(--read); color: var(--text); }
+.paper-name { overflow-wrap: anywhere; text-wrap: balance; }
+.paper-end { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.paper-note,
+.paper-left { margin: 0.1rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.paper-left { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.running-paper > .page-acts { margin-top: 0.9rem; }
+.paper-confirm-text { margin: 0.9rem 0 0; max-width: 34em; font: 400 0.882rem/1.55 var(--app); color: var(--text); text-wrap: pretty; }
+.paper-confirm .page-acts { margin-top: 0.4rem; }
+.paper-marks { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 1.4rem; margin: 1.1rem 0 0; font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.paper-marks dt { color: var(--text); word-spacing: 0.15em; }
+.paper-marks dd { margin: 0; }
+@container (max-width: 26em) {
+  .paper-head { flex-direction: column; }
+  .paper-when { text-align: left; }
+}
+
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 
