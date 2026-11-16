@@ -383,6 +383,11 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--ink);
 }
 :root[data-input="key"] .act:focus-visible { outline: none; }
+/* A grant that never asks again, on its own line under the two answers, in the window's small quiet type. */
+.card-always { margin: 0.1rem 0 0 -0.5rem; }
+.card-always .act { padding: 0.15rem 0.5rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.card-always .act:hover { color: var(--text); }
+.card-always .act:focus::before { top: 0.15rem; font-size: 0.765rem; line-height: 1.148rem; }
 
 /* Files over the window. */
 .veil {
@@ -733,14 +738,18 @@ button.line-end:hover { color: var(--text); }
 /* While a card waits on the learner, the line under it sits at a turn's gap. */
 .foot.asking { margin-top: 0.4rem; }
 /* The soft field is a shape of its own: under a card it keeps a line's room from the card's rule, and while the card
-   waits it is drawn at half its shade, as the bare line puts its "›" away: the card's choice is the answer now. */
+   waits it is drawn at half its shade, as the bare line puts its "›" away: the card's choice is the answer now.
+   A card that arrived while the learner was typing leaves the keyboard on the line, and the line keeps its full look,
+   so it is plain where the keyboard is. */
 :root[data-field="soft"] .foot.asking { margin-top: 1.1rem; }
-:root[data-field="soft"] .foot.asking .line.lesson { background: color-mix(in srgb, var(--well) 50%, transparent); }
+:root[data-field="soft"] .foot.asking .line.lesson:not(:focus-within) { background: color-mix(in srgb, var(--well) 50%, transparent); }
 /* An empty font field draws no rule until it has the focus or words. */
 .text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
 
-/* While a card waits, the line under it shows no prompt of its own. */
-.foot.asking .line.lesson .field-row::before { visibility: hidden; }
+/* While a card waits, the line under it shows no prompt of its own, unless the keyboard is still on it. */
+.foot.asking .line.lesson:not(:focus-within) .field-row::before { visibility: hidden; }
+.line-end.to-card { display: none; }
+:root:not([data-hints="off"]) .foot.asking .line.lesson:focus-within .line-end.to-card { display: inline; }
 
 /* A notice that stops the lesson (a usage limit, a sign-in): at reading size so it is not skimmed past,
    in the text's colour, as a mark that is not right yet is; the ink would read as a success. */

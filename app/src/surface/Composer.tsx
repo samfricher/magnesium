@@ -337,6 +337,16 @@ export const Composer = memo(
         send(place === "lesson" && event.altKey && taskOpen);
         return;
       }
+      // While a card waits above the line, ⇧⇥ goes to its first choice. In the page's order the nearest choice is the
+      // card's last, the standing grant, which is the one a learner should never land on by going back.
+      if (event.key === "Tab" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && el.closest(".foot.asking")) {
+        const choice = el.closest(".session")?.querySelector<HTMLElement>(".card .act");
+        if (choice) {
+          event.preventDefault();
+          choice.focus();
+          return;
+        }
+      }
       // Esc closes what is open on the line, and then puts the line away with its words kept.
       // While the tutor writes, Esc stops the reply instead, and the window handles it.
       if (event.key === "Escape" && plain && !latest.current.busy && (symbols || menu || place === "lesson")) {
@@ -418,6 +428,14 @@ export const Composer = memo(
       </button>
     );
     const tools: React.ReactNode[] = [];
+    // How the keyboard reaches a card that arrived while the learner was typing: shown only while a card waits and
+    // the keyboard is on this line (surface.css, by the foot's "asking").
+    if (!rest)
+      tools.push(
+        <span key="to-card" className="line-end to-card" aria-hidden="true">
+          <span className="keys">⇧⇥</span> answer the tutor
+        </span>,
+      );
     if (props.busy && props.onStop)
       tools.push(
         <button key="stop" type="button" className="quiet-act" data-drive="stop" onMouseDown={keep_} onClick={() => latest.current.onStop?.()}>
