@@ -284,9 +284,16 @@ pub(crate) fn dispatch_with_host(
     if operation == "learning_step" && crate::just_checks::is_request(&request) {
         let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
         return Ok(crate::just_checks::from_tool(cwd, by, |workspace| {
-            caller
-                .as_ref()
-                .is_none_or(|host| records_here(workspace, host))
+            crate::just_checks::Asker {
+                records: caller
+                    .as_ref()
+                    .is_none_or(|host| records_here(workspace, host)),
+                lesson_active: caller.as_ref().is_some_and(|host| {
+                    open_store(workspace)
+                        .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
+                        .is_ok_and(|(_, active, _)| active)
+                }),
+            }
         }));
     }
     if let Some(refusal) = crate::just_checks::refusal(cwd, operation, &request) {

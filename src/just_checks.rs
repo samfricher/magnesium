@@ -101,13 +101,21 @@ pub(crate) fn asked_in_words(text: &str) -> bool {
     ASKS.contains(&words)
 }
 
-/// The tool's answer to `just_checks`, asked by the conversation `by`.
-/// `records` says whether that conversation records, since an answer it
-/// cannot record cannot settle a check.
+/// What the conversation that asks can do with the checks: whether it
+/// records, and whether a lesson is active in it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Asker {
+    pub(crate) records: bool,
+    pub(crate) lesson_active: bool,
+}
+
+/// The tool's answer to `just_checks`, asked by the conversation `by`. An
+/// answer is recorded only in a conversation that records and has a lesson
+/// active, and only a recorded answer settles a check.
 pub(crate) fn from_tool(
     cwd: &Path,
     by: Option<&str>,
-    records: impl FnOnce(&Workspace) -> bool,
+    asker: impl FnOnce(&Workspace) -> Asker,
 ) -> Value {
     let workspace = match Workspace::discover(cwd) {
         Ok(Some(workspace)) => workspace,
@@ -126,7 +134,8 @@ pub(crate) fn from_tool(
             "note": note,
         })
     };
-    if !records(&workspace) {
+    let asker = asker(&workspace);
+    if !asker.records {
         return answer(
             0,
             "Recording is off in this conversation, so no answer to a quick check can be marked now. Say so in a line, set no task and ask no question.".to_owned(),
@@ -174,10 +183,14 @@ pub(crate) fn from_tool(
     let Some(opener) = opener else {
         return json!({"error": {"code": "sittings_unavailable", "message": "the sitting's checks could not be read"}});
     };
-    let mut out = answer(
-        checks,
-        "Follow sitting_opener: it is this sitting's whole plan.".to_owned(),
-    );
+    // In the live runs of 2026-11-16 a tutor told only to follow the opener
+    // posed the checks with no lesson active, so no answer was recorded.
+    let note = if asker.lesson_active {
+        "Pose the checks and end as sitting_opener says.".to_owned()
+    } else {
+        "No lesson is active in this conversation, and an answer is recorded only in one: before your reply, start or resume the Magnesium session as your instructions say (a new one with goal \"Quick checks\", with the learner's message as native_capture). Then pose the checks and end as sitting_opener says.".to_owned()
+    };
+    let mut out = answer(checks, note);
     out["sitting_opener"] = opener.text.into();
     if crate::sittings::checks_wanted() {
         out["sitting_checks"] = opener.checks;

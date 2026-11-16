@@ -180,6 +180,11 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
     assert_eq!(asked["checks"], 3, "{asked}");
     let opener = asked["sitting_opener"].as_str().unwrap();
     assert!(opener.starts_with("Quick checks alone."), "{opener}");
+    // A lesson is active here, so the note needs no start.
+    assert_eq!(
+        asked["note"],
+        "Pose the checks and end as sitting_opener says."
+    );
     // Asked twice, it is the same sitting with the same checks.
     let again = step(
         &e,
@@ -190,6 +195,20 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
     assert_eq!(
         load(&e, "orient_and_probe")["error"]["code"],
         "quick_checks_alone"
+    );
+    // In a conversation with no lesson active, an answer could not be
+    // recorded: the note asks for a start first.
+    let elsewhere = v2::tool(
+        &e,
+        "claude",
+        "conv-2",
+        "learning_step",
+        json!({"schema":"learner-model/v2","action":"just_checks"}),
+    );
+    let note = elsewhere["note"].as_str().unwrap();
+    assert!(
+        note.starts_with("No lesson is active in this conversation"),
+        "{note}"
     );
 }
 
