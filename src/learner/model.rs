@@ -641,8 +641,9 @@ pub struct PendingTask {
     pub proposal_event_ref: String,
     /// The task's own words, copied exactly from the reply that posed it:
     /// the question and what it states, not the feedback or teaching before
-    /// it. The study window marks them as the task. Other constraints go in
-    /// plan_text.
+    /// it. The study window marks them as the task. A task's words restate
+    /// every number, name and condition its answer needs, so these stand
+    /// alone. Other constraints go in plan_text.
     pub conditions: String,
     #[serde(default)]
     /// Captured event IDs of actual observed delivery, not planned future

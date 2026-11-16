@@ -29,6 +29,7 @@ mod tests {
         assert!(!core["## Core rules".len()..].contains("\n## "), "{core}");
         for rule in [
             "**Each turn**",
+            "**A task stands alone.**",
             "**Start from one concrete case.**",
             "**An answer counts only when it rules out the misunderstanding.**",
             "**Done means done alone, on a later day.**",
@@ -36,6 +37,8 @@ mod tests {
         ] {
             assert!(core.contains(rule), "{rule}");
         }
-        assert!(core.len() < 2048, "{} bytes", core.len());
+        // The restatement after a compaction carries this section and more inside
+        // Claude Code's 4096-byte limit for a hook's added context.
+        assert!(core.len() < 2304, "{} bytes", core.len());
     }
 }
