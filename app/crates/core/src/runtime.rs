@@ -32,6 +32,12 @@ fn run(folder: &Path, args: &[&str], limit: Duration) -> Result<String, String> 
     paths::run(command, limit)
 }
 
+/// Run another of the runtime's read-only commands in a folder and return
+/// what it printed, or the last line of its complaint.
+pub fn run_in(folder: &Path, args: &[&str], limit: Duration) -> Result<String, String> {
+    run(folder, args, limit)
+}
+
 /// `magnesium digest`: the study folder and the learner record, summarized
 /// without changing either.
 pub fn digest(folder: &Path) -> Result<Value, String> {

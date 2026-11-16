@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 12] = [
+const PUBLIC_COMMANDS: [(&str, &str); 13] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -12,6 +12,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 12] = [
     (
         "digest",
         "Summarize this study folder and its learner record without changing them",
+    ),
+    (
+        "calendar",
+        "Print the plans' planned sessions as a calendar file (.ics) to import, without changing anything",
     ),
     (
         "attempts",
@@ -92,13 +96,14 @@ pub(crate) fn command() -> ClapCommand {
                             .help("Switch a workspace set up by an earlier Magnesium version to this version's teaching instructions; unedited earlier instructions are kept on disk")
                             .action(ArgAction::SetTrue),
                     )
-            } else if name == "info" || name == "attempts" || name == "progress" {
+            } else if name == "info" || name == "attempts" || name == "progress" || name == "calendar" {
                 subcommand.arg(
                     Arg::new("json")
                         .long("json")
                         .help(match name {
                             "info" => "Print the status as JSON on one line instead of pretty-printed",
                             "attempts" => "Print the answers as JSON instead of text",
+                            "calendar" => "Print the sessions and the lines left out as JSON instead of a calendar file",
                             _ => "Print the skills, the level and the days as JSON instead of text",
                         })
                         .action(ArgAction::SetTrue),

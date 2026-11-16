@@ -9,6 +9,7 @@ mod support;
 
 mod adapter_call;
 mod attempts;
+mod calendar;
 mod captured_turn_lifecycle;
 mod checkpoint_recovery;
 mod control_safety_review;

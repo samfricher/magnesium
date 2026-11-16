@@ -60,7 +60,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// The keys the window starts with, as the page's own defaults.
-const DEFAULT_KEYS: [(&str, &str); 24] = [
+const DEFAULT_KEYS: [(&str, &str); 25] = [
     ("home", "cmd+1"),
     ("commands", "cmd+k"),
     ("new-session", "cmd+n"),
@@ -85,6 +85,7 @@ const DEFAULT_KEYS: [(&str, &str); 24] = [
     ("open-document", "cmd+shift+o"),
     ("zoom-in-document", "cmd+alt+="),
     ("zoom-out-document", "cmd+alt+-"),
+    ("add-to-calendar", "cmd+shift+c"),
 ];
 
 /// "cmd+shift+h" as the menu writes an accelerator, "Cmd+Shift+H".
@@ -249,6 +250,8 @@ fn build<R: Runtime>(
             &command(table, "share-document", "Share Document…")?,
             &separator()?,
             &command(table, "attach", "Attach a Photo or PDF…")?,
+            &separator()?,
+            &command(table, "add-to-calendar", "Add Sessions to Calendar…")?,
         ],
     )?;
     let edit = Submenu::with_items(
