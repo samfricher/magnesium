@@ -17,6 +17,7 @@
 //
 // PAGES_ONLY=work photographs only the workspace page over a record of
 // several skills (scripts/scratch-record.py), in a few minutes.
+// PAGES_ONLY=answer photographs only the page while a task is open (answer-*).
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -164,9 +165,237 @@ async function workRecord() {
   await quit(k);
 }
 
+/** A window of its own on the course, with its own window home: the course's folders listed, no session yet. */
+async function ownWindow(name, withAgent = agent, engine = "direct") {
+  const home = join(scratch, `window-${name}`);
+  mkdirSync(home, { recursive: true });
+  const listed = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
+  // Not the tabs the main window left: the session here is always the second tab.
+  const { window: _tabs, ...kept } = listed;
+  writeFileSync(join(home, "state.json"), JSON.stringify({ ...kept, folders: {}, engine }, null, 2));
+  return { home, window: await launch(name, home, withAgent) };
+}
+
+/** The line's look, chosen in Settings as a learner chooses it: from the bar's Settings, or Settings' own tab once it has one. */
+async function lineLook(w, look) {
+  const bar = await w.op({ op: "click", target: "settings", by: "drive" });
+  if (!bar.ok) await step(w, `settings for the ${look}`, { op: "click", target: "Settings" });
+  await step(w, `your line: ${look}`, { op: "click", target: look });
+  // Settings closed again, so a session is always the second tab.
+  await step(w, `close Settings after the ${look}`, { op: "key", key: "w", meta: true });
+  await settle(w, 300);
+}
+
+/** The page while a task is open (the blank page): the bare line first, then the soft field; each in light and dark. */
+async function answerPages() {
+  // A note of the course's own, so a document that is not a past paper can be open beside the task.
+  const notes = join(scratch, "Intro-Statistics", "Study", "materials", "week6-notes.md");
+  writeFileSync(notes, "# Week 6: intervals for a mean\n\nA 95% interval for a mean is x̄ ± t* · s/√n, with t* from the t table at n − 1 degrees of freedom.\n\nThe standard error s/√n shrinks as the sample grows.\n");
+  const looked = async (w, want, label) => {
+    const at = await w.op({ op: "session" });
+    if (at.page !== want) problem(`${label}: the page is ${JSON.stringify(at.page)}, not ${JSON.stringify(want)}`);
+  };
+  const turn = async (w, label) => {
+    await step(w, label, { op: "key", key: "ArrowUp", meta: true });
+    await settle(w, 400);
+  };
+
+  const { home, window: a } = await ownWindow("answer");
+  await lineLook(a, "Bare line");
+  await step(a, "the workspace", { op: "click", target: "tab-1", by: "drive" });
+  await step(a, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(a, 800);
+  await step(a, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(a, 800);
+  await step(a, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "start", { op: "key", key: "Enter" });
+  await step(a, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  await looked(a, "open", "the first reply");
+  await shoot(a, "answer-bare-first-reply", "Answer: the reply that set the task, read where it was written (the page stays whole)");
+  await turn(a, "⌘↑: only the task");
+  await looked(a, "folded", "⌘↑ after the first reply");
+  await shoot(a, "answer-bare-rest", "Answer: a task open at rest, the page is the task (bare line)");
+  // The menu bar while the page is the task: Session > Only the Task / The Lesson So Far, with its key.
+  const menu = await step(a, "the menu bar, folded", { op: "menu" });
+  writeFileSync(join(out, "answer-menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));
+  await step(a, "write an answer", { op: "type", text: ANSWER });
+  await settle(a, 300);
+  await shoot(a, "answer-bare-typed", "Answer: words on the bare line, under the task alone");
+  await step(a, "send it", { op: "key", key: "Enter" });
+  await step(a, "the reply", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(a, 600);
+  await looked(a, "open", "the reply that sets the next task");
+  await shoot(a, "answer-bare-next-task", "Answer: the reply ends with a new task open; the page stays whole to be read, the mark under the answer");
+  await step(a, "write on the line", { op: "type", text: "2.064 × 2" });
+  await settle(a, 400);
+  await looked(a, "folded", "writing after the reply");
+  await shoot(a, "answer-bare-next-written", "Answer: writing on the line turns the page to the new task");
+  await step(a, "clear the line", { op: "type", text: "", replace: true });
+  await step(a, "stuck", { op: "click", target: "stuck", by: "drive" });
+  await settle(a, 300);
+  await shoot(a, "answer-bare-stuck", "Answer: Stuck's row open, under the task alone");
+  await step(a, "close Stuck", { op: "key", key: "Escape" });
+  await step(a, "more", { op: "click", target: "more", by: "drive" });
+  await step(a, "symbols", { op: "click", target: "symbols", by: "drive" });
+  await settle(a, 300);
+  await shoot(a, "answer-bare-symbols", "Answer: the symbols open under the line");
+  await step(a, "more again", { op: "click", target: "more", by: "drive" });
+  await step(a, "close the symbols", { op: "click", target: "symbols", by: "drive" });
+  await step(a, "attach a photo", { op: "attach", path: photo });
+  await settle(a, 400);
+  await shoot(a, "answer-bare-attached", "Answer: a photo of working on the line");
+  await step(a, "take it off", { op: "click", target: "×" });
+  await step(a, "focus the line again", { op: "focus", target: "composer", by: "drive" });
+  await turn(a, "⌘↑: the lesson so far");
+  await looked(a, "open", "⌘↑ on the folded page");
+  await shoot(a, "answer-bare-looked-back", "Answer: ⌘↑ opens the whole lesson over the task, at its end");
+  await step(a, "fold it from its line", { op: "click", target: "look-back", by: "drive" });
+  await settle(a, 400);
+  await looked(a, "folded", "the line under the heading");
+  await shoot(a, "answer-bare-folded-again", "Answer: folded again from “only the task”");
+
+  // Talk while the task is open: not an answer, and the task stays.
+  await step(a, "focus for talk", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "a question off the task", { op: "type", text: "by the way, why does s divide by n − 1?" });
+  await step(a, "send it as talk", { op: "key", key: "Enter", alt: true });
+  await step(a, "the talk's reply", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(a, 600);
+  await looked(a, "open", "the reply to talk");
+  await shoot(a, "answer-bare-talk-reply", "Answer: talk while a task is open, and its reply; the task stays open");
+  await turn(a, "⌘↑ after the talk");
+  await shoot(a, "answer-bare-talk-folded", "Answer: after the talk, the same task is the page again");
+
+  // The plan and documents beside it.
+  await step(a, "show the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await settle(a, 600);
+  await shoot(a, "answer-bare-plan", "Answer: the plan beside the task; the plan stays open");
+  await step(a, "open a document", { op: "click", target: "open-document", by: "drive" });
+  await settle(a, 800);
+  await step(a, "the week's notes", { op: "click", target: "Week 6 notes" });
+  await settle(a, 1000);
+  await looked(a, "open", "a document opened while the page was the task");
+  await shoot(a, "answer-bare-document-opened", "Answer: a document picked while the page is the task opens, with the lesson");
+  await step(a, "focus before folding", { op: "focus", target: "composer", by: "drive" });
+  await turn(a, "⌘↑ with the notes open");
+  await looked(a, "folded", "⌘↑ with the notes open");
+  await shoot(a, "answer-bare-document", "Answer: the notes beside the task are closed, and say how to have them back");
+  const expand = await step(a, "expand the panel", { op: "click", target: "panel-expand", by: "drive" });
+  if (expand.ok) {
+    await settle(a, 800);
+    await shoot(a, "answer-bare-document-expanded", "Answer: notes that filled the session step aside for the task");
+    await step(a, "focus in the expanded state", { op: "focus", target: "composer", by: "drive" });
+    await turn(a, "⌘↑ with the notes expanded");
+    await settle(a, 600);
+    await shoot(a, "answer-bare-document-expanded-open", "Answer: ⌘↑ brings the expanded notes back");
+    await step(a, "the notes beside again", { op: "click", target: "panel-expand", by: "drive" });
+    await settle(a, 400);
+  }
+  await closeDocument(a, "Week 6 notes");
+  await step(a, "open the past paper", { op: "click", target: "open-document", by: "drive" });
+  await settle(a, 800);
+  await step(a, "Midterm 2023", { op: "click", target: "open-Midterm 2023", by: "drive" });
+  await settle(a, 1800);
+  await step(a, "focus with the paper", { op: "focus", target: "composer", by: "drive" });
+  const paperPage = await a.op({ op: "session" });
+  if (paperPage.page === "open") await turn(a, "⌘↑ with the paper open");
+  await shoot(a, "answer-bare-paper", "Answer: a past paper beside the task stays open, as its links do");
+  await closeDocument(a, "Midterm 2023");
+  await step(a, "hide the panel", { op: "click", target: "plan-toggle", by: "drive" });
+
+  // A small window with the largest text: folded, written on, and opened.
+  const wide = await step(a, "the window's size", { op: "frame" });
+  await step(a, "720 by 560", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await a.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(a, 400);
+  await shoot(a, "answer-bare-narrow-big", "Answer: the task alone at 720 by 560, the largest text");
+  await step(a, "focus the small line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the small line", { op: "type", text: ANSWER });
+  await settle(a, 300);
+  await shoot(a, "answer-bare-narrow-big-typed", "Answer: words on the line at 720 by 560, the largest text");
+  await turn(a, "⌘↑ in the small window");
+  await settle(a, 400);
+  await shoot(a, "answer-bare-narrow-big-open", "Answer: the lesson opened at 720 by 560, “only the task” at the top edge");
+  await turn(a, "⌘↑ again in the small window");
+  await step(a, "clear the small line", { op: "type", text: "", replace: true });
+  await step(a, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(a, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
+  await settle(a, 400);
+
+  // The soft field.
+  await lineLook(a, "Soft field");
+  await step(a, "back to the session", { op: "click", target: "tab-2", by: "drive" });
+  await settle(a, 500);
+  await shoot(a, "answer-soft-rest", "Answer: a task open at rest, the soft field");
+  await step(a, "focus the soft line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the soft line", { op: "type", text: ANSWER });
+  await settle(a, 300);
+  await shoot(a, "answer-soft-typed", "Answer: words on the soft field, under the task alone");
+  await step(a, "stuck on the soft line", { op: "click", target: "stuck", by: "drive" });
+  await settle(a, 300);
+  await shoot(a, "answer-soft-stuck", "Answer: Stuck's row open on the soft field");
+  await step(a, "close Stuck on the soft line", { op: "key", key: "Escape" });
+  await step(a, "clear the soft line", { op: "type", text: "", replace: true });
+  await lineLook(a, "Bare line");
+  await step(a, "the session, bare", { op: "click", target: "tab-2", by: "drive" });
+  await settle(a, 400);
+
+  // A reply arriving: the whole lesson, as before, until it is read.
+  await step(a, "focus for a slow reply", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "ask for a slow reply", { op: "type", text: "VERYSLOW: and what does the 95% mean?" });
+  await step(a, "send it as talk", { op: "key", key: "Enter", alt: true });
+  await step(a, "the reply begins", { op: "wait_reply", timeout_ms: TURN_MS });
+  await settle(a, 700);
+  await shoot(a, "answer-bare-reply-arriving", "Answer: the tutor writing; the whole lesson is on the page");
+  await step(a, "the slow reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  // A session closed and opened again with its task open: the page is the task at once.
+  await step(a, "pose the task again", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "back to it", { op: "type", text: "back to the task" });
+  await step(a, "send", { op: "key", key: "Enter", alt: true });
+  await step(a, "the task again", { op: "wait_idle", timeout_ms: TURN_MS });
+  await quit(a);
+  const again = await launch("answer-again", home);
+  await step(again, "the session again", { op: "click", target: "tab-2", by: "drive" });
+  await settle(again, 1200);
+  await looked(again, "folded", "a session opened again with its task open");
+  await shoot(again, "answer-bare-reopened", "Answer: a session closed and opened again with its task open");
+  await lineLook(again, "Soft field");
+  await quit(again);
+
+  // Claude Code's engine: a task the tutor set but did not save (#98), and a permission card waiting.
+  const { window: p } = await ownWindow("answer-plugin", pluginAgent, "plugin");
+  await lineLook(p, "Bare line");
+  await step(p, "the workspace", { op: "click", target: "tab-1", by: "drive" });
+  await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(p, 800);
+  await step(p, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(p, 800);
+  await step(p, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "a task the record does not name", { op: "type", text: "A task, please.\n\n**Task.** A sample of 49 has s = 14. What is the standard error of the mean?" });
+  await step(p, "send", { op: "key", key: "Enter" });
+  await step(p, "the reply", { op: "wait_idle", timeout_ms: TURN_MS });
+  await settle(p, 1500);
+  await turn(p, "⌘↑ on the unsaved task");
+  await looked(p, "folded", "a task found by its bold word");
+  await shoot(p, "answer-bare-unsaved-task", "Answer: a task the tutor set but did not save (#98), found by its bold word");
+  await step(p, "focus for permission", { op: "focus", target: "composer", by: "drive" });
+  await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
+  await step(p, "send it as talk", { op: "key", key: "Enter", alt: true });
+  await settle(p, 3000);
+  await looked(p, null, "a permission card waiting");
+  await shoot(p, "answer-bare-permission", "Answer: a permission card waiting; the whole lesson is on the page");
+  await step(p, "allow once", { op: "click", target: "allow", by: "drive" });
+  await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  await lineLook(p, "Soft field");
+  await quit(p);
+}
+
 try {
   if (process.env.PAGES_ONLY === "work") {
     await workRecord();
+    throw "only";
+  }
+  if (process.env.PAGES_ONLY === "answer") {
+    await answerPages();
     throw "only";
   }
   // Home on a Mac with no study folder yet.
@@ -548,6 +777,7 @@ try {
     await quit(s);
   }
 
+  await answerPages();
   await workRecord();
 
   // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy

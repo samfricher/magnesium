@@ -26,6 +26,7 @@ export type KeyAction =
   | "hint"
   | "lost"
   | "unknown"
+  | "look-back"
   | "symbols"
   | "model"
   | "bigger"
@@ -91,6 +92,7 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["hint", "Hint"],
   ["lost", "I’m lost"],
   ["unknown", "I don’t know"],
+  ["look-back", "The lesson so far, or the task alone"],
   ["symbols", "Symbols"],
   ["model", "Model and effort"],
   ["stop-reply", "Stop the reply"],
@@ -127,6 +129,7 @@ export const DEFAULTS: Prefs = {
     hint: "cmd+shift+h",
     lost: "cmd+shift+l",
     unknown: "cmd+shift+d",
+    "look-back": "cmd+arrowup",
     symbols: "cmd+shift+m",
     model: "cmd+shift+j",
     bigger: "cmd+=",

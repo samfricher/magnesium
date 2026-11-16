@@ -560,6 +560,20 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     actions.openSession(folder, sessions[0].session, sessions[0].title ?? "");
     await until("the session again", () => document.querySelector(".session.in-front .now.lesson article") !== null, 10_000);
     await wait(1500);
+    // With its task open and nothing new to read, the page is the task: its own words over the line, the lesson
+    // folded away. ⌘↑ opens the lesson, and nothing of that is sent.
+    const folded = {
+      page: actions.session()?.probe().page ?? null,
+      words: document.querySelector(".session.in-front .answer-task")?.textContent ?? null,
+      lessonHidden: (document.querySelector<HTMLElement>(".session.in-front .now.lesson article")?.offsetHeight ?? -1) === 0,
+      line: document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null,
+    };
+    steps.reopenedFolded = folded;
+    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("the lesson so far"))
+      throw new Error(`a session opened again with its task open is not the task alone: ${JSON.stringify(folded)}`);
+    press("ArrowUp", { meta: true });
+    await until("⌘↑ to open the lesson over the task", () => actions.session()?.probe().page === "open", 3000);
+    await wait(300);
     const head = document.querySelector(".session.in-front .now.lesson .head")!.getBoundingClientRect().top;
     const first = document.querySelector(".session.in-front .now.lesson article")!.getBoundingClientRect().top;
     const again = await api.lessonTurns(folder, sessions[0].session);

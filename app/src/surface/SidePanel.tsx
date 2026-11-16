@@ -33,6 +33,8 @@ type Props = {
   /** The list of the folder's material to open from is showing (its control, or File > Open Document…). */
   picking: boolean;
   onPicking: (picking: boolean) => void;
+  /** The document in front is closed while the learner answers: these words stand in its place. The plan is never closed. */
+  closed?: string | null;
   id?: string;
 };
 
@@ -137,6 +139,12 @@ export const SidePanel = memo(function SidePanel(props: Props) {
     }
   };
   const isPdf = shown !== null && kind.pages !== null;
+  const closed = shown !== null && props.closed ? props.closed : null;
+  // Closed, the document is out of reach of the keyboard and of a screen reader too.
+  const docBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    docBox.current?.toggleAttribute("inert", closed !== null);
+  }, [closed, shown?.path]);
 
   return (
     <>
@@ -202,13 +210,13 @@ export const SidePanel = memo(function SidePanel(props: Props) {
           </button>
         </div>
         <div className="side-tools">
-          {shown && !kind.refused && (
+          {shown && !kind.refused && !closed && (
             // The file itself to the Mac's share sheet, AirDrop first: an answer key never gets this far.
             <button type="button" className="bar-act" title="Share the document: AirDrop, Mail and the rest" data-drive="share-document" onClick={(event) => void share(shown.path, event.currentTarget)}>
               Share…
             </button>
           )}
-          {isPdf && (
+          {isPdf && !closed && (
             <span className="side-zoom" role="group" aria-label="Zoom">
               <button type="button" className="bar-act" aria-label="Zoom out" title="Zoom out" data-drive="zoom-out" onClick={() => view.current?.zoom(-1)}>
                 −
@@ -235,9 +243,17 @@ export const SidePanel = memo(function SidePanel(props: Props) {
       </header>
       <div className="side-body">
         {shown ? (
-          <DocView key={shown.path} ref={view} doc={shown} folder={props.folder} goTo={props.goTo} onPlace={onPlace} onNote={props.onNote} onKind={onKind} />
+          // Kept drawn under its cover, at its page and zoom, so it is back at once when the task is answered.
+          <div className="side-doc" ref={docBox}>
+            <DocView key={shown.path} ref={view} doc={shown} folder={props.folder} goTo={props.goTo} onPlace={onPlace} onNote={props.onNote} onKind={onKind} />
+          </div>
         ) : (
           props.plan
+        )}
+        {closed && (
+          <p className="side-closed" data-role="doc-closed">
+            {closed}
+          </p>
         )}
       </div>
     </aside>
