@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { mark } from "../harness";
 import { namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
@@ -121,6 +122,8 @@ type Props = {
   onPickFolder: () => void;
   onNewFolder: () => void;
   onFindFolders: () => void;
+  /** Home's column is drawn with its first row: the first screen is ready. */
+  onShown?: () => void;
 };
 
 /** The most recent session in the library, and its workspace. */
@@ -132,6 +135,13 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
 
 /** What Home last read of a workspace: its Next, and its last goal (the name of a session an earlier window kept). */
 type Read = { next: Next | null; goal: string | null };
+
+/**
+ * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
+ * through `magnesium digest`, which the core gives ten seconds; past this, Home draws the row it drew before the plan
+ * led (the last session, else New session), keeps it for this visit, and keeps the plan read for the next one.
+ */
+export const PLAN_WAIT_MS = 400;
 
 // What Home read last, by folder, so that coming back to Home draws the first row at once while it reads again.
 const known = new Map<string, Read>();
@@ -167,19 +177,30 @@ export function HomePage(props: Props) {
     const kept = lead ? known.get(lead.folder) : undefined;
     return lead && kept ? { folder: lead.folder, read: kept } : null;
   });
+  // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its first row is drawn without it.
+  const [gaveUp, setGaveUp] = useState<string | null>(null);
+  const gaveUpOn = useRef<string | null>(null);
   useEffect(() => {
     if (!lead || !props.api) return;
     let live = true;
     const folder = lead.folder;
+    const limit = window.setTimeout(() => {
+      if (!live || known.has(folder)) return;
+      gaveUpOn.current = folder;
+      setGaveUp(folder);
+    }, PLAN_WAIT_MS);
     void readNext(props.api, folder).then((fresh) => {
       known.set(folder, fresh);
-      if (live) setRead({ folder, read: fresh });
+      // A row already drawn without the plan stays as it is, rather than changing under the learner.
+      if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh });
     });
     return () => {
       live = false;
+      window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const now = lead && read?.folder === lead.folder ? read.read : null;
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null } : null;
+  const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>("button.home-row") ?? []);
@@ -198,10 +219,18 @@ export function HomePage(props: Props) {
   };
 
   const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
-  // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only,
-  // rather than drawing one row and putting another in its place.
+  // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
+  // for PLAN_WAIT_MS at most, rather than drawing one row and putting another in its place.
   const waiting = lead !== null && now === null && !props.step;
   const note = props.note ? <NoteBlock note={props.note} /> : null;
+  // For the harness: when Home mounted, and when its column showed.
+  mark("home");
+  const { onShown } = props;
+  useEffect(() => {
+    if (waiting || props.workspaces === null) return;
+    mark("home-shown");
+    onShown?.();
+  }, [waiting, props.workspaces, onShown]);
 
   return (
     <div className="page home-page" data-page="home">
