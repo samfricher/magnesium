@@ -1,4 +1,5 @@
-// A short menu over the lesson's line, opened by one of its words (Stuck, More).
+// A short menu opened by one of the line's words. More floats over the line; Stuck opens as a row of its own
+// in the line, above the words, so it does not cover the question the learner is stuck on.
 // Its rows are data, so a tool joins the line by joining a list of rows.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -27,9 +28,11 @@ type Props = {
   opener: RefObject<HTMLElement>;
   /** The menu closed; `back` when the keyboard should go back to the line. */
   onClose: (back: boolean) => void;
+  /** Drawn as a row in the line's own flow, not floating over the page. */
+  inline?: boolean;
 };
 
-export function LineMenu({ label, rows, opener, onClose }: Props) {
+export function LineMenu({ label, rows, opener, onClose, inline = false }: Props) {
   const menu = useRef<HTMLDivElement>(null);
   // Over the line, unless the line sits too high on the page for the menu to fit above it. Under a session's
   // first line, which has the next thing's name above it and the page's empty ground below.
@@ -41,6 +44,12 @@ export function LineMenu({ label, rows, opener, onClose }: Props) {
     const el = menu.current;
     const line = el?.closest(".line");
     if (!el || !line) return;
+    if (inline) {
+      // The row made the line taller: the whole line stays in view, not only the row the keyboard goes to.
+      el.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus({ preventScroll: true });
+      line.scrollIntoView({ block: "nearest" });
+      return;
+    }
     const top = document.querySelector(".tabs")?.getBoundingClientRect().bottom ?? 0;
     setBelow(line.classList.contains("first") || line.getBoundingClientRect().top - top - 16 < el.offsetHeight);
     el.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus();
@@ -70,10 +79,12 @@ export function LineMenu({ label, rows, opener, onClose }: Props) {
   }, [opener]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const forward = event.key === "ArrowDown" || (inline && event.key === "ArrowRight");
+    const back = event.key === "ArrowUp" || (inline && event.key === "ArrowLeft");
+    if (!forward && !back) return;
     const stops = [...(menu.current?.querySelectorAll<HTMLElement>("[role='menuitem']:not(:disabled)") ?? [])];
     const at = stops.indexOf(document.activeElement as HTMLElement);
-    const next = stops[(at + (event.key === "ArrowDown" ? 1 : -1) + stops.length) % stops.length];
+    const next = stops[(at + (forward ? 1 : -1) + stops.length) % stops.length];
     if (next) {
       event.preventDefault();
       next.focus();
@@ -81,7 +92,14 @@ export function LineMenu({ label, rows, opener, onClose }: Props) {
   };
 
   return (
-    <div className={`line-menu${below ? " below" : ""}`} ref={menu} role="menu" aria-label={label} onKeyDown={onKeyDown}>
+    <div
+      className={`line-menu${inline ? " inline" : below ? " below" : ""}`}
+      ref={menu}
+      role="menu"
+      aria-label={label}
+      aria-orientation={inline ? "horizontal" : undefined}
+      onKeyDown={onKeyDown}
+    >
       {rows.map((row, index) => (
         <button
           key={row.id}
