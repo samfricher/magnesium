@@ -399,6 +399,17 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     await actions.session()!.say("PERMISSION", "talk");
     await until("the permission card", () => session().cards.length > 0);
     steps.card = document.querySelector(".card .record-head")?.textContent ?? null;
+    // The card says what the tutor asks in the learner's words, shows the command itself, and names what "always"
+    // would allow by the rule the agent suggests saving.
+    const card = {
+      head: steps.card,
+      what: document.querySelector(".card .card-what")?.textContent ?? null,
+      exact: document.querySelector(".card .card-detail")?.textContent ?? null,
+      always: document.querySelector('.card [data-drive="allow-always"]')?.textContent ?? null,
+    };
+    steps.cardWords = card;
+    if (card.head !== "The tutor asks to run a command" || card.what !== "Build the paper as a PDF" || card.exact !== "tectonic paper.tex" || card.always !== "Always allow tectonic commands")
+      throw new Error(`the permission card is not in the learner's words: ${JSON.stringify(card)}`);
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 

@@ -16,6 +16,9 @@ What a turn does is chosen by words in the learner's message (inside
   SLOW         write slowly, so the reply can be interrupted
   EXPIRED      the sign-in ran out: Claude Code's own line comes in the
                reply's place, as 2.1.322 sent it on 2026-11-15
+  NOMODEL      the model is one the account cannot use: Claude Code's own
+               line comes in the reply's place, as 2.1.322 sent it on
+               2026-11-15
   BACK         (or the window's "I'm back") pose quick check 1 when the
                state lists one or says it is still due, or else the first
                paper redo it lists
@@ -582,6 +585,15 @@ def turn(content):
               "message": {"id": "synthetic-1", "model": "<synthetic>", "content": [{"type": "text", "text": said}]},
               "error": "authentication_failed", "is_api_error_message": True, "api_error_status": 401})
         emit({"type": "result", "subtype": "success", "is_error": True, "api_error_status": 401, "result": said,
+              "session_id": session})
+        return
+    if "NOMODEL" in learner:
+        said = ("There's an issue with the selected model (claude-opus-4-6). It may not exist or you may not have "
+                "access to it. Run --model to pick a different model.")
+        emit({"type": "assistant", "session_id": session, "parent_tool_use_id": None,
+              "message": {"id": "synthetic-1", "model": "<synthetic>", "content": [{"type": "text", "text": said}]},
+              "error": "model_not_found", "is_api_error_message": True, "api_error_status": 404})
+        emit({"type": "result", "subtype": "success", "is_error": True, "api_error_status": 404, "result": said,
               "session_id": session})
         return
     last_kind[0] = None

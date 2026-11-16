@@ -1321,7 +1321,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 })}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 {error && <p className="record note">{withoutPaths(error)}</p>}
-                <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} onSignIn={props.onSignIn} />
+                <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} onSignIn={props.onSignIn} onPickModel={() => pickerRef.current.toggle()} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
                   // The line: the page's last line, under the reply. Typed into while the learner reads

@@ -12,8 +12,20 @@ import { Line } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, sessionName, whenOpened } from "../words";
 
-/** "0.3.0" from "0.3.0+<commit>". */
-const versionNumber = (version: string) => version.split("+")[0] ?? version;
+/**
+ * Which of two programs' versions is later: 1 when `a` is, -1 when `b` is, 0 when the numbers are the same or
+ * either cannot be read. "0.3.0+<commit>" is read as 0.3.0.
+ */
+export function later(a: string, b: string): number {
+  const parts = (version: string) => (version.split("+")[0] ?? "").split(".").map((part) => Number.parseInt(part, 10));
+  const [x, y] = [parts(a), parts(b)];
+  if ([...x, ...y].some((n) => Number.isNaN(n))) return 0;
+  for (let at = 0; at < Math.max(x.length, y.length); at++) {
+    const [p, q] = [x[at] ?? 0, y[at] ?? 0];
+    if (p !== q) return p > q ? 1 : -1;
+  }
+  return 0;
+}
 
 export type Step = { next: string; where: string | null; choices: { label: string; run: () => void }[]; status?: string | null };
 
@@ -25,14 +37,27 @@ export function setupStep(
 ): Step | null {
   if (!setup) return null;
   const { runtime, account } = setup;
+  // The version numbers are in Settings, under About: here the step says which is newer and what each choice does.
   if (runtime.state === "different" && runtime.installed && runtime.bundled) {
+    const use = { label: "Use this app’s copy", run: act.replace };
+    const keep = { label: "Keep the one on this Mac", run: act.keep };
+    const newer = later(runtime.bundled.version, runtime.installed.version);
+    if (newer > 0)
+      return {
+        next: "This app has a newer magnesium program",
+        where: "Lessons use the one already on this Mac until you replace it. The newer one updates each workspace’s record the first time it opens it, after keeping a copy.",
+        choices: [use, keep],
+      };
+    if (newer < 0)
+      return {
+        next: "This Mac has a newer magnesium program than this app",
+        where: "Lessons can go on using it. This app’s copy is older, and would replace it for every workspace.",
+        choices: [keep, use],
+      };
     return {
-      next: "Another magnesium program is on this Mac",
-      where: `This Mac has version ${versionNumber(runtime.installed.version)}, and this app carries ${versionNumber(runtime.bundled.version)}. A newer program upgrades each study folder’s record when it opens it, after keeping a copy.`,
-      choices: [
-        { label: `Use this app’s ${versionNumber(runtime.bundled.version)}`, run: act.replace },
-        { label: `Keep ${versionNumber(runtime.installed.version)}`, run: act.keep },
-      ],
+      next: "Another copy of the magnesium program is on this Mac",
+      where: "Lessons use one copy for every workspace. This app’s is the one it was built with.",
+      choices: [use, keep],
     };
   }
   if (runtime.state === "too_old" || runtime.state === "missing" || runtime.state === "failed") {

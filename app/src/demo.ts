@@ -8,10 +8,11 @@
 // and the new screens of the combined window:
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
-//   #permission  #paper  #upgrade  #help-row  #symbols
+//   #permission  #permission-command  #permission-unknown  #model-unavailable
+//   #paper  #upgrade  #not-set-up  #help-row  #symbols
 //   #line-stuck  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
 //   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
-//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-too-old
+//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-replace-newer  #setup-too-old
 
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
@@ -77,6 +78,7 @@ const modelChoice = (): ModelChoice => {
 };
 let sitting: PaperSitting | null = has("paper") ? { target: "midterm-1", name: "Paper B", path: paperB.path, minutes: 50, started_ms: Date.now() - 12 * 60_000 } : null;
 let upgraded = !has("upgrade");
+let notSetUp = has("not-set-up");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
 let open: string | null = FOLDER;
 const DAY_MS = 86_400_000;
@@ -181,10 +183,12 @@ function home(folder: string | null = open): Home {
   return {
     folder: FOLDER,
     name: "Biochemistry",
-    state: upgraded ? "ready" : "needs_upgrade",
-    message: upgraded
-      ? null
-      : "An earlier version of Magnesium set this folder up. Upgrade it to study here with this version. Magnesium keeps a copy of your record in .magnesium/backups before it changes it.",
+    state: !upgraded ? "needs_upgrade" : notSetUp ? "not_set_up" : "ready",
+    message: !upgraded
+      ? "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
+      : notSetUp
+        ? "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+        : null,
     exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
     last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,
     checks_due: week ? 1 : 0,
@@ -224,6 +228,7 @@ function runtime(): RuntimeSetup {
   const program = (version: string) => ({ shown_path: "~/.local/bin/magnesium", version });
   const bundled = program("0.3.0+4f1c2ad9e0b7");
   if (has("setup-replace")) return { state: "different", installed: program("0.2.0"), bundled, installed_now: false, message: null };
+  if (has("setup-replace-newer")) return { state: "different", installed: program("0.4.1"), bundled, installed_now: false, message: null };
   if (has("setup-too-old")) {
     return {
       state: "too_old",
@@ -357,7 +362,33 @@ async function respond(text: string, intent: Intent | undefined) {
   const base = demoBaseReply(text);
   if (lower.includes("into my plan")) {
     emit({ type: "turn_started" });
-    emit({ type: "permission", id: "p1", title: "Change a file", detail: "Study/midterm-1/plan.md", can_always: true });
+    // As the core words what Claude Code 2.1.322 sends for each (asks.rs): the plan, a command, a tool it does not know.
+    if (has("permission-command"))
+      emit({
+        type: "permission",
+        id: "p1",
+        title: "The tutor asks to run a command",
+        detail: "Build the lab report as a PDF",
+        exact: "latexmk -pdf Study/midterm-1/lab-report.tex",
+        can_always: true,
+        always: "Always allow latexmk commands",
+      });
+    else if (has("permission-unknown"))
+      emit({
+        type: "permission",
+        id: "p1",
+        title: "The tutor asks to use a tool this window doesn’t know",
+        detail: "Adds an event to your calendar",
+        exact: 'create_event {"title":"Lab report due","date":"2026-11-20"}',
+        can_always: false,
+      });
+    else emit({ type: "permission", id: "p1", title: "The tutor asks to change your plan", detail: "Midterm 1", can_always: true, always: "Allow changes to files this session" });
+    return;
+  }
+  if (lower.includes("nomodel")) {
+    emit({ type: "turn_started" });
+    emit({ type: "notice", kind: "model_unavailable", text: "Opus 4.6 isn’t available to you. Pick another model, then send your message again." });
+    emit({ type: "turn_ended", ok: false, interrupted: false, error: null });
     return;
   }
   if (text.trim() === "Can I have a hint?") {
@@ -442,7 +473,10 @@ export function demoCore(): Core {
       return home();
     },
     home: async (folder) => home(folder ?? open),
-    setUp: async (folder) => home(folder ?? open),
+    setUp: async (folder) => {
+      notSetUp = false;
+      return home(folder ?? open);
+    },
     upgradeFolder: async (folder) => {
       upgraded = true;
       return home(folder ?? open);
@@ -786,9 +820,17 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       void session(actions).say("Why is the intercept the reciprocal?", "talk");
       return wait(900);
     case "permission":
+    case "permission-command":
+    case "permission-unknown":
       await lesson(actions);
       await session(actions).say("Can you write the lab report into my plan for Friday?", "talk");
       return;
+    case "model-unavailable":
+      await lesson(actions);
+      await session(actions).say("NOMODEL Why is the intercept the reciprocal?", "talk");
+      return wait(200);
+    case "not-set-up":
+      return actions.goWorkspace(FOLDER);
     case "commands":
       return actions.run("commands");
     case "switch":

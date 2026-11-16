@@ -273,8 +273,9 @@ export type Answer = { question: string; chosen: string[] };
  * "turn": about the turn just ended, let go when the learner writes again; "other" stands until dismissed.
  * "record_unopened": a new lesson's first reply never opened the record; the window offers to start it again.
  * "record_unopened_at_effort": the same, at an effort the learner picked; the window offers to start again at usual effort.
+ * "model_unavailable": the session's model is one the account cannot use; the window offers the list of models.
  */
-export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened" | "record_unopened_at_effort";
+export type NoticeKind = "usage_limit" | "sign_in" | "retry" | "turn" | "other" | "record_unopened" | "record_unopened_at_effort" | "model_unavailable";
 
 export type AgentEvent =
   | { type: "ready"; session_id: string; problems: string[]; plugin_missing: boolean; model?: string | null }
@@ -282,7 +283,12 @@ export type AgentEvent =
   | { type: "text_delta"; text: string }
   | { type: "text_done"; text: string }
   | { type: "working"; doing: string | null }
-  | { type: "permission"; id: string; title: string; detail: string; can_always: boolean }
+  /**
+   * `title` says what the tutor asks and `detail` what it would touch, in plain words. `exact` is the thing itself
+   * when the words cannot show all of it (a command, a tool the window does not know). `always` labels the choice
+   * that saves the agent's own rule, by what it would allow.
+   */
+  | { type: "permission"; id: string; title: string; detail: string; exact?: string | null; can_always: boolean; always?: string | null }
   | { type: "question"; id: string; questions: Question[] }
   | { type: "withdrawn"; id: string }
   | { type: "turn_ended"; ok: boolean; interrupted: boolean; error: string | null }

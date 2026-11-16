@@ -4,7 +4,7 @@ import type { Answer, AgentEvent, Intent, Mark, NoticeKind, Question, Turn } fro
 import type { PlanDiff } from "./words";
 
 export type Card =
-  | { kind: "permission"; id: string; title: string; detail: string; canAlways: boolean }
+  | { kind: "permission"; id: string; title: string; detail: string; exact: string | null; canAlways: boolean; always: string | null }
   | { kind: "question"; id: string; questions: Question[] };
 
 export type Status = "idle" | "waiting" | "writing" | "working";
@@ -156,7 +156,7 @@ function limitNotice(old: Notice, next: Notice): Notice {
 }
 
 /** What the learner writes next lets go of what was said about the turn before; the rest still stands. */
-const aboutTheTurn = (notice: Notice) => notice.kind === "turn" || notice.kind === "retry" || notice.kind === "usage_limit";
+const aboutTheTurn = (notice: Notice) => notice.kind === "turn" || notice.kind === "retry" || notice.kind === "usage_limit" || notice.kind === "model_unavailable";
 
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
   if (notice.kind === "usage_limit") {
@@ -193,7 +193,15 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
         ...state,
         cards: [
           ...state.cards.filter((card) => card.id !== event.id),
-          { kind: "permission", id: event.id, title: event.title, detail: event.detail, canAlways: event.can_always },
+          {
+            kind: "permission",
+            id: event.id,
+            title: event.title,
+            detail: event.detail,
+            exact: event.exact ?? null,
+            canAlways: event.can_always,
+            always: event.always ?? null,
+          },
         ],
       };
     case "question":

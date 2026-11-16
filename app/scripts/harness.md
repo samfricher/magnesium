@@ -35,7 +35,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - Home: `start`, `workspace-<name>`, `open-folder`
 - A workspace's page: `home`, `new-session`, `add-material`, `read-<paper>`, `paper-<paper>`
 - ⌘K: `layer`, `command-home`, `command-switch`, `command-new-session`, `command-close-session`, `command-settings`, `command-plan`, `switch-<workspace>`
-- A session: `composer`, `start-session`, `open-task`, `allow`, `start-again`
+- A session: `composer`, `start-session`, `open-task`, `allow`, `allow-always`, `start-again`, `sign-in`, `pick-model`
 - A session's line, before the lesson and in it: `stuck` and `more`, and `stop` while the tutor writes. Under Stuck: `hint`, `help`, `dont-know` (greyed before a lesson has begun). Under More: `send-talk` (typing, with a task open), `attach`, `symbols`, `model`
 - The model's list, from either line: `model-row` (with `data-value`), `model-effort` (with `data-level`), `model-older`, `model-current`
 - The panel: `side-plan`, `plan-<item id>`, `doc-<title>`, `close-doc-<title>`, `open-document`, `open-<title>`, `zoom-in`, `zoom-out`, `zoom-fit`, `share-document`, `panel-expand`, `panel-grip`, `doc-pages`, `doc-flow`

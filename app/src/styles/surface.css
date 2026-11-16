@@ -357,7 +357,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   border-left: 2px solid var(--ink);
 }
 .card-detail { margin: 0 0 0.5rem; font: 400 0.824rem/1.5 var(--mono); color: var(--quiet); overflow-wrap: anywhere; }
-.card-question { margin: 0 0 0.5rem; }
+.card-question, .card-what { margin: 0 0 0.5rem; }
 .card-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
 /* The permission card's choices are the window's one kind of choice, as on the first screen. */
 .card-acts { gap: 2px 0.9rem; margin-left: -0.5rem; }
