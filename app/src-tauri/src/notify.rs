@@ -111,15 +111,19 @@ pub fn change(root: &Path, folders: &[String], on: bool, time: Option<String>) -
 
 fn refresh_now(root: &Path, folders: &[String]) -> State {
     let permission = permission();
+    // A window that is not an app bundle hands the Mac nothing, so it notes
+    // nothing as scheduled: the installed app sharing its folder would
+    // otherwise take those days as held by another build.
+    if permission == Permission::Unavailable {
+        return state(&Kept::read(root), &[], permission);
+    }
     let (kept, notices) = reminder::plan(root, folders, &build());
     let handed = match permission {
         Permission::Allowed | Permission::Quiet => &notices[..],
         // Nothing can arrive; anything still pending from before is taken away.
         _ => &[],
     };
-    if permission != Permission::Unavailable {
-        replace(handed);
-    }
+    replace(handed);
     state(&kept, &notices, permission)
 }
 
