@@ -1697,11 +1697,11 @@ fn settle(
                 store.note_task(&folder, session, *ms, task.as_deref(), posed);
             }
             if lock(&settling.watch).seq == seq && live() {
-                // Options under trial for a task the tutor set and did not
-                // save: MAGNESIUM_APP_TASK_FALLBACK=bold lets the page take a
-                // bold-word task when the record names none.
-                let fallback = task.is_none()
-                    && std::env::var("MAGNESIUM_APP_TASK_FALLBACK").is_ok_and(|how| how == "bold");
+                // Claude Code's tutor can set a task and end its turn without
+                // saving it. The record then names none, and an answer would go
+                // out as talk and never be marked. So with none named, the page
+                // may still take a task a reply opens with a bold word.
+                let fallback = task.is_none();
                 out(AgentEvent::OpenTask {
                     task: task.clone(),
                     posed,

@@ -303,7 +303,9 @@ export type AgentEvent =
   /**
    * The task open after a turn, in the tutor's own words, or null; `posed`
    * when this turn's reply asked for it. Sent by an engine that knows its
-   * open task (Magnesium's). The window puts the field for an answer inside it.
+   * open task (Magnesium's), and for Claude Code's from the record. The window
+   * puts the field for an answer inside it. `fallback`, with no task named:
+   * the page may still take a task a reply opens with a bold word.
    */
   | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
