@@ -113,6 +113,12 @@ export function App() {
   // The workspace page in front takes the panel's commands for the material open beside it.
   const workspaceDocs = useRef<((command: string) => boolean) | null>(null);
   const registerWorkspacePanel = useCallback((run: ((command: string) => boolean) | null) => (workspaceDocs.current = run), []);
+  // The folder whose page shows a timed paper running, if any.
+  const paperIn = useRef<string | null>(null);
+  const onPaper = useCallback((folder: string, running: boolean) => {
+    if (running) paperIn.current = folder;
+    else if (paperIn.current === folder) paperIn.current = null;
+  }, []);
   const setupWait = useRef<Promise<Setup> | null>(null);
   // The commands a key just ran: the menu's echo of the same press is not run twice.
   const pressed = useRef<Record<string, number>>({});
@@ -797,7 +803,10 @@ export function App() {
     const tab = tabs.find((each) => each.key === active);
     if (!api) return;
     if (tab?.kind === "session") handles.current[tab.key]?.drop(paths);
-    else if (tab?.kind === "home" && homeFolder) {
+    else if (tab?.kind === "home" && homeFolder && paperIn.current === homeFolder) {
+      // The page is the paper then, with no material to add to: files dropped during it are most likely its working.
+      note("While a paper runs, nothing is added to the material. Your working goes in when you hand the paper in.");
+    } else if (tab?.kind === "home" && homeFolder) {
       void api.addMaterial(paths, homeFolder).then(
         (added) => {
           added.lines.forEach(note);
@@ -922,6 +931,7 @@ export function App() {
                 onSessionRenamed={onSessionRenamed}
                 onDocsChange={onDocsChange}
                 registerPanel={registerWorkspacePanel}
+                onPaper={onPaper}
                 onNote={note}
               />
             ) : (
