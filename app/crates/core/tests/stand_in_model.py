@@ -34,6 +34,10 @@ What a turn does is chosen by words in the learner's message (inside
   REWORD       pose the open paper redo again in other words
   MENTION      speak of paper redo 2 and pose an ordinary task
   COLD         with "b = -5": mark the answer cold
+  PARTLY       mark the answer to the open task partly right, and pose
+               "What is b in x² − 5x + 6 = 0?"
+  DECLINE      mark the open task declined, and pose "What is b in
+               x² + 3x − 4 = 0?"
   REPAIRED     finish the first repair the state listed (or REPAIR <n>:
                repair n), with its next question
   BADREPAIR    name a repair with no number
@@ -513,6 +517,13 @@ def reply_for(learner, state):
             return f"Paper redo {number}: {redo_question(number)}" + block(task=redo_question(number)), False
         if "BACK" in learner:
             return "Welcome back. " + THIRD + block(task=THIRD), False
+    # Each poses a new task, for the record marks only a task's first answer.
+    if "PARTLY" in learner and open_task[0]:
+        return f"Partly: the method is right, the arithmetic is not. Next: {FIRST}" + block(
+            answer="partly", skill="arithmetic", note="Right method, slipped in the arithmetic.", task=FIRST), False
+    if "DECLINE" in learner and open_task[0]:
+        return f"We can leave that one for another day. Next: {SECOND}" + block(
+            answer="declined", skill="sign of b", note="Left for another day.", task=SECOND), False
     if course[0] == "stats":
         if open_task[0] == STATS_FIRST:
             if re.search(r"(?<![\d.])2(?:\.0+)?(?![\d.])", learner):
