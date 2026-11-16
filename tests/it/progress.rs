@@ -267,6 +267,51 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
 }
 
+#[test]
+fn a_due_check_answered_today_without_a_pass_is_counted_due_tomorrow_not_today() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    answer(
+        &e,
+        "a-1",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
+    );
+    days_pass(&e, 1);
+    let due = progress(&e);
+    assert_eq!(due["due"]["checks"], 1, "{due}");
+    assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
+
+    // Right only after a hint, on the day it is due: no pass, and the check
+    // stays on its day. No answer later today can be cold, so it is not due
+    // today, in the count or on the skill, and it counts with tomorrow's.
+    answer(
+        &e,
+        "b-1",
+        "b is -7",
+        json!({"label":"sign of b","question":"In 3x² − 7x + 2 = 0, what is b?","first_try":"right","help":"hint","cold":false}),
+    );
+    let value = progress(&e);
+    let sign = skill(&value, "sign of b");
+    let tomorrow = Local::now()
+        .date_naive()
+        .checked_add_days(Days::new(1))
+        .unwrap()
+        .to_string();
+    assert_eq!(value["due"], json!({"redos": 0, "checks": 0}), "{value}");
+    assert_eq!(
+        (
+            sign["due"].clone(),
+            sign["next_on"].clone(),
+            sign["passes"].clone()
+        ),
+        (json!(false), json!(tomorrow), json!(0)),
+        "{sign}"
+    );
+    assert_eq!(value["today_counts"]["due_tomorrow"], 1, "{value}");
+}
+
 const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax from the double reciprocal plot\n    kind: course\n    needs: [reciprocals]\n    key_need: [reciprocals]\n    contains: [reciprocals]\n    touches: []\n  reciprocals:\n    covers: 1/x and its inverse\n    kind: foundation\n    needs: []\n    key_need: []\n    contains: []\n    touches: []\n";
 
 #[test]

@@ -6,7 +6,7 @@
 //! `gap-log.md` Gaps table from the store. The tutor reads that table and no
 //! longer edits it. An edit made there by hand is noticed, saved and reported,
 //! never silently lost.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::{Local, NaiveDate};
@@ -37,6 +37,29 @@ impl Item {
     pub(crate) fn name(&self) -> String {
         self.facts.name()
     }
+
+    /// Whether a pass on it can count on `day`: it is due, and its label has
+    /// no answer that day yet. The runtime takes no answer as cold on a label
+    /// that already has one that day (`learner::update::observations`), so a
+    /// due item answered once without a pass waits for the next day.
+    /// `answered` holds the label keys with an answer on `day`.
+    pub(crate) fn can_pass_on(&self, day: NaiveDate, answered: &BTreeSet<String>) -> bool {
+        self.state.due_on(day) && !answered.contains(&crate::learner::label_key(&self.facts.label))
+    }
+}
+
+/// The label keys with an answer on `day`, whatever its mark.
+pub(crate) fn answered_on(conn: &Connection, day: NaiveDate) -> rusqlite::Result<BTreeSet<String>> {
+    let mut statement = conn.prepare("SELECT label_key, answered_at_ms FROM attempts")?;
+    let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+    let mut keys = BTreeSet::new();
+    for row in rows {
+        let (key, ms) = row?;
+        if crate::learner::practice::local_day(ms) == day {
+            keys.insert(key);
+        }
+    }
+    Ok(keys)
 }
 
 pub(crate) fn open_store(workspace: &Workspace) -> Result<LearnerStore, String> {
@@ -1079,9 +1102,10 @@ pub(crate) fn plan_gaps(
         .iter()
         .filter(|item| item.facts.plan.as_deref() == Some(plan) && !item.state.closed())
         .collect::<Vec<_>>();
+    let answered = answered_on(conn, today).ok()?;
     let mut due = rows
         .iter()
-        .filter(|item| item.state.due_on(today))
+        .filter(|item| item.can_pass_on(today, &answered))
         .collect::<Vec<_>>();
     due.sort_by_key(|item| (item.state.next_on, item.facts.row_no));
     let first_due = due.first().map(|item| {

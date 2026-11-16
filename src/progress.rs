@@ -611,11 +611,20 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
                 .count()
         })
         .sum();
+    // A check or redo due today whose label was already answered today can
+    // pass only from tomorrow, so it is counted with tomorrow's.
+    let answered_today: BTreeSet<String> = answers
+        .iter()
+        .filter(|answer| answer.day == today)
+        .map(|answer| answer.key.clone())
+        .collect();
     let tomorrow = today.succ_opt();
     let due_tomorrow = items
         .iter()
         .filter(|item| {
-            !item.state.closed() && item.state.next_on.is_some() && item.state.next_on == tomorrow
+            !item.state.closed()
+                && (item.state.next_on.is_some() && item.state.next_on == tomorrow
+                    || item.state.due_on(today) && !item.can_pass_on(today, &answered_today))
         })
         .count();
     json!({
@@ -689,10 +698,16 @@ fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
             }),
         })
         .collect();
+    // What is due counts only what can pass today, as each skill's `due` does.
+    let answered_today: BTreeSet<String> = answers
+        .iter()
+        .filter(|answer| answer.day == today)
+        .map(|answer| answer.key.clone())
+        .collect();
     let due = |origin: Origin| {
         items
             .iter()
-            .filter(|item| item.facts.origin == origin && item.state.due_on(today))
+            .filter(|item| item.facts.origin == origin && item.can_pass_on(today, &answered_today))
             .count()
     };
     Ok(json!({
