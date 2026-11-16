@@ -145,6 +145,15 @@ export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask
 }
 
 /**
+ * Whether a task may be open that the page cannot see. The engine's word that none is open settles it. Claude
+ * Code's engine reads the tutor's record, which names only a task the tutor saved: with none named, or no lesson
+ * in the record yet, the tutor may still have set one.
+ */
+export function taskMayBeOpen(session: SessionState): boolean {
+  return session.task === undefined || session.task.fallback === true;
+}
+
+/**
  * A session's kept turns as the lesson draws them: how each message was
  * sent, the task it answered, the task a reply posed, the record's marks
  * (the rows the window saw appear for the turn's message; for a turn kept
@@ -537,8 +546,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return begin(continuing, shown, "opening", title, (api) => api.sendNewLesson(shown));
   };
 
-  /** Send the learner's words, with what they are. */
-  const say = async (text: string, said: Said = "talk", question?: string) => {
+  /** Send the learner's words, with what they are. With nothing said of them, the tutor decides. */
+  const say = async (text: string, said?: Said, question?: string) => {
     const { session, props } = now.current;
     try {
       if (!session.open || !props.live) {
@@ -549,7 +558,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       }
       stuck.current = true;
       setFact(null);
-      dispatch({ type: "sent", shown: text, now: Date.now(), said, ...(question ? { question } : {}) });
+      dispatch({ type: "sent", shown: text, now: Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
     } catch (problem) {
@@ -570,8 +579,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     // Help asked for, ⌥↩ and a quoted passage are never an answer.
     const task = now.current.task?.text;
     if (isHelp(sending.text)) void sayRef.current(sending.text, "help", task);
-    else if (task !== undefined && !sending.talk) void sayRef.current(sending.text, "answer", task);
-    else void sayRef.current(sending.text, "talk");
+    else if (sending.talk) void sayRef.current(sending.text, "talk");
+    else if (task !== undefined) void sayRef.current(sending.text, "answer", task);
+    // No task that the page can see. Sent as talk, the runtime refuses any attempt on the message. Claude Code's
+    // tutor can set a task without saving it (a redo it words its own way), and the page then sees none: so
+    // unless the engine itself says no task is open, nothing is said of the message and the tutor decides.
+    else void sayRef.current(sending.text, taskMayBeOpen(now.current.session) ? undefined : "talk");
   }, [setRaised]);
   const startRef = useRef(start);
   startRef.current = start;
@@ -762,7 +775,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     close: stop,
     release: () => dispatch({ type: "released" }),
     state: () => now.current.session,
-    say: (text, said) => say(text, said),
+    say: (text, said) => say(text, said ?? "talk"),
     start: (words) => start(words),
     taskOpen: () => now.current.task !== null,
     busy: () => isBusyNow(now.current.session),
@@ -1345,6 +1358,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       busy={isBusy}
                       paused={paused}
                       taskOpen={task !== null}
+                      taskUnseen={task === null && taskMayBeOpen(session)}
                       stopKey={stopKey}
                       toolBeside={picker.list}
                       more={moreRows}
