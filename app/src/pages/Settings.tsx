@@ -8,7 +8,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { useGlassState } from "../glass";
 import { Line } from "../surface/Rich";
 import { DEFAULTS, FACES, INKS, KEY_ACTIONS, MEASURES, SCHEMES, VOICES, comboOf, faceCss, keyName, type KeyAction, type Prefs } from "../prefs";
-import type { About, Engine, EngineChoice, Payment, Setup } from "../types";
+import type { About, Engine, EngineChoice, Payment, Permissions, Setup } from "../types";
 
 const ENGINE_NAMES: Record<Engine, string> = { plugin: "Claude Code", direct: "Magnesium" };
 
@@ -304,6 +304,7 @@ type Props = {
   section: string | null;
   onEngine: (engine: Engine) => void;
   onPayment: (payment: Payment) => void;
+  onPermissions: (permissions: Permissions) => void;
   onBlock: (minutes: number) => void;
   onSignIn: () => void;
   onCheckAgain: () => void;
@@ -496,6 +497,26 @@ export function SettingsPage(props: Props) {
                 : "Claude Code runs a lesson as in a terminal. Magnesium runs it in the window, with Claude Code as the model. The next session uses it."}
             </span>
           </Setting>
+          {props.setup && (
+            <Setting name="Before the tutor uses a tool">
+              <Choice
+                name="Before the tutor uses a tool"
+                options={[
+                  ["auto", "Claude Code decides"],
+                  ["ask", "Ask me"],
+                ]}
+                value={props.setup.permissions}
+                onPick={props.onPermissions}
+              />
+              <span className="setting-note">
+                {props.engine?.chosen === "direct"
+                  ? "Magnesium’s engine never asks: it uses only its own tools."
+                  : props.setup.permissions === "auto"
+                    ? "Claude Code’s auto mode allows safe steps and refuses risky ones. You are asked only when it cannot decide."
+                    : "You are asked before each step that is not already allowed."}
+              </span>
+            </Setting>
+          )}
           <Setting name="Paid with">
             {props.setup && (
               <Choice
