@@ -193,7 +193,6 @@ fn clip_at_word(name: &str, room: usize) -> String {
 /// One marked answer, as the closing lines need it.
 #[derive(Clone, Debug)]
 pub(crate) struct Answered {
-    pub(crate) attempt_id: String,
     pub(crate) key: String,
     pub(crate) day: NaiveDate,
     pub(crate) declined: bool,
@@ -207,11 +206,6 @@ pub(crate) fn from_record(
     answers: &[Answered],
     today: NaiveDate,
 ) -> Option<Closing> {
-    let today_ids: BTreeSet<&str> = answers
-        .iter()
-        .filter(|answer| answer.day == today)
-        .map(|answer| answer.attempt_id.as_str())
-        .collect();
     // Each skill answered today, by when it was first answered today: the
     // lines name skills in the order the learner met them.
     let mut answered_today: BTreeMap<&str, usize> = BTreeMap::new();
@@ -249,14 +243,14 @@ pub(crate) fn from_record(
         if !seen.insert(key.clone()) {
             continue;
         }
-        // A pass it holds now that an answer of today's earned. A pass made
-        // today and lost to a miss later today is not held, so not named.
-        let earned_today = skill["passed_by"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|id| today_ids.contains(id));
+        // A pass earned today and still held: more passes now than when
+        // today began. A pass made today and lost to a miss later today is
+        // not held, so not named. The runtime counts the skill's passes from
+        // its weakest practice item, so the start of today is counted the
+        // same way (`passes_before_today`).
+        let passes = skill["passes"].as_i64().unwrap_or(0);
+        let before = skill["passes_before_today"].as_i64().unwrap_or(passes);
+        let earned_today = passes > before;
         let proven = skill["proven"] == true;
         if earned_today {
             if proven {
@@ -293,16 +287,15 @@ fn load_answered(workspace: &Workspace) -> Result<Vec<Answered>, String> {
     let mut statement = store
         .conn
         .prepare(
-            "SELECT attempt_id, label_key, mark, answered_at_ms FROM attempts ORDER BY answered_at_ms, attempt_no",
+            "SELECT label_key, mark, answered_at_ms FROM attempts ORDER BY answered_at_ms, attempt_no",
         )
         .map_err(|e| e.to_string())?;
     statement
         .query_map([], |r| {
             Ok(Answered {
-                attempt_id: r.get(0)?,
-                key: r.get(1)?,
-                declined: r.get::<_, String>(2)? == "declined",
-                day: local_day(r.get(3)?),
+                key: r.get(0)?,
+                declined: r.get::<_, String>(1)? == "declined",
+                day: local_day(r.get(2)?),
             })
         })
         .map_err(|e| e.to_string())?
@@ -343,17 +336,28 @@ pub(crate) fn is_end_request(request: &Value) -> bool {
 
 /// The tool's answer to `end_sitting`. The tutor is told that the learner
 /// sees the lines, never what they say, so it has nothing to repeat.
-pub(crate) fn end_from_tool(cwd: &std::path::Path, by: Option<&str>) -> Value {
+pub(crate) fn end_from_tool(
+    cwd: &std::path::Path,
+    caller: Option<&crate::learner::HostContext>,
+) -> Result<Value, String> {
     let workspace = match Workspace::discover(cwd) {
         Ok(Some(workspace)) => workspace,
         _ => {
-            return json!({"error": {"code": "workspace_not_initialized", "message": "No Magnesium study folder here."}});
+            return Ok(
+                json!({"error": {"code": "workspace_not_initialized", "message": "No Magnesium study folder here."}}),
+            );
         }
     };
     if let Err(error) = crate::adapter::check_workspace_binding(&workspace) {
-        return json!({"error": {"code": "workspace_binding", "message": error}});
+        return Ok(json!({"error": {"code": "workspace_binding", "message": error}}));
     }
-    match end_sitting(&workspace, by, now_ms()) {
+    // As every other write: a conversation cleared or switched after the
+    // tool connection started is refused, so its end is never recorded.
+    if let Some(host) = caller {
+        crate::adapter::refuse_changed_conversation(&workspace, host)?;
+    }
+    let by = caller.map(|host| host.host_thread_id.as_str());
+    Ok(match end_sitting(&workspace, by, now_ms()) {
         Ok((Some(_), shown)) => json!({
             "schema": crate::learner::SCHEMA,
             "action": END_ACTION,
@@ -373,7 +377,7 @@ pub(crate) fn end_from_tool(cwd: &std::path::Path, by: Option<&str>) -> Value {
             "note": "No sitting has begun in this study folder, so there is nothing to end. Set no task and ask no question: close in a line.",
         }),
         Err(error) => json!({"error": {"code": "sittings_unavailable", "message": error}}),
-    }
+    })
 }
 
 /// A pause or a stop the learner asked for ends the sitting too.
@@ -394,6 +398,20 @@ pub(crate) fn stop_hook_lines(workspace: &Workspace, by: &str) -> Option<String>
     if crate::mcp::catalog::window_surface() {
         return None;
     }
+    stop_hook_lines_with(workspace, by, |now| {
+        closing(workspace, now).ok().flatten().map(|c| c.lines())
+    })
+}
+
+/// The lines are worked out before the end is claimed: a read that fails, or
+/// a hook stopped for its time, leaves the end unclaimed, and the learner's
+/// next message sets it aside ([`Sittings::reopen`]), so the lines never
+/// show later under another reply.
+fn stop_hook_lines_with(
+    workspace: &Workspace,
+    by: &str,
+    lines_at: impl FnOnce(i64) -> Option<Vec<String>>,
+) -> Option<String> {
     let mut sittings = Sittings::open_existing(workspace).ok()??;
     let now_state = sittings.now_state().ok()??;
     let ended = now_state.ended_ms?;
@@ -405,10 +423,10 @@ pub(crate) fn stop_hook_lines(workspace: &Workspace, by: &str) -> Option<String>
         return None;
     }
     let now = now_ms();
+    let lines = lines_at(now)?;
     if !sittings.claim_end_shown(&now_state.id, now).ok()? {
         return None;
     }
-    let lines = closing(workspace, now).ok()??.lines();
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
@@ -429,10 +447,9 @@ fn closing_value(workspace: &Workspace, now: i64) -> Result<Value, String> {
     }
     let answers = load_answered(workspace)?;
     let today = local_day(now);
-    let sitting = Sittings::open_existing(workspace)
+    let sitting = crate::sittings::now_state_read_only(workspace)
         .ok()
-        .flatten()
-        .and_then(|sittings| sittings.now_state().ok().flatten());
+        .flatten();
     Ok(json!({
         "active": true,
         "today": today.to_string(),

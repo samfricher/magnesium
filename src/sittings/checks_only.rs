@@ -2,10 +2,11 @@
 //! due and nothing else ("just the checks").
 //!
 //! The ask is kept beside the sitting it changes, in `sitting_checks_only`,
-//! and holds until that sitting ends ([`Sittings::end`]). While it holds, the
-//! sitting's opener is its quick checks alone, with no paper redos, and the
-//! runtime ends the sitting itself once each of them is answered or declined.
-//! A learner who carries on after the end is taught as in any sitting.
+//! and holds until that sitting ends: [`Sittings::end`] removes it, so a
+//! sitting carried on after its end is not checks alone again unless asked.
+//! While it holds, the sitting's opener is its quick checks alone, with no
+//! paper redos, and the runtime ends the sitting itself once each of them is
+//! answered or declined.
 
 use rusqlite::{OptionalExtension, params};
 use serde_json::json;
@@ -26,15 +27,14 @@ const CLOSE: &str = "After each answer, show the lettered options, say in a line
 const FIRST_REPLY: &str = "Your first reply of this sitting";
 
 impl Sittings {
-    /// The current sitting, while it is one of quick checks alone.
+    /// The current sitting, while it is one of quick checks alone: from the
+    /// ask until it ends ([`Sittings::end`] removes the ask).
     pub(crate) fn checks_only(&self) -> Result<Option<String>, String> {
         self.conn
             .query_row(
                 "SELECT s.sitting_id
                  FROM (SELECT sitting_id FROM sittings ORDER BY sitting_no DESC LIMIT 1) s
-                 JOIN sitting_checks_only c ON c.sitting_id = s.sitting_id
-                 LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
-                 WHERE e.ended_ms IS NULL OR e.ended_ms < c.asked_ms",
+                 JOIN sitting_checks_only c ON c.sitting_id = s.sitting_id",
                 [],
                 |r| r.get(0),
             )

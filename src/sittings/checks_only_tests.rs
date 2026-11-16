@@ -115,6 +115,9 @@ fn the_checks_alone_take_three_and_end_with_the_last_answer_or_decline() {
         !s.end_checks_only_when_done(Some("claude:a"), start + 180_000)
             .unwrap()
     );
+    // The learner writes again: the sitting carries on, still not checks alone.
+    s.reopen().unwrap();
+    assert!(s.checks_only().unwrap().is_none());
     std::fs::remove_dir_all(root).unwrap();
 }
 

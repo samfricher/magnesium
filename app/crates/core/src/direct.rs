@@ -1945,6 +1945,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     // and the turn that asked for it records nothing more.
     if let Some(control) = record.as_ref().and_then(|record| record.control) {
         apply_control(shared, control, &words, event.as_deref());
+        say_if_the_sitting_ended(shared);
         tell_task(shared, false);
         // The turn that asks for a control records nothing more, a repair
         // included: both are told.
@@ -2055,6 +2056,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             shared.note(&format!("end of the sitting not recorded: {why}"));
         }
     }
+    say_if_the_sitting_ended(shared);
     tell_task(
         shared,
         record.as_ref().is_some_and(|record| record.task.is_some()),
@@ -2793,6 +2795,15 @@ fn save(
             }
             false
         }
+    }
+}
+
+/// Any learning_step of this turn whose result said a sitting ended (the
+/// end the tutor asked for, a pause or a stop, or the runtime's own end of a
+/// sitting of quick checks alone) tells the window to read the closing lines.
+fn say_if_the_sitting_ended(shared: &Arc<Shared>) {
+    if shared.host.take_sitting_ended() {
+        shared.emit(AgentEvent::SittingEnded);
     }
 }
 
