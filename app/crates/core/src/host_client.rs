@@ -60,6 +60,8 @@ pub struct HostClient {
     session: String,
     version: String,
     server: Mutex<Option<Server>>,
+    /// A learning_step result said a sitting ended, since this was last taken.
+    sitting_ended: std::sync::atomic::AtomicBool,
 }
 
 struct Server {
@@ -89,6 +91,7 @@ impl HostClient {
             session,
             version,
             server: Mutex::new(None),
+            sitting_ended: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -256,7 +259,18 @@ impl HostClient {
                 json!({"name": tool, "arguments": arguments}),
                 left.min(call_limit()),
             ) {
-                Ok(result) => return answer(tool, &result),
+                Ok(result) => {
+                    let answered = answer(tool, &result);
+                    if tool == "learning_step"
+                        && answered
+                            .as_ref()
+                            .is_ok_and(|value| value["sitting_ended"] == true)
+                    {
+                        self.sitting_ended
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    return answered;
+                }
                 Err(Failure::Refused(error)) => return Err(error),
                 // Not carried out: start the server again and send it.
                 Err(Failure::NotSent(error)) => {
@@ -271,6 +285,13 @@ impl HostClient {
             }
         }
         Err(last.unwrap_or_else(|| "no time was left for the call".to_owned()))
+    }
+
+    /// Whether a learning_step result said a sitting ended since the last
+    /// time this was asked.
+    pub fn take_sitting_ended(&self) -> bool {
+        self.sitting_ended
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
     /// End the tool server.

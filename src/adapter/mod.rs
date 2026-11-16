@@ -277,8 +277,7 @@ pub(crate) fn dispatch_with_host(
         .clone()
         .or_else(|| host::process_host_identity().map(|host| host_context(&host)));
     if operation == "learning_step" && crate::closing::is_end_request(&request) {
-        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
-        return Ok(crate::closing::end_from_tool(cwd, by));
+        return crate::closing::end_from_tool(cwd, caller.as_ref());
     }
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
@@ -303,7 +302,11 @@ pub(crate) fn dispatch_with_host(
         && let Ok(Some(workspace)) = Workspace::discover(cwd)
     {
         let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
-        let _ = crate::closing::end_sitting(&workspace, by, crate::sittings::now_ms());
+        if let Ok((Some(_), _)) =
+            crate::closing::end_sitting(&workspace, by, crate::sittings::now_ms())
+        {
+            result["sitting_ended"] = true.into();
+        }
     }
     open_sitting(
         cwd,
@@ -401,6 +404,20 @@ fn add_goal_context(
     {
         result["context"] = context;
     }
+}
+/// A Claude MCP server keeps its spawn-time session after /clear or an
+/// in-process /resume; refuse rather than act on the conversation it left.
+pub(crate) fn refuse_changed_conversation(
+    workspace: &Workspace,
+    host: &crate::learner::HostContext,
+) -> Result<(), String> {
+    if host::launch_host() == Some(host::HostKind::Claude)
+        && host.host_kind == "claude"
+        && host::session_ended(workspace, &host.host_thread_id)?
+    {
+        return Err("conversation_changed: this Claude Code conversation was cleared or switched after Magnesium's tool connection started, so Magnesium will not read or record learner state for it. Start a new Claude Code session, or resume this conversation, to continue the lesson.".into());
+    }
+    Ok(())
 }
 /// The study folder's sittings, when this call runs in one it is bound to.
 /// The store is created only for a write, so a read changes no file.
@@ -687,14 +704,7 @@ fn dispatch_inner(
     let Some(resolved) = resolved else {
         return Ok(json!({"schema":crate::learner::SCHEMA,"active":false,"outcome":"inactive"}));
     };
-    // A Claude MCP server keeps its spawn-time session after /clear or an
-    // in-process /resume; refuse rather than act on the conversation it left.
-    if host::launch_host() == Some(host::HostKind::Claude)
-        && host.host_kind == "claude"
-        && host::session_ended(resolved.workspace(), &host.host_thread_id)?
-    {
-        return Err("conversation_changed: this Claude Code conversation was cleared or switched after Magnesium's tool connection started, so Magnesium will not read or record learner state for it. Start a new Claude Code session, or resume this conversation, to continue the lesson.".into());
-    }
+    refuse_changed_conversation(resolved.workspace(), &host)?;
     let store = match open_store(resolved.workspace()) {
         Ok(store) => store,
         Err(error) => {
@@ -998,8 +1008,17 @@ pub(crate) fn host_user_prompt_submit(
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
     // A learner message in a conversation that records may begin a sitting.
     // Only its time is kept, never its text.
-    if recording && let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
-        let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
+    // A message after a sitting's end carries the sitting on.
+    let sittings = if recording {
+        crate::sittings::Sittings::open(&workspace).map(Some)
+    } else {
+        crate::sittings::Sittings::open_existing(&workspace)
+    };
+    if let Ok(Some(mut sittings)) = sittings {
+        if recording {
+            let _ = sittings.note_learner_message(&workspace, crate::sittings::now_ms());
+        }
+        let _ = sittings.reopen();
     }
     let sitting = crate::sittings::notice_clause(&workspace);
     if !active && recording {

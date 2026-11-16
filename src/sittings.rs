@@ -160,6 +160,48 @@ pub(crate) struct SittingNow {
     pub(crate) shown_ms: Option<i64>,
 }
 
+/// The current sitting, read without opening the store for writing: a store
+/// an earlier version made, with no table of ends, is left as it is.
+pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<SittingNow>, String> {
+    let path = workspace.control().join(STORE_FILE);
+    if !path.try_exists().map_err(error)? {
+        return Ok(None);
+    }
+    crate::workspace::reject_symlink_components(&path, workspace.control()).map_err(error)?;
+    let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(error)?;
+    conn.busy_timeout(Duration::from_secs(2)).map_err(error)?;
+    let has = |table: &str| -> Result<bool, String> {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(error)
+    };
+    if !has("sittings")? {
+        return Ok(None);
+    }
+    let query = if has("sitting_ends")? {
+        "SELECT s.sitting_id, s.started_ms, e.ended_ms, e.ended_by, e.shown_ms
+         FROM sittings s LEFT JOIN sitting_ends e ON e.sitting_id = s.sitting_id
+         ORDER BY s.sitting_no DESC LIMIT 1"
+    } else {
+        "SELECT sitting_id, started_ms, NULL, NULL, NULL FROM sittings ORDER BY sitting_no DESC LIMIT 1"
+    };
+    conn.query_row(query, [], |r| {
+        Ok(SittingNow {
+            id: r.get(0)?,
+            started_ms: r.get(1)?,
+            ended_ms: r.get(2)?,
+            ended_by: r.get(3)?,
+            shown_ms: r.get(4)?,
+        })
+    })
+    .optional()
+    .map_err(error)
+}
+
 /// One quick check as the opener states it.
 #[derive(Clone, Debug)]
 struct Check {
@@ -479,6 +521,20 @@ impl Sittings {
             )
             .optional()
             .map_err(error)
+    }
+
+    /// The learner wrote again after the end: the sitting goes on. An end a
+    /// Stop hook never claimed (the goodbye was stopped part way, or the
+    /// hook failed) is set aside here, so its lines never show later under
+    /// another reply. A learner who stops again ends it again.
+    pub(crate) fn reopen(&mut self) -> Result<(), String> {
+        let Some((sitting, _)) = self.current()? else {
+            return Ok(());
+        };
+        let tx = self.write()?;
+        tx.execute("DELETE FROM sitting_ends WHERE sitting_id=?1", [&sitting])
+            .map_err(error)?;
+        tx.commit().map_err(error)
     }
 
     /// Claim the showing of a sitting's end that has not been shown yet.

@@ -111,6 +111,11 @@ pub enum AgentEvent {
     /// turn has settled, and only when the record held an answer marked
     /// today. Never the tutor's words.
     Closing { lines: Vec<String> },
+    /// A tool result in this turn said a sitting ended: the tutor's
+    /// `end_sitting`, a pause or a stop, or the runtime's own end of a
+    /// sitting of quick checks alone. The window then reads the closing
+    /// lines; the page is never sent this.
+    SittingEnded,
     /// The record has been read for what the last message changed: any mark
     /// it has for it has been sent. With none, the record kept no mark.
     Settled,
