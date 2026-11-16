@@ -14,6 +14,9 @@
 // (the menu bar, which a photograph of the window does not show) and run.json
 // (each step, and any problem). It exits 1 when a step failed, after doing
 // every step it can.
+//
+// PAGES_ONLY=work photographs only the workspace page over a record of
+// several skills (scripts/scratch-record.py), in a few minutes.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -130,7 +133,42 @@ async function closeDocument(window, title) {
   await settle(window, 300);
 }
 
+/** The workspace page over a record of several skills, each with its own next day: at the window's size, at 720 by
+ * 560, and at 720 by 560 with the largest text. */
+async function workRecord() {
+  const dir = join(scratch, "record");
+  mkdirSync(dir, { recursive: true });
+  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), dir], { encoding: "utf8" });
+  execFileSync("python3", [join(APP, "scripts/scratch-record.py"), dir], { encoding: "utf8" });
+  const home = join(scratch, "window-record");
+  mkdirSync(home, { recursive: true });
+  const listed = JSON.parse(readFileSync(join(dir, "window", "state.json"), "utf8"));
+  writeFileSync(join(home, "state.json"), JSON.stringify({ ...listed, folders: {} }, null, 2));
+  const k = await launch("record", home, agent, { MAGNESIUM_APP_RUNTIME: join(dir, "magnesium") });
+  await step(k, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(k, 800);
+  await shoot(k, "workspace-work-many", "Workspace over a record of six skills: Your work under Next, by the day each can count again");
+  await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(k, 400);
+  await shoot(k, "workspace-work-narrow", "Workspace over six skills at 720 by 560");
+  await step(k, "to Your work", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-narrow-list", "Workspace over six skills at 720 by 560, scrolled to Your work");
+  for (let n = 0; n < 11; n++) await k.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(k, 400);
+  await step(k, "to Your work, larger", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-big", "Workspace over six skills at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(k);
+}
+
 try {
+  if (process.env.PAGES_ONLY === "work") {
+    await workRecord();
+    throw "only";
+  }
   // Home on a Mac with no study folder yet.
   const emptyHome = join(scratch, "window-empty");
   mkdirSync(emptyHome, { recursive: true });
@@ -489,6 +527,8 @@ try {
     await quit(s);
   }
 
+  await workRecord();
+
   // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
   // here only answers --version; it is never chosen.
   const newer = join(scratch, "bundled-magnesium");
@@ -514,7 +554,7 @@ try {
   await shoot(n, "session-different-program", "Session: a lesson on the copy already on this Mac, before choosing");
   await quit(n);
 } catch (error) {
-  problem(`stopped: ${error?.stack ?? error}`);
+  if (error !== "only") problem(`stopped: ${error?.stack ?? error}`);
 }
 
 run.finished = new Date().toISOString();

@@ -130,6 +130,7 @@ if (week) demoChangePlan();
 
 // The record's marks, oldest first. An answer sent in the demo adds one a moment later.
 const marks: Mark[] = [
+  { id: "m0", at: "2026-11-04 18:02", label: "what $V_{max}$ means", mark: "right", help: "none", cold: true, paper: null, pass: 3 },
   { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null, pass: 1 },
   { id: "m2", at: "2026-11-09 18:26", label: "the slope gives $K_m / V_{max}$", mark: "wrong", help: "none", cold: true, paper: null },
   { id: "m3", at: "2026-11-10 17:02", label: "taking reciprocals of the rate equation", mark: "right", help: "hint", cold: false, paper: null },
@@ -439,7 +440,7 @@ function addMark(mark: Mark["mark"]) {
       cold: !helpAsked,
       paper: null,
       // The stand-in record: a right answer alone is the skill's first day, and the next one the same day earns none.
-      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1 } : {}),
+      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1, next_day: dayFromNow(1) } : {}),
     };
     helpAsked = false;
     marks.push(row);
@@ -579,13 +580,14 @@ export function demoCore(): Core {
     progress: async (): Promise<Progress> => ({
       targets: [],
       exam: null,
-      confirmed: [],
-      // The demo record's skills, each with the newest answer on it, as the runtime groups them.
+      confirmed: [{ dots: [2, 2, 2], name: "what $V_{max}$ means", what: "", note: "confirmed", due: false, next_day: null, last_answer: "m0" }],
+      // The demo record's skills, each with the newest answer on it and the first day its next pass can count, as
+      // the runtime gives them.
       in_progress: [
-        { dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: week ? "due today" : "–", due: week, next_day: null, last_answer: "m4" },
-        { dots: [2, 0, 0], name: "units of a rate", what: "", note: "–", due: false, next_day: null, last_answer: "m1" },
-        { dots: [1, 0, 0], name: "the slope gives $K_m / V_{max}$", what: "", note: "–", due: false, next_day: null, last_answer: "m2" },
-        { dots: [0, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "–", due: false, next_day: null, last_answer: "m3" },
+        { dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: week ? "due today" : "–", due: week, next_day: week ? dayFromNow(0) : dayFromNow(1), last_answer: "m4" },
+        { dots: [2, 0, 0], name: "units of a rate", what: "", note: "–", due: false, next_day: dayFromNow(0), last_answer: "m1" },
+        { dots: [1, 0, 0], name: "the slope gives $K_m / V_{max}$ when the plot is drawn the other way round", what: "", note: "–", due: false, next_day: dayFromNow(3), last_answer: "m2" },
+        { dots: [0, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "–", due: false, next_day: dayFromNow(1), last_answer: "m3" },
       ],
       untested: [],
       scores: [{ paper: "Paper A", date: "2026-11-07", score: "31/50", sure_right: null, sure_total: null }],
@@ -681,6 +683,13 @@ async function offPlan(actions: Actions) {
   await changed(actions);
   await session(actions).say("By the way, why do some courses use a Hanes–Woolf plot instead?", "talk");
   await settle();
+}
+
+/** A day from today, as the runtime writes one: "2026-11-17". */
+function dayFromNow(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 /** Drive the window to the state the address names, as a learner would. */

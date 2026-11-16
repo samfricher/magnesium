@@ -61,10 +61,26 @@ export function markWords(mark: Mark): string {
 
 const PASS_WORDS = ["First", "Second", "Third"];
 
-/** Which day of its skill's three this answer was, as the runtime counts it: "First of three days.", or null. */
-export function passWords(mark: Mark): string | null {
+const isoDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+/** Where a day the runtime names stands from today: "past" for today or before, "tomorrow", or "later". */
+export function fromToday(day: string, now = new Date()): "past" | "tomorrow" | "later" {
+  if (day <= isoDay(now)) return "past";
+  return day === isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) ? "tomorrow" : "later";
+}
+
+/**
+ * Which day of its skill's three this answer was, as the runtime counts it, and on its latest pass when the next can
+ * count: "First of three days. The second can count from tomorrow.", or null.
+ */
+export function passWords(mark: Mark, now = new Date()): string | null {
   const said = mark.mark === "right" && mark.help === "none" && mark.pass ? PASS_WORDS[mark.pass - 1] : undefined;
-  return said ? `${said} of three days.` : null;
+  if (!said) return null;
+  const next = mark.pass && mark.pass < 3 && mark.next_day ? PASS_WORDS[mark.pass].toLowerCase() : null;
+  if (!next || !mark.next_day) return `${said} of three days.`;
+  const from = fromToday(mark.next_day, now);
+  const when = from === "past" ? "today" : from === "tomorrow" ? "from tomorrow" : `from ${shortDay(mark.next_day)}`;
+  return `${said} of three days. The ${next} can count ${when}.`;
 }
 
 /** A mark in a few words, for a list of past work: "right, with a hint". */
