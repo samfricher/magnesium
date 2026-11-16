@@ -119,7 +119,7 @@ fn the_checks_alone_take_three_and_end_with_the_last_answer_or_decline() {
 }
 
 #[test]
-fn asked_again_in_an_open_sitting_it_poses_a_declined_check_and_the_next_due() {
+fn asked_in_an_open_sitting_it_keeps_its_checks_and_takes_the_next_due() {
     let (root, workspace) = fixture();
     due(
         &workspace,
@@ -127,7 +127,8 @@ fn asked_again_in_an_open_sitting_it_poses_a_declined_check_and_the_next_due() {
     );
     let mut s = Sittings::open(&workspace).unwrap();
     let start = now_ms();
-    // A sitting begun by an ordinary message takes three checks.
+    // A sitting begun by an ordinary message takes three checks, and two are
+    // settled in it.
     assert!(s.note_learner_message(&workspace, start).unwrap());
     s.settle(&[("q-0".into(), "passed"), ("q-1".into(), "declined")])
         .unwrap();
@@ -137,14 +138,14 @@ fn asked_again_in_an_open_sitting_it_poses_a_declined_check_and_the_next_due() {
         3
     );
     let opener = s.checks_only_opener(&workspace).unwrap().unwrap();
-    // Check 3 still open, the declined skill 2 again under a new number, and
-    // the next due, skill 4. The passed skill 1 is not posed again.
+    // Check 3 still open, then the next due under new numbers. A check the
+    // sitting already holds is never taken twice.
     assert_eq!(
         numbers(&opener),
         [
             (3, "skill 3".into()),
-            (4, "skill 2".into()),
-            (5, "skill 4".into())
+            (4, "skill 4".into()),
+            (5, "skill 5".into())
         ]
     );
     assert!(

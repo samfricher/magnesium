@@ -67,11 +67,11 @@ impl Sittings {
     /// The learner asked for the quick checks alone, at `now`, in the
     /// conversation `by`. The message begins a sitting after the usual gap.
     /// The sitting keeps the checks it took and has not settled, and takes
-    /// the checks due today that it has not posed yet, longest due first, up
-    /// to [`MAX_CHECKS_PER_SITTING`] in all; a check the learner declined
-    /// earlier in it is taken again, since a decline leaves it due. With any
-    /// check to pose, the sitting becomes one of checks alone. Returns how
-    /// many it holds to pose: none when no check is due.
+    /// the checks due today that it does not hold yet, longest due first, up
+    /// to [`MAX_CHECKS_PER_SITTING`] in all. (A check answered or declined
+    /// today is due again on a later day, so it is not taken twice.) With
+    /// any check to pose, the sitting becomes one of checks alone. Returns
+    /// how many it holds to pose: none when no check is due.
     pub(crate) fn ask_checks_only(
         &mut self,
         workspace: &Workspace,
@@ -88,9 +88,9 @@ impl Sittings {
             .map(|item| (item.facts.item_id.clone(), item.facts.label.clone()))
             .collect();
         let tx = self.write()?;
-        let held: Vec<(String, Option<String>)> = {
+        let held: Vec<(String, bool)> = {
             let mut statement = tx
-                .prepare("SELECT item_id, outcome FROM sitting_items WHERE sitting_id=?1")
+                .prepare("SELECT item_id, outcome IS NULL FROM sitting_items WHERE sitting_id=?1")
                 .map_err(error)?;
             statement
                 .query_map([&sitting], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -98,7 +98,7 @@ impl Sittings {
                 .collect::<rusqlite::Result<_>>()
                 .map_err(error)?
         };
-        let mut open = held.iter().filter(|(_, outcome)| outcome.is_none()).count();
+        let mut open = held.iter().filter(|(_, open)| *open).count();
         let mut number: i64 = tx
             .query_row(
                 "SELECT coalesce(max(number), 0) FROM sitting_items WHERE sitting_id=?1",
@@ -110,29 +110,16 @@ impl Sittings {
             if open >= MAX_CHECKS_PER_SITTING {
                 break;
             }
-            match held.iter().find(|(id, _)| id == item) {
-                None => {
-                    number += 1;
-                    tx.execute(
-                        "INSERT INTO sitting_items(sitting_id,item_id,number,label) VALUES(?1,?2,?3,?4)",
-                        params![sitting, item, number, label],
-                    )
-                    .map_err(error)?;
-                    open += 1;
-                }
-                Some((_, Some(outcome))) if outcome == "declined" => {
-                    // A new number, so the reply that poses it again is told
-                    // from the one that posed it before.
-                    number += 1;
-                    tx.execute(
-                        "UPDATE sitting_items SET outcome=NULL, posed=0, number=?3 WHERE sitting_id=?1 AND item_id=?2",
-                        params![sitting, item, number],
-                    )
-                    .map_err(error)?;
-                    open += 1;
-                }
-                _ => {}
+            if held.iter().any(|(id, _)| id == item) {
+                continue;
             }
+            number += 1;
+            tx.execute(
+                "INSERT INTO sitting_items(sitting_id,item_id,number,label) VALUES(?1,?2,?3,?4)",
+                params![sitting, item, number, label],
+            )
+            .map_err(error)?;
+            open += 1;
         }
         if open > 0 {
             tx.execute(
