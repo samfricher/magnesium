@@ -563,9 +563,13 @@ pub struct Row {
     pub name: String,
     pub what: String,
     pub note: String,
-    /// Whether the next proof can be earned today.
+    /// Whether the record asks for it today: a quick check or a redo on it
+    /// is due, and a proof can be earned today.
     pub due: bool,
-    /// The day the next proof can be earned, as "2026-11-12".
+    /// The first day the next proof can be earned, as "2026-11-12". The
+    /// runtime names one for every skill not proven, except one waiting for
+    /// its repair or never answered. For a skill with no check or redo it
+    /// is never before today.
     pub next_day: Option<String>,
     /// The record's id for the newest answer marked on this skill, as the
     /// runtime groups answers by skill. None when the runtime does not say.

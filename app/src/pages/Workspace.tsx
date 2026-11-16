@@ -13,7 +13,7 @@ import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
-import { displayName, goalName, markShort, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, fromToday, goalName, markShort, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -80,6 +80,35 @@ function Days({ row }: { row: Row }) {
   );
 }
 
+/**
+ * When a skill's next pass can count, from the runtime's day for it and nothing else: "today", "again tomorrow",
+ * "again Thu 19 Nov", "proven", or "" when the record names no day (a paper question waiting for its fix).
+ */
+type Again = { words: string; today: boolean; rank: number; day: string };
+function again(row: Row): Again {
+  // Rank: a check or redo the record asks for today, then a skill that can count today, then by day, then no day, then proven.
+  if (earned(row) >= 3) return { words: "proven", today: false, rank: 4, day: "" };
+  if (row.due) return { words: "today", today: true, rank: 0, day: "" };
+  if (row.next_day && fromToday(row.next_day) === "past") return { words: "today", today: true, rank: 1, day: "" };
+  if (!row.next_day) return { words: "", today: false, rank: 3, day: "" };
+  return { words: fromToday(row.next_day) === "tomorrow" ? "again tomorrow" : `again ${shortDay(row.next_day)}`, today: false, rank: 2, day: row.next_day };
+}
+
+/** One skill of Your work: its name, then its newest mark; when it can count again beside the name, then its days. */
+function WorkRow({ row, last }: { row: Row; last: Mark | null }) {
+  const next = again(row);
+  return (
+    <div role="listitem" className="work-row">
+      <span className="row-name work-name">
+        <Line text={row.name} />
+      </span>
+      <span className={next.today ? "row-when work-when work-today" : "row-when work-when"}>{next.words}</span>
+      <Days row={row} />
+      {last && <span className="work-mark">{`${markShort(last)}, ${shortDay(last.at)}`}</span>}
+    </div>
+  );
+}
+
 const MINUTE = 60_000;
 const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
 const dayOf = (ms: number) => new Date(ms).toDateString();
@@ -88,12 +117,13 @@ const isoDay = (ms: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-/** How long past its end a paper has run, said coarsely: minutes, then hours, then days. */
-function overBy(ms: number): string {
+/** How long ago a paper's time was up, said coarsely: minutes, then hours, then days. */
+function agoWords(ms: number): string {
   const minutes = Math.floor(ms / MINUTE);
-  if (minutes < 60) return minutes < 1 ? "just over" : plural(minutes, "minute", "minutes") + " over";
-  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " over";
-  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " over";
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return plural(minutes, "minute", "minutes") + " ago";
+  if (minutes < 24 * 60) return plural(Math.floor(minutes / 60), "hour", "hours") + " ago";
+  return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " ago";
 }
 
 /** The time now, read again only when the paper's count of whole minutes left would change, so nothing moves in between. */
@@ -155,19 +185,22 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       }}
     >
       <p className="list-head">A paper is running</p>
+      {/* The time leads, at a size read from the desk where the paper is sat. Its words change only with the
+          minute, and nothing else in the block moves. */}
       <div className="paper-head">
-        <div className="paper-what">
-          <h2 className="paper-name">{sitting.name}</h2>
-          <p className="paper-note">
-            Started {when(sitting.started_ms)} · {plural(sitting.minutes, "minute", "minutes")} · no tutor until you hand in
-          </p>
-        </div>
-        <div className="paper-when">
-          <p className="paper-end">{over ? `time up at ${when(end)}` : `until ${when(end)}`}</p>
-          <p className="paper-left" data-drive="sitting-left">
-            {over ? overBy(now - end) : `${plural(left, "minute", "minutes")} left`}
-          </p>
-        </div>
+        <p className="paper-time" data-drive="sitting-left">
+          {over ? "Time is up" : `${plural(left, "minute", "minutes")} left`}
+        </p>
+        <h2 className="paper-name" title={sitting.name}>
+          {sitting.name}
+        </h2>
+        {/* Past its time the paper's length says nothing new, and leaving it out keeps Hand in on a short window
+            at the largest text. */}
+        <p className="paper-facts">
+          <span>{over ? `Up at ${when(end)}, ${agoWords(now - end)}` : `Until ${when(end)}`}</span>
+          <span>started {when(sitting.started_ms)}</span>
+          {!over && <span>{plural(sitting.minutes, "minute", "minutes")}</span>}
+        </p>
       </div>
       {confirming ? (
         <div className="paper-confirm" role="group" aria-label="End without handing in" aria-describedby={said}>
@@ -184,20 +217,31 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
           </p>
         </div>
       ) : (
-        <p className="page-acts">
-          <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
-            Hand in your work…
-          </button>
-          {onOpen && (
-            <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
-              Open the paper again
+        <>
+          {/* Past its time, handing in is what is left to do, so it stands as a step of its own. */}
+          {over && (
+            <button className="paper-hand-in" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+              Hand in your work…
             </button>
           )}
-          <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
-            End without handing in
-          </button>
-        </p>
+          <p className="page-acts">
+            {!over && (
+              <button className="quiet-act strong" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
+                Hand in your work…
+              </button>
+            )}
+            {onOpen && (
+              <button className="quiet-act" data-drive="sitting-open" onClick={onOpen}>
+                Open the paper again
+              </button>
+            )}
+            <button ref={endButton} className="quiet-act" data-drive="sitting-end" disabled={busy} onClick={() => setConfirming(true)}>
+              End without handing in
+            </button>
+          </p>
+        </>
       )}
+      <p className="paper-rule">No tutor until you hand in.</p>
       <dl className="paper-marks">
         <dt>?</dt>
         <dd>where you are stuck, instead of looking it up</dd>
@@ -410,6 +454,8 @@ export function WorkspacePage(props: Props) {
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
   const exam = examLine(home?.exam ?? null);
+  // Off the list, a running paper's clock would go on with nothing to show it or hand it in.
+  const held = props.running ? "Close its running session first" : sitting ? "Hand in or end the paper first" : null;
 
   // The plan's item in hand, by the rule Home's first row uses too (src/next.ts).
   const items = plan?.items ?? [];
@@ -424,14 +470,15 @@ export function WorkspacePage(props: Props) {
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
-  // Each skill the learner has answered on, newest answer first, with the runtime's count of its days.
+  // Each skill the learner has answered on, with the runtime's count of its days, in the order it can count again:
+  // today, then by its day, then those with no day, then the proven; the newest answer first within each.
   const marksById = new Map(record !== "unread" && record ? record.marks.map((mark) => [mark.id, mark]) : []);
   const work =
     record !== "unread" && record
       ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
-          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null }))
+          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: again(row) }))
           .filter(({ row, last }) => last !== null || earned(row) > 0)
-          .sort((a, b) => (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
+          .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
       : [];
 
   return (
@@ -538,6 +585,31 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
+        <section aria-label="Your work" className="your-work">
+          <p className="list-head">Your work</p>
+          {record === "unread" ? (
+            <p className="page-note">Reading the record…</p>
+          ) : record === null ? (
+            <p className="page-note">The record could not be read.</p>
+          ) : work.length === 0 ? (
+            <p className="page-note">
+              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
+              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
+                ? withoutPaths(record.progress.message)
+                : "Nothing marked yet. Each skill you answer on is kept here."}
+            </p>
+          ) : (
+            <>
+              <div className="list" role="list">
+                {work.map(({ row, last }) => (
+                  <WorkRow key={row.name} row={row} last={last} />
+                ))}
+              </div>
+              <p className="page-note work-key">Each ring is a day you got it right on your own, from memory. Three prove a skill.</p>
+            </>
+          )}
+        </section>
+
         {earlier.length > 0 && (
           <section aria-label="Earlier sessions">
             <p className="list-head">Earlier</p>
@@ -613,46 +685,20 @@ export function WorkspacePage(props: Props) {
                   Paste text…
                 </button>
               </p>
+              {/* Files to hand during a paper are most likely its working, which goes in by handing in, not here. */}
+              {sitting && <p className="page-note">While a paper runs, your working is handed in above, not added here.</p>}
             </>
-          )}
-        </section>
-
-        <section aria-label="Your work" className="your-work">
-          <p className="list-head">Your work</p>
-          {record === "unread" ? (
-            <p className="page-note">Reading the record…</p>
-          ) : record === null ? (
-            <p className="page-note">The record could not be read.</p>
-          ) : work.length === 0 ? (
-            <p className="page-note">
-              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
-              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
-                ? withoutPaths(record.progress.message)
-                : "Nothing marked yet. Each skill you answer on is kept here."}
-            </p>
-          ) : (
-            <div className="list" role="list">
-              {work.map(({ row, last }) => (
-                <div key={row.name} role="listitem" className="home-row static work-row">
-                  <span className="row-name">
-                    <Line text={row.name} />
-                  </span>
-                  <span className="row-when">{last ? `${markShort(last)}, ${shortDay(last.at)}` : ""}</span>
-                  <Days row={row} />
-                </div>
-              ))}
-            </div>
           )}
         </section>
 
         <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
-            <button className="quiet-act" disabled={props.running} title={props.running ? "Close its running session first" : "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
+            <button className="quiet-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list
             </button>
           </p>
           {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
-          {props.running && <p className="page-note">Close its running session first.</p>}
+          {held && <p className="page-note">{held}.</p>}
         </section>
       </div>
       </div>

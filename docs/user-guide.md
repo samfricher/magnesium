@@ -119,7 +119,7 @@ A task is open from the reply that set it until an answer to it is marked. A qui
 
 ## See how far each skill is proved
 
-`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new. It counts each skill at the most passes it has held, so it never falls when you miss either. The dots still show the passes you hold now: a miss after a pass starts that skill's passes again. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. For example:
+`magnesium progress` adds those answers up. It lists each skill with its passes, from none to three. A pass is one answer you gave right, alone and cold, on its own day, and three passes prove a skill. A skill you got wrong earns its passes by the redos the tutor schedules. A skill you never got wrong earns one for each day you answer it right. The command also prints a level from 1 to 10 for each plan, which is the share of the plan's passes you have earned, and the days on which an answer of yours was marked. A plan's level counts only the skills in its course graph, so it never falls because you start something new. It counts each skill at the most passes it has held, so it never falls when you miss either. The dots still show the passes you hold now: a miss after a pass starts that skill's passes again. A chat answer on a skill the graph names is recorded under the graph's name, so chat lessons on the course move the level too. Skills in no plan are listed with their passes and counted as proven or in progress, with no level. Beside each skill not yet proven it says when its next pass can count: "due" when a redo or check asks for it today, else the first day it can. A pass needs a later day than your last answer on that skill, so an answer later the same day never counts, and a skill you got wrong also waits for its next redo or check. For example:
 
 ```text
 midterm-1: level 5 of 10 · 4 of 9 passes · 1 of 3 skills proven
@@ -127,7 +127,7 @@ midterm-1: level 5 of 10 · 4 of 9 passes · 1 of 3 skills proven
   ●●●  rate equation · proven
   ○○○  Hill coefficient · waits for its repair
 In no plan: 0 proven, 1 in progress
-  ●○○  units of a rate
+  ●○○  units of a rate · next today
 Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 ```
 

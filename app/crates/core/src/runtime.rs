@@ -71,6 +71,12 @@ pub struct Mark {
     /// a later miss started the count again, or when the runtime cannot say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pass: Option<u8>,
+    /// The first day its skill's next pass can count, as "2026-11-19", on
+    /// the answer that earned the skill's latest pass, while the skill is
+    /// not proven. On an earlier pass it would answer a question the
+    /// learner is past, so only the latest carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_day: Option<String>,
 }
 
 /// Each answer that earned a pass a skill holds now, by the record's id, and
@@ -97,7 +103,27 @@ pub fn passes_from(progress: &Value) -> HashMap<String, u8> {
     passes
 }
 
-/// Say which pass each mark earned, as the runtime counts it now.
+/// The first day each skill's next pass can count, by the record's id for
+/// the answer that earned the latest pass it holds, from what `magnesium
+/// progress` printed. A proven skill, or one the runtime names no day for,
+/// gives none.
+pub fn next_days_from(progress: &Value) -> HashMap<String, String> {
+    let plans = progress["plans"].as_array().into_iter().flatten();
+    let skills = plans
+        .flat_map(|plan| plan["skills"].as_array().into_iter().flatten())
+        .chain(progress["other"]["skills"].as_array().into_iter().flatten());
+    skills
+        .filter(|skill| skill["proven"].as_bool() != Some(true))
+        .filter_map(|skill| {
+            let latest = skill["passed_by"].as_array()?.last()?.as_str()?;
+            let day = skill["next_on"].as_str()?;
+            Some((latest.to_owned(), day.to_owned()))
+        })
+        .collect()
+}
+
+/// Say which pass each mark earned, as the runtime counts it now, and on the
+/// latest pass of a skill, the day its next can count.
 pub fn note_passes(marks: &mut [Mark], folder: &Path) {
     // Only a right answer given alone can earn one: the others need no reading.
     if !marks
@@ -110,8 +136,10 @@ pub fn note_passes(marks: &mut [Mark], folder: &Path) {
         return;
     };
     let passes = passes_from(&progress);
+    let next_days = next_days_from(&progress);
     for mark in marks {
         mark.pass = passes.get(&mark.id).copied();
+        mark.next_day = next_days.get(&mark.id).cloned();
     }
 }
 
@@ -142,6 +170,7 @@ pub fn marks_from(printed: &str) -> Option<Vec<Mark>> {
                     cold: row["cold"].as_bool().unwrap_or(false),
                     paper: text("paper"),
                     pass: None,
+                    next_day: None,
                 })
             })
             .collect(),
@@ -337,6 +366,7 @@ mod tests {
                 cold: true,
                 paper: None,
                 pass: None,
+                next_day: None,
             }
         );
         assert_eq!(
@@ -367,6 +397,24 @@ mod tests {
         assert_eq!(passes.get("a-3"), Some(&2));
         assert_eq!(passes.get("a-7"), Some(&1));
         assert_eq!(passes.len(), 2);
+    }
+
+    #[test]
+    fn the_latest_pass_of_a_skill_not_proven_carries_its_next_day() {
+        let printed = json!({
+            "plans": [{"plan": "midterm-1", "from": "record", "skills": [
+                {"skill": "reading Km", "passes": 2, "proven": false, "passed_by": ["a-1", "a-3"], "next_on": "2026-11-19"},
+                {"skill": "rate", "passes": 3, "proven": true, "passed_by": ["a-4", "a-5", "a-6"], "next_on": null}
+            ]}],
+            "other": {"skills": [
+                // A pass brought in from a gap log has no answer to carry it.
+                {"skill": "units", "passes": 1, "proven": false, "passed_by": [null], "next_on": "2026-11-17"},
+                {"skill": "sign of b", "passes": 0, "proven": false, "passed_by": [], "next_on": "2026-11-17"}
+            ]}
+        });
+        let days = next_days_from(&printed);
+        assert_eq!(days.get("a-3").map(String::as_str), Some("2026-11-19"));
+        assert_eq!(days.len(), 1, "{days:?}");
     }
 
     #[test]

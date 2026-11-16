@@ -343,6 +343,12 @@ export type Mark = {
    * the count again, or when the runtime cannot say.
    */
   pass?: number | null;
+  /**
+   * The first day its skill's next pass can count, as "2026-11-19", on the
+   * answer that earned the skill's latest pass while the skill is not proven.
+   * Absent otherwise, or when the runtime does not say.
+   */
+  next_day?: string | null;
 };
 
 /**

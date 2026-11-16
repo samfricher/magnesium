@@ -14,6 +14,9 @@
 // (the menu bar, which a photograph of the window does not show) and run.json
 // (each step, and any problem). It exits 1 when a step failed, after doing
 // every step it can.
+//
+// PAGES_ONLY=work photographs only the workspace page over a record of
+// several skills (scripts/scratch-record.py), in a few minutes.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -130,7 +133,42 @@ async function closeDocument(window, title) {
   await settle(window, 300);
 }
 
+/** The workspace page over a record of several skills, each with its own next day: at the window's size, at 720 by
+ * 560, and at 720 by 560 with the largest text. */
+async function workRecord() {
+  const dir = join(scratch, "record");
+  mkdirSync(dir, { recursive: true });
+  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), dir], { encoding: "utf8" });
+  execFileSync("python3", [join(APP, "scripts/scratch-record.py"), dir], { encoding: "utf8" });
+  const home = join(scratch, "window-record");
+  mkdirSync(home, { recursive: true });
+  const listed = JSON.parse(readFileSync(join(dir, "window", "state.json"), "utf8"));
+  writeFileSync(join(home, "state.json"), JSON.stringify({ ...listed, folders: {} }, null, 2));
+  const k = await launch("record", home, agent, { MAGNESIUM_APP_RUNTIME: join(dir, "magnesium") });
+  await step(k, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(k, 800);
+  await shoot(k, "workspace-work-many", "Workspace over a record of six skills: Your work under Next, by the day each can count again");
+  await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(k, 400);
+  await shoot(k, "workspace-work-narrow", "Workspace over six skills at 720 by 560");
+  await step(k, "to Your work", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-narrow-list", "Workspace over six skills at 720 by 560, scrolled to Your work");
+  for (let n = 0; n < 11; n++) await k.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(k, 400);
+  await step(k, "to Your work, larger", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-big", "Workspace over six skills at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(k);
+}
+
 try {
+  if (process.env.PAGES_ONLY === "work") {
+    await workRecord();
+    throw "only";
+  }
   // Home on a Mac with no study folder yet.
   const emptyHome = join(scratch, "window-empty");
   mkdirSync(emptyHome, { recursive: true });
@@ -292,6 +330,31 @@ try {
   await step(w, "close Stuck again", { op: "key", key: "Escape" });
   await step(w, "close the symbols on the bare line", { op: "key", key: "Escape" });
   await step(w, "clear the line", { op: "type", text: "", replace: true });
+  await step(w, "attach a photo on the bare line", { op: "attach", path: photo });
+  await settle(w, 400);
+  await shoot(w, "session-bare-attached", "Session: a photo on the bare line, before sending");
+  await step(w, "take it off the bare line", { op: "click", target: "×" });
+  await step(w, "focus the bare line for a slow reply", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "ask for a slow reply on the bare line", { op: "type", text: "VERYSLOW: and the margin of error?" });
+  await step(w, "send it from the bare line", { op: "key", key: "Enter" });
+  await step(w, "the reply begins over the bare line", { op: "wait_reply", timeout_ms: TURN_MS });
+  await settle(w, 700);
+  await shoot(w, "session-bare-reply", "Session: the tutor's reply arriving, the bare line under it saying how to stop it");
+  await step(w, "the reply ends over the bare line", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The bare foot in a small window with the largest text: the open question, Stuck's row and the words.
+  const wide = await step(w, "the window's size", { op: "frame" });
+  await step(w, "720 by 560, bare", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(w, "focus the small bare line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the small bare line", { op: "type", text: ANSWER });
+  await step(w, "stuck on the small bare line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 400);
+  await shoot(w, "session-bare-narrow-stuck", "Session: Stuck open on the bare line at 720 by 560, the largest text");
+  await step(w, "close Stuck on the small bare line", { op: "key", key: "Escape" });
+  await step(w, "clear the small bare line", { op: "type", text: "", replace: true });
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(w, "the text back to its own size, bare", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(w, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
   // Before a lesson the line ends in More alone.
   await step(w, "a new session on the bare line", { op: "click", target: "new-session", by: "drive" });
   await settle(w, 800);
@@ -467,6 +530,25 @@ try {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
+  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  for (const [stem, minutesAgo, what] of [
+    ["paper-last", 74.3, "Workspace: a paper in its last minute"],
+    ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
+    ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
+  ]) {
+    const s = await paperWindow(stem, sitting(minutesAgo, "Midterm 2023"));
+    await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+    await settle(s, 800);
+    await shoot(s, `workspace-${stem}`, what);
+    if (stem === "paper-hours") {
+      await step(s, "end without handing in, past the end", { op: "click", target: "sitting-end", by: "drive" });
+      await settle(s, 300);
+      await shoot(s, "workspace-paper-hours-end", "Workspace: ending a paper past its end asks first, in place");
+    }
+    await quit(s);
+  }
+
+  await workRecord();
 
   // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
   // here only answers --version; it is never chosen.
@@ -523,7 +605,7 @@ try {
   await homeWith("one", "home-one", "Home: one workspace, with a plan, never studied in", { recent: [kept.recent[0]] });
   await homeWith("one-no-plan", "home-one-no-plan", "Home: one workspace, no plan, never studied in", { recent: [kept.recent[1]] });
 } catch (error) {
-  problem(`stopped: ${error?.stack ?? error}`);
+  if (error !== "only") problem(`stopped: ${error?.stack ?? error}`);
 }
 
 run.finished = new Date().toISOString();
