@@ -392,7 +392,8 @@ type Entry =
   | { at: string; kind: "reply"; text: string; ok: boolean; interrupted: boolean; error: string | null }
   | { at: string; kind: "marked"; mark: unknown }
   | { at: string; kind: "plan_changed"; what: string[] }
-  | { at: string; kind: "notice"; text: string };
+  | { at: string; kind: "notice"; text: string }
+  | { at: string; kind: "closing"; lines: string[] };
 const transcript: Entry[] = [];
 let replyBlocks: string[] = [];
 let replyStreaming = "";
@@ -426,6 +427,9 @@ function note(event: AgentEvent): void {
       break;
     case "notice":
       transcript.push({ at, kind: "notice", text: event.text });
+      break;
+    case "closing":
+      transcript.push({ at, kind: "closing", lines: event.lines });
       break;
   }
 }

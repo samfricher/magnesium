@@ -27,6 +27,9 @@ use crate::workspace::Workspace;
 /// The learning_step action the tutor sends when the learner stops.
 pub(crate) const END_ACTION: &str = "end_sitting";
 
+/// What a lesson's session-start notice says of the end of a sitting.
+pub(crate) const END_GUIDANCE: &str = " When the learner says they are stopping for now, send learning_step {\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"} before your reply, and set no task.";
+
 /// How many skills a line names before it counts the rest.
 const NAMES_IN_LINE: usize = 3;
 /// How many days the second line names before it counts the rest.
@@ -88,7 +91,7 @@ impl Closing {
                 .next
                 .iter()
                 .take(DAYS_IN_LINE)
-                .map(|(day, skills)| format!("{} from {}", names(skills), self.day_words(*day)))
+                .map(|(day, skills)| format!("from {}, {}", self.day_words(*day), names(skills)))
                 .collect();
             let more: usize = self
                 .next
@@ -97,9 +100,11 @@ impl Closing {
                 .map(|(_, skills)| skills.len())
                 .sum();
             if more > 0 {
-                parts.push(format!("{more} more later"));
+                parts.push(format!("{more} more on later days"));
             }
-            lines.push(format!("Can count next: {}.", parts.join(", ")));
+            // The day leads each part and parts end with a semicolon, so a
+            // skill's name with a comma or an "and" in it stays readable.
+            lines.push(format!("Can count next: {}.", parts.join("; ")));
         }
         lines
     }

@@ -88,6 +88,8 @@ export type Turn = {
   posed?: boolean;
   noted?: boolean;
   mark_ids?: string[] | null;
+  /** The closing lines drawn under this turn's reply, when it ended a sitting. */
+  closing?: string[] | null;
 };
 
 /**
@@ -314,6 +316,8 @@ export type AgentEvent =
    * the page may still take a task a reply opens with a bold word.
    */
   | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
+  /** The turn ended the sitting: the runtime's closing lines, drawn under the reply as they are. */
+  | { type: "closing"; lines: string[] }
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 

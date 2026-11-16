@@ -74,7 +74,7 @@ fn a_sitting_the_learner_ends_shows_its_two_lines_once_under_the_reply() {
     assert_eq!(stop(&e, "p-3"), json!({}));
     let lines = json!([
         format!("Earned today: a pass on {RIGHT}."),
-        format!("Can count next: {RIGHT} and {WRONG} from tomorrow."),
+        format!("Can count next: from tomorrow, {RIGHT} and {WRONG}."),
     ]);
     let read = closing_json(&e);
     assert_eq!(read["closing"]["lines"], lines, "{read}");
@@ -156,6 +156,6 @@ fn a_stop_the_learner_asks_for_ends_the_sitting_too() {
     assert_eq!(stopped["durable"], true, "{stopped}");
     assert_eq!(
         stop(&e, "p-3")["systemMessage"],
-        format!("Can count next: {WRONG} from tomorrow.")
+        format!("Can count next: from tomorrow, {WRONG}.")
     );
 }

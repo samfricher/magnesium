@@ -192,6 +192,21 @@ pub struct Turn {
     /// own, as the record is read only once the turn is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_ids: Option<Vec<String>>,
+    /// The closing lines the window drew under this turn's reply, as the
+    /// runtime worked them out when this turn ended the sitting. Kept in a
+    /// file of their own beside the turns: they say what the record held on
+    /// that day, which a later reading would not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closing: Option<Vec<String>>,
+}
+
+/// The closing lines drawn under a turn, kept beside it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ClosingNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    lines: Vec<String>,
 }
 
 /// What the engine said of a turn's task, kept beside the turn.
@@ -593,6 +608,22 @@ impl Store {
         append_line(&self.marks_notes(folder), &note);
     }
 
+    /// The file beside a folder's transcript that holds the closing lines
+    /// drawn under the turn that ended a sitting.
+    fn closing_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("closing.jsonl")
+    }
+
+    /// Keep the closing lines drawn under a kept turn.
+    pub fn note_closing(&self, folder: &Path, session: &str, ms: i64, lines: &[String]) {
+        let note = ClosingNote {
+            session: session.to_owned(),
+            ms,
+            lines: lines.to_vec(),
+        };
+        append_line(&self.closing_notes(folder), &note);
+    }
+
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
@@ -657,6 +688,20 @@ impl Store {
             for turn in &mut turns {
                 if let Some(ids) = by_ms.get(&turn.ms) {
                     turn.mark_ids = Some(ids.clone());
+                }
+            }
+        }
+        // The closing lines drawn under a turn, the last kept for it.
+        if let Ok(notes) = fs::read_to_string(self.closing_notes(folder)) {
+            let by_ms: BTreeMap<i64, Vec<String>> = notes
+                .lines()
+                .filter_map(|line| serde_json::from_str::<ClosingNote>(line).ok())
+                .filter(|note| note.session == session && !note.lines.is_empty())
+                .map(|note| (note.ms, note.lines))
+                .collect();
+            for turn in &mut turns {
+                if let Some(lines) = by_ms.get(&turn.ms) {
+                    turn.closing = Some(lines.clone());
                 }
             }
         }

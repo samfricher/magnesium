@@ -67,7 +67,7 @@ fn a_pass_today_and_its_next_day_make_two_lines() {
         closing.lines(),
         [
             "Earned today: a pass on slope and Km.",
-            "Can count next: rate equation from tomorrow, slope and Km from Thu 19 Nov.",
+            "Can count next: from tomorrow, rate equation; from Thu 19 Nov, slope and Km.",
         ]
     );
 }
@@ -82,7 +82,7 @@ fn a_wrong_answer_earns_nothing_but_names_its_next_day() {
     let closing = from_record(&progress, &answers, day(TODAY)).unwrap();
     assert_eq!(
         closing.lines(),
-        ["Can count next: units of a rate from tomorrow."]
+        ["Can count next: from tomorrow, units of a rate."]
     );
 }
 
@@ -106,7 +106,7 @@ fn a_pass_that_proves_a_skill_says_so_and_names_no_next_day() {
         lines,
         [
             "Earned today: a pass on slope and Km, and the pass that proves rate equation.",
-            "Can count next: slope and Km from tomorrow.",
+            "Can count next: from tomorrow, slope and Km.",
         ]
     );
     // Proven alone: one line.
@@ -134,7 +134,7 @@ fn a_pass_lost_to_a_later_miss_today_is_not_named() {
     let lines = from_record(&progress, &answers, day(TODAY))
         .unwrap()
         .lines();
-    assert_eq!(lines, ["Can count next: units of a rate from tomorrow."]);
+    assert_eq!(lines, ["Can count next: from tomorrow, units of a rate."]);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn many_skills_are_named_three_at_a_time_and_the_rest_counted() {
         lines,
         [
             "Earned today: a pass on a, b, c and 2 more.",
-            "Can count next: a from tomorrow, b from Wed 18 Nov, c from Thu 19 Nov, 2 more later.",
+            "Can count next: from tomorrow, a; from Wed 18 Nov, b; from Thu 19 Nov, c; 2 more on later days.",
         ]
     );
 }
@@ -187,7 +187,7 @@ fn a_skill_in_a_plan_and_out_of_one_is_named_once_and_a_file_plan_is_skipped() {
         lines,
         [
             "Earned today: a pass on Slope and Km.",
-            "Can count next: Slope and Km from Wed 18 Nov.",
+            "Can count next: from Wed 18 Nov, Slope and Km.",
         ]
     );
 }

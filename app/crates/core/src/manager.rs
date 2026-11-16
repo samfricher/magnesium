@@ -1727,6 +1727,33 @@ fn settle(
             *told = Some(task);
         };
         read_task(&told);
+        // A turn that ended the sitting: the runtime's closing lines. The
+        // tutor ends the sitting before its reply, so they are read at once,
+        // and again after the marks, in case an answer in the same message
+        // was recorded late or the end came with the turn's last write.
+        let mut closed: Option<Vec<String>> = None;
+        let read_closing = |closed: &mut Option<Vec<String>>| {
+            if lock(&settling.watch).seq != seq || !live() {
+                return;
+            }
+            let Some(closing) = runtime::closing(&folder) else {
+                return;
+            };
+            if closing.ended_ms.is_none_or(|ended| ended < sent_ms)
+                || closing.lines.is_empty()
+                || closed.as_ref() == Some(&closing.lines)
+            {
+                return;
+            }
+            if let Some((store, session, ms)) = &turn {
+                store.note_closing(&folder, session, *ms, &closing.lines);
+            }
+            out(AgentEvent::Closing {
+                lines: closing.lines.clone(),
+            });
+            *closed = Some(closing.lines);
+        };
+        read_closing(&mut closed);
         let mut marked_late = false;
         let mut found: Option<Vec<String>> = None;
         if let Some(before) = before {
@@ -1781,6 +1808,9 @@ fn settle(
         if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
             read_task(&told);
         }
+        // A turn that ended the sitting: the runtime's closing lines, read
+        // after the marks so an answer in the same message is in them.
+        read_closing(&mut closed);
         // The record has been read for this message: say so, unless the
         // learner has written again since.
         if lock(&settling.watch).seq == seq && live() {

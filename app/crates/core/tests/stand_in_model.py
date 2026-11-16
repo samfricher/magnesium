@@ -45,6 +45,8 @@ What a turn does is chosen by words in the learner's message (inside
   CHECK AGAIN  pose quick check 1 again
   RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
   RECORDING OFF / RECORDING ON / PAUSE   ask for that control
+  DONE FOR TODAY   (any case) the learner stops: close in a line, no task,
+               and end the sitting
   VERYSLOW     write for about ten seconds
   CITETASK     set a task with two links beside it: a page of the past paper
                (opens at once) and a page of slides (shut until answered)
@@ -464,6 +466,8 @@ def reply_for(learner, state):
         return "Recording is on again." + block(control="recording_on"), False
     if "PAUSE" in learner:
         return "Paused." + block(control="pause"), False
+    if "done for today" in lower:
+        return "Good place to stop." + block(note="Stopping for today.", sitting_ends=True), False
     asks_help = learner == "I'm lost" or "hint" in learner.lower()
     if asks_help and due_open[0] and not warned[0]:
         warned[0] = True

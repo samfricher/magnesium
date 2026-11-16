@@ -2036,6 +2036,18 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             }
         }
     }
+    // The learner is stopping: the runtime ends the sitting, as the plugin
+    // engine's tutor asks it to, and the window reads the closing lines
+    // from the record once the turn has settled.
+    if record.as_ref().is_some_and(|record| record.sitting_ends) {
+        let ended = shared.host.call(
+            "learning_step",
+            json!({"schema": "learner-model/v2", "action": "end_sitting"}),
+        );
+        if let Err(why) = ended {
+            shared.note(&format!("end of the sitting not recorded: {why}"));
+        }
+    }
     tell_task(
         shared,
         record.as_ref().is_some_and(|record| record.task.is_some()),
