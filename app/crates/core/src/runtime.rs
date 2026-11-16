@@ -4,6 +4,7 @@
 //! program the learner installed and reads what it prints, so the runtime
 //! stays small and the two can be updated apart.
 
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -65,6 +66,53 @@ pub struct Mark {
     pub cold: bool,
     /// The paper the answer was given on, or none in a lesson.
     pub paper: Option<String>,
+    /// Which of its skill's passes this answer earned, 1 to 3, as
+    /// `magnesium progress` counts them now. None when it earned none, when
+    /// a later miss started the count again, or when the runtime cannot say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<u8>,
+}
+
+/// Each answer that earned a pass a skill holds now, by the record's id, and
+/// which pass it was, from what `magnesium progress` printed. A runtime from
+/// before it named these answers gives none.
+pub fn passes_from(progress: &Value) -> HashMap<String, u8> {
+    let plans = progress["plans"].as_array().into_iter().flatten();
+    let skills = plans
+        .flat_map(|plan| plan["skills"].as_array().into_iter().flatten())
+        .chain(progress["other"]["skills"].as_array().into_iter().flatten());
+    let mut passes = HashMap::new();
+    for skill in skills {
+        for (at, id) in skill["passed_by"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if let (Some(id), Ok(pass)) = (id.as_str(), u8::try_from(at + 1)) {
+                passes.insert(id.to_owned(), pass);
+            }
+        }
+    }
+    passes
+}
+
+/// Say which pass each mark earned, as the runtime counts it now.
+pub fn note_passes(marks: &mut [Mark], folder: &Path) {
+    // Only a right answer given alone can earn one: the others need no reading.
+    if !marks
+        .iter()
+        .any(|mark| mark.mark == "right" && mark.help == "none")
+    {
+        return;
+    }
+    let Some(progress) = progress(folder) else {
+        return;
+    };
+    let passes = passes_from(&progress);
+    for mark in marks {
+        mark.pass = passes.get(&mark.id).copied();
+    }
 }
 
 /// The marked answers in what `magnesium attempts --json` printed, oldest
@@ -93,6 +141,7 @@ pub fn marks_from(printed: &str) -> Option<Vec<Mark>> {
                     help: text("help").unwrap_or_else(|| "none".to_owned()),
                     cold: row["cold"].as_bool().unwrap_or(false),
                     paper: text("paper"),
+                    pass: None,
                 })
             })
             .collect(),
@@ -287,6 +336,7 @@ mod tests {
                 help: "none".into(),
                 cold: true,
                 paper: None,
+                pass: None,
             }
         );
         assert_eq!(
@@ -299,6 +349,24 @@ mod tests {
         );
         assert_eq!(marks[2].paper.as_deref(), Some("Diagnostic"));
         assert_eq!(marks[3].mark, "declined");
+    }
+
+    #[test]
+    fn an_answer_is_told_which_pass_it_earned_from_what_the_runtime_prints() {
+        let printed = json!({
+            "plans": [{"plan": "midterm-1", "from": "record", "skills": [
+                {"skill": "reading Km", "passes": 2, "passed_by": [null, "a-3"]}
+            ]}, {"plan": "old", "from": "file"}],
+            "other": {"skills": [
+                {"skill": "units", "passes": 1, "passed_by": ["a-7"]},
+                // A runtime from before it named them.
+                {"skill": "sign of b", "passes": 1}
+            ]}
+        });
+        let passes = passes_from(&printed);
+        assert_eq!(passes.get("a-3"), Some(&2));
+        assert_eq!(passes.get("a-7"), Some(&1));
+        assert_eq!(passes.len(), 2);
     }
 
     #[test]

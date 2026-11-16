@@ -797,7 +797,12 @@ impl Manager {
     }
 
     pub fn marks_at(&self, folder: Option<&Path>) -> AgentResult<Option<Vec<runtime::Mark>>> {
-        Ok(runtime::marks(&self.at(folder)?))
+        let folder = self.at(folder)?;
+        let mut marks = runtime::marks(&folder);
+        if let Some(marks) = marks.as_mut() {
+            runtime::note_passes(marks, &folder);
+        }
+        Ok(marks)
     }
 
     /// The files in the open course's material folder.
@@ -1725,7 +1730,7 @@ fn settle(
                 }
                 let rows = runtime::marks(&folder);
                 read |= rows.is_some();
-                let fresh: Vec<runtime::Mark> = rows
+                let mut fresh: Vec<runtime::Mark> = rows
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|row| !before.contains(&row.id))
@@ -1733,6 +1738,7 @@ fn settle(
                 if !fresh.is_empty() {
                     marked_late = look > 0;
                     found = Some(fresh.iter().map(|mark| mark.id.clone()).collect());
+                    runtime::note_passes(&mut fresh, &folder);
                     if live() {
                         for mark in fresh {
                             out(AgentEvent::Marked { mark });

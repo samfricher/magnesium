@@ -149,6 +149,9 @@ try {
   await step(w, "back home for a note", { op: "click", target: "‹ Home" });
   await step(w, "open Linear Algebra", { op: "click", target: "workspace-Linear Algebra", by: "drive" });
   await settle(w, 800);
+  await shoot(w, "workspace-no-plan", "Workspace with no plan: New session first, the material folded to its count");
+  await step(w, "open the material", { op: "click", target: "material", by: "drive" });
+  await settle(w, 300);
   await step(w, "open its note", { op: "click", target: "Week 3 eigenvalues" });
   await settle(w, 1000);
   await shoot(w, "material", "A note of the material, opened from the workspace");
@@ -284,11 +287,10 @@ try {
   await shoot(w, "home-recent", "Home with a session to carry on; three tabs open");
   await step(w, "workspace again", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(w, 800);
-  await step(w, "your work", { op: "click", target: "Your work" });
-  await settle(w, 800);
+  await shoot(w, "workspace-next", "Workspace with a session: the plan's next item, then the earlier sessions");
   await step(w, "to the foot", { op: "scroll", to: "bottom" });
   await settle(w, 300);
-  await shoot(w, "workspace-work", "Workspace with a session, Your work open, at its foot");
+  await shoot(w, "workspace-work", "Workspace with a session, at its foot: each skill's days in Your work");
   await step(w, "back to the top", { op: "scroll", to: "top" });
   await step(w, "open the past paper", { op: "click", target: "Midterm 2023" });
   await settle(w, 1800);

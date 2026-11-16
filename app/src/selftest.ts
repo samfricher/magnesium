@@ -235,6 +235,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
     // The workspace lists its material by title, with no extension and no path, and shows it in the window.
     actions.goWorkspace(folder);
+    // The material is folded to its count, and opens in place.
+    await until("the material folded", () => document.querySelector('[data-page="workspace"] [data-drive="material"]') !== null, 10_000);
+    if (document.querySelector('[data-page="workspace"] .file-row') !== null) throw new Error("the material was listed before it was opened");
+    document.querySelector<HTMLElement>('[data-page="workspace"] [data-drive="material"]')!.click();
     await until("the material listed", () => document.querySelector('[data-page="workspace"] .file-row') !== null, 10_000);
     const titles = Array.from(document.querySelectorAll('[data-page="workspace"] .file-row .row-name')).map((row) => row.textContent ?? "");
     steps.materialTitles = titles;

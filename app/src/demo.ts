@@ -115,7 +115,7 @@ if (week) demoChangePlan();
 
 // The record's marks, oldest first. An answer sent in the demo adds one a moment later.
 const marks: Mark[] = [
-  { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null },
+  { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null, pass: 1 },
   { id: "m2", at: "2026-11-09 18:26", label: "the slope gives $K_m / V_{max}$", mark: "wrong", help: "none", cold: true, paper: null },
   { id: "m3", at: "2026-11-10 17:02", label: "taking reciprocals of the rate equation", mark: "right", help: "hint", cold: false, paper: null },
   { id: "m4", at: "2026-11-05 18:40", label: "reading $V_{max}$ from the y-intercept", mark: "wrong", help: "none", cold: true, paper: null },
@@ -394,6 +394,8 @@ function addMark(mark: Mark["mark"]) {
       help: helpAsked ? "hint" : "none",
       cold: !helpAsked,
       paper: null,
+      // The stand-in record: a right answer alone is the skill's first day, and the next one the same day earns none.
+      ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1 } : {}),
     };
     helpAsked = false;
     marks.push(row);
@@ -528,9 +530,13 @@ export function demoCore(): Core {
       targets: [],
       exam: null,
       confirmed: [],
-      in_progress: week
-        ? [{ dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: "due today", due: true, next_day: null }]
-        : [],
+      // The demo record's skills, each with the newest answer on it, as the runtime groups them.
+      in_progress: [
+        { dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: week ? "due today" : "–", due: week, next_day: null, last_answer: "m4" },
+        { dots: [2, 0, 0], name: "units of a rate", what: "", note: "–", due: false, next_day: null, last_answer: "m1" },
+        { dots: [1, 0, 0], name: "the slope gives $K_m / V_{max}$", what: "", note: "–", due: false, next_day: null, last_answer: "m2" },
+        { dots: [0, 0, 0], name: "taking reciprocals of the rate equation", what: "", note: "–", due: false, next_day: null, last_answer: "m3" },
+      ],
       untested: [],
       scores: [{ paper: "Paper A", date: "2026-11-07", score: "31/50", sure_right: null, sure_total: null }],
       helped: [],
@@ -667,6 +673,8 @@ export async function startFromAddress(actions: Actions): Promise<void> {
     case "material":
       actions.goWorkspace(FOLDER);
       await wait(300);
+      document.querySelector<HTMLElement>("[data-drive='material']")?.click();
+      await wait(50);
       document.querySelector<HTMLElement>(".file-row")?.click();
       return wait(400);
     case "workspace":

@@ -59,6 +59,31 @@ export function markWords(mark: Mark): string {
   }
 }
 
+const PASS_WORDS = ["First", "Second", "Third"];
+
+/** Which day of its skill's three this answer was, as the runtime counts it: "First of three days.", or null. */
+export function passWords(mark: Mark): string | null {
+  const said = mark.mark === "right" && mark.help === "none" && mark.pass ? PASS_WORDS[mark.pass - 1] : undefined;
+  return said ? `${said} of three days.` : null;
+}
+
+/** A mark in a few words, for a list of past work: "right, with a hint". */
+export function markShort(mark: Mark): string {
+  const help = HELP_WORDS[mark.help] ?? null;
+  switch (mark.mark) {
+    case "right":
+      return help ? `right, ${help}` : mark.cold ? "right, on your own" : "right";
+    case "partly":
+      return help ? `partly right, ${help}` : "partly right";
+    case "wrong":
+      return "not right yet";
+    case "declined":
+      return "left for later";
+    default:
+      return mark.mark;
+  }
+}
+
 /**
  * One thing that changed in the plan, as a line under the tutor's reply.
  * `route` is a change to the lesson's goal or steps, which the tutor makes as
