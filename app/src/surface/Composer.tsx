@@ -107,6 +107,8 @@ type Props = {
   paused: boolean;
   /** A task is open: Stuck is offered, ⌥↩ means something, and a file sent now is the learner's work. */
   taskOpen: boolean;
+  /** No task the page can see, but the tutor may have set one it did not save: a message may still be marked. */
+  taskUnseen?: boolean;
   /** Words to show when the line is empty. */
   placeholder?: string;
   /** The quiet end of the line at rest: the one key worth naming there, and what it does. */
@@ -329,12 +331,13 @@ export const Composer = memo(
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (composing(event)) return;
       const el = event.currentTarget;
-      const { place, taskOpen } = latest.current;
+      const { place, taskOpen, taskUnseen } = latest.current;
       const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
       if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
-        // ⌥↩ sends the words as talk: not an answer, whatever they say. It means something only while a task is open.
-        send(place === "lesson" && event.altKey && taskOpen);
+        // ⌥↩ sends the words as talk: not an answer, whatever they say. It means something only while a message
+        // could be marked: a task is open, or the tutor may have set one the page cannot see.
+        send(place === "lesson" && event.altKey && (taskOpen || taskUnseen === true));
         return;
       }
       // While a card waits above the line, ⇧⇥ goes to its first choice. In the page's order the nearest choice is the
@@ -404,8 +407,8 @@ export const Composer = memo(
       { id: "dont-know", label: "I don’t know", keys: key("unknown"), group: "help", disabled: noHelp, run: () => help(HELP.unknown) },
     ];
     const moreRows: LineRow[] = [
-      // Said for sure to be no answer: only while a task is open, words are typed, and no passage is quoted (which is never an answer).
-      ...(props.taskOpen && typed && quote === null
+      // Said for sure to be no answer: only while a message could be marked, words are typed, and no passage is quoted (which is never an answer).
+      ...((props.taskOpen || props.taskUnseen) && typed && quote === null
         ? [{ id: "send-talk", label: "Send without a mark", keys: "⌥↩", group: "send", run: () => send(true) }]
         : []),
       { id: "attach", label: "Attach a photo or PDF", keys: key("attach"), group: "line", run: () => (setMenu(null), void pick()) },

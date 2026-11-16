@@ -475,6 +475,33 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
     if (!document.querySelector(".session.in-front .sent-files")?.textContent?.includes(kept.split("/").pop() ?? kept)) throw new Error("the file sent was not named under the message");
 
+    // No task the page can see, on Claude Code's engine, where the tutor may have set one it did not save: words on
+    // the line go with nothing said of them, so the tutor may mark them. ⌥↩ still sends them as talk.
+    {
+      const line = document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+      const write = (value: string) => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(line, value);
+        line.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const press = (init: KeyboardEventInit) => line.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+      if (actions.session()?.probe().task !== null) throw new Error("a task is open before one was set");
+      line.focus();
+      write("Here is my working");
+      press({ key: "Enter" });
+      await until("the words sent with no task in view", () => session().live?.learner === "Here is my working", 3000);
+      const plain = session().live?.said ?? null;
+      await until("the reply to them", () => idle(), 10_000);
+      line.focus();
+      write("A question, not an answer");
+      press({ key: "Enter", altKey: true });
+      await until("the words sent with ⌥↩ and no task in view", () => session().live?.learner === "A question, not an answer", 3000);
+      const talk = session().live?.said ?? null;
+      await until("the reply to the question", () => idle(), 10_000);
+      steps.unseenTask = { plain, talk };
+      if (plain !== null) throw new Error(`with no task in view, words on the line were sent as ${plain}: the tutor could not mark them`);
+      if (talk !== "talk") throw new Error(`with no task in view, ⌥↩ sent the words as ${String(talk)}, not as talk`);
+    }
+
     // One line with a task open. Esc closes the symbols first, then puts the line away; the words stay.
     await actions.session()!.say("A task, please.\n\n**Task.** What is 2 + 2?", "talk");
     await until("the task open", () => idle() && actions.session()?.probe().task !== null, 10_000);
@@ -578,6 +605,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const turns = await api.lessonTurns(folder, sessions[0].session);
     if (turns.length === 0) throw new Error("the session's turns were not kept to be read again");
     if (!turns.some((turn) => turn.intent === "talk")) throw new Error("a kept turn does not say it was sent as talk");
+    if (turns.find((turn) => turn.learner === "Here is my working")?.intent != null) throw new Error("words sent with no task in view were kept as sent with an intent");
 
     // Opened again, it is as it was left: its heading at the top, its turns under it, and nothing is sent.
     // A window quit with the task open kept the task's words with the session's place, and windows before this one
