@@ -659,13 +659,32 @@ try {
   await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  await shoot(p, "session-permission", "Session: the tutor asks permission (Claude Code engine)");
-  // The same card on the bare line, chosen in Settings as a learner chooses it, then the soft field again.
-  await step(p, "settings", { op: "click", target: "settings", by: "drive" });
-  await step(p, "your line: bare", { op: "click", target: "Bare line" });
-  await step(p, "the session", { op: "click", target: "tab-2", by: "drive" });
-  await settle(p, 500);
-  await shoot(p, "session-permission-bare", "Session: the tutor asks permission, on the bare line");
+  // Each card in both of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
+  // asks within a moment of the Return that sent the words, so the card leaves the keyboard on the line; ⇧⇥ takes
+  // it to the card. Settings keeps its tab, the third, once it has one.
+  let settingsTab = null;
+  const lineLook = async (which) => {
+    await step(p, `settings for the ${which}`, { op: "click", target: settingsTab ?? "settings", by: "drive" });
+    settingsTab = "tab-3";
+    await step(p, `your line: ${which}`, { op: "click", target: which });
+    await step(p, "the session", { op: "click", target: "tab-2", by: "drive" });
+    await settle(p, 500);
+  };
+  const cardShots = async (stem, what) => {
+    for (const [which, suffix, words] of [
+      ["Bare line", "-bare", ", on the bare line"],
+      ["Soft field", "", ""],
+    ]) {
+      await lineLook(which);
+      await step(p, `${stem}: the keyboard on the line`, { op: "focus", target: "composer", by: "drive" });
+      await settle(p, 300);
+      await shoot(p, `${stem}-line${suffix}`, `${what}, the keyboard still on the line${words}`);
+      await step(p, `${stem}: ⇧⇥ to the card`, { op: "key", key: "Tab", shift: true });
+      await settle(p, 300);
+      await shoot(p, `${stem}${suffix}`, `${what}, the keyboard on the card${words}`);
+    }
+  };
+  await cardShots("session-permission", "Session: the tutor asks permission (Claude Code engine)");
   await step(p, "allow once", { op: "click", target: "allow", by: "drive" });
   await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
   // The tutor asks to change the plan, which its rules did not cover.
@@ -673,7 +692,7 @@ try {
   await step(p, "ask to change the plan", { op: "type", text: "PLANEDIT: move the lab report to Friday" });
   await step(p, "send the plan change", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  await shoot(p, "session-permission-plan-bare", "Session: the tutor asks to change the plan, on the bare line");
+  await cardShots("session-permission-plan", "Session: the tutor asks to change the plan");
   await step(p, "refuse the plan change", { op: "click", target: "Refuse" });
   await step(p, "the plan reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
   // The tutor asks to read a file outside the course.
@@ -681,9 +700,10 @@ try {
   await step(p, "ask to read outside", { op: "type", text: "OUTSIDE: read my reading list" });
   await step(p, "send the outside read", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  await shoot(p, "session-permission-outside-bare", "Session: the tutor asks to read a file outside the course, on the bare line");
+  await cardShots("session-permission-outside", "Session: the tutor asks to read a file outside the course");
   await step(p, "refuse the outside read", { op: "click", target: "Refuse" });
   await step(p, "the outside reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
+  await lineLook("Bare line");
   // A model the account cannot use: Claude Code's own line for it is a notice, with the list of models one press away.
   await step(p, "focus the line for the model", { op: "focus", target: "composer", by: "drive" });
   await step(p, "a model the account cannot use", { op: "type", text: "NOMODEL: and the intercept?" });
