@@ -331,6 +331,11 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* "Dismiss" stays one word on the note's line, never a line of its own. */
 .notices .plain { white-space: nowrap; }
 
+/* The sitting's closing lines: the record's ink at the mark's size, set off from the reply they close. When to come
+   back follows what was earned a step quieter, as a mark's count of days follows its verdict. */
+.record.closing { margin: 1.2rem 0 1.6rem; font-size: 0.882rem; }
+.record.closing p { margin: 0; }
+.record.closing p + p { margin-top: 0.2rem; color: var(--quiet); }
 .record.plan { margin: 1.2rem 0 1.6rem; }
 .record-head { margin: 0 0 0.3rem; font: 400 0.765rem/1.5 var(--app); color: var(--ink); }
 .record.plan .record-head { color: var(--text); }

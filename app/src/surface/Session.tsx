@@ -188,6 +188,7 @@ export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: strin
     if (said === "answer" && open) lesson.question = open;
     if (turn.noted && turn.posed && turn.task) lesson.posed = turn.task;
     if (owned[at].length > 0) lesson.marks = owned[at];
+    if (turn.closing && turn.closing.length > 0) lesson.closing = turn.closing;
     const change = session ? changeOf(session, turn.learner, turn.tutor) : null;
     if (change) lesson.change = change as PlanDiff;
     if (turn.noted) open = turn.task ?? null;
@@ -260,6 +261,7 @@ function liveTurn(session: SessionState): LessonTurn | null {
     ...(live.change ? { change: live.change } : {}),
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
+    ...(live.closing ? { closing: live.closing } : {}),
   };
 }
 

@@ -909,6 +909,10 @@ fn hook_notice(
             if hook == (NoticeHook::SessionStart { core_rules: false }) {
                 clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
             }
+            // A compaction drops the skill that says how a sitting ends.
+            if matches!(hook, NoticeHook::SessionStart { .. }) {
+                clauses.push((Clause::Required, crate::closing::END_GUIDANCE.into()));
+            }
         }
         (false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
