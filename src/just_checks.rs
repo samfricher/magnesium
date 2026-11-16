@@ -188,7 +188,7 @@ pub(crate) fn from_tool(
     let note = if asker.lesson_active {
         "Pose the checks and end as sitting_opener says.".to_owned()
     } else {
-        "No lesson is active in this conversation, and an answer is recorded only in one: before your reply, start or resume the Magnesium session as your instructions say (a new one with goal \"Quick checks\", with the learner's message as native_capture). Then pose the checks and end as sitting_opener says.".to_owned()
+        "No lesson is active in this conversation, and an answer is recorded only in one: before your reply, start one with learning_step {\"schema\":\"learner-model/v2\",\"action\":\"update\",\"request_id\":\"<new>\",\"session\":{\"operation\":\"start\",\"client_ref\":\"lesson\",\"goal\":\"Quick checks\"},\"native_capture\":{\"ticket\":\"<the prompt notice's ticket>\",\"text\":\"<the learner's message, exactly>\"}}, or resume theirs as your instructions say. Then pose the checks and end as sitting_opener says.".to_owned()
     };
     let mut out = answer(checks, note);
     out["sitting_opener"] = opener.text.into();
