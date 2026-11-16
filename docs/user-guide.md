@@ -135,6 +135,14 @@ Days with a marked answer: 2 in all. The latest: 2026-11-08, 2026-11-09
 
 Add `--json` for the same facts as data. The study window reads them from there. The data also counts what you did today: the answers you gave, the skills you answered for the first time, the passes you earned and the checks due tomorrow. The command changes nothing in the folder.
 
+When an answer earns a pass, Magnesium shows one more line from the record: the last time you got that skill wrong, with its day and label, and how many days the answer came after your last answer on the skill. The study window shows it under the mark. Claude Code in a terminal shows it once the tutor has recorded the answer. For example:
+
+```text
+Not right on Fri 13 Nov: sign of b. It held through the 3 days since you last answered it.
+```
+
+A skill you never got wrong gets only the days, and your first answer on a skill gets no line. A lost mark on a paper says the paper: "Lost marks on Midterm 2023, Mon 2 Nov: slope and Km." The `--json` data has these lines under `pass_receipts`.
+
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
 ## Add course material, and read a source beside the lesson
