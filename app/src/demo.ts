@@ -9,7 +9,7 @@
 //   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
 //   #tabs  #commands  #switch  #session-earlier  #source  #working
 //   #permission  #permission-command  #permission-unknown  #model-unavailable
-//   #paper  #paper-over  #paper-long  #upgrade  #not-set-up  #help-row  #symbols
+//   #paper  #paper-last  #paper-over  #paper-hours  #paper-days  #paper-long  #upgrade  #not-set-up  #help-row  #symbols
 //   #line-stuck  #line-stuck-typing  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
 //   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
 //   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-replace-newer  #setup-too-old
@@ -77,16 +77,19 @@ const modelChoice = (): ModelChoice => {
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
   return { models, failed: modelsFailed, pick, not_offered: !offered };
 };
-// #paper-over has run past its end, as a paper does when the window was closed and opened again later; #paper-long has a long name.
-let sitting: PaperSitting | null = has("paper", "paper-over", "paper-long")
-  ? {
-      target: "midterm-1",
-      name: has("paper-long") ? "Paper B, the full midterm from last year with every part of question four" : "Paper B",
-      path: paperB.path,
-      minutes: 50,
-      started_ms: Date.now() - (has("paper-over") ? 64 : 12) * 60_000,
-    }
-  : null;
+// #paper-over has run past its end, as a paper does when the window was closed and opened again later, and
+// #paper-hours and #paper-days further; #paper-last is in its last minute; #paper-long has a long name.
+const sittingAgo: Record<string, number> = { paper: 12, "paper-long": 12, "paper-last": 49.5, "paper-over": 64, "paper-hours": 50 + 190, "paper-days": 50 + 2 * 1440 + 30 };
+let sitting: PaperSitting | null =
+  state in sittingAgo
+    ? {
+        target: "midterm-1",
+        name: has("paper-long") ? "Paper B, the full midterm from last year with every part of question four" : "Paper B",
+        path: paperB.path,
+        minutes: 50,
+        started_ms: Date.now() - sittingAgo[state] * 60_000,
+      }
+    : null;
 let upgraded = !has("upgrade");
 let notSetUp = has("not-set-up");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
@@ -811,7 +814,10 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       await wait(200);
       return settle();
     case "paper":
+    case "paper-last":
     case "paper-over":
+    case "paper-hours":
+    case "paper-days":
     case "paper-long":
       return actions.goWorkspace(FOLDER);
     case "upgrade":

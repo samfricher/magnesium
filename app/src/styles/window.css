@@ -273,39 +273,66 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
 .work-day.earned { background: var(--ink); border-color: var(--ink); }
 
-/* A timed paper while it runs: its name and its end on one line, inside the ink rule a card has; its actions and its
-   two marks under it. In a narrow column the end goes under the name. */
-/* The container stops its first margin passing through, so the block keeps the space the name over it would. */
-.running-paper { container-type: inline-size; margin-top: 1.8rem; }
+/* A timed paper while it runs: the time, the paper's name and its clock inside the ink rule a card has; its actions,
+   the rule of the sitting and its two marks under it. */
+/* Its own formatting context stops its first margin passing through, so the block keeps the space the name over it would. */
+.running-paper { display: flow-root; margin-top: 1.8rem; }
 .running-paper > .list-head { margin-top: 0; }
 .paper-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.15rem 1.2rem;
   margin-left: calc(-1 * var(--hang));
-  padding: 0.2rem 0 0.25rem calc(var(--hang) - 2px);
+  padding: 0.15rem 0 0.2rem calc(var(--hang) - 2px);
   border-left: 2px solid var(--ink);
 }
-.paper-what { flex: 1 1 auto; min-width: 0; }
-.paper-when { flex: none; text-align: right; }
-.paper-name,
-.paper-end { margin: 0; font: 400 1.235rem/1.35 var(--read); color: var(--text); }
-.paper-name { overflow-wrap: anywhere; text-wrap: balance; }
-.paper-end { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.paper-note,
-.paper-left { margin: 0.1rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
-.paper-left { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* The one thing on the page a learner sitting the paper looks up for, at the desk: a step over the page's title. */
+.paper-time { margin: 0; font: 400 1.53rem/1.2 var(--read); color: var(--text); font-variant-numeric: tabular-nums; }
+/* The name says which paper, at a row's size; a very long one stops at two lines, and its title holds the rest. */
+.paper-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0.2rem 0 0;
+  font: 400 1rem/1.45 var(--read);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+/* The clock, as facts with a dot between. A fact that does not fit goes to the next line whole, and the dot before it
+   falls in the clipped strip left of the column, so no line starts on a dot. */
+.paper-facts {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0.1rem 0 0 -0.8em;
+  clip-path: inset(0 0 0 0.8em);
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+.paper-facts > span { position: relative; padding-left: 0.8em; }
+.paper-facts > span::before { content: "·"; position: absolute; left: 0.25em; }
 .running-paper > .page-acts { margin-top: 0.9rem; }
+/* Past its time: handing in, a row of its own, drawn as a step's choice is. */
+.paper-hand-in {
+  display: block;
+  width: calc(100% + var(--hang));
+  margin: 0.6rem 0 0 calc(-1 * var(--hang));
+  padding: 0.38rem var(--hang);
+  border-radius: 4px;
+  text-align: left;
+  font: 400 0.941rem/1.4 var(--app);
+  color: var(--text);
+}
+.paper-hand-in:hover:not(:disabled) { background: var(--tint); }
+.paper-hand-in:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
+:root[data-input="key"] .paper-hand-in:focus-visible { outline: none; }
+.paper-hand-in:disabled { color: var(--off); cursor: default; }
+.paper-hand-in + .page-acts { margin-top: 0.3rem; }
 .paper-confirm-text { margin: 0.9rem 0 0; max-width: 34em; font: 400 0.882rem/1.55 var(--app); color: var(--text); text-wrap: pretty; }
 .paper-confirm .page-acts { margin-top: 0.4rem; }
-.paper-marks { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 1.4rem; margin: 1.1rem 0 0; font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.paper-rule { margin: 1.1rem 0 0; font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.paper-marks { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 1.4rem; margin: 0.1rem 0 0; font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
 .paper-marks dt { color: var(--text); word-spacing: 0.15em; }
 .paper-marks dd { margin: 0; }
-@container (max-width: 26em) {
-  .paper-head { flex-direction: column; }
-  .paper-when { text-align: left; }
-}
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */

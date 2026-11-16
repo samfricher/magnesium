@@ -446,6 +446,23 @@ try {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
+  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  for (const [stem, minutesAgo, what] of [
+    ["paper-last", 74.3, "Workspace: a paper in its last minute"],
+    ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
+    ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
+  ]) {
+    const s = await paperWindow(stem, sitting(minutesAgo, "Midterm 2023"));
+    await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+    await settle(s, 800);
+    await shoot(s, `workspace-${stem}`, what);
+    if (stem === "paper-hours") {
+      await step(s, "end without handing in, past the end", { op: "click", target: "sitting-end", by: "drive" });
+      await settle(s, 300);
+      await shoot(s, "workspace-paper-hours-end", "Workspace: ending a paper past its end asks first, in place");
+    }
+    await quit(s);
+  }
 
   // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
   // here only answers --version; it is never chosen.
