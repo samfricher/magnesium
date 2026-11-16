@@ -345,8 +345,11 @@ try {
   await step(q, "end without handing in", { op: "click", target: "sitting-end", by: "drive" });
   await settle(q, 300);
   await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
-  const back = await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
-  if (!String(JSON.stringify(back.focused ?? "")).includes("sitting-end")) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
+  await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
+  await settle(q, 200);
+  // A key that does nothing, to read where the keyboard is once the block is back.
+  const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
+  if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
   await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
   await step(q, "end the paper", { op: "click", target: "sitting-end-now", by: "drive" });
   await settle(q, 800);
