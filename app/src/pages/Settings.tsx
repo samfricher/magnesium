@@ -166,7 +166,7 @@ const PALETTES: Record<"ink" | "ground" | "text", [string[], string[]]> = {
  * that opens a grid of swatches (radio buttons: one Tab stop, the arrow keys
  * choose) and a field for any colour as #rrggbb. Esc closes the grid.
  */
-function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string; named?: boolean }) {
+function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string }) {
   const [open, setOpen] = useState(false);
   const hex = hexOf(props.value, props.dark, props.fallback);
   const [typed, setTyped] = useState(hex);
@@ -190,10 +190,7 @@ function ColourField(props: { label: string; value: string; dark: boolean; fallb
         onClick={() => setOpen((shown) => !shown)}
       >
         <span className="swatch-face" style={{ background: hex }} />
-        {/* Light and dark are named once, on the first row; the rows under it keep the same columns. */}
-        <span className={props.named ? undefined : "unnamed"} aria-hidden={props.named ? undefined : true}>
-          {props.label}
-        </span>
+        <span>{props.label}</span>
       </button>
       {props.own && props.value !== "" && (
         <button type="button" className="plain" onClick={() => props.onPick("")}>
@@ -438,8 +435,8 @@ export function SettingsPage(props: Props) {
             ) : null}
           </Setting>
           <Setting name="Ink">
-            <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} named fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
-            <ColourField kind="ink" name="Ink" label="in dark" value={prefs.inkDark} dark named fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
+            <ColourField kind="ink" name="Ink" label="in light" value={prefs.ink} dark={false} fallback={INKS["blue-black"][0]} onPick={(ink) => change({ ink })} />
+            <ColourField kind="ink" name="Ink" label="in dark" value={prefs.inkDark} dark fallback={INKS["blue-black"][1]} onPick={(inkDark) => change({ inkDark })} />
             <span className="swatches" role="radiogroup" aria-label="Ink">
               {Object.entries(INKS).map(([name, [light, dark]]) => {
                 const chosen = prefs.ink === name && prefs.inkDark === name;

@@ -1,7 +1,8 @@
 // The tab bar, from the workspace editor concept (#68): one quiet row at the
 // top, beside the traffic lights, that the window is dragged by. Home is
 // always first; then the open sessions; then Settings when it is open. Its
-// right end holds the plan's switch (in a session) and Settings.
+// right end holds the plan's switch (in a session) and Settings, which is
+// left out while Settings has a tab.
 //
 // It is a tablist that holds tabs only, one Tab stop: ← → move along it,
 // Home and End go to its ends, Return or Space shows the tab, Delete closes
@@ -49,6 +50,16 @@ export const Tabs = memo(function Tabs(props: Props) {
   useEffect(() => {
     list.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [props.active, props.tabs.length]);
+
+  // The Settings button goes while Settings has a tab. Pressed from the keyboard, it would take the focus with it to
+  // nowhere, so the focus moves onto the Settings tab it opened.
+  const settingsOpen = props.tabs.some((tab) => tab.kind === "settings");
+  const keysOnSettings = useRef(false);
+  useEffect(() => {
+    if (props.active !== "settings" || !keysOnSettings.current) return;
+    keysOnSettings.current = false;
+    document.getElementById(tabId("settings"))?.focus();
+  }, [props.active]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, at: number) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -149,9 +160,20 @@ export const Tabs = memo(function Tabs(props: Props) {
             Panel
           </button>
         )}
-        <button type="button" className={props.active === "settings" ? "bar-act current" : "bar-act"} data-drive="settings" title={`Settings   ${props.settingsKey}`} onClick={props.onSettings}>
-          Settings
-        </button>
+        {!settingsOpen && (
+          <button
+            type="button"
+            className="bar-act"
+            data-drive="settings"
+            title={`Settings   ${props.settingsKey}`}
+            onClick={(event) => {
+              keysOnSettings.current = document.activeElement === event.currentTarget;
+              props.onSettings();
+            }}
+          >
+            Settings
+          </button>
+        )}
       </div>
     </header>
   );
