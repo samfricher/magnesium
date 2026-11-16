@@ -191,7 +191,7 @@ pub(crate) fn from_tool(
     // once took five tries to start it.
     let started = !asker.lesson_active && start().is_ok();
     let note = if asker.lesson_active || started {
-        "Pose the checks and end as sitting_opener says.".to_owned()
+        "Pose the checks as sitting_opener says.".to_owned()
     } else {
         "No lesson is active in this conversation, and an answer is recorded only in one: before your reply, start one with learning_step {\"schema\":\"learner-model/v2\",\"action\":\"update\",\"request_id\":\"<new>\",\"session\":{\"operation\":\"start\",\"client_ref\":\"lesson\",\"goal\":\"Quick checks\"},\"native_capture\":{\"ticket\":\"<the prompt notice's ticket>\",\"text\":\"<the learner's message, exactly>\"}}, or resume theirs as your instructions say. Then pose the checks and end as sitting_opener says.".to_owned()
     };

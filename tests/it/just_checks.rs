@@ -192,10 +192,7 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
     let opener = asked["sitting_opener"].as_str().unwrap();
     assert!(opener.starts_with("Quick checks alone."), "{opener}");
     // A lesson is active here, so the note needs no start.
-    assert_eq!(
-        asked["note"],
-        "Pose the checks and end as sitting_opener says."
-    );
+    assert_eq!(asked["note"], "Pose the checks as sitting_opener says.");
     // Asked twice, it is the same sitting with the same checks.
     let again = step(
         &e,
@@ -217,10 +214,7 @@ fn other_words_reach_the_same_sitting_through_the_tutor() {
         json!({"schema":"learner-model/v2","action":"just_checks"}),
     );
     assert_eq!(elsewhere["lesson_started"], "Quick checks", "{elsewhere}");
-    assert_eq!(
-        elsewhere["note"],
-        "Pose the checks and end as sitting_opener says."
-    );
+    assert_eq!(elsewhere["note"], "Pose the checks as sitting_opener says.");
     let input = json!({"session_id":"conv-2","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":"q-1","prompt":"-5"});
     let notice = v2::context(&run_hook_with_host_flag(
         &e,
