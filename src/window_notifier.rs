@@ -20,6 +20,8 @@ use crate::workspace::GlobalPaths;
 /// The flag the window's program takes to schedule its notification again
 /// and exit, with no window.
 pub(crate) const REFRESH_FLAG: &str = "--refresh-due-notifications";
+/// Where the window's program looks for the runtime to run, before its PATH.
+const WINDOW_RUNTIME_ENV: &str = "MAGNESIUM_APP_RUNTIME";
 
 /// Name the window's program and the folder it keeps its own files in, or
 /// with None forget them.
@@ -89,6 +91,11 @@ pub(crate) fn record_changed() {
     };
     let mut command = Command::new(program);
     command.arg(REFRESH_FLAG);
+    // It reads the record through this very runtime, the one that changed
+    // it, not whichever `magnesium` its PATH would find first.
+    if let Ok(runtime) = std::env::current_exe() {
+        command.env(WINDOW_RUNTIME_ENV, runtime);
+    }
     if let Some(home) = home {
         command.arg(home);
     }

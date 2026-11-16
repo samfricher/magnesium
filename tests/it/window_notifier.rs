@@ -18,7 +18,10 @@ fn stand_in(e: &TestEnvironment) -> (PathBuf, PathBuf) {
     let program = contents.join("MacOS/magnesium-window");
     fs::write(
         &program,
-        format!("#!/bin/sh\necho \"$*\" >> '{}'\n", marker.display()),
+        format!(
+            "#!/bin/sh\necho \"$* runtime=$MAGNESIUM_APP_RUNTIME\" >> '{}'\n",
+            marker.display()
+        ),
     )
     .unwrap();
     #[cfg(unix)]
@@ -86,10 +89,16 @@ fn a_committed_change_starts_the_named_window_program_and_off_stops_it() {
         .unwrap();
     assert!(named.status.success(), "{named:?}");
     capture(&e, "named", 2, &session);
-    assert_eq!(
-        starts(&marker, 1),
-        [format!("--refresh-due-notifications {}", home.display())]
+    let started = starts(&marker, 1);
+    assert_eq!(started.len(), 1, "{started:?}");
+    assert!(
+        started[0].starts_with(&format!(
+            "--refresh-due-notifications {} runtime=/",
+            home.display()
+        )),
+        "it is started with the window's folder and this runtime: {started:?}"
     );
+    assert!(started[0].ends_with("magnesium"), "{started:?}");
 
     let off = e
         .command()

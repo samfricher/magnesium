@@ -111,7 +111,7 @@ pub fn change(root: &Path, folders: &[String], on: bool, time: Option<String>) -
 
 fn refresh_now(root: &Path, folders: &[String]) -> State {
     let permission = permission();
-    let (kept, notices) = reminder::plan(root, folders);
+    let (kept, notices) = reminder::plan(root, folders, &build());
     let handed = match permission {
         Permission::Allowed | Permission::Quiet => &notices[..],
         // Nothing can arrive; anything still pending from before is taken away.
@@ -134,6 +134,23 @@ pub fn current(root: &Path) -> State {
         .cloned()
         .collect();
     state(&kept, &ahead, permission())
+}
+
+/// This build of the app, as the Mac tells builds apart: by the program
+/// itself. The same program, started by the runtime or as the window, is
+/// the same build.
+fn build() -> String {
+    std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .map(|meta| {
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_secs());
+            format!("{}-{modified}", meta.len())
+        })
+        .unwrap_or_default()
 }
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
