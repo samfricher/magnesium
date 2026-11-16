@@ -126,6 +126,89 @@ async function quit(window) {
 
 const settle = (window, ms = 500) => window.op({ op: "wait", ms });
 
+/** A timed paper running, in each of its states, with the page as the paper alone until it is handed in or ended.
+ * PAGES_ONLY=paper photographs only these. */
+async function paperStates() {
+  const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
+  // While a paper runs the page is that paper: none of what the folder holds is drawn, and all of it is back after.
+  const rest = ["Your work", "Material", "Take this folder off the list"];
+  const pageShows = async (window, label, running) => {
+    const read = await window.op({ op: "text" });
+    const text = String(read.text ?? "");
+    const drawn = rest.filter((words) => text.includes(words));
+    run.steps.push({ label, drawn });
+    if (running && drawn.length > 0) problem(`${label}: the page draws ${drawn.join(", ")} while the paper runs`);
+    if (!running && drawn.length !== rest.length) problem(`${label}: the page lacks ${rest.filter((w) => !drawn.includes(w)).join(", ")} after the paper`);
+  };
+  // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
+  // Sitting one from the page would open the paper in the Mac's own viewer, so the sitting is written here.
+  const course = realpathSync(join(scratch, "Intro-Statistics"));
+  const sitting = (minutesAgo, name) => ({ target: "midterm-2", name, path: "Study/midterm-2/papers/Midterm 2023.pdf", minutes: 75, started_ms: Date.now() - minutesAgo * 60_000 });
+  const paperWindow = (name, paper) => {
+    const home = join(scratch, `window-${name}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), JSON.stringify({ recent: kept.recent, folders: { [course]: { paper } } }, null, 2));
+    return launch(name, home);
+  };
+  const q = await paperWindow("paper", sitting(12, "Midterm 2023"));
+  await step(q, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper", "Workspace: a timed paper running, the page's lead");
+  await pageShows(q, "the paper alone on the page", true);
+  await step(q, "open the paper again", { op: "click", target: "sitting-open", by: "drive" });
+  await settle(q, 1800);
+  await shoot(q, "workspace-paper-open", "Workspace: the running paper with the paper itself open beside the page");
+  await closeDocument(q, "Midterm 2023");
+  await step(q, "end without handing in", { op: "click", target: "sitting-end", by: "drive" });
+  await settle(q, 300);
+  await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
+  await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
+  await settle(q, 200);
+  // A key that does nothing, to read where the keyboard is once the block is back.
+  const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
+  if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
+  await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
+  await step(q, "end the paper", { op: "click", target: "sitting-end-now", by: "drive" });
+  await settle(q, 800);
+  await shoot(q, "workspace-paper-ended", "Workspace: the paper ended without handing in, the page as before it");
+  await pageShows(q, "the page back after the paper", false);
+  const after = await step(q, "where the keyboard is after the paper", { op: "key", key: "Shift" });
+  if (!/data-drive=next\b/.test(String(after.focused ?? ""))) problem(`after the paper, the keyboard is not on Next: ${JSON.stringify(after.focused)}`);
+  await quit(q);
+  const r = await paperWindow("paper-over", sitting(100, "Midterm 2023, all three questions with every part, from the paper the course set last spring"));
+  await step(r, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(r, 800);
+  await shoot(r, "workspace-paper-over", "Workspace: a paper with a long name, past its end");
+  await step(r, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-narrow", "Workspace: the running paper at 720 by 560");
+  for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(r, 400);
+  await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(r);
+  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  for (const [stem, minutesAgo, what] of [
+    ["paper-last", 74.3, "Workspace: a paper in its last minute"],
+    ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
+    ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
+  ]) {
+    const s = await paperWindow(stem, sitting(minutesAgo, "Midterm 2023"));
+    await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+    await settle(s, 800);
+    await shoot(s, `workspace-${stem}`, what);
+    if (stem === "paper-hours") {
+      await step(s, "end without handing in, past the end", { op: "click", target: "sitting-end", by: "drive" });
+      await settle(s, 300);
+      await shoot(s, "workspace-paper-hours-end", "Workspace: ending a paper past its end asks first, in place");
+    }
+    await quit(s);
+  }
+
+}
+
+
 /** Close a document: from the panel beside the page or lesson where there is one, else the sheet over it, with Esc. */
 async function closeDocument(window, title) {
   const closed = await window.op({ op: "click", target: `close-doc-${title}`, by: "drive" });
@@ -502,6 +585,11 @@ async function answerPages() {
 }
 
 try {
+  if (process.env.PAGES_ONLY === "paper") {
+    await paperStates();
+    throw "only";
+  }
+
   if (process.env.PAGES_ONLY === "work") {
     await workRecord();
     throw "only";
@@ -851,63 +939,7 @@ try {
   await shoot(p, "workspace-not-set-up", "Workspace: a folder Magnesium is not set up in");
   await quit(p);
 
-  // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
-  // Sitting one from the page would open the paper in the Mac's own viewer, so the sitting is written here.
-  const course = realpathSync(join(scratch, "Intro-Statistics"));
-  const sitting = (minutesAgo, name) => ({ target: "midterm-2", name, path: "Study/midterm-2/papers/Midterm 2023.pdf", minutes: 75, started_ms: Date.now() - minutesAgo * 60_000 });
-  const paperWindow = (name, paper) => {
-    const home = join(scratch, `window-${name}`);
-    mkdirSync(home, { recursive: true });
-    writeFileSync(join(home, "state.json"), JSON.stringify({ recent: kept.recent, folders: { [course]: { paper } } }, null, 2));
-    return launch(name, home);
-  };
-  const q = await paperWindow("paper", sitting(12, "Midterm 2023"));
-  await step(q, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
-  await settle(q, 800);
-  await shoot(q, "workspace-paper", "Workspace: a timed paper running, the page's lead");
-  await step(q, "end without handing in", { op: "click", target: "sitting-end", by: "drive" });
-  await settle(q, 300);
-  await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
-  await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
-  await settle(q, 200);
-  // A key that does nothing, to read where the keyboard is once the block is back.
-  const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
-  if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
-  await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
-  await step(q, "end the paper", { op: "click", target: "sitting-end-now", by: "drive" });
-  await settle(q, 800);
-  await shoot(q, "workspace-paper-ended", "Workspace: the paper ended without handing in, the page as before it");
-  await quit(q);
-  const r = await paperWindow("paper-over", sitting(100, "Midterm 2023, all three questions with every part, from the paper the course set last spring"));
-  await step(r, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
-  await settle(r, 800);
-  await shoot(r, "workspace-paper-over", "Workspace: a paper with a long name, past its end");
-  await step(r, "720 by 560", { op: "frame", width: 720, height: 560 });
-  await settle(r, 400);
-  await shoot(r, "workspace-paper-narrow", "Workspace: the running paper at 720 by 560");
-  for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
-  await settle(r, 400);
-  await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
-  // The text size is kept with the window's settings, which outlast this run: put it back.
-  await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
-  await quit(r);
-  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
-  for (const [stem, minutesAgo, what] of [
-    ["paper-last", 74.3, "Workspace: a paper in its last minute"],
-    ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
-    ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
-  ]) {
-    const s = await paperWindow(stem, sitting(minutesAgo, "Midterm 2023"));
-    await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
-    await settle(s, 800);
-    await shoot(s, `workspace-${stem}`, what);
-    if (stem === "paper-hours") {
-      await step(s, "end without handing in, past the end", { op: "click", target: "sitting-end", by: "drive" });
-      await settle(s, 300);
-      await shoot(s, "workspace-paper-hours-end", "Workspace: ending a paper past its end asks first, in place");
-    }
-    await quit(s);
-  }
+  await paperStates();
 
   await answerPages();
   await workRecord();
