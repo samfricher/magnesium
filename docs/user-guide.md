@@ -76,6 +76,19 @@ You can decline any of it. A decline costs nothing: it is recorded as your choic
 
 To turn this off for a study folder, run `magnesium opener off` there. Checks are still scheduled, but sittings no longer open with them. `magnesium opener on` turns it back on. `magnesium opener block` also makes the tutor wait to teach new material until each quick check has been asked or declined.
 
+## End a sitting
+
+When you are stopping, say so in your own words: "that's enough for today", "I have to go". The tutor tells Magnesium, closes in a line and sets no task. Under its reply you then see at most two lines, worked out from your learning history and never from the tutor's words: the passes you earned today, and when each skill you answered today can count next. For example:
+
+```text
+Earned today: a pass on slope and Km.
+Can count next: from tomorrow, units of a rate; from Thu 19 Nov, slope and Km.
+```
+
+A pass that proves a skill says so ("the pass that proves rate equation"). A wrong or partly right answer earns no pass, so it is never named as earned, but its skill's next day is. If no answer was marked today, nothing is shown: a declined question is your choice, not an answer. Asking to pause or stop the lesson ends the sitting the same way. In Claude Code in a terminal the lines come from Claude Code itself, after the reply, each starting "Stop says:". In the study window they sit under the reply, and stay there when you open the lesson again. Closing the window or the terminal without saying so shows nothing.
+
+From the study folder, `magnesium closing` prints the lines for today as they would show if the sitting ended now, and `--json` the same as data with when the current sitting ended. The command changes nothing in the folder.
+
 ## Your gap log
 
 Magnesium keeps every gap-log row in your learning history and writes the Gaps table of `gap-log.md` from it after each change. It works out each row's passes, status and next redo date itself, with the rule above, and makes the gaps shorter to fit before the date in your plan's When row. If a row is wrong, tell the tutor: it corrects the mark or the row, and the table is written again. If you edit the table by hand, nothing about what is due changes; the next time Magnesium writes the table, it saves your edited file in `.magnesium/backups/gap-logs/` and the tutor asks what you meant.
