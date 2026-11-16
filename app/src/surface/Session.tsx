@@ -131,8 +131,9 @@ export type OpenTask = { text: string; at: number };
 /**
  * The task open now. The record says so after each turn, in the tutor's own
  * words: Magnesium's engine keeps it, and on Claude Code's the window reads
- * it from the runtime. Only with a runtime too old to say is a task found by
- * the bold word a reply opens it with.
+ * it from the runtime. A task is found by the bold word a reply opens it
+ * with when the runtime is too old to say, and on Claude Code's engine when
+ * the record names none: its tutor can set a task and not save it.
  */
 export function openTaskOf(session: SessionState, turns: LessonTurn[]): OpenTask | null {
   if (session.task !== undefined && !(session.task.text === null && session.task.fallback)) {
