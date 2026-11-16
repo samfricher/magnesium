@@ -180,8 +180,8 @@ fn miss_words(miss: &Miss) -> String {
     }
 }
 
-/// The days the pass held through, counted as evidence of what the
-/// learner's memory kept, never as time away.
+/// The days since the learner's previous answer on the skill, said as what
+/// this answer held through.
 fn held_words(days: i64) -> String {
     if days == 1 {
         "It held through the day since you last answered it.".to_owned()
@@ -193,43 +193,6 @@ fn held_words(days: i64) -> String {
 impl Receipt {
     /// The line the window and a terminal show.
     pub(crate) fn text(&self) -> String {
-        // TEMPORARY, for photographing the wording options; removed before merge.
-        match std::env::var("MAGNESIUM_RECEIPT_WORDS").as_deref() {
-            Ok("plain") => {
-                let mut said: Vec<String> = self.miss.iter().map(miss_words).collect();
-                if let Some(days) = self.days {
-                    said.push(if days == 1 {
-                        "Your last answer on it was the day before this one.".to_owned()
-                    } else {
-                        format!("Your last answer on it was {days} days before this one.")
-                    });
-                }
-                return said.join(" ");
-            }
-            Ok("ledger") => {
-                let mut said: Vec<String> = Vec::new();
-                if let Some(miss) = &self.miss {
-                    let words = miss_words(miss);
-                    let words = words.trim_end_matches('.');
-                    let (head, label) = words.split_once(": ").unwrap_or((words, ""));
-                    said.push(head.replace(" on ", " ").replacen(", ", " ", 1));
-                    said.push(label.to_owned());
-                }
-                if let Some(days) = self.days {
-                    said.push(if days == 1 {
-                        "a day since you last answered it".to_owned()
-                    } else {
-                        format!("{days} days since you last answered it")
-                    });
-                }
-                return said
-                    .into_iter()
-                    .filter(|part| !part.is_empty())
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-            }
-            _ => {}
-        }
         let mut said: Vec<String> = Vec::new();
         if let Some(miss) = &self.miss {
             said.push(miss_words(miss));
