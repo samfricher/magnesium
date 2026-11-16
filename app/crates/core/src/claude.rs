@@ -1500,7 +1500,7 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
             }
             Some("tool_use" | "server_tool_use") => {
                 begin_turn(shared);
-                if block["name"].as_str().is_some_and(is_context_tool) {
+                if block["name"].as_str().is_some_and(is_context_tool) || asks_for_checks(block) {
                     shared.opening.record_opened.store(true, Ordering::SeqCst);
                 }
                 shared.emit(AgentEvent::Working {
@@ -1574,6 +1574,15 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
 /// learner's record at the start of a lesson.
 fn is_context_tool(name: &str) -> bool {
     name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__context")
+}
+
+/// `learning_step` `just_checks` reads the record's due checks and starts the
+/// lesson their answers are recorded in, so a lesson of quick checks alone
+/// opens the record with it, and needs no context read.
+fn asks_for_checks(block: &Value) -> bool {
+    block["name"].as_str().is_some_and(|name| {
+        name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__learning_step")
+    }) && block["input"]["action"] == "just_checks"
 }
 
 /// After a new lesson's first reply, at an effort the learner picked: a
@@ -1970,6 +1979,20 @@ impl Drop for ClaudeConversation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asking_for_the_checks_alone_opens_the_record() {
+        let tool = format!("mcp__{PLUGIN}__learning_step");
+        assert!(asks_for_checks(
+            &json!({"name": tool, "input": {"schema": "learner-model/v2", "action": "just_checks"}})
+        ));
+        assert!(!asks_for_checks(
+            &json!({"name": tool, "input": {"schema": "learner-model/v2", "action": "update"}})
+        ));
+        assert!(!asks_for_checks(
+            &json!({"name": "Bash", "input": {"action": "just_checks"}})
+        ));
+    }
 
     #[test]
     fn a_tool_result_that_says_a_sitting_ended_is_noticed() {
