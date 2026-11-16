@@ -330,6 +330,31 @@ try {
   await step(w, "close Stuck again", { op: "key", key: "Escape" });
   await step(w, "close the symbols on the bare line", { op: "key", key: "Escape" });
   await step(w, "clear the line", { op: "type", text: "", replace: true });
+  await step(w, "attach a photo on the bare line", { op: "attach", path: photo });
+  await settle(w, 400);
+  await shoot(w, "session-bare-attached", "Session: a photo on the bare line, before sending");
+  await step(w, "take it off the bare line", { op: "click", target: "×" });
+  await step(w, "focus the bare line for a slow reply", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "ask for a slow reply on the bare line", { op: "type", text: "VERYSLOW: and the margin of error?" });
+  await step(w, "send it from the bare line", { op: "key", key: "Enter" });
+  await step(w, "the reply begins over the bare line", { op: "wait_reply", timeout_ms: TURN_MS });
+  await settle(w, 700);
+  await shoot(w, "session-bare-reply", "Session: the tutor's reply arriving, the bare line under it saying how to stop it");
+  await step(w, "the reply ends over the bare line", { op: "wait_idle", timeout_ms: TURN_MS });
+  // The bare foot in a small window with the largest text: the open question, Stuck's row and the words.
+  const wide = await step(w, "the window's size", { op: "frame" });
+  await step(w, "720 by 560, bare", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(w, "focus the small bare line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the small bare line", { op: "type", text: ANSWER });
+  await step(w, "stuck on the small bare line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 400);
+  await shoot(w, "session-bare-narrow-stuck", "Session: Stuck open on the bare line at 720 by 560, the largest text");
+  await step(w, "close Stuck on the small bare line", { op: "key", key: "Escape" });
+  await step(w, "clear the small bare line", { op: "type", text: "", replace: true });
+  // The text size is kept with the window's settings, which outlast this run: put it back.
+  await step(w, "the text back to its own size, bare", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(w, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
   // Before a lesson the line ends in More alone.
   await step(w, "a new session on the bare line", { op: "click", target: "new-session", by: "drive" });
   await settle(w, 800);
@@ -484,6 +509,23 @@ try {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
+  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  for (const [stem, minutesAgo, what] of [
+    ["paper-last", 74.3, "Workspace: a paper in its last minute"],
+    ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
+    ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
+  ]) {
+    const s = await paperWindow(stem, sitting(minutesAgo, "Midterm 2023"));
+    await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+    await settle(s, 800);
+    await shoot(s, `workspace-${stem}`, what);
+    if (stem === "paper-hours") {
+      await step(s, "end without handing in, past the end", { op: "click", target: "sitting-end", by: "drive" });
+      await settle(s, 300);
+      await shoot(s, "workspace-paper-hours-end", "Workspace: ending a paper past its end asks first, in place");
+    }
+    await quit(s);
+  }
 
   await workRecord();
 
@@ -497,6 +539,19 @@ try {
   const n = await launch("replace", replaceHome, agent, { MAGNESIUM_APP_BUNDLED: newer, MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") });
   await settle(n, 800);
   await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
+  // Before the learner chooses, a lesson runs on the copy already on this Mac, as Home says.
+  await step(n, "open the workspace before choosing", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(n, 800);
+  await step(n, "a new session before choosing", { op: "click", target: "new-session", by: "drive" });
+  await settle(n, 800);
+  await step(n, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(n, "start the lesson", { op: "key", key: "Enter" });
+  await step(n, "the first task, on the installed copy", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  const before = await n.op({ op: "text" });
+  if (/not set up for lessons/.test(String(before.text ?? ""))) problem("replace: the lesson did not start before choosing a copy");
+  const opened = await n.op({ op: "session" });
+  if (!opened.ok || opened.phase !== "lesson" || !opened.task) problem(`replace: no task in the lesson before choosing a copy: ${JSON.stringify(opened)}`);
+  await shoot(n, "session-different-program", "Session: a lesson on the copy already on this Mac, before choosing");
   await quit(n);
 } catch (error) {
   if (error !== "only") problem(`stopped: ${error?.stack ?? error}`);

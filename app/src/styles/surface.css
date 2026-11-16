@@ -835,15 +835,17 @@ button.line-end:hover { color: var(--text); }
 .line-menu-detail { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
 :root[data-input="key"] .line-menu-row:focus-visible { outline: none; background: var(--tint); }
 
-/* Stuck: its rows in the line's own flow, above the words, drawn as a card's choices are, the labels on the
-   column's edge. The line grows by this one row, so the question above it is not covered. */
+/* Stuck: its rows in the line's own flow, above the words, on the column's edge. The line grows by this one row, so
+   the question above it is not covered. They are the line's controls, so they are said as Stuck, More and
+   "⌘. stop the reply" are: small, grey, the key before its word. In the reading size and the text's colour they
+   read as one more line of the transcript, between the question and the words. */
 .line-menu.inline {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 0.6rem;
+  gap: 0 1.1rem;
   min-width: 0;
-  margin: 0 -0.5rem 0.45rem;
+  margin: 0 0 0.3rem;
   padding: 0;
   background: none;
   border: 0;
@@ -852,21 +854,19 @@ button.line-end:hover { color: var(--text); }
 }
 .line-menu.inline .line-menu-row {
   width: auto;
-  gap: 0.5rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  gap: 0.3em;
+  padding: 0.1rem 0;
   justify-content: flex-start;
+  font: 400 0.765rem/1.6 var(--app);
+  color: var(--quiet);
 }
-/* In the soft field, a hairline parts the row from the words under it, on the words' own column. */
-:root[data-field="soft"] .line-menu.inline { margin-bottom: 0.6rem; padding-bottom: 0.45rem; }
-:root[data-field="soft"] .line-menu.inline::after {
-  content: "";
-  position: absolute;
-  left: 0.5rem;
-  right: 0.5rem;
-  bottom: 0;
-  border-top: 1px solid var(--edge);
-}
+.line-menu.inline .line-menu-key { order: -1; font: inherit; color: var(--hint); }
+/* The choice Return would take, or the one pointed at, in the text's colour; no tint, as the line's words have none. */
+.line-menu.inline .line-menu-row:hover:not(:disabled),
+.line-menu.inline .line-menu-row:focus { background: none; color: var(--text); }
+.line-menu.inline .line-menu-row:disabled,
+.line-menu.inline .line-menu-row:disabled .line-menu-key { color: var(--off); }
+:root[data-input="key"] .line-menu.inline .line-menu-row:focus-visible .line-menu-label { text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 .line.lesson .line-tools .keys { margin-right: 0.15em; }
 /* Files going with the next message sit on the row, before the words. */
 .line.lesson .attached { flex: none; max-width: 50%; margin: 0 0 0.22rem; }
@@ -882,15 +882,20 @@ button.line-end:hover { color: var(--text); }
   overflow: hidden;
 }
 
-/* The bare line: the learner's "›" hung in the margin, in the quiet grey every line of theirs carries. */
+/* The bare line: the learner's "›" hung in the margin, as every line they sent has one. The sent ones are grey and
+   this one is in the ink: on the bare line nothing else but the caret said which words had not gone yet, and after
+   a notice that asks for a message again, the learner could not tell. */
 :root:not([data-field="soft"]) .line.lesson .field-row::before {
   content: "›";
   position: absolute;
   left: calc(-1 * var(--hang));
   top: 0;
   font: 400 0.882rem/1.6 var(--mono);
-  color: var(--hint);
+  color: var(--ink);
 }
+/* The bare foot stands further from the last turn than turns stand from each other (1.5rem), so the line under it
+   is not read as one more turn. The soft field's shade does this on its own. */
+:root:not([data-field="soft"]) .foot:not(.asking) { margin-top: 2.6rem; }
 
 /* The soft field: one row in a shade of the page, the words at the column's edge. */
 :root[data-field="soft"] .line.lesson {
@@ -898,6 +903,10 @@ button.line-end:hover { color: var(--text); }
   padding: 10px var(--field-in);
   border-radius: 13px;
   background: var(--well);
+  /* The quiet grey is mixed for the page's ground; on the field's shade it came to 4.4:1 in light, under the 5:1 the
+     grey is meant to keep. Mixed for the shade here, it is about 5:1 in light and dark. */
+  --quiet: color-mix(in srgb, var(--text) 66%, var(--well));
+  --hint: var(--quiet);
 }
 
 /* What the learner sent: every message drawn the same way. */
