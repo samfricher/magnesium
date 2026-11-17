@@ -575,7 +575,10 @@ async function run(op: Op): Promise<Result> {
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
       // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
-      return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView() };
+      // What a screen reader is told of the newest mark, and the rings beside each mark with whether its day is filling.
+      const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
+      const passDays = Array.from(document.querySelectorAll<HTMLElement>('.session.in-front [data-role="pass-days"]')).map((days) => ({ day: Number(days.dataset.day), arriving: days.querySelector(".arriving") !== null }));
+      return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView(), mark_said: markSaid, pass_days: passDays };
     }
     case "smooth": {
       // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`

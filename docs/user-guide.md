@@ -158,6 +158,8 @@ Not right on Fri 13 Nov: sign of b. It held through the 3 days since you last an
 
 A skill you never got wrong gets only the days, and your first answer on a skill gets no line. A lost mark on a paper says the paper: "Lost marks on Midterm 2023, Mon 2 Nov: slope and Km." The `--json` data has these lines under `pass_receipts`.
 
+In the study window, a mark that earns a pass also shows its skill's three days in the margin to the left of the mark: the days earned filled, in the same rings as the workspace's Your work. The day just earned fills as the mark arrives, unless the Mac is set to reduce motion. A wrong, partly right, helped or declined answer shows its words alone. A screen reader reads each mark once, as it arrives.
+
 The first time this version opens a study folder from an earlier version, it upgrades the learning history once. It first copies it to `.magnesium/backups/`. Quick checks kept in `.magnesium/sittings.sqlite` by an earlier version move into the learning history then too. So do the help steps and tag readings the tutor wrote into your learner record, such as "example step (discrete expected value): partly worked" or "sound from MockA Q3". To go back to the earlier version, put that copy in place of `.magnesium/state.sqlite`.
 
 ## Add course material, and read a source beside the lesson
