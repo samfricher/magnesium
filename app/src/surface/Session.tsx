@@ -1739,11 +1739,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     />
                   );
                 })}
-                {/* Home's answer was put on the line because the check posed is not the one Home showed: said in the
-                    lesson, under the reply, until the learner next sends anything. */}
+                {/* Home's answer was put on the line because the window could not match the check posed to the one Home
+                    showed: said in the lesson, under the reply, until the learner next sends anything. The words say
+                    "may not be": the same note shows when another check was posed, when the record was slow to say
+                    which was, and when the reply posed none, and only the first is known to be another check. */}
                 {otherCheck !== null && !isBusyNow(session) && (
                   <p className="record quiet other-check" data-role="other-check">
-                    This is not the check Home asked, so your answer from Home was not sent. It is on the line, to send for this one or to change.
+                    Your answer from Home was not sent: this may not be the check Home asked. It is on the line, to send for this one or to change.
                   </p>
                 )}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
