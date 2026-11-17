@@ -5,6 +5,8 @@
 Rust is pinned in `rust-toolchain.toml`. Repository checks also need Python 3.11+.
 The study window under `app/` is a separate Cargo workspace. `python3 ci/check.py`
 does not build or test it. Its own check is `app/scripts/check.sh`.
+`app/scripts/prove.sh` reads which files a change touches and runs, one after
+another, the parts of both checks picked for them.
 
 From the repository root, run the local checks:
 

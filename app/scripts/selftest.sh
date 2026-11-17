@@ -12,9 +12,10 @@
 # Set MAGNESIUM_APP_BIN to check another build, such as the one inside
 # target/release/bundle/macos/Magnesium.app/Contents/MacOS/.
 #
-# Keep other windows off it while it runs: pdf.js draws a page on animation
-# frames, which WebKit stops for a window that is covered, so a PDF step can
-# time out under another window.
+# Keep other windows off it while it runs: WebKit stops animation frames for
+# a window that is covered. pdf.js draws a page on them and the step that
+# shortens the line waits for them, so either can time out under another
+# window. Each says so by name when it does.
 
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -40,16 +41,20 @@ exec python3 '$ROOT/crates/core/tests/stand_in_agent.py' "\$@"
 EOF
 chmod +x "$WORK/claude"
 
-# The real runtime, with a scratch home: the one built at the root of this
-# checkout, which is the one this window's readers are written for, else the
-# one installed. Setting a folder up writes user settings, and those must land
-# in the scratch home.
+# The real runtime, with a scratch home: the one MAGNESIUM_TEST_BINARY names,
+# else the one built at the root of this checkout (which is the one this
+# window's readers are written for, but may be older than the checkout), else
+# the one installed. Setting a folder up writes user settings, and those must
+# land in the scratch home.
 RUNTIME=""
-if [ -x "$ROOT/../target/release/magnesium" ]; then
+if [ -n "${MAGNESIUM_TEST_BINARY:-}" ]; then
+  RUNTIME=$MAGNESIUM_TEST_BINARY
+elif [ -x "$ROOT/../target/release/magnesium" ]; then
   RUNTIME="$ROOT/../target/release/magnesium"
 else
   RUNTIME=$(command -v magnesium || true)
 fi
+echo "selftest: the runtime is ${RUNTIME:-none}" >&2
 if [ -n "$RUNTIME" ]; then
   cat > "$WORK/magnesium" <<EOF
 #!/bin/sh

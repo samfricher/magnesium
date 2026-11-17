@@ -726,6 +726,11 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     pub action: UpdateAction,
     #[serde(default)]
     pub mode: UpdateMode,
+    /// Required. An ID you make up for this request, new to this study folder:
+    /// every conversation here shares its IDs, so end it with something only
+    /// this turn has, such as the last characters of its ticket or event ID.
+    /// Send an ID again only to replay the identical request after an unknown
+    /// outcome.
     pub request_id: String,
     /// Existing learner input used as context/support, never a reassignment.
     /// To associate pending unbound work, select it explicitly in session.

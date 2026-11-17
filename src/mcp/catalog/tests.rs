@@ -185,3 +185,48 @@ fn the_reply_tool_is_offered_only_in_a_session_the_window_starts() {
     assert_eq!(schema["required"], serde_json::json!(["text"]));
     assert!(tool_for(REPLY_TOOL, false).is_none());
 }
+
+/// Claude Code shows the model one merged shape for the four requests, with
+/// only the fields all four need marked as required. So the schema's own
+/// `required` never tells the tutor an update needs an ID; the field's
+/// description and the tool's description do.
+#[test]
+fn the_id_an_update_needs_is_said_where_the_tutor_reads_it() {
+    let tool = get_tool("learning_step").unwrap();
+    let root = Value::Object((*tool.input_schema).clone());
+    let mut needing = Vec::new();
+    for branch in root["anyOf"].as_array().unwrap() {
+        let required = branch["required"].as_array().unwrap();
+        if required.iter().any(|field| field == "request_id") {
+            let action = branch["properties"]["action"]["enum"][0].as_str().unwrap();
+            let said = branch["properties"]["request_id"]["description"]
+                .as_str()
+                .unwrap_or_default();
+            assert!(said.starts_with("Required."), "{action}: {said:?}");
+            needing.push(action.to_owned());
+        }
+    }
+    assert_eq!(needing, ["update", "control"]);
+
+    // The start the description shows whole is one the runtime decodes.
+    let description = tool.description.as_deref().unwrap();
+    let at = description
+        .find(r#"{"schema":"learner-model/v2","action":"update""#)
+        .expect("the description shows a whole session start");
+    let example = serde_json::Deserializer::from_str(&description[at..])
+        .into_iter::<Value>()
+        .next()
+        .unwrap()
+        .unwrap();
+    let crate::adapter::LearningStepRequest::Update(start) =
+        serde_json::from_value(example).unwrap()
+    else {
+        panic!("the example is not an update")
+    };
+    assert!(!start.request_id.is_empty());
+    assert!(start.native_capture.is_some());
+    assert!(matches!(
+        start.session,
+        Some(crate::learner::SessionEdit::Start(_))
+    ));
+}

@@ -730,7 +730,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(line, value);
         line.dispatchEvent(new Event("input", { bubbles: true }));
       };
-      const frame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+      // WebKit draws no frame for a window another window covers, so this wait has a limit: without one the check
+      // stopped here saying nothing, and the launcher could only report that the page never answered.
+      const frame = () =>
+        within("drawing the window's next frame (a covered window draws none)", new Promise<void>((done) => requestAnimationFrame(() => done())), 10_000);
       const copy = () => document.querySelector(".session.in-front .foot .parked") !== null;
       // Where the line's bottom is against the bottom of the lesson's view: it should not change as rows go.
       const place = () => Math.round(lineNow().getBoundingClientRect().bottom - view.getBoundingClientRect().bottom);

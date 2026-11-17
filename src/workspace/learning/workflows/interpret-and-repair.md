@@ -8,7 +8,7 @@ Build each explanation on an anchor. Run a memory search with all_of ["anchor"] 
 
 When the learner was sure of an answer that is wrong, repair that mistake before the others, because a learner who feels sure has no reason to review it. How sure they were is not evidence of what they can do. Only their work is. In the papers loop these are the gap-log rows with Conf S, and papers-loop says how this order combines with its other order rules.
 
-Read related memories and rewrite the affected current description, current_basis, and reason. Do not create a diary entry for every turn. Useful current wording and a few retrieval cues help future retrieval; they cannot invent difficulties. Acknowledgments or unchanged interpretations can receive no_change.
+Read related memories and rewrite the affected current description, current_basis, and reason. Do not create a diary entry for every turn. Useful current wording and a few retrieval cues help future retrieval; they cannot invent difficulties.
 
 For example, preserve earlier correct formula substitution when later repeated confusion over coefficient labels reveals a narrower symbol-role misunderstanding. A single arithmetic slip alone warrants a narrower, uncertain interpretation. These are illustrations, not facts about this learner.
 

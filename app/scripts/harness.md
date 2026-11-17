@@ -2,6 +2,8 @@
 
 The ops and `data-drive` names a harness uses on a window started with `MAGNESIUM_APP_DRIVE=<dir>`. Send an op with `node scripts/drive.mjs <dir> '<op json>'`; each is answered `{ok, error?, ...}`.
 
+To photograph one state without writing a script, `node scripts/look.mjs --at task click:stuck shot:stuck` builds what changed, opens the window on the made-up course, goes to a place (`home`, `workspace`, `session`, `task`, `marked`, `settings`), does each step and prints the photographs' paths. `--base <ref>` does the same in the window built from that commit, for before and after; `--keep` leaves the window open for more ops. A script of your own gets the same course, windows and photographs from `scripts/window.mjs`, as `scripts/pages.mjs` does.
+
 ## Ops
 
 - `type {text, replace?}`
