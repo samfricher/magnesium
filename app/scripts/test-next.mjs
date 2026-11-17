@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
+const { checksAlone, dayFacts, drawableAtLaunch, firstQuestion, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -90,5 +90,15 @@ assert.equal(dayFacts({ can_count_today: 1, exam: exam(0) }), "1 can count today
 assert.equal(dayFacts({ can_count_today: 3, exam: exam(-2) }), "3 can count today", "an exam past is not named");
 assert.equal(dayFacts({ can_count_today: null, exam: null }), "");
 assert.equal(dayFacts(null), "");
+
+// A read kept by an earlier run of the window: drawn from at once only when it cannot lack a question due now.
+const noon = new Date(2026, 10, 17, 12).getTime();
+const keptRead = (more = {}) => ({ checks: 0, question: null, at: noon - 3_600_000, ...more });
+assert.ok(drawableAtLaunch(keptRead(), noon), "no check due earlier today: none can fall due later today");
+assert.ok(drawableAtLaunch(keptRead({ checks: 1, question: { text: "Q", meta: "m" } }), noon), "a check due with its question");
+assert.equal(drawableAtLaunch(keptRead({ checks: 1 }), noon), null, "a check due without its question: the next message may begin a sitting since");
+assert.equal(drawableAtLaunch(keptRead({ at: new Date(2026, 10, 16, 23).getTime() }), noon), null, "kept yesterday: a check may have fallen due overnight");
+assert.equal(drawableAtLaunch(undefined, noon), null);
+assert.equal(drawableAtLaunch({ checks: 0, question: null }, noon), null, "a kept read without its time is not trusted");
 
 console.log("next checks passed");

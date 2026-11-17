@@ -90,3 +90,22 @@ export function dayFacts(home: Pick<Home, "can_count_today" | "exam"> | null): s
     home.exam && left !== null && left >= 0 ? `${home.exam.title} ${left === 0 ? "today" : left === 1 ? "tomorrow" : `in ${left} days`}` : null;
   return [count > 0 ? `${count} can count today` : null, exam].filter(Boolean).join(" · ");
 }
+
+/** "2026-11-17" for a moment, in local time. */
+export function dayOf(ms: number): string {
+  const at = new Date(ms);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * A read an earlier run kept, if Home can draw from it before reading again. Home never puts the first check's question
+ * in after its first drawing, so a kept read that may lack one that is due now is not drawn from: one from another day
+ * (a check can fall due overnight), or one that found a check due without its question (the next message may begin a
+ * sitting since). A kept read with no check due today, or with the question, is safe: no check falls due later in the
+ * day, and a question answered since is taken away by the fresh read.
+ */
+export function drawableAtLaunch<T extends { checks: number; question: unknown; at: number }>(kept: T | undefined, now = Date.now()): T | null {
+  if (!kept || typeof kept.at !== "number" || dayOf(kept.at) !== dayOf(now)) return null;
+  if (kept.checks > 0 && !kept.question) return null;
+  return kept;
+}

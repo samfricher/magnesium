@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
-import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
+import { checksAlone, dayFacts, drawableAtLaunch, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, longDay, sessionName, whenOpened } from "../words";
@@ -161,6 +161,57 @@ const known = new Map<string, Read>();
 // What each workspace's row last said of its day, by folder: drawn at once on the next visit while it is read again.
 const factsKnown = new Map<string, string>();
 
+// Both are kept in the window's own storage too, so that the first Home after a launch draws at once. Storage can be
+// missing or full; then Home reads as on a first visit. What is kept is what Home drew: never a check's key, which the
+// window is never given.
+const READS_KEPT = "mg.home.reads.1";
+const FACTS_KEPT = "mg.home.facts.1";
+const READS_KEPT_MAX = 8;
+
+function loadKept<T>(key: string): Record<string, T> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, T>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveKept(key: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Not kept: the next launch reads before it draws, as a first visit does.
+  }
+}
+
+// Reads kept by an earlier run of the window, by folder. Used once each, for the first Home after the launch.
+const keptReads = typeof window === "undefined" ? {} : loadKept<Read>(READS_KEPT);
+if (typeof window !== "undefined") for (const [folder, said] of Object.entries(loadKept<string>(FACTS_KEPT))) if (typeof said === "string") factsKnown.set(folder, said);
+
+function keepRead(folder: string, read: Read): void {
+  known.set(folder, read);
+  const all = { ...loadKept<Read>(READS_KEPT), [folder]: read };
+  const newest = Object.entries(all)
+    .sort(([, a], [, b]) => (b?.at ?? 0) - (a?.at ?? 0))
+    .slice(0, READS_KEPT_MAX);
+  saveKept(READS_KEPT, Object.fromEntries(newest));
+}
+
+function keepFacts(folder: string, said: string): void {
+  factsKnown.set(folder, said);
+  saveKept(FACTS_KEPT, Object.fromEntries(factsKnown));
+}
+
+/** What Home draws from before its own read: this run's last read, else one an earlier run kept, if it can. */
+function keptFor(folder: string): Read | null {
+  const mine = known.get(folder);
+  if (mine) return mine;
+  const kept = drawableAtLaunch(keptReads[folder]);
+  if (kept) known.set(folder, kept);
+  return kept;
+}
+
 async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
   const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
@@ -206,10 +257,11 @@ export function HomePage(props: Props) {
   // The workspace studied in most recently; in a library with no session yet, the one opened most recently.
   const lead = recent ?? workspaces[0] ?? null;
   // `here`: read on this visit, rather than kept from an earlier one.
-  const [read, setRead] = useState<{ folder: string; read: Read; here: boolean } | null>(() => {
-    const kept = lead ? known.get(lead.folder) : undefined;
-    return lead && kept ? { folder: lead.folder, read: kept, here: false } : null;
-  });
+  const [readState, setRead] = useState<{ folder: string; read: Read; here: boolean } | null>(null);
+  // Until this visit has read the lead workspace, the read kept from an earlier visit or run, so the row is drawn on the
+  // first frame that knows the lead: the library is often still being listed when Home first renders.
+  const keptNow = lead && readState?.folder !== lead.folder ? keptFor(lead.folder) : null;
+  const read = lead && readState?.folder === lead.folder ? readState : keptNow && lead ? { folder: lead.folder, read: keptNow, here: false } : null;
   // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its first row is drawn without it.
   const [gaveUp, setGaveUp] = useState<string | null>(null);
   const gaveUpOn = useRef<string | null>(null);
@@ -223,7 +275,7 @@ export function HomePage(props: Props) {
       setGaveUp(folder);
     }, PLAN_WAIT_MS);
     void readNext(props.api, folder).then((fresh) => {
-      known.set(folder, fresh);
+      keepRead(folder, fresh);
       // A row already drawn without the plan stays as it is, rather than changing under the learner.
       if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh, here: true });
     });
@@ -263,8 +315,8 @@ export function HomePage(props: Props) {
   const checks = lead && trusted && !question && (now?.checks ?? 0) > 0 ? lead.folder : null;
   const { onChecksDue } = props;
   useEffect(() => {
-    if (read?.here) onChecksDue?.(read.folder, read.read.checks);
-  }, [read, onChecksDue]);
+    if (readState?.here) onChecksDue?.(readState.folder, readState.read.checks);
+  }, [readState, onChecksDue]);
   const checksAct = checks ? (
     <p className="page-acts next-acts">
       <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(checks)}>
@@ -312,7 +364,7 @@ export function HomePage(props: Props) {
   const leadFacts = read?.here ? { folder: read.folder, said: read.read.facts } : null;
   useEffect(() => {
     if (!leadFacts) return;
-    factsKnown.set(leadFacts.folder, leadFacts.said);
+    keepFacts(leadFacts.folder, leadFacts.said);
     setFacts((old) => (old[leadFacts.folder] === leadFacts.said ? old : { ...old, [leadFacts.folder]: leadFacts.said }));
   }, [leadFacts?.folder, leadFacts?.said]);
   useEffect(() => {
@@ -325,7 +377,7 @@ export function HomePage(props: Props) {
         const home = await api.home(workspace.folder).catch(() => null);
         if (!live) return;
         const said = dayFacts(home);
-        factsKnown.set(workspace.folder, said);
+        keepFacts(workspace.folder, said);
         setFacts((old) => (old[workspace.folder] === said ? old : { ...old, [workspace.folder]: said }));
       }
     })();
