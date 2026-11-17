@@ -326,6 +326,30 @@ fn served_instructions_ask_for_plain_learner_facing_save_failures() {
 }
 
 #[test]
+fn served_instructions_say_how_to_close_a_turn_that_records_nothing() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    let host = "claude";
+    // No operation: the rule is in what every stage load serves, not only in a recipe.
+    let served = v2::tool(
+        &e,
+        host,
+        "close-once",
+        "context",
+        json!({"action":"instructions","host":host,"stage":"teach_and_practice"}),
+    );
+    let text = served["text"].as_str().unwrap();
+    assert!(
+        text.contains("Close each learner message once with event_dispositions, in the call that records it: processed with its observation, no_change when the turn has no observation"),
+        "{text}"
+    );
+    assert!(
+        text.contains("A later call in the same turn leaves the closed message out."),
+        "{text}"
+    );
+}
+
+#[test]
 fn served_instructions_skip_the_task_only_on_the_learners_terms() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
