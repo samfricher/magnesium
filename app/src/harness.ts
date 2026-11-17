@@ -624,6 +624,96 @@ async function run(op: Op): Promise<Result> {
         pdf: pdfInView(),
       };
     }
+    case "watch": {
+      // For `ms`, look every frame at the copy of the open task pinned over the line, and say each text it showed,
+      // in order, with how long each showed: a copy that comes for a moment and goes is a flash.
+      const ms = Number(op.ms ?? 5000);
+      const shown: { text: string; ms: number }[] = [];
+      const started = performance.now();
+      let current: string | null = null;
+      let since = started;
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          const parked = document.querySelector<HTMLElement>(".session.in-front .foot .parked");
+          const text = parked ? collapse(parked.innerText) : null;
+          if (text !== current) {
+            if (current !== null) shown.push({ text: current, ms: Math.round(now - since) });
+            current = text;
+            since = now;
+          }
+          if (now - started < ms) requestAnimationFrame(tick);
+          else {
+            if (current !== null) shown.push({ text: current, ms: Math.round(now - since) });
+            done();
+          }
+        };
+        requestAnimationFrame(tick);
+      });
+      return { ok: true, parked: shown };
+    }
+    case "caret": {
+      // Where the caret is on the line in front, and with `at`, put it there first.
+      const line = composer();
+      if (!(line instanceof HTMLTextAreaElement)) return { ok: false, error: "no lesson line in front" };
+      if (op.at !== undefined) line.setSelectionRange(Number(op.at), Number(op.at));
+      return { ok: true, at: line.selectionStart, length: line.value.length, focused: document.activeElement === line };
+    }
+    case "steady": {
+      // Write `text` on the line a key every `every` ms, then take `back` characters off with ⌫, as a learner
+      // writing and correcting would, and say how still the line stood on screen: for every frame, where its
+      // bottom was against the bottom of the lesson's view. Its words wrapping onto a new row grow it upward
+      // while the lesson keeps its end in view, so that place should not change. Also how often the task's copy
+      // over the line came or went, and how far the lesson ended from its foot.
+      const text = Array.from(String(op.text ?? ""));
+      const back = Number(op.back ?? 0);
+      const every = Number(op.every ?? 40);
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      const line = composer();
+      if (!surface || !(line instanceof HTMLTextAreaElement)) return { ok: false, error: "no lesson line in front" };
+      line.focus();
+      line.setSelectionRange(line.value.length, line.value.length);
+      const keys: string[] = [...text, ...Array<string>(back).fill("\b")];
+      const place = () => Math.round(line.getBoundingClientRect().bottom - surface.getBoundingClientRect().bottom);
+      const parked = () => document.querySelector(".session.in-front .foot .parked") !== null;
+      const raised = () => document.querySelector(".session.in-front .foot.raised") !== null;
+      const places: number[] = [];
+      let parkedFlips = 0;
+      let raisedFlips = 0;
+      let wasParked = parked();
+      let wasRaised = raised();
+      let next = performance.now();
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          places.push(place());
+          if (parked() !== wasParked) (parkedFlips += 1), (wasParked = !wasParked);
+          if (raised() !== wasRaised) (raisedFlips += 1), (wasRaised = !wasRaised);
+          if (keys.length > 0 && now >= next) {
+            const key = keys.shift()!;
+            if (key === "\b") document.execCommand("delete");
+            else insert(line, key);
+            next = now + every;
+          }
+          if (keys.length > 0 || performance.now() - next < 300) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const moves = places.slice(1).map((at, i) => Math.abs(at - places[i]));
+      return {
+        ok: true,
+        frames: places.length,
+        // How many frames the line moved on, and the largest move between two frames, in pixels.
+        moved: moves.filter((move) => move > 1).length,
+        largestMove: Math.max(0, ...moves),
+        // The line's lowest and highest place against the view's bottom: positive is under the view's edge.
+        lowest: Math.max(...places),
+        highest: Math.min(...places),
+        parkedFlips,
+        raisedFlips,
+        rows: Math.round(line.getBoundingClientRect().height),
+        from_foot: Math.round(surface.scrollHeight - surface.clientHeight - surface.scrollTop),
+      };
+    }
     case "document": {
       const pdf = pdfInView();
       return pdf ? { ok: true, ...pdf, focus: focusName() } : { ok: false, error: "no PDF is in view" };

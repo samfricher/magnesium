@@ -789,12 +789,15 @@ button.line-end:hover { color: var(--text); }
    Drawn bare on the page's ground, or in a soft field: the learner's
    choice in Settings. */
 
-/* Its ground reaches into the margin, where a "›" hangs: over the page, nothing of the page shows beside it. */
+/* Its ground reaches into the margin, where a "›" hangs: over the page, nothing of the page shows beside it.
+   Under it, room in proportion to the window, the same at the page's end and raised over it: with 1.4rem the words
+   being written sat 24px from the window's edge, and writing felt like running off the page. */
 .foot {
+  --foot-room: clamp(2rem, 5vh, 3rem);
   position: relative;
   z-index: 3;
   margin: 1.6rem calc(-1 * var(--hang) - 8px) 0;
-  padding: 0 calc(var(--hang) + 8px) 1.4rem;
+  padding: 0 calc(var(--hang) + 8px) var(--foot-room);
 }
 /* A menu or list open from the line is drawn over the lesson's top edge, not under its fade. */
 .foot:has(.model-list, .line-menu) { z-index: 5; }

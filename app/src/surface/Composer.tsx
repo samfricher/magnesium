@@ -172,8 +172,14 @@ export const Composer = memo(
       const el = box.current;
       if (!el) return;
       if (text.length < length.current || text === "") {
+        // To be measured the field drops to one row for a moment. Its row keeps its height meanwhile: without it the
+        // page lost that height too, WebKit pulled a lesson scrolled to its end up by as much, and the lesson let go
+        // of its end. Every ⌫ on a line of several rows left the line that far under the window's edge.
+        const row = el.parentElement;
+        if (row) row.style.minHeight = `${row.offsetHeight}px`;
         el.style.height = "auto";
         el.style.height = `${el.scrollHeight}px`;
+        if (row) row.style.minHeight = "";
       } else if (el.scrollHeight > el.clientHeight) {
         el.style.height = `${el.scrollHeight}px`;
       }
@@ -196,8 +202,11 @@ export const Composer = memo(
       const el = box.current;
       if (!el) return;
       const active = document.activeElement;
+      // Already here, the caret stays where the learner put it: it was sent to the end of their words whenever the
+      // tutor finished, or the page's end came into view, in the middle of a correction.
+      if (active === el) return;
       // Not from a card, the line's own controls or menus, the model list, the symbols, a file on the line, or a document being read beside the lesson.
-      if (active && active !== document.body && active !== el && active.closest(".card, .line-tools, .line-menu, .model-list, .symbols, .attached, .panel.side")) return;
+      if (active && active !== document.body && active.closest(".card, .line-tools, .line-menu, .model-list, .symbols, .attached, .panel.side")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     }, [props.active, props.paused, props.busy]);

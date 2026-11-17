@@ -48,12 +48,15 @@ function Marks({ marks }: { marks: Mark[] }) {
   );
 }
 
-/** The sitting's closing lines, as the runtime worked them out from the record: drawn as they are, never reworded. */
+/** The sitting's closing lines, as the runtime worked them out from the record: drawn as they are, never reworded,
+ * with a skill's name drawn as it is everywhere else, formulas and all. */
 function Closing({ lines }: { lines: string[] }) {
   return (
     <div className="record closing" data-role="closing">
       {lines.map((line) => (
-        <p key={line}>{line}</p>
+        <p key={line}>
+          <Line text={line} />
+        </p>
       ))}
     </div>
   );
@@ -83,7 +86,7 @@ export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief
   if (brief) {
     return (
       <p className="record plan-brief" data-role="plan-change">
-        The plan changed: {namesOf(shown)}.
+        <Line text={`The plan changed: ${namesOf(shown)}.`} />
       </p>
     );
   }
@@ -93,8 +96,12 @@ export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief
       <dl>
         {shown.map((each, at) => (
           <div key={at}>
-            <dt>{each.what}</dt>
-            <dd>{each.detail}</dd>
+            <dt>
+              <Line text={each.what} />
+            </dt>
+            <dd>
+              <Line text={each.detail} />
+            </dd>
           </div>
         ))}
       </dl>
