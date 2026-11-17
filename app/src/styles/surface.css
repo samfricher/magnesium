@@ -319,8 +319,9 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* A pass's three days, hung in the margin on the mark's first line, where the learner's "›" hangs: Your work's rings. */
 .record.mark { position: relative; }
 .pass-days {
+  --pass-gap: 0.6;
   position: absolute;
-  right: calc(100% + 0.6rem);
+  right: calc(100% + var(--pass-gap) * 1rem);
   top: 0;
   /* The mark's own line (0.882rem at a line-height of 1.5), so the rings sit on its middle at any text size. */
   height: 1.323rem;
@@ -328,6 +329,8 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   align-items: center;
   gap: 0.22rem;
 }
+/* Where the margin has no room (a narrow window, a large text size, the plan beside the lesson), they start the line. */
+.pass-days.inline { position: static; height: auto; vertical-align: middle; margin-right: 0.5em; }
 .pass-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
 .pass-day.earned { background: var(--ink); border-color: var(--ink); }
 .pass-day.arriving { animation: pass-day-in 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
