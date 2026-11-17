@@ -69,6 +69,8 @@ What a turn does is chosen by words in the learner's message (inside
                arguments give the Edit tool and allow Edit on that file;
                otherwise say the plan cannot be changed from here
   NEW GOAL <goal>   set the record's goal to <goal>
+  LONGSTEP     a reply of seven paragraphs that moves the lesson on to the
+               third step of the stats route ("A test of the mean")
   by the way   (any case) answer an off-plan question: no task, no mark
   back to      (any case) pose the open task again, in the same words
   The stats course: when the state names the plan "Midterm 2" (the scratch
@@ -397,6 +399,9 @@ STATS_STEPS = [{"step": "The standard error", "status": "doing"}, {"step": "A 95
 STATS_DONE = [{"step": "The standard error", "status": "done"}, {"step": "A 95% interval", "status": "doing"},
               {"step": "A test of the mean", "status": "todo"}]
 
+STATS_TEST = [{"step": "The standard error", "status": "done"}, {"step": "A 95% interval", "status": "done"},
+              {"step": "A test of the mean", "status": "doing"}]
+
 STEPS = [{"step": "Read a, b, c", "status": "doing"}, {"step": "Use the formula", "status": "todo"}]
 DONE = [{"step": "Read a, b, c", "status": "done"}, {"step": "Use the formula", "status": "doing"}]
 FIRST = "What is b in x² − 5x + 6 = 0?"
@@ -530,6 +535,14 @@ def reply_for(learner, state):
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:
         return "Let me think about that slowly, one small word after another, for a while." + block(), True
+    # A long reply that moves a statistics lesson on to its third step: long enough that a learner can read on
+    # past its first lines in a small window.
+    if "LONGSTEP" in learner:
+        paragraph = ("A test of the mean asks whether a sample mean this far from a claimed value is likely by chance. "
+                     "The test statistic is the distance between them, counted in standard errors.")
+        return "\n\n".join([paragraph] * 6 + ["What is t when the sample mean is 52, the claimed mean 50 and the standard error 2?"]) + block(
+            note="On to the test.", task="What is t when the sample mean is 52, the claimed mean 50 and the standard error 2?",
+            steps=STATS_TEST), False
     if "TEACH" in learner:
         return f"Let's start. {FIRST}" + block(note="Lesson start.", task=FIRST, steps=STEPS), False
     if ("BACK" in learner or learner.startswith("I'm back")) and "Quick check" not in learner:

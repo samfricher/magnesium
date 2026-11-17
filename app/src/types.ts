@@ -104,7 +104,12 @@ export type Turn = {
   mark_ids?: string[] | null;
   /** The closing lines drawn under this turn's reply, when it ended a sitting. */
   closing?: string[] | null;
+  /** The step of the lesson's route this turn's reply moved on to, when it moved on to one. */
+  step?: StepBegun | null;
 };
+
+/** A step of a lesson's route as it stood when a reply moved on to it: its place, counted from 1, the route's length, its name. */
+export type StepBegun = { n: number; of: number; name: string };
 
 /**
  * One of a folder's sessions: a conversation the window kept turns of.
@@ -246,6 +251,8 @@ export type Row = {
   due: boolean;
   /** The day the next proof can be earned, as "2026-11-12". */
   next_day: string | null;
+  /** The runtime says it waits for its repair (a paper's lost mark not yet repaired); absent from an older window core. */
+  needs_repair?: boolean;
   /** The record's id for the newest answer on this skill, as the runtime groups them; absent when it does not say. */
   last_answer?: string | null;
 };
@@ -332,6 +339,8 @@ export type AgentEvent =
   | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The turn ended the sitting: the runtime's closing lines, drawn under the reply as they are. */
   | { type: "closing"; lines: string[] }
+  /** This turn's reply moved the lesson on to a step of its route, as the record has it once the turn settled. */
+  | ({ type: "step_begun" } & StepBegun)
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 

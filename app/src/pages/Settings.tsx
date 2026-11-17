@@ -394,6 +394,7 @@ export function SettingsPage(props: Props) {
               name="Your line"
               options={[
                 ["bare", "Bare line"],
+                ["ruled", "Ruled line"],
                 ["soft", "Soft field"],
               ]}
               value={prefs.line}

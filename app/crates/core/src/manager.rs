@@ -29,7 +29,7 @@ use crate::models::{self, ModelOption, Pick};
 use crate::paths;
 use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
-use crate::store::{Engine, FolderState, PaperSitting, Store, Turn};
+use crate::store::{Engine, FolderState, PaperSitting, StepBegun, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
 use crate::workspace::{self, LessonInfo, Workspace};
 
@@ -55,6 +55,13 @@ struct Buffer {
     /// When the last turn was kept, so what the engine says of its task is
     /// kept beside it.
     last_ms: Option<i64>,
+    /// Messages sent in this conversation, and turns ended: while as many
+    /// have ended as were sent, the page is on the last turn that ended.
+    sent: u64,
+    ended_turns: u64,
+    /// The turn the engine's next `RouteRead` belongs to: the turn that just
+    /// ended and was kept, none when the turn that ended was not kept.
+    route_for: Option<(String, i64)>,
     /// The model this conversation runs on, by its full id: the pick it was
     /// started with, then what the agent's first message says. None while
     /// it is the agent's default and the agent has not yet said which.
@@ -1014,6 +1021,8 @@ impl Manager {
                     ok, interrupted, ..
                 } => {
                     let mut buffer = lock(&buffer);
+                    buffer.ended_turns += 1;
+                    buffer.route_for = None;
                     let unfinished = std::mem::take(&mut buffer.writing);
                     if !unfinished.trim().is_empty() {
                         buffer.tutor.push(unfinished);
@@ -1049,11 +1058,34 @@ impl Manager {
                                 },
                             );
                             buffer.last_ms = Some(ms);
+                            buffer.route_for = Some((session.clone(), ms));
                             kept_turn = Some((session, ms));
                         }
                     }
                 }
                 AgentEvent::SittingEnded => lock(&settling.watch).sitting_ended = true,
+                // The step in hand once the turn's record was saved, kept
+                // beside that turn, whether or not the page or the
+                // conversation is still there. The page hears of a head only
+                // while it is still on that turn.
+                // Messages a stop dropped never end a turn: counted as ended,
+                // so the page is taken to be on the last turn again.
+                AgentEvent::QueuedDropped { count } => lock(&buffer).ended_turns += count,
+                AgentEvent::RouteRead { steps } => {
+                    let (target, page_on_it) = {
+                        let mut buffer = lock(&buffer);
+                        (buffer.route_for.take(), buffer.ended_turns >= buffer.sent)
+                    };
+                    if let Some((session, ms)) = target {
+                        let step = steps.as_ref().map(|steps| step_in_hand(steps));
+                        let began = store.note_step(&folder, &session, ms, step);
+                        if let Some(StepBegun { n, of, name }) = began {
+                            if live && page_on_it {
+                                also = Some(AgentEvent::StepBegun { n, of, name });
+                            }
+                        }
+                    }
+                }
                 // The engine says which task is open once the turn's record
                 // is kept: it is kept beside the turn, for a reopened lesson.
                 AgentEvent::OpenTask { task, posed, .. } if live => {
@@ -1066,7 +1098,13 @@ impl Manager {
             }
             let ended = matches!(event, AgentEvent::TurnEnded { .. });
             if live {
-                if !matches!(event, AgentEvent::Models { .. } | AgentEvent::SittingEnded) {
+                if !matches!(
+                    event,
+                    AgentEvent::Models { .. }
+                        | AgentEvent::SittingEnded
+                        | AgentEvent::RouteRead { .. }
+                        | AgentEvent::QueuedDropped { .. }
+                ) {
                     out(event);
                 }
                 if let Some(notice) = also {
@@ -1308,6 +1346,7 @@ impl Manager {
             let mut buffer = lock(&buffer);
             buffer.learner = shown.to_owned();
             buffer.typed = typed;
+            buffer.sent += 1;
             buffer.intent = intent;
         }
         // What the record and the plan hold before the message, so the turn
@@ -1617,6 +1656,17 @@ impl Manager {
     }
 }
 
+/// The step in hand in a route, as a head would name it: its place,
+/// counted from 1, the route's length and its name. None when no step is.
+fn step_in_hand(steps: &[runtime::Step]) -> Option<StepBegun> {
+    let at = steps.iter().position(|step| step.status == "doing")?;
+    Some(StepBegun {
+        n: at + 1,
+        of: steps.len(),
+        name: steps[at].step.clone(),
+    })
+}
+
 /// Read what a turn changed, once its record is kept: the plan, compared with
 /// the last reading, and the record's marks, compared with those before the
 /// message. Sends `plan_changed` and `marked` while the conversation is still
@@ -1691,21 +1741,36 @@ fn settle(
         // last write, so the record has both by now. Waiting for the marks
         // below would hold the line back for up to their last look. A runtime
         // that cannot say leaves the page to find the task as before.
-        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
-        let read_task = |told: &Mutex<Option<Option<String>>>| {
+        // The lesson as the record has it after the turn, read once for both
+        // the open task and the step in hand, on Claude Code's engine, whose
+        // tutor keeps the record itself during the turn. Read even when the
+        // conversation has closed since: the step belongs to this turn. Not
+        // read once the learner has written again: the next turn's tutor may
+        // have written to the record by then. `moved_on` says whether that
+        // happened before the reading was done, so it could not tell.
+        let read_lesson = || -> (Option<Option<runtime::Lesson>>, bool) {
             let Some(conversation) = task_of.as_deref() else {
-                return;
+                return (None, false);
             };
-            if lock(&settling.watch).seq != seq || !live() {
+            if lock(&settling.watch).seq != seq {
+                return (None, true);
+            }
+            let lesson = runtime::lesson(&folder, Some(conversation));
+            (lesson, lock(&settling.watch).seq != seq)
+        };
+        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
+        let read_task = |told: &Mutex<Option<Option<String>>>,
+                         lesson: &Option<Option<runtime::Lesson>>| {
+            if task_of.is_none() || lock(&settling.watch).seq != seq || !live() {
                 return;
             }
             // A record with no lesson for this conversation says nothing of
             // its tasks (the tutor never started one), so the page goes on
             // finding the task as it did before the record could say.
-            let Some(Some(lesson)) = runtime::lesson(&folder, Some(conversation)) else {
+            let Some(Some(lesson)) = lesson else {
                 return;
             };
-            let open = lesson.open_task;
+            let open = lesson.open_task.clone();
             let posed = open
                 .as_ref()
                 .is_some_and(|task| task.posed_at_ms >= sent_ms);
@@ -1731,7 +1796,43 @@ fn settle(
             }
             *told = Some(task);
         };
-        read_task(&told);
+        // The step in hand after the turn, kept beside it, on Claude Code's
+        // engine (Magnesium's says it with `RouteRead`). When the reply moved
+        // the lesson on to it, the page sets its name in above the reply, if
+        // the page is still on this turn. A reading that could not tell is
+        // kept as such: that turn begins nothing, and passes nothing on.
+        let stepped: Mutex<Option<Option<Option<StepBegun>>>> = Mutex::new(None);
+        let read_step = |lesson: &Option<Option<runtime::Lesson>>, moved_on: bool| {
+            let Some((store, session, ms)) = &turn else {
+                return;
+            };
+            if task_of.is_none() {
+                return;
+            }
+            let step = if moved_on {
+                None
+            } else {
+                lesson.as_ref().map(|lesson| {
+                    lesson
+                        .as_ref()
+                        .and_then(|lesson| step_in_hand(&lesson.steps))
+                })
+            };
+            let mut stepped = lock(&stepped);
+            if stepped.as_ref() == Some(&step) {
+                return;
+            }
+            let began = store.note_step(&folder, session, *ms, step.clone());
+            *stepped = Some(step);
+            if let Some(StepBegun { n, of, name }) = began {
+                if lock(&settling.watch).seq == seq && live() {
+                    out(AgentEvent::StepBegun { n, of, name });
+                }
+            }
+        };
+        let (lesson, moved_on) = read_lesson();
+        read_task(&told, &lesson);
+        read_step(&lesson, moved_on);
         // A turn that ended the sitting: the runtime's closing lines, read
         // only when a tool result of the turn said a sitting ended. The tutor
         // ends the sitting before its reply, so they are read at once, and
@@ -1815,7 +1916,14 @@ fn settle(
         // A mark that turned up only on a later look may have closed the task
         // read at the turn's end: read it again.
         if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
-            read_task(&told);
+            // Read again only while the learner has not written since, and
+            // only when the runtime answered: a reading that could not tell
+            // never replaces one that could (the store holds to that too).
+            let (lesson, moved_on) = read_lesson();
+            if !moved_on && lesson.is_some() {
+                read_task(&told, &lesson);
+                read_step(&lesson, false);
+            }
         }
         // Read again only when the lines could have changed: none were shown
         // yet, or a mark of this message turned up late.
