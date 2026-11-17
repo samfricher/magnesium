@@ -321,7 +321,7 @@ fn build<R: Runtime>(
             &command(table, "lost", "I’m Lost")?,
             &command(table, "unknown", "I Don’t Know")?,
             &separator()?,
-            &command(table, "look-back", "The Lesson So Far")?,
+            &command(table, "look-back", "Show the Lesson")?,
             &separator()?,
             &command(table, "symbols", "Symbols")?,
             &command(table, "model", "Model and Effort…")?,

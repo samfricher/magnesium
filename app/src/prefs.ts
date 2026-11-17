@@ -94,7 +94,7 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["hint", "Hint"],
   ["lost", "I’m lost"],
   ["unknown", "I don’t know"],
-  ["look-back", "The lesson so far, or the task alone"],
+  ["look-back", "Show or hide the lesson"],
   ["symbols", "Symbols"],
   ["model", "Model and effort"],
   ["stop-reply", "Stop the reply"],
