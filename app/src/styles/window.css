@@ -275,24 +275,37 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .list-head.fold[aria-expanded="true"]::after { content: " ⌄"; }
 .fold-count { margin-left: 0.35rem; color: var(--hint); }
 
-/* A skill in Your work: its name, and under it its newest mark; beside the name's first line, when it can count again
-   and its three days. A long name wraps under itself, so the day and the rings stay on its first line. */
-.work-row {
+/* Your work as the days each skill can next count. Each row is a grid of its own (the day, the name, its rings), so
+   each stays a list item to assistive tech; the day column has one width, so the rows line up as one table. Hung, the
+   day sits in the margin and the names keep the page's left edge. */
+.agenda { --agenda-day: 5.4rem; --agenda-gap: 1.1rem; }
+.agenda-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
-  column-gap: 1.2rem;
+  grid-template-columns: var(--agenda-day) minmax(0, 1fr) max-content;
+  column-gap: var(--agenda-gap);
   align-items: baseline;
-  padding: 0.38rem 0;
+  padding: 0.3rem 0;
 }
-.work-name { grid-column: 1; white-space: normal; overflow: visible; text-wrap: pretty; }
-.work-when { grid-column: 2; }
-.work-when.work-today { color: var(--ink); }
-.work-mark { grid-column: 1 / -1; margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.agenda.hung .agenda-row { margin-left: calc(-1 * (var(--agenda-day) + var(--agenda-gap))); }
+.agenda-row.first:not(:first-child) { margin-top: 0.75rem; }
+.agenda-day {
+  grid-column: 1;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.agenda.hung .agenda-day { text-align: right; }
+.agenda-day.today { color: var(--ink); }
+.agenda .work-name { grid-column: 2; white-space: normal; overflow: visible; text-wrap: pretty; }
+.agenda-row.proven .work-name { color: var(--quiet); }
+.agenda-exam > .agenda-day { color: var(--text); }
+.agenda-exam-name { grid-column: 2 / span 2; font: italic 400 1rem/1.45 var(--read); color: var(--text); }
 /* Each skill's days, as the record counts them: one ring for each of the three, filled for each earned. The rings sit
    in a box one name line high, so they are centred on that line at any text size. */
 .work-days { grid-column: 3; display: inline-flex; align-items: center; gap: 0.24rem; align-self: start; height: 1.45rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
-.work-day.earned { background: var(--text); border-color: var(--text); }
+.work-day.earned { background: var(--ink); border-color: var(--ink); }
 .your-work .work-key { margin-top: 0.5rem; max-width: 34em; }
 
 /* A timed paper while it runs: the time, the paper's name and its clock inside the ink rule a card has; its actions,

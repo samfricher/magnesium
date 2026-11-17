@@ -21,9 +21,9 @@ import { hasTask, poses } from "../render";
 import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
-import { displayName, firstWords, goalName, markWords, namedByItsWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
+import { displayName, firstWords, goalName, markWords, namedByItsWords, passWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
-import { Cards, Notices, Turn, Working } from "./Conversation";
+import { Cards, markArrived, Notices, Turn, Working } from "./Conversation";
 import { tabId } from "../pages/Tabs";
 import { PlanPanel } from "./PlanPanel";
 import { SidePanel } from "./SidePanel";
@@ -294,11 +294,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [fact, setFact] = useState<{ kind: "mark" | "plan"; text: string; title?: string; since: number } | null>(null);
   // The fact's own line is in view: the foot does not repeat it.
   const [factSeen, setFactSeen] = useState(true);
+  // A mark's words as it arrives, for a screen reader. The region stays drawn and empty until then, so the words are
+  // read once when they come, and a lesson drawn again from the record says nothing.
+  const [markSaid, setMarkSaid] = useState("");
   // A reply came in this window and the learner has not written since: the page stays whole, so the reply is read
   // where it was written. Writing on the line turns the page to the task. A session opened from its kept turns has
   // nothing new to read, so its open task is the page at once.
   const [reading, setReading] = useState(false);
-  // The learner opened the whole lesson over the task (⌘↑, or "the lesson so far"): it stays open until they fold it,
+  // The learner opened the whole lesson over the task (⌘↑, or "Show the lesson"): it stays open until they fold it,
   // or the next reply comes. Nothing of it goes to the runtime or the record.
   const [lookedBack, setLookedBack] = useState(false);
   // From a turn's start until the window has heard which task is open after it. On Claude Code's engine that is read
@@ -484,9 +487,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (event.type === "turn_ended" && now.current.session.task === undefined) setSettling(false);
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
+    if (event.type === "turn_started") setMarkSaid("");
     if (event.type === "marked") {
       const since = now.current.session.live?.since ?? 0;
       setFact({ kind: "mark", text: markWords(event.mark), since });
+      markArrived(event.mark.id);
+      const words = [markWords(event.mark), passWords(event.mark)].filter(Boolean).join(" ");
+      // Two marks on one answer are both said: the second is added to the first, and only what was added is read.
+      setMarkSaid((said) => (said ? `${said} ${words}` : words));
     }
     // A session named before its goal was known: the goal names it once the tutor has set one.
     if (event.type === "turn_ended" && provisionalTitle.current) void nameByOwnGoal();
@@ -1353,10 +1361,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const turnLine = (where: string) =>
     page === null ? null : (
       <button type="button" className={`plain page-turn at-${where}`} data-drive={where === "head" ? "look-back" : `look-back-${where}`} aria-expanded={!folded} onMouseDown={(event) => event.preventDefault()} onClick={() => turnPage()}>
-        {lookKey && <span className="keys">{lookKey}</span>} {folded ? "the lesson so far" : "only the task"}
+        {lookKey && <span className="keys">{lookKey}</span>} {folded ? "Show the lesson" : "Hide the lesson"}
       </button>
     );
-  const closedWords = `Closed while you answer. It opens again when you send your answer, or with ${lookKey || "“the lesson so far”"}.`;
+  const closedWords = `Closed while you answer. It opens again when you send your answer, or with ${lookKey || "“Show the lesson”"}.`;
 
   return (
     <div
@@ -1504,6 +1512,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   );
                 })}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
+                <p className="visually-hidden" role="status" aria-live="polite" data-role="mark-said">
+                  {markSaid}
+                </p>
                 {error && <p className="record note">{withoutPaths(error)}</p>}
                 <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} onSignIn={props.onSignIn} onPickModel={() => pickerRef.current.toggle()} />
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
