@@ -379,6 +379,7 @@ impl Harness for ClaudeCode {
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
             held: Mutex::new(Vec::new()),
+            held_writing: Mutex::new(String::new()),
             replied: AtomicBool::new(false),
             reply_tool: AtomicBool::new(true),
             folder: options.folder.clone(),
@@ -602,6 +603,11 @@ struct Shared {
     /// it waits for the turn's end, and reaches the page only when the turn
     /// sent no reply through the tool (Magnesium issue 142).
     held: Mutex<Vec<String>>,
+    /// The held text of the block still being written, from its pieces. The
+    /// finished block replaces it. A turn stopped, or a program that ends,
+    /// inside a block never sends the finished block, and this is then all
+    /// there is of what the tutor wrote.
+    held_writing: Mutex<String>,
     /// Words of a `reply` call reached the page this turn, whole or, when
     /// the turn was stopped, in part.
     replied: AtomicBool,
@@ -1244,10 +1250,21 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
     match event["type"].as_str() {
         Some("message_start") => {
             lock(&shared.reply_blocks).clear();
+            // A block left unfinished belongs to a request Claude Code gave
+            // up on, and its retry writes it again.
+            lock(&shared.held_writing).clear();
             begin_turn(shared);
         }
         Some("content_block_start") => match event["content_block"]["type"].as_str() {
-            Some("text") | None => {}
+            Some("text") => {
+                // A message sent whole replaces the pieces of each of its
+                // blocks at once, so blocks still in pieces are kept apart.
+                let mut writing = lock(&shared.held_writing);
+                if !writing.is_empty() {
+                    writing.push_str("\n\n");
+                }
+            }
+            None => {}
             Some("tool_use") if is_reply_tool(event["content_block"]["name"].as_str()) => {
                 begin_turn(shared);
                 shared.reply_tool.store(true, Ordering::SeqCst);
@@ -1280,7 +1297,9 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
                 begin_turn(shared);
                 // Plain text waits for the turn's end while a reply may still
                 // come through the tool; see `held`.
-                if !shared.reply_tool.load(Ordering::SeqCst) {
+                if shared.reply_tool.load(Ordering::SeqCst) {
+                    lock(&shared.held_writing).push_str(text);
+                } else {
                     shared.emit(AgentEvent::TextDelta {
                         text: text.to_owned(),
                     });
@@ -1522,6 +1541,7 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                 }
                 begin_turn(shared);
                 if shared.reply_tool.load(Ordering::SeqCst) {
+                    lock(&shared.held_writing).clear();
                     lock(&shared.held).push(text.to_owned());
                 } else {
                     shared.emit(AgentEvent::TextDone {
@@ -1572,7 +1592,11 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
 /// through the tool, so a reply written as plain text is never lost; beside
 /// a reply, kept off the page and written to the trace alone.
 fn release_held(shared: &Arc<Shared>) {
-    let held = std::mem::take(&mut *lock(&shared.held));
+    let mut held = std::mem::take(&mut *lock(&shared.held));
+    let unfinished = std::mem::take(&mut *lock(&shared.held_writing));
+    if !unfinished.trim().is_empty() {
+        held.push(unfinished);
+    }
     let replied = shared.replied.swap(false, Ordering::SeqCst);
     for text in held {
         if replied {
@@ -2257,6 +2281,7 @@ mod tests {
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
             held: Mutex::new(Vec::new()),
+            held_writing: Mutex::new(String::new()),
             replied: AtomicBool::new(false),
             reply_tool: AtomicBool::new(true),
             folder: PathBuf::from("/study"),
@@ -2698,6 +2723,7 @@ mod tests {
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
             held: Mutex::new(Vec::new()),
+            held_writing: Mutex::new(String::new()),
             replied: AtomicBool::new(false),
             reply_tool: AtomicBool::new(true),
             folder: PathBuf::from("/study"),
@@ -2969,25 +2995,109 @@ mod tests {
 
     #[test]
     fn plain_text_cut_off_by_the_programs_end_is_still_shown() {
-        let (shared, seen) = listening();
-        shared.awaiting.store(true, Ordering::SeqCst);
-        let text = "The derivative of $x^2$ is $2x$.";
-        let lines = [
+        let text = "The derivative of $x^2$ is $2x$, because";
+        let line = |value: Value| value.to_string();
+        let start = line(
             json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "message_start", "message": {"id": "m1"}}}),
-            json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}}),
+        );
+        let block = line(
+            json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}}),
+        );
+        let pieces: Vec<String> = text
+            .split_inclusive(' ')
+            .map(|piece| {
+                line(
+                    json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": piece}}}),
+                )
+            })
+            .collect();
+        let finished = line(
             json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [{"type": "text", "text": text}]}}),
-        ]
-        .iter()
-        .map(Value::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-        read_loop(&shared, lines.as_bytes());
+        );
+        // The program ends after the block is finished, and inside it, when
+        // Claude Code never sends the finished block.
+        for whole in [true, false] {
+            let (shared, seen) = listening();
+            shared.awaiting.store(true, Ordering::SeqCst);
+            let mut lines = vec![start.clone(), block.clone()];
+            lines.extend(pieces.iter().cloned());
+            if whole {
+                lines.push(finished.clone());
+            }
+            read_loop(&shared, lines.join("\n").as_bytes());
+            let events = lock(&seen).clone();
+            assert_eq!(words(&events).1, [text], "whole: {whole}, {events:?}");
+            assert!(matches!(
+                events.iter().rev().nth(1),
+                Some(AgentEvent::TurnEnded { ok: false, .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn a_plain_text_reply_stopped_part_way_keeps_what_was_written() {
+        let (shared, seen) = listening();
+        let stream = |event: Value| {
+            handle(
+                &shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start", "message": {"id": "m1"}}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        );
+        for piece in ["word0", " word1", " word2"] {
+            stream(
+                json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": piece}}),
+            );
+        }
+        // Stop: the result Claude Code sent for a turn interrupted before its
+        // reply ended (the live trace of 2026-11-10, which the stand-in agent
+        // plays). No finished block comes.
+        shared.interrupting.store(true, Ordering::SeqCst);
+        handle(
+            &shared,
+            &json!({"type": "result", "subtype": "error_during_execution", "is_error": true,
+                "errors": ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"]}),
+        );
         let events = lock(&seen).clone();
-        assert_eq!(words(&events).1, [text], "{events:?}");
+        assert_eq!(
+            words(&events),
+            (String::new(), vec!["word0 word1 word2".to_owned()]),
+            "{events:?}"
+        );
         assert!(matches!(
-            events.iter().rev().nth(1),
-            Some(AgentEvent::TurnEnded { ok: false, .. })
+            events.last(),
+            Some(AgentEvent::TurnEnded {
+                interrupted: true,
+                ..
+            })
         ));
+        // The next turn starts with nothing held.
+        assert!(lock(&shared.held_writing).is_empty() && lock(&shared.held).is_empty());
+    }
+
+    #[test]
+    fn the_pieces_of_a_request_given_up_on_are_not_kept_beside_its_retry() {
+        let (shared, seen) = listening();
+        let stream = |event: Value| {
+            handle(
+                &shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start", "message": {"id": "m1"}}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        );
+        stream(
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Two th"}}),
+        );
+        // The request failed and Claude Code tried again: a new message.
+        plain(&shared, "m2", "Two thirds.");
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        assert_eq!(words(&lock(&seen)).1, ["Two thirds."]);
     }
 
     #[test]
