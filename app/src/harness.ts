@@ -386,6 +386,8 @@ let running = false;
 let lastEventAt = 0;
 let deltas = 0;
 let turnsEnded = 0;
+let stepsBegun = 0;
+let marksSeen = 0;
 
 type Entry =
   | { at: string; kind: "send" | "new_lesson" | "shown"; text: string; intent: Intent | null; sent?: string; from?: string }
@@ -393,7 +395,8 @@ type Entry =
   | { at: string; kind: "marked"; mark: unknown }
   | { at: string; kind: "plan_changed"; what: string[] }
   | { at: string; kind: "notice"; text: string }
-  | { at: string; kind: "closing"; lines: string[] };
+  | { at: string; kind: "closing"; lines: string[] }
+  | { at: string; kind: "step"; n: number; of: number; name: string };
 const transcript: Entry[] = [];
 let replyBlocks: string[] = [];
 let replyStreaming = "";
@@ -431,6 +434,9 @@ function note(event: AgentEvent): void {
     case "closing":
       transcript.push({ at, kind: "closing", lines: event.lines });
       break;
+    case "step_begun":
+      transcript.push({ at, kind: "step", n: event.n, of: event.of, name: event.name });
+      break;
   }
 }
 
@@ -461,6 +467,8 @@ async function listen(): Promise<void> {
       running = false;
       turnsEnded += 1;
     }
+    if (event.type === "step_begun") stepsBegun += 1;
+    if (event.type === "marked") marksSeen += 1;
     note(event);
   });
 }
@@ -581,8 +589,17 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
+      // The lesson's step heads drawn now, as a screen reader hears each ("Step 2 of 3: A 95% interval"), and what
+      // the top edge counts ("2 of 3"), or null while it shows none.
+      const heads = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head"))
+        .filter((head) => head.getClientRects().length > 0)
+        .map((head) => collapse(head.textContent ?? "").replace(/^\d+\s*/, ""));
+      const count = document.querySelector<HTMLElement>(".session.in-front .top-edge .top-count");
       // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
-      return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView() };
+      // What a screen reader is told of the newest mark, and the rings beside each mark with whether its day is filling.
+      const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
+      const passDays = Array.from(document.querySelectorAll<HTMLElement>('.session.in-front [data-role="pass-days"]')).map((days) => ({ day: Number(days.dataset.day), arriving: days.querySelector(".arriving") !== null, hung: !days.classList.contains("inline"), left: Math.round(days.getBoundingClientRect().left) }));
+      return { ok: true, ...(found as object), files, heads, top_count: count ? collapse(count.textContent ?? "") : null, focus: focusName(), key_window: document.hasFocus(), document: pdfInView(), mark_said: markSaid, pass_days: passDays };
     }
     case "smooth": {
       // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`
@@ -658,12 +675,87 @@ async function run(op: Op): Promise<Result> {
       });
       return { ok: true, parked: shown };
     }
+    case "still": {
+      // With `send`, press Return on the line first. Then for `ms`, every frame, read where the last turn's reply
+      // stands on screen and how many step heads are drawn, and say when the turn ended, when the window heard of
+      // a step it began, when a head was drawn, and every frame after the turn ended in which the reply moved.
+      if (op.send) press("Enter", { alt: Boolean(op.alt) });
+      const ms = Number(op.ms ?? 5000);
+      const started = performance.now();
+      const ended = turnsEnded;
+      const begun = stepsBegun;
+      const marks = marksSeen;
+      let markedAt: number | null = null;
+      const at = (now: number) => Math.round(now - started);
+      const replyTop = () => {
+        const replies = document.querySelectorAll<HTMLElement>(".session.in-front .now > article.turn .tutor");
+        const last = replies[replies.length - 1];
+        return last ? Math.round(last.getBoundingClientRect().top * 10) / 10 : null;
+      };
+      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter((head) => head.getClientRects().length > 0).length;
+      let endedAt: number | null = null;
+      let stepAt: number | null = null;
+      let headAt: number | null = null;
+      const headsBefore = drawn();
+      let lastTop: number | null = null;
+      let topAtStep: { before: number | null; after: number | null } = { before: null, after: null };
+      const moves: { at: number; from: number | null; to: number | null }[] = [];
+      let frames = 0;
+      let scrolledPast: boolean | null = null;
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          if (endedAt === null && turnsEnded > ended) endedAt = at(now);
+          // With `past`, once the page has settled after the reply (a frame with the reply where it was), the learner scrolls back up to just
+          // past the reply's first lines: its top is 40 px above the view, and the lesson is no longer held at its end.
+          if (op.past && scrolledPast === null && endedAt !== null && at(now) > endedAt && replyTop() === lastTop) {
+            const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+            const reply = replyTop();
+            scrolledPast = false;
+            if (surface && reply !== null) {
+              surface.scrollTop += reply - surface.getBoundingClientRect().top + 40;
+              lastTop = replyTop();
+              scrolledPast = lastTop !== null && lastTop < surface.getBoundingClientRect().top && stepsBegun === begun;
+            }
+          }
+          const top = replyTop();
+          if (stepAt === null && stepsBegun > begun) {
+            stepAt = at(now);
+            topAtStep = { before: lastTop, after: top };
+          }
+          if (headAt === null && drawn() !== headsBefore) headAt = at(now);
+          if (markedAt === null && marksSeen > marks) markedAt = at(now);
+          if (endedAt !== null) {
+            frames += 1;
+            if (lastTop !== null && top !== lastTop) moves.push({ at: at(now), from: lastTop, to: top });
+          }
+          lastTop = top;
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      return {
+        ok: true,
+        ended_at: endedAt,
+        step_at: stepAt,
+        marked_at: markedAt,
+        head_at: headAt,
+        heads_before: headsBefore,
+        heads_after: drawn(),
+        reply_top_at_step: topAtStep,
+        frames_after_end: frames,
+        moves_after_end: moves,
+        scrollable: surface ? surface.scrollHeight > surface.clientHeight : null,
+        scrolled_past: scrolledPast,
+      };
+    }
     case "caret": {
       // Where the caret is on the line in front, and with `at`, put it there first.
       const line = composer();
       if (!(line instanceof HTMLTextAreaElement)) return { ok: false, error: "no lesson line in front" };
       if (op.at !== undefined) line.setSelectionRange(Number(op.at), Number(op.at));
-      return { ok: true, at: line.selectionStart, length: line.value.length, focused: document.activeElement === line };
+      return { ok: true, at: line.selectionStart, length: line.value.length, text: line.value, focused: document.activeElement === line };
     }
     case "steady": {
       // Write `text` on the line a key every `every` ms, then take `back` characters off with ⌫, as a learner

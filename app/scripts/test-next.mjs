@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { checksAlone, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
+const { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -69,5 +69,57 @@ assert.equal(checksAlone({ checks_alone: 3, sitting: paper }), 0, "a paper is ru
 assert.equal(checksAlone({ sitting: null }), 0, "an older runtime says nothing of them");
 assert.equal(checksAlone({ checks_alone: null, sitting: null }), 0);
 assert.equal(checksAlone(null), 0);
+
+
+// Home's first question: the record's stored question for the check a sitting of checks alone poses first.
+const due = (more = {}) => ({ checks_alone: 1, sitting: null, opening: { checks: 1, redos: 0 }, first_check: "What is $b$ in $2x^2 - 9x + 4$?", ...more });
+assert.deepEqual(firstQuestion(due()), { text: "What is $b$ in $2x^2 - 9x + 4$?", meta: "A quick check · about a minute", id: null });
+assert.equal(firstQuestion(due({ first_check_id: "item-a" }))?.id, "item-a", "the record's ID for the check goes with it");
+assert.equal(firstQuestion(due({ checks_alone: 3 }))?.meta, "First of 3 quick checks · about 3 minutes");
+assert.equal(firstQuestion(due({ first_check: null })), null, "with no stored question there is nothing to set");
+assert.equal(firstQuestion(due({ first_check: "  " })), null);
+assert.equal(firstQuestion(due({ opening: null })), null, "a sitting carried on does not open with the check");
+assert.equal(firstQuestion(due({ sitting: { paper: "P" } })), null, "not while a timed paper runs");
+assert.equal(firstQuestion(due({ checks_alone: null })), null, "not from a runtime that cannot pose checks alone");
+assert.equal(firstQuestion(null), null);
+
+// What a workspace's row says of the day.
+const exam = (days_left) => ({ target: "t", title: "Midterm 2", date: null, day: null, days_left });
+assert.equal(dayFacts({ can_count_today: 2, exam: exam(10) }), "2 can count today · Midterm 2 in 10 days");
+assert.equal(dayFacts({ can_count_today: 0, exam: exam(1) }), "Midterm 2 tomorrow");
+assert.equal(dayFacts({ can_count_today: 1, exam: exam(0) }), "1 can count today · Midterm 2 today");
+assert.equal(dayFacts({ can_count_today: 3, exam: exam(-2) }), "3 can count today", "an exam past is not named");
+assert.equal(dayFacts({ can_count_today: null, exam: null }), "");
+assert.equal(dayFacts(null), "");
+
+// Where Home's held answer goes once the posing reply has ended: only to the check Home showed. A wrong attempt on the
+// record is worse than words left on the line, so a near miss goes to the line.
+const { heldAnswerGoes } = await import("../src/render.ts");
+const Q = "Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?";
+const held = (question = Q, id = null) => ({ question, id });
+const after = (more) => ({ posed: undefined, task: null, taskUnseen: false, reply: "", ...more });
+// By the record's ID for the check, when it says which was posed.
+assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-a", task: `Quick check 1: ${Q}` })), "answer", "the record says Home's check was posed, as Home asked it");
+assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-a", reply: `Quick check 1: ${Q}` })), "answer", "the page sees no task; the record and the reply say it is Home's");
+assert.equal(
+  heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-a", task: "Quick check 1: Two samples of 8 have variances 1 and 4. What is their pooled variance?" })),
+  "line",
+  "Home's check, posed with a new problem the learner has not seen",
+);
+assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-b", task: `Quick check 1: ${Q}` })), "line", "another check was posed, whatever its words");
+assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: null, task: `Quick check 1: ${Q}` })), "line", "the record says none was posed");
+// Without an ID: the whole question, formulas and numbers included, spacing aside.
+assert.equal(heldAnswerGoes(held(), after({ task: `Quick check 1: ${Q}` })), "answer", "the open task is Home's question");
+assert.equal(heldAnswerGoes(held(), after({ task: `Quick check 1:\n${Q.replace(/ /g, "  ")}` })), "answer", "spacing aside");
+const otherNumbers = "Two samples of 10 students have variances $s_1^2 = 16$ and $s_2^2 = 25$. What is their pooled variance?";
+assert.equal(heldAnswerGoes(held(), after({ task: `Quick check 1: ${otherNumbers}` })), "line", "the same template with other numbers is another check");
+assert.equal(heldAnswerGoes(held(), after({ taskUnseen: true, reply: `Quick check 1: ${otherNumbers}` })), "line", "and in the reply, with the task unseen");
+const derivative = "What is $\\frac{d}{dx}\\sin(x^2)$?";
+const integral = "What is $\\int_0^1 x\\,dx$?";
+assert.equal(heldAnswerGoes(held(derivative), after({ task: `Quick check 1: ${integral}` })), "line", "formula questions that share only \"what\" are different checks");
+assert.equal(heldAnswerGoes(held(derivative), after({ taskUnseen: true, reply: `Quick check 1: ${integral}` })), "line");
+assert.equal(heldAnswerGoes(held(), after({ task: "What is b in 2x² − 7x − 4 = 0?", reply: `Quick check 1: ${Q}` })), "line", "another task is open");
+assert.equal(heldAnswerGoes(held(), after({ taskUnseen: true, reply: `Quick check 1: ${Q}` })), "unmarked", "the engine has not said; the reply posed Home's question");
+assert.equal(heldAnswerGoes(held(), after({ taskUnseen: false, reply: `Quick check 1: ${Q}` })), "line", "the engine says no task is open");
 
 console.log("next checks passed");

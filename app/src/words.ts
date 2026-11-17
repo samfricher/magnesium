@@ -83,6 +83,12 @@ export function passWords(mark: Mark, now = new Date()): string | null {
   return `${said} of three days. The ${next} can count ${when}.`;
 }
 
+/** Which of its skill's three days an answer earned, 1 to 3, when its line says it earned one; null otherwise. */
+export function passDay(mark: Mark): number | null {
+  if (!passWords(mark)) return null;
+  return mark.pass && mark.pass >= 1 && mark.pass <= 3 ? mark.pass : null;
+}
+
 /** A mark in a few words, for a list of past work: "right, with a hint". */
 export function markShort(mark: Mark): string {
   const help = HELP_WORDS[mark.help] ?? null;

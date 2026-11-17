@@ -594,3 +594,55 @@ fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
     );
     assert_eq!(earlier[0]["mark"], "right");
 }
+
+#[test]
+fn the_first_due_check_gives_its_stored_question_and_never_its_key() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    answer(
+        &e,
+        "a-1",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false,
+            "next":{"question":"In 2x² − 9x + 4 = 0, what is b?","answer_key":"KEY-minus-nine"}}),
+    );
+    // Made today, the check is due from tomorrow: nothing to pose yet.
+    assert_eq!(progress(&e)["first_check"], Value::Null);
+
+    days_pass(&e, 1);
+    let due = progress(&e);
+    assert_eq!(
+        due["first_check"]["question"],
+        json!("In 2x² − 9x + 4 = 0, what is b?"),
+        "{due}"
+    );
+    assert!(
+        !due.to_string().contains("KEY-minus-nine"),
+        "the key never leaves with the question: {due}"
+    );
+    let id = due["first_check"]["id"].as_str().unwrap().to_owned();
+    assert!(!id.is_empty() && !id.contains("sign of b"), "{id}");
+    // Nothing posed yet.
+    assert_eq!(due["posed_check"], Value::Null, "{due}");
+
+    // A message after the gap begins a sitting, which takes the check; a reply poses it.
+    Connection::open(e.workspace.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET last_learner_ms = last_learner_ms - 4 * 3600 * 1000",
+            [],
+        )
+        .unwrap();
+    prompt(&e, "b-0", "I'm back.");
+    let input = json!({"session_id":THREAD,"cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"b-0","stop_hook_active":false,
+        "last_assistant_message":"Quick check 1: In 2x² − 9x + 4 = 0, what is b?"});
+    let output = run_hook_with_host_flag(&e, &e.workspace, "stop", input, "claude");
+    assert!(output.status.success(), "{output:?}");
+    let posed = progress(&e);
+    assert_eq!(
+        posed["posed_check"],
+        json!({"id": id}),
+        "the check posed is the one first_check named: {posed}"
+    );
+}
