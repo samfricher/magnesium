@@ -668,6 +668,84 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const probe = actions.session()?.probe();
     steps.reopened = { ...(steps.reopened as object), line: probe?.line, task: probe?.task !== null };
     if (probe?.line === "raised") throw new Error("a reopened session opened with its line raised over the page");
+
+    // Writing and correcting on the line, with the lesson open over its task and at its end. Each of these moved
+    // something the learner had not moved: taking words off a line of several rows left the line under the window's
+    // edge, a reply ending sent the caret to the end of the words, and the task's copy over the line stayed under
+    // an answer while the tutor wrote. All three are looked at before anything is said to be wrong.
+    {
+      const lineNow = () => document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+      const view = document.querySelector<HTMLElement>(".session.in-front main.surface")!;
+      const write = (value: string) => {
+        const line = lineNow();
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(line, value);
+        line.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const frame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+      const copy = () => document.querySelector(".session.in-front .foot .parked") !== null;
+      // Where the line's bottom is against the bottom of the lesson's view: it should not change as rows go.
+      const place = () => Math.round(lineNow().getBoundingClientRect().bottom - view.getBoundingClientRect().bottom);
+
+      lineNow().focus();
+      let words = "one\ntwo\nthree\nfour\nfive\nsix";
+      write(words);
+      await wait(300);
+      const scrolls = view.scrollHeight - view.clientHeight;
+      const rest = place();
+      let lowest = rest;
+      for (let n = 0; n < 14; n++) {
+        words = words.slice(0, -1);
+        write(words);
+        await frame();
+        await frame();
+        lowest = Math.max(lowest, place());
+      }
+      await wait(200);
+      const fromFoot = fromEnd() ?? 0;
+      write("");
+
+      // The session is opened by a first message, so the line is not drawn anew under the words of the next step.
+      await actions.session()!.say("Before that.", "talk");
+      await until("the reply that opens the session again", () => idle() && session().live?.learner === "Before that.", 15_000);
+      lineNow().focus();
+      write("the caret stays in these words");
+      lineNow().setSelectionRange(9, 9);
+      void actions.session()!.say("By the way.", "talk");
+      await until("the reply that ends while words are on the line", () => idle() && session().live?.learner === "By the way.", 15_000);
+      await wait(300);
+      const caret = lineNow().selectionStart;
+      write("");
+
+      // A message tall enough to put the reply that set the task out of view, and a reply written slowly.
+      const tall = `SLOW\n${Array.from({ length: 60 }, (_, n) => `row ${n + 1}`).join("\n")}`;
+      void actions.session()!.say(tall, "talk");
+      await until("the slow reply to begin", () => session().live?.learner.startsWith("SLOW") === true && !idle(), 10_000);
+      let looks = 0;
+      let copies = 0;
+      const began = performance.now();
+      while (performance.now() - began < 1500) {
+        looks += 1;
+        if (copy()) copies += 1;
+        await wait(50);
+      }
+      await api.interrupt();
+      await until("the slow reply to stop", () => idle(), 15_000);
+      // Once the window has heard which task is open, its copy is over the line again: it is held back, not gone.
+      let back = false;
+      for (let n = 0; n < 200 && !back; n++) {
+        back = copy();
+        if (!back) await wait(50);
+      }
+
+      steps.steadyLine = { scrolls, rest, lowest, fromFoot, caret, looks, copies, back };
+      const wrong: string[] = [];
+      if (scrolls < 100) wrong.push(`the lesson was too short to scroll (${scrolls} px), so the line could not be seen to move`);
+      if (lowest - rest > 2 || fromFoot > 6) wrong.push(`taking words off the line left it ${lowest - rest} px under its place, the lesson ${fromFoot} px from its end`);
+      if (caret !== 9) wrong.push(`a reply ending moved the caret from 9 to ${caret}`);
+      if (copies > 0) wrong.push(`the task's copy was over the line while the tutor wrote, in ${copies} of ${looks} looks`);
+      if (!back) wrong.push("the task's copy did not come back over the line after the reply ended");
+      if (wrong.length > 0) throw new Error(wrong.join("; "));
+    }
     // The task it was left with is open again, and goes when it is answered. Claude Code's engine never says which
     // task is open, so the window finds it in the turns: the next task the tutor poses is then the open one.
     await actions.session()!.say("6", "answer");

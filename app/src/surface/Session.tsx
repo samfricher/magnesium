@@ -478,6 +478,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       setSettling(true);
     }
     if (event.type === "open_task" || event.type === "settled" || event.type === "exited") setSettling(false);
+    // An engine that has never said which task is open (Claude Code's, when the record has no lesson for this
+    // conversation) will not say after this reply either, and the page finds the task in the turns, where an answer
+    // closes it at once. Waiting on "settled" there held the copy back for the 20 s the window looks for a late mark.
+    if (event.type === "turn_ended" && now.current.session.task === undefined) setSettling(false);
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
     if (event.type === "marked") {
