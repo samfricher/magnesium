@@ -79,6 +79,8 @@ fn see_through(window: &tauri::WebviewWindow, unseen: bool) {
     let ns_window: &objc2_app_kit::NSWindow =
         unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
     ns_window.setAlphaValue(if unseen { 0.0 } else { 1.0 });
+    // Unseen, it would still take a click meant for the window behind it.
+    ns_window.setIgnoresMouseEvents(unseen);
 }
 
 /// Elsewhere the window is simply shown from the start.
