@@ -163,10 +163,12 @@ type TurnProps = {
   onSource: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
   onHold: () => void;
+  /** The learner's words are held until the tutor finishes, and not sent yet. */
+  waiting?: boolean;
 };
 
 /** One exchange. Finished exchanges are drawn once and kept: a new word in the live reply redraws only the live one. */
-export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold, waiting }: TurnProps) {
   const reply = turn.tutor;
   return (
     <article
@@ -176,6 +178,11 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
     >
       {divider && <hr className="sitting-rule" />}
       <Learner turn={turn} showQuestion={showQuestion} />
+      {waiting && (
+        <p className="record quiet" data-role="held">
+          goes when the tutor finishes
+        </p>
+      )}
       {reply.trim() !== "" && (
         <div className="tutor">
           <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} opensNow={opensNow} onSource={onSource} onNote={onNote} task={task ?? turn.posed} caret={writing} />

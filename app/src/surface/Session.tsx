@@ -324,8 +324,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const started = useRef(false);
   // Words written on Home as the answer to the first quick check, held until the reply that poses it has ended and the
   // window knows which task is open. They are kept here, not on the line: the line is drawn again, empty, once the
-  // session has its conversation, which happens during that reply.
-  const [homeAnswer, setHomeAnswer] = useState<{ words: string; ended: boolean } | null>(null);
+  // session has its conversation, which happens during that reply. Meanwhile the page shows them where they will
+  // stand once sent, as the turn they will be (`ms` is that turn's time), so the learner sees they were not lost.
+  const [homeAnswer, setHomeAnswer] = useState<{ words: string; ms: number; ended: boolean; sending: boolean } | null>(null);
 
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
   const provisionalTitle = useRef(false);
@@ -611,12 +612,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const checks = async (answer?: string): Promise<boolean> => {
     if (!now.current.home) return false;
     const words = answer?.trim() ?? "";
-    if (words !== "") setHomeAnswer({ words, ended: false });
+    if (words !== "") setHomeAnswer({ words, ms: Date.now(), ended: false, sending: false });
     return begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
   };
 
   /** Send the learner's words, with what they are. With nothing said of them, the tutor decides. */
-  const say = async (text: string, said?: Said, question?: string) => {
+  /** `at`: the turn's time, when the page already shows these words as a turn to come (Home's answer). */
+  const say = async (text: string, said?: Said, question?: string, at?: number) => {
     const { session, props } = now.current;
     try {
       if (!session.open || !props.live) {
@@ -627,7 +629,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       }
       stuck.current = true;
       setFact(null);
-      dispatch({ type: "sent", shown: text, now: Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
+      dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
     } catch (problem) {
@@ -1062,15 +1064,28 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // Once the reply that poses the check has ended and the window knows which task is open, Home's answer goes as the
   // answer to that task, as words sent from the line then would. With no task the page sees and none the tutor may
   // hold, nothing was posed: the words are put on the line, unsent, for the learner to send or change.
+  const homeAnswerSent = homeAnswer !== null && turns.some((turn) => turn.ms === homeAnswer.ms);
   useEffect(() => {
-    if (!homeAnswer?.ended || settling || isBusyNow(session)) return;
-    const { words } = homeAnswer;
-    setHomeAnswer(null);
+    if (!homeAnswer) return;
+    // Sent: the turn it became stands where it was shown.
+    if (homeAnswerSent) return setHomeAnswer(null);
+    if (!homeAnswer.ended || homeAnswer.sending || settling || isBusyNow(session)) return;
+    const { words, ms } = homeAnswer;
     if (task !== null || taskMayBeOpen(session)) {
+      setHomeAnswer({ ...homeAnswer, sending: true });
       fromLine.current = words;
-      void sayRef.current(words, task !== null ? "answer" : undefined, task?.text);
-    } else lineRef.current?.write(words);
-  }, [homeAnswer, settling, task, session]);
+      void sayRef.current(words, task !== null ? "answer" : undefined, task?.text, ms).then(() => {
+        // It never became a turn (the session could not be opened again): the words go back on the line.
+        if (!now.current.session.earlier.some((turn) => turn.ms === ms) && now.current.session.live?.since !== ms) {
+          lineRef.current?.write(words);
+          setHomeAnswer(null);
+        }
+      });
+    } else {
+      setHomeAnswer(null);
+      lineRef.current?.write(words);
+    }
+  }, [homeAnswer, homeAnswerSent, settling, task, session]);
   const taskText_ = task?.text ?? null;
   useEffect(() => {
     props.onTaskChange(tab.key, taskText_ !== null);
@@ -1512,7 +1527,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     <Rich text={task.text} final linksOpen={false} opensNow={isPaper} onSource={onSource} onNote={note} />
                   </div>
                 )}
-                {sittingTurns.map((turn, at) => {
+                {[
+                  ...sittingTurns,
+                  // Home's answer, held: drawn as the turn it becomes, under the same key, so sending it moves nothing.
+                  ...(homeAnswer && !homeAnswerSent ? [{ session: "", ms: homeAnswer.ms, learner: homeAnswer.words, tutor: "", interrupted: false, said: "answer" } satisfies LessonTurn] : []),
+                ].map((turn, at) => {
                   const index = shownFrom + at;
                   const live = index === turns.length - 1 && session.live !== null;
                   const before = index > 0 ? turns[index - 1] : null;
@@ -1533,6 +1552,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       onSource={onSource}
                       onNote={note}
                       onHold={onHold}
+                      waiting={homeAnswer !== null && !homeAnswerSent && turn.ms === homeAnswer.ms}
                     />
                   );
                 })}
