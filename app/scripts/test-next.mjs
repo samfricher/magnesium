@@ -93,11 +93,13 @@ assert.equal(dayFacts(null), "");
 
 // A read kept by an earlier run of the window: drawn from at once only when it cannot lack a question due now.
 const noon = new Date(2026, 10, 17, 12).getTime();
-const keptRead = (more = {}) => ({ checks: 0, question: null, at: noon - 3_600_000, ...more });
+const keptRead = (more = {}) => ({ checks: 0, question: null, paper: false, at: noon - 3_600_000, ...more });
 assert.ok(drawableAtLaunch(keptRead(), noon), "no check due earlier today: none can fall due later today");
 assert.ok(drawableAtLaunch(keptRead({ checks: 1, question: { text: "Q", meta: "m" } }), noon), "a check due with its question");
 assert.equal(drawableAtLaunch(keptRead({ checks: 1 }), noon), null, "a check due without its question: the next message may begin a sitting since");
 assert.equal(drawableAtLaunch(keptRead({ at: new Date(2026, 10, 16, 23).getTime() }), noon), null, "kept yesterday: a check may have fallen due overnight");
+assert.equal(drawableAtLaunch(keptRead({ paper: true }), noon), null, "kept while a timed paper ran: its checks show once the paper is over");
+assert.equal(drawableAtLaunch({ checks: 0, question: null, at: noon - 3_600_000 }, noon), null, "kept by a window that did not note a paper");
 assert.equal(drawableAtLaunch(undefined, noon), null);
 assert.equal(drawableAtLaunch({ checks: 0, question: null }, noon), null, "a kept read without its time is not trusted");
 

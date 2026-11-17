@@ -101,11 +101,13 @@ export function dayOf(ms: number): string {
  * A read an earlier run kept, if Home can draw from it before reading again. Home never puts the first check's question
  * in after its first drawing, so a kept read that may lack one that is due now is not drawn from: one from another day
  * (a check can fall due overnight), or one that found a check due without its question (the next message may begin a
- * sitting since). A kept read with no check due today, or with the question, is safe: no check falls due later in the
- * day, and a question answered since is taken away by the fresh read.
+ * sitting since), or one taken while a timed paper ran (it counts no checks then, and they show once the paper is
+ * over). A kept read with no check due today, or with the question, is safe: no check falls due later in the day,
+ * and a question answered since is taken away by the fresh read.
  */
-export function drawableAtLaunch<T extends { checks: number; question: unknown; at: number }>(kept: T | undefined, now = Date.now()): T | null {
+export function drawableAtLaunch<T extends { checks: number; question: unknown; at: number; paper?: boolean }>(kept: T | undefined, now = Date.now()): T | null {
   if (!kept || typeof kept.at !== "number" || dayOf(kept.at) !== dayOf(now)) return null;
+  if (kept.paper !== false) return null;
   if (kept.checks > 0 && !kept.question) return null;
   return kept;
 }

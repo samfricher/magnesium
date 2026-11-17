@@ -147,7 +147,7 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
  * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
  */
-type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string } | null; redos: number; facts: string; at: number };
+type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string } | null; redos: number; facts: string; paper: boolean; at: number };
 
 /**
  * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
@@ -223,6 +223,8 @@ async function readNext(api: Core, folder: string): Promise<Read> {
     checks: checksAlone(home),
     question: firstQuestion(home),
     redos: home?.sitting ? 0 : (home?.opening?.redos ?? 0),
+    // A timed paper running hides the quick checks (src/next.ts, checksAlone): such a read says nothing of them.
+    paper: Boolean(home?.sitting),
     facts: dayFacts(home),
     at,
   };
@@ -284,7 +286,7 @@ export function HomePage(props: Props) {
       window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, question: null, redos: 0, facts: "", at: 0 } : null;
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, question: null, redos: 0, facts: "", paper: false, at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
