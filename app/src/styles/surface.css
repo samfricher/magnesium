@@ -46,6 +46,8 @@
   --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
   /* The soft field the learner may write in: a shade under the page in light and over it in dark. A field lighter than a light page looked worse when it was tried. */
   --well: color-mix(in srgb, var(--text) 5%, var(--ground));
+  /* What the ruled line's rule is mixed into: the solid ground, or nothing over glass (window.css). */
+  --rule-under: var(--ground);
 
   --read: Charter, "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -945,12 +947,12 @@ button.line-end:hover { color: var(--text); }
   left: calc(-1 * var(--hang));
   right: 0;
   bottom: 0;
-  border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--ground));
+  border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under));
   pointer-events: none;
 }
 /* While a card waits the "›" is put away and the rule is drawn at half its strength, as the soft field is drawn at
    half its shade: the card's choice is the answer now. */
-:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--ground)); }
+:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--rule-under)); }
 
 /* The soft field: one row in a shade of the page, the words at the column's edge. */
 :root[data-field="soft"] .line.lesson {
