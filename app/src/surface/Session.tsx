@@ -1110,19 +1110,43 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const folded = page === "folded";
   now.current.page = page;
   // Replies out of view are skipped (prose.css) only once every turn has been
-  // laid out once and so has its real height kept: a reply never drawn would
-  // stand at a guessed height, and the page would change length as it scrolled
-  // into view. Again each time the turns are put back on the page.
+  // laid out and so has its real height kept: a reply never drawn would stand
+  // at a guessed height, and the page would change length as it scrolled into
+  // view. Laid out again whenever the kept heights would be wrong: the turns
+  // put back on the page, the column made wider or narrower (the window, the
+  // panel), or the text a different size.
   const turnsDrawn = !folded && turns.length > 0;
   useEffect(() => {
     const section = nowRef.current;
     if (!section) return;
-    delete section.dataset.measured;
-    if (!turnsDrawn) return;
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => (section.dataset.measured = ""));
-    });
-    return () => cancelAnimationFrame(frame);
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      delete section.dataset.measured;
+      if (!turnsDrawn) return;
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => (section.dataset.measured = ""));
+      });
+    };
+    // What the heights were measured at: the column's width and the reading text's size.
+    const at = () => `${section.clientWidth} ${getComputedStyle(section).fontSize} ${document.documentElement.style.cssText}`;
+    let measuredAt = at();
+    const check = () => {
+      const now = at();
+      if (now === measuredAt) return;
+      measuredAt = now;
+      measure();
+    };
+    const sized = new ResizeObserver(check);
+    sized.observe(section);
+    const styled = new MutationObserver(check);
+    styled.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      sized.disconnect();
+      styled.disconnect();
+    };
   }, [turnsDrawn]);
   useEffect(() => {
     props.onAnswerPage(tab.key, page);

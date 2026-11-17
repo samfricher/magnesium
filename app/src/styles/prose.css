@@ -123,7 +123,10 @@
    and each keeps the height it last had on screen. Not the reply being
    written (the last turn's), nor the one holding the open task, which the
    copy over the line measures. Only once every turn has been laid out once
-   (`data-measured`, set by the session), so each has its real height kept.
+   (`data-measured`, set by the session, and again when the column's width
+   or the text size changes), so each has its real height kept. Never a reply
+   with an image or a diagram: one that loads after its height was kept
+   would change the page's length as it scrolls into view.
    Never while text is selected (`data-whole`, main.tsx): WebKit leaves a
    skipped reply out of the page's text, so a copy would lose it.
    Skipping needs the reply contained, and a contained box keeps its last
@@ -139,7 +142,7 @@
   margin-left: calc(-1 * var(--hang));
   padding-left: var(--hang);
 }
-:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type) > .tutor > .prose { content-visibility: auto; }
+:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child,
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child,
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child > :last-child {
