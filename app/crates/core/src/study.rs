@@ -127,8 +127,9 @@ pub fn first_check(progress: &Value) -> Option<String> {
 
 /// How many skills not proven can earn a pass today: the record names today,
 /// or a day before it, as the first day their next pass can count. A skill
-/// never answered has no such day and is not counted. None from a record
-/// with no skills listed, as an earlier runtime prints.
+/// never answered has no such day and is not counted. A skill in two plans is
+/// listed under each, and counted once. None from a record with no skills
+/// listed, as an earlier runtime prints.
 pub fn can_count_today(progress: &Value, today: NaiveDate) -> Option<u32> {
     let plans = progress["plans"].as_array();
     let other = progress["other"]["skills"].as_array();
@@ -141,12 +142,12 @@ pub fn can_count_today(progress: &Value, today: NaiveDate) -> Option<u32> {
         .filter_map(|plan| plan["skills"].as_array())
         .flatten()
         .chain(other.into_iter().flatten());
-    Some(
-        skills
-            .filter(|skill| skill["proven"].as_bool() != Some(true))
-            .filter(|skill| day_of(&skill["next_on"]).is_some_and(|day| day <= today))
-            .count() as u32,
-    )
+    let ready: std::collections::BTreeSet<&str> = skills
+        .filter(|skill| skill["proven"].as_bool() != Some(true))
+        .filter(|skill| day_of(&skill["next_on"]).is_some_and(|day| day <= today))
+        .filter_map(|skill| skill["skill"].as_str())
+        .collect();
+    Some(ready.len() as u32)
 }
 
 pub fn today() -> NaiveDate {
@@ -1161,6 +1162,15 @@ mod tests {
             "other": {"skills": [{"skill": "loose", "proven": false, "next_on": "2026-11-17"}]},
         });
         assert_eq!(can_count_today(&printed, today), Some(3));
+        // The same skill in two plans is one skill.
+        let twice = json!({
+            "plans": [
+                {"plan": "a", "skills": [{"skill": "pooled variance", "proven": false, "next_on": "2026-11-17"}]},
+                {"plan": "b", "skills": [{"skill": "pooled variance", "proven": false, "next_on": "2026-11-17"}]},
+            ],
+            "other": {"skills": []},
+        });
+        assert_eq!(can_count_today(&twice, today), Some(1));
         assert_eq!(can_count_today(&json!({"active": true}), today), None);
     }
 
