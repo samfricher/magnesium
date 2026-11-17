@@ -20,6 +20,8 @@
 // PAGES_ONLY=answer photographs only the page while a task is open (answer-*).
 // PAGES_ONLY=note photographs only Home with the note about which copy of the
 // program lessons use, under each kind of first row.
+// PAGES_ONLY=model photographs only the model list across a pick of Fable 5.2
+// and the session after it.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -654,7 +656,51 @@ async function noteStates() {
   await quit(none);
 }
 
+/**
+ * The model list across sessions on Fable 5.2 (PAGES_ONLY=model). A scratch window starts on Fable 5.2 and has no list
+ * until a lesson sends one. Claude Code sends a session started on Fable 5.2 its full id in place of the `fable` row,
+ * and the list must still show it with the current models, in that session and in the next.
+ */
+async function modelPick() {
+  const m = await launch("model", join(scratch, "window"));
+  await lineLook(m, "Bare line");
+  await step(m, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(m, 800);
+  await step(m, "new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(m, 800);
+  await step(m, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step(m, "start on Fable 5.2", { op: "key", key: "Enter" });
+  await step(m, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  const listShows = async (label, stem, what) => {
+    await step(m, `more, ${label}`, { op: "click", target: "more", by: "drive" });
+    await step(m, `the model list, ${label}`, { op: "click", target: "model", by: "drive" });
+    await settle(m, 500);
+    const read = await m.op({ op: "text" });
+    const text = String(read.text ?? "");
+    const fable = text.indexOf("Fable 5.2");
+    const older = text.indexOf("Older models");
+    run.steps.push({ label: `where Fable 5.2 is listed, ${label}`, fable, older });
+    if (fable < 0 || (older >= 0 && fable > older)) problem(`${label}: the list does not show Fable 5.2 with the current models`);
+    await shoot(m, stem, what);
+  };
+  await listShows("in the session on Fable 5.2", "model-in-session", "The model list in a session on Fable 5.2");
+  await step(m, "close the list", { op: "key", key: "Escape" });
+  await step(m, "close the session", { op: "key", key: "w", meta: true });
+  await settle(m, 800);
+  await step(m, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(m, 800);
+  await listShows("in the next session", "model-next-session", "The model list in the session after one on Fable 5.2");
+  await step(m, "older models", { op: "click", target: "model-older", by: "drive" });
+  await settle(m, 400);
+  await shoot(m, "model-next-session-older", "The older models in the session after one on Fable 5.2");
+  await quit(m);
+}
+
 try {
+  if (process.env.PAGES_ONLY === "model") {
+    await modelPick();
+    throw "only";
+  }
   if (process.env.PAGES_ONLY === "paper") {
     await paperStates();
     throw "only";

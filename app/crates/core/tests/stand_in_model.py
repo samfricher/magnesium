@@ -126,6 +126,16 @@ MODELS = [
 ]
 
 
+
+def listed_models():
+    """Claude Code 2.1.326, started with `--model claude-fable-5-2`, sends
+    that full id in place of the `fable` row, at the same place."""
+    picked = args[args.index("--model") + 1] if "--model" in args else None
+    if picked != "claude-fable-5-2":
+        return MODELS
+    return [dict(row, value=picked) if row["value"] == "fable" else row for row in MODELS]
+
+
 args = sys.argv[1:]
 log("start", {"args": args, "cwd": os.getcwd(), "env": {k: os.environ.get(k) for k in (
     "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "ENABLE_CLAUDEAI_MCP_SERVERS",
@@ -665,7 +675,7 @@ def main():
                 interrupted.set()
                 with lock:
                     pending.clear()
-            response = {"commands": [], "models": MODELS} if subtype == "initialize" else {}
+            response = {"commands": [], "models": listed_models()} if subtype == "initialize" else {}
             emit({"type": "control_response",
                   "response": {"subtype": "success", "request_id": message["request_id"], "response": response}})
         elif message.get("type") == "user":
