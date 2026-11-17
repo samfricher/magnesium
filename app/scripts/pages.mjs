@@ -192,8 +192,10 @@ async function paperStates() {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
-  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  // The paper's other clocks: a third through, its last minute, and past its end by hours, and by days from a start
+  // on an earlier day.
   for (const [stem, minutesAgo, what] of [
+    ["paper-third", 25, "Workspace: a paper a third through"],
     ["paper-last", 74.3, "Workspace: a paper in its last minute"],
     ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
     ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
