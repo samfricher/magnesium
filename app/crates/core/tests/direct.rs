@@ -3248,3 +3248,58 @@ fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply
     );
     manager.shut_down();
 }
+
+#[test]
+fn the_turn_whose_reply_moves_the_lesson_on_keeps_the_step_it_began() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    // The step a turn began, if any: it is sent before the turn's record is said to be read.
+    let step_of =
+        |events: &mut Events| match next_event(events, "the step or the record read", |e| {
+            matches!(e, AgentEvent::StepBegun { .. } | AgentEvent::Settled)
+        }) {
+            AgentEvent::StepBegun { n, of, name } => {
+                next_event(events, "the record read", |e| {
+                    matches!(e, AgentEvent::Settled)
+                });
+                Some((n, of, name))
+            }
+            _ => None,
+        };
+    // The lesson's first reply sets the route and begins its first step.
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(
+        step_of(&mut events),
+        Some((1, 2, "Read a, b, c".to_owned()))
+    );
+    // A wrong answer keeps the step in hand: no step begins.
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(step_of(&mut events), None);
+    // The right one moves the lesson on.
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    assert_eq!(
+        step_of(&mut events),
+        Some((2, 2, "Use the formula".to_owned()))
+    );
+    manager.shut_down();
+
+    // Kept beside the turns, so a reopened lesson draws its heads where they were.
+    let session = manager.lessons(None).unwrap()[0].session.clone();
+    let turns = manager.lesson_turns(None, &session).unwrap();
+    let steps: Vec<Option<(usize, String)>> = turns
+        .iter()
+        .map(|turn| turn.step.as_ref().map(|step| (step.n, step.name.clone())))
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            Some((1, "Read a, b, c".to_owned())),
+            None,
+            Some((2, "Use the formula".to_owned()))
+        ]
+    );
+}

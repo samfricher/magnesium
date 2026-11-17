@@ -293,6 +293,30 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 .sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
 
+/* A step of the lesson's route, where its work began: its name in the reading face's italic, in the quiet grey, its
+   number hung where the learner's "›" hangs. The room above it is a section's; the lesson's first head sits under
+   the heading, and one just under a sitting's rule has the rule's room. */
+.step-head {
+  position: relative;
+  margin: 2.3rem 0 0.7rem;
+  font: italic 400 1rem/1.45 var(--read);
+  color: var(--quiet);
+}
+.now > article.turn:first-of-type > .step-head:first-child,
+.sitting-rule + .step-head { margin-top: 0; }
+/* Set from its right, so a number one figure wide starts where the "›" does, and keeps a gap before the name when the
+   text is larger than the margin was made for: from the left, "2" touched the name's first letter at the largest
+   text. */
+.step-n {
+  position: absolute;
+  right: calc(100% + max(var(--hang) - 1ch, 0.5em));
+  top: 0;
+  font: 400 0.765rem/1.45rem var(--app);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--quiet);
+}
+
 .you {
   /* No word left alone on a line of its own. */
   text-wrap: pretty;
@@ -750,6 +774,8 @@ button.line-end:hover { color: var(--text); }
 .top-edge .inner > * { font: 400 0.765rem/1.4 var(--app); color: var(--hint); }
 .top-edge .top-name { color: var(--quiet); overflow: hidden; text-overflow: ellipsis; }
 .top-edge .top-step { overflow: hidden; text-overflow: ellipsis; }
+/* "2 of 3" before the step's name: how far through the route, at a glance. */
+.top-edge .inner > .top-count { color: var(--quiet); font-variant-numeric: tabular-nums; flex: none; margin-right: -0.5rem; }
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }

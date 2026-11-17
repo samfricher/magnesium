@@ -198,6 +198,34 @@ pub struct Turn {
     /// that day, which a later reading would not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closing: Option<Vec<String>>,
+    /// The step of the lesson's route this turn's reply moved on to, as the
+    /// record had the route then. Kept in a file of its own beside the turns:
+    /// the record keeps only the route as it stands now, so where each step
+    /// began is known only from what the window read after each turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<StepBegun>,
+}
+
+/// A step of a lesson's route, as it stood when a turn moved on to it: its
+/// place in the route, counted from 1, the route's length, and its name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepBegun {
+    pub n: usize,
+    pub of: usize,
+    pub name: String,
+}
+
+/// The step in hand after a turn, as the record said once the turn was kept:
+/// none when the lesson had no step in hand. `began` when it is not the step
+/// in hand after the turn before, so the turn's reply moved on to it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StepNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    step: Option<StepBegun>,
+    #[serde(default)]
+    began: bool,
 }
 
 /// The closing lines drawn under a turn, kept beside it.
@@ -624,6 +652,69 @@ impl Store {
         append_line(&self.closing_notes(folder), &note);
     }
 
+    /// The file beside a folder's transcript that holds the step in hand
+    /// after each turn.
+    fn step_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("steps.jsonl")
+    }
+
+    fn step_notes_of(&self, folder: &Path, session: &str) -> Vec<StepNote> {
+        let Ok(text) = fs::read_to_string(self.step_notes(folder)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| serde_json::from_str::<StepNote>(line).ok())
+            .filter(|note| note.session == session)
+            .collect()
+    }
+
+    /// Keep the step in hand after a kept turn, as the record has it now,
+    /// and say whether the turn's reply moved on to it: Some with the step
+    /// when it did. It did when the step before it, the one noted for the
+    /// conversation's latest earlier turn, had another name, or there was
+    /// none. A conversation that has earlier turns and no note at all was
+    /// kept by a window that did not note steps: where its step began is not
+    /// known, so the first step noted in it begins nowhere. Noted again for
+    /// the same turn, the later note stands.
+    pub fn note_step(
+        &self,
+        folder: &Path,
+        session: &str,
+        ms: i64,
+        step: Option<StepBegun>,
+    ) -> Option<StepBegun> {
+        let notes = self.step_notes_of(folder, session);
+        let before = notes
+            .iter()
+            .filter(|note| note.ms < ms)
+            .max_by_key(|note| note.ms);
+        let began = match before {
+            Some(before) => {
+                step.is_some()
+                    && before.step.as_ref().map(|s| &s.name) != step.as_ref().map(|s| &s.name)
+            }
+            None => {
+                step.is_some()
+                    && !self
+                        .all_turns(folder)
+                        .iter()
+                        .any(|turn| turn.session == session && turn.ms < ms)
+            }
+        };
+        let note = StepNote {
+            session: session.to_owned(),
+            ms,
+            step,
+            began,
+        };
+        append_line(&self.step_notes(folder), &note);
+        if began {
+            note.step
+        } else {
+            None
+        }
+    }
+
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
@@ -703,6 +794,16 @@ impl Store {
                 if let Some(lines) = by_ms.get(&turn.ms) {
                     turn.closing = Some(lines.clone());
                 }
+            }
+        }
+        // The step each turn's reply moved on to, the last note kept for it.
+        let mut began: BTreeMap<i64, Option<StepBegun>> = BTreeMap::new();
+        for note in self.step_notes_of(folder, session) {
+            began.insert(note.ms, note.step.filter(|_| note.began));
+        }
+        for turn in &mut turns {
+            if let Some(step) = began.get(&turn.ms) {
+                turn.step.clone_from(step);
             }
         }
         turns
@@ -1053,5 +1154,101 @@ mod tests {
         let store = Store::at(home.path().to_path_buf());
         assert!(store.recent().is_empty());
         assert_eq!(store.block_minutes(), 50);
+    }
+
+    fn step(n: usize, of: usize, name: &str) -> Option<StepBegun> {
+        Some(StepBegun {
+            n,
+            of,
+            name: name.into(),
+        })
+    }
+
+    fn kept(store: &Store, folder: &Path, session: &str, ms: i64) {
+        store.append_turn(
+            folder,
+            &Turn {
+                session: session.into(),
+                ms,
+                learner: "words".into(),
+                tutor: "reply".into(),
+                ..Turn::default()
+            },
+        );
+    }
+
+    #[test]
+    fn a_step_begins_where_the_step_in_hand_changes_numbered_as_the_route_was_then() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        // The first turn has no route yet; the second sets it.
+        kept(&store, &folder, "s", 1);
+        assert_eq!(store.note_step(&folder, "s", 1, None), None);
+        kept(&store, &folder, "s", 2);
+        assert_eq!(
+            store.note_step(&folder, "s", 2, step(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        // The same step, in a route the tutor made longer: nothing begins.
+        kept(&store, &folder, "s", 3);
+        assert_eq!(store.note_step(&folder, "s", 3, step(1, 3, "A")), None);
+        kept(&store, &folder, "s", 4);
+        assert_eq!(
+            store.note_step(&folder, "s", 4, step(2, 3, "B")),
+            step(2, 3, "B")
+        );
+        // Back to an earlier step: it begins again here.
+        kept(&store, &folder, "s", 5);
+        assert_eq!(
+            store.note_step(&folder, "s", 5, step(1, 3, "A")),
+            step(1, 3, "A")
+        );
+        // Read again for the same turn, the later reading stands.
+        kept(&store, &folder, "s", 6);
+        assert_eq!(store.note_step(&folder, "s", 6, step(1, 3, "A")), None);
+        assert_eq!(
+            store.note_step(&folder, "s", 6, step(3, 3, "C")),
+            step(3, 3, "C")
+        );
+        let heads: Vec<Option<StepBegun>> = store
+            .turns(&folder, "s")
+            .into_iter()
+            .map(|turn| turn.step)
+            .collect();
+        assert_eq!(
+            heads,
+            [
+                None,
+                step(1, 2, "A"),
+                None,
+                step(2, 3, "B"),
+                step(1, 3, "A"),
+                step(3, 3, "C")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_conversation_kept_before_steps_were_noted_has_no_step_begin_mid_way() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        kept(&store, &folder, "old", 1);
+        kept(&store, &folder, "old", 2);
+        // Reopened in this window: where its step began is not known.
+        kept(&store, &folder, "old", 3);
+        assert_eq!(store.note_step(&folder, "old", 3, step(2, 3, "B")), None);
+        kept(&store, &folder, "old", 4);
+        assert_eq!(
+            store.note_step(&folder, "old", 4, step(3, 3, "C")),
+            step(3, 3, "C")
+        );
+        // Another conversation in the folder is its own.
+        kept(&store, &folder, "new", 5);
+        assert_eq!(
+            store.note_step(&folder, "new", 5, step(1, 1, "A")),
+            step(1, 1, "A")
+        );
     }
 }

@@ -148,6 +148,12 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       steps.reopenedMarks = reopened;
       const wanted = { twoTasks: "a-1 a-2", threeTries: "- - - a-3", noAnswerKept: "a-1 -", older: "a-1 a-2", mixed: "a-1 a-2", noRecord: "- -" };
       for (const [name, want] of Object.entries(wanted)) if (reopened[name as keyof typeof wanted] !== want) throw new Error(`a reopened session put a mark on the wrong answer (${name}): ${reopened[name as keyof typeof wanted]}, not ${want}`);
+      // The step a turn's reply moved on to comes back with that turn, and a turn that began none has no head.
+      const heads = rebuild([kept(0, { step: { n: 1, of: 3, name: "One" } }), kept(10), kept(20, { step: { n: 2, of: 3, name: "Two" } })], [], "s")
+        .map((turn) => (turn.step ? `${turn.step.n}/${turn.step.of} ${turn.step.name}` : "-"))
+        .join(" | ");
+      steps.reopenedSteps = heads;
+      if (heads !== "1/3 One | - | 2/3 Two") throw new Error(`a reopened session lost where its steps began: ${heads}`);
     }
 
     // Mathematics in an attribute is plain text; in the text it is KaTeX. Image maps are dropped.

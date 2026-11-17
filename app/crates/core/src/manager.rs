@@ -29,7 +29,7 @@ use crate::models::{self, ModelOption, Pick};
 use crate::paths;
 use crate::plan::{self, Plan, PlanPart};
 use crate::runtime;
-use crate::store::{Engine, FolderState, PaperSitting, Store, Turn};
+use crate::store::{Engine, FolderState, PaperSitting, StepBegun, Store, Turn};
 use crate::study::{self, Card, Home, Paper, Progress, Rail};
 use crate::workspace::{self, LessonInfo, Workspace};
 
@@ -1691,21 +1691,31 @@ fn settle(
         // last write, so the record has both by now. Waiting for the marks
         // below would hold the line back for up to their last look. A runtime
         // that cannot say leaves the page to find the task as before.
-        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
-        let read_task = |told: &Mutex<Option<Option<String>>>| {
-            let Some(conversation) = task_of.as_deref() else {
-                return;
-            };
+        // The lesson as the record has it after the turn, read once for both
+        // the open task and the step in hand. None when the runtime could not
+        // say, or the learner has written again since.
+        let conversation = task_of
+            .clone()
+            .or_else(|| turn.as_ref().map(|(_, session, _)| session.clone()));
+        let read_lesson = || -> Option<Option<runtime::Lesson>> {
             if lock(&settling.watch).seq != seq || !live() {
+                return None;
+            }
+            runtime::lesson(&folder, Some(conversation.as_deref()?))
+        };
+        let told: Mutex<Option<Option<String>>> = Mutex::new(None);
+        let read_task = |told: &Mutex<Option<Option<String>>>,
+                         lesson: &Option<Option<runtime::Lesson>>| {
+            if task_of.is_none() {
                 return;
             }
             // A record with no lesson for this conversation says nothing of
             // its tasks (the tutor never started one), so the page goes on
             // finding the task as it did before the record could say.
-            let Some(Some(lesson)) = runtime::lesson(&folder, Some(conversation)) else {
+            let Some(Some(lesson)) = lesson else {
                 return;
             };
-            let open = lesson.open_task;
+            let open = lesson.open_task.clone();
             let posed = open
                 .as_ref()
                 .is_some_and(|task| task.posed_at_ms >= sent_ms);
@@ -1731,7 +1741,41 @@ fn settle(
             }
             *told = Some(task);
         };
-        read_task(&told);
+        // The step in hand after the turn, kept beside it; when the reply
+        // moved the lesson on to it, the page sets its name in above the
+        // reply. Not noted when the runtime could not say: a turn with no
+        // note is never taken as a step's beginning.
+        let stepped: Mutex<Option<Option<StepBegun>>> = Mutex::new(None);
+        let read_step = |lesson: &Option<Option<runtime::Lesson>>| {
+            let (Some((store, session, ms)), Some(lesson)) = (&turn, lesson) else {
+                return;
+            };
+            let step = lesson.as_ref().and_then(|lesson| {
+                let at = lesson
+                    .steps
+                    .iter()
+                    .position(|step| step.status == "doing")?;
+                Some(StepBegun {
+                    n: at + 1,
+                    of: lesson.steps.len(),
+                    name: lesson.steps[at].step.clone(),
+                })
+            });
+            let mut stepped = lock(&stepped);
+            if stepped.as_ref() == Some(&step) {
+                return;
+            }
+            let began = store.note_step(&folder, session, *ms, step.clone());
+            *stepped = Some(step);
+            if let Some(StepBegun { n, of, name }) = began {
+                if lock(&settling.watch).seq == seq && live() {
+                    out(AgentEvent::StepBegun { n, of, name });
+                }
+            }
+        };
+        let lesson = read_lesson();
+        read_task(&told, &lesson);
+        read_step(&lesson);
         // A turn that ended the sitting: the runtime's closing lines, read
         // only when a tool result of the turn said a sitting ended. The tutor
         // ends the sitting before its reply, so they are read at once, and
@@ -1815,7 +1859,9 @@ fn settle(
         // A mark that turned up only on a later look may have closed the task
         // read at the turn's end: read it again.
         if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
-            read_task(&told);
+            let lesson = read_lesson();
+            read_task(&told, &lesson);
+            read_step(&lesson);
         }
         // Read again only when the lines could have changed: none were shown
         // yet, or a mark of this message turned up late.

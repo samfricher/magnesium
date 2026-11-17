@@ -111,6 +111,11 @@ pub enum AgentEvent {
     /// turn has settled, and only when the record held an answer marked
     /// today. Never the tutor's words.
     Closing { lines: Vec<String> },
+    /// This turn's reply moved the lesson on to a step of its route: its
+    /// place in the route as it stands now, counted from 1, the route's
+    /// length, and its name. Sent once the turn has settled, from the
+    /// record, and kept beside the turn. Never the tutor's words.
+    StepBegun { n: usize, of: usize, name: String },
     /// A tool result in this turn said a sitting ended: the tutor's
     /// `end_sitting`, a pause or a stop, or the runtime's own end of a
     /// sitting of quick checks alone. The window then reads the closing

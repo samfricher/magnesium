@@ -393,7 +393,8 @@ type Entry =
   | { at: string; kind: "marked"; mark: unknown }
   | { at: string; kind: "plan_changed"; what: string[] }
   | { at: string; kind: "notice"; text: string }
-  | { at: string; kind: "closing"; lines: string[] };
+  | { at: string; kind: "closing"; lines: string[] }
+  | { at: string; kind: "step"; n: number; of: number; name: string };
 const transcript: Entry[] = [];
 let replyBlocks: string[] = [];
 let replyStreaming = "";
@@ -430,6 +431,9 @@ function note(event: AgentEvent): void {
       break;
     case "closing":
       transcript.push({ at, kind: "closing", lines: event.lines });
+      break;
+    case "step_begun":
+      transcript.push({ at, kind: "step", n: event.n, of: event.of, name: event.name });
       break;
   }
 }
@@ -574,8 +578,14 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
+      // The lesson's step heads drawn now, as a screen reader hears each ("Step 2 of 3: A 95% interval"), and what
+      // the top edge counts ("2 of 3"), or null while it shows none.
+      const heads = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head"))
+        .filter((head) => head.getClientRects().length > 0)
+        .map((head) => collapse(head.textContent ?? "").replace(/^\d+\s*/, ""));
+      const count = document.querySelector<HTMLElement>(".session.in-front .top-edge .top-count");
       // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
-      return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView() };
+      return { ok: true, ...(found as object), files, heads, top_count: count ? collapse(count.textContent ?? "") : null, focus: focusName(), key_window: document.hasFocus(), document: pdfInView() };
     }
     case "smooth": {
       // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`

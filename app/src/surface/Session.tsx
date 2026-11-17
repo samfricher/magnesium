@@ -189,6 +189,7 @@ export function rebuild(saved: SavedTurn[], marks: Mark[] | null, session: strin
     if (turn.noted && turn.posed && turn.task) lesson.posed = turn.task;
     if (owned[at].length > 0) lesson.marks = owned[at];
     if (turn.closing && turn.closing.length > 0) lesson.closing = turn.closing;
+    if (turn.step) lesson.step = turn.step;
     const change = session ? changeOf(session, turn.learner, turn.tutor) : null;
     if (change) lesson.change = change as PlanDiff;
     if (turn.noted) open = turn.task ?? null;
@@ -262,6 +263,7 @@ function liveTurn(session: SessionState): LessonTurn | null {
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
     ...(live.closing ? { closing: live.closing } : {}),
+    ...(live.step ? { step: live.step } : {}),
   };
 }
 
@@ -1109,7 +1111,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   }, [folded]);
 
   const rest = restView();
-  const currentStep = plan?.steps.find((step) => step.status === "doing")?.step ?? null;
+  const stepAt = plan?.steps.findIndex((step) => step.status === "doing") ?? -1;
+  const currentStep = stepAt >= 0 ? plan!.steps[stepAt].step : null;
   // The one action is the field's own end, in the text's colour; the window's other keys are one quiet line.
   const restVerb = rest?.start ? (/^↩ ([a-z]+(?: on)?)/.exec(rest.keys)?.[1] ?? "start") : null;
   const restOthers = rest ? (rest.start ? rest.keys.replace(/^↩ [a-z]+(?: on)?\s*/, "") : rest.keys) : "";
@@ -1378,6 +1381,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
           {headGone && (
             <div className="inner">
               {/* The tab names the session already: the step in hand is what this line adds. */}
+              {currentStep && !props.panel && (
+                <span className="top-count" data-role="top-count">{`${stepAt + 1} of ${plan!.steps.length}`}</span>
+              )}
               {currentStep && !props.panel ? <Line text={currentStep} className="top-step" /> : !currentStep ? <Line text={sittingTitle} className="top-name" /> : null}
               {turnLine("top")}
             </div>

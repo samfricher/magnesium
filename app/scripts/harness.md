@@ -19,7 +19,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `transcript`
 - `ready`
 - `errors`
-- `session`
+- `session`: the session in front, with `heads` (the lesson's step heads drawn now, as a screen reader hears each: "Step 2 of 3: A 95% interval") and `top_count` (what the top edge counts, "2 of 3", or null)
 - `smooth {ms, scroll_by?, type_every?}`
 - `steady {text, back?, every?}`: write `text` on the line a key at a time, then take `back` characters off, and say how far the line moved on screen frame to frame (`largestMove`, `lowest` under the view's edge), how often the task's copy over the line came or went, and `from_foot`
 - `caret {at?}`: where the caret is on the line, put at `at` first

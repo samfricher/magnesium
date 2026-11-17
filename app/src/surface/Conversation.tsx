@@ -176,6 +176,17 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
     >
       {divider && <hr className="sitting-rule" />}
       <Learner turn={turn} showQuestion={showQuestion} />
+      {turn.step && (
+        // Where the step's work began: set in above the reply that moved the lesson on to it, numbered by the route as
+        // it stood then. The number is for the eye; a screen reader hears it with the route's length.
+        <h2 className="step-head" data-role="step-head">
+          <span className="step-n" aria-hidden="true">
+            {turn.step.n}
+          </span>
+          <span className="visually-hidden">{`Step ${turn.step.n} of ${turn.step.of}: `}</span>
+          <Line text={turn.step.name} />
+        </h2>
+      )}
       {reply.trim() !== "" && (
         <div className="tutor">
           <Rich text={reply} final={!writing} stopped={turn.interrupted} linksOpen={linksOpen} opensNow={opensNow} onSource={onSource} onNote={onNote} task={task ?? turn.posed} caret={writing} />
