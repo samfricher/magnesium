@@ -10,7 +10,7 @@
 // (crates/core/tests/stand_in_model.py).
 //
 // It writes <stem>-dark.png and <stem>-light.png for each page and state it
-// visits (the session's line in both of its looks, soft and bare), menu.json
+// visits (the session's line in each of its looks: soft, bare and ruled), menu.json
 // (the menu bar, which a photograph of the window does not show) and run.json
 // (each step, and any problem). It exits 1 when a step failed, after doing
 // every step it can.
@@ -195,8 +195,10 @@ async function paperStates() {
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
-  // The paper's other clocks: its last minute, and past its end by hours, and by days from a start on an earlier day.
+  // The paper's other clocks: a third through, its last minute, and past its end by hours, and by days from a start
+  // on an earlier day.
   for (const [stem, minutesAgo, what] of [
+    ["paper-third", 25, "Workspace: a paper a third through"],
     ["paper-last", 74.3, "Workspace: a paper in its last minute"],
     ["paper-hours", 75 + 190, "Workspace: a paper three hours past its end"],
     ["paper-days", 75 + 2 * 1440 + 30, "Workspace: a paper started two days ago, long past its end"],
@@ -351,6 +353,9 @@ async function workRecord() {
   await step(k, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(k, 800);
   await shoot(k, "workspace-work-many", "Workspace over a record of six skills: Your work under Next, by the day each can count again");
+  await step(k, "to Your work, wide", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-list", "Workspace over six skills, scrolled to Your work: each day in the margin, the exam among them");
   await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
   await settle(k, 400);
   await shoot(k, "workspace-work-narrow", "Workspace over six skills at 720 by 560");
@@ -362,6 +367,11 @@ async function workRecord() {
   await step(k, "to Your work, larger", { op: "scroll", target: "Your work" });
   await settle(k, 300);
   await shoot(k, "workspace-work-big", "Workspace over six skills at 720 by 560, the largest text");
+  await step(k, "1040 by 720, larger", { op: "frame", width: 1040, height: 720 });
+  await settle(k, 400);
+  await step(k, "to Your work, larger and wide", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-big-wide", "Workspace over six skills at 1040 by 720, the largest text");
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(k);
@@ -388,7 +398,7 @@ async function lineLook(w, look) {
   await settle(w, 300);
 }
 
-/** The page while a task is open (the blank page): the bare line first, then the soft field; each in light and dark. */
+/** The page while a task is open (the blank page): the bare line first, then the soft field and the ruled line; each in light and dark. */
 async function answerPages() {
   // A note of the course's own, so a document that is not a past paper can be open beside the task.
   const notes = join(scratch, "Intro-Statistics", "Study", "materials", "week6-notes.md");
@@ -414,10 +424,10 @@ async function answerPages() {
   await step(a, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   await looked(a, "open", "the first reply");
   await shoot(a, "answer-bare-first-reply", "Answer: the reply that set the task, read where it was written (the page stays whole)");
-  await turn(a, "⌘↑: only the task");
+  await turn(a, "⌘↑: Hide the lesson");
   await looked(a, "folded", "⌘↑ after the first reply");
   await shoot(a, "answer-bare-rest", "Answer: a task open at rest, the page is the task (bare line)");
-  // The menu bar while the page is the task: Session > Only the Task / The Lesson So Far, with its key.
+  // The menu bar while the page is the task: Session > Hide the Lesson / Show the Lesson, with its key.
   const menu = await step(a, "the menu bar, folded", { op: "menu" });
   writeFileSync(join(out, "answer-menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));
   await step(a, "write an answer", { op: "type", text: ANSWER });
@@ -448,13 +458,13 @@ async function answerPages() {
   await shoot(a, "answer-bare-attached", "Answer: a photo of working on the line");
   await step(a, "take it off", { op: "click", target: "×" });
   await step(a, "focus the line again", { op: "focus", target: "composer", by: "drive" });
-  await turn(a, "⌘↑: the lesson so far");
+  await turn(a, "⌘↑: Show the lesson");
   await looked(a, "open", "⌘↑ on the folded page");
   await shoot(a, "answer-bare-looked-back", "Answer: ⌘↑ opens the whole lesson over the task, at its end");
   await step(a, "fold it from its line", { op: "click", target: "look-back", by: "drive" });
   await settle(a, 400);
   await looked(a, "folded", "the line under the heading");
-  await shoot(a, "answer-bare-folded-again", "Answer: folded again from “only the task”");
+  await shoot(a, "answer-bare-folded-again", "Answer: folded again from “Hide the lesson”");
 
   // Talk while the task is open: not an answer, and the task stays.
   await step(a, "focus for talk", { op: "focus", target: "composer", by: "drive" });
@@ -468,7 +478,7 @@ async function answerPages() {
   await shoot(a, "answer-bare-talk-folded", "Answer: after the talk, the same task is the page again");
 
   // The plan and documents beside it.
-  await step(a, "show the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(a, 600);
   await shoot(a, "answer-bare-plan", "Answer: the plan beside the task; the plan stays open");
   await step(a, "open a document", { op: "click", target: "open-document", by: "drive" });
@@ -502,7 +512,7 @@ async function answerPages() {
   if (paperPage.page === "open") await turn(a, "⌘↑ with the paper open");
   await shoot(a, "answer-bare-paper", "Answer: a past paper beside the task stays open, as its links do");
   await closeDocument(a, "Midterm 2023");
-  await step(a, "hide the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
   // A small window with the largest text: folded, written on, and opened.
   const wide = await step(a, "the window's size", { op: "frame" });
@@ -516,7 +526,7 @@ async function answerPages() {
   await shoot(a, "answer-bare-narrow-big-typed", "Answer: words on the line at 720 by 560, the largest text");
   await turn(a, "⌘↑ in the small window");
   await settle(a, 400);
-  await shoot(a, "answer-bare-narrow-big-open", "Answer: the lesson opened at 720 by 560, “only the task” at the top edge");
+  await shoot(a, "answer-bare-narrow-big-open", "Answer: the lesson opened at 720 by 560, “Hide the lesson” at the top edge");
   await turn(a, "⌘↑ again in the small window");
   await step(a, "clear the small line", { op: "type", text: "", replace: true });
   await step(a, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
@@ -537,6 +547,34 @@ async function answerPages() {
   await shoot(a, "answer-soft-stuck", "Answer: Stuck's row open on the soft field");
   await step(a, "close Stuck on the soft line", { op: "key", key: "Escape" });
   await step(a, "clear the soft line", { op: "type", text: "", replace: true });
+  // The ruled line: the bare line on one hairline, in the soft field's states, with a file on it, and at the largest text.
+  await lineLook(a, "Ruled line");
+  await step(a, "the session, ruled", { op: "click", target: "tab-2", by: "drive" });
+  await settle(a, 500);
+  await shoot(a, "answer-ruled-rest", "Answer: a task open at rest, the ruled line");
+  await step(a, "focus the ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the ruled line", { op: "type", text: ANSWER });
+  await settle(a, 300);
+  await shoot(a, "answer-ruled-typed", "Answer: words on the ruled line, under the task alone");
+  await step(a, "stuck on the ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(a, 300);
+  await shoot(a, "answer-ruled-stuck", "Answer: Stuck's row open on the ruled line");
+  await step(a, "close Stuck on the ruled line", { op: "key", key: "Escape" });
+  await step(a, "clear the ruled line", { op: "type", text: "", replace: true });
+  await step(a, "a photo on the ruled line", { op: "attach", path: photo });
+  await settle(a, 400);
+  await shoot(a, "answer-ruled-attached", "Answer: a photo of working on the ruled line");
+  await step(a, "take it off the ruled line", { op: "click", target: "×" });
+  const ruledWide = await step(a, "the window's size, ruled", { op: "frame" });
+  await step(a, "720 by 560, ruled", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await a.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(a, "focus the small ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the small ruled line", { op: "type", text: ANSWER });
+  await settle(a, 400);
+  await shoot(a, "answer-ruled-narrow-big-typed", "Answer: words on the ruled line at 720 by 560, the largest text");
+  await step(a, "clear the small ruled line", { op: "type", text: "", replace: true });
+  await step(a, "the text back to its own size, ruled", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (ruledWide.ok) await step(a, "the window's size again, ruled", { op: "frame", width: ruledWide.frame.width, height: ruledWide.frame.height });
   await lineLook(a, "Bare line");
   await step(a, "the session, bare", { op: "click", target: "tab-2", by: "drive" });
   await settle(a, 400);
@@ -1077,6 +1115,47 @@ try {
   await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
   await step(w, "close the new session", { op: "key", key: "w", meta: true });
   await settle(w, 300);
+
+  // The line ruled: the bare line on one hairline, in the bare line's states. Settings keeps its tab, the third.
+  await step(w, "settings for the ruled line", { op: "click", target: "tab-3", by: "drive" });
+  await step(w, "your line: ruled", { op: "click", target: "Ruled line" });
+  await step(w, "settings: Your line", { op: "scroll", target: "Your line" });
+  await w.op({ op: "scroll", by: -330 });
+  await settle(w, 300);
+  await shoot(w, "settings-line-ruled", "Settings: Your line on the ruled line, the sample drawn on it");
+  await step(w, "the session, ruled", { op: "click", target: "tab-2", by: "drive" });
+  await settle(w, 500);
+  await shoot(w, "session-ruled", "Session: the line ruled");
+  await step(w, "focus the ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the ruled line", { op: "type", text: ANSWER });
+  await settle(w, 300);
+  await shoot(w, "session-ruled-typed", "Session: words on the ruled line");
+  await step(w, "stuck on the ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "session-ruled-stuck", "Session: Stuck open on the ruled line");
+  await step(w, "close Stuck on the ruled line", { op: "key", key: "Escape" });
+  await step(w, "clear the ruled line", { op: "type", text: "", replace: true });
+  await step(w, "attach a photo on the ruled line", { op: "attach", path: photo });
+  await settle(w, 400);
+  await shoot(w, "session-ruled-attached", "Session: a photo on the ruled line, before sending");
+  await step(w, "take it off the ruled line", { op: "click", target: "×" });
+  const ruledWide = await step(w, "the window's size, ruled", { op: "frame" });
+  await step(w, "720 by 560, ruled", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(w, "focus the small ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the small ruled line", { op: "type", text: ANSWER });
+  await step(w, "stuck on the small ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 400);
+  await shoot(w, "session-ruled-narrow-stuck", "Session: Stuck open on the ruled line at 720 by 560, the largest text");
+  await step(w, "close Stuck on the small ruled line", { op: "key", key: "Escape" });
+  await step(w, "clear the small ruled line", { op: "type", text: "", replace: true });
+  await step(w, "the text back to its own size, ruled", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (ruledWide.ok) await step(w, "the window's size again, ruled", { op: "frame", width: ruledWide.frame.width, height: ruledWide.frame.height });
+  await step(w, "a new session on the ruled line", { op: "click", target: "new-session", by: "drive" });
+  await settle(w, 800);
+  await shoot(w, "session-rest-ruled", "Session: a new session before it starts, the line ruled");
+  await step(w, "close the ruled new session", { op: "key", key: "w", meta: true });
+  await settle(w, 300);
   // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
   await step(w, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
@@ -1146,7 +1225,7 @@ try {
   await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  // Each card in both of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
+  // Each card in each of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
   // asks within a moment of the Return that sent the words, so the card leaves the keyboard on the line; ⇧⇥ takes
   // it to the card. Settings keeps its tab, the third, once it has one.
   let settingsTab = null;
@@ -1160,6 +1239,7 @@ try {
   const cardShots = async (stem, what) => {
     for (const [which, suffix, words] of [
       ["Bare line", "-bare", ", on the bare line"],
+      ["Ruled line", "-ruled", ", on the ruled line"],
       ["Soft field", "", ""],
     ]) {
       await lineLook(which);

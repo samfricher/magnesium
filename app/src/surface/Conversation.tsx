@@ -5,13 +5,14 @@
 // alike, and only a mark under one says the record took it as an answer.
 // Nothing here reads a mark or a change from the tutor's words.
 
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
+import { useHangs } from "../hangs";
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, passWords, withoutPaths, type PlanDiff } from "../words";
+import { firstWords, markWords, passDay, passWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
@@ -29,11 +30,55 @@ function Sent({ files, working }: { files: string[]; working: boolean }) {
   );
 }
 
+// Marks the runtime sent while this window was open, and those of them whose day has already filled once. A mark
+// read back from the record when a session is drawn again is in neither, so its day is drawn filled and still.
+const arrived = new Set<string>();
+const filled = new Set<string>();
+
+/** A mark has just come from the runtime: its day fills as it is drawn, once. */
+export function markArrived(id: string): void {
+  arrived.add(id);
+}
+
+/** The skill's three days beside a mark that earned one: those earned filled, the one just earned filling as it comes.
+ * They hang in the margin left of the mark while it has room for them, else they start the mark's line. */
+function PassDays({ mark, day }: { mark: Mark; day: number }) {
+  // Decided once, when first drawn: a turn drawn again later (folded into the lesson, or the tab reopened) is still.
+  const [fresh] = useState(() => arrived.has(mark.id) && !filled.has(mark.id));
+  const days = useRef<HTMLSpanElement | null>(null);
+  const edge = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    filled.add(mark.id);
+  }, [mark.id]);
+  // The mark's own line is the column's edge; the rings and their gap must fit left of it.
+  const hangs = useHangs(edge, ".surface", () => {
+    const rings = days.current;
+    return rings ? rings.offsetWidth + parseFloat(getComputedStyle(rings).getPropertyValue("--pass-gap") || "0") * parseFloat(getComputedStyle(document.documentElement).fontSize) : 0;
+  });
+  return (
+    <span
+      ref={(element) => {
+        days.current = element;
+        edge.current = element?.parentElement ?? null;
+      }}
+      className={hangs ? "pass-days" : "pass-days inline"}
+      aria-hidden="true"
+      data-role="pass-days"
+      data-day={day}
+    >
+      {[1, 2, 3].map((at) => (
+        <span key={at} className={at < day ? "pass-day earned" : at === day ? (fresh ? "pass-day earned arriving" : "pass-day earned") : "pass-day"} />
+      ))}
+    </span>
+  );
+}
+
 function Marks({ marks }: { marks: Mark[] }) {
   return (
     <>
       {marks.map((mark) => (
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
+          {passDay(mark) !== null && <PassDays mark={mark} day={passDay(mark)!} />}
           {markWords(mark)}
           {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
           {passWords(mark) && mark.receipt && (

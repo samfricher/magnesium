@@ -322,6 +322,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     };
     actions.newSession(folder);
     await until("a new session's first line, ending in More", () => front('[data-line="rest"] [data-drive="more"]') !== null, 10_000);
+    // A session not begun is named "New session" in its tab: the page above it already says the course.
+    const newTab = document.querySelector('[role="tab"][aria-selected="true"] .tab-name')?.textContent?.trim() ?? null;
+    steps.newSessionTab = newTab;
+    if (newTab !== "New session") throw new Error(`a new session's tab is not named New session: ${JSON.stringify(newTab)}`);
     const noStuck = front('[data-line="rest"] [data-drive="stuck"]') === null;
     actions.run("hint");
     await wait(300);
@@ -385,6 +389,34 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       if (!above || !inFlow) throw new Error(`Stuck's rows are not a row above the words: ${JSON.stringify(steps.stuckInLesson)}`);
       if (focused !== "hint") throw new Error(`the keyboard did not go to Stuck's first row: ${focused}`);
       if (line()?.querySelector(".line-menu") != null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not put Stuck's rows away: ${JSON.stringify(steps.stuckInLesson)}`);
+    }
+
+    // The line's three looks: the ruled line keeps the bare line's "›" and adds one hairline under the words, from
+    // the "›" to the column's end; the bare line and the soft field draw none. Set on the root as applyPrefs sets it.
+    {
+      const root = document.documentElement;
+      const was = root.dataset.field;
+      const words = () => document.querySelector<HTMLElement>(".session.in-front .line.lesson .field-row")!;
+      const look = (field: string) => {
+        root.dataset.field = field;
+        const rule = getComputedStyle(words(), "::after");
+        const mark = getComputedStyle(words(), "::before");
+        const hang = parseFloat(getComputedStyle(root).getPropertyValue("--hang")) || 0;
+        return {
+          rule: rule.content !== "none" && rule.borderTopStyle === "solid" ? rule.borderTopWidth : null,
+          // The rule starts where the "›" hangs and ends at the row's right edge.
+          from: rule.content !== "none" ? Math.round(parseFloat(rule.left) + hang) : null,
+          to: rule.content !== "none" ? Math.round(parseFloat(rule.right)) : null,
+          mark: mark.content,
+        };
+      };
+      steps.lineLooks = { bare: look("bare"), ruled: look("ruled"), soft: look("soft") };
+      if (was === undefined) delete root.dataset.field;
+      else root.dataset.field = was;
+      const { bare, ruled, soft } = steps.lineLooks as Record<string, ReturnType<typeof look>>;
+      if (ruled.rule !== "1px" || ruled.from !== 0 || ruled.to !== 0) throw new Error(`the ruled line has no hairline from its "›" to the column's end: ${JSON.stringify(steps.lineLooks)}`);
+      if (ruled.mark !== bare.mark || bare.mark === "none") throw new Error(`the ruled line does not hang the bare line's "›": ${JSON.stringify(steps.lineLooks)}`);
+      if (bare.rule !== null || soft.rule !== null) throw new Error(`a look other than the ruled line drew a rule: ${JSON.stringify(steps.lineLooks)}`);
     }
 
     // The model on the lesson's line: under More, the same list as the start line, now changing the running session.
@@ -596,6 +628,15 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The quiet controls, and the plan beside the lesson, shown and hidden.
     steps.controls = ["more", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
+    const planWord = document.querySelector('[data-drive="plan-toggle"]')?.textContent ?? null;
+    if (planWord !== "Plan") throw new Error(`the tab bar's switch for the plan says ${JSON.stringify(planWord)}`);
+    // ⌘K names the same action by the same word.
+    press("k", { meta: true });
+    await until("the command menu, in a session", () => document.querySelector('[data-drive="command-plan"]') !== null, 3000);
+    const planCommand = document.querySelector('[data-drive="command-plan"] .row-label')?.textContent ?? null;
+    press("Escape");
+    await until("the command menu to go, in a session", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
+    if (planCommand !== "Show plan") throw new Error(`⌘K's command for the plan says ${JSON.stringify(planCommand)}`);
     actions.run("plan");
     await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);
     await wait(300);
@@ -659,11 +700,13 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       line: document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null,
     };
     steps.reopenedFolded = folded;
-    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("the lesson so far"))
+    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("Show the lesson"))
       throw new Error(`a session opened again with its task open is not the task alone: ${JSON.stringify(folded)}`);
     press("ArrowUp", { meta: true });
     await until("⌘↑ to open the lesson over the task", () => actions.session()?.probe().page === "open", 3000);
     await wait(300);
+    const openLine = document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null;
+    if (!openLine?.includes("Hide the lesson")) throw new Error(`the open lesson's line does not say it hides the lesson: ${JSON.stringify(openLine)}`);
     const head = document.querySelector(".session.in-front .now.lesson .head")!.getBoundingClientRect().top;
     const first = document.querySelector(".session.in-front .now.lesson article")!.getBoundingClientRect().top;
     const again = await api.lessonTurns(folder, sessions[0].session);

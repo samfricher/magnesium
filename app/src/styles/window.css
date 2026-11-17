@@ -275,24 +275,37 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .list-head.fold[aria-expanded="true"]::after { content: " ⌄"; }
 .fold-count { margin-left: 0.35rem; color: var(--hint); }
 
-/* A skill in Your work: its name, and under it its newest mark; beside the name's first line, when it can count again
-   and its three days. A long name wraps under itself, so the day and the rings stay on its first line. */
-.work-row {
+/* Your work as the days each skill can next count. Each row is a grid of its own (the day, the name, its rings), so
+   each stays a list item to assistive tech; the day column has one width, so the rows line up as one table. Hung, the
+   day sits in the margin and the names keep the page's left edge. */
+.agenda { --agenda-day: 5.4rem; --agenda-gap: 1.1rem; }
+.agenda-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
-  column-gap: 1.2rem;
+  grid-template-columns: var(--agenda-day) minmax(0, 1fr) max-content;
+  column-gap: var(--agenda-gap);
   align-items: baseline;
-  padding: 0.38rem 0;
+  padding: 0.3rem 0;
 }
-.work-name { grid-column: 1; white-space: normal; overflow: visible; text-wrap: pretty; }
-.work-when { grid-column: 2; }
-.work-when.work-today { color: var(--ink); }
-.work-mark { grid-column: 1 / -1; margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.agenda.hung .agenda-row { margin-left: calc(-1 * (var(--agenda-day) + var(--agenda-gap))); }
+.agenda-row.first:not(:first-child) { margin-top: 0.75rem; }
+.agenda-day {
+  grid-column: 1;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--quiet);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.agenda.hung .agenda-day { text-align: right; }
+.agenda-day.today { color: var(--ink); }
+.agenda .work-name { grid-column: 2; white-space: normal; overflow: visible; text-wrap: pretty; }
+.agenda-row.proven .work-name { color: var(--quiet); }
+.agenda-exam > .agenda-day { color: var(--text); }
+.agenda-exam-name { grid-column: 2 / span 2; font: italic 400 1rem/1.45 var(--read); color: var(--text); }
 /* Each skill's days, as the record counts them: one ring for each of the three, filled for each earned. The rings sit
    in a box one name line high, so they are centred on that line at any text size. */
 .work-days { grid-column: 3; display: inline-flex; align-items: center; gap: 0.24rem; align-self: start; height: 1.45rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
-.work-day.earned { background: var(--text); border-color: var(--text); }
+.work-day.earned { background: var(--ink); border-color: var(--ink); }
 .your-work .work-key { margin-top: 0.5rem; max-width: 34em; }
 
 /* A timed paper while it runs: the time, the paper's name and its clock inside the ink rule a card has; its actions,
@@ -301,10 +314,23 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .running-paper { display: flow-root; margin-top: 1.8rem; }
 .running-paper > .list-head { margin-top: 0; }
 .paper-head {
+  position: relative;
   margin-left: calc(-1 * var(--hang));
-  padding: 0.15rem 0 0.2rem calc(var(--hang) - 2px);
+  padding: 0.15rem 4.6rem 0.2rem calc(var(--hang) - 2px);
   border-left: 2px solid var(--ink);
 }
+/* The time left as an area, at the block's right. A wash of the ink, not the ink itself, so the minutes stay the
+   darkest thing in the block. */
+.time-disc { position: absolute; right: 0; top: 0.35rem; width: 3.4rem; height: 3.4rem; }
+.time-disc-edge { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+/* In dark the same share of ink was a dim slate on the near-black ground, too faint to read from the desk, so dark
+   takes more of it. */
+.time-disc { --disc-wash: 34%; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) .time-disc { --disc-wash: 70%; }
+}
+:root[data-scheme="dark"] .time-disc { --disc-wash: 70%; }
+.time-disc-left { fill: color-mix(in srgb, var(--ink) var(--disc-wash), var(--ground)); }
 /* The one thing on the page a learner sitting the paper looks up for, at the desk: a step over the page's title. */
 .paper-time { margin: 0; font: 400 1.53rem/1.2 var(--read); color: var(--text); font-variant-numeric: tabular-nums; }
 /* The name says which paper, at a row's size; a very long one stops at two lines, and its title holds the rest. */
@@ -499,6 +525,11 @@ input[type="range"]::-webkit-slider-thumb {
 .sample sub { font-size: 0.68em; }
 .sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
 .sample-you::before { content: "›"; position: absolute; left: calc(-1 * var(--hang)); font: 400 0.882rem/1.6 var(--mono); color: var(--hint); }
+/* The learner's words in the sample are drawn on the line chosen under Your line, so the choice shows where it is made. */
+:root[data-field="ruled"] .sample-you { padding-bottom: 0.4rem; }
+:root[data-field="ruled"] .sample-you::after { content: ""; position: absolute; left: calc(-1 * var(--hang)); right: 0; bottom: 0; border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under)); }
+:root[data-field="soft"] .sample-you { margin-left: calc(-1 * var(--field-in)); padding: 6px var(--field-in); border-radius: 13px; background: var(--well); }
+:root[data-field="soft"] .sample-you::before { content: none; }
 .key-cap {
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);
@@ -786,6 +817,9 @@ dialog.layer::backdrop { background: transparent; }
   --pane: color-mix(in srgb, var(--ground) var(--frost), transparent);
   /* The soft field: a shade of the text over the glass, not of an opaque ground. */
   --well: color-mix(in srgb, var(--text) 6%, transparent);
+  /* The ruled line's rule: a share of the text over the glass, as the soft field is. Mixed with the solid ground it was
+     an opaque pale line, lighter than the thinned ground over a dark desktop. */
+  --rule-under: transparent;
   /* The quiet grey nearer the text as more shows through: over a dark desktop the thinned ground is darker
      than the solid one, and the window's small words have to stay readable on it. It starts from the solid
      ground's grey in light (surface.css) and reaches 88% at full strength. */
