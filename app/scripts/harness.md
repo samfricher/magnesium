@@ -28,7 +28,8 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `document`
 - `attach {path | paths}`
 - `scroll {target?, to?, by?}`
-- `menu`
+- `menu`: the menu bar as data; `replaced`, how many times the whole menu bar was put in place since the window opened; and `native`, the bar as macOS holds it (each menu's item titles in order, with their keys), which also has what macOS adds, such as the window list in Window
+- `switch {target, ms?}`: click a tab (as `click` names it), then every frame for `ms` (800 by default) read what the view in front shows: its words' length and its first lines with where each stands. Says the `first` frame and `changes_after_first`, each later frame that differed: whether a line `moved` (stands elsewhere, or lines came or went), where the keyboard is (`focus`) and, when the words changed, where they part (`text`)
 - `menu_click {path}`
 - `frame {width?, height?, x?, y?, on_top?}`
 - `quit`

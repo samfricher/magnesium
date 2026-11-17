@@ -42,7 +42,11 @@
 //                           a drop does (photos and PDFs), for a harness that
 //                           cannot drive the Mac's Open panel
 //   menu                    the macOS menu bar as data: each menu's title, and
-//                           each item's title, id, enabled state and key
+//                           each item's title, id, enabled state and key; how
+//                           many times the whole menu bar was put in place; and
+//                           the bar as macOS holds it, with what macOS adds
+//   switch {target, ms?}    click a tab, then every frame for ms say what the
+//                           view in front shows, and each frame that changed
 //   frame {width?, height?, x?, y?, on_top?}  size and place the window, as
 //                           dragging its corner or title bar would, let it
 //                           fall behind other windows (on_top false: the
@@ -155,8 +159,8 @@ function visible(element: Element): boolean {
 /** The field typing is timed in: the composer, or else the field for talk, or else the one for an answer. */
 function composer(): HTMLElement | null {
   const found = ["composer", "talk", "answer"]
-    .map((name) => document.querySelector<HTMLElement>(`[data-drive="${name}"]`))
-    .find((element) => element !== null && visible(element));
+    .map((name) => Array.from(document.querySelectorAll<HTMLElement>(`[data-drive="${name}"]`)).find(visible) ?? null)
+    .find((element) => element !== null);
   if (!found) return null;
   const field = editable(found);
   if (!field) return null;
@@ -523,6 +527,61 @@ async function run(op: Op): Promise<Result> {
       press(String(op.key ?? ""), op as { meta?: boolean; shift?: boolean; alt?: boolean; ctrl?: boolean });
       return { ok: true, focused: describe(document.activeElement) };
     }
+    case "switch": {
+      // Click a tab (as click names it), then for `ms`, every frame, read what the view in front shows: its words'
+      // length and where its first lines stand. Says what the first frame drew and every later frame that differed,
+      // so a page that draws half and then moves is caught frame by frame.
+      const element = find(String(op.target ?? ""), op.by === "drive");
+      if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
+      const ms = Number(op.ms ?? 800);
+      const look = () => {
+        const view = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front, .views > .view")).find(visible);
+        if (!view) return { words: 0, text: "", lines: [] as string[] };
+        const lines = Array.from(view.querySelectorAll<HTMLElement>("h1, h2, h3, p, button, li, textarea"))
+          .filter(visible)
+          .slice(0, 8)
+          .map((line) => `${collapse(line.innerText || line.getAttribute("aria-label") || "").slice(0, 24)} @${Math.round(line.getBoundingClientRect().top)}`);
+        const text = collapse(view.innerText);
+        return { words: text.length, text, lines };
+      };
+      // Where two readings of the page's words part, with a little of each.
+      const parted = (a: string, b: string) => {
+        let at = 0;
+        while (at < a.length && at < b.length && a[at] === b[at]) at++;
+        const from = Math.max(0, at - 20);
+        return { was: a.slice(from, at + 30), now: b.slice(from, at + 30) };
+      };
+      const before = look();
+      const started = performance.now();
+      click(element);
+      const frames: { at: number; words: number; text: string; lines: string[]; focus: string }[] = [];
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          const seen = { ...look(), focus: describe(document.activeElement) ?? "" };
+          const last = frames[frames.length - 1];
+          if (!last || last.text !== seen.text || last.lines.join("|") !== seen.lines.join("|") || last.focus !== seen.focus) frames.push({ at: Math.round(now - started), ...seen });
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const brief = (frame: (typeof frames)[number], previous?: (typeof frames)[number]) => ({
+        at: frame.at,
+        words: frame.words,
+        lines: frame.lines,
+        focus: frame.focus,
+        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving.
+        moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && line !== previous.lines[n]) || frame.lines.length !== previous.lines.length : false,
+        ...(previous && previous.text !== frame.text ? { text: parted(previous.text, frame.text) } : {}),
+      });
+      return {
+        ok: true,
+        before: before.lines.slice(0, 3),
+        first: frames[0] ? brief(frames[0]) : null,
+        changes_after_first: frames.slice(1).map((frame, n) => brief(frame, frames[n])),
+        focused: describe(document.activeElement),
+      };
+    }
     case "click": {
       const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
@@ -846,7 +905,12 @@ async function run(op: Op): Promise<Result> {
     }
     case "menu":
       try {
-        return { ok: true, menu: await invoke<unknown>("harness_menu") };
+        return {
+          ok: true,
+          menu: await invoke<unknown>("harness_menu"),
+          replaced: await invoke<number>("harness_menu_replaced"),
+          native: await invoke<unknown>("harness_menu_native"),
+        };
       } catch (error) {
         return { ok: false, error: String(error) };
       }

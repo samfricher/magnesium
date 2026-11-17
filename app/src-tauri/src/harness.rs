@@ -200,6 +200,78 @@ pub fn harness_menu(app: tauri::AppHandle) -> Result<Value, String> {
     Ok(crate::menu::read(&app))
 }
 
+/// How many times the whole menu bar was put in place since the window opened.
+#[tauri::command(async)]
+pub fn harness_menu_replaced(app: tauri::AppHandle) -> Result<usize, String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    Ok(app.state::<crate::menu::MenuBar>().replaced())
+}
+
+/// The menu bar as macOS holds it: each menu's title and its items' titles, in
+/// order, with a key where one is set. `harness_menu` reads Tauri's record of
+/// the items; this reads AppKit's own, which also holds what macOS adds (the
+/// window list in Window), so a check can see where changed items landed.
+#[tauri::command(async)]
+pub fn harness_menu_native(app: tauri::AppHandle) -> Result<Value, String> {
+    if drive_dir().is_none() {
+        return Err("the harness is off".into());
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(native_menu());
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn native_menu() -> Value {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSMenu};
+
+    fn items(menu: &NSMenu) -> Vec<Value> {
+        menu.itemArray()
+            .iter()
+            .map(|item| {
+                if item.isSeparatorItem() {
+                    return Value::from("—");
+                }
+                let title = item.title().to_string();
+                let key = item.keyEquivalent().to_string();
+                Value::from(if key.is_empty() {
+                    title
+                } else {
+                    format!("{title} ({key})")
+                })
+            })
+            .collect()
+    }
+    let Some(mtm) = MainThreadMarker::new() else {
+        return Value::Null;
+    };
+    let Some(bar) = NSApplication::sharedApplication(mtm).mainMenu() else {
+        return Value::Null;
+    };
+    Value::from(
+        bar.itemArray()
+            .iter()
+            .map(|top| {
+                serde_json::json!({
+                    "title": top.submenu().map(|menu| menu.title().to_string()).unwrap_or_default(),
+                    "items": top.submenu().map(|menu| items(&menu)).unwrap_or_default(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_menu() -> Value {
+    Value::Null
+}
+
 /// Choose a menu item by its path, ["File", "Attach…"], exactly as a click on
 /// it would: the same handler sends the page the same event.
 #[tauri::command(async)]

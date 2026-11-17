@@ -721,6 +721,8 @@ fn main() {
             harness::harness_idle,
             harness::harness_quit,
             harness::harness_menu,
+            harness::harness_menu_replaced,
+            harness::harness_menu_native,
             harness::harness_menu_click,
             harness::harness_frame,
         ])
