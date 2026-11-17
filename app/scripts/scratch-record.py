@@ -2,7 +2,7 @@
 """Give a scratch course (scripts/scratch-course.sh) a record of several
 skills, answered over ten days, so a photograph can show where each stands.
 
-    python3 scripts/scratch-record.py <dir>
+    python3 scripts/scratch-record.py <dir> [--new-sitting]
 
 <dir> is the one given to scratch-course.sh. The answers go in as Claude
 Code's would, through the runtime's own hooks and MCP tool, one lesson a
@@ -15,6 +15,11 @@ day; between days every recorded time is moved back with scratch-course.sh
   margin of error                wrong on day -1, its check passed today: next in 3 days
   degrees of freedom of a t statistic   wrong today: a check due tomorrow
   a long name                    right on its own today: can count tomorrow
+
+Each wrong answer stores the check's next question with its key, as the
+tutor's does (attempt.next). With --new-sitting the runtime's note of the
+learner's last message is moved four hours back, so the next message begins
+a sitting, which opens with the check that is due.
 """
 
 import asyncio
@@ -33,6 +38,14 @@ HOST = ["--plugin-version", "0.2.0", "--adapter-protocol-version", "2", "--host-
 LONG = "when to use the t distribution rather than the normal, for a small sample whose standard deviation is not known"
 
 # (days before the next batch, [(skill, mark, cold)]), oldest first.
+# The next question each check stores when its skill is got wrong, and its key.
+NEXT = {
+    "pooled variance": ("Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?",
+                        "$s_p^2 = (9 \\cdot 4 + 9 \\cdot 9) / 18 = 6.5$"),
+    "margin of error": ("A 95% interval for a mean runs from 12.4 to 15.0. What is its margin of error?", "$(15.0 - 12.4) / 2 = 1.3$"),
+    "degrees of freedom of a t statistic": ("A one-sample $t$ test uses 16 observations. How many degrees of freedom does its statistic have?", "15"),
+}
+
 DAYS = [
     (3, [("standard error of a mean", "right", True)]),
     (4, [("standard error of a mean", "right", True)]),
@@ -42,13 +55,20 @@ DAYS = [
 ]
 
 
-def main(root: Path):
+def main(root: Path, new_sitting: bool = False):
     course = root / "Intro-Statistics"
     runtime = root / "magnesium"
     for day, (gap, answers) in enumerate(DAYS):
         asyncio.run(lesson(course, runtime, f"scratch-day-{day}", answers))
         if gap:
             subprocess.run(["sh", str(APP / "scripts/scratch-course.sh"), str(root), "--days-ago", str(gap)], check=True, stdout=subprocess.DEVNULL)
+    if new_sitting:
+        import sqlite3
+        import time
+        conn = sqlite3.connect(course / ".magnesium" / "sittings.sqlite")
+        conn.execute("UPDATE meta SET last_learner_ms=?", (int((time.time() - 4 * 3600) * 1000),))
+        conn.commit()
+        conn.close()
 
 
 def environment(course: Path, conversation: str) -> dict:
@@ -92,12 +112,14 @@ async def lesson(course: Path, runtime: Path, conversation: str, answers: list):
             turn = f"{conversation}-{at}"
             said = hook(course, runtime, conversation, "user-prompt-submit", prompt_id=turn, prompt=f"My answer on {skill}.")
             event = re.search(r"current event (e-[0-9a-f]+)", said).group(1)
+            attempt = {"label": skill, "question": f"A question on {skill}.", "first_try": mark, "help": "none", "cold": cold}
+            if mark == "wrong" and skill in NEXT:
+                attempt["next"] = {"question": NEXT[skill][0], "answer_key": NEXT[skill][1]}
             await call(client, "learning_step", {
                 "schema": "learner-model/v2", "action": "update", "request_id": turn,
                 "observations": [{"client_ref": "work", "kind": "learner_work", "description": f"Answered on {skill}.",
                                   "events": [{"event_id": event, "role": "learner_response"}],
-                                  "attempt": {"label": skill, "question": f"A question on {skill}.", "first_try": mark,
-                                              "help": "none", "cold": cold}}]})
+                                  "attempt": attempt}]})
             hook(course, runtime, conversation, "stop", prompt_id=turn, last_message="Marked.")
 
 
@@ -109,6 +131,7 @@ async def call(client, tool: str, arguments: dict):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python3 scripts/scratch-record.py <dir>")
-    main(Path(sys.argv[1]).resolve())
+    args = [arg for arg in sys.argv[1:] if arg != "--new-sitting"]
+    if len(args) != 1:
+        raise SystemExit("usage: python3 scripts/scratch-record.py <dir> [--new-sitting]")
+    main(Path(args[0]).resolve(), "--new-sitting" in sys.argv[1:])

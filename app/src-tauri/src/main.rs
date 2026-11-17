@@ -23,12 +23,13 @@ use mg_core::study::{Card, Home, Paper, Progress, Rail};
 use mg_core::workspace::{LessonInfo, Workspace};
 use mg_core::{Manager, Store};
 use serde::Serialize;
-use tauri::{Emitter, Manager as _, State, WindowEvent};
+use tauri::{Emitter, Manager as _, RunEvent, State, WindowEvent};
 
 mod glass;
 mod harness;
 mod menu;
 mod occlusion;
+mod reveal;
 mod share;
 
 /// When set to a file path, the window runs a short check of itself, writes
@@ -621,6 +622,7 @@ fn main() {
                     .chosen(app, event.id().as_ref());
             });
             harness::note("setup done");
+            reveal::hold(app);
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
                 // A check that never reports must still end.
                 let handle = app.handle().clone();
@@ -674,6 +676,7 @@ fn main() {
             set_permissions,
             sign_in,
             about,
+            reveal::show_window,
             engine,
             set_engine,
             models,
@@ -721,6 +724,13 @@ fn main() {
             harness::harness_menu_click,
             harness::harness_frame,
         ])
-        .run(tauri::generate_context!())
-        .expect("the window could not start");
+        .build(tauri::generate_context!())
+        .expect("the window could not start")
+        .run(|app, event| {
+            // A click on the Dock icon while the page is still loading: the
+            // learner asked for the window, so it shows as it is.
+            if let RunEvent::Reopen { .. } = event {
+                reveal::show(app, "window shown, Dock");
+            }
+        });
 }

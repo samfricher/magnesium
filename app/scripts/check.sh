@@ -23,6 +23,12 @@ npm run build
 node scripts/test-task-line.mjs
 node scripts/test-setup.mjs
 node scripts/test-next.mjs
+node scripts/test-record-sign.mjs
+node scripts/test-paper-time.mjs
+node scripts/test-prefs.mjs
+node scripts/test-step-head.mjs
+node scripts/test-words-batch.mjs
+node scripts/test-reveal.mjs
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked -p mg-core

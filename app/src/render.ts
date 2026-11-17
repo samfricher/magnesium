@@ -462,6 +462,33 @@ export function poses(reply: string, task: string): boolean {
 }
 
 /**
+ * Where an answer written on Home goes once the reply that was to pose its check has ended: to that check, or onto the
+ * line, unsent. A wrong attempt on the record is worse than words left for one more Return, so both tests are strict.
+ *
+ * - The check: the record says which check a reply posed (`posed`, its ID; null when none is open; undefined from a
+ *   runtime that cannot say). Only Home's check (`id`) takes the words.
+ * - The question: the same check can be posed with a new problem, which the learner has not seen. The open task (or,
+ *   when the page sees none, the reply that posed it) must hold Home's whole question, formulas and numbers included,
+ *   spacing aside, as a stored question posed as written does. `poses` is no test here: it drops formulas and short
+ *   words, so the same question with other numbers would pass.
+ *
+ * With both, the words go as an answer when the page or the record knows the check is open, and with nothing said of
+ * them (the tutor decides, as for words sent from the line then) when neither does.
+ */
+export function heldAnswerGoes(
+  held: { question: string; id: string | null },
+  after: { posed: string | null | undefined; task: string | null; taskUnseen: boolean; reply: string },
+): "answer" | "unmarked" | "line" {
+  const byRecord = Boolean(held.id) && after.posed !== undefined;
+  if (byRecord && after.posed !== held.id) return "line";
+  const bare = (text: string) => text.replace(/\s+/g, "");
+  const holds = (text: string) => bare(held.question) !== "" && bare(text).includes(bare(held.question));
+  if (after.task !== null) return holds(after.task) ? "answer" : "line";
+  if (!holds(after.reply)) return "line";
+  return byRecord ? "answer" : after.taskUnseen ? "unmarked" : "line";
+}
+
+/**
  * The words the engine needs a due question to open with ("Quick check 2:",
  * "Paper redo 1:") are not a queue to show: they are drawn as one quiet
  * "From earlier", with no number.

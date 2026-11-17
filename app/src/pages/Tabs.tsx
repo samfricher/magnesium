@@ -154,10 +154,10 @@ export const Tabs = memo(function Tabs(props: Props) {
             data-drive="plan-toggle"
             aria-expanded={props.plan}
             aria-controls={props.plan ? "plan-panel" : undefined}
-            title={`${props.plan ? "Hide" : "Show"} the panel: the plan and the documents open in this session   ${props.planKey}`}
+            title={`${props.plan ? "Hide" : "Show"} the plan and the documents open in this session   ${props.planKey}`}
             onClick={props.onPlan}
           >
-            Panel
+            Plan
           </button>
         )}
         {!settingsOpen && (

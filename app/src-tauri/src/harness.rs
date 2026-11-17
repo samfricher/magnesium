@@ -56,6 +56,11 @@ fn named(var: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Whether the harness drives this window (it keeps it drawing throughout).
+pub fn driven() -> bool {
+    drive_dir().is_some()
+}
+
 fn drive_dir() -> Option<PathBuf> {
     named(DRIVE_ENV)
 }

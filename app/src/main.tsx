@@ -2,6 +2,7 @@ import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { core } from "./bridge";
 import { mark } from "./harness";
 import { applyPrefs, loadPrefs } from "./prefs";
 import "./styles/surface.css";
@@ -30,6 +31,15 @@ applyPrefs(loadPrefs());
 document.documentElement.dataset.input = "pointer";
 window.addEventListener("keydown", () => (document.documentElement.dataset.input = "key"), true);
 window.addEventListener("pointerdown", () => (document.documentElement.dataset.input = "pointer"), true);
+
+// While text is selected, every reply in a long lesson is drawn (prose.css): WebKit
+// leaves a reply it skips out of the page's text, so a copy across it would lose
+// it.
+document.addEventListener("selectionchange", () => {
+  const selection = document.getSelection();
+  const whole = selection !== null && !selection.isCollapsed;
+  if (whole !== "whole" in document.documentElement.dataset) document.documentElement.toggleAttribute("data-whole", whole);
+});
 
 // Tab reaches every button and link. In WebKit, which draws the real window,
 // Tab skips them unless the Mac's "keyboard navigation" setting is on, so each
@@ -61,6 +71,8 @@ class Kept extends Component<{ children: ReactNode }, { failed: string | null }>
   }
   componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
     window.__mgErrors.push(`render: ${String(error)} ${(info.componentStack ?? "").split("\n").slice(0, 4).join(" ")}`);
+    // The shell keeps the window unseen until its first screen is drawn: this line is that screen now.
+    void core().then((api) => api.showWindow()).catch(() => {});
   }
   render() {
     if (this.state.failed) return <p className="record note page-failed">The window met a problem it cannot draw past: {this.state.failed}. Quit and open it again.</p>;

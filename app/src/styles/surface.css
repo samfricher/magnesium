@@ -46,6 +46,8 @@
   --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
   /* The soft field the learner may write in: a shade under the page in light and over it in dark. A field lighter than a light page looked worse when it was tried. */
   --well: color-mix(in srgb, var(--text) 5%, var(--ground));
+  /* What the ruled line's rule is mixed into: the solid ground, or nothing over glass (window.css). */
+  --rule-under: var(--ground);
 
   --read: Charter, "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -293,6 +295,32 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 
 .sitting-rule { border: 0; border-top: 1px solid var(--faint); margin: 2.2rem 0; }
 
+/* A step of the lesson's route, where its work began: its name in the reading face's italic, in the quiet grey, its
+   number hung where the learner's "›" hangs. The room above it is a section's; the lesson's first head sits under
+   the heading. */
+/* Its room and lines are whole pixels: a head set in above the view is made up for by scrolling on by its height,
+   which a fractional height left 0.2 px short, the reply moving by that. */
+.step-head {
+  position: relative;
+  margin: round(2.3rem, 1px) 0 round(0.7rem, 1px);
+  font: italic 400 1rem/1.45 var(--read);
+  line-height: round(1.45rem, 1px);
+  color: var(--quiet);
+}
+.now > article.turn:first-of-type > .step-head:first-child { margin-top: 0; }
+/* Set from its right, so a number one figure wide starts where the "›" does, and keeps a gap before the name when the
+   text is larger than the margin was made for: from the left, "2" touched the name's first letter at the largest
+   text. */
+.step-n {
+  position: absolute;
+  right: calc(100% + max(var(--hang) - 1ch, 0.5em));
+  top: 0;
+  font: 400 0.765rem/1.45rem var(--app);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--quiet);
+}
+
 .you {
   /* No word left alone on a line of its own. */
   text-wrap: pretty;
@@ -316,6 +344,32 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* The mark on an answer: its words a step larger than the record's other lines, the count of days on its own line under them. */
 .record.mark { font-size: 0.882rem; }
 .record.mark .record-pass { display: block; font-size: 0.765rem; }
+/* A pass's three days, hung in the margin on the mark's first line, where the learner's "›" hangs: Your work's rings. */
+.record.mark { position: relative; }
+.pass-days {
+  --pass-gap: 0.6;
+  position: absolute;
+  right: calc(100% + var(--pass-gap) * 1rem);
+  top: 0;
+  /* The mark's own line (0.882rem at a line-height of 1.5), so the rings sit on its middle at any text size. */
+  height: 1.323rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+}
+/* Where the margin has no room (a narrow window, a large text size, the plan beside the lesson), they start the line. */
+.pass-days.inline { position: static; height: auto; vertical-align: middle; margin-right: 0.5em; }
+.pass-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
+.pass-day.earned { background: var(--ink); border-color: var(--ink); }
+.pass-day.arriving { animation: pass-day-in 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+/* The ring fills from its edge in, where it stands: nothing beside it moves. */
+@keyframes pass-day-in {
+  from { border-color: var(--hint); background-color: transparent; box-shadow: inset 0 0 0 0 var(--ink); }
+  to { border-color: var(--ink); background-color: transparent; box-shadow: inset 0 0 0 0.21rem var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pass-day.arriving { animation: none; }
+}
 /* What the record shows the pass held through: one more line, as quiet as the count of days. */
 .record-receipt { color: var(--quiet); }
 .record.mark .record-receipt { display: block; font-size: 0.765rem; }
@@ -750,6 +804,8 @@ button.line-end:hover { color: var(--text); }
 .top-edge .inner > * { font: 400 0.765rem/1.4 var(--app); color: var(--hint); }
 .top-edge .top-name { color: var(--quiet); overflow: hidden; text-overflow: ellipsis; }
 .top-edge .top-step { overflow: hidden; text-overflow: ellipsis; }
+/* "2 of 3" before the step's name: how far through the route, at a glance. */
+.top-edge .inner > .top-count { color: var(--quiet); font-variant-numeric: tabular-nums; flex: none; margin-right: -0.5rem; }
 
 /* Help with the task opens near the line it is about. */
 .layer[data-layer="Help with the task"] { top: auto; bottom: 16vh; }
@@ -934,6 +990,24 @@ button.line-end:hover { color: var(--text); }
    is not read as one more turn. The soft field's shade does this on its own. */
 :root:not([data-field="soft"]) .foot:not(.asking) { margin-top: 2.6rem; }
 
+/* The ruled line: the bare line, everything the bare line does, on one hairline from its "›" to the column's end.
+   The hairline is under the row of words alone, so Stuck's row, a quote, the symbols and the lines under the words
+   stay off it, and it moves down with the words as they wrap. Mixed from the text and the ground rather than taken
+   from --faint, so the learner's own colours draw it too. */
+:root[data-field="ruled"] .line.lesson .field-row { padding-bottom: 0.5rem; }
+:root[data-field="ruled"] .line.lesson .field-row::after {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  right: 0;
+  bottom: 0;
+  border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under));
+  pointer-events: none;
+}
+/* While a card waits the "›" is put away and the rule is drawn at half its strength, as the soft field is drawn at
+   half its shade: the card's choice is the answer now. */
+:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--rule-under)); }
+
 /* The soft field: one row in a shade of the page, the words at the column's edge. */
 :root[data-field="soft"] .line.lesson {
   margin: 0 calc(-1 * var(--field-in));
@@ -996,3 +1070,7 @@ button.line-end:hover { color: var(--text); }
 :root:not([data-field="soft"]) .now.folded .foot:not(.asking) { margin-top: 1.5rem; }
 @keyframes answer-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .answer-task { animation: none; } }
+
+/* Home's answer put on the line because the check posed is not the one Home asked: one quiet paragraph under the
+   reply saying so. */
+.record.other-check { margin: 1.2rem 0 0; }

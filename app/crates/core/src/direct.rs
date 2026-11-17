@@ -1041,6 +1041,13 @@ fn work_loop(shared: &Arc<Shared>) {
                     shared.phase.store(PREPARING, Ordering::SeqCst);
                 }
                 let ended = turn(shared, &words);
+                // The route as the record has it once this turn's own
+                // writes are done, and before the next message is taken, so
+                // no later turn's writes can be in it.
+                let read = crate::runtime::lesson(&shared.folder, Some(&shared.session));
+                shared.emit(AgentEvent::RouteRead {
+                    steps: read.map(|lesson| lesson.map(|lesson| lesson.steps).unwrap_or_default()),
+                });
                 remember(shared);
                 shared.phase.store(IDLE, Ordering::SeqCst);
                 shared.done();
@@ -2925,7 +2932,16 @@ impl Conversation for DirectConversation {
     fn interrupt(&mut self) -> AgentResult<()> {
         // Words waiting their turn are dropped, as Claude Code drops a
         // queued message on an interrupt.
-        lock(&self.shared.queue).retain(|item| matches!(item, Item::Ended));
+        let dropped = {
+            let mut queue = lock(&self.shared.queue);
+            let before = queue.len();
+            queue.retain(|item| matches!(item, Item::Ended));
+            (before - queue.len()) as u64
+        };
+        if dropped > 0 {
+            self.shared
+                .emit(AgentEvent::QueuedDropped { count: dropped });
+        }
         // Decided under the gate, so the turn cannot change phase meanwhile.
         let _gate = lock(&self.shared.gate);
         match self.shared.phase.load(Ordering::SeqCst) {

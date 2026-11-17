@@ -117,3 +117,39 @@
 
 /* The words the engine needs a due question to open with, drawn quiet and unnumbered. */
 .prose .earlier { font: 400 0.765rem/1 var(--app); color: var(--quiet); margin-right: 0.35em; }
+
+/* A long lesson holds up to 150 turns. The replies of the finished ones are
+   not laid out or painted while they are out of view (content-visibility),
+   and each keeps the height it last had on screen. Not the reply being
+   written (the last turn's), nor the one holding the open task, which the
+   copy over the line measures. Only once every turn has been laid out once
+   (`data-measured`, set by the session, and again when the column's width
+   or the text size changes), so each has its real height kept. Never a reply
+   with an image or a diagram: one that loads after its height was kept
+   would change the page's length as it scrolls into view.
+   Never while text is selected (`data-whole`, main.tsx): WebKit leaves a
+   skipped reply out of the page's text, so a copy would lose it.
+   Skipping needs the reply contained, and a contained box keeps its last
+   margin inside instead of letting it merge with the gap under it. So that
+   the page is laid out as before, the reply's last margin (0.85em, which
+   prose blocks all share) moves out to the reply's holder, and the reply's
+   box reaches into the hang on the left, where a task's rule is drawn. */
+.now > article.turn:not(.open):not(:last-of-type) > .tutor {
+  margin-bottom: 0.85rem;
+}
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose {
+  contain-intrinsic-block-size: auto 300px;
+  margin-left: calc(-1 * var(--hang));
+  padding-left: var(--hang);
+}
+:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child,
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child,
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child > :last-child {
+  margin-bottom: 0;
+}
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :first-child > :first-child,
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :first-child > :first-child > :first-child {
+  margin-top: 0;
+}
+.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose.has-task-rule::before { left: 0; }
