@@ -316,6 +316,10 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     };
     actions.newSession(folder);
     await until("a new session's first line, ending in More", () => front('[data-line="rest"] [data-drive="more"]') !== null, 10_000);
+    // A session not begun is named "New session" in its tab: the page above it already says the course.
+    const newTab = document.querySelector('[role="tab"][aria-selected="true"] .tab-name')?.textContent?.trim() ?? null;
+    steps.newSessionTab = newTab;
+    if (newTab !== "New session") throw new Error(`a new session's tab is not named New session: ${JSON.stringify(newTab)}`);
     const noStuck = front('[data-line="rest"] [data-drive="stuck"]') === null;
     actions.run("hint");
     await wait(300);
@@ -590,6 +594,15 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The quiet controls, and the plan beside the lesson, shown and hidden.
     steps.controls = ["more", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
+    const planWord = document.querySelector('[data-drive="plan-toggle"]')?.textContent ?? null;
+    if (planWord !== "Plan") throw new Error(`the tab bar's switch for the plan says ${JSON.stringify(planWord)}`);
+    // ⌘K names the same action by the same word.
+    press("k", { meta: true });
+    await until("the command menu, in a session", () => document.querySelector('[data-drive="command-plan"]') !== null, 3000);
+    const planCommand = document.querySelector('[data-drive="command-plan"] .row-label')?.textContent ?? null;
+    press("Escape");
+    await until("the command menu to go, in a session", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
+    if (planCommand !== "Show plan") throw new Error(`⌘K's command for the plan says ${JSON.stringify(planCommand)}`);
     actions.run("plan");
     await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);
     await wait(300);
@@ -653,11 +666,13 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       line: document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null,
     };
     steps.reopenedFolded = folded;
-    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("the lesson so far"))
+    if (folded.page !== "folded" || !folded.words?.includes("3 + 3") || !folded.lessonHidden || !folded.line?.includes("Show the lesson"))
       throw new Error(`a session opened again with its task open is not the task alone: ${JSON.stringify(folded)}`);
     press("ArrowUp", { meta: true });
     await until("⌘↑ to open the lesson over the task", () => actions.session()?.probe().page === "open", 3000);
     await wait(300);
+    const openLine = document.querySelector('.session.in-front [data-drive="look-back"]')?.textContent ?? null;
+    if (!openLine?.includes("Hide the lesson")) throw new Error(`the open lesson's line does not say it hides the lesson: ${JSON.stringify(openLine)}`);
     const head = document.querySelector(".session.in-front .now.lesson .head")!.getBoundingClientRect().top;
     const first = document.querySelector(".session.in-front .now.lesson article")!.getBoundingClientRect().top;
     const again = await api.lessonTurns(folder, sessions[0].session);

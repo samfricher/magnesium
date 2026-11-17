@@ -301,7 +301,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // where it was written. Writing on the line turns the page to the task. A session opened from its kept turns has
   // nothing new to read, so its open task is the page at once.
   const [reading, setReading] = useState(false);
-  // The learner opened the whole lesson over the task (⌘↑, or "the lesson so far"): it stays open until they fold it,
+  // The learner opened the whole lesson over the task (⌘↑, or "Show the lesson"): it stays open until they fold it,
   // or the next reply comes. Nothing of it goes to the runtime or the record.
   const [lookedBack, setLookedBack] = useState(false);
   // From a turn's start until the window has heard which task is open after it. On Claude Code's engine that is read
@@ -1361,10 +1361,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const turnLine = (where: string) =>
     page === null ? null : (
       <button type="button" className={`plain page-turn at-${where}`} data-drive={where === "head" ? "look-back" : `look-back-${where}`} aria-expanded={!folded} onMouseDown={(event) => event.preventDefault()} onClick={() => turnPage()}>
-        {lookKey && <span className="keys">{lookKey}</span>} {folded ? "the lesson so far" : "only the task"}
+        {lookKey && <span className="keys">{lookKey}</span>} {folded ? "Show the lesson" : "Hide the lesson"}
       </button>
     );
-  const closedWords = `Closed while you answer. It opens again when you send your answer, or with ${lookKey || "“the lesson so far”"}.`;
+  const closedWords = `Closed while you answer. It opens again when you send your answer, or with ${lookKey || "“Show the lesson”"}.`;
 
   return (
     <div
