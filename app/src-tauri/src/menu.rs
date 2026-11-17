@@ -273,7 +273,7 @@ fn build<R: Runtime>(
         true,
         &[
             &command(table, "home", "Home")?,
-            &command(table, "plan", "Show Panel")?,
+            &command(table, "plan", "Show Plan")?,
             &command(table, "expand-panel", "Expand Panel")?,
             &command(table, "flip-panel", "Switch to the Document")?,
             &separator()?,
@@ -321,7 +321,7 @@ fn build<R: Runtime>(
             &command(table, "lost", "I’m Lost")?,
             &command(table, "unknown", "I Don’t Know")?,
             &separator()?,
-            &command(table, "look-back", "The Lesson So Far")?,
+            &command(table, "look-back", "Show the Lesson")?,
             &separator()?,
             &command(table, "symbols", "Symbols")?,
             &command(table, "model", "Model and Effort…")?,
