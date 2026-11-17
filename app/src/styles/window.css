@@ -314,10 +314,23 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .running-paper { display: flow-root; margin-top: 1.8rem; }
 .running-paper > .list-head { margin-top: 0; }
 .paper-head {
+  position: relative;
   margin-left: calc(-1 * var(--hang));
-  padding: 0.15rem 0 0.2rem calc(var(--hang) - 2px);
+  padding: 0.15rem 4.6rem 0.2rem calc(var(--hang) - 2px);
   border-left: 2px solid var(--ink);
 }
+/* The time left as an area, at the block's right. A wash of the ink, not the ink itself, so the minutes stay the
+   darkest thing in the block. */
+.time-disc { position: absolute; right: 0; top: 0.35rem; width: 3.4rem; height: 3.4rem; }
+.time-disc-edge { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+/* In dark the same share of ink was a dim slate on the near-black ground, too faint to read from the desk, so dark
+   takes more of it. */
+.time-disc { --disc-wash: 34%; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) .time-disc { --disc-wash: 70%; }
+}
+:root[data-scheme="dark"] .time-disc { --disc-wash: 70%; }
+.time-disc-left { fill: color-mix(in srgb, var(--ink) var(--disc-wash), var(--ground)); }
 /* The one thing on the page a learner sitting the paper looks up for, at the desk: a step over the page's title. */
 .paper-time { margin: 0; font: 400 1.53rem/1.2 var(--read); color: var(--text); font-variant-numeric: tabular-nums; }
 /* The name says which paper, at a row's size; a very long one stops at two lines, and its title holds the rest. */
