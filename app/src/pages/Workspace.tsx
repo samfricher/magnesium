@@ -400,6 +400,8 @@ export function WorkspacePage(props: Props) {
   useEffect(() => {
     const back = front && !wasFront.current;
     wasFront.current = front;
+    // The read Home's tab makes as it comes back (src/App.tsx) notes the visit.
+    if (back) visitDue.current = true;
     if (back && props.focus && !pageRef.current?.contains(document.activeElement))
       column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,9 +409,15 @@ export function WorkspacePage(props: Props) {
   // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 
+  // Noting a visit moves the folder to the top of the library (and Go). It is noted when the learner comes to the page:
+  // when the page is made in front, and each time Home's tab, holding it, comes back. A read for any other reason (a
+  // lesson's marks, an action on the page) only reads.
+  const visitDue = useRef(props.front);
   const read = useCallback(async () => {
+    const visit = visitDue.current;
+    visitDue.current = false;
     const [opened, listed, held, planned] = await Promise.all([
-      api.visitFolder(folder).catch(() => null),
+      (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
       api.lessons(folder).catch(() => [] as LessonInfo[]),
       api.materialList(folder).catch(() => "none" as const),
       api.plan(folder).catch(() => null),

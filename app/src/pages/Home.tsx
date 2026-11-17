@@ -291,8 +291,9 @@ export function HomePage(props: Props) {
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
   const asked = question !== null;
   useEffect(() => {
-    if (props.focus && !props.step) rows()[0]?.focus({ preventScroll: true });
-    // The answer line keeps the keyboard once the learner is in it: a fresh read must not move it.
+    // A fresh read never takes the keyboard off a row or the answer line the learner is on: Home stays on the page
+    // behind other tabs and reads again as the library changes, and its tab gives the keyboard back where it was.
+    if (props.focus && !props.step && !list.current?.contains(document.activeElement)) rows()[0]?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.focus, props.step, props.workspaces, asked ? null : now, asked]);
 
@@ -330,6 +331,15 @@ export function HomePage(props: Props) {
     factsKnown.set(leadFacts.folder, leadFacts.said);
     setFacts((old) => (old[leadFacts.folder] === leadFacts.said ? old : { ...old, [leadFacts.folder]: leadFacts.said }));
   }, [leadFacts?.folder, leadFacts?.said]);
+  // A row's line changes with its workspace's record and the day, so behind other tabs a row reads again only when its
+  // workspace was studied since or the day moved on: each read runs the runtime twice, and the library is read again
+  // after every turn of a lesson. Each time Home's tab comes to the front every row reads again, for what changed
+  // where the window does not hear of it (a lesson in a terminal).
+  const [visit, setVisit] = useState(0);
+  useEffect(() => {
+    if (props.front) setVisit((n) => n + 1);
+  }, [props.front]);
+  const factsRead = useRef(new Map<string, string>());
   useEffect(() => {
     if (!shown || !props.api) return;
     const api = props.api;
@@ -337,8 +347,11 @@ export function HomePage(props: Props) {
     const others = workspaces.filter((workspace) => workspace.folder !== lead?.folder);
     void (async () => {
       for (const workspace of others) {
+        const as = `${workspace.latest?.last_ms ?? 0} ${day} ${visit}`;
+        if (factsRead.current.get(workspace.folder) === as) continue;
         const home = await api.home(workspace.folder).catch(() => null);
         if (!live) return;
+        factsRead.current.set(workspace.folder, as);
         const said = dayFacts(home);
         factsKnown.set(workspace.folder, said);
         setFacts((old) => (old[workspace.folder] === said ? old : { ...old, [workspace.folder]: said }));
@@ -347,13 +360,15 @@ export function HomePage(props: Props) {
     return () => {
       live = false;
     };
-    // Read again when the library changes, not on every drawing.
+    // Read again when the library changes, the day moves on or Home comes to the front, not on every drawing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, props.api, props.workspaces]);
+  }, [shown, props.api, props.workspaces, day, visit]);
 
   // The answer to the first check, as typed on Home. Return starts a sitting of the due checks alone and gives it
   // these words, which go as the answer once the tutor has posed that check.
-  // Kept apart from the page (src/homeDraft.ts) until the words are sent: Home is drawn again when it comes back.
+  // Kept apart from the page (src/homeDraft.ts) until the words are sent, by the session that takes them. The line
+  // reads them from there again when the question changes and when Home comes to the front, so words sent since are
+  // gone from it, and words for one check never stand under another.
   const [answer, setAnswerState] = useState(() => (lead && question ? homeDraftFor(lead.folder, question.text) : ""));
   const setAnswer = (words: string) => {
     setAnswerState(words);
@@ -361,8 +376,8 @@ export function HomePage(props: Props) {
   };
   const questionText = question?.text ?? null;
   useEffect(() => {
-    if (lead && questionText) setAnswerState((old) => old || homeDraftFor(lead.folder, questionText));
-  }, [lead?.folder, questionText]);
+    if (lead && questionText) setAnswerState(homeDraftFor(lead.folder, questionText));
+  }, [lead?.folder, questionText, props.front]);
   const answerBox = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = answerBox.current;

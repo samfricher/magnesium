@@ -1,7 +1,7 @@
 // The answer written on Home under the first quick check's question, kept for this run of the window until it has
-// been sent. Home is drawn again each time it comes to the front, and Return on it starts a session that may never
-// send the words (it failed to open, or what it posed was not that question): until they are sent, Home still holds
-// them, so they are never lost.
+// been sent. Return on Home starts a session that may never send the words (it failed to open, or what it posed was
+// not that question): until they are sent, Home still holds them, so they are never lost. The session that sends them
+// clears them here, and Home's line reads them from here again when it comes to the front.
 
 export type HomeDraft = { folder: string; question: string; words: string };
 
