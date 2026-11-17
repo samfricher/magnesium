@@ -31,6 +31,15 @@ document.documentElement.dataset.input = "pointer";
 window.addEventListener("keydown", () => (document.documentElement.dataset.input = "key"), true);
 window.addEventListener("pointerdown", () => (document.documentElement.dataset.input = "pointer"), true);
 
+// While text is selected, every reply in a long lesson is drawn (prose.css): WebKit
+// leaves a reply it skips out of the page's text, so a copy across it would lose
+// it.
+document.addEventListener("selectionchange", () => {
+  const selection = document.getSelection();
+  const whole = selection !== null && !selection.isCollapsed;
+  if (whole !== "whole" in document.documentElement.dataset) document.documentElement.toggleAttribute("data-whole", whole);
+});
+
 // Tab reaches every button and link. In WebKit, which draws the real window,
 // Tab skips them unless the Mac's "keyboard navigation" setting is on, so each
 // control with no tabindex of its own is given 0 as it appears.
