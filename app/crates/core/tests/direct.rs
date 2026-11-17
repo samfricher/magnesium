@@ -3369,3 +3369,35 @@ fn a_step_read_that_finishes_after_the_session_closed_stays_with_its_turn() {
         .collect();
     assert_eq!(steps, [Some(1), Some(2)]);
 }
+
+#[test]
+fn a_message_dropped_by_a_stop_leaves_later_steps_drawn_live() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    // A message written while the reply's record is being kept waits its
+    // turn; a stop then drops it, and it never ends a turn.
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
+    events.turn_end();
+    manager
+        .send_with("why that way?", Some(Intent::Talk))
+        .unwrap();
+    manager.interrupt().unwrap();
+    assert!(manager.wait_saved(Duration::from_secs(30)));
+    // The answer that moves the lesson on is still drawn while it is read.
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    let heard = next_event(&mut events, "the step or the record read", |e| {
+        matches!(e, AgentEvent::StepBegun { .. } | AgentEvent::Settled)
+    });
+    manager.shut_down();
+    assert!(
+        matches!(heard, AgentEvent::StepBegun { n: 2, .. }),
+        "no head was drawn live after a dropped message: {heard:?}"
+    );
+}

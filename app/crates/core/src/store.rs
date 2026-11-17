@@ -687,7 +687,9 @@ impl Store {
     /// not tell, nothing is known of where this step began, and it begins
     /// nowhere: so a reading that was missed never moves a head onto a later
     /// turn. This also covers a conversation kept by a window that did not
-    /// note steps. Noted again for the same turn, the later note stands.
+    /// note steps. Noted again for the same turn, the later note stands,
+    /// unless it could not tell and an earlier one for that turn could: a
+    /// reading that could not tell never replaces one that could.
     pub fn note_step(
         &self,
         folder: &Path,
@@ -696,6 +698,14 @@ impl Store {
         step: Option<Option<StepBegun>>,
     ) -> Option<StepBegun> {
         let known = step.is_some();
+        if !known
+            && self
+                .step_notes_of(folder, session)
+                .iter()
+                .any(|note| note.ms == ms && note.known)
+        {
+            return None;
+        }
         let step = step.flatten();
         let before = self
             .all_turns(folder)
@@ -1298,5 +1308,36 @@ mod tests {
             .map(|turn| turn.step)
             .collect();
         assert_eq!(heads, [step(1, 2, "A"), None, None, None, None]);
+    }
+
+    #[test]
+    fn a_reading_that_could_not_tell_never_replaces_one_that_could() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        kept(&store, &folder, "s", 1);
+        assert_eq!(
+            store.note_step(&folder, "s", 1, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        kept(&store, &folder, "s", 2);
+        assert_eq!(
+            store.note_step(&folder, "s", 2, read(2, 2, "B")),
+            step(2, 2, "B")
+        );
+        // A later reading of the same turn fails: the turn keeps its head.
+        assert_eq!(store.note_step(&folder, "s", 2, None), None);
+        // And the next turn still knows which step was in hand before it.
+        kept(&store, &folder, "s", 3);
+        assert_eq!(
+            store.note_step(&folder, "s", 3, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        let heads: Vec<Option<StepBegun>> = store
+            .turns(&folder, "s")
+            .into_iter()
+            .map(|turn| turn.step)
+            .collect();
+        assert_eq!(heads, [step(1, 2, "A"), step(2, 2, "B"), step(1, 2, "A")]);
     }
 }

@@ -124,6 +124,9 @@ pub enum AgentEvent {
     RouteRead {
         steps: Option<Vec<crate::runtime::Step>>,
     },
+    /// A stop dropped this many messages that were waiting their turn: they
+    /// will never start or end a turn. The page is never sent this.
+    QueuedDropped { count: u64 },
     /// A tool result in this turn said a sitting ended: the tutor's
     /// `end_sitting`, a pause or a stop, or the runtime's own end of a
     /// sitting of quick checks alone. The window then reads the closing

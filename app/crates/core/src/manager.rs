@@ -1068,6 +1068,9 @@ impl Manager {
                 // beside that turn, whether or not the page or the
                 // conversation is still there. The page hears of a head only
                 // while it is still on that turn.
+                // Messages a stop dropped never end a turn: counted as ended,
+                // so the page is taken to be on the last turn again.
+                AgentEvent::QueuedDropped { count } => lock(&buffer).ended_turns += count,
                 AgentEvent::RouteRead { steps } => {
                     let (target, page_on_it) = {
                         let mut buffer = lock(&buffer);
@@ -1100,6 +1103,7 @@ impl Manager {
                     AgentEvent::Models { .. }
                         | AgentEvent::SittingEnded
                         | AgentEvent::RouteRead { .. }
+                        | AgentEvent::QueuedDropped { .. }
                 ) {
                     out(event);
                 }
@@ -1912,10 +1916,11 @@ fn settle(
         // A mark that turned up only on a later look may have closed the task
         // read at the turn's end: read it again.
         if found.as_ref().is_some_and(|ids| !ids.is_empty()) && marked_late {
-            // Read again only while the learner has not written since: a
-            // reading that could not tell never replaces one that could.
+            // Read again only while the learner has not written since, and
+            // only when the runtime answered: a reading that could not tell
+            // never replaces one that could (the store holds to that too).
             let (lesson, moved_on) = read_lesson();
-            if !moved_on {
+            if !moved_on && lesson.is_some() {
                 read_task(&told, &lesson);
                 read_step(&lesson, false);
             }

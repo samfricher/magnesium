@@ -2932,7 +2932,16 @@ impl Conversation for DirectConversation {
     fn interrupt(&mut self) -> AgentResult<()> {
         // Words waiting their turn are dropped, as Claude Code drops a
         // queued message on an interrupt.
-        lock(&self.shared.queue).retain(|item| matches!(item, Item::Ended));
+        let dropped = {
+            let mut queue = lock(&self.shared.queue);
+            let before = queue.len();
+            queue.retain(|item| matches!(item, Item::Ended));
+            (before - queue.len()) as u64
+        };
+        if dropped > 0 {
+            self.shared
+                .emit(AgentEvent::QueuedDropped { count: dropped });
+        }
         // Decided under the gate, so the turn cannot change phase meanwhile.
         let _gate = lock(&self.shared.gate);
         match self.shared.phase.load(Ordering::SeqCst) {
