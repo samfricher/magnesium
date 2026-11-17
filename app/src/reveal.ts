@@ -29,9 +29,11 @@ const KEY_FRAMES = 30;
  * When to stop waiting, in ms of the page's own clock. The shell shows the
  * window anyway 1.5 s after its setup (SHOW_ANYWAY in src-tauri/src/reveal.rs),
  * and the page's clock starts after that setup, so this ends at the same moment
- * or just after. A page whose content never comes (a folder that was moved
- * away, a session that cannot be opened) still gets its startup timed, and
- * the watching stops: a frame loop left running keeps the display awake.
+ * or just after. A page whose content never comes (a runtime that never
+ * answers leaves a folder's page "Reading the record…" for good) still gets
+ * its startup timed, and the watching stops: a frame loop left running keeps
+ * the display awake. A folder moved away is not such a page: the window drops
+ * it and opens on Home.
  */
 export const GIVE_UP_MS = 1500;
 
