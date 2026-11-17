@@ -6,9 +6,10 @@
 // the page is that paper alone until it is handed in or ended; the rest comes
 // back as it was.
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { agendaOf, againOf, earned, type Again, type Day } from "../agenda";
+import { useHangs } from "../hangs";
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
 import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
 import type { DocHandle } from "../surface/DocView";
@@ -94,29 +95,21 @@ function Days({ row }: { row: Row }) {
  */
 function Agenda({ days }: { days: Day<{ row: Row; next: Again }>[] }) {
   const list = useRef<HTMLDivElement>(null);
-  const [hung, setHung] = useState(true);
-  // The room is measured, not guessed from the window's width: the margin left of the column depends on the window,
-  // the text size, the line width set in Settings and a document open beside the page, and a day's words on its font.
-  useLayoutEffect(() => {
-    const element = list.current;
-    const page = element?.closest<HTMLElement>(".page-scroll") ?? null;
-    if (!element || !page) return;
-    const measure = () => {
-      const room = element.getBoundingClientRect().left - page.getBoundingClientRect().left;
+  // Measured as a pass's rings beside its mark are: the margin left of the column depends on the window, the text
+  // size, the line width set in Settings and a document open beside the page, and a day's words on its font.
+  const hung = useHangs(
+    list,
+    ".page-scroll",
+    (element) => {
       const label = element.querySelector<HTMLElement>(".agenda-day");
       const row = element.querySelector<HTMLElement>(".agenda-row");
-      if (!label || !row) return;
+      if (!label || !row) return 0;
       const widest = Math.max(label.offsetWidth, ...[...element.querySelectorAll<HTMLElement>(".agenda-day > span")].map((each) => each.offsetWidth));
-      const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
-      // 24px from the window's edge, as the column keeps at its narrowest.
-      setHung(room >= widest + gap + 24);
-    };
-    measure();
-    const watch = new ResizeObserver(measure);
-    watch.observe(page);
-    watch.observe(element);
-    return () => watch.disconnect();
-  }, [days]);
+      // 24px from the window's edge in all, as the column keeps at its narrowest; the hook keeps 8 of them.
+      return widest + (parseFloat(getComputedStyle(row).columnGap) || 0) + 16;
+    },
+    [days],
+  );
   return (
     <div ref={list} className={hung ? "agenda hung" : "agenda"} role="list" data-role="agenda">
       {days.map((day) =>

@@ -1373,9 +1373,7 @@ mod tests {
     #[test]
     fn only_the_runtime_says_a_skill_waits_for_its_repair() {
         let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
-        let skill = |needs: bool, next: Option<&str>| {
-            serde_json::json!({"skill": "pooled standard error", "passes": 0, "needs_repair": needs, "next_on": next})
-        };
+        let skill = |needs: bool, next: Option<&str>| serde_json::json!({"skill": "pooled standard error", "passes": 0, "needs_repair": needs, "next_on": next});
         // Waiting for its repair: no day, and the runtime says so.
         let (_, waits) = skill_row(&skill(true, None), None, today);
         assert!(waits.needs_repair);
