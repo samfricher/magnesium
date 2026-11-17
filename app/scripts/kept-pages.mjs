@@ -10,7 +10,8 @@
 // - Home's answer line still holds an answer the session sent, once Home's tab comes back;
 // - a course's page kept in Home's tab notes a visit to its folder (the library's order) after a lesson turn in
 //   another course;
-// - a question Home set over its first row while it was behind does not have the keyboard when Home comes back.
+// - a question Home set over its first row while it was behind, or read while in front but drew only when it came
+//   back, does not have the keyboard when Home comes back.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
@@ -177,6 +178,41 @@ try {
   if (report.question_before_leaving || !report.question_on_return)
     report.problems.push(`the new-question case did not arise (a question as Home went behind: ${report.question_before_leaving}, on its return: ${report.question_on_return}); it tested nothing`);
   else if (!String(returned.focused ?? "").includes("home-answer")) report.problems.push(`a question set while Home was behind did not take the keyboard: ${returned.focused}`);
+
+  // 5. A question Home read while in front, but did not draw (its row was drawn already), is new when Home next comes
+  // back and draws it: it takes the keyboard too. A lesson's reply ends while Home is in front, with the last message
+  // held four hours back, so Home's read then finds the check; Home goes behind Settings and comes back.
+  await step("to the session again", { op: "click", target: "tab-2", by: "drive" });
+  await step("focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step("a message that keeps the sitting", { op: "type", text: "ok" });
+  await step("send it", { op: "key", key: "Enter" });
+  await step("its reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  await sleep(3000);
+  await step("focus the line", { op: "focus", target: "composer", by: "drive" });
+  await step("a slow message", { op: "type", text: "VERYSLOW: and after that?" });
+  const holdingThird = spawn("python3", ["-I", "-c", hold, sittings], { stdio: "ignore" });
+  await step("send it", { op: "key", key: "Enter" });
+  await step("to Home while it is written", { op: "click", target: "home", by: "drive" });
+  await sleep(500);
+  const before = await op({ op: "text" });
+  report.question_drawn_in_front = String(before.text ?? "").includes("pooled variance");
+  await step("the keyboard on Home's first row", { op: "focus", target: "start", by: "drive" });
+  await step("the slow reply ends, Home in front", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  await sleep(3000);
+  const still = await op({ op: "text" });
+  report.question_drawn_after_read = String(still.text ?? "").includes("pooled variance");
+  await step("to Settings", { op: "click", target: "tab-3", by: "drive" });
+  await sleep(800);
+  const fromSettings = await step("back to Home, and 1.5 s on", { op: "switch", target: "home", by: "drive", ms: 1500 });
+  holdingThird.kill();
+  const drawnNow = await op({ op: "text" });
+  report.question_drawn_on_return = String(drawnNow.text ?? "").includes("pooled variance");
+  report.keyboard_on_undrawn_question = fromSettings.focused;
+  if (report.question_drawn_in_front || report.question_drawn_after_read || !report.question_drawn_on_return)
+    report.problems.push(
+      `the undrawn-question case did not arise (drawn in front: ${report.question_drawn_in_front}, after Home's read: ${report.question_drawn_after_read}, on return: ${report.question_drawn_on_return}); it tested nothing`,
+    );
+  else if (!String(fromSettings.focused ?? "").includes("home-answer")) report.problems.push(`a question Home read in front but drew only on return did not take the keyboard: ${fromSettings.focused}`);
 } catch (error) {
   report.problems.push(String(error));
 } finally {
@@ -189,6 +225,7 @@ try {
 console.log(`keyboard after Home came back: ${report.keyboard}`);
 console.log(`answer sent: ${report.answer_sent}; question on Home again: ${report.question_again}; Home's line after: ${report.home_line}`);
 console.log(`keyboard on a question set while Home was behind: ${report.keyboard_on_new_question}`);
+console.log(`keyboard on a question read in front, drawn on return: ${report.keyboard_on_undrawn_question}`);
 console.log(`Linear Algebra opened: before the turn ${report.before_turn?.linear}, after ${report.after_turn?.linear}, after coming back ${report.after_return?.linear}`);
 console.log(report.problems.length === 0 ? "the kept pages kept what they should" : `${report.problems.length} problems:\n- ${report.problems.join("\n- ")}`);
 process.exit(report.problems.length === 0 ? 0 : 1);

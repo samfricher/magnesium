@@ -291,11 +291,16 @@ export function HomePage(props: Props) {
   // The answer line, when a question is set, then the rows: ↑↓ move between them.
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
   const asked = question !== null;
-  // Whether a question was set over the first row as Home went behind another tab: null while Home is in front.
+  // Whether a question was drawn over the first row while Home was last in front. Not what the render that sends
+  // Home behind computes: that render may already hold a question Home read but did not draw (its row was drawn).
+  const askedShown = useRef(false);
+  useEffect(() => {
+    if (props.front) askedShown.current = asked;
+  }, [props.front, asked]);
+  // The same, kept as Home went behind another tab: null while Home is in front.
   const askedAsLeft = useRef<boolean | null>(null);
   useEffect(() => {
-    askedAsLeft.current = props.front ? askedAsLeft.current : asked;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!props.front) askedAsLeft.current = askedShown.current;
   }, [props.front]);
   const claimKeyboard = useClaimKeyboard();
   useEffect(() => {
