@@ -16,6 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
+import { whenDrawn } from "./reveal";
 import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
 import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
@@ -494,20 +495,17 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The first screen is painted with its real content: tell the harness, and
-  // let the window be seen. The shell keeps it see-through until now, so it
-  // never shows a page half drawn.
+  // The first screen is drawn whole (reveal.ts): let the window be seen, which
+  // the shell keeps see-through until now so it never shows a page half
+  // drawn, and tell the harness.
   const shown = useRef(false);
   useEffect(() => {
     const homeWaits = active === "home" && homeFolder === null && !homeShown;
-    if (!restored || workspaces === null || homeWaits) return;
-    requestAnimationFrame(() => {
+    if (!restored || workspaces === null || homeWaits || shown.current) return;
+    shown.current = true;
+    void whenDrawn().then(() => {
       ready();
-      if (shown.current) return;
-      shown.current = true;
-      // At the frame after, once this frame's paint has reached the window: a
-      // task straight after it can still come before, and show the screen before.
-      requestAnimationFrame(() => void now.current.api?.showWindow().catch(() => {}));
+      void now.current.api?.showWindow().catch(() => {});
     });
   }, [restored, workspaces, active, homeFolder, homeShown]);
 

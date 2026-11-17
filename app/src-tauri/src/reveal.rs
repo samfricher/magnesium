@@ -34,6 +34,10 @@ pub fn hold(app: &tauri::App) {
         // it, sometimes before the first screen, so it would turn opaque blank.
         crate::occlusion::detect(&window, false);
         let _ = window.show();
+        // Key and in front already, as a window made visible at launch is: the
+        // page's focused row draws its rule only in the key window, and it
+        // should be drawn before the window is seen.
+        let _ = window.set_focus();
     }
     let handle = app.handle().clone();
     std::thread::spawn(move || {
@@ -53,10 +57,6 @@ pub fn show(app: &tauri::AppHandle, why: &str) {
         if !harness::driven() {
             crate::occlusion::detect(&window, true);
         }
-        // A window shown after launch does not make the app active the way
-        // one made visible at launch does: it would open behind the window
-        // the learner launched it from, with the keys going there.
-        let _ = window.set_focus();
         harness::note(why);
     }
 }
