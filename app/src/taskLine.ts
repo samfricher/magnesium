@@ -175,3 +175,16 @@ export function locate(pieces: Piece[], task: string): Found | null {
     end: { piece: last.piece, at: last.at === -1 ? -1 : last.at + 1 },
   };
 }
+
+/**
+ * What to do with the line once the task's words are measured: draw it where
+ * they are, clear it when they are not on the page, or keep it as it is. A
+ * reply out of view may be skipped (prose.css: content-visibility), and then
+ * its words have no boxes at all though they are still there; clearing the
+ * line then would leave the task without it when the reply comes back into
+ * view at the same size, as nothing would draw it again.
+ */
+export function ruleAction(boxes: number, skipped: boolean): "draw" | "clear" | "keep" {
+  if (boxes > 0) return "draw";
+  return skipped ? "keep" : "clear";
+}

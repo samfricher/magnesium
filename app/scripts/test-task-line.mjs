@@ -77,3 +77,12 @@ assert.equal(locate([t("Take "), f("x^2+5x+6"), t(".")], "Take x^2"), null, "sto
 assert.equal(find(teaching, "   "), null);
 
 console.log("taskLine: every case passed");
+
+// The line beside a task in a reply skipped out of view: its words have no boxes then, and the line stays.
+{
+  const { ruleAction } = await import("../src/taskLine.ts");
+  assert.equal(ruleAction(3, false), "draw");
+  assert.equal(ruleAction(0, false), "clear", "words not on the page: no line");
+  assert.equal(ruleAction(0, true), "keep", "a skipped reply keeps its line for when it is drawn again");
+  console.log("task rule: ok");
+}
