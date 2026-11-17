@@ -25,6 +25,8 @@ type Props = {
   folder: string;
   /** The page is in front, with nothing over it. */
   focus: boolean;
+  /** Home's tab, which holds the page, is in front. Behind another tab the page stays as it was, read again by `refresh`. */
+  front: boolean;
   /** A session in this folder is running, so the folder cannot be taken off the list now. */
   running: boolean;
   onBack: () => void;
@@ -55,7 +57,7 @@ type Props = {
   /** Whether a timed paper runs in this folder, as the page shows it: a file dropped then is not added as material. */
   onPaper?: (folder: string, running: boolean) => void;
   onNote: (text: string) => void;
-  /** Bumped when the material changes from outside the page, as by a drop. */
+  /** Bumped when what the page shows may have changed from outside it: a drop, a lesson's marks, Home's tab back in front. */
   refresh: number;
 };
 
@@ -391,6 +393,17 @@ export function WorkspacePage(props: Props) {
     registerPanel((command) => panelRun.current(command));
     return () => registerPanel(null);
   }, [registerPanel]);
+  // Back in front with the keyboard outside the page, it goes to what leads the page, as when the page was first
+  // drawn. The tab's page then gives it back to whatever in the page had it last, if anything did.
+  const { front } = props;
+  const wasFront = useRef(front);
+  useEffect(() => {
+    const back = front && !wasFront.current;
+    wasFront.current = front;
+    if (back && props.focus && !pageRef.current?.contains(document.activeElement))
+      column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [front]);
   // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 

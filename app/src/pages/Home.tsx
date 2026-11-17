@@ -120,6 +120,8 @@ type Props = {
   note: Note | null;
   /** Home is in front, with nothing over it: the first row takes the focus. */
   focus: boolean;
+  /** Home's tab is in front. Behind another tab Home stays on the page, read again as the library changes. */
+  front: boolean;
   notes: string[];
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
@@ -243,6 +245,9 @@ export function HomePage(props: Props) {
   const trusted = read !== null && read.read === now && (read.here || !lead?.latest || lead.latest.last_ms <= read.read.at);
   const firstNow = trusted ? (now?.first ?? null) : null;
   const firstDrawn = useRef<{ folder: string; line: boolean; question: boolean } | null>(null);
+  // Behind another tab nobody sees the row, so a read then may still set the question over it: what Home holds when it
+  // comes to the front is what it is first drawn with.
+  if (!props.front) firstDrawn.current = null;
 
   const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
   // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
