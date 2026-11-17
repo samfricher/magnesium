@@ -1,6 +1,7 @@
 // Look at one state of the real window, in one command: build what changed,
 // open the window on the made-up course, go to a place, do a few things there
-// and photograph it. Starts no model.
+// and photograph it. Lessons run through the runtime built from this checkout,
+// never the installed one. Starts no model.
 //
 //   node scripts/look.mjs                                  Home
 //   node scripts/look.mjs --at task                        a lesson with its first task open
@@ -20,7 +21,8 @@
 //   --scheme <s>    light, dark or both (the default)
 //   --name <stem>   the photographs' name (look)
 //   --out <dir>     where they go
-//   --base <ref>    photograph the same steps in the window as of that commit too (scripts/window-build.sh --ref)
+//   --base <ref>    photograph the same steps in the window as of that commit too, on the runtime as of that
+//                   commit (scripts/window-build.sh --ref)
 //   --bin <path>    a window already built, in place of building this checkout's
 //   --keep          leave the window open afterwards and print its drive folder, to send it more ops with
 //                   scripts/drive.mjs and photograph it with scripts/capture.sh <pid> <png>. Its copy of the
@@ -106,9 +108,9 @@ function parse(text) {
 }
 const steps = options.steps.map(parse);
 
-function built(ref) {
-  console.error(ref ? `look: the window as of ${ref}…` : "look: building what changed…");
-  const args = [join(APP, "scripts/window-build.sh"), ...(ref ? ["--ref", ref] : [])];
+/** The window's program, or with `runtime` the magnesium program lessons run through: this checkout's, or as of `ref`. */
+function built(ref, runtime = false) {
+  const args = [join(APP, "scripts/window-build.sh"), ...(runtime ? ["--runtime"] : []), ...(ref ? ["--ref", ref] : [])];
   try {
     return execFileSync("sh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n").pop();
   } catch (error) {
@@ -121,9 +123,9 @@ const photographs = [];
 const failed = [];
 
 /** One window: the look chosen, the place reached, the steps done and photographed. `tag` goes into each name. */
-async function look(binary, tag, lineName) {
+async function look({ binary, runtimeProgram }, tag, lineName) {
   const stem = (name) => [name, tag, options.line === "all" ? lineName : null].filter(Boolean).join("-");
-  const { run, scratch, launch, step, shoot, quit, settle, lineLook } = openRun({ binary, out: options.out, stem, keep: options.keep });
+  const { run, scratch, launch, step, shoot, quit, settle, lineLook } = openRun({ binary, out: options.out, stem, keep: options.keep, runtimeProgram });
   const w = await launch("look", join(scratch, "window"));
   const photograph = async (name) => photographs.push(...(await shoot(w, name, `${options.at}${tag ? `, ${tag}` : ""}`, schemes)));
 
@@ -185,12 +187,21 @@ async function look(binary, tag, lineName) {
 }
 
 mkdirSync(options.out, { recursive: true });
-const binary = options.bin ?? built();
-if (!existsSync(binary)) usage(`no window program at ${binary}`);
-const before = options.base ? built(options.base) : null;
+// Each window with the runtime of its own commit: a lesson's replies and the record come from it, so a change to
+// the runtime shows only if "before" runs on the runtime as it was.
+console.error("look: building what changed…");
+const after = { binary: options.bin ?? built(), runtimeProgram: built(null, true) };
+if (!existsSync(after.binary)) usage(`no window program at ${after.binary}`);
+console.error(`look: the window ${after.binary}\n      on the runtime ${after.runtimeProgram}`);
+let before = null;
+if (options.base) {
+  console.error(`look: the window and the runtime as of ${options.base}…`);
+  before = { binary: built(options.base), runtimeProgram: built(options.base, true) };
+  console.error(`look: before, the window ${before.binary}\n      on the runtime ${before.runtimeProgram}`);
+}
 for (const lineName of options.line === "all" ? Object.keys(LOOKS) : [options.line]) {
   if (before) await look(before, "before", lineName);
-  await look(binary, before ? "after" : "", lineName);
+  await look(after, before ? "after" : "", lineName);
 }
 for (const file of photographs) console.log(file);
 if (failed.length > 0) {

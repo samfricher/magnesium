@@ -52,9 +52,10 @@ export function ownCopy(binary, { keep = false } = {}) {
 /**
  * Start a run: make the scratch course and say where its photographs go. `binary` is the window's program and `out`
  * the folder for the photographs, run.json and each window's log. `stem` turns a photograph's or a window's name into
- * its file's name; `keep` is for a run that leaves a window open when it ends.
+ * its file's name; `keep` is for a run that leaves a window open when it ends; `runtimeProgram` is the magnesium
+ * program lessons run through, in place of the one scratch-course.sh would pick.
  */
-export function openRun({ binary, out, stem = (name) => name, keep = false }) {
+export function openRun({ binary, out, stem = (name) => name, keep = false, runtimeProgram }) {
   mkdirSync(out, { recursive: true });
   const program = ownCopy(binary, { keep });
   const run = { started: new Date().toISOString(), binary, steps: [], problems: [], shots: [] };
@@ -66,7 +67,9 @@ export function openRun({ binary, out, stem = (name) => name, keep = false }) {
 
   const scratch = mkdtempSync(join(tmpdir(), "mg-pages-"));
   run.scratch = scratch;
-  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8" });
+  // scratch-course.sh takes the runtime to use as the window's core tests do.
+  const courseEnv = runtimeProgram ? { ...process.env, MAGNESIUM_TEST_BINARY: runtimeProgram } : process.env;
+  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8", env: courseEnv });
   const runtime = join(scratch, "magnesium");
   const agent = join(scratch, "claude");
   // A photo of working, to put on the line.

@@ -11,7 +11,7 @@
 #   scripts/check.sh --pages    only the pages and their checks
 #   scripts/check.sh --rust     only the Rust format, lints and core tests
 #
-# scripts/prove.sh runs the parts a change can affect, side by side.
+# scripts/prove.sh picks the parts from the files a change touches.
 #
 # It starts no model. The check against the real agent, on your own
 # subscription, is scripts/live-check.sh.
