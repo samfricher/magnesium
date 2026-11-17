@@ -100,7 +100,7 @@ impl LearnerStore {
                 "complete_captured cannot record an attempt, a practice change or an attempt correction, because each can change what is due",
             ));
         }
-        for d in &r.event_dispositions {
+        for (index, d) in r.event_dispositions.iter().enumerate() {
             let old: Option<String> = tx
                 .query_row(
                     "SELECT processed_request_id FROM learning_events WHERE event_id=?1",
@@ -110,10 +110,7 @@ impl LearnerStore {
                 .optional()?
                 .ok_or_else(|| unknown(&d.event_id))?;
             if let Some(request) = old {
-                return Err(LearnerError::new(
-                    "events_already_processed",
-                    format!("{}: original request {request}", d.event_id),
-                ));
+                return Err(already_closed(index, &d.event_id, &request));
             }
         }
         if r.mode == UpdateMode::Normal
@@ -256,12 +253,9 @@ impl LearnerStore {
                 "Completion changes must be supported by the selected captured learner turn",
             ));
         }
-        for d in &r.event_dispositions {
+        for (index, d) in r.event_dispositions.iter().enumerate() {
             if d.outcome == Disposition::Processed && !used_events.contains(&d.event_id) {
-                return Err(LearnerError::new(
-                    "invalid_variant",
-                    "event_dispositions.outcome must be processed or no_change; processed needs observation, change, or review activity support",
-                ));
+                return Err(unsupported_processed(index, &d.event_id));
             }
             events_changed |= tx.execute(
                 "UPDATE learning_events
@@ -330,6 +324,43 @@ fn check_semantic_cancellation() -> Result<()> {
 }
 fn unknown(id: &str) -> LearnerError {
     LearnerError::new("unknown_reference", id)
+}
+/// A live tutor that had to work the fix out from this refusal sent the
+/// request again with no disposition at all. That is accepted, and it leaves
+/// the learner's message pending for good, so the refusal names the outcome
+/// to send instead.
+fn unsupported_processed(index: usize, event_id: &str) -> LearnerError {
+    let path = format!("event_dispositions[{index}].outcome");
+    let mut error = LearnerError::new(
+        "invalid_variant",
+        format!(
+            "{path}: processed needs an observation, memory edit or review in this request that cites {event_id}, and none does. A turn that records nothing takes no_change."
+        ),
+    );
+    error.recovery = Some(json!({
+        "field_path": path,
+        "event_id": event_id,
+        "instruction": "Send this request again with this outcome as no_change when the turn records nothing about the learner: it only poses a task, answers a question or acknowledges. When the message holds work to record, keep processed and add the observation that cites it. Keep the disposition either way: a message with none stays pending.",
+    }));
+    error
+}
+/// A message is closed by one request. The tutor that names it again, such as
+/// in a later call for the same turn, needs to know the first close stands.
+fn already_closed(index: usize, event_id: &str, request: &str) -> LearnerError {
+    let path = format!("event_dispositions[{index}]");
+    let mut error = LearnerError::new(
+        "events_already_processed",
+        format!(
+            "{path}: {event_id} was already closed by request {request}. Leave this disposition out."
+        ),
+    );
+    error.recovery = Some(json!({
+        "field_path": path,
+        "event_id": event_id,
+        "closed_by_request_id": request,
+        "instruction": "A message is closed once, and this one already is. Send this request again without this disposition; the rest of the request can stay as it is.",
+    }));
+    error
 }
 fn insert_ref(refs: &mut BTreeMap<String, String>, name: &str, id: &str) -> Result<()> {
     // The typed preflight owns request admission and field diagnostics. This

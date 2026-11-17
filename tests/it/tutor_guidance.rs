@@ -227,6 +227,83 @@ fn reused_request_ids_name_the_fix_for_updates_and_controls() {
     }
 }
 
+/// The current event a prompt notice names.
+fn current_event(notice: &str) -> String {
+    notice
+        .split_once("current event ")
+        .unwrap()
+        .1
+        .split('.')
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn refused_dispositions_say_what_to_send_instead() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", "conv");
+    let call = |request: Value| {
+        let output = v2::tool_output(&e, "claude", "conv", "learning_step", request);
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    // The learner only asks for the next task: the turn has nothing to record.
+    let event = current_event(&claude_prompt(&e, "conv", "p-1", "ok, next one please"));
+    let close = |request_id: &str, outcome: &str| json!({"schema":"learner-model/v2","action":"update","request_id":request_id,"event_dispositions":[{"event_id":event,"outcome":outcome}]});
+
+    let unsupported = call(close("pose-task", "processed"));
+    let error = &unsupported["error"];
+    assert_eq!(error["code"], "invalid_variant", "{unsupported}");
+    let message = error["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("event_dispositions[0].outcome: "),
+        "{message}"
+    );
+    assert!(message.contains(&event), "{message}");
+    assert!(
+        message.contains("A turn that records nothing takes no_change."),
+        "{message}"
+    );
+    assert_eq!(
+        error["recovery"]["field_path"], "event_dispositions[0].outcome",
+        "{unsupported}"
+    );
+    let instruction = error["recovery"]["instruction"].as_str().unwrap();
+    assert!(instruction.contains("as no_change"), "{instruction}");
+    assert!(instruction.contains("stays pending"), "{instruction}");
+
+    // What the refusal says to send is accepted, under the refused request's ID.
+    let closed = call(close("pose-task", "no_change"));
+    assert_eq!(closed["update_status"], "committed", "{closed}");
+
+    let again = call(close("pose-task-checkpoint", "no_change"));
+    let error = &again["error"];
+    assert_eq!(error["code"], "events_already_processed", "{again}");
+    assert_eq!(
+        error["message"],
+        format!(
+            "event_dispositions[0]: {event} was already closed by request pose-task. Leave this disposition out."
+        ),
+        "{again}"
+    );
+    assert_eq!(
+        error["recovery"]["field_path"], "event_dispositions[0]",
+        "{again}"
+    );
+    assert!(
+        error["recovery"]["instruction"]
+            .as_str()
+            .unwrap()
+            .contains("without this disposition"),
+        "{again}"
+    );
+
+    // The message is closed: the next turn counts only itself as waiting.
+    let next = claude_prompt(&e, "conv", "p-2", "is it 950?");
+    assert!(next.contains("; pending 1;"), "{next}");
+}
+
 #[test]
 fn served_instructions_ask_for_plain_learner_facing_save_failures() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
