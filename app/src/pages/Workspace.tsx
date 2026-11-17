@@ -10,6 +10,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
 import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
+import { DISC_R, discFill, shareLeft } from "../paperTime";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
@@ -119,6 +120,20 @@ function WorkRow({ row, last }: { row: Row; last: Mark | null }) {
   );
 }
 
+/**
+ * The time left as a disc beside its words: a wash of the ink over the share left, read from the desk without
+ * subtracting. It is drawn again only when the words change, once a minute, and never moves in between.
+ */
+function TimeDisc({ share }: { share: number }) {
+  const fill = discFill(share);
+  return (
+    <svg className="time-disc" viewBox="0 0 48 48" aria-hidden="true" data-role="time-disc" data-share={share.toFixed(3)}>
+      {fill === "whole" ? <circle cx="24" cy="24" r={DISC_R} className="time-disc-left" /> : fill !== "none" && <path d={fill.path} className="time-disc-left" />}
+      <circle cx="24" cy="24" r={DISC_R} className="time-disc-edge" />
+    </svg>
+  );
+}
+
 const MINUTE = 60_000;
 const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
 const dayOf = (ms: number) => new Date(ms).toDateString();
@@ -198,6 +213,7 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       {/* The time leads, at a size read from the desk where the paper is sat. Its words change only with the
           minute, and nothing else in the block moves. */}
       <div className="paper-head">
+        <TimeDisc share={over ? 0 : shareLeft(left, sitting.minutes)} />
         <p className="paper-time" data-drive="sitting-left">
           {over ? "Time is up" : `${plural(left, "minute", "minutes")} left`}
         </p>
