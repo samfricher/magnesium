@@ -499,6 +499,11 @@ input[type="range"]::-webkit-slider-thumb {
 .sample sub { font-size: 0.68em; }
 .sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
 .sample-you::before { content: "›"; position: absolute; left: calc(-1 * var(--hang)); font: 400 0.882rem/1.6 var(--mono); color: var(--hint); }
+/* The learner's words in the sample are drawn on the line chosen under Your line, so the choice shows where it is made. */
+:root[data-field="ruled"] .sample-you { padding-bottom: 0.4rem; }
+:root[data-field="ruled"] .sample-you::after { content: ""; position: absolute; left: calc(-1 * var(--hang)); right: 0; bottom: 0; border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--ground)); }
+:root[data-field="soft"] .sample-you { margin-left: calc(-1 * var(--field-in)); padding: 6px var(--field-in); border-radius: 13px; background: var(--well); }
+:root[data-field="soft"] .sample-you::before { content: none; }
 .key-cap {
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);

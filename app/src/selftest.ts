@@ -381,6 +381,34 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       if (line()?.querySelector(".line-menu") != null || document.activeElement?.getAttribute("data-drive") !== "composer") throw new Error(`Esc did not put Stuck's rows away: ${JSON.stringify(steps.stuckInLesson)}`);
     }
 
+    // The line's three looks: the ruled line keeps the bare line's "›" and adds one hairline under the words, from
+    // the "›" to the column's end; the bare line and the soft field draw none. Set on the root as applyPrefs sets it.
+    {
+      const root = document.documentElement;
+      const was = root.dataset.field;
+      const words = () => document.querySelector<HTMLElement>(".session.in-front .line.lesson .field-row")!;
+      const look = (field: string) => {
+        root.dataset.field = field;
+        const rule = getComputedStyle(words(), "::after");
+        const mark = getComputedStyle(words(), "::before");
+        const hang = parseFloat(getComputedStyle(root).getPropertyValue("--hang")) || 0;
+        return {
+          rule: rule.content !== "none" && rule.borderTopStyle === "solid" ? rule.borderTopWidth : null,
+          // The rule starts where the "›" hangs and ends at the row's right edge.
+          from: rule.content !== "none" ? Math.round(parseFloat(rule.left) + hang) : null,
+          to: rule.content !== "none" ? Math.round(parseFloat(rule.right)) : null,
+          mark: mark.content,
+        };
+      };
+      steps.lineLooks = { bare: look("bare"), ruled: look("ruled"), soft: look("soft") };
+      if (was === undefined) delete root.dataset.field;
+      else root.dataset.field = was;
+      const { bare, ruled, soft } = steps.lineLooks as Record<string, ReturnType<typeof look>>;
+      if (ruled.rule !== "1px" || ruled.from !== 0 || ruled.to !== 0) throw new Error(`the ruled line has no hairline from its "›" to the column's end: ${JSON.stringify(steps.lineLooks)}`);
+      if (ruled.mark !== bare.mark || bare.mark === "none") throw new Error(`the ruled line does not hang the bare line's "›": ${JSON.stringify(steps.lineLooks)}`);
+      if (bare.rule !== null || soft.rule !== null) throw new Error(`a look other than the ruled line drew a rule: ${JSON.stringify(steps.lineLooks)}`);
+    }
+
     // The model on the lesson's line: under More, the same list as the start line, now changing the running session.
     // A change goes to the agent at once; its next reply says what it ran on. It is set back so later steps see the pick.
     {

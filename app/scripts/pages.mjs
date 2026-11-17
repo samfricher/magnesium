@@ -10,7 +10,7 @@
 // (crates/core/tests/stand_in_model.py).
 //
 // It writes <stem>-dark.png and <stem>-light.png for each page and state it
-// visits (the session's line in both of its looks, soft and bare), menu.json
+// visits (the session's line in each of its looks: soft, bare and ruled), menu.json
 // (the menu bar, which a photograph of the window does not show) and run.json
 // (each step, and any problem). It exits 1 when a step failed, after doing
 // every step it can.
@@ -385,7 +385,7 @@ async function lineLook(w, look) {
   await settle(w, 300);
 }
 
-/** The page while a task is open (the blank page): the bare line first, then the soft field; each in light and dark. */
+/** The page while a task is open (the blank page): the bare line first, then the soft field and the ruled line; each in light and dark. */
 async function answerPages() {
   // A note of the course's own, so a document that is not a past paper can be open beside the task.
   const notes = join(scratch, "Intro-Statistics", "Study", "materials", "week6-notes.md");
@@ -534,6 +534,34 @@ async function answerPages() {
   await shoot(a, "answer-soft-stuck", "Answer: Stuck's row open on the soft field");
   await step(a, "close Stuck on the soft line", { op: "key", key: "Escape" });
   await step(a, "clear the soft line", { op: "type", text: "", replace: true });
+  // The ruled line: the bare line on one hairline, in the soft field's states, with a file on it, and at the largest text.
+  await lineLook(a, "Ruled line");
+  await step(a, "the session, ruled", { op: "click", target: "tab-2", by: "drive" });
+  await settle(a, 500);
+  await shoot(a, "answer-ruled-rest", "Answer: a task open at rest, the ruled line");
+  await step(a, "focus the ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the ruled line", { op: "type", text: ANSWER });
+  await settle(a, 300);
+  await shoot(a, "answer-ruled-typed", "Answer: words on the ruled line, under the task alone");
+  await step(a, "stuck on the ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(a, 300);
+  await shoot(a, "answer-ruled-stuck", "Answer: Stuck's row open on the ruled line");
+  await step(a, "close Stuck on the ruled line", { op: "key", key: "Escape" });
+  await step(a, "clear the ruled line", { op: "type", text: "", replace: true });
+  await step(a, "a photo on the ruled line", { op: "attach", path: photo });
+  await settle(a, 400);
+  await shoot(a, "answer-ruled-attached", "Answer: a photo of working on the ruled line");
+  await step(a, "take it off the ruled line", { op: "click", target: "×" });
+  const ruledWide = await step(a, "the window's size, ruled", { op: "frame" });
+  await step(a, "720 by 560, ruled", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await a.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(a, "focus the small ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(a, "write on the small ruled line", { op: "type", text: ANSWER });
+  await settle(a, 400);
+  await shoot(a, "answer-ruled-narrow-big-typed", "Answer: words on the ruled line at 720 by 560, the largest text");
+  await step(a, "clear the small ruled line", { op: "type", text: "", replace: true });
+  await step(a, "the text back to its own size, ruled", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (ruledWide.ok) await step(a, "the window's size again, ruled", { op: "frame", width: ruledWide.frame.width, height: ruledWide.frame.height });
   await lineLook(a, "Bare line");
   await step(a, "the session, bare", { op: "click", target: "tab-2", by: "drive" });
   await settle(a, 400);
@@ -910,6 +938,47 @@ try {
   await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
   await step(w, "close the new session", { op: "key", key: "w", meta: true });
   await settle(w, 300);
+
+  // The line ruled: the bare line on one hairline, in the bare line's states. Settings keeps its tab, the third.
+  await step(w, "settings for the ruled line", { op: "click", target: "tab-3", by: "drive" });
+  await step(w, "your line: ruled", { op: "click", target: "Ruled line" });
+  await step(w, "settings: Your line", { op: "scroll", target: "Your line" });
+  await w.op({ op: "scroll", by: -330 });
+  await settle(w, 300);
+  await shoot(w, "settings-line-ruled", "Settings: Your line on the ruled line, the sample drawn on it");
+  await step(w, "the session, ruled", { op: "click", target: "tab-2", by: "drive" });
+  await settle(w, 500);
+  await shoot(w, "session-ruled", "Session: the line ruled");
+  await step(w, "focus the ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the ruled line", { op: "type", text: ANSWER });
+  await settle(w, 300);
+  await shoot(w, "session-ruled-typed", "Session: words on the ruled line");
+  await step(w, "stuck on the ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 300);
+  await shoot(w, "session-ruled-stuck", "Session: Stuck open on the ruled line");
+  await step(w, "close Stuck on the ruled line", { op: "key", key: "Escape" });
+  await step(w, "clear the ruled line", { op: "type", text: "", replace: true });
+  await step(w, "attach a photo on the ruled line", { op: "attach", path: photo });
+  await settle(w, 400);
+  await shoot(w, "session-ruled-attached", "Session: a photo on the ruled line, before sending");
+  await step(w, "take it off the ruled line", { op: "click", target: "×" });
+  const ruledWide = await step(w, "the window's size, ruled", { op: "frame" });
+  await step(w, "720 by 560, ruled", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await step(w, "focus the small ruled line", { op: "focus", target: "composer", by: "drive" });
+  await step(w, "write on the small ruled line", { op: "type", text: ANSWER });
+  await step(w, "stuck on the small ruled line", { op: "click", target: "stuck", by: "drive" });
+  await settle(w, 400);
+  await shoot(w, "session-ruled-narrow-stuck", "Session: Stuck open on the ruled line at 720 by 560, the largest text");
+  await step(w, "close Stuck on the small ruled line", { op: "key", key: "Escape" });
+  await step(w, "clear the small ruled line", { op: "type", text: "", replace: true });
+  await step(w, "the text back to its own size, ruled", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (ruledWide.ok) await step(w, "the window's size again, ruled", { op: "frame", width: ruledWide.frame.width, height: ruledWide.frame.height });
+  await step(w, "a new session on the ruled line", { op: "click", target: "new-session", by: "drive" });
+  await settle(w, 800);
+  await shoot(w, "session-rest-ruled", "Session: a new session before it starts, the line ruled");
+  await step(w, "close the ruled new session", { op: "key", key: "w", meta: true });
+  await settle(w, 300);
   // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
   await step(w, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
@@ -979,7 +1048,7 @@ try {
   await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  // Each card in both of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
+  // Each card in each of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
   // asks within a moment of the Return that sent the words, so the card leaves the keyboard on the line; ⇧⇥ takes
   // it to the card. Settings keeps its tab, the third, once it has one.
   let settingsTab = null;
@@ -993,6 +1062,7 @@ try {
   const cardShots = async (stem, what) => {
     for (const [which, suffix, words] of [
       ["Bare line", "-bare", ", on the bare line"],
+      ["Ruled line", "-ruled", ", on the ruled line"],
       ["Soft field", "", ""],
     ]) {
       await lineLook(which);

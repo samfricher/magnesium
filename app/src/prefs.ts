@@ -61,7 +61,7 @@ export type Prefs = {
   textDark: string;
   /** Whether the lines that name keys are shown. */
   hints: boolean;
-  /** How the line the learner writes on is drawn: bare on the page's ground, or in a soft field. */
+  /** How the line the learner writes on is drawn: bare on the page's ground, bare on one ruled hairline, or in a soft field. */
   line: LineLook;
   /**
    * What the window's ground is, on one scale from -10 to 10: 0 is solid, below it is frosted glass and above it
@@ -71,7 +71,8 @@ export type Prefs = {
   keys: Record<KeyAction, string>;
 };
 
-export type LineLook = "bare" | "soft";
+export type LineLook = "bare" | "ruled" | "soft";
+export const LINE_LOOKS: LineLook[] = ["bare", "ruled", "soft"];
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
@@ -259,7 +260,7 @@ export function cleanPrefs(raw: Partial<Prefs>): Prefs {
     text: str(raw.text, ""),
     textDark: str(raw.textDark, ""),
     hints: typeof raw.hints === "boolean" ? raw.hints : DEFAULTS.hints,
-    line: raw.line === "bare" || raw.line === "soft" ? raw.line : DEFAULTS.line,
+    line: LINE_LOOKS.includes(raw.line as LineLook) ? (raw.line as LineLook) : DEFAULTS.line,
     glass: num(raw.glass, -10, 10, DEFAULTS.glass),
     keys,
   };
