@@ -34,6 +34,7 @@ import { docsOf, keepDocs, moveDocs, sessionDocsKey, withClosed, withOpened, typ
 import { Line, Rich } from "./Rich";
 import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
+import { pageClock, wordsBatch, type WordsBatch } from "../wordsBatch";
 
 /** What a session tab starts with, once, when it is opened. */
 export type Pending =
@@ -904,11 +905,23 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return false;
   };
 
+  // The reply's words go on the page at most once a frame (wordsBatch.ts).
+  const deliverWords = useRef((text: string) => onEvent({ type: "text_delta", text }));
+  deliverWords.current = (text: string) => onEvent({ type: "text_delta", text });
+  const words = useRef<WordsBatch | null>(null);
+  words.current ??= wordsBatch((text) => deliverWords.current(text), pageClock);
+  useEffect(() => () => words.current?.drop(), []);
+
   // ---------------------------------------------------------------------------
   // What the window can ask of this session
 
   const handle: SessionHandle = {
-    event: (event) => onEvent(event),
+    event: (event) => {
+      if (event.type === "text_delta") return words.current?.add(event.text);
+      // Anything else comes after the words before it: they are put on the page first.
+      words.current?.flush();
+      onEvent(event);
+    },
     command: (command) => {
       const { phase } = now.current;
       if (command === "hint" || command === "lost" || command === "unknown") {
@@ -1247,6 +1260,45 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const page: AnswerPage = phase === "lesson" && task !== null && !ownBusy && session.cards.length === 0 ? (reading || lookedBack ? "open" : "folded") : null;
   const folded = page === "folded";
   now.current.page = page;
+  // Replies out of view are skipped (prose.css) only once every turn has been
+  // laid out and so has its real height kept: a reply never drawn would stand
+  // at a guessed height, and the page would change length as it scrolled into
+  // view. Laid out again whenever the kept heights would be wrong: the turns
+  // put back on the page, the column made wider or narrower (the window, the
+  // panel), or the text a different size.
+  const turnsDrawn = !folded && turns.length > 0;
+  useEffect(() => {
+    const section = nowRef.current;
+    if (!section) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      delete section.dataset.measured;
+      if (!turnsDrawn) return;
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => (section.dataset.measured = ""));
+      });
+    };
+    // What the heights were measured at: the column's width and the reading text's size.
+    const at = () => `${section.clientWidth} ${getComputedStyle(section).fontSize} ${document.documentElement.style.cssText}`;
+    let measuredAt = at();
+    const check = () => {
+      const now = at();
+      if (now === measuredAt) return;
+      measuredAt = now;
+      measure();
+    };
+    const sized = new ResizeObserver(check);
+    sized.observe(section);
+    const styled = new MutationObserver(check);
+    styled.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      sized.disconnect();
+      styled.disconnect();
+    };
+  }, [turnsDrawn]);
   useEffect(() => {
     props.onAnswerPage(tab.key, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps

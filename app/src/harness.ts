@@ -560,8 +560,15 @@ async function run(op: Op): Promise<Result> {
     case "wait":
       await sleep(Number(op.ms ?? 0));
       return { ok: true };
-    case "text":
-      return { ok: true, text: document.body.innerText };
+    case "text": {
+      // Every reply, as a selection would have it: skipped ones are not in innerText (prose.css).
+      const root = document.documentElement;
+      const was = root.hasAttribute("data-whole");
+      root.setAttribute("data-whole", "");
+      const text = document.body.innerText;
+      if (!was) root.removeAttribute("data-whole");
+      return { ok: true, text };
+    }
     case "perf": {
       const measured = await measureInput();
       return "error" in measured ? { ok: false, error: measured.error } : { ok: true, ...measured, startup_ms: perfResult.startup_ms };

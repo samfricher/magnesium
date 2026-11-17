@@ -27,6 +27,7 @@ node scripts/test-record-sign.mjs
 node scripts/test-paper-time.mjs
 node scripts/test-prefs.mjs
 node scripts/test-step-head.mjs
+node scripts/test-words-batch.mjs
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked -p mg-core
