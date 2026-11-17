@@ -73,12 +73,14 @@ export function planDay(day: string | null, now = new Date()): string {
  * with the words over it. Null while a timed paper runs, when no check can be taken alone, or when the record holds
  * no question for the first.
  */
-export function firstQuestion(home: Pick<Home, "first_check" | "checks_alone" | "sitting" | "opening"> | null): { text: string; meta: string } | null {
+export function firstQuestion(
+  home: Pick<Home, "first_check" | "first_check_id" | "checks_alone" | "sitting" | "opening"> | null,
+): { text: string; meta: string; id: string | null } | null {
   const checks = checksAlone(home);
   const text = home?.first_check?.trim() ?? "";
   if (checks === 0 || text === "" || !home?.opening?.checks) return null;
   const meta = checks === 1 ? "A quick check · about a minute" : `First of ${checks} quick checks · about ${checks} minutes`;
-  return { text, meta };
+  return { text, meta, id: home?.first_check_id ?? null };
 }
 
 /** What a workspace's row on Home says of it: "2 can count today · Midterm 2 in 10 days", each part only when it applies. */

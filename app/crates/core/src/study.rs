@@ -99,6 +99,12 @@ pub struct Home {
     /// a sitting that opens with checks, so it is the check that sitting
     /// takes first. None when the record stores no question for it.
     pub first_check: Option<String>,
+    /// The record's ID for that check, to tell it from another once one is
+    /// posed. Opaque: it names neither the skill nor the question.
+    pub first_check_id: Option<String>,
+    /// The record's ID for the quick check a reply of the current sitting has
+    /// posed and no answer has settled, or None.
+    pub posed_check: Option<String>,
     /// Skills not proven yet whose next pass can be earned today, as the
     /// record has them. None when the runtime cannot say.
     pub can_count_today: Option<u32>,
@@ -359,6 +365,8 @@ fn blank_home(folder: &Path, store: &Store) -> Home {
         redos_due: 0,
         opening: None,
         first_check: None,
+        first_check_id: None,
+        posed_check: None,
         can_count_today: None,
         first_redo: None,
         papers: Vec::new(),
@@ -444,7 +452,15 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
     );
     if home.opening.is_some_and(|opening| opening.checks > 0) {
         home.first_check = record.as_ref().and_then(first_check);
+        home.first_check_id = home
+            .first_check
+            .as_ref()
+            .and(record.as_ref())
+            .and_then(|record| text(&record["first_check"]["id"]));
     }
+    home.posed_check = record
+        .as_ref()
+        .and_then(|record| text(&record["posed_check"]["id"]));
     home.can_count_today = record
         .as_ref()
         .and_then(|record| can_count_today(record, today()));

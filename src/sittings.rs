@@ -166,6 +166,32 @@ pub(crate) struct SittingNow {
     pub(crate) shown_ms: Option<i64>,
 }
 
+/// The practice item of the quick check a reply of the current sitting has
+/// posed and no answer has settled yet (the one [`Sittings::open_check`]
+/// names), read without opening the store for writing, so a read from a
+/// command that changes nothing leaves an earlier version's store as it is.
+/// None when there is none, or the store cannot tell.
+pub(crate) fn open_check_item_read_only(workspace: &Workspace) -> Option<String> {
+    let path = workspace.control().join(STORE_FILE);
+    if !path.try_exists().ok()? {
+        return None;
+    }
+    crate::workspace::reject_symlink_components(&path, workspace.control()).ok()?;
+    let conn =
+        Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    conn.busy_timeout(Duration::from_secs(2)).ok()?;
+    conn.query_row(
+        "SELECT i.item_id FROM sitting_items i
+         WHERE i.sitting_id = (SELECT sitting_id FROM sittings ORDER BY sitting_no DESC LIMIT 1)
+           AND i.posed=1 AND i.outcome IS NULL ORDER BY i.number LIMIT 1",
+        [],
+        |r| r.get(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
 /// The current sitting, read without opening the store for writing: a store
 /// an earlier version made, with no table of ends, is left as it is.
 pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<SittingNow>, String> {

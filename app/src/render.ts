@@ -462,15 +462,30 @@ export function poses(reply: string, task: string): boolean {
 }
 
 /**
- * Where an answer written on Home goes once the reply that was to pose its check has ended: as the answer to the open
- * task when that task is Home's question; with nothing said of it when the engine has not said which task is open and
- * the reply posed Home's question (as words sent from the line then go); else onto the line, unsent. The tutor poses a
- * stored question as written, so a check posed from Home's question holds its words.
+ * Where an answer written on Home goes once the reply that was to pose its check has ended: to that check, or onto the
+ * line, unsent. A wrong attempt on the record is worse than words left for one more Return, so both tests are strict.
+ *
+ * - The check: the record says which check a reply posed (`posed`, its ID; null when none is open; undefined from a
+ *   runtime that cannot say). Only Home's check (`id`) takes the words.
+ * - The question: the same check can be posed with a new problem, which the learner has not seen. The open task (or,
+ *   when the page sees none, the reply that posed it) must hold Home's whole question, formulas and numbers included,
+ *   spacing aside, as a stored question posed as written does. `poses` is no test here: it drops formulas and short
+ *   words, so the same question with other numbers would pass.
+ *
+ * With both, the words go as an answer when the page or the record knows the check is open, and with nothing said of
+ * them (the tutor decides, as for words sent from the line then) when neither does.
  */
-export function heldAnswerGoes(question: string, after: { task: string | null; taskUnseen: boolean; reply: string }): "answer" | "unmarked" | "line" {
-  const holds = (text: string) => text.includes(question) || poses(text, question);
+export function heldAnswerGoes(
+  held: { question: string; id: string | null },
+  after: { posed: string | null | undefined; task: string | null; taskUnseen: boolean; reply: string },
+): "answer" | "unmarked" | "line" {
+  const byRecord = Boolean(held.id) && after.posed !== undefined;
+  if (byRecord && after.posed !== held.id) return "line";
+  const bare = (text: string) => text.replace(/\s+/g, "");
+  const holds = (text: string) => bare(held.question) !== "" && bare(text).includes(bare(held.question));
   if (after.task !== null) return holds(after.task) ? "answer" : "line";
-  return after.taskUnseen && holds(after.reply) ? "unmarked" : "line";
+  if (!holds(after.reply)) return "line";
+  return byRecord ? "answer" : after.taskUnseen ? "unmarked" : "line";
 }
 
 /**

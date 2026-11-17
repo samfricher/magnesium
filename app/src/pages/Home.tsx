@@ -124,7 +124,7 @@ type Props = {
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
   /** Just the quick checks due in a folder, in a session of their own; `answer`, words written for the first. */
-  onChecks: (folder: string, answer?: { words: string; question: string }) => void;
+  onChecks: (folder: string, answer?: { words: string; question: string; id: string | null }) => void;
   /** How many quick checks are due in a folder, as Home read it. */
   onChecksDue?: (folder: string, due: number) => void;
   /** The key for Just the quick checks, as the learner set it. */
@@ -148,7 +148,7 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
  * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
  */
-type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string } | null; redos: number; facts: string; at: number };
+type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string; id: string | null } | null; redos: number; facts: string; at: number };
 
 /**
  * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
@@ -273,6 +273,15 @@ export function HomePage(props: Props) {
       </button>
     </p>
   ) : null;
+  // The day at the head of the page, which moves on at midnight when Home is left open.
+  const [day, setDay] = useState(isoToday);
+  useEffect(() => {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1).getTime();
+    const timer = window.setTimeout(() => setDay(isoToday()), Math.max(1000, midnight - now.getTime()));
+    return () => window.clearTimeout(timer);
+  }, [day]);
+
   // The answer line, when a question is set, then the rows: ↑↓ move between them.
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
   const asked = question !== null;
@@ -361,13 +370,13 @@ export function HomePage(props: Props) {
     event.preventDefault();
     if (!lead) return;
     const words = answer.trim();
-    props.onChecks(lead.folder, words === "" || !question ? undefined : { words, question: question.text });
+    props.onChecks(lead.folder, words === "" || !question ? undefined : { words, question: question.text, id: question.id });
   };
 
   return (
     <div className="page home-page" data-page="home">
       <div className="page-column" ref={list} onKeyDown={onKeyDown} style={waiting ? { visibility: "hidden" } : undefined}>
-        {workspaces.length > 0 && <p className="home-day">{longDay(isoToday())}</p>}
+        {workspaces.length > 0 && <p className="home-day">{longDay(day)}</p>}
         {props.step && (
           <section className="step" aria-label="This Mac">
             <h1 className="page-next">{props.step.next}</h1>

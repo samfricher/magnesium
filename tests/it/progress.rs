@@ -613,12 +613,36 @@ fn the_first_due_check_gives_its_stored_question_and_never_its_key() {
     days_pass(&e, 1);
     let due = progress(&e);
     assert_eq!(
-        due["first_check"],
-        json!({"question": "In 2x² − 9x + 4 = 0, what is b?"}),
+        due["first_check"]["question"],
+        json!("In 2x² − 9x + 4 = 0, what is b?"),
         "{due}"
     );
     assert!(
         !due.to_string().contains("KEY-minus-nine"),
         "the key never leaves with the question: {due}"
+    );
+    let id = due["first_check"]["id"].as_str().unwrap().to_owned();
+    assert!(!id.is_empty() && !id.contains("sign of b"), "{id}");
+    // Nothing posed yet.
+    assert_eq!(due["posed_check"], Value::Null, "{due}");
+
+    // A message after the gap begins a sitting, which takes the check; a reply poses it.
+    Connection::open(e.workspace.join(".magnesium/sittings.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET last_learner_ms = last_learner_ms - 4 * 3600 * 1000",
+            [],
+        )
+        .unwrap();
+    prompt(&e, "b-0", "I'm back.");
+    let input = json!({"session_id":THREAD,"cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"b-0","stop_hook_active":false,
+        "last_assistant_message":"Quick check 1: In 2x² − 9x + 4 = 0, what is b?"});
+    let output = run_hook_with_host_flag(&e, &e.workspace, "stop", input, "claude");
+    assert!(output.status.success(), "{output:?}");
+    let posed = progress(&e);
+    assert_eq!(
+        posed["posed_check"],
+        json!({"id": id}),
+        "the check posed is the one first_check named: {posed}"
     );
 }

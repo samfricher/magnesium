@@ -16,7 +16,7 @@ export function keepHomeDraft(draft: HomeDraft): void {
   kept = draft.words.trim() === "" ? null : draft;
 }
 
-/** The words have gone to the tutor, from the session that took them or from its line: Home lets them go. */
-export function sentHomeDraft(text: string): void {
-  if (kept && text.includes(kept.words.trim())) kept = null;
+/** These words, for this folder's question, have gone to the tutor, from the session that took them or from its line. */
+export function sentHomeDraft(folder: string, question: string, words: string): void {
+  if (kept && kept.folder === folder && kept.question === question && kept.words.trim() === words.trim()) kept = null;
 }

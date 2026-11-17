@@ -16,7 +16,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 
 import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
-import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
+import { actionOf, changeOf, keepChange, keyName, keepPlace, movePlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, heldAnswerGoes, poses } from "../render";
 import { sentHomeDraft } from "../homeDraft";
 import { setupReady } from "../setup";
@@ -46,8 +46,17 @@ export type Pending =
   /** Ask the tutor to mark a paper that was handed in. */
   | { kind: "paper"; shown: string; sent: string };
 
+/**
+ * How the page says that Home's answer was put on the line because the check posed is not the one Home showed: under
+ * the line ("under"), in the lesson under the reply ("lesson"), or over the line with Home's question ("question").
+ * Three options photographed for Sam; set at build time with VITE_OTHER_CHECK_NOTE.
+ */
+const OTHER_CHECK_NOTE: "under" | "lesson" | "question" = ((value) => (value === "lesson" || value === "question" ? value : "under"))(
+  import.meta.env.VITE_OTHER_CHECK_NOTE as string | undefined,
+);
+
 /** Words written on Home under the first quick check's question, and that question as Home showed it. */
-export type HomeAnswer = { words: string; question: string };
+export type HomeAnswer = { words: string; question: string; id: string | null };
 
 export type SessionTab = { key: string; kind: "session"; folder: string; session: string | null; title: string; pending?: Pending };
 
@@ -334,7 +343,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // They go only as the answer to the check Home showed, and only if nothing else was sent first. Otherwise (the learner
   // sent something from the line, stopped the reply, the reply failed, or it posed another question) they are never
   // sent: they are put on the line as a draft. Home keeps its own copy until they are sent (src/homeDraft.ts).
-  const [homeAnswer, setHomeAnswerState] = useState<{ words: string; question: string; ms: number; ended: boolean; sending: boolean } | null>(null);
+  //
+  // `posed`: which check the record says the reply posed, once read after it (undefined until then).
+  const [homeAnswer, setHomeAnswerState] = useState<
+    (HomeAnswer & { ms: number; ended: boolean; sending: boolean; reading: boolean; posed?: string | null }) | null
+  >(null);
+  // Home's question, when Home's words were put on the line because the check posed was another one: the page says so,
+  // until the learner next sends anything.
+  const [otherCheck, setOtherCheck] = useState<string | null>(null);
   // The same, at once: an effect and an event in one pass must not both act on it.
   const homeAnswerNow = useRef<typeof homeAnswer>(null);
   const setHomeAnswer = useCallback((next: typeof homeAnswer | ((old: typeof homeAnswer) => typeof homeAnswer)) => {
@@ -343,10 +359,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     setHomeAnswerState(value);
   }, []);
   /** Home's words withdrawn: onto the line as a draft, after anything being sent from it has gone. */
-  const withdrawHomeAnswer = useCallback(() => {
+  const withdrawHomeAnswer = useCallback((another = false) => {
     const held = homeAnswerNow.current;
     if (!held || held.sending) return;
     setHomeAnswer(null);
+    withdrawn.current = held;
+    if (another) setOtherCheck(held.question);
     // A message being sent from the line is still on it until the line has been drawn again: wait for it to clear,
     // then put Home's words there. Words the learner has written since are kept, before them.
     let tries = 0;
@@ -358,6 +376,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     window.setTimeout(put, 0);
   }, [setHomeAnswer]);
 
+  // Home's words last put on the line, so that sending them from it later lets Home's own copy go.
+  const withdrawn = useRef<HomeAnswer | null>(null);
+
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
   const provisionalTitle = useRef(false);
   // The words typed to start it: a goal that only says them again does not name the session. Started from typed
@@ -366,6 +387,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
 
   // Where this session's draft, line and scroll are kept: its conversation once it has one.
   const place = keyOf(folder, tab.session, tab.key);
+  // A session just begun gets its conversation's id during its first reply. What the line holds then (words the
+  // learner wrote, or Home's words put back on it) is kept under the new key: the line itself stays as it is, since it
+  // is keyed by the tab, not by the place, and drawing it again empty lost those words.
+  const placeWas = useRef(place);
+  useEffect(() => {
+    if (placeWas.current === place) return;
+    movePlace(placeWas.current, place);
+    placeWas.current = place;
+  }, [place]);
 
   // The documents open in this session, kept with it: each comes back at its page and zoom.
   const docsKey = sessionDocsKey(folder, tab.session, tab.key);
@@ -638,7 +668,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const checks = async (answer?: HomeAnswer): Promise<boolean> => {
     if (!now.current.home) return false;
     const words = answer?.words.trim() ?? "";
-    if (answer && words !== "") setHomeAnswer({ words, question: answer.question, ms: Date.now(), ended: false, sending: false });
+    if (answer && words !== "") setHomeAnswer({ words, question: answer.question, id: answer.id, ms: Date.now(), ended: false, sending: false, reading: false });
     const begun = await begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
     // Not begun: nothing was posed. The words stay on Home, and go on this line as a draft.
     if (!begun) withdrawHomeAnswer();
@@ -651,6 +681,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const { session, props } = now.current;
     // Anything else sent first takes the place of Home's answer, which then waits on the line.
     if (at === undefined) withdrawHomeAnswer();
+    setOtherCheck(null);
+    // Home's words, sent now as Home's answer or from the line where they were put: Home's own copy goes.
+    const fromHome = at !== undefined ? homeAnswerNow.current : withdrawn.current?.words === text.trim() ? withdrawn.current : null;
     try {
       if (!session.open || !props.live) {
         props.claim(props.tab.key);
@@ -663,7 +696,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
-      sentHomeDraft(text);
+      if (fromHome) {
+        sentHomeDraft(folder, fromHome.question, fromHome.words);
+        if (fromHome === withdrawn.current) withdrawn.current = null;
+      }
     } catch (problem) {
       dispatch({ type: "failed", error: String(problem) });
     }
@@ -1102,10 +1138,26 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (!held) return;
     // Sent: the turn it became stands where it was shown.
     if (turns.some((turn) => turn.ms === held.ms)) return setHomeAnswer(null);
-    if (!held.ended || held.sending || settling || isBusyNow(session)) return;
+    if (!held.ended || held.sending || held.reading || settling || isBusyNow(session)) return;
+    // Which check the reply posed, as the record says once it has noted the reply. The engine notes it as the reply
+    // ends, which can be just after the window hears that it ended, so the record is read a few times before it is
+    // taken to say none.
+    if (held.id && held.posed === undefined) {
+      setHomeAnswer({ ...held, reading: true });
+      void (async () => {
+        let posed: string | null = null;
+        for (let tries = 0; tries < 8 && posed === null; tries++) {
+          if (tries > 0) await new Promise((done) => window.setTimeout(done, 400));
+          posed = (await api.home(folder).catch(() => null))?.posed_check ?? null;
+        }
+        const still = homeAnswerNow.current;
+        if (still && still.ms === held.ms) setHomeAnswer({ ...still, reading: false, posed });
+      })();
+      return;
+    }
     // Only the check Home showed takes the words (render.ts, heldAnswerGoes).
-    const goes = heldAnswerGoes(held.question, { task: task?.text ?? null, taskUnseen: task === null && taskMayBeOpen(session), reply: turns[turns.length - 1]?.tutor ?? "" });
-    if (goes === "line") return withdrawHomeAnswer();
+    const goes = heldAnswerGoes(held, { posed: held.id ? held.posed : undefined, task: task?.text ?? null, taskUnseen: task === null && taskMayBeOpen(session), reply: turns[turns.length - 1]?.tutor ?? "" });
+    if (goes === "line") return withdrawHomeAnswer(true);
     const { words, ms } = held;
     setHomeAnswer({ ...held, sending: true });
     fromLine.current = words;
@@ -1591,6 +1643,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     />
                   );
                 })}
+                {otherCheck !== null && OTHER_CHECK_NOTE === "lesson" && !isBusyNow(session) && (
+                  <p className="record quiet other-check in-lesson" data-role="other-check">
+                    This is not the check Home asked, so your answer from Home was not sent. It is on the line, to send for this one or to change.
+                  </p>
+                )}
                 {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 {error && <p className="record note">{withoutPaths(error)}</p>}
                 <Notices notices={session.notices} onDismiss={onDismiss} onStartAgain={startAgain} onSignIn={props.onSignIn} onPickModel={() => pickerRef.current.toggle()} />
@@ -1608,8 +1665,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                         <Line text={task.text} />
                       </button>
                     )}
+                    {otherCheck !== null && OTHER_CHECK_NOTE === "question" && (
+                      <p className="record quiet other-check asked-on-home" data-role="other-check">
+                        Not sent. Written on Home for another check: <Line text={otherCheck} />
+                      </p>
+                    )}
                     <Composer
-                      key={`line-${place}`}
+                      key={`line-${tab.key}`}
                       ref={lineRef}
                       place="lesson"
                       placeKey={place}
@@ -1637,6 +1699,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
                     />
+                    {otherCheck !== null && OTHER_CHECK_NOTE === "under" && (
+                      <p className="record quiet other-check" data-role="other-check">
+                        Your answer from Home is on the line, not sent: the check above is not the one Home asked.
+                      </p>
+                    )}
                     {footFact && !raised && (
                       <p className={`fact ${footFact.kind}`} title={footFact.title} data-role="fact">
                         <Line text={footFact.text} />

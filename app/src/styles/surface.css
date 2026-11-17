@@ -996,3 +996,8 @@ button.line-end:hover { color: var(--text); }
 :root:not([data-field="soft"]) .now.folded .foot:not(.asking) { margin-top: 1.5rem; }
 @keyframes answer-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .answer-task { animation: none; } }
+
+/* Home's answer put on the line because the check posed is not the one Home asked: one quiet line saying so. */
+.foot .other-check { margin: 0.35rem 0 0; }
+.foot .other-check.asked-on-home { margin: 0 0 0.45rem; }
+.other-check.in-lesson { margin: 1.2rem 0 0; }
