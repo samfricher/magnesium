@@ -37,8 +37,11 @@ import { useModelPicker } from "./ModelPicker";
 export type Pending =
   /** Start the plan's next thing, in a session not yet begun. */
   | { kind: "start" }
-  /** Just the quick checks that are due, in a session not yet begun. */
-  | { kind: "checks" }
+  /**
+   * Just the quick checks that are due, in a session not yet begun. `answer`: words the learner wrote on Home under
+   * the first check's question, to go as the answer to that check once the tutor has posed it.
+   */
+  | { kind: "checks"; answer?: string }
   /** Ask the tutor to mark a paper that was handed in. */
   | { kind: "paper"; shown: string; sent: string };
 
@@ -67,7 +70,8 @@ export type SessionHandle = {
   say: (text: string, said?: Said) => Promise<void>;
   start: (words?: string) => Promise<boolean>;
   /** Just the quick checks that are due, in this session not yet begun. */
-  checks: () => Promise<boolean>;
+  /** `answer`: words written on Home under the first check's question, to answer it once it is posed. */
+  checks: (answer?: string) => Promise<boolean>;
   taskOpen: () => boolean;
   /** The page with a task open: folded to the task, opened on the whole lesson, or null when there is no such page. */
   answerPage: () => AnswerPage;
@@ -318,6 +322,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const lastTop = useRef(0);
   const restoring = useRef<number | null>(null);
   const started = useRef(false);
+  // Words written on Home as the answer to the first quick check, held until the reply that poses it has ended and the
+  // window knows which task is open. They are kept here, not on the line: the line is drawn again, empty, once the
+  // session has its conversation, which happens during that reply.
+  const [homeAnswer, setHomeAnswer] = useState<{ words: string; ended: boolean } | null>(null);
 
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
   const provisionalTitle = useRef(false);
@@ -482,6 +490,17 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     // conversation) will not say after this reply either, and the page finds the task in the turns, where an answer
     // closes it at once. Waiting on "settled" there held the copy back for the 20 s the window looks for a late mark.
     if (event.type === "turn_ended" && now.current.session.task === undefined) setSettling(false);
+    // The reply that was to pose the first check has ended. One that failed posed nothing: Home's words stay on the
+    // line, unsent, for the learner to send when there is something to answer.
+    if (event.type === "turn_ended" || event.type === "exited")
+      setHomeAnswer((old) => {
+        if (!old || old.ended) return old;
+        if (event.type === "exited" || unanswered(before, event)) {
+          lineRef.current?.write(old.words);
+          return null;
+        }
+        return { ...old, ended: true };
+      });
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
     if (event.type === "marked") {
@@ -589,8 +608,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
    * Just the quick checks that are due. The runtime takes the words as the ask, poses the checks alone and ends the
    * sitting after the last, as it does for the same words in a terminal.
    */
-  const checks = async (): Promise<boolean> => {
+  const checks = async (answer?: string): Promise<boolean> => {
     if (!now.current.home) return false;
+    const words = answer?.trim() ?? "";
+    if (words !== "") setHomeAnswer({ words, ended: false });
     return begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
   };
 
@@ -667,7 +688,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     started.current = true;
     props.onStarted(tab.key);
     if (pending.kind === "start") void start();
-    else if (pending.kind === "checks") void checks();
+    else if (pending.kind === "checks") void checks(pending.answer);
     else if (pending.kind === "paper") void begin(true, pending.shown, "talk", sittingTitle || "The paper", (api) => api.sendShown(pending.shown, pending.sent));
     // Runs once the tab has read its folder.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -854,7 +875,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     state: () => now.current.session,
     say: (text, said) => say(text, said ?? "talk"),
     start: (words) => start(words),
-    checks: () => checks(),
+    checks: (answer) => checks(answer),
     taskOpen: () => now.current.task !== null,
     answerPage: () => now.current.page,
     docClosed: () => docClosedNow.current,
@@ -880,7 +901,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       state: () => handleRef.current.state(),
       say: (t, s) => handleRef.current.say(t, s),
       start: (w) => handleRef.current.start(w),
-      checks: () => handleRef.current.checks(),
+      checks: (a) => handleRef.current.checks(a),
       taskOpen: () => handleRef.current.taskOpen(),
       answerPage: () => handleRef.current.answerPage(),
       docClosed: () => handleRef.current.docClosed(),
@@ -1038,6 +1059,18 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const task = useMemo(() => openTaskOf(session, turns), [session, turns]);
   const openAt = task?.at ?? -1;
   now.current.task = task;
+  // Once the reply that poses the check has ended and the window knows which task is open, Home's answer goes as the
+  // answer to that task, as words sent from the line then would. With no task the page sees and none the tutor may
+  // hold, nothing was posed: the words are put on the line, unsent, for the learner to send or change.
+  useEffect(() => {
+    if (!homeAnswer?.ended || settling || isBusyNow(session)) return;
+    const { words } = homeAnswer;
+    setHomeAnswer(null);
+    if (task !== null || taskMayBeOpen(session)) {
+      fromLine.current = words;
+      void sayRef.current(words, task !== null ? "answer" : undefined, task?.text);
+    } else lineRef.current?.write(words);
+  }, [homeAnswer, settling, task, session]);
   const taskText_ = task?.text ?? null;
   useEffect(() => {
     props.onTaskChange(tab.key, taskText_ !== null);

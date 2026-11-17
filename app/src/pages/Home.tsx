@@ -1,22 +1,25 @@
-// Home: what the window opens on. Its first row is what to study next, in the
-// workspace studied in most recently, by the rule that workspace's own page
-// uses (src/next.ts): the plan's item in hand, which Return starts or carries
-// on. With no plan, one that cannot be read, or every item done, the first row
-// carries on the most recent session, else starts a new one. Under it, every
-// workspace in the library, most recently opened first, with when.
+// Home: what the window opens on, headed by the day. Its first row is what to
+// study next, in the workspace studied in most recently, by the rule that
+// workspace's own page uses (src/next.ts): the plan's item in hand, which
+// Return starts or carries on. With no plan, one that cannot be read, or every
+// item done, the first row carries on the most recent session, else starts a
+// new one. When the next sitting there opens with a quick check whose question
+// the record stores, that question comes first, with a line to answer it on,
+// and the row follows it. Under it, every workspace in the library, most
+// recently opened first, with what the record says of its day.
 //
 // A step this Mac needs before any lesson can run takes the first row's
 // place. A choice that leaves lessons running (which copy of the program to
 // keep) is a note at the foot of the page instead, under the workspaces and
 // the folder actions: it never takes Return, and lessons do not wait on it.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
-import { checksAlone, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
-import { Line } from "../surface/Rich";
+import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
+import { Line, Rich } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
-import { displayName, sessionName, whenOpened } from "../words";
+import { displayName, longDay, sessionName, whenOpened } from "../words";
 
 /**
  * Which of two programs' versions is later: 1 when `a` is, -1 when `b` is, 0 when the numbers are the same or
@@ -119,8 +122,8 @@ type Props = {
   notes: string[];
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
-  /** Just the quick checks due in a folder, in a session of their own. */
-  onChecks: (folder: string) => void;
+  /** Just the quick checks due in a folder, in a session of their own; `answer`, words written for the first. */
+  onChecks: (folder: string, answer?: string) => void;
   /** How many quick checks are due in a folder, as Home read it. */
   onChecksDue?: (folder: string, due: number) => void;
   /** The key for Just the quick checks, as the learner set it. */
@@ -144,7 +147,7 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
  * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
  */
-type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; at: number };
+type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string } | null; redos: number; facts: string; at: number };
 
 /**
  * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
@@ -155,12 +158,29 @@ export const PLAN_WAIT_MS = 400;
 
 // What Home read last, by folder, so that coming back to Home draws the first row at once while it reads again.
 const known = new Map<string, Read>();
+// What each workspace's row last said of its day, by folder: drawn at once on the next visit while it is read again.
+const factsKnown = new Map<string, string>();
 
 async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
   const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
   const goal = sessions.some((info) => !info.title) ? (home?.last?.goal ?? null) : null;
-  return { next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)), goal, first: firstStep(home), checks: checksAlone(home), at };
+  return {
+    next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)),
+    goal,
+    first: firstStep(home),
+    checks: checksAlone(home),
+    question: firstQuestion(home),
+    redos: home?.sitting ? 0 : (home?.opening?.redos ?? 0),
+    facts: dayFacts(home),
+    at,
+  };
+}
+
+/** Today, as "2026-11-17". */
+function isoToday(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function NoteBlock({ note }: { note: Note }) {
@@ -212,7 +232,7 @@ export function HomePage(props: Props) {
       window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, at: 0 } : null;
+  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, question: null, redos: 0, facts: "", at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
@@ -221,33 +241,26 @@ export function HomePage(props: Props) {
   // line is drawn only with the row's first drawing on this visit: a later read may take it away, never put it there.
   const trusted = read !== null && read.read === now && (read.here || !lead?.latest || lead.latest.last_ms <= read.read.at);
   const firstNow = trusted ? (now?.first ?? null) : null;
-  const firstDrawn = useRef<{ folder: string; line: boolean } | null>(null);
-
-  const rows = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>("button.home-row") ?? []);
-  useEffect(() => {
-    if (props.focus && !props.step) rows()[0]?.focus({ preventScroll: true });
-  }, [props.focus, props.step, props.workspaces, now]);
-
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-    if (step === 0 || event.metaKey || event.altKey) return;
-    const all = rows();
-    const at = all.indexOf(document.activeElement as HTMLButtonElement);
-    if (at === -1) return;
-    event.preventDefault();
-    all[Math.min(all.length - 1, Math.max(0, at + step))]?.focus();
-  };
+  const firstDrawn = useRef<{ folder: string; line: boolean; question: boolean } | null>(null);
 
   const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
   // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
   // for PLAN_WAIT_MS at most, rather than drawing one row and putting another in its place.
   const waiting = lead !== null && now === null && !props.step;
-  if (lead && !waiting && props.workspaces !== null && firstDrawn.current?.folder !== lead.folder) firstDrawn.current = { folder: lead.folder, line: firstNow !== null };
-  const first = lead && firstDrawn.current?.folder === lead.folder && firstDrawn.current.line ? firstNow : null;
+  const questionNow = trusted && !props.step ? (now?.question ?? null) : null;
+  if (lead && !waiting && props.workspaces !== null && firstDrawn.current?.folder !== lead.folder)
+    firstDrawn.current = { folder: lead.folder, line: firstNow !== null, question: questionNow !== null };
+  const drawnFirst = lead && firstDrawn.current?.folder === lead.folder ? firstDrawn.current : null;
+  // The first check's question is set over the row only if it was there when the row was first drawn: coming later,
+  // it would push the row down and take the keyboard from under the learner. A later read may take it away.
+  const question = drawnFirst?.question ? questionNow : null;
+  // Under the question, the row's line about what its session starts with stays only for paper redos, which the
+  // question's sitting of checks alone does not take.
+  const first = drawnFirst?.line && !(question && (now?.redos ?? 0) === 0) ? firstNow : null;
   const firstLine = first ? <span className="next-first">{first}</span> : null;
   // Quick checks due in the lead workspace can be taken alone, in a few minutes, instead of the row above. Shown only
   // from a read the row's own line trusts: a kept one may count checks a lesson has answered since.
-  const checks = lead && trusted && (now?.checks ?? 0) > 0 ? lead.folder : null;
+  const checks = lead && trusted && !question && (now?.checks ?? 0) > 0 ? lead.folder : null;
   const { onChecksDue } = props;
   useEffect(() => {
     if (read?.here) onChecksDue?.(read.folder, read.read.checks);
@@ -259,19 +272,93 @@ export function HomePage(props: Props) {
       </button>
     </p>
   ) : null;
+  // The answer line, when a question is set, then the rows: ↑↓ move between them.
+  const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
+  const asked = question !== null;
+  useEffect(() => {
+    if (props.focus && !props.step) rows()[0]?.focus({ preventScroll: true });
+    // The answer line keeps the keyboard once the learner is in it: a fresh read must not move it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.focus, props.step, props.workspaces, asked ? null : now, asked]);
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+    if (step === 0 || event.metaKey || event.altKey) return;
+    const all = rows();
+    const at = all.indexOf(document.activeElement as HTMLElement);
+    if (at === -1) return;
+    // In the answer line, ↑↓ move its caret until it is at the words' start or end.
+    const field = document.activeElement instanceof HTMLTextAreaElement ? document.activeElement : null;
+    if (field && (step > 0 ? field.selectionEnd < field.value.length : field.selectionStart > 0)) return;
+    event.preventDefault();
+    all[Math.min(all.length - 1, Math.max(0, at + step))]?.focus();
+  };
+
   const note = props.note ? <NoteBlock note={props.note} /> : null;
   // For the harness: when Home mounted, and when its column showed.
   mark("home");
   const { onShown } = props;
+  const shown = !waiting && props.workspaces !== null;
   useEffect(() => {
-    if (waiting || props.workspaces === null) return;
+    if (!shown) return;
     mark("home-shown");
     onShown?.();
-  }, [waiting, props.workspaces, onShown]);
+  }, [shown, onShown]);
+
+  // What each workspace's row says of its day. Each is read through the runtime, so the rows are drawn first, with
+  // what was read on an earlier visit, and each is filled in when read: the lead workspace's from Home's own read, the
+  // others one after another once the page is up, so they never hold up its first drawing.
+  const [facts, setFacts] = useState<Record<string, string>>(() => Object.fromEntries(factsKnown));
+  const leadFacts = read?.here ? { folder: read.folder, said: read.read.facts } : null;
+  useEffect(() => {
+    if (!leadFacts) return;
+    factsKnown.set(leadFacts.folder, leadFacts.said);
+    setFacts((old) => (old[leadFacts.folder] === leadFacts.said ? old : { ...old, [leadFacts.folder]: leadFacts.said }));
+  }, [leadFacts?.folder, leadFacts?.said]);
+  useEffect(() => {
+    if (!shown || !props.api) return;
+    const api = props.api;
+    let live = true;
+    const others = workspaces.filter((workspace) => workspace.folder !== lead?.folder);
+    void (async () => {
+      for (const workspace of others) {
+        const home = await api.home(workspace.folder).catch(() => null);
+        if (!live) return;
+        const said = dayFacts(home);
+        factsKnown.set(workspace.folder, said);
+        setFacts((old) => (old[workspace.folder] === said ? old : { ...old, [workspace.folder]: said }));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // Read again when the library changes, not on every drawing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, props.api, props.workspaces]);
+
+  // The answer to the first check, as typed on Home. Return starts a sitting of the due checks alone and gives it
+  // these words, which go as the answer once the tutor has posed that check.
+  const [answer, setAnswer] = useState("");
+  const answerBox = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = answerBox.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [answer, asked]);
+  const onAnswerKey = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (!lead) return;
+    const words = answer.trim();
+    props.onChecks(lead.folder, words === "" ? undefined : words);
+    setAnswer("");
+  };
 
   return (
     <div className="page home-page" data-page="home">
       <div className="page-column" ref={list} onKeyDown={onKeyDown} style={waiting ? { visibility: "hidden" } : undefined}>
+        {workspaces.length > 0 && <p className="home-day">{longDay(isoToday())}</p>}
         {props.step && (
           <section className="step" aria-label="This Mac">
             <h1 className="page-next">{props.step.next}</h1>
@@ -305,9 +392,43 @@ export function HomePage(props: Props) {
           )
         ) : (
           <>
+            {lead && question && (
+              <section className="home-question" aria-label="A quick check">
+                <p className="home-question-meta">{question.meta}</p>
+                {/* Set as the open task is on a lesson's folded page. Its links stay shut, as they are there. */}
+                <div className="answer-task home-task" onClick={() => answerBox.current?.focus()}>
+                  <Rich text={question.text} final linksOpen={false} />
+                </div>
+                <div className="foot home-foot">
+                  <div className={`line lesson first${answer.trim() !== "" ? " typed" : ""}`}>
+                    <div className="field-row">
+                      <textarea
+                        ref={answerBox}
+                        className="field home-answer"
+                        data-drive="home-answer"
+                        aria-label="Your answer"
+                        rows={1}
+                        spellCheck
+                        placeholder="Your answer"
+                        value={answer}
+                        onChange={(event) => setAnswer(event.target.value)}
+                        onKeyDown={onAnswerKey}
+                      />
+                      <span className="line-tools">
+                        {answer.trim() !== "" && (
+                          <span className="line-end" aria-hidden="true">
+                            <span className="keys">↩</span> answer
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
             {lead && !props.step && next && (
-              <section className="home-first next" aria-label="Next">
-                <p className="list-head">Next</p>
+              <section className={`home-first next${question ? " then" : ""}`} aria-label={question ? "Then" : "Next"}>
+                <p className="list-head">{question ? "Then" : "Next"}</p>
                 <button
                   className="home-row first next-row"
                   data-drive="start"
@@ -333,8 +454,8 @@ export function HomePage(props: Props) {
               </section>
             )}
             {lead && !props.step && !next && (
-              <section className="home-first" aria-label="Carry on">
-                {recent && <p className="list-head">Carry on</p>}
+              <section className={`home-first${question ? " then" : ""}`} aria-label={question ? "Then" : "Carry on"}>
+                {(recent || question) && <p className="list-head">{question ? "Then" : "Carry on"}</p>}
                 <button
                   className="home-row first"
                   data-drive="start"
@@ -359,8 +480,7 @@ export function HomePage(props: Props) {
               {workspaces.map((workspace) => (
                 <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
                   <span className="row-name">{displayName(workspace.name)}</span>
-                  {/* The session carried on says when; its workspace's row does not say it again. */}
-                  <span className="row-when">{recent?.folder === workspace.folder && recent.latest && !props.step && !next ? "" : whenOpened(workspace.opened_ms)}</span>
+                  <span className="row-when">{facts[workspace.folder] ?? ""}</span>
                 </button>
               ))}
             </section>

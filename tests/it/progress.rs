@@ -594,3 +594,31 @@ fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
     );
     assert_eq!(earlier[0]["mark"], "right");
 }
+
+#[test]
+fn the_first_due_check_gives_its_stored_question_and_never_its_key() {
+    let e = TestEnvironment::from_fixture("basic").unwrap();
+    v2::init(&e);
+    v2::start(&e, "claude", THREAD);
+    answer(
+        &e,
+        "a-1",
+        "b is 7",
+        json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false,
+            "next":{"question":"In 2x² − 9x + 4 = 0, what is b?","answer_key":"KEY-minus-nine"}}),
+    );
+    // Made today, the check is due from tomorrow: nothing to pose yet.
+    assert_eq!(progress(&e)["first_check"], Value::Null);
+
+    days_pass(&e, 1);
+    let due = progress(&e);
+    assert_eq!(
+        due["first_check"],
+        json!({"question": "In 2x² − 9x + 4 = 0, what is b?"}),
+        "{due}"
+    );
+    assert!(
+        !due.to_string().contains("KEY-minus-nine"),
+        "the key never leaves with the question: {due}"
+    );
+}

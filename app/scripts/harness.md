@@ -35,7 +35,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 ## `data-drive` names
 
 - Tab bar: `home`, `tab-<n>`, `close-tab-<n>`, `new-session`, `plan-toggle`, `flip`, `settings` (only while Settings has no tab; once it has one, click its `tab-<n>`)
-- Home: `start`, `workspace-<name>`, `open-folder`
+- Home: `start`, `workspace-<name>`, `open-folder`, `just-checks` (with a check due and no question shown), `home-answer` (the line under the first quick check's question, when Home shows one; Return there starts the checks)
 - A workspace's page: `home`, `next` (the plan's item in hand, when the plan has one), `new-session` ("Something else…", or the page's first row when there is no item), `material` (opens the folded material), `add-material` (once the material is open, or when there is none), `read-<paper>`, `paper-<paper>`; while a paper runs, `sitting-hand-in`, `sitting-open`, `sitting-end` (asks first, in place), then `sitting-keep` or `sitting-end-now`, and `sitting-left` (the minutes left, or over)
 - ⌘K: `layer`, `command-home`, `command-switch`, `command-new-session`, `command-close-session`, `command-settings`, `command-plan`, `switch-<workspace>`
 - A session: `composer`, `start-session`, `open-task`, `allow`, `allow-always`, `start-again`, `sign-in`, `pick-model`

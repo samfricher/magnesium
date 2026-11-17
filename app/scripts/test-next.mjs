@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { checksAlone, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
+const { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -69,5 +69,26 @@ assert.equal(checksAlone({ checks_alone: 3, sitting: paper }), 0, "a paper is ru
 assert.equal(checksAlone({ sitting: null }), 0, "an older runtime says nothing of them");
 assert.equal(checksAlone({ checks_alone: null, sitting: null }), 0);
 assert.equal(checksAlone(null), 0);
+
+
+// Home's first question: the record's stored question for the check a sitting of checks alone poses first.
+const due = (more = {}) => ({ checks_alone: 1, sitting: null, opening: { checks: 1, redos: 0 }, first_check: "What is $b$ in $2x^2 - 9x + 4$?", ...more });
+assert.deepEqual(firstQuestion(due()), { text: "What is $b$ in $2x^2 - 9x + 4$?", meta: "A quick check · about a minute" });
+assert.equal(firstQuestion(due({ checks_alone: 3 }))?.meta, "First of 3 quick checks · about 3 minutes");
+assert.equal(firstQuestion(due({ first_check: null })), null, "with no stored question there is nothing to set");
+assert.equal(firstQuestion(due({ first_check: "  " })), null);
+assert.equal(firstQuestion(due({ opening: null })), null, "a sitting carried on does not open with the check");
+assert.equal(firstQuestion(due({ sitting: { paper: "P" } })), null, "not while a timed paper runs");
+assert.equal(firstQuestion(due({ checks_alone: null })), null, "not from a runtime that cannot pose checks alone");
+assert.equal(firstQuestion(null), null);
+
+// What a workspace's row says of the day.
+const exam = (days_left) => ({ target: "t", title: "Midterm 2", date: null, day: null, days_left });
+assert.equal(dayFacts({ can_count_today: 2, exam: exam(10) }), "2 can count today · Midterm 2 in 10 days");
+assert.equal(dayFacts({ can_count_today: 0, exam: exam(1) }), "Midterm 2 tomorrow");
+assert.equal(dayFacts({ can_count_today: 1, exam: exam(0) }), "1 can count today · Midterm 2 today");
+assert.equal(dayFacts({ can_count_today: 3, exam: exam(-2) }), "3 can count today", "an exam past is not named");
+assert.equal(dayFacts({ can_count_today: null, exam: null }), "");
+assert.equal(dayFacts(null), "");
 
 console.log("next checks passed");
