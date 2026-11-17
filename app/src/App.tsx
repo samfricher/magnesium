@@ -642,17 +642,30 @@ export function App() {
   // Home and a workspace's page stay behind the tab in front. What a lesson changes in the record (a mark, the plan,
   // a turn ended) is read into them while they are behind, so they come back current and do not move as they are
   // shown. The reads wait until the lesson has been quiet a moment: a turn's mark and plan come just after it ends.
+  // The library is read again (Home reads the rows that changed); a workspace's page reads again only when the lesson
+  // was in its folder. `folder` null: whatever changed, read everything.
   const pagesTimer = useRef<number | null>(null);
-  const readPagesAgain = useCallback(() => {
-    if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
-    pagesTimer.current = null;
-    void loadWorkspaces();
-    setReadAgain((n) => n + 1);
-  }, [loadWorkspaces]);
-  const readPagesSoon = useCallback(() => {
-    if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
-    pagesTimer.current = window.setTimeout(readPagesAgain, PAGES_QUIET_MS);
-  }, [readPagesAgain]);
+  const pagesFolder = useRef<string | null | undefined>(undefined);
+  const readPagesAgain = useCallback(
+    (folder: string | null = null) => {
+      if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
+      pagesTimer.current = null;
+      pagesFolder.current = undefined;
+      void loadWorkspaces();
+      if (folder === null || folder === now.current.homeFolder) setReadAgain((n) => n + 1);
+    },
+    [loadWorkspaces],
+  );
+  const readPagesSoon = useCallback(
+    (folder: string | null) => {
+      if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
+      // Two folders waiting at once: both are read, as everything.
+      const waiting = pagesFolder.current === undefined || pagesFolder.current === folder ? folder : null;
+      pagesFolder.current = waiting;
+      pagesTimer.current = window.setTimeout(() => readPagesAgain(waiting), PAGES_QUIET_MS);
+    },
+    [readPagesAgain],
+  );
 
   // Back in front, Home's tab reads again too, for what changed where the window does not hear of it (a lesson in
   // a terminal). Usually nothing has, and nothing moves.
@@ -673,7 +686,10 @@ export function App() {
   onEventRef.current = (event: AgentEvent) => {
     const key = now.current.liveKey;
     if (key) handles.current[key]?.event(event);
-    if (["turn_ended", "marked", "plan_changed", "closing", "exited"].includes(event.type)) readPagesSoon();
+    if (["turn_ended", "marked", "plan_changed", "closing", "exited"].includes(event.type)) {
+      const tab = now.current.tabs.find((each) => each.key === key);
+      readPagesSoon(tab?.kind === "session" ? tab.folder : null);
+    }
     // Claude Code was asked whether it is signed in when the window opened. A lesson that says it is signed out
     // knows better: ask again, so Home and Settings stop saying it is signed in.
     if (event.type === "notice" && event.kind === "sign_in") {

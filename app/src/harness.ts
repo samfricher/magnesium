@@ -953,7 +953,9 @@ function describe(element: Element | null): string | null {
   if (!element) return null;
   const drive = element.getAttribute("data-drive");
   const text = collapse((element as HTMLElement).innerText ?? "").slice(0, 60);
-  return `${element.tagName.toLowerCase()}${drive ? `[data-drive=${drive}]` : ""}${text ? ` "${text}"` : ""}`;
+  // A field's words are its value, which innerText does not hold.
+  const field = element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement ? ` value=${JSON.stringify(element.value.slice(0, 60))}` : "";
+  return `${element.tagName.toLowerCase()}${drive ? `[data-drive=${drive}]` : ""}${text ? ` "${text}"` : ""}${field}`;
 }
 
 async function driveLoop(): Promise<void> {

@@ -443,6 +443,8 @@ export function WorkspacePage(props: Props) {
   useEffect(() => {
     const back = front && !wasFront.current;
     wasFront.current = front;
+    // The read Home's tab makes as it comes back (src/App.tsx) notes the visit.
+    if (back) visitDue.current = true;
     if (back && props.focus && !pageRef.current?.contains(document.activeElement))
       column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -460,7 +462,16 @@ export function WorkspacePage(props: Props) {
     drawn.current = at;
     setReading(fresh);
   }, []);
-  const read = useCallback(() => take(readWorkspace(api, folder)), [take, api, folder]);
+  // Noting a visit moves the folder to the top of the library (and Go). It is noted when the learner comes to the page:
+  // when the page is made in front, and each time Home's tab, holding it, comes back. A read for any other reason (a
+  // lesson's marks, an action on the page) only reads. A page handed its first reading was opened by the window,
+  // whose reading noted the visit.
+  const visitDue = useRef(props.front && props.first === undefined);
+  const read = useCallback(() => {
+    const visit = visitDue.current;
+    visitDue.current = false;
+    return take(readWorkspace(api, folder, visit));
+  }, [take, api, folder]);
 
   // The window hands the page its first reading: read again only when something changes after it.
   const handed = useRef(props.first);
