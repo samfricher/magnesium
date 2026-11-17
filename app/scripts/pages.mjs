@@ -411,10 +411,10 @@ async function answerPages() {
   await step(a, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   await looked(a, "open", "the first reply");
   await shoot(a, "answer-bare-first-reply", "Answer: the reply that set the task, read where it was written (the page stays whole)");
-  await turn(a, "⌘↑: only the task");
+  await turn(a, "⌘↑: Hide the lesson");
   await looked(a, "folded", "⌘↑ after the first reply");
   await shoot(a, "answer-bare-rest", "Answer: a task open at rest, the page is the task (bare line)");
-  // The menu bar while the page is the task: Session > Only the Task / The Lesson So Far, with its key.
+  // The menu bar while the page is the task: Session > Hide the Lesson / Show the Lesson, with its key.
   const menu = await step(a, "the menu bar, folded", { op: "menu" });
   writeFileSync(join(out, "answer-menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));
   await step(a, "write an answer", { op: "type", text: ANSWER });
@@ -445,13 +445,13 @@ async function answerPages() {
   await shoot(a, "answer-bare-attached", "Answer: a photo of working on the line");
   await step(a, "take it off", { op: "click", target: "×" });
   await step(a, "focus the line again", { op: "focus", target: "composer", by: "drive" });
-  await turn(a, "⌘↑: the lesson so far");
+  await turn(a, "⌘↑: Show the lesson");
   await looked(a, "open", "⌘↑ on the folded page");
   await shoot(a, "answer-bare-looked-back", "Answer: ⌘↑ opens the whole lesson over the task, at its end");
   await step(a, "fold it from its line", { op: "click", target: "look-back", by: "drive" });
   await settle(a, 400);
   await looked(a, "folded", "the line under the heading");
-  await shoot(a, "answer-bare-folded-again", "Answer: folded again from “only the task”");
+  await shoot(a, "answer-bare-folded-again", "Answer: folded again from “Hide the lesson”");
 
   // Talk while the task is open: not an answer, and the task stays.
   await step(a, "focus for talk", { op: "focus", target: "composer", by: "drive" });
@@ -465,7 +465,7 @@ async function answerPages() {
   await shoot(a, "answer-bare-talk-folded", "Answer: after the talk, the same task is the page again");
 
   // The plan and documents beside it.
-  await step(a, "show the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(a, 600);
   await shoot(a, "answer-bare-plan", "Answer: the plan beside the task; the plan stays open");
   await step(a, "open a document", { op: "click", target: "open-document", by: "drive" });
@@ -499,7 +499,7 @@ async function answerPages() {
   if (paperPage.page === "open") await turn(a, "⌘↑ with the paper open");
   await shoot(a, "answer-bare-paper", "Answer: a past paper beside the task stays open, as its links do");
   await closeDocument(a, "Midterm 2023");
-  await step(a, "hide the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
   // A small window with the largest text: folded, written on, and opened.
   const wide = await step(a, "the window's size", { op: "frame" });
@@ -513,7 +513,7 @@ async function answerPages() {
   await shoot(a, "answer-bare-narrow-big-typed", "Answer: words on the line at 720 by 560, the largest text");
   await turn(a, "⌘↑ in the small window");
   await settle(a, 400);
-  await shoot(a, "answer-bare-narrow-big-open", "Answer: the lesson opened at 720 by 560, “only the task” at the top edge");
+  await shoot(a, "answer-bare-narrow-big-open", "Answer: the lesson opened at 720 by 560, “Hide the lesson” at the top edge");
   await turn(a, "⌘↑ again in the small window");
   await step(a, "clear the small line", { op: "type", text: "", replace: true });
   await step(a, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
