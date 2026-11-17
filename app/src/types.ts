@@ -234,6 +234,8 @@ export type Row = {
   due: boolean;
   /** The day the next proof can be earned, as "2026-11-12". */
   next_day: string | null;
+  /** The runtime says it waits for its repair (a paper's lost mark not yet repaired); absent from an older window core. */
+  needs_repair?: boolean;
   /** The record's id for the newest answer on this skill, as the runtime groups them; absent when it does not say. */
   last_answer?: string | null;
 };

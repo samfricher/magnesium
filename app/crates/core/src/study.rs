@@ -596,6 +596,10 @@ pub struct Row {
     /// its repair or never answered. For a skill with no check or redo it
     /// is never before today.
     pub next_day: Option<String>,
+    /// The runtime says the skill waits for its repair before it can count
+    /// again: a lost mark on a paper not yet repaired. A skill with no next
+    /// day is not always one of these.
+    pub needs_repair: bool,
     /// The record's id for the newest answer marked on this skill, as the
     /// runtime groups answers by skill. None when the runtime does not say.
     pub last_answer: Option<String>,
@@ -721,6 +725,7 @@ fn gap_row(gap: &Gap, today: NaiveDate) -> Row {
         note,
         due: !gap.closed && gap.next_redo.is_some_and(|date| date <= today),
         next_day: next_day(gap.closed, gap.next_redo),
+        needs_repair: !gap.closed && !gap.repaired,
         last_answer: None,
         order: gap.next_redo,
     }
@@ -741,6 +746,7 @@ fn check_row(check: &Check, today: NaiveDate) -> Row {
         },
         due: !check.closed && check.due.is_some_and(|date| date <= today),
         next_day: next_day(check.closed, check.due),
+        needs_repair: false,
         last_answer: None,
         order: check.due,
     }
@@ -831,6 +837,7 @@ fn skill_row(skill: &Value, covers: Option<&str>, today: NaiveDate) -> (Place, R
         note,
         due: skill["due"].as_bool() == Some(true),
         next_day: next.map(|day| day.format("%Y-%m-%d").to_string()),
+        needs_repair: !proven && skill["needs_repair"].as_bool() == Some(true),
         last_answer: text(&skill["last_answer"]),
         order: next,
     };
@@ -949,6 +956,7 @@ fn board(
                         note: "–".into(),
                         due: false,
                         next_day: None,
+                        needs_repair: false,
                         last_answer: None,
                         order: None,
                     };
@@ -1360,5 +1368,36 @@ mod tests {
             .what
             .ends_with("found before the exam, restarted Sun 8 Nov"));
         assert_eq!(row.note, "next Tue 10 Nov");
+    }
+
+    #[test]
+    fn only_the_runtime_says_a_skill_waits_for_its_repair() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+        let skill = |needs: bool, next: Option<&str>| serde_json::json!({"skill": "pooled standard error", "passes": 0, "needs_repair": needs, "next_on": next});
+        // Waiting for its repair: no day, and the runtime says so.
+        let (_, waits) = skill_row(&skill(true, None), None, today);
+        assert!(waits.needs_repair);
+        assert_eq!(waits.next_day, None);
+        // No day, and nothing to repair: not one that waits.
+        let (_, dateless) = skill_row(&skill(false, None), None, today);
+        assert!(!dateless.needs_repair);
+        assert_eq!(dateless.next_day, None);
+        // A gap log's row: repaired with no redo date yet is not waiting; unrepaired is.
+        let gap = |repaired: bool| Gap {
+            paper: "Diagnostic".into(),
+            question: "Q3".into(),
+            tag: "slope and Km".into(),
+            wrong: "read the slope as Km".into(),
+            confidence: "S".into(),
+            passes: 0,
+            earlier_passes: 0,
+            failed_on: None,
+            last_pass: None,
+            next_redo: None,
+            closed: false,
+            repaired,
+        };
+        assert!(!gap_row(&gap(true), today).needs_repair);
+        assert!(gap_row(&gap(false), today).needs_repair);
     }
 }
