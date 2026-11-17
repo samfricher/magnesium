@@ -16,6 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
+import { whenDrawn } from "./reveal";
 import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
 import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
@@ -493,10 +494,18 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The first screen is painted with its real content: tell the harness.
+  // The first screen is drawn whole (reveal.ts): let the window be seen, which
+  // the shell keeps see-through until now so it never shows a page half
+  // drawn, and tell the harness.
+  const shown = useRef(false);
   useEffect(() => {
     const homeWaits = active === "home" && homeFolder === null && !homeShown;
-    if (restored && workspaces !== null && !homeWaits) requestAnimationFrame(() => ready());
+    if (!restored || workspaces === null || homeWaits || shown.current) return;
+    shown.current = true;
+    void whenDrawn().then(() => {
+      ready();
+      void now.current.api?.showWindow().catch(() => {});
+    });
   }, [restored, workspaces, active, homeFolder, homeShown]);
 
   // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.

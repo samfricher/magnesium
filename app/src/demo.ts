@@ -555,6 +555,7 @@ export function demoCore(): Core {
       signedIn = true;
     },
     about: async () => ({ version: "0.3.0", commit: "4f1c2ad9e0b7" }),
+    showWindow: async () => {},
     turns: async () => savedTurns(),
     lessons: async (folder) => sessionsOf(folder),
     lessonTurns: async (folder, session) => savedTurns(folder, session),

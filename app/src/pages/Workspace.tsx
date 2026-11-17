@@ -547,6 +547,7 @@ export function WorkspacePage(props: Props) {
       ref={pageRef}
       className={`page workspace-page${withDocs ? " with-docs" : ""}${withDocs && docs.expanded ? " expanded" : ""}${withDocs && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
       data-page="workspace"
+      data-read={home !== null && sessions !== null && plan !== undefined && record !== "unread" ? "" : undefined}
       style={withDocs ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
     >
       <div className="page-scroll">
