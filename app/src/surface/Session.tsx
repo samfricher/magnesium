@@ -46,15 +46,6 @@ export type Pending =
   /** Ask the tutor to mark a paper that was handed in. */
   | { kind: "paper"; shown: string; sent: string };
 
-/**
- * How the page says that Home's answer was put on the line because the check posed is not the one Home showed: under
- * the line ("under"), in the lesson under the reply ("lesson"), or over the line with Home's question ("question").
- * Three options photographed for Sam; set at build time with VITE_OTHER_CHECK_NOTE.
- */
-const OTHER_CHECK_NOTE: "under" | "lesson" | "question" = ((value) => (value === "lesson" || value === "question" ? value : "under"))(
-  import.meta.env.VITE_OTHER_CHECK_NOTE as string | undefined,
-);
-
 /** Words written on Home under the first quick check's question, and that question as Home showed it. */
 export type HomeAnswer = { words: string; question: string; id: string | null };
 
@@ -1643,8 +1634,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     />
                   );
                 })}
-                {otherCheck !== null && OTHER_CHECK_NOTE === "lesson" && !isBusyNow(session) && (
-                  <p className="record quiet other-check in-lesson" data-role="other-check">
+                {/* Home's answer was put on the line because the check posed is not the one Home showed: said in the
+                    lesson, under the reply, until the learner next sends anything. */}
+                {otherCheck !== null && !isBusyNow(session) && (
+                  <p className="record quiet other-check" data-role="other-check">
                     This is not the check Home asked, so your answer from Home was not sent. It is on the line, to send for this one or to change.
                   </p>
                 )}
@@ -1664,11 +1657,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={task.text} />
                       </button>
-                    )}
-                    {otherCheck !== null && OTHER_CHECK_NOTE === "question" && (
-                      <p className="record quiet other-check asked-on-home" data-role="other-check">
-                        Not sent. Written on Home for another check: <Line text={otherCheck} />
-                      </p>
                     )}
                     <Composer
                       key={`line-${tab.key}`}
@@ -1699,11 +1687,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
                     />
-                    {otherCheck !== null && OTHER_CHECK_NOTE === "under" && (
-                      <p className="record quiet other-check" data-role="other-check">
-                        Your answer from Home is on the line, not sent: the check above is not the one Home asked.
-                      </p>
-                    )}
                     {footFact && !raised && (
                       <p className={`fact ${footFact.kind}`} title={footFact.title} data-role="fact">
                         <Line text={footFact.text} />
