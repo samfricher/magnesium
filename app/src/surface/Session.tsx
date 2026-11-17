@@ -17,7 +17,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
-import { hasTask, poses } from "../render";
+import { hasTask, heldAnswerGoes, poses } from "../render";
+import { sentHomeDraft } from "../homeDraft";
 import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
@@ -39,11 +40,14 @@ export type Pending =
   | { kind: "start" }
   /**
    * Just the quick checks that are due, in a session not yet begun. `answer`: words the learner wrote on Home under
-   * the first check's question, to go as the answer to that check once the tutor has posed it.
+   * the first check's question (`question`, as Home showed it), to go as the answer to that check once it is posed.
    */
-  | { kind: "checks"; answer?: string }
+  | { kind: "checks"; answer?: HomeAnswer }
   /** Ask the tutor to mark a paper that was handed in. */
   | { kind: "paper"; shown: string; sent: string };
+
+/** Words written on Home under the first quick check's question, and that question as Home showed it. */
+export type HomeAnswer = { words: string; question: string };
 
 export type SessionTab = { key: string; kind: "session"; folder: string; session: string | null; title: string; pending?: Pending };
 
@@ -71,7 +75,7 @@ export type SessionHandle = {
   start: (words?: string) => Promise<boolean>;
   /** Just the quick checks that are due, in this session not yet begun. */
   /** `answer`: words written on Home under the first check's question, to answer it once it is posed. */
-  checks: (answer?: string) => Promise<boolean>;
+  checks: (answer?: HomeAnswer) => Promise<boolean>;
   taskOpen: () => boolean;
   /** The page with a task open: folded to the task, opened on the whole lesson, or null when there is no such page. */
   answerPage: () => AnswerPage;
@@ -326,7 +330,33 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // window knows which task is open. They are kept here, not on the line: the line is drawn again, empty, once the
   // session has its conversation, which happens during that reply. Meanwhile the page shows them where they will
   // stand once sent, as the turn they will be (`ms` is that turn's time), so the learner sees they were not lost.
-  const [homeAnswer, setHomeAnswer] = useState<{ words: string; ms: number; ended: boolean; sending: boolean } | null>(null);
+  //
+  // They go only as the answer to the check Home showed, and only if nothing else was sent first. Otherwise (the learner
+  // sent something from the line, stopped the reply, the reply failed, or it posed another question) they are never
+  // sent: they are put on the line as a draft. Home keeps its own copy until they are sent (src/homeDraft.ts).
+  const [homeAnswer, setHomeAnswerState] = useState<{ words: string; question: string; ms: number; ended: boolean; sending: boolean } | null>(null);
+  // The same, at once: an effect and an event in one pass must not both act on it.
+  const homeAnswerNow = useRef<typeof homeAnswer>(null);
+  const setHomeAnswer = useCallback((next: typeof homeAnswer | ((old: typeof homeAnswer) => typeof homeAnswer)) => {
+    const value = typeof next === "function" ? next(homeAnswerNow.current) : next;
+    homeAnswerNow.current = value;
+    setHomeAnswerState(value);
+  }, []);
+  /** Home's words withdrawn: onto the line as a draft, after anything being sent from it has gone. */
+  const withdrawHomeAnswer = useCallback(() => {
+    const held = homeAnswerNow.current;
+    if (!held || held.sending) return;
+    setHomeAnswer(null);
+    // A message being sent from the line is still on it until the line has been drawn again: wait for it to clear,
+    // then put Home's words there. Words the learner has written since are kept, before them.
+    let tries = 0;
+    const put = () => {
+      const line = lineRef.current;
+      if (line && line.holds() && tries++ < 20) return void window.setTimeout(put, 50);
+      line?.write(line.holds() ? ` ${held.words}` : held.words);
+    };
+    window.setTimeout(put, 0);
+  }, [setHomeAnswer]);
 
   // The session's name stands in until the tutor sets the lesson's goal (a start from typed words).
   const provisionalTitle = useRef(false);
@@ -491,17 +521,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     // conversation) will not say after this reply either, and the page finds the task in the turns, where an answer
     // closes it at once. Waiting on "settled" there held the copy back for the 20 s the window looks for a late mark.
     if (event.type === "turn_ended" && now.current.session.task === undefined) setSettling(false);
-    // The reply that was to pose the first check has ended. One that failed posed nothing: Home's words stay on the
-    // line, unsent, for the learner to send when there is something to answer.
-    if (event.type === "turn_ended" || event.type === "exited")
-      setHomeAnswer((old) => {
-        if (!old || old.ended) return old;
-        if (event.type === "exited" || unanswered(before, event)) {
-          lineRef.current?.write(old.words);
-          return null;
-        }
-        return { ...old, ended: true };
-      });
+    // The reply that was to pose the first check has ended. One stopped, or failed before its first word, may have
+    // posed nothing, or not all of it: Home's words go on the line, unsent. Otherwise what it posed decides (below).
+    const held = homeAnswerNow.current;
+    if (held && !held.ended && !held.sending && (event.type === "turn_ended" || event.type === "exited")) {
+      if (event.type === "exited" || event.interrupted || unanswered(before, event)) withdrawHomeAnswer();
+      else setHomeAnswer({ ...held, ended: true });
+    }
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
     if (event.type === "marked") {
@@ -609,17 +635,22 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
    * Just the quick checks that are due. The runtime takes the words as the ask, poses the checks alone and ends the
    * sitting after the last, as it does for the same words in a terminal.
    */
-  const checks = async (answer?: string): Promise<boolean> => {
+  const checks = async (answer?: HomeAnswer): Promise<boolean> => {
     if (!now.current.home) return false;
-    const words = answer?.trim() ?? "";
-    if (words !== "") setHomeAnswer({ words, ms: Date.now(), ended: false, sending: false });
-    return begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
+    const words = answer?.words.trim() ?? "";
+    if (answer && words !== "") setHomeAnswer({ words, question: answer.question, ms: Date.now(), ended: false, sending: false });
+    const begun = await begin(false, CHECKS_WORDS, "opening", "Quick checks", (api) => api.sendNewLesson(CHECKS_WORDS));
+    // Not begun: nothing was posed. The words stay on Home, and go on this line as a draft.
+    if (!begun) withdrawHomeAnswer();
+    return begun;
   };
 
   /** Send the learner's words, with what they are. With nothing said of them, the tutor decides. */
   /** `at`: the turn's time, when the page already shows these words as a turn to come (Home's answer). */
   const say = async (text: string, said?: Said, question?: string, at?: number) => {
     const { session, props } = now.current;
+    // Anything else sent first takes the place of Home's answer, which then waits on the line.
+    if (at === undefined) withdrawHomeAnswer();
     try {
       if (!session.open || !props.live) {
         props.claim(props.tab.key);
@@ -632,6 +663,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
+      sentHomeDraft(text);
     } catch (problem) {
       dispatch({ type: "failed", error: String(problem) });
     }
@@ -1066,26 +1098,25 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // hold, nothing was posed: the words are put on the line, unsent, for the learner to send or change.
   const homeAnswerSent = homeAnswer !== null && turns.some((turn) => turn.ms === homeAnswer.ms);
   useEffect(() => {
-    if (!homeAnswer) return;
+    const held = homeAnswerNow.current;
+    if (!held) return;
     // Sent: the turn it became stands where it was shown.
-    if (homeAnswerSent) return setHomeAnswer(null);
-    if (!homeAnswer.ended || homeAnswer.sending || settling || isBusyNow(session)) return;
-    const { words, ms } = homeAnswer;
-    if (task !== null || taskMayBeOpen(session)) {
-      setHomeAnswer({ ...homeAnswer, sending: true });
-      fromLine.current = words;
-      void sayRef.current(words, task !== null ? "answer" : undefined, task?.text, ms).then(() => {
-        // It never became a turn (the session could not be opened again): the words go back on the line.
-        if (!now.current.session.earlier.some((turn) => turn.ms === ms) && now.current.session.live?.since !== ms) {
-          lineRef.current?.write(words);
-          setHomeAnswer(null);
-        }
-      });
-    } else {
-      setHomeAnswer(null);
-      lineRef.current?.write(words);
-    }
-  }, [homeAnswer, homeAnswerSent, settling, task, session]);
+    if (turns.some((turn) => turn.ms === held.ms)) return setHomeAnswer(null);
+    if (!held.ended || held.sending || settling || isBusyNow(session)) return;
+    // Only the check Home showed takes the words (render.ts, heldAnswerGoes).
+    const goes = heldAnswerGoes(held.question, { task: task?.text ?? null, taskUnseen: task === null && taskMayBeOpen(session), reply: turns[turns.length - 1]?.tutor ?? "" });
+    if (goes === "line") return withdrawHomeAnswer();
+    const { words, ms } = held;
+    setHomeAnswer({ ...held, sending: true });
+    fromLine.current = words;
+    void sayRef.current(words, goes === "answer" ? "answer" : undefined, task?.text, ms).then(() => {
+      // It never became a turn (the session could not be opened again): the words go on the line, unsent.
+      if (!now.current.session.earlier.some((turn) => turn.ms === ms) && now.current.session.live?.since !== ms) {
+        setHomeAnswer(null);
+        lineRef.current?.write(words);
+      }
+    });
+  }, [homeAnswer, homeAnswerSent, settling, task, session, turns, setHomeAnswer, withdrawHomeAnswer]);
   const taskText_ = task?.text ?? null;
   useEffect(() => {
     props.onTaskChange(tab.key, taskText_ !== null);
@@ -1381,7 +1412,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     },
     [api, folder, note, setDocs],
   );
-  const stopReply = useCallback(() => interrupt(), [interrupt]);
+  const stopReply = useCallback(() => {
+    // Stopped while it poses the check: Home's words are not sent after it.
+    withdrawHomeAnswer();
+    interrupt();
+  }, [interrupt, withdrawHomeAnswer]);
   // The whole session sits under its heading; a very long one shows its last 150 turns.
   const shownFrom = Math.max(sittingStart, turns.length - 150);
   const sittingTurns = phase === "lesson" ? turns.slice(shownFrom) : [];

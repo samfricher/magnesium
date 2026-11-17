@@ -91,4 +91,13 @@ assert.equal(dayFacts({ can_count_today: 3, exam: exam(-2) }), "3 can count toda
 assert.equal(dayFacts({ can_count_today: null, exam: null }), "");
 assert.equal(dayFacts(null), "");
 
+// Where Home's held answer goes once the posing reply has ended: only to the check Home showed.
+const { heldAnswerGoes } = await import("../src/render.ts");
+const Q = "Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?";
+assert.equal(heldAnswerGoes(Q, { task: `Quick check 1: ${Q}`, taskUnseen: false, reply: "" }), "answer", "the open task is Home's question");
+assert.equal(heldAnswerGoes(Q, { task: "What is b in 2x² − 7x − 4 = 0?", taskUnseen: false, reply: `Quick check 1: ${Q}` }), "line", "another check is open: Home's words wait on the line");
+assert.equal(heldAnswerGoes(Q, { task: null, taskUnseen: true, reply: `Quick check 1: ${Q}` }), "unmarked", "the engine has not said; the reply posed Home's question");
+assert.equal(heldAnswerGoes(Q, { task: null, taskUnseen: true, reply: "Quick check 1: What is b in 2x² − 7x − 4 = 0?" }), "line", "the reply posed another question");
+assert.equal(heldAnswerGoes(Q, { task: null, taskUnseen: false, reply: `Quick check 1: ${Q}` }), "line", "the engine says no task is open");
+
 console.log("next checks passed");

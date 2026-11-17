@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
+import { homeDraftFor, keepHomeDraft } from "../homeDraft";
 import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
 import type { Core, Setup, Workspace } from "../types";
@@ -123,7 +124,7 @@ type Props = {
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
   /** Just the quick checks due in a folder, in a session of their own; `answer`, words written for the first. */
-  onChecks: (folder: string, answer?: string) => void;
+  onChecks: (folder: string, answer?: { words: string; question: string }) => void;
   /** How many quick checks are due in a folder, as Home read it. */
   onChecksDue?: (folder: string, due: number) => void;
   /** The key for Just the quick checks, as the learner set it. */
@@ -338,7 +339,16 @@ export function HomePage(props: Props) {
 
   // The answer to the first check, as typed on Home. Return starts a sitting of the due checks alone and gives it
   // these words, which go as the answer once the tutor has posed that check.
-  const [answer, setAnswer] = useState("");
+  // Kept apart from the page (src/homeDraft.ts) until the words are sent: Home is drawn again when it comes back.
+  const [answer, setAnswerState] = useState(() => (lead && question ? homeDraftFor(lead.folder, question.text) : ""));
+  const setAnswer = (words: string) => {
+    setAnswerState(words);
+    if (lead && question) keepHomeDraft({ folder: lead.folder, question: question.text, words });
+  };
+  const questionText = question?.text ?? null;
+  useEffect(() => {
+    if (lead && questionText) setAnswerState((old) => old || homeDraftFor(lead.folder, questionText));
+  }, [lead?.folder, questionText]);
   const answerBox = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = answerBox.current;
@@ -351,8 +361,7 @@ export function HomePage(props: Props) {
     event.preventDefault();
     if (!lead) return;
     const words = answer.trim();
-    props.onChecks(lead.folder, words === "" ? undefined : words);
-    setAnswer("");
+    props.onChecks(lead.folder, words === "" || !question ? undefined : { words, question: question.text });
   };
 
   return (

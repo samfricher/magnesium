@@ -462,6 +462,18 @@ export function poses(reply: string, task: string): boolean {
 }
 
 /**
+ * Where an answer written on Home goes once the reply that was to pose its check has ended: as the answer to the open
+ * task when that task is Home's question; with nothing said of it when the engine has not said which task is open and
+ * the reply posed Home's question (as words sent from the line then go); else onto the line, unsent. The tutor poses a
+ * stored question as written, so a check posed from Home's question holds its words.
+ */
+export function heldAnswerGoes(question: string, after: { task: string | null; taskUnseen: boolean; reply: string }): "answer" | "unmarked" | "line" {
+  const holds = (text: string) => text.includes(question) || poses(text, question);
+  if (after.task !== null) return holds(after.task) ? "answer" : "line";
+  return after.taskUnseen && holds(after.reply) ? "unmarked" : "line";
+}
+
+/**
  * The words the engine needs a due question to open with ("Quick check 2:",
  * "Paper redo 1:") are not a queue to show: they are drawn as one quiet
  * "From earlier", with no number.
