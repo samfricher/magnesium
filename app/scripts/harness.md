@@ -19,7 +19,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `transcript`
 - `ready`
 - `errors`
-- `session`: the session in front, with `mark_said` (what the live region tells a screen reader of the marks that arrived since the learner last sent, `""` when none has) and `pass_days` (each mark's rings: the `day` it earned and whether it is `arriving`, filling as it comes)
+- `session`: the session in front, with `mark_said` (what the live region tells a screen reader of the marks that arrived since the learner last sent, `""` when none has) and `pass_days` (each mark's rings: the `day` it earned and whether it is `arriving`, filling as it comes, whether it is `hung` in the margin or starts the mark's line, and its `left` edge in the window, which is never below 0)
 - `smooth {ms, scroll_by?, type_every?}`
 - `steady {text, back?, every?}`: write `text` on the line a key at a time, then take `back` characters off, and say how far the line moved on screen frame to frame (`largestMove`, `lowest` under the view's edge), how often the task's copy over the line came or went, and `from_foot`
 - `caret {at?}`: where the caret is on the line, put at `at` first

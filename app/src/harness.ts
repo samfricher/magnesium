@@ -577,7 +577,7 @@ async function run(op: Op): Promise<Result> {
       // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
       // What a screen reader is told of the newest mark, and the rings beside each mark with whether its day is filling.
       const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
-      const passDays = Array.from(document.querySelectorAll<HTMLElement>('.session.in-front [data-role="pass-days"]')).map((days) => ({ day: Number(days.dataset.day), arriving: days.querySelector(".arriving") !== null }));
+      const passDays = Array.from(document.querySelectorAll<HTMLElement>('.session.in-front [data-role="pass-days"]')).map((days) => ({ day: Number(days.dataset.day), arriving: days.querySelector(".arriving") !== null, hung: !days.classList.contains("inline"), left: Math.round(days.getBoundingClientRect().left) }));
       return { ok: true, ...(found as object), files, focus: focusName(), key_window: document.hasFocus(), document: pdfInView(), mark_said: markSaid, pass_days: passDays };
     }
     case "smooth": {
