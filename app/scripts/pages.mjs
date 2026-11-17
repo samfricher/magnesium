@@ -727,25 +727,49 @@ async function stepHeads() {
   await settle(s, 800);
   await step(s, "a new session", { op: "click", target: "new-session", by: "drive" });
   await settle(s, 800);
+  // A step's head never moves anything in view: the reply that began a step stands still on screen from its end
+  // through the window hearing of the step (`still` reads it every frame). A head for a reply in view waits for
+  // the page folding to the task or the next message.
+  const still = async (w, label, more) => {
+    const read = await step(w, label, { op: "still", ms: 4000, send: true, ...more });
+    run.steps.push({ label: `${label}: still`, still: read });
+    if (read.step_at === null || read.step_at === undefined) problem(`${label}: the window heard of no step`);
+    // From the frame before the window heard of the step on, the reply stands still. (A mark the record shows
+    // above it, on Magnesium's engine, moves it in the frame the mark comes: that is the mark's, not the head's.)
+    const marked = read.marked_at ?? -1;
+    // Under half a CSS pixel is under one device pixel here: WebKit keeps a scroll place a learner left between
+    // device pixels (0.2 px measured), and puts it on one when the page scrolls on by the head's height.
+    const moved = (read.moves_after_end ?? []).filter((move) => move.at >= read.step_at && Math.abs(move.to - move.from) >= 0.5 && !(move.at >= marked && move.at <= marked + 50));
+    const atStep = read.reply_top_at_step ?? {};
+    if (atStep.before === null || atStep.after === null || Math.abs(atStep.after - atStep.before) >= 0.5 || moved.length > 0) problem(`${label}: the reply moved when the step was heard: ${JSON.stringify(read)}`);
+    await step(w, `${label}: settled`, { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 1500 });
+    return read;
+  };
+  const one = ["Step 1 of 3: The standard error"];
   await step(s, "focus the line", { op: "focus", target: "composer", by: "drive" });
-  await step(s, "start", { op: "key", key: "Enter" });
-  await step(s, "the first task", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  const first = await still(s, "start, a short lesson");
+  if (first.heads_after !== 0) problem("the first step's head was drawn over the reply in view");
   await step(s, "focus the answer", { op: "focus", target: "composer", by: "drive" });
   await step(s, "type the answer", { op: "type", text: ANSWER });
-  await step(s, "send", { op: "key", key: "Enter" });
-  await step(s, "marked, and the next step", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
-  await settle(s, 800);
-  await heads(s, both, "the lesson after its second step began");
-  await step(s, "to the top", { op: "scroll", to: "top" });
-  await settle(s, 400);
-  await shoot(s, "steps-bare-top", "Steps: the lesson from its top, a head where each step began (bare line)");
-  // Talk, so the lesson runs past the window and the heading scrolls away.
+  await heads(s, [], "writing folds the page to the task");
+  await lessonSoFar(s, "the lesson so far, while writing");
+  await heads(s, one, "the first head, drawn once the page folded");
+  await step(s, "focus the answer again", { op: "focus", target: "composer", by: "drive" });
+  const second = await still(s, "the answer that moves the lesson on");
+  if (second.heads_after !== second.heads_before) problem("the second step's head was drawn over the reply in view");
+  await heads(s, one, "the second head, held while its reply is read");
+  // Talk, so the lesson runs past the window and the heading scrolls away; sending draws the held head.
   for (const words of ["CITE: where is that in the slides?", "VERYSLOW: say a little more about the standard error"]) {
     await step(s, "focus for talk", { op: "focus", target: "composer", by: "drive" });
     await step(s, "write talk", { op: "type", text: words });
     await step(s, "send it as talk", { op: "key", key: "Enter", alt: true });
     await step(s, "the reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   }
+  await lessonSoFar(s, "the lesson so far, after talk");
+  await heads(s, both, "both heads, once the next message was sent");
+  await step(s, "to the top", { op: "scroll", to: "top" });
+  await settle(s, 400);
+  await shoot(s, "steps-bare-top", "Steps: the lesson from its top, a head where each step began (bare line)");
   await step(s, "to the foot", { op: "scroll", to: "bottom" });
   await settle(s, 500);
   const edge = await s.op({ op: "session" });
@@ -795,6 +819,29 @@ async function stepHeads() {
   await shoot(again, "steps-bare-big-second", "Steps: 720 by 560 with the largest text, the second head and the top edge");
   await step(again, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   if (wide.ok) await step(again, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
+
+  // A long lesson, read at its end, where the tutor begins a new route: its reply stands still too.
+  await lessonSoFar(again, "the lesson so far, long");
+  await step(again, "to the end, long", { op: "scroll", to: "bottom" });
+  await step(again, "focus, long", { op: "focus", target: "composer", by: "drive" });
+  await step(again, "ask for a new route", { op: "type", text: "TEACH me the quadratic formula" });
+  const long = await still(again, "a long lesson at its end", { alt: true });
+  if (long.heads_after !== long.heads_before) problem("a head was drawn over the reply in view, in a long lesson");
+  // Small and large, read on past the reply's first lines: the head goes in above the view at once, and the page
+  // scrolls by its height so the reply stays where it is.
+  await step(again, "720 by 560 for the last step", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await again.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(again, 400);
+  await step(again, "focus, past", { op: "focus", target: "composer", by: "drive" });
+  await step(again, "a long reply that moves the lesson on", { op: "type", text: "LONGSTEP: and next?" });
+  await step(again, "to the end, past", { op: "scroll", to: "bottom" });
+  const past = await still(again, "read on past the reply's top", { past: true, alt: true });
+  if (!past.scrolled_past) problem("the reply could not be scrolled above the view; the head drawn at once was not measured");
+  const drawnPast = await again.op({ op: "session" });
+  run.steps.push({ label: "read on past the reply's top: heads", heads: drawnPast.heads });
+  if (!(drawnPast.heads ?? []).includes("Step 3 of 3: A test of the mean")) problem("read on past the reply, its step's head was not drawn at once");
+  await step(again, "the text back to its own size, past", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(again, "the window's size again, past", { op: "frame", width: wide.frame.width, height: wide.frame.height });
   await quit(again);
 }
 
@@ -875,9 +922,10 @@ try {
   await step(w, "send", { op: "key", key: "Enter" });
   await step(w, "marked", { op: "wait_idle", timeout_ms: TURN_MS });
   {
-    // The answer moved the lesson on: its second step is set in above the reply, and the first above the first.
+    // The answer moved the lesson on.
     const at = await w.op({ op: "session" });
-    const want = "Step 1 of 3: The standard error | Step 2 of 3: A 95% interval";
+    // The second waits while its reply is read (it would push the reply down); the first went in as the page folded.
+    const want = "Step 1 of 3: The standard error";
     if ((at.heads ?? []).join(" | ") !== want) problem(`the lesson's step heads are ${JSON.stringify(at.heads)}, not ${want}`);
   }
   await shoot(w, "session-marked", "Session: an answer marked by the record, the next task open");

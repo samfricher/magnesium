@@ -386,6 +386,8 @@ let running = false;
 let lastEventAt = 0;
 let deltas = 0;
 let turnsEnded = 0;
+let stepsBegun = 0;
+let marksSeen = 0;
 
 type Entry =
   | { at: string; kind: "send" | "new_lesson" | "shown"; text: string; intent: Intent | null; sent?: string; from?: string }
@@ -465,6 +467,8 @@ async function listen(): Promise<void> {
       running = false;
       turnsEnded += 1;
     }
+    if (event.type === "step_begun") stepsBegun += 1;
+    if (event.type === "marked") marksSeen += 1;
     note(event);
   });
 }
@@ -660,6 +664,81 @@ async function run(op: Op): Promise<Result> {
         requestAnimationFrame(tick);
       });
       return { ok: true, parked: shown };
+    }
+    case "still": {
+      // With `send`, press Return on the line first. Then for `ms`, every frame, read where the last turn's reply
+      // stands on screen and how many step heads are drawn, and say when the turn ended, when the window heard of
+      // a step it began, when a head was drawn, and every frame after the turn ended in which the reply moved.
+      if (op.send) press("Enter", { alt: Boolean(op.alt) });
+      const ms = Number(op.ms ?? 5000);
+      const started = performance.now();
+      const ended = turnsEnded;
+      const begun = stepsBegun;
+      const marks = marksSeen;
+      let markedAt: number | null = null;
+      const at = (now: number) => Math.round(now - started);
+      const replyTop = () => {
+        const replies = document.querySelectorAll<HTMLElement>(".session.in-front .now > article.turn .tutor");
+        const last = replies[replies.length - 1];
+        return last ? Math.round(last.getBoundingClientRect().top * 10) / 10 : null;
+      };
+      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter((head) => head.getClientRects().length > 0).length;
+      let endedAt: number | null = null;
+      let stepAt: number | null = null;
+      let headAt: number | null = null;
+      const headsBefore = drawn();
+      let lastTop: number | null = null;
+      let topAtStep: { before: number | null; after: number | null } = { before: null, after: null };
+      const moves: { at: number; from: number | null; to: number | null }[] = [];
+      let frames = 0;
+      let scrolledPast: boolean | null = null;
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          if (endedAt === null && turnsEnded > ended) endedAt = at(now);
+          // With `past`, once the page has settled after the reply (a frame with the reply where it was), the learner scrolls back up to just
+          // past the reply's first lines: its top is 40 px above the view, and the lesson is no longer held at its end.
+          if (op.past && scrolledPast === null && endedAt !== null && at(now) > endedAt && replyTop() === lastTop) {
+            const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+            const reply = replyTop();
+            scrolledPast = false;
+            if (surface && reply !== null) {
+              surface.scrollTop += reply - surface.getBoundingClientRect().top + 40;
+              lastTop = replyTop();
+              scrolledPast = lastTop !== null && lastTop < surface.getBoundingClientRect().top && stepsBegun === begun;
+            }
+          }
+          const top = replyTop();
+          if (stepAt === null && stepsBegun > begun) {
+            stepAt = at(now);
+            topAtStep = { before: lastTop, after: top };
+          }
+          if (headAt === null && drawn() !== headsBefore) headAt = at(now);
+          if (markedAt === null && marksSeen > marks) markedAt = at(now);
+          if (endedAt !== null) {
+            frames += 1;
+            if (lastTop !== null && top !== lastTop) moves.push({ at: at(now), from: lastTop, to: top });
+          }
+          lastTop = top;
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      return {
+        ok: true,
+        ended_at: endedAt,
+        step_at: stepAt,
+        marked_at: markedAt,
+        head_at: headAt,
+        heads_before: headsBefore,
+        heads_after: drawn(),
+        reply_top_at_step: topAtStep,
+        frames_after_end: frames,
+        moves_after_end: moves,
+        scrollable: surface ? surface.scrollHeight > surface.clientHeight : null,
+        scrolled_past: scrolledPast,
+      };
     }
     case "caret": {
       // Where the caret is on the line in front, and with `at`, put it there first.

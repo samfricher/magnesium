@@ -16,6 +16,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 
 import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, opening, pickedWords, reduce, tutorText, unanswered, type LessonTurn, type Said, type SessionState } from "../lesson";
 import { marksOfTurns } from "../marks";
+import { drawHeadNow, stillHeld } from "../stepHead";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
 import { hasTask, poses } from "../render";
 import { setupReady } from "../setup";
@@ -307,6 +308,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // from the record after the reply has ended, and until then the task already answered was still the open one.
   const [settling, setSettling] = useState(false);
   const surface = useRef<HTMLElement>(null);
+  // A step's head for the turn just ended, held until it moves nothing in view (see stepHead.ts), and the reply's
+  // place on screen before a head drawn at once above the view, which the page then scrolls to keep.
+  const [heldStep, setHeldStep] = useState<number | null>(null);
+  const keepReply = useRef<{ ms: number; top: number } | null>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
@@ -458,8 +463,22 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // ---------------------------------------------------------------------------
   // The tutor's events, when this tab holds its program
 
+  /** Draw the head of the step the turn begun at `ms` began now, keeping its reply where it is, or hold it. */
+  const placeHead = (ms: number) => {
+    const reply = replyOf(ms);
+    const view = surface.current;
+    const place = { folded: now.current.page === "folded", shown: now.current.props.active && view !== null && view.clientHeight > 0, replyTop: reply ? reply.getBoundingClientRect().top : null, viewTop: view ? view.getBoundingClientRect().top : 0 };
+    if (!drawHeadNow(place)) {
+      setHeldStep(ms);
+      return;
+    }
+    keepReply.current = reply && place.shown && !place.folded ? { ms, top: reply.getBoundingClientRect().top } : null;
+  };
+  const replyOf = (ms: number) => surface.current?.querySelector<HTMLElement>(`article.turn[data-ms="${ms}"] .tutor`) ?? null;
+
   const onEvent = (event: AgentEvent) => {
     const before = now.current.session.live;
+    if (event.type === "step_begun" && before) placeHead(before.since);
     dispatch({ type: "event", event });
     const { props } = now.current;
     // A message from the line whose reply failed before its first word (Claude Code signed out, a request refused)
@@ -1111,6 +1130,26 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   }, [folded]);
 
   const rest = restView();
+  // A held head is drawn once the page folds to the task or another message is sent; once drawn it stays.
+  const holdingStep = stillHeld(heldStep, session.live?.since ?? null, folded);
+  useLayoutEffect(() => {
+    if (heldStep !== null && !holdingStep) setHeldStep(null);
+  }, [heldStep, holdingStep]);
+  // A head drawn at once above the view: scroll on by what it added, before the frame is painted, so the reply
+  // stands where it stood.
+  useLayoutEffect(() => {
+    const kept = keepReply.current;
+    const view = surface.current;
+    if (!kept || !view) return;
+    keepReply.current = null;
+    // A lesson held at its end is kept there by the effect above, which scrolls on by what was added: the reply is
+    // still already, and a second scroll here moved it by the rounding of the first.
+    if (stuck.current) return;
+    const reply = replyOf(kept.ms);
+    // The head is whole pixels high (surface.css), so this is a whole number, and the place the learner scrolled
+    // to, often a fraction, is kept as it is: rounding the sum moved the reply by that fraction (0.2 px measured).
+    if (reply) view.scrollTop += Math.round(reply.getBoundingClientRect().top - kept.top);
+  });
   const stepAt = plan?.steps.findIndex((step) => step.status === "doing") ?? -1;
   const currentStep = stepAt >= 0 ? plan!.steps[stepAt].step : null;
   // The one action is the field's own end, in the text's colour; the window's other keys are one quiet line.
@@ -1492,7 +1531,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   return (
                     <Turn
                       key={`${turn.ms}-${index}`}
-                      turn={turn}
+                      turn={holdingStep && turn.step && turn.ms === heldStep ? { ...turn, step: undefined } : turn}
                       open={index === openAt}
                       held={false}
                       linksOpen={index !== openAt}

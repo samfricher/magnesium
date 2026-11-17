@@ -296,10 +296,13 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 /* A step of the lesson's route, where its work began: its name in the reading face's italic, in the quiet grey, its
    number hung where the learner's "›" hangs. The room above it is a section's; the lesson's first head sits under
    the heading, and one just under a sitting's rule has the rule's room. */
+/* Its room and lines are whole pixels: a head set in above the view is made up for by scrolling on by its height,
+   which a fractional height left 0.2 px short, the reply moving by that. */
 .step-head {
   position: relative;
-  margin: 2.3rem 0 0.7rem;
+  margin: round(2.3rem, 1px) 0 round(0.7rem, 1px);
   font: italic 400 1rem/1.45 var(--read);
+  line-height: round(1.45rem, 1px);
   color: var(--quiet);
 }
 .now > article.turn:first-of-type > .step-head:first-child,
