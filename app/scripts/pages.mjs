@@ -348,6 +348,9 @@ async function workRecord() {
   await step(k, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(k, 800);
   await shoot(k, "workspace-work-many", "Workspace over a record of six skills: Your work under Next, by the day each can count again");
+  await step(k, "to Your work, wide", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-list", "Workspace over six skills, scrolled to Your work: each day in the margin, the exam among them");
   await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
   await settle(k, 400);
   await shoot(k, "workspace-work-narrow", "Workspace over six skills at 720 by 560");
@@ -359,6 +362,11 @@ async function workRecord() {
   await step(k, "to Your work, larger", { op: "scroll", target: "Your work" });
   await settle(k, 300);
   await shoot(k, "workspace-work-big", "Workspace over six skills at 720 by 560, the largest text");
+  await step(k, "1040 by 720, larger", { op: "frame", width: 1040, height: 720 });
+  await settle(k, 400);
+  await step(k, "to Your work, larger and wide", { op: "scroll", target: "Your work" });
+  await settle(k, 300);
+  await shoot(k, "workspace-work-big-wide", "Workspace over six skills at 1040 by 720, the largest text");
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(k);
