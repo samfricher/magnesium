@@ -1547,7 +1547,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     />
                     {footFact && !raised && (
                       <p className={`fact ${footFact.kind}`} title={footFact.title} data-role="fact">
-                        {footFact.text}
+                        <Line text={footFact.text} />
                       </p>
                     )}
                   </div>

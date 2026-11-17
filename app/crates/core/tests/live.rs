@@ -804,3 +804,73 @@ fn plain_fractions(text: &str) -> Vec<String> {
     }
     found
 }
+
+/// What a window lesson's tutor saves to the record stays in words. The
+/// window tells it to write formulas in TeX (`claude::DRAWS`), and a skill's
+/// name is also shown where TeX is not drawn: the runtime's closing lines,
+/// and in a terminal. Two maths lessons, each answered once; every mark's
+/// skill name is checked. Pick the model in MAGNESIUM_LIVE_MODEL, at medium
+/// effort.
+#[test]
+#[ignore = "starts Claude Code on your own subscription; run it yourself"]
+fn a_window_lessons_skill_names_stay_in_words() {
+    let lessons = [
+        (
+            "Logistic-Regression",
+            "The logistic sigmoid and its derivative. Show me the function and its derivative, then set me this task: give sigma(0) and sigma'(0), and say what sigma(s) tends to as s grows large, with a reason.",
+            "sigma(0) = 1/2 and sigma'(0) = sigma(0)(1 - sigma(0)) = 1/4. As s grows, e^(-s) goes to 0, so sigma(s) tends to 1.",
+        ),
+        (
+            "Quadratics",
+            "The quadratic formula. Show it to me, then set me this task: solve x^2 - 5x + 6 = 0 with the formula and give both roots.",
+            "a = 1, b = -5, c = 6, so the discriminant is 25 - 24 = 1 and x = (5 ± 1)/2, which gives x = 3 and x = 2.",
+        ),
+    ];
+    let scratch = std::env::temp_dir().join(format!(
+        "magnesium-window-live-names-{}",
+        std::process::id()
+    ));
+    let mut found = Vec::new();
+    for (name, start, answer) in lessons {
+        let folder = scratch.join(name);
+        let home = scratch.join(format!("window-{name}"));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        println!("\nstudy folder: {}", folder.display());
+        runtime::init(&folder).expect("magnesium sets the folder up");
+        let live = Live::new(&folder, &home);
+        if let Some(model) = std::env::var_os("MAGNESIUM_LIVE_MODEL") {
+            live.manager.store().set_pick(mg_core::models::Pick {
+                model: model.to_string_lossy().into_owned(),
+                name: None,
+                effort: Some("medium".into()),
+            });
+        }
+        live.manager
+            .open_session(false)
+            .expect("Claude Code starts");
+        live.manager.send_new_lesson(start).unwrap();
+        let report = live.turn(Duration::from_secs(600), None);
+        println!("== the lesson starts ==\n{}", report.text);
+        let (task, _) = live.settled(Duration::from_secs(120));
+        println!("open task: {task:?}");
+        live.manager
+            .send_with(answer, Some(mg_core::agent::Intent::Answer))
+            .unwrap();
+        let report = live.turn(Duration::from_secs(600), None);
+        println!("== the answer's reply ==\n{}", report.text);
+        let (task, marks) = live.settled(Duration::from_secs(120));
+        println!("open task: {task:?}\nmarks: {marks:?}");
+        let session = live.manager.store().folder(&folder).session_id;
+        println!("lesson: {:?}", runtime::lesson(&folder, session.as_deref()));
+        let saved = runtime::marks(&folder).unwrap_or_default();
+        for mark in &saved {
+            println!("saved skill: {:?}", mark.label);
+            if mark.label.contains('$') || mark.label.contains('\\') {
+                found.push(mark.label.clone());
+            }
+        }
+        assert!(!saved.is_empty(), "the answer was not marked in {name}");
+    }
+    assert!(found.is_empty(), "skill names saved in TeX: {found:?}");
+}
