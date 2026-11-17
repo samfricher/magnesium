@@ -22,6 +22,9 @@
 // program lessons use, under each kind of first row.
 // PAGES_ONLY=model photographs only the model list across a pick of Fable 5.2
 // and the session after it.
+// PAGES_ONLY=steps photographs only a lesson that crosses from its first step
+// to its second (steps-*): the heads where each began, the top edge, and the
+// session opened again.
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -734,7 +737,164 @@ async function modelPick() {
   await quit(m);
 }
 
+
+/**
+ * A lesson that moves from its first step to its second, with the step's name set in where each began
+ * (PAGES_ONLY=steps): from the top, scrolled to where the top edge counts the steps, opened again, on the bare line
+ * and the soft field, and at 720 by 560 with the largest text.
+ */
+async function stepHeads() {
+  const heads = async (w, want, label) => {
+    const at = await w.op({ op: "session" });
+    const found = at.heads ?? [];
+    run.steps.push({ label, heads: found, top_count: at.top_count });
+    if (found.join(" | ") !== want.join(" | ")) problem(`${label}: the step heads drawn are ${JSON.stringify(found)}, not ${JSON.stringify(want)}`);
+  };
+  const both = ["Step 1 of 3: The standard error", "Step 2 of 3: A 95% interval"];
+  const lessonSoFar = async (w, label) => {
+    const at = await w.op({ op: "session" });
+    if (at.page === "folded") await step(w, label, { op: "key", key: "ArrowUp", meta: true });
+    await settle(w, 400);
+  };
+  const { home, window: s } = await ownWindow("steps");
+  // The text size is kept with the window's settings, by program name, and an earlier run can leave it larger.
+  await step(s, "the text at its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await lineLook(s, "Bare line");
+  await step(s, "the workspace", { op: "click", target: "tab-1", by: "drive" });
+  await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(s, 800);
+  await step(s, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await settle(s, 800);
+  // A step's head never moves anything in view: the reply that began a step stands still on screen from its end
+  // through the window hearing of the step (`still` reads it every frame). A head for a reply in view waits for
+  // the page folding to the task or the next message.
+  const still = async (w, label, more) => {
+    const read = await w.op({ op: "still", ms: 4000, send: true, ...more });
+    if (!read.ok) {
+      // A build from before the `still` op (the base of a before-and-after): send as a learner does, measure nothing.
+      problem(`${label}: no still op (${read.error ?? "not ok"}); sent without measuring`);
+      await step(w, `${label}: send`, { op: "key", key: "Enter", ...(more?.alt ? { alt: true } : {}) });
+      await step(w, `${label}: the reply`, { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+      return read;
+    }
+    run.steps.push({ label: `${label}: still`, still: read });
+    if (read.step_at === null || read.step_at === undefined) problem(`${label}: the window heard of no step`);
+    // From the frame before the window heard of the step on, the reply stands still. (A mark the record shows
+    // above it, on Magnesium's engine, moves it in the frame the mark comes: that is the mark's, not the head's.)
+    const marked = read.marked_at ?? -1;
+    // Under half a CSS pixel is under one device pixel here: WebKit keeps a scroll place a learner left between
+    // device pixels (0.2 px measured), and puts it on one when the page scrolls on by the head's height.
+    const moved = (read.moves_after_end ?? []).filter((move) => move.at >= read.step_at && Math.abs(move.to - move.from) >= 0.5 && !(move.at >= marked && move.at <= marked + 50));
+    const atStep = read.reply_top_at_step ?? {};
+    if (atStep.before === null || atStep.after === null || Math.abs(atStep.after - atStep.before) >= 0.5 || moved.length > 0) problem(`${label}: the reply moved when the step was heard: ${JSON.stringify(read)}`);
+    await step(w, `${label}: settled`, { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 1500 });
+    return read;
+  };
+  const one = ["Step 1 of 3: The standard error"];
+  await step(s, "focus the line", { op: "focus", target: "composer", by: "drive" });
+  const first = await still(s, "start, a short lesson");
+  if (first.heads_after !== 0) problem("the first step's head was drawn over the reply in view");
+  await step(s, "focus the answer", { op: "focus", target: "composer", by: "drive" });
+  await step(s, "type the answer", { op: "type", text: ANSWER });
+  await heads(s, [], "writing folds the page to the task");
+  await lessonSoFar(s, "the lesson so far, while writing");
+  await heads(s, one, "the first head, drawn once the page folded");
+  await step(s, "focus the answer again", { op: "focus", target: "composer", by: "drive" });
+  const second = await still(s, "the answer that moves the lesson on");
+  if (second.heads_after !== second.heads_before) problem("the second step's head was drawn over the reply in view");
+  await heads(s, one, "the second head, held while its reply is read");
+  // Talk, so the lesson runs past the window and the heading scrolls away; sending draws the held head.
+  for (const words of ["CITE: where is that in the slides?", "VERYSLOW: say a little more about the standard error"]) {
+    await step(s, "focus for talk", { op: "focus", target: "composer", by: "drive" });
+    await step(s, "write talk", { op: "type", text: words });
+    await step(s, "send it as talk", { op: "key", key: "Enter", alt: true });
+    await step(s, "the reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+  }
+  await lessonSoFar(s, "the lesson so far, after talk");
+  await heads(s, both, "both heads, once the next message was sent");
+  await step(s, "to the top", { op: "scroll", to: "top" });
+  await settle(s, 400);
+  await shoot(s, "steps-bare-top", "Steps: the lesson from its top, a head where each step began (bare line)");
+  await step(s, "to the foot", { op: "scroll", to: "bottom" });
+  await settle(s, 500);
+  const edge = await s.op({ op: "session" });
+  run.steps.push({ label: "the top edge, scrolled", top_count: edge.top_count });
+  if (edge.top_count !== "2 of 3") problem(`scrolled down, the top edge counts ${JSON.stringify(edge.top_count)}, not "2 of 3"`);
+  await shoot(s, "steps-bare-scrolled", "Steps: scrolled down, the top edge says how far through the route");
+  await step(s, "to the second head", { op: "scroll", target: "A 95% interval" });
+  await s.op({ op: "scroll", by: -120 });
+  await settle(s, 400);
+  await shoot(s, "steps-bare-second", "Steps: the second step's head, set in above the reply that moved on to it");
+
+  // Closed and opened again: the heads are where they were.
+  await quit(s);
+  const again = await launch("steps-again", home);
+  await step(again, "the session again", { op: "click", target: "tab-2", by: "drive" });
+  await settle(again, 1200);
+  await lessonSoFar(again, "the lesson so far, opened again");
+  await heads(again, both, "the session opened again");
+  await step(again, "to the top, opened again", { op: "scroll", to: "top" });
+  await settle(again, 400);
+  await shoot(again, "steps-bare-reopened", "Steps: the session closed and opened again, its heads where they were");
+
+  await lineLook(again, "Soft field");
+  await step(again, "the session, soft", { op: "click", target: "tab-2", by: "drive" });
+  await lessonSoFar(again, "the lesson so far, soft");
+  await step(again, "to the top, soft", { op: "scroll", to: "top" });
+  await settle(again, 400);
+  await shoot(again, "steps-soft-top", "Steps: the lesson from its top on the soft field");
+  await step(again, "to the foot, soft", { op: "scroll", to: "bottom" });
+  await settle(again, 500);
+  await shoot(again, "steps-soft-scrolled", "Steps: scrolled down on the soft field, the top edge counting");
+  await lineLook(again, "Bare line");
+  await step(again, "the session, bare again", { op: "click", target: "tab-2", by: "drive" });
+  await lessonSoFar(again, "the lesson so far, bare again");
+
+  // A small window with the largest text.
+  const wide = await step(again, "the window's size", { op: "frame" });
+  await step(again, "720 by 560", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await again.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(again, 400);
+  await step(again, "to the top, big", { op: "scroll", to: "top" });
+  await settle(again, 400);
+  await shoot(again, "steps-bare-big-top", "Steps: 720 by 560 with the largest text, from the top");
+  await step(again, "to the second head, big", { op: "scroll", target: "A 95% interval" });
+  await again.op({ op: "scroll", by: -160 });
+  await settle(again, 400);
+  await shoot(again, "steps-bare-big-second", "Steps: 720 by 560 with the largest text, the second head and the top edge");
+  await step(again, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(again, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
+
+  // A long lesson, read at its end, where the tutor begins a new route: its reply stands still too.
+  await lessonSoFar(again, "the lesson so far, long");
+  await step(again, "to the end, long", { op: "scroll", to: "bottom" });
+  await step(again, "focus, long", { op: "focus", target: "composer", by: "drive" });
+  await step(again, "ask for a new route", { op: "type", text: "TEACH me the quadratic formula" });
+  const long = await still(again, "a long lesson at its end", { alt: true });
+  if (long.heads_after !== long.heads_before) problem("a head was drawn over the reply in view, in a long lesson");
+  // Small and large, read on past the reply's first lines: the head goes in above the view at once, and the page
+  // scrolls by its height so the reply stays where it is.
+  await step(again, "720 by 560 for the last step", { op: "frame", width: 720, height: 560 });
+  for (let n = 0; n < 11; n++) await again.op({ op: "menu_click", path: ["View", "Bigger Text"] });
+  await settle(again, 400);
+  await step(again, "focus, past", { op: "focus", target: "composer", by: "drive" });
+  await step(again, "a long reply that moves the lesson on", { op: "type", text: "LONGSTEP: and next?" });
+  await step(again, "to the end, past", { op: "scroll", to: "bottom" });
+  const past = await still(again, "read on past the reply's top", { past: true, alt: true });
+  if (!past.scrolled_past) problem("the reply could not be scrolled above the view; the head drawn at once was not measured");
+  const drawnPast = await again.op({ op: "session" });
+  run.steps.push({ label: "read on past the reply's top: heads", heads: drawnPast.heads });
+  if (!(drawnPast.heads ?? []).includes("Step 3 of 3: A test of the mean")) problem("read on past the reply, its step's head was not drawn at once");
+  await step(again, "the text back to its own size, past", { op: "menu_click", path: ["View", "Actual Size"] });
+  if (wide.ok) await step(again, "the window's size again, past", { op: "frame", width: wide.frame.width, height: wide.frame.height });
+  await quit(again);
+}
+
 try {
+  if (process.env.PAGES_ONLY === "steps") {
+    await stepHeads();
+    throw "only";
+  }
   if (process.env.PAGES_ONLY === "model") {
     await modelPick();
     throw "only";
@@ -806,6 +966,13 @@ try {
   await step(w, "type the answer", { op: "type", text: ANSWER });
   await step(w, "send", { op: "key", key: "Enter" });
   await step(w, "marked", { op: "wait_idle", timeout_ms: TURN_MS });
+  {
+    // The answer moved the lesson on.
+    const at = await w.op({ op: "session" });
+    // The second waits while its reply is read (it would push the reply down); the first went in as the page folded.
+    const want = "Step 1 of 3: The standard error";
+    if ((at.heads ?? []).join(" | ") !== want) problem(`the lesson's step heads are ${JSON.stringify(at.heads)}, not ${want}`);
+  }
   await shoot(w, "session-marked", "Session: an answer marked by the record, the next task open");
   await step(w, "more", { op: "click", target: "more", by: "drive" });
   await step(w, "symbols", { op: "click", target: "symbols", by: "drive" });

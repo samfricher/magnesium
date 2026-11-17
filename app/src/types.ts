@@ -92,7 +92,12 @@ export type Turn = {
   mark_ids?: string[] | null;
   /** The closing lines drawn under this turn's reply, when it ended a sitting. */
   closing?: string[] | null;
+  /** The step of the lesson's route this turn's reply moved on to, when it moved on to one. */
+  step?: StepBegun | null;
 };
+
+/** A step of a lesson's route as it stood when a reply moved on to it: its place, counted from 1, the route's length, its name. */
+export type StepBegun = { n: number; of: number; name: string };
 
 /**
  * One of a folder's sessions: a conversation the window kept turns of.
@@ -322,6 +327,8 @@ export type AgentEvent =
   | { type: "open_task"; task: string | null; posed: boolean; fallback?: boolean }
   /** The turn ended the sitting: the runtime's closing lines, drawn under the reply as they are. */
   | { type: "closing"; lines: string[] }
+  /** This turn's reply moved the lesson on to a step of its route, as the record has it once the turn settled. */
+  | ({ type: "step_begun" } & StepBegun)
   /** The record has been read for the last message: any mark it has for it was sent before this. */
   | { type: "settled" };
 

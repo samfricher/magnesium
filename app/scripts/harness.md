@@ -19,9 +19,10 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `transcript`
 - `ready`
 - `errors`
-- `session`: the session in front, with `mark_said` (what the live region tells a screen reader of the marks that arrived since the learner last sent, `""` when none has) and `pass_days` (each mark's rings: the `day` it earned and whether it is `arriving`, filling as it comes, whether it is `hung` in the margin or starts the mark's line, and its `left` edge in the window, which is never below 0)
+- `session`: the session in front, with `heads` (the lesson's step heads drawn now, as a screen reader hears each: "Step 2 of 3: A 95% interval"), `top_count` (what the top edge counts, "2 of 3", or null), `mark_said` (what the live region tells a screen reader of the marks that arrived since the learner last sent, `""` when none has) and `pass_days` (each mark's rings: the `day` it earned and whether it is `arriving`, filling as it comes, whether it is `hung` in the margin or starts the mark's line, and its `left` edge in the window, which is never below 0)
 - `smooth {ms, scroll_by?, type_every?}`
 - `steady {text, back?, every?}`: write `text` on the line a key at a time, then take `back` characters off, and say how far the line moved on screen frame to frame (`largestMove`, `lowest` under the view's edge), how often the task's copy over the line came or went, and `from_foot`
+- `still {ms, send?, alt?, past?}`: with `send`, press Return (⌥ with `alt`) first; with `past`, once the turn ends, scroll so the reply's top is just above the view, as a learner who read on; then for `ms`, every frame, where the last reply stands on screen and how many step heads are drawn. Says when the turn ended (`ended_at`), when a step it began was heard (`step_at`), when a head was drawn (`head_at`), the reply's top in the frames either side of `step_at`, and every frame after the turn ended in which the reply moved (`moves_after_end`)
 - `caret {at?}`: where the caret is on the line, put at `at` first
 - `watch {ms}`: each text the copy of the open task pinned over the line showed, in order, and for how long
 - `document`

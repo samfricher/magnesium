@@ -1,6 +1,6 @@
 // What the session screen holds, and how each event from the tutor changes it.
 
-import type { Answer, AgentEvent, Intent, Mark, NoticeKind, Question, Turn } from "./types";
+import type { Answer, AgentEvent, Intent, Mark, NoticeKind, Question, StepBegun, Turn } from "./types";
 import type { PlanDiff } from "./words";
 
 export type Card =
@@ -54,6 +54,7 @@ export type Live = {
   posed?: string;
   question?: string;
   closing?: string[];
+  step?: StepBegun;
 };
 
 export type Notice = { kind: NoticeKind; text: string };
@@ -137,6 +138,7 @@ function asTurn(live: Live): LessonTurn | null {
     ...(live.posed ? { posed: live.posed } : {}),
     ...(live.question ? { question: live.question } : {}),
     ...(live.closing ? { closing: live.closing } : {}),
+    ...(live.step ? { step: live.step } : {}),
   };
 }
 
@@ -244,6 +246,9 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     // Closing lines belong to the reply that ended the sitting.
     case "closing":
       return state.live ? { ...state, live: { ...state.live, closing: event.lines } } : state;
+    // A step of the route belongs to the reply that moved the lesson on to it.
+    case "step_begun":
+      return state.live ? { ...state, live: { ...state.live, step: { n: event.n, of: event.of, name: event.name } } } : state;
     case "plan_changed":
     case "settled":
       return state;
@@ -291,6 +296,7 @@ export function reduce(state: SessionState, action: Action): SessionState {
               ...(last.posed ? { posed: last.posed } : {}),
               ...(last.question ? { question: last.question } : {}),
               ...(last.closing ? { closing: last.closing } : {}),
+              ...(last.step ? { step: last.step } : {}),
             }
           : null,
       };
