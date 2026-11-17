@@ -10,9 +10,10 @@
 // window's own screens: Home, a workspace, Settings, the plan beside the
 // lesson shown and hidden, a file on the line, the tabs and ⌘K.
 //
-// The line is photographed in both of its looks. A new window draws it as a
+// The line is photographed in each of its looks. A new window draws it as a
 // soft field, so every state here does; the states that show the line's own
-// parts are taken again with it bare, as <stem>-bare-<scheme>.png.
+// parts are taken again with it bare, as <stem>-bare-<scheme>.png, and some
+// of them ruled, as <stem>-ruled-<scheme>.png.
 //
 // These are photographs in Chrome. What only the Mac's WebKit draws (the
 // range sliders, the menu bar) is checked in the real window.
@@ -112,6 +113,13 @@ const shots = [
   ["permission-unknown-bare", "permission-unknown", 500, WIDE, BOTH, "bare"],
   ["model-unavailable-bare", "model-unavailable", 500, WIDE, BOTH, "bare"],
   ["narrow-lesson-bare", "narrow-lesson", 400, { width: 720, height: 560 }, BOTH, "bare"],
+  // The line ruled: the bare line on one hairline, before the lesson, with a task open, Stuck open, a file on it.
+  ["new-session-ruled", "new-session", 400, WIDE, BOTH, "ruled"],
+  ["help-row-ruled", "help-row", 300, WIDE, BOTH, "ruled"],
+  ["line-stuck-ruled", "line-stuck", 300, WIDE, BOTH, "ruled"],
+  ["line-stuck-narrow-ruled", "line-stuck", 300, { width: 720, height: 560 }, BOTH, "ruled"],
+  ["attach-ruled", "attach", 400, WIDE, BOTH, "ruled"],
+  ["narrow-lesson-ruled", "narrow-lesson", 400, { width: 720, height: 560 }, BOTH, "ruled"],
 ].filter(([name]) => !only || name.includes(only));
 
 const server = await createServer({ server: { port: 1431, strictPort: false }, logLevel: "error" });

@@ -8,14 +8,17 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { agendaOf, againOf, earned, type Again, type Day } from "../agenda";
+import { useHangs } from "../hangs";
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
 import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
+import { DISC_R, discFill, shareLeft } from "../paperTime";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
-import { displayName, fromToday, goalName, markShort, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, goalName, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
 
 type Props = {
   api: Core;
@@ -75,9 +78,6 @@ function dueLine(home: Home): string | null {
   return `${parts.join(" and ")} ${count === 1 ? "is" : "are"} due.`;
 }
 
-/** The passes a skill holds now, as the runtime counts them: a 2 in its dots. */
-const earned = (row: Row) => row.dots.filter((dot) => dot === 2).length;
-
 /** A skill's three days, filled for each the record counts now. A pass made before a later miss no longer counts, and is drawn empty. */
 function Days({ row }: { row: Row }) {
   const said = `${earned(row)} of the 3 days it needs: right, on your own, from memory`;
@@ -91,31 +91,65 @@ function Days({ row }: { row: Row }) {
 }
 
 /**
- * When a skill's next pass can count, from the runtime's day for it and nothing else: "today", "again tomorrow",
- * "again Thu 19 Nov", "proven", or "" when the record names no day (a paper question waiting for its fix).
+ * Your work as an agenda: each day said once, beside the first skill it holds, in the margin left of the names while
+ * the margin has room for it, else in a column of its own at the list's left. Each skill keeps its three days.
  */
-type Again = { words: string; today: boolean; rank: number; day: string };
-function again(row: Row): Again {
-  // Rank: a check or redo the record asks for today, then a skill that can count today, then by day, then no day, then proven.
-  if (earned(row) >= 3) return { words: "proven", today: false, rank: 4, day: "" };
-  if (row.due) return { words: "today", today: true, rank: 0, day: "" };
-  if (row.next_day && fromToday(row.next_day) === "past") return { words: "today", today: true, rank: 1, day: "" };
-  if (!row.next_day) return { words: "", today: false, rank: 3, day: "" };
-  return { words: fromToday(row.next_day) === "tomorrow" ? "again tomorrow" : `again ${shortDay(row.next_day)}`, today: false, rank: 2, day: row.next_day };
+function Agenda({ days }: { days: Day<{ row: Row; next: Again }>[] }) {
+  const list = useRef<HTMLDivElement>(null);
+  // Measured as a pass's rings beside its mark are: the margin left of the column depends on the window, the text
+  // size, the line width set in Settings and a document open beside the page, and a day's words on its font.
+  const hung = useHangs(
+    list,
+    ".page-scroll",
+    (element) => {
+      const label = element.querySelector<HTMLElement>(".agenda-day");
+      const row = element.querySelector<HTMLElement>(".agenda-row");
+      if (!label || !row) return 0;
+      const widest = Math.max(label.offsetWidth, ...[...element.querySelectorAll<HTMLElement>(".agenda-day > span")].map((each) => each.offsetWidth));
+      // 24px from the window's edge in all, as the column keeps at its narrowest; the hook keeps 8 of them.
+      return widest + (parseFloat(getComputedStyle(row).columnGap) || 0) + 16;
+    },
+    [days],
+  );
+  return (
+    <div ref={list} className={hung ? "agenda hung" : "agenda"} role="list" data-role="agenda">
+      {days.map((day) =>
+        day.exam !== null ? (
+          <div key={day.key} role="listitem" className="agenda-row first agenda-exam">
+            <span className="agenda-day">
+              <span>{day.label}</span>
+            </span>
+            <span className="agenda-exam-name">
+              <Line text={day.exam} />
+            </span>
+          </div>
+        ) : (
+          day.items.map(({ row }, at) => (
+            <div key={row.name} role="listitem" className={`agenda-row${at === 0 ? " first" : ""}${day.proven ? " proven" : ""}`}>
+              <span className={day.today ? "agenda-day today" : "agenda-day"}>{at === 0 && <span>{day.label}</span>}</span>
+              <span className="row-name work-name">
+                <Line text={row.name} />
+              </span>
+              <Days row={row} />
+            </div>
+          ))
+        ),
+      )}
+    </div>
+  );
 }
 
-/** One skill of Your work: its name, then its newest mark; when it can count again beside the name, then its days. */
-function WorkRow({ row, last }: { row: Row; last: Mark | null }) {
-  const next = again(row);
+/**
+ * The time left as a disc beside its words: a wash of the ink over the share left, read from the desk without
+ * subtracting. It is drawn again only when the words change, once a minute, and never moves in between.
+ */
+function TimeDisc({ share }: { share: number }) {
+  const fill = discFill(share);
   return (
-    <div role="listitem" className="work-row">
-      <span className="row-name work-name">
-        <Line text={row.name} />
-      </span>
-      <span className={next.today ? "row-when work-when work-today" : "row-when work-when"}>{next.words}</span>
-      <Days row={row} />
-      {last && <span className="work-mark">{`${markShort(last)}, ${shortDay(last.at)}`}</span>}
-    </div>
+    <svg className="time-disc" viewBox="0 0 48 48" aria-hidden="true" data-role="time-disc" data-share={share.toFixed(3)}>
+      {fill === "whole" ? <circle cx="24" cy="24" r={DISC_R} className="time-disc-left" /> : fill !== "none" && <path d={fill.path} className="time-disc-left" />}
+      <circle cx="24" cy="24" r={DISC_R} className="time-disc-edge" />
+    </svg>
   );
 }
 
@@ -198,6 +232,7 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       {/* The time leads, at a size read from the desk where the paper is sat. Its words change only with the
           minute, and nothing else in the block moves. */}
       <div className="paper-head">
+        <TimeDisc share={over ? 0 : shareLeft(left, sitting.minutes)} />
         <p className="paper-time" data-drive="sitting-left">
           {over ? "Time is up" : `${plural(left, "minute", "minutes")} left`}
         </p>
@@ -502,7 +537,7 @@ export function WorkspacePage(props: Props) {
   const work =
     record !== "unread" && record
       ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
-          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: again(row) }))
+          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: againOf(row) }))
           .filter(({ row, last }) => last !== null || earned(row) > 0)
           .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
       : [];
@@ -638,11 +673,7 @@ export function WorkspacePage(props: Props) {
             </p>
           ) : (
             <>
-              <div className="list" role="list">
-                {work.map(({ row, last }) => (
-                  <WorkRow key={row.name} row={row} last={last} />
-                ))}
-              </div>
+              <Agenda days={agendaOf(work, home?.exam ?? null)} />
               <p className="page-note work-key">Each ring is a day you got it right on your own, from memory. Three prove a skill.</p>
             </>
           )}

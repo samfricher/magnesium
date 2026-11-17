@@ -5,7 +5,7 @@
 // ::before, placed by two custom properties (prose.css).
 
 import { coverage } from "./render";
-import { locate, taskPlain, type Piece } from "./taskLine";
+import { locate, ruleAction, taskPlain, type Piece } from "./taskLine";
 
 const BLOCK = /^(P|LI|UL|OL|DIV|H[1-6]|BLOCKQUOTE|PRE|TABLE|TR|TD|TH|FIGURE|HR)$/;
 
@@ -84,7 +84,9 @@ export function drawTaskRule(root: HTMLElement, task: string): () => void {
   const draw = () => {
     const range = taskRange(root, task) ?? blockRange(root, task);
     const rects = range ? Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0) : [];
-    if (rects.length === 0) return clear();
+    const action = ruleAction(rects.length, rects.length === 0 && getComputedStyle(root).contentVisibility === "auto");
+    if (action === "clear") return clear();
+    if (action === "keep") return;
     const base = root.getBoundingClientRect();
     const top = Math.min(...rects.map((rect) => rect.top)) - base.top;
     const bottom = Math.max(...rects.map((rect) => rect.bottom)) - base.top;

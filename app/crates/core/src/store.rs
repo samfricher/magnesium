@@ -198,6 +198,41 @@ pub struct Turn {
     /// that day, which a later reading would not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closing: Option<Vec<String>>,
+    /// The step of the lesson's route this turn's reply moved on to, as the
+    /// record had the route then. Kept in a file of its own beside the turns:
+    /// the record keeps only the route as it stands now, so where each step
+    /// began is known only from what the window read after each turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<StepBegun>,
+}
+
+/// A step of a lesson's route, as it stood when a turn moved on to it: its
+/// place in the route, counted from 1, the route's length, and its name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepBegun {
+    pub n: usize,
+    pub of: usize,
+    pub name: String,
+}
+
+/// The step in hand after a turn, as the record said once the turn was kept:
+/// none when the lesson had no step in hand. `began` when it is not the step
+/// in hand after the turn before, so the turn's reply moved on to it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StepNote {
+    session: String,
+    ms: i64,
+    #[serde(default)]
+    step: Option<StepBegun>,
+    #[serde(default)]
+    began: bool,
+    /// False when the reading could not tell which step was in hand.
+    #[serde(default = "yes")]
+    known: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The closing lines drawn under a turn, kept beside it.
@@ -624,6 +659,88 @@ impl Store {
         append_line(&self.closing_notes(folder), &note);
     }
 
+    /// The file beside a folder's transcript that holds the step in hand
+    /// after each turn.
+    fn step_notes(&self, folder: &Path) -> PathBuf {
+        self.transcript(folder).with_extension("steps.jsonl")
+    }
+
+    fn step_notes_of(&self, folder: &Path, session: &str) -> Vec<StepNote> {
+        let Ok(text) = fs::read_to_string(self.step_notes(folder)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| serde_json::from_str::<StepNote>(line).ok())
+            .filter(|note| note.session == session)
+            .collect()
+    }
+
+    /// Keep the step in hand after a kept turn, as the record had it once
+    /// that turn's record was saved, and say whether the turn's reply moved
+    /// on to it: Some with the step when it did. `step` is None when the
+    /// reading could not tell (the runtime did not answer, or the next turn
+    /// may already have written to the record): that turn begins nothing.
+    ///
+    /// A turn began its step when the conversation's turn just before it
+    /// was read and had another step in hand, or none, or when it is the
+    /// conversation's first turn. When the turn before was not read, or could
+    /// not tell, nothing is known of where this step began, and it begins
+    /// nowhere: so a reading that was missed never moves a head onto a later
+    /// turn. This also covers a conversation kept by a window that did not
+    /// note steps. Noted again for the same turn, the later note stands,
+    /// unless it could not tell and an earlier one for that turn could: a
+    /// reading that could not tell never replaces one that could.
+    pub fn note_step(
+        &self,
+        folder: &Path,
+        session: &str,
+        ms: i64,
+        step: Option<Option<StepBegun>>,
+    ) -> Option<StepBegun> {
+        let known = step.is_some();
+        if !known
+            && self
+                .step_notes_of(folder, session)
+                .iter()
+                .any(|note| note.ms == ms && note.known)
+        {
+            return None;
+        }
+        let step = step.flatten();
+        let before = self
+            .all_turns(folder)
+            .into_iter()
+            .filter(|turn| turn.session == session && turn.ms < ms)
+            .map(|turn| turn.ms)
+            .max();
+        let began = known
+            && step.is_some()
+            && match before {
+                None => true,
+                Some(before) => self
+                    .step_notes_of(folder, session)
+                    .into_iter()
+                    .rfind(|note| note.ms == before)
+                    .is_some_and(|note| {
+                        note.known
+                            && note.step.as_ref().map(|s| &s.name) != step.as_ref().map(|s| &s.name)
+                    }),
+            };
+        let note = StepNote {
+            session: session.to_owned(),
+            ms,
+            step,
+            began,
+            known,
+        };
+        append_line(&self.step_notes(folder), &note);
+        if began {
+            note.step
+        } else {
+            None
+        }
+    }
+
     /// Keep one finished turn. The agent keeps its own full transcript; this
     /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
@@ -703,6 +820,16 @@ impl Store {
                 if let Some(lines) = by_ms.get(&turn.ms) {
                     turn.closing = Some(lines.clone());
                 }
+            }
+        }
+        // The step each turn's reply moved on to, the last note kept for it.
+        let mut began: BTreeMap<i64, Option<StepBegun>> = BTreeMap::new();
+        for note in self.step_notes_of(folder, session) {
+            began.insert(note.ms, note.step.filter(|_| note.began));
+        }
+        for turn in &mut turns {
+            if let Some(step) = began.get(&turn.ms) {
+                turn.step.clone_from(step);
             }
         }
         turns
@@ -1053,5 +1180,164 @@ mod tests {
         let store = Store::at(home.path().to_path_buf());
         assert!(store.recent().is_empty());
         assert_eq!(store.block_minutes(), 50);
+    }
+
+    fn step(n: usize, of: usize, name: &str) -> Option<StepBegun> {
+        Some(StepBegun {
+            n,
+            of,
+            name: name.into(),
+        })
+    }
+
+    fn read(n: usize, of: usize, name: &str) -> Option<Option<StepBegun>> {
+        Some(step(n, of, name))
+    }
+
+    fn kept(store: &Store, folder: &Path, session: &str, ms: i64) {
+        store.append_turn(
+            folder,
+            &Turn {
+                session: session.into(),
+                ms,
+                learner: "words".into(),
+                tutor: "reply".into(),
+                ..Turn::default()
+            },
+        );
+    }
+
+    #[test]
+    fn a_step_begins_where_the_step_in_hand_changes_numbered_as_the_route_was_then() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        // The first turn has no route yet; the second sets it.
+        kept(&store, &folder, "s", 1);
+        assert_eq!(store.note_step(&folder, "s", 1, Some(None)), None);
+        kept(&store, &folder, "s", 2);
+        assert_eq!(
+            store.note_step(&folder, "s", 2, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        // The same step, in a route the tutor made longer: nothing begins.
+        kept(&store, &folder, "s", 3);
+        assert_eq!(store.note_step(&folder, "s", 3, read(1, 3, "A")), None);
+        kept(&store, &folder, "s", 4);
+        assert_eq!(
+            store.note_step(&folder, "s", 4, read(2, 3, "B")),
+            step(2, 3, "B")
+        );
+        // Back to an earlier step: it begins again here.
+        kept(&store, &folder, "s", 5);
+        assert_eq!(
+            store.note_step(&folder, "s", 5, read(1, 3, "A")),
+            step(1, 3, "A")
+        );
+        // Read again for the same turn, the later reading stands.
+        kept(&store, &folder, "s", 6);
+        assert_eq!(store.note_step(&folder, "s", 6, read(1, 3, "A")), None);
+        assert_eq!(
+            store.note_step(&folder, "s", 6, read(3, 3, "C")),
+            step(3, 3, "C")
+        );
+        let heads: Vec<Option<StepBegun>> = store
+            .turns(&folder, "s")
+            .into_iter()
+            .map(|turn| turn.step)
+            .collect();
+        assert_eq!(
+            heads,
+            [
+                None,
+                step(1, 2, "A"),
+                None,
+                step(2, 3, "B"),
+                step(1, 3, "A"),
+                step(3, 3, "C")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_conversation_kept_before_steps_were_noted_has_no_step_begin_mid_way() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        kept(&store, &folder, "old", 1);
+        kept(&store, &folder, "old", 2);
+        // Reopened in this window: where its step began is not known.
+        kept(&store, &folder, "old", 3);
+        assert_eq!(store.note_step(&folder, "old", 3, read(2, 3, "B")), None);
+        kept(&store, &folder, "old", 4);
+        assert_eq!(
+            store.note_step(&folder, "old", 4, read(3, 3, "C")),
+            step(3, 3, "C")
+        );
+        // Another conversation in the folder is its own.
+        kept(&store, &folder, "new", 5);
+        assert_eq!(
+            store.note_step(&folder, "new", 5, read(1, 1, "A")),
+            step(1, 1, "A")
+        );
+    }
+
+    #[test]
+    fn a_turn_whose_reading_could_not_tell_passes_no_head_to_the_next() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        kept(&store, &folder, "s", 1);
+        assert_eq!(
+            store.note_step(&folder, "s", 1, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        // The learner wrote again before this turn's reading: it cannot tell.
+        kept(&store, &folder, "s", 2);
+        assert_eq!(store.note_step(&folder, "s", 2, None), None);
+        // The next turn finds "B" in hand, but cannot tell whether it began it.
+        kept(&store, &folder, "s", 3);
+        assert_eq!(store.note_step(&folder, "s", 3, read(2, 2, "B")), None);
+        // A turn never read at all is the same.
+        kept(&store, &folder, "s", 4);
+        kept(&store, &folder, "s", 5);
+        assert_eq!(store.note_step(&folder, "s", 5, read(1, 2, "A")), None);
+        let heads: Vec<Option<StepBegun>> = store
+            .turns(&folder, "s")
+            .into_iter()
+            .map(|turn| turn.step)
+            .collect();
+        assert_eq!(heads, [step(1, 2, "A"), None, None, None, None]);
+    }
+
+    #[test]
+    fn a_reading_that_could_not_tell_never_replaces_one_that_could() {
+        let home = tempfile::tempdir().unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        let folder = home.path().join("course");
+        kept(&store, &folder, "s", 1);
+        assert_eq!(
+            store.note_step(&folder, "s", 1, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        kept(&store, &folder, "s", 2);
+        assert_eq!(
+            store.note_step(&folder, "s", 2, read(2, 2, "B")),
+            step(2, 2, "B")
+        );
+        // A later reading of the same turn fails: the turn keeps its head.
+        assert_eq!(store.note_step(&folder, "s", 2, None), None);
+        // And the next turn still knows which step was in hand before it.
+        kept(&store, &folder, "s", 3);
+        assert_eq!(
+            store.note_step(&folder, "s", 3, read(1, 2, "A")),
+            step(1, 2, "A")
+        );
+        let heads: Vec<Option<StepBegun>> = store
+            .turns(&folder, "s")
+            .into_iter()
+            .map(|turn| turn.step)
+            .collect();
+        assert_eq!(heads, [step(1, 2, "A"), step(2, 2, "B"), step(1, 2, "A")]);
     }
 }
