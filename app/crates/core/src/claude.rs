@@ -378,6 +378,9 @@ impl Harness for ClaudeCode {
             seen_text: Mutex::new(HashMap::new()),
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
+            held: Mutex::new(Vec::new()),
+            replied: AtomicBool::new(false),
+            reply_tool: AtomicBool::new(true),
             folder: options.folder.clone(),
             stderr_tail: Mutex::new(String::new()),
             closing: AtomicBool::new(false),
@@ -591,9 +594,21 @@ struct Shared {
     seen_text: Mutex<HashMap<String, Vec<String>>>,
     /// The `reply` calls being written, by their block's index.
     reply_blocks: Mutex<HashMap<u64, ReplyStream>>,
-    /// The replies already shown this turn. Text written besides them is held
-    /// back until it is whole, and shown only when it says something new.
+    /// The replies already shown this turn.
     replies: Mutex<Vec<String>>,
+    /// This turn's plain text, outside the `reply` tool. The tutor writes
+    /// notes to itself there ("Fresh topic, no history."), and a note before
+    /// the reply comes before the window can know a reply will follow. So
+    /// it waits for the turn's end, and reaches the page only when the turn
+    /// sent no reply through the tool (Magnesium issue 142).
+    held: Mutex<Vec<String>>,
+    /// Words of a `reply` call reached the page this turn, whole or, when
+    /// the turn was stopped, in part.
+    replied: AtomicBool,
+    /// Claude Code's report of what it loaded leaves room for the `reply`
+    /// tool. Without the tool, plain text is the only reply there can be,
+    /// and is shown as it is written.
+    reply_tool: AtomicBool,
     /// The study folder, to name the files the tutor works on.
     folder: PathBuf,
     stderr_tail: Mutex<String>,
@@ -786,6 +801,7 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
     }
     let was_awaiting = shared.awaiting.swap(false, Ordering::SeqCst);
     if shared.in_turn.swap(false, Ordering::SeqCst) || was_awaiting {
+        release_held(shared);
         let interrupted = shared.interrupting.swap(false, Ordering::SeqCst);
         shared.emit(AgentEvent::TurnEnded {
             ok: expected || interrupted,
@@ -997,20 +1013,10 @@ fn init_problems(value: &Value) -> Vec<String> {
             }
         }
     }
-    let servers = value["mcp_servers"].as_array().cloned().unwrap_or_default();
-    // The plugin's own server is named plugin:<plugin>:<server>. It is looked
-    // for first, so another server with a similar name cannot decide this.
-    let named = |test: &dyn Fn(&str) -> bool| {
-        servers
-            .iter()
-            .find(|s| s["name"].as_str().is_some_and(test))
-    };
-    let server = named(&|name| name.starts_with("plugin:magnesium:"))
-        .or_else(|| named(&|name| name.contains(PLUGIN)));
     let has_tools = tools
         .iter()
         .any(|tool| tool.starts_with("mcp__") && tool.contains(PLUGIN));
-    match server.and_then(|s| s["status"].as_str()) {
+    match server_status(value) {
         Some("connected" | "pending") => {}
         Some(status) => problems.push(format!(
             "Magnesium's tool server is {status}, so the tutor cannot read or save your record. In a terminal, run: magnesium info"
@@ -1024,10 +1030,43 @@ fn init_problems(value: &Value) -> Vec<String> {
     problems
 }
 
+/// The status Claude Code's report gives Magnesium's tool server:
+/// "connected", "pending", "failed", or none when it lists no such server.
+fn server_status(init: &Value) -> Option<&str> {
+    let servers = init["mcp_servers"].as_array()?;
+    // The plugin's own server is named plugin:<plugin>:<server>. It is looked
+    // for first, so another server with a similar name cannot decide this.
+    let named = |test: &dyn Fn(&str) -> bool| {
+        servers
+            .iter()
+            .find(|s| s["name"].as_str().is_some_and(test))
+    };
+    named(&|name| name.starts_with("plugin:magnesium:"))
+        .or_else(|| named(&|name| name.contains(PLUGIN)))
+        .and_then(|s| s["status"].as_str())
+}
+
+/// Whether Claude Code's report leaves room for the `reply` tool: it names
+/// the tool, or Magnesium's server is still connecting, or the report lists
+/// no tools to tell by. A server that failed, or a plugin or server that
+/// does not offer the tool, leaves plain text as the only reply.
+fn can_reply_by_tool(init: &Value) -> bool {
+    init.get("tools").is_none()
+        || names(&init["tools"])
+            .iter()
+            .any(|tool| is_reply_tool(Some(tool)))
+        || server_status(init) == Some("pending")
+}
+
 fn on_init(shared: &Arc<Shared>, value: &Value) {
     if let Some(id) = value["session_id"].as_str() {
         *lock(&shared.session_id) = Some(id.to_owned());
     }
+    // Claude Code reports again at each turn's start, so a server that was
+    // still connecting at the first is judged again once it has.
+    shared
+        .reply_tool
+        .store(can_reply_by_tool(value), Ordering::SeqCst);
     if !shared.ready_sent.swap(true, Ordering::SeqCst) {
         let session_id = lock(&shared.session_id).clone().unwrap_or_default();
         if let Some(text) = payment_notice(shared.payment, value) {
@@ -1211,6 +1250,7 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
             Some("text") | None => {}
             Some("tool_use") if is_reply_tool(event["content_block"]["name"].as_str()) => {
                 begin_turn(shared);
+                shared.reply_tool.store(true, Ordering::SeqCst);
                 lock(&shared.reply_blocks).insert(index, ReplyStream::default());
             }
             // Each step is named when it starts, from the tool's name alone,
@@ -1234,13 +1274,13 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
         },
         Some("content_block_delta") => match event["delta"]["type"].as_str() {
             Some("text_delta") => {
-                // Once the tutor has replied through the tool, other text
-                // waits until it is whole, so the reply is never shown twice.
-                if !lock(&shared.replies).is_empty() {
+                let Some(text) = event["delta"]["text"].as_str().filter(|t| !t.is_empty()) else {
                     return;
-                }
-                if let Some(text) = event["delta"]["text"].as_str().filter(|t| !t.is_empty()) {
-                    begin_turn(shared);
+                };
+                begin_turn(shared);
+                // Plain text waits for the turn's end while a reply may still
+                // come through the tool; see `held`.
+                if !shared.reply_tool.load(Ordering::SeqCst) {
                     shared.emit(AgentEvent::TextDelta {
                         text: text.to_owned(),
                     });
@@ -1253,6 +1293,7 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
                     .map(|stream| stream.push(more))
                     .unwrap_or_default();
                 if !fresh.is_empty() {
+                    shared.replied.store(true, Ordering::SeqCst);
                     shared.emit(AgentEvent::TextDelta { text: fresh });
                 }
             }
@@ -1464,16 +1505,8 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                 let Some(text) = block["text"].as_str().filter(|t| !t.trim().is_empty()) else {
                     continue;
                 };
-                // Text that repeats a reply sent through the tool is not
-                // shown again.
-                if lock(&shared.replies)
-                    .iter()
-                    .any(|reply| reply.contains(text.trim()))
-                {
-                    continue;
-                }
                 // The agent may send a message once per block or once whole.
-                // Either way each block is shown one time.
+                // Either way each block counts one time.
                 let fresh = {
                     let mut seen = lock(&shared.seen_text);
                     let texts = seen.entry(id.clone()).or_default();
@@ -1484,14 +1517,20 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                         true
                     }
                 };
-                if fresh {
-                    begin_turn(shared);
+                if !fresh {
+                    continue;
+                }
+                begin_turn(shared);
+                if shared.reply_tool.load(Ordering::SeqCst) {
+                    lock(&shared.held).push(text.to_owned());
+                } else {
                     shared.emit(AgentEvent::TextDone {
                         text: text.to_owned(),
                     });
                 }
             }
             Some("tool_use") if is_reply_tool(block["name"].as_str()) => {
+                shared.reply_tool.store(true, Ordering::SeqCst);
                 let Some(text) = block["input"]["text"]
                     .as_str()
                     .filter(|t| !t.trim().is_empty())
@@ -1499,6 +1538,7 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                     continue;
                 };
                 begin_turn(shared);
+                shared.replied.store(true, Ordering::SeqCst);
                 let mut replies = lock(&shared.replies);
                 if !replies.iter().any(|said| said == text) {
                     replies.push(text.to_owned());
@@ -1528,9 +1568,29 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
     }
 }
 
+/// At a turn's end, the plain text held back in it: shown when no reply came
+/// through the tool, so a reply written as plain text is never lost; beside
+/// a reply, kept off the page and written to the trace alone.
+fn release_held(shared: &Arc<Shared>) {
+    let held = std::mem::take(&mut *lock(&shared.held));
+    let replied = shared.replied.swap(false, Ordering::SeqCst);
+    for text in held {
+        if replied {
+            let quoted = serde_json::to_string(&text).unwrap_or_default();
+            shared.trace(
+                "#",
+                &format!("kept off the page beside the reply: {quoted}"),
+            );
+        } else {
+            shared.emit(AgentEvent::TextDone { text });
+        }
+    }
+}
+
 fn on_result(shared: &Arc<Shared>, value: &Value) {
     shared.in_turn.store(false, Ordering::SeqCst);
     shared.awaiting.store(false, Ordering::SeqCst);
+    release_held(shared);
     lock(&shared.seen_text).clear();
     lock(&shared.replies).clear();
     lock(&shared.reply_blocks).clear();
@@ -2196,6 +2256,9 @@ mod tests {
             seen_text: Mutex::new(HashMap::new()),
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
+            held: Mutex::new(Vec::new()),
+            replied: AtomicBool::new(false),
+            reply_tool: AtomicBool::new(true),
             folder: PathBuf::from("/study"),
             stderr_tail: Mutex::new(String::new()),
             closing: AtomicBool::new(false),
@@ -2634,6 +2697,9 @@ mod tests {
             seen_text: Mutex::new(HashMap::new()),
             reply_blocks: Mutex::new(HashMap::new()),
             replies: Mutex::new(Vec::new()),
+            held: Mutex::new(Vec::new()),
+            replied: AtomicBool::new(false),
+            reply_tool: AtomicBool::new(true),
             folder: PathBuf::from("/study"),
             stderr_tail: Mutex::new(String::new()),
             closing: AtomicBool::new(false),
@@ -2698,29 +2764,17 @@ mod tests {
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
             {"type": "text", "text": "Two thirds."}]}}),
         );
-        // Text that says something new is still shown, whole.
+        // Nor is text that says something else beside the reply.
         handle(
             &shared,
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
             {"type": "text", "text": "(Saved.)"}]}}),
         );
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
         let events = lock(&seen).clone();
-        let deltas: String = events
-            .iter()
-            .filter_map(|e| match e {
-                AgentEvent::TextDelta { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
+        let (deltas, done) = words(&events);
         assert_eq!(deltas, reply, "{events:?}");
-        let done: Vec<&str> = events
-            .iter()
-            .filter_map(|e| match e {
-                AgentEvent::TextDone { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(done, [reply, "(Saved.)"]);
+        assert_eq!(done, [reply]);
         assert!(
             !events
                 .iter()
@@ -2728,8 +2782,262 @@ mod tests {
             "{events:?}"
         );
         // The next turn starts with no replies remembered.
-        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
         assert!(lock(&shared.replies).is_empty());
+        assert!(!shared.replied.load(Ordering::SeqCst));
+    }
+
+    /// The words a turn put on the page: the pieces as they were written,
+    /// and the finished blocks.
+    fn words(events: &[AgentEvent]) -> (String, Vec<String>) {
+        let deltas = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let done = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDone { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        (deltas, done)
+    }
+
+    const REPLY: &str = "mcp__plugin_magnesium_magnesium__reply";
+
+    /// One plain text block as Claude Code sends it: its pieces as they are
+    /// written, then the finished message.
+    fn plain(shared: &Arc<Shared>, id: &str, text: &str) {
+        let stream = |event: Value| {
+            handle(
+                shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start", "message": {"id": id}}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        );
+        for piece in text.split_inclusive(' ') {
+            stream(
+                json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": piece}}),
+            );
+        }
+        handle(
+            shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": id, "content": [
+            {"type": "text", "text": text}]}}),
+        );
+    }
+
+    /// One tool call as Claude Code sends it, the reply tool's input written
+    /// in a few pieces.
+    fn call(shared: &Arc<Shared>, id: &str, name: &str, input: Value) {
+        let stream = |event: Value| {
+            handle(
+                shared,
+                &json!({"type": "stream_event", "parent_tool_use_id": null, "event": event}),
+            )
+        };
+        stream(json!({"type": "message_start", "message": {"id": id}}));
+        stream(
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "name": name, "input": {}}}),
+        );
+        let whole = input.to_string();
+        let mut at = 0;
+        while at < whole.len() {
+            let mut end = (at + 7).min(whole.len());
+            while !whole.is_char_boundary(end) {
+                end += 1;
+            }
+            stream(
+                json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": &whole[at..end]}}),
+            );
+            at = end;
+        }
+        handle(
+            shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": id, "content": [
+            {"type": "tool_use", "name": name, "input": input}]}}),
+        );
+    }
+
+    /// Whether the page was sent words that contain `line`, as they were
+    /// written or finished. The lines tested are from issue 142's live lesson.
+    fn shown(events: &[AgentEvent], line: &str) -> bool {
+        events.iter().any(|e| match e {
+            AgentEvent::TextDelta { text } | AgentEvent::TextDone { text } => text.contains(line),
+            _ => false,
+        })
+    }
+
+    #[test]
+    fn the_tutors_note_before_its_reply_never_reaches_the_page() {
+        let (shared, seen) = listening();
+        let note = "Fresh topic, no history. First opening question: one easy concrete case.";
+        plain(&shared, "m1", note);
+        call(
+            &shared,
+            "m1",
+            "mcp__plugin_magnesium_magnesium__context",
+            json!({}),
+        );
+        let reply = "Take $f(x) = x^2$.\n\n**Task.** What is $f(3)$?";
+        call(&shared, "m2", REPLY, json!({"text": reply}));
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        let events = lock(&seen).clone();
+        assert!(!shown(&events, "Fresh topic"), "{events:?}");
+        let (deltas, done) = words(&events);
+        assert_eq!(deltas, reply);
+        assert_eq!(done, [reply]);
+        assert!(matches!(
+            events.last(),
+            Some(AgentEvent::TurnEnded { ok: true, .. })
+        ));
+    }
+
+    #[test]
+    fn the_tutors_note_after_its_reply_never_reaches_the_page() {
+        let (shared, seen) = listening();
+        let reply =
+            "Not quite: the sign flips.\n\n**Task.** Try $-2$. If something else, say what.";
+        call(
+            &shared,
+            "m1",
+            REPLY,
+            json!({"text": reply, "save_after": true}),
+        );
+        call(
+            &shared,
+            "m1",
+            "mcp__plugin_magnesium_magnesium__learning_step",
+            json!({"action": "update"}),
+        );
+        plain(&shared, "m2", "Retrying without the disposition.");
+        call(
+            &shared,
+            "m3",
+            "mcp__plugin_magnesium_magnesium__learning_step",
+            json!({"action": "update"}),
+        );
+        plain(&shared, "m4", "Saved.");
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        let events = lock(&seen).clone();
+        assert!(!shown(&events, "Retrying"), "{events:?}");
+        assert!(!shown(&events, "Saved."), "{events:?}");
+        let (deltas, done) = words(&events);
+        assert_eq!(deltas, reply);
+        assert_eq!(done, [reply]);
+    }
+
+    #[test]
+    fn a_turn_without_a_reply_call_still_shows_its_plain_text_once() {
+        let (shared, seen) = listening();
+        let first = "Two thirds, because the remaining third is the one you left out.";
+        let second = "**Task.** Why is it not three quarters?";
+        plain(&shared, "m1", first);
+        // Claude Code may send the message again, whole.
+        handle(
+            &shared,
+            &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [
+            {"type": "text", "text": first}]}}),
+        );
+        call(
+            &shared,
+            "m1",
+            "mcp__plugin_magnesium_magnesium__learning_step",
+            json!({"action": "update"}),
+        );
+        plain(&shared, "m2", second);
+        // Nothing is on the page while a reply may still come through the tool.
+        assert_eq!(words(&lock(&seen)), (String::new(), vec![]));
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        let events = lock(&seen).clone();
+        let (_, done) = words(&events);
+        assert_eq!(done, [first, second], "{events:?}");
+        // Shown before the turn ends, so the turn is kept with its words.
+        let at = |wanted: fn(&AgentEvent) -> bool| events.iter().position(wanted).unwrap();
+        assert!(
+            at(|e| matches!(e, AgentEvent::TextDone { .. }))
+                < at(|e| matches!(e, AgentEvent::TurnEnded { .. }))
+        );
+        assert!(lock(&shared.held).is_empty());
+    }
+
+    #[test]
+    fn plain_text_cut_off_by_the_programs_end_is_still_shown() {
+        let (shared, seen) = listening();
+        shared.awaiting.store(true, Ordering::SeqCst);
+        let text = "The derivative of $x^2$ is $2x$.";
+        let lines = [
+            json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "message_start", "message": {"id": "m1"}}}),
+            json!({"type": "stream_event", "parent_tool_use_id": null, "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}}),
+            json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [{"type": "text", "text": text}]}}),
+        ]
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+        read_loop(&shared, lines.as_bytes());
+        let events = lock(&seen).clone();
+        assert_eq!(words(&events).1, [text], "{events:?}");
+        assert!(matches!(
+            events.iter().rev().nth(1),
+            Some(AgentEvent::TurnEnded { ok: false, .. })
+        ));
+    }
+
+    #[test]
+    fn without_the_reply_tool_plain_text_is_the_reply_and_streams() {
+        let (shared, seen) = listening();
+        // Magnesium's server failed, so the tutor has no reply tool.
+        handle(
+            &shared,
+            &json!({"type": "system", "subtype": "init", "session_id": "s1",
+                "tools": ["Read", "Bash"],
+                "plugins": [{"name": "magnesium", "path": "/x"}],
+                "slash_commands": ["magnesium:learn"],
+                "mcp_servers": [{"name": "plugin:magnesium:magnesium", "status": "failed"}]}),
+        );
+        let text = "Two thirds. **Task.** Why?";
+        plain(&shared, "m1", text);
+        let (deltas, done) = words(&lock(&seen));
+        assert_eq!(deltas, text, "shown as it is written");
+        assert_eq!(done, [text]);
+        on_result(&shared, &json!({"type": "result", "subtype": "success"}));
+        assert_eq!(words(&lock(&seen)).1, [text], "and only once");
+    }
+
+    #[test]
+    fn the_report_of_what_claude_code_loaded_says_whether_a_reply_tool_can_come() {
+        let server =
+            |status: &str| json!([{"name": "plugin:magnesium:magnesium", "status": status}]);
+        let init = |tools: Value, servers: Value| json!({"tools": tools, "mcp_servers": servers});
+        assert!(can_reply_by_tool(&init(
+            json!(["Read", REPLY]),
+            server("connected")
+        )));
+        // Still connecting: its tools are not listed yet.
+        assert!(can_reply_by_tool(&init(json!(["Read"]), server("pending"))));
+        // A report that lists no tools cannot say.
+        assert!(can_reply_by_tool(
+            &json!({"mcp_servers": server("connected")})
+        ));
+        // Failed, absent, or a server that does not offer the tool.
+        assert!(!can_reply_by_tool(&init(json!(["Read"]), server("failed"))));
+        assert!(!can_reply_by_tool(&init(json!(["Read"]), json!([]))));
+        assert!(!can_reply_by_tool(&init(
+            json!(["Read", "mcp__plugin_magnesium_magnesium__learning_step"]),
+            server("connected")
+        )));
+        // Another plugin's reply tool is not Magnesium's.
+        assert!(!can_reply_by_tool(&init(
+            json!(["mcp__other__reply"]),
+            server("connected")
+        )));
     }
 
     #[test]
