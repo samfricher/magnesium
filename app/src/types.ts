@@ -473,6 +473,8 @@ export interface Core {
   setSessionModel(at: ModelAt, model: string, effort: string | null): Promise<ModelChoice>;
   signIn(): Promise<void>;
   about(): Promise<About>;
+  /** Put the window on screen: its first screen is drawn. */
+  showWindow(): Promise<void>;
   /** The open folder's saved conversation, as the window showed it, read without starting it. */
   turns(): Promise<Turn[]>;
   /** A folder's sessions, newest opened first. */

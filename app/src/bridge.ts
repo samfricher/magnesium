@@ -54,6 +54,7 @@ async function tauriCore(): Promise<Core> {
     setSessionModel: (at, model, effort) => invoke("set_session_model", { folder: at.folder, session: at.session, live: at.live, model, effort }),
     signIn: () => invoke("sign_in"),
     about: () => invoke("about"),
+    showWindow: () => invoke("show_window"),
     turns: () => invoke("turns"),
     lessons: (folder) => invoke("lessons", { folder }),
     lessonTurns: (folder, session) => invoke("lesson_turns", { folder, session }),

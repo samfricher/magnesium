@@ -494,10 +494,21 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The first screen is painted with its real content: tell the harness.
+  // The first screen is painted with its real content: tell the harness, and
+  // let the window be seen. The shell keeps it see-through until now, so it
+  // never shows a page half drawn.
+  const shown = useRef(false);
   useEffect(() => {
     const homeWaits = active === "home" && homeFolder === null && !homeShown;
-    if (restored && workspaces !== null && !homeWaits) requestAnimationFrame(() => ready());
+    if (!restored || workspaces === null || homeWaits) return;
+    requestAnimationFrame(() => {
+      ready();
+      if (shown.current) return;
+      shown.current = true;
+      // At the frame after, once this frame's paint has reached the window: a
+      // task straight after it can still come before, and show the screen before.
+      requestAnimationFrame(() => void now.current.api?.showWindow().catch(() => {}));
+    });
   }, [restored, workspaces, active, homeFolder, homeShown]);
 
   // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
