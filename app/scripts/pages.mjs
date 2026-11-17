@@ -731,7 +731,14 @@ async function stepHeads() {
   // through the window hearing of the step (`still` reads it every frame). A head for a reply in view waits for
   // the page folding to the task or the next message.
   const still = async (w, label, more) => {
-    const read = await step(w, label, { op: "still", ms: 4000, send: true, ...more });
+    const read = await w.op({ op: "still", ms: 4000, send: true, ...more });
+    if (!read.ok) {
+      // A build from before the `still` op (the base of a before-and-after): send as a learner does, measure nothing.
+      problem(`${label}: no still op (${read.error ?? "not ok"}); sent without measuring`);
+      await step(w, `${label}: send`, { op: "key", key: "Enter", ...(more?.alt ? { alt: true } : {}) });
+      await step(w, `${label}: the reply`, { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
+      return read;
+    }
     run.steps.push({ label: `${label}: still`, still: read });
     if (read.step_at === null || read.step_at === undefined) problem(`${label}: the window heard of no step`);
     // From the frame before the window heard of the step on, the reply stands still. (A mark the record shows

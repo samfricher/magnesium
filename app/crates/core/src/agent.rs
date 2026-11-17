@@ -116,6 +116,14 @@ pub enum AgentEvent {
     /// length, and its name. Sent once the turn has settled, from the
     /// record, and kept beside the turn. Never the tutor's words.
     StepBegun { n: usize, of: usize, name: String },
+    /// Magnesium's engine read the lesson's route from the record once the
+    /// turn that just ended had its record saved, before it took the next
+    /// message: the steps, or none when the record could not say. The
+    /// window keeps the step in hand beside that turn; the page is never
+    /// sent this.
+    RouteRead {
+        steps: Option<Vec<crate::runtime::Step>>,
+    },
     /// A tool result in this turn said a sitting ended: the tutor's
     /// `end_sitting`, a pause or a stop, or the runtime's own end of a
     /// sitting of quick checks alone. The window then reads the closing

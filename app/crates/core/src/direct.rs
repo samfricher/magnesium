@@ -1041,6 +1041,13 @@ fn work_loop(shared: &Arc<Shared>) {
                     shared.phase.store(PREPARING, Ordering::SeqCst);
                 }
                 let ended = turn(shared, &words);
+                // The route as the record has it once this turn's own
+                // writes are done, and before the next message is taken, so
+                // no later turn's writes can be in it.
+                let read = crate::runtime::lesson(&shared.folder, Some(&shared.session));
+                shared.emit(AgentEvent::RouteRead {
+                    steps: read.map(|lesson| lesson.map(|lesson| lesson.steps).unwrap_or_default()),
+                });
                 remember(shared);
                 shared.phase.store(IDLE, Ordering::SeqCst);
                 shared.done();

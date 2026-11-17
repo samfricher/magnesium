@@ -3303,3 +3303,69 @@ fn the_turn_whose_reply_moves_the_lesson_on_keeps_the_step_it_began() {
         ]
     );
 }
+
+#[test]
+fn a_step_read_that_finishes_after_the_next_message_stays_with_its_own_turn() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    // The right answer moves the lesson on to its second step. The learner
+    // writes again as soon as the reply ends, while its record is still being
+    // kept: the step this turn began is read after the next turn has begun.
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
+    events.turn_end();
+    manager
+        .send_with("why that way?", Some(Intent::Talk))
+        .unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    manager.shut_down();
+
+    let session = manager.lessons(None).unwrap()[0].session.clone();
+    let turns = manager.lesson_turns(None, &session).unwrap();
+    let steps: Vec<Option<(usize, String)>> = turns
+        .iter()
+        .map(|turn| turn.step.as_ref().map(|step| (step.n, step.name.clone())))
+        .collect();
+    // The head is the answer's, never the talk's after it.
+    assert_eq!(
+        steps,
+        [
+            Some((1, "Read a, b, c".to_owned())),
+            Some((2, "Use the formula".to_owned())),
+            None
+        ]
+    );
+}
+
+#[test]
+fn a_step_read_that_finishes_after_the_session_closed_stays_with_its_turn() {
+    let bench = Bench::new(None, &[]);
+    let (manager, mut events) = bench.manager();
+    manager.open_session(false).unwrap();
+    manager.send_new_lesson("TEACH me").unwrap();
+    assert!(ended_well(&done(&manager, &mut events)));
+    next_event(&mut events, "the record read", |e| {
+        matches!(e, AgentEvent::Settled)
+    });
+    // The session closes as soon as the reply that moves the lesson on ends,
+    // while its record is still being kept.
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
+    events.turn_end();
+    manager.shut_down();
+
+    let session = manager.lessons(None).unwrap()[0].session.clone();
+    let turns = manager.lesson_turns(None, &session).unwrap();
+    let steps: Vec<Option<usize>> = turns
+        .iter()
+        .map(|turn| turn.step.as_ref().map(|step| step.n))
+        .collect();
+    assert_eq!(steps, [Some(1), Some(2)]);
+}
