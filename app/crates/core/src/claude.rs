@@ -55,6 +55,14 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 /// whose input the window draws as the tutor's words while they are written.
 pub const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
 const SURFACE: &str = "window";
+/// Added to Claude Code's own prompt in a window lesson. The plugin's
+/// instructions, the same in a terminal, say nothing of how to write
+/// mathematics, and a window lesson's tutor wrote it as plain text, such as
+/// `1/(1 + e^(−s))`, which the window draws as typed (seen on 2026-11-16: a
+/// lesson of 17 replies with TeX in none). The direct engine's prompt says
+/// the same.
+pub const DRAWS: &str = "This lesson is shown in Magnesium's study window, which draws your replies as Markdown and draws mathematics with KaTeX. Write every formula in TeX, even a short one inside a sentence: inline as `$\\frac{1}{1+e^{-s}}$` (no space after the opening dollar), display as `$$...$$` on its own lines. Maths written as plain text, such as 1/(1 + e^(−s)), is shown as typed, never as a formula. A diagram is a fenced `mermaid` block.";
+
 /// Claude Code's switch for the tool servers of the learner's Claude account.
 pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
 
@@ -131,6 +139,8 @@ pub fn lesson_args(
         "project,local".into(),
         "--tools".into(),
         TOOLS.join(","),
+        "--append-system-prompt".into(),
+        DRAWS.into(),
     ];
     if permissions == Permissions::Auto {
         args.push("--permission-mode".into());
@@ -2369,6 +2379,10 @@ mod tests {
             args[at + 1].clone()
         };
         assert_eq!(after("--setting-sources"), "project,local");
+        assert!(
+            after("--append-system-prompt").contains("$$...$$"),
+            "the tutor is told the window draws TeX"
+        );
         assert_eq!(
             after("--tools"),
             "Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash"

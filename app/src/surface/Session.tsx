@@ -301,6 +301,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   // The learner opened the whole lesson over the task (⌘↑, or "the lesson so far"): it stays open until they fold it,
   // or the next reply comes. Nothing of it goes to the runtime or the record.
   const [lookedBack, setLookedBack] = useState(false);
+  // From a turn's start until the window has heard which task is open after it. On Claude Code's engine that is read
+  // from the record after the reply has ended, and until then the task already answered was still the open one.
+  const [settling, setSettling] = useState(false);
   const surface = useRef<HTMLElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -472,7 +475,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       props.onBusy(props.tab.key, true);
       setReading(true);
       setLookedBack(false);
+      setSettling(true);
     }
+    if (event.type === "open_task" || event.type === "settled" || event.type === "exited") setSettling(false);
     if (event.type === "turn_ended" || event.type === "exited") props.onBusy(props.tab.key, false);
     if (event.type === "turn_ended") void refreshHome();
     if (event.type === "marked") {
@@ -837,7 +842,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     },
     drop,
     close: stop,
-    release: () => dispatch({ type: "released" }),
+    release: () => {
+      dispatch({ type: "released" });
+      // Another tab has the tutor now: nothing more of this turn comes here.
+      setSettling(false);
+    },
     state: () => now.current.session,
     say: (text, said) => say(text, said ?? "talk"),
     start: (words) => start(words),
@@ -1052,7 +1061,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     setQuestionInView((was) => (was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24));
   };
   useEffect(() => {
-    measureQuestion.current();
     const root = surface.current;
     if (!root) return;
     let frame = 0;
@@ -1067,12 +1075,17 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       root.removeEventListener("scroll", again);
       window.removeEventListener("resize", again);
     };
-  }, [task, openAt, session, raised, props.panel]);
+  }, []);
   // A session named by the learner's first words: its heading would only say them again.
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
   const ownBusy = isBusyNow(session);
   const isBusy = ownBusy || props.elsewhereBusy;
+  // Measured before the page is painted: measured after, a task just named was pinned over the line for one frame
+  // while its own reply was in view, and the lesson jumped by the copy's height and back.
+  useLayoutEffect(() => {
+    measureQuestion.current();
+  }, [task, openAt, session, raised, props.panel, ownBusy, settling]);
   // With a task open, the page is the task: the lesson folds to one line under the heading, and the task's own words
   // stand over the line. Only while the tutor is not writing and no card waits, and not while a reply just written
   // here is still to be read (see `reading`).
@@ -1495,7 +1508,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   // higher up, it rises to the foot of the window over the page, and goes back down when
                   // the words are sent or put away. The record's latest fact sits under it at the end.
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
-                    {task && !raised && !questionInView && !folded && (
+                    {/* Not while the tutor writes: what was sent is the answer to it, and a copy under the answer read
+                        as the task set again, under the reply that set it. Nor after the reply, until the window has
+                        heard which task is open now: until then it is the one just answered. */}
+                    {task && !raised && !questionInView && !folded && !ownBusy && !settling && (
                       <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={task.text} />
                       </button>

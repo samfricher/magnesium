@@ -735,3 +735,72 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
     );
     println!("\nLook in: {}", folder.display());
 }
+
+/// The tutor of a window lesson writes its mathematics in TeX, which the
+/// window draws, and not as plain text such as `1/(1 + e^(−s))`, which it
+/// shows as typed. Claude Code's engine, the window's own prompt line
+/// (`claude::DRAWS`). Pick the model in MAGNESIUM_LIVE_MODEL, at medium effort.
+#[test]
+#[ignore = "starts Claude Code on your own subscription; run it yourself"]
+fn a_window_lesson_writes_its_mathematics_in_tex() {
+    let scratch =
+        std::env::temp_dir().join(format!("magnesium-window-live-tex-{}", std::process::id()));
+    let folder = scratch.join("Logistic-Regression");
+    let home = scratch.join("window");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    println!("study folder: {}", folder.display());
+    runtime::init(&folder).expect("magnesium sets the folder up");
+    let live = Live::new(&folder, &home);
+    if let Some(model) = std::env::var_os("MAGNESIUM_LIVE_MODEL") {
+        live.manager.store().set_pick(mg_core::models::Pick {
+            model: model.to_string_lossy().into_owned(),
+            name: None,
+            effort: Some("medium".into()),
+        });
+    }
+    live.manager
+        .open_session(false)
+        .expect("Claude Code starts");
+    live.manager
+        .send_new_lesson("The logistic sigmoid and its derivative. Show me the function, then set me one short task on it.")
+        .unwrap();
+    let report = live.turn(Duration::from_secs(600), None);
+    println!("\n== the reply ==\n{}", report.text);
+    let tex = report.text.contains('$') || report.text.contains("\\(");
+    let plain = plain_fractions(&report.text);
+    println!("TeX: {tex}; plain-text fractions: {plain:?}");
+    assert!(tex, "the reply holds no TeX");
+    assert!(
+        plain.is_empty(),
+        "the reply writes fractions as plain text: {plain:?}"
+    );
+}
+
+/// Fractions written as plain text outside TeX: a digit, letter or bracket,
+/// a slash with or without spaces, then an opening bracket, as in
+/// `1/(1 + e^(−s))` and `1 / (1 + e^(−x))`.
+fn plain_fractions(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_math = false;
+    let chars: Vec<char> = text.chars().collect();
+    for (at, c) in chars.iter().enumerate() {
+        if *c == '$' {
+            in_math = !in_math;
+            continue;
+        }
+        if in_math || *c != '/' {
+            continue;
+        }
+        let before = chars[..at].iter().rev().find(|c| **c != ' ');
+        let after = chars[at + 1..].iter().find(|c| **c != ' ');
+        if before.is_some_and(|c| c.is_alphanumeric() || *c == ')') && after == Some(&'(') {
+            found.push(
+                chars[at.saturating_sub(8)..(at + 12).min(chars.len())]
+                    .iter()
+                    .collect(),
+            );
+        }
+    }
+    found
+}
