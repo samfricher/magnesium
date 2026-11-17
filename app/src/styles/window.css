@@ -525,6 +525,11 @@ input[type="range"]::-webkit-slider-thumb {
 .sample sub { font-size: 0.68em; }
 .sample-you { display: block; position: relative; margin-top: 0.3rem; font-size: 0.941rem; }
 .sample-you::before { content: "›"; position: absolute; left: calc(-1 * var(--hang)); font: 400 0.882rem/1.6 var(--mono); color: var(--hint); }
+/* The learner's words in the sample are drawn on the line chosen under Your line, so the choice shows where it is made. */
+:root[data-field="ruled"] .sample-you { padding-bottom: 0.4rem; }
+:root[data-field="ruled"] .sample-you::after { content: ""; position: absolute; left: calc(-1 * var(--hang)); right: 0; bottom: 0; border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under)); }
+:root[data-field="soft"] .sample-you { margin-left: calc(-1 * var(--field-in)); padding: 6px var(--field-in); border-radius: 13px; background: var(--well); }
+:root[data-field="soft"] .sample-you::before { content: none; }
 .key-cap {
   font: 400 0.765rem/1.5 var(--app);
   color: var(--text);
@@ -812,6 +817,9 @@ dialog.layer::backdrop { background: transparent; }
   --pane: color-mix(in srgb, var(--ground) var(--frost), transparent);
   /* The soft field: a shade of the text over the glass, not of an opaque ground. */
   --well: color-mix(in srgb, var(--text) 6%, transparent);
+  /* The ruled line's rule: a share of the text over the glass, as the soft field is. Mixed with the solid ground it was
+     an opaque pale line, lighter than the thinned ground over a dark desktop. */
+  --rule-under: transparent;
   /* The quiet grey nearer the text as more shows through: over a dark desktop the thinned ground is darker
      than the solid one, and the window's small words have to stay readable on it. It starts from the solid
      ground's grey in light (surface.css) and reaches 88% at full strength. */

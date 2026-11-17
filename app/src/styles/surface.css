@@ -46,6 +46,8 @@
   --ink-soft: color-mix(in srgb, var(--ink) 12%, transparent);
   /* The soft field the learner may write in: a shade under the page in light and over it in dark. A field lighter than a light page looked worse when it was tried. */
   --well: color-mix(in srgb, var(--text) 5%, var(--ground));
+  /* What the ruled line's rule is mixed into: the solid ground, or nothing over glass (window.css). */
+  --rule-under: var(--ground);
 
   --read: Charter, "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -959,6 +961,24 @@ button.line-end:hover { color: var(--text); }
 /* The bare foot stands further from the last turn than turns stand from each other (1.5rem), so the line under it
    is not read as one more turn. The soft field's shade does this on its own. */
 :root:not([data-field="soft"]) .foot:not(.asking) { margin-top: 2.6rem; }
+
+/* The ruled line: the bare line, everything the bare line does, on one hairline from its "›" to the column's end.
+   The hairline is under the row of words alone, so Stuck's row, a quote, the symbols and the lines under the words
+   stay off it, and it moves down with the words as they wrap. Mixed from the text and the ground rather than taken
+   from --faint, so the learner's own colours draw it too. */
+:root[data-field="ruled"] .line.lesson .field-row { padding-bottom: 0.5rem; }
+:root[data-field="ruled"] .line.lesson .field-row::after {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--hang));
+  right: 0;
+  bottom: 0;
+  border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under));
+  pointer-events: none;
+}
+/* While a card waits the "›" is put away and the rule is drawn at half its strength, as the soft field is drawn at
+   half its shade: the card's choice is the answer now. */
+:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--rule-under)); }
 
 /* The soft field: one row in a shade of the page, the words at the column's edge. */
 :root[data-field="soft"] .line.lesson {

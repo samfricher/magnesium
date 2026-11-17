@@ -25,6 +25,7 @@ node scripts/test-setup.mjs
 node scripts/test-next.mjs
 node scripts/test-record-sign.mjs
 node scripts/test-paper-time.mjs
+node scripts/test-prefs.mjs
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked -p mg-core
