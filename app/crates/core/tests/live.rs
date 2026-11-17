@@ -874,3 +874,104 @@ fn a_window_lessons_skill_names_stay_in_words() {
     }
     assert!(found.is_empty(), "skill names saved in TeX: {found:?}");
 }
+
+/// Issue 150: the call that starts a lesson is accepted the first time it is
+/// sent. Claude Code's engine. The calls are read from the trace, so name a
+/// new file in MAGNESIUM_APP_TRACE, and pick the model in
+/// MAGNESIUM_LIVE_MODEL, at medium effort.
+#[test]
+#[ignore = "starts Claude Code on your own subscription; run it yourself"]
+fn a_window_lessons_first_call_starts_the_lesson() {
+    let trace = PathBuf::from(
+        std::env::var_os(mg_core::claude::TRACE_ENV).expect("a new file in MAGNESIUM_APP_TRACE"),
+    );
+    let scratch = std::env::temp_dir().join(format!(
+        "magnesium-window-live-start-{}",
+        std::process::id()
+    ));
+    let folder = scratch.join("Intro-Statistics");
+    let home = scratch.join("window");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    println!("study folder: {}", folder.display());
+    runtime::init(&folder).expect("magnesium sets the folder up");
+    let live = Live::new(&folder, &home);
+    if let Some(model) = std::env::var_os("MAGNESIUM_LIVE_MODEL") {
+        live.manager.store().set_pick(mg_core::models::Pick {
+            model: model.to_string_lossy().into_owned(),
+            name: None,
+            effort: Some("medium".into()),
+        });
+    }
+    live.manager
+        .open_session(false)
+        .expect("Claude Code starts");
+    live.manager
+        .send_new_lesson("Let's work on sampling distributions.")
+        .unwrap();
+    let report = live.turn(Duration::from_secs(600), None);
+    println!("\n== the reply ==\n{}", report.text);
+    let calls = learning_steps(&trace);
+    for (input, result) in &calls {
+        let shown: String = result.chars().take(200).collect();
+        println!("learning_step {input}\n  -> {shown}");
+    }
+    let (input, result) = calls.first().expect("the tutor called learning_step");
+    assert!(
+        !result.starts_with("{\"error\""),
+        "the first call was refused: {input}\n{result}"
+    );
+}
+
+/// Each `learning_step` call in a trace, in the order sent, with what the
+/// runtime answered.
+fn learning_steps(trace: &Path) -> Vec<(serde_json::Value, String)> {
+    let text = std::fs::read_to_string(trace).unwrap_or_default();
+    let mut calls: Vec<(String, serde_json::Value, String)> = Vec::new();
+    for line in text.lines() {
+        // "< <milliseconds> <what the agent wrote>"
+        let Some(json) = line.strip_prefix("< ").and_then(|l| l.split_once(' ')) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(json.1) else {
+            continue;
+        };
+        let Some(blocks) = value["message"]["content"].as_array() else {
+            continue;
+        };
+        for block in blocks {
+            let id = |key: &str| block[key].as_str().unwrap_or_default().to_owned();
+            match block["type"].as_str() {
+                Some("tool_use")
+                    if block["name"]
+                        .as_str()
+                        .is_some_and(|n| n.ends_with("__learning_step"))
+                        && !calls.iter().any(|(seen, ..)| *seen == id("id")) =>
+                {
+                    calls.push((id("id"), block["input"].clone(), String::new()));
+                }
+                Some("tool_result") => {
+                    if let Some(call) = calls
+                        .iter_mut()
+                        .find(|(seen, ..)| *seen == id("tool_use_id"))
+                    {
+                        call.2 = match &block["content"] {
+                            serde_json::Value::String(text) => text.clone(),
+                            parts => parts
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|part| part["text"].as_str())
+                                .collect(),
+                        };
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    calls
+        .into_iter()
+        .map(|(_, input, result)| (input, result))
+        .collect()
+}
