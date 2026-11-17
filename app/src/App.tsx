@@ -192,6 +192,7 @@ export function App() {
   // the ones under it down; Home's list drew nothing until its first row was known.
   const opening = useRef<{ asked: number; folder: string | null } | null>(null);
   const asks = useRef(0);
+  const justRead = useRef(false);
   const goWorkspace = useCallback(
     (folder: string | null) => {
       // Asked again while it is read, as by a second click on its row: the reading under way is waited for.
@@ -200,6 +201,8 @@ export function App() {
       opening.current = null;
       const { api, homeFolder, active, workspaces } = now.current;
       const show = (first?: Reading | Promise<Reading>) => {
+        // The page comes in front just read: Home's tab coming back does not read it again.
+        justRead.current = first !== undefined && now.current.active !== "home";
         setHomeFirst(folder && first ? { folder, first } : null);
         setHomeFolder(folder);
         activate("home");
@@ -210,8 +213,9 @@ export function App() {
       let reading: Promise<Reading> | null = null;
       let ready: Promise<unknown> | null;
       if (folder) {
-        reading = readWorkspace(api, folder).then((done) => (read = done));
-        // The reading notes the visit, which puts the folder first in the library.
+        // Opening the page notes the visit, which puts the folder first in the library. The library is read again once
+        // the page is read, so Home's list does not change order while it is still on screen.
+        reading = readWorkspace(api, folder, true).then((done) => (read = done));
         void reading.then(() => loadWorkspaces());
         ready = reading;
       } else {
@@ -656,7 +660,10 @@ export function App() {
   useEffect(() => {
     const was = lastActive.current;
     lastActive.current = active;
-    if (active === "home" && was !== "home") readPagesAgain();
+    if (active === "home" && was !== "home") {
+      if (justRead.current) justRead.current = false;
+      else readPagesAgain();
+    }
   }, [active, readPagesAgain]);
   useEffect(() => () => {
     if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);

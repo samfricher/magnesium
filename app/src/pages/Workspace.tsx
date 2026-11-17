@@ -78,10 +78,13 @@ export type Reading = {
   record: { progress: Progress; marks: Mark[] } | null;
 };
 
-/** Reads a folder's page. Notes the visit, as opening the page does. */
-export async function readWorkspace(api: Core, folder: string): Promise<Reading> {
+/**
+ * Reads a folder's page. With `visit`, it also notes the folder as opened, which puts it first in the library: for
+ * the reading made as the page is opened, not for the readings made while it stays in Home's tab.
+ */
+export async function readWorkspace(api: Core, folder: string, visit = false): Promise<Reading> {
   const [home, sessions, materials, plan, record] = await Promise.all([
-    api.visitFolder(folder).catch(() => null),
+    (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
     api.lessons(folder).catch(() => [] as LessonInfo[]),
     api.materialList(folder).catch(() => "none" as const),
     api.plan(folder).catch(() => null),
@@ -447,12 +450,15 @@ export function WorkspacePage(props: Props) {
   // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 
-  // Each reading is numbered: one that comes back after a later one began is not drawn over it.
-  const readings = useRef(0);
+  // Each reading is numbered: one that comes back after a later one was drawn is not drawn over it.
+  const begun = useRef(0);
+  const drawn = useRef(0);
   const take = useCallback(async (pending: Promise<Reading>) => {
-    const at = ++readings.current;
+    const at = ++begun.current;
     const fresh = await pending;
-    if (at === readings.current) setReading(fresh);
+    if (at < drawn.current) return;
+    drawn.current = at;
+    setReading(fresh);
   }, []);
   const read = useCallback(() => take(readWorkspace(api, folder)), [take, api, folder]);
 

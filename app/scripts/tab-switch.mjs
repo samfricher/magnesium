@@ -175,6 +175,7 @@ try {
   if (!report.place.kept) report.problems.push(`the course's page lost its place: left ${left.from_foot} px from its foot, found ${found.from_foot}`);
   if (menuEnd.replaced !== menuBefore.replaced) report.problems.push(`the menu bar was put in place ${menuEnd.replaced - menuBefore.replaced} more times during ${report.switches.length} switches and the key changes`);
   for (const each of report.switches) {
+    if (each.answered_at === null) report.problems.push(`${each.label}: the window never answered the click`);
     const moved = (each.changes_after_first ?? []).filter((frame) => frame.moved);
     if (moved.length > 0) report.problems.push(`${each.label}: the page moved in ${moved.length} frames after the first`);
   }
