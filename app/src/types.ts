@@ -40,6 +40,18 @@ export type Home = {
    * nothing is due.
    */
   opening: { checks: number; redos: number } | null;
+  /**
+   * The question of the quick check the next sitting poses first, as the record stores it, never its key. Null unless
+   * the next message begins a sitting that opens with checks, or when the record stores no question for it. Absent
+   * from an older window core.
+   */
+  first_check?: string | null;
+  /** The record's ID for that check: opaque, to tell it from the check a reply poses. */
+  first_check_id?: string | null;
+  /** The record's ID for the quick check a reply of the current sitting posed and no answer settled; null when none. */
+  posed_check?: string | null;
+  /** Skills not proven yet whose next pass can be earned today. Null when the runtime cannot say. */
+  can_count_today?: number | null;
   first_redo: string | null;
   papers: Paper[];
   can_resume: boolean;

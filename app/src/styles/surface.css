@@ -1070,3 +1070,7 @@ button.line-end:hover { color: var(--text); }
 :root:not([data-field="soft"]) .now.folded .foot:not(.asking) { margin-top: 1.5rem; }
 @keyframes answer-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .answer-task { animation: none; } }
+
+/* Home's answer put on the line because the check posed is not the one Home asked: one quiet paragraph under the
+   reply saying so. */
+.record.other-check { margin: 1.2rem 0 0; }

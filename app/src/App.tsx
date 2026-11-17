@@ -225,7 +225,7 @@ export function App() {
       if (waiting) {
         activate(waiting.key);
         if (pending?.kind === "start") void handles.current[waiting.key]?.start();
-        else if (pending?.kind === "checks") void handles.current[waiting.key]?.checks();
+        else if (pending?.kind === "checks") void handles.current[waiting.key]?.checks(pending.answer);
         return;
       }
       addSession({ folder: where, session: null, title: NEW_TITLE, ...(pending ? { pending } : {}) });
@@ -994,7 +994,7 @@ export function App() {
                 notes={notes}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}
                 onStartIn={(folder) => newSession(folder, { kind: "start" })}
-                onChecks={(folder) => newSession(folder, { kind: "checks" })}
+                onChecks={(folder, answer) => newSession(folder, { kind: "checks", ...(answer ? { answer } : {}) })}
                 onChecksDue={onChecksDue}
                 checksKey={k("just-checks")}
                 onWorkspace={(folder) => goWorkspace(folder)}

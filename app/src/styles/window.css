@@ -262,6 +262,25 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .next-first { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--text); }
 .next .next-due { margin-top: 0.5rem; }
 .next .next-acts, .home-first .next-acts { margin-top: 0.5rem; }
+/* The day, at the head of Home, in the window's small quiet type. */
+.home-day {
+  margin: 0 0 2.6rem;
+  font: 400 0.765rem/1.5 var(--app);
+  color: var(--quiet);
+  letter-spacing: 0.01em;
+}
+/* The first quick check's question: the words over it, then the question set as a lesson sets its open task on the
+   folded page, then the lesson's own line under it. */
+.home-question-meta { margin: 0 0 0.45rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+.answer-task.home-task { margin: 0 0 0 calc(-1 * var(--hang)); animation: none; }
+.foot.home-foot,
+:root:not([data-field="soft"]) .foot.home-foot:not(.asking) { margin-top: 1.2rem; padding-bottom: 0; }
+/* What follows the question: the plan's item, at a list row's size. */
+.home-first.then { margin-top: 3rem; margin-bottom: 2.2rem; }
+.then .home-row.first { padding-top: 0.38rem; padding-bottom: 0.38rem; }
+.then .home-row.first .next-name { font-size: 1rem; line-height: 1.45; }
+.then .home-row.first .row-key { top: 0.72rem; }
+
 /* A choice about this Mac that lessons do not wait on, at the foot of Home: as far under the folder actions as they
    are under the list. */
 .home-note { margin-top: 2.2rem; }

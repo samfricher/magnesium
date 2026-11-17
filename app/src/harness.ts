@@ -748,7 +748,7 @@ async function run(op: Op): Promise<Result> {
       const line = composer();
       if (!(line instanceof HTMLTextAreaElement)) return { ok: false, error: "no lesson line in front" };
       if (op.at !== undefined) line.setSelectionRange(Number(op.at), Number(op.at));
-      return { ok: true, at: line.selectionStart, length: line.value.length, focused: document.activeElement === line };
+      return { ok: true, at: line.selectionStart, length: line.value.length, text: line.value, focused: document.activeElement === line };
     }
     case "steady": {
       // Write `text` on the line a key every `every` ms, then take `back` characters off with ⌫, as a learner

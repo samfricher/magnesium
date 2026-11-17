@@ -94,6 +94,20 @@ pub struct Home {
     /// sitting: None when it carries one on, the opener is off, or nothing
     /// is due (see `peek::opening`).
     pub opening: Option<peek::Opening>,
+    /// The question of the quick check the next sitting poses first, as the
+    /// record stores it, without its key. Only while the next message begins
+    /// a sitting that opens with checks, so it is the check that sitting
+    /// takes first. None when the record stores no question for it.
+    pub first_check: Option<String>,
+    /// The record's ID for that check, to tell it from another once one is
+    /// posed. Opaque: it names neither the skill nor the question.
+    pub first_check_id: Option<String>,
+    /// The record's ID for the quick check a reply of the current sitting has
+    /// posed and no answer has settled, or None.
+    pub posed_check: Option<String>,
+    /// Skills not proven yet whose next pass can be earned today, as the
+    /// record has them. None when the runtime cannot say.
+    pub can_count_today: Option<u32>,
     pub first_redo: Option<String>,
     pub papers: Vec<Paper>,
     pub can_resume: bool,
@@ -107,6 +121,39 @@ pub fn checks_alone(progress: &Value) -> Option<u32> {
     progress["due"]["checks_alone"]
         .as_u64()
         .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+/// The question of the first quick check a sitting begun now would pose, from
+/// what `magnesium progress --json` printed. The runtime prints the question
+/// alone; anything else beside it is dropped here too, so a key never reaches
+/// the page that draws it before the tutor poses it.
+pub fn first_check(progress: &Value) -> Option<String> {
+    text(&progress["first_check"]["question"])
+}
+
+/// How many skills not proven can earn a pass today: the record names today,
+/// or a day before it, as the first day their next pass can count. A skill
+/// never answered has no such day and is not counted. A skill in two plans is
+/// listed under each, and counted once. None from a record with no skills
+/// listed, as an earlier runtime prints.
+pub fn can_count_today(progress: &Value, today: NaiveDate) -> Option<u32> {
+    let plans = progress["plans"].as_array();
+    let other = progress["other"]["skills"].as_array();
+    if plans.is_none() && other.is_none() {
+        return None;
+    }
+    let skills = plans
+        .into_iter()
+        .flatten()
+        .filter_map(|plan| plan["skills"].as_array())
+        .flatten()
+        .chain(other.into_iter().flatten());
+    let ready: std::collections::BTreeSet<&str> = skills
+        .filter(|skill| skill["proven"].as_bool() != Some(true))
+        .filter(|skill| day_of(&skill["next_on"]).is_some_and(|day| day <= today))
+        .filter_map(|skill| skill["skill"].as_str())
+        .collect();
+    Some(ready.len() as u32)
 }
 
 pub fn today() -> NaiveDate {
@@ -317,6 +364,10 @@ fn blank_home(folder: &Path, store: &Store) -> Home {
         checks_alone: None,
         redos_due: 0,
         opening: None,
+        first_check: None,
+        first_check_id: None,
+        posed_check: None,
+        can_count_today: None,
         first_redo: None,
         papers: Vec::new(),
         can_resume: remembered.session_id.is_some(),
@@ -399,6 +450,20 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         home.redos_due,
         Local::now().timestamp_millis(),
     );
+    if home.opening.is_some_and(|opening| opening.checks > 0) {
+        home.first_check = record.as_ref().and_then(first_check);
+        home.first_check_id = home
+            .first_check
+            .as_ref()
+            .and(record.as_ref())
+            .and_then(|record| text(&record["first_check"]["id"]));
+    }
+    home.posed_check = record
+        .as_ref()
+        .and_then(|record| text(&record["posed_check"]["id"]));
+    home.can_count_today = record
+        .as_ref()
+        .and_then(|record| can_count_today(record, today()));
 
     // The most recently changed lesson is where the learner stopped.
     home.last = sessions.first().and_then(|session| {
@@ -1091,6 +1156,46 @@ mod tests {
             checks_alone(&serde_json::json!({"due": {"checks": 5}})),
             None
         );
+    }
+
+    #[test]
+    fn the_first_checks_question_is_read_without_anything_beside_it() {
+        assert_eq!(
+            first_check(&json!({"first_check": {"question": " What is b? ", "key": "-9"}})),
+            Some("What is b?".into())
+        );
+        assert_eq!(first_check(&json!({"first_check": null})), None);
+        // An earlier runtime prints none.
+        assert_eq!(first_check(&json!({"due": {"checks": 1}})), None);
+    }
+
+    #[test]
+    fn skills_count_today_when_their_next_pass_can_be_earned_today() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 17).unwrap();
+        let printed = json!({
+            "plans": [
+                {"plan": "a", "skills": [
+                    {"skill": "due today", "proven": false, "next_on": "2026-11-17"},
+                    {"skill": "overdue", "proven": false, "next_on": "2026-11-10"},
+                    {"skill": "tomorrow", "proven": false, "next_on": "2026-11-18"},
+                    {"skill": "never answered", "proven": false, "next_on": null},
+                    {"skill": "proven", "proven": true, "next_on": "2026-11-01"},
+                ]},
+                {"plan": "b", "from": "file"},
+            ],
+            "other": {"skills": [{"skill": "loose", "proven": false, "next_on": "2026-11-17"}]},
+        });
+        assert_eq!(can_count_today(&printed, today), Some(3));
+        // The same skill in two plans is one skill.
+        let twice = json!({
+            "plans": [
+                {"plan": "a", "skills": [{"skill": "pooled variance", "proven": false, "next_on": "2026-11-17"}]},
+                {"plan": "b", "skills": [{"skill": "pooled variance", "proven": false, "next_on": "2026-11-17"}]},
+            ],
+            "other": {"skills": []},
+        });
+        assert_eq!(can_count_today(&twice, today), Some(1));
+        assert_eq!(can_count_today(&json!({"active": true}), today), None);
     }
 
     #[test]

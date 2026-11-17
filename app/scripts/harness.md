@@ -23,7 +23,7 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 - `smooth {ms, scroll_by?, type_every?}`
 - `steady {text, back?, every?}`: write `text` on the line a key at a time, then take `back` characters off, and say how far the line moved on screen frame to frame (`largestMove`, `lowest` under the view's edge), how often the task's copy over the line came or went, and `from_foot`
 - `still {ms, send?, alt?, past?}`: with `send`, press Return (⌥ with `alt`) first; with `past`, once the turn ends, scroll so the reply's top is just above the view, as a learner who read on; then for `ms`, every frame, where the last reply stands on screen and how many step heads are drawn. Says when the turn ended (`ended_at`), when a step it began was heard (`step_at`), when a head was drawn (`head_at`), the reply's top in the frames either side of `step_at`, and every frame after the turn ended in which the reply moved (`moves_after_end`)
-- `caret {at?}`: where the caret is on the line, put at `at` first
+- `caret {at?}`: where the caret is on the line, put at `at` first, and the words on it (`text`)
 - `watch {ms}`: each text the copy of the open task pinned over the line showed, in order, and for how long
 - `document`
 - `attach {path | paths}`
@@ -36,10 +36,11 @@ The ops and `data-drive` names a harness uses on a window started with `MAGNESIU
 ## `data-drive` names
 
 - Tab bar: `home`, `tab-<n>` (a session not begun is named "New session"), `close-tab-<n>`, `new-session`, `plan-toggle` ("Plan": the plan and the session's documents), `flip`, `settings` (only while Settings has no tab; once it has one, click its `tab-<n>`)
-- Home: `start`, `workspace-<name>`, `open-folder`
+- Home: `start`, `workspace-<name>`, `open-folder`, `just-checks` (with a check due and no question shown), `home-answer` (the line under the first quick check's question, when Home shows one; Return there starts the checks)
 - A workspace's page: `home`, `next` (the plan's item in hand, when the plan has one), `new-session` ("Something else…", or the page's first row when there is no item), `material` (opens the folded material), `add-material` (once the material is open, or when there is none), `read-<paper>`, `paper-<paper>`; while a paper runs, `sitting-hand-in`, `sitting-open`, `sitting-end` (asks first, in place), then `sitting-keep` or `sitting-end-now`, and `sitting-left` (the minutes left, or over)
 - ⌘K: `layer`, `command-home`, `command-switch`, `command-new-session`, `command-close-session`, `command-settings`, `command-plan` ("Show plan" or "Hide plan"), `switch-<workspace>`
 - A session: `composer`, `start-session`, `open-task`, `allow`, `allow-always`, `start-again`, `sign-in`, `pick-model`
+- A session that took an answer written on Home: while it waits for the tutor to pose the check, the held words carry `data-role="held"`; when another check was posed and the words were put on the line, the note in the lesson under the reply carries `data-role="other-check"`
 - A session with a task open and the tutor not writing: `look-back` (under the heading: "Show the lesson" while the page is the task alone, "Hide the lesson" while the lesson is open), and `look-back-top` (the same, at the top edge once the heading has scrolled away). The `session` op says which as `page`: `"folded"`, `"open"` or null
 - A session's line: `more`, and in a lesson `stuck` too (not shown before a lesson has begun), and `stop` while the tutor writes. Stuck's row, which opens in the line above the words: `hint`, `lost`, `dont-know` (greyed while the tutor writes). Under More: `send-talk` (typing, with a task open), `attach`, `symbols`, `model`
 - The model's list, from either line: `model-row` (with `data-value`), `model-effort` (with `data-level`), `model-older`, `model-current`

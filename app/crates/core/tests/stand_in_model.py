@@ -48,6 +48,10 @@ What a turn does is chosen by words in the learner's message (inside
   DONE FOR TODAY   (any case) the learner stops: close in a line, no task,
                and end the sitting
   VERYSLOW     write for about ten seconds
+  Just the quick checks.   with STAND_IN_SLOW_CHECKS set: pose quick check 1
+               slowly, over about ten seconds, so a photograph can catch the
+               reply being written; STAND_IN_CHECK_QUESTION, if set, is the
+               question it poses
   CITETASK     set a task with two links beside it: a page of the past paper
                (opens at once) and a page of slides (shut until answered)
   CITE         cite page 2 of the scratch course's past paper as a link, name
@@ -522,6 +526,11 @@ def reply_for(learner, state):
         return ("The past paper asks it: [Midterm 2023, p. 2](Study/midterm-2/papers/Midterm%202023.pdf#page=2). "
                 "The practice paper is `Study/midterm-2/papers/Practice midterm #2.pdf`, and the past paper's key is "
                 "[the answers](Study/midterm-2/papers/Midterm%202023%20key.pdf).") + block(), False
+    if os.environ.get("STAND_IN_SLOW_CHECKS") and "Just the quick checks." in learner:
+        # STAND_IN_CHECK_QUESTION: pose another question than the one the record stores, as a stale Home would face.
+        question = os.environ.get("STAND_IN_CHECK_QUESTION") or (
+            "Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?")
+        return f"Quick check 1: {question}" + block(task=question), 0.45
     if "VERYSLOW" in learner:
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:

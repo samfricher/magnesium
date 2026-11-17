@@ -676,6 +676,30 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
     })
 }
 
+/// The quick check a sitting begun today poses first (the longest due, as
+/// the sitting takes them), with the question the record stores for it and
+/// its practice item's ID. Its answer key stays out: the window draws this
+/// question before the tutor poses it, and the key must reach the learner only
+/// after they answer. Null when no check is due, or the first has no stored
+/// question, which the tutor then makes up as it poses it.
+fn first_check(items: &[Item], today: NaiveDate) -> Value {
+    crate::practice::due_checks(items, today)
+        .first()
+        .and_then(|item| {
+            let question = item.facts.next_question.as_deref()?.trim();
+            (!question.is_empty()).then(|| json!({"question": question, "id": item.facts.item_id}))
+        })
+        .unwrap_or(Value::Null)
+}
+
+/// The quick check a reply of the current sitting has posed and no answer has
+/// settled, by its practice item's ID, so a host can tell which check is open
+/// now: the one whose question it showed, or another. Null when none is.
+fn posed_check(workspace: &Workspace) -> Value {
+    crate::sittings::open_check_item_read_only(workspace)
+        .map_or(Value::Null, |id| json!({"id": id}))
+}
+
 /// What `magnesium progress --json` prints, for another part of the runtime
 /// that reads the same facts (the closing lines).
 pub(crate) fn record(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
@@ -783,6 +807,8 @@ pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, Stri
             "checks": due(Origin::Chat),
             "checks_alone": due(Origin::Chat).min(crate::sittings::MAX_CHECKS_PER_SITTING),
         },
+        "first_check": first_check(&items, today),
+        "posed_check": posed_check(workspace),
         "days": answered_days(&answers),
         "today_counts": today_counts(&items, &answers, today),
         "pass_receipts": receipts,

@@ -67,3 +67,28 @@ export function planDay(day: string | null, now = new Date()): string {
   if (day === iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))) return "tomorrow";
   return shortDay(day);
 }
+
+/**
+ * The question Home sets first: the quick check a sitting of checks alone would pose first, as the record stores it,
+ * with the words over it. Null while a timed paper runs, when no check can be taken alone, or when the record holds
+ * no question for the first.
+ */
+export function firstQuestion(
+  home: Pick<Home, "first_check" | "first_check_id" | "checks_alone" | "sitting" | "opening"> | null,
+): { text: string; meta: string; id: string | null } | null {
+  const checks = checksAlone(home);
+  const text = home?.first_check?.trim() ?? "";
+  if (checks === 0 || text === "" || !home?.opening?.checks) return null;
+  const meta = checks === 1 ? "A quick check · about a minute" : `First of ${checks} quick checks · about ${checks} minutes`;
+  return { text, meta, id: home?.first_check_id ?? null };
+}
+
+/** What a workspace's row on Home says of it: "2 can count today · Midterm 2 in 10 days", each part only when it applies. */
+export function dayFacts(home: Pick<Home, "can_count_today" | "exam"> | null): string {
+  if (!home) return "";
+  const count = home.can_count_today ?? 0;
+  const left = home.exam?.days_left ?? null;
+  const exam =
+    home.exam && left !== null && left >= 0 ? `${home.exam.title} ${left === 0 ? "today" : left === 1 ? "tomorrow" : `in ${left} days`}` : null;
+  return [count > 0 ? `${count} can count today` : null, exam].filter(Boolean).join(" · ");
+}
