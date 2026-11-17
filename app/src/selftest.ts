@@ -596,6 +596,13 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
     const planWord = document.querySelector('[data-drive="plan-toggle"]')?.textContent ?? null;
     if (planWord !== "Plan") throw new Error(`the tab bar's switch for the plan says ${JSON.stringify(planWord)}`);
+    // ⌘K names the same action by the same word.
+    press("k", { meta: true });
+    await until("the command menu, in a session", () => document.querySelector('[data-drive="command-plan"]') !== null, 3000);
+    const planCommand = document.querySelector('[data-drive="command-plan"] .row-label')?.textContent ?? null;
+    press("Escape");
+    await until("the command menu to go, in a session", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
+    if (planCommand !== "Show plan") throw new Error(`⌘K's command for the plan says ${JSON.stringify(planCommand)}`);
     actions.run("plan");
     await until("the plan beside the lesson", () => document.querySelector(".session.in-front .panel") !== null, 3000);
     await wait(300);

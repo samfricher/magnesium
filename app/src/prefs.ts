@@ -80,7 +80,7 @@ export const KEY_ACTIONS: [KeyAction, string][] = [
   ["open-workspace", "Open a folder"],
   ["close-session", "Close session"],
   ["attach", "Attach a photo or PDF"],
-  ["plan", "Show panel"],
+  ["plan", "Show or hide the plan"],
   ["expand-panel", "Expand panel"],
   ["flip-panel", "Switch to the document"],
   ["open-document", "Open document"],

@@ -465,7 +465,7 @@ async function answerPages() {
   await shoot(a, "answer-bare-talk-folded", "Answer: after the talk, the same task is the page again");
 
   // The plan and documents beside it.
-  await step(a, "show the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(a, 600);
   await shoot(a, "answer-bare-plan", "Answer: the plan beside the task; the plan stays open");
   await step(a, "open a document", { op: "click", target: "open-document", by: "drive" });
@@ -499,7 +499,7 @@ async function answerPages() {
   if (paperPage.page === "open") await turn(a, "⌘↑ with the paper open");
   await shoot(a, "answer-bare-paper", "Answer: a past paper beside the task stays open, as its links do");
   await closeDocument(a, "Midterm 2023");
-  await step(a, "hide the panel", { op: "click", target: "plan-toggle", by: "drive" });
+  await step(a, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
   // A small window with the largest text: folded, written on, and opened.
   const wide = await step(a, "the window's size", { op: "frame" });

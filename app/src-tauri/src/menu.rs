@@ -273,7 +273,7 @@ fn build<R: Runtime>(
         true,
         &[
             &command(table, "home", "Home")?,
-            &command(table, "plan", "Show Panel")?,
+            &command(table, "plan", "Show Plan")?,
             &command(table, "expand-panel", "Expand Panel")?,
             &command(table, "flip-panel", "Switch to the Document")?,
             &separator()?,

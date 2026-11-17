@@ -711,7 +711,7 @@ export function App() {
       tabs: tabs.map((tab) => ({ id: tab.key, title: tabTitles[tab.key] })),
       disabled,
       titles: {
-        plan: panel ? "Hide Panel" : "Show Panel",
+        plan: panel ? "Hide Plan" : "Show Plan",
         "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
         // A document that filled the session and stepped aside for the task is switched to as if the lesson were in front.
         "flip-panel":
