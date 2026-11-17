@@ -470,7 +470,10 @@ pub(crate) mod tests {
             .filter(|m| m.current)
             .map(|m| m.value.as_str())
             .collect();
-        assert_eq!(current, ["default", "opus", "claude-fable-5-2", "sonnet", "haiku"]);
+        assert_eq!(
+            current,
+            ["default", "opus", "claude-fable-5-2", "sonnet", "haiku"]
+        );
         assert_eq!(models.iter().filter(|m| !m.current).count(), 9);
         assert_eq!(find(&models, EARLIER).unwrap().value, "claude-fable-5-2");
     }
