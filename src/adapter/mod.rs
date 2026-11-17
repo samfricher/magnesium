@@ -166,6 +166,11 @@ pub(crate) enum LearningStepRequest {
 pub(crate) struct ControlRequest {
     pub schema: crate::learner::SchemaVersion,
     pub action: control_admission::ControlTag,
+    /// Required. An ID you make up for this request, new to this study folder:
+    /// every conversation here shares its IDs, so end it with something only
+    /// this turn has, such as the last characters of its ticket or event ID.
+    /// Send an ID again only to replay the identical request after an unknown
+    /// outcome.
     pub request_id: String,
     pub control: control_admission::ControlAction,
     pub turn_ref: Option<String>,
