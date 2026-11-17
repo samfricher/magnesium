@@ -21,9 +21,20 @@
 # A commit: built once in a checkout of its own under the cache folder
 # (~/Library/Caches/magnesium-dev, or MAGNESIUM_DEV_CACHE) and kept there by
 # its commit, so every later "before" of that commit, from any checkout, is
-# already made. The first one of all copies this checkout's build folders to
-# start from; after that a new commit rebuilds only what changed. That
-# checkout is a git worktree, so `git worktree list` shows it.
+# already made. The first build there is from nothing, a few minutes; after
+# that a new commit rebuilds only what changed.
+#
+# What the cache holds: the newest eight windows (28 MB each) and runtimes
+# (12 MB each), which are what make "before" quick; npm's downloads; and the
+# checkout with its build folders, which only make the next commit's build
+# short. Those build folders are cleared when they pass 6 GB
+# (MAGNESIUM_DEV_CACHE_MAX_MB) or when no build has used them for a week.
+# They are built there and not copied from this checkout: a copy that shares
+# its blocks with a checkout's build folder (an APFS clone) costs little
+# while that checkout exists and all of its size once it is deleted.
+#
+# The checkout is a git worktree, so `git worktree list` shows it. To remove
+# the cache: delete the folder, then `git worktree prune`.
 set -eu
 APP=$(cd "$(dirname "$0")/.." && pwd)
 REF=""
@@ -92,6 +103,12 @@ else
   KEEP="$CACHE/windows"
   BIN="$KEEP/magnesium-window-$SHORT"
 fi
+SRC="$CACHE/src"
+# The build folders of a cache nothing has built in for a week are not worth their room. Asked on every call,
+# a kept program's too, since that is the only time this script runs.
+if [ -n "$(find "$CACHE/last-build" -mtime +7 2>/dev/null)" ]; then
+  rm -rf "$SRC/app/target" "$SRC/target" "$CACHE/last-build"
+fi
 if [ -x "$BIN" ]; then
   echo "$BIN"
   exit 0
@@ -121,30 +138,16 @@ if [ -x "$BIN" ]; then
   exit 0
 fi
 
-ROOT=$(cd "$APP/.." && pwd)
-SRC="$CACHE/src"
 if [ -e "$SRC/.git" ]; then
   git -C "$SRC" checkout --quiet --detach "$SHA" >&2
 else
   rm -rf "$SRC"
   git -C "$APP" worktree prune
   git -C "$APP" worktree add --quiet --detach "$SRC" "$SHA" >&2
-  # Start from this checkout's builds, as copies that take no room (APFS clones), so the first build is not from
-  # nothing. The packages copied are the right ones only if this checkout asks for the same ones as the commit.
-  if [ -d "$APP/node_modules" ] && cp -cR "$APP/node_modules" "$SRC/app/node_modules" 2>/dev/null; then
-    ! cmp -s "$APP/package-lock.json" "$SRC/app/package-lock.json" || cp "$SRC/app/package-lock.json" "$SRC/app/node_modules/.lock-installed"
-  fi
-  if [ -d "$APP/target/debug" ]; then
-    mkdir -p "$SRC/app/target"
-    cp -cR "$APP/target/debug" "$SRC/app/target/debug" 2>/dev/null || true
-    rm -f "$SRC/app/target/debug/.window-build"
-  fi
 fi
-# The runtime's build folder, the first time a runtime is asked for (the checkout may have been made for a window).
-if [ "$WHAT" = runtime ] && [ ! -d "$SRC/target/release" ] && [ -d "$ROOT/target/release" ]; then
-  mkdir -p "$SRC/target"
-  cp -cR "$ROOT/target/release" "$SRC/target/release" 2>/dev/null || true
-fi
+touch "$CACHE/last-build"
+# No incremental data: it grows with every commit built, and each commit is built once.
+export CARGO_INCREMENTAL=0
 if [ "$WHAT" = runtime ]; then
   (unset CARGO_TARGET_DIR; build_runtime "$SRC") || { echo "window-build.sh: the runtime as of $REF did not build" >&2; exit 1; }
   MADE="$SRC/target/release/magnesium"
@@ -160,6 +163,13 @@ else
 fi
 cp -c "$MADE" "$BIN.partial" 2>/dev/null || cp "$MADE" "$BIN.partial"
 mv "$BIN.partial" "$BIN"
+# The build folders, held to their limit: past it they go, and the next commit builds from nothing.
+MAX_MB=${MAGNESIUM_DEV_CACHE_MAX_MB:-6000}
+USED_MB=$(du -sk "$SRC/app/target" "$SRC/target" 2>/dev/null | awk '{ kb += $1 } END { print int(kb / 1024) }')
+if [ "${USED_MB:-0}" -gt "$MAX_MB" ]; then
+  echo "window-build.sh: the cache's build folders reached ${USED_MB} MB (limit ${MAX_MB}); cleared" >&2
+  rm -rf "$SRC/app/target" "$SRC/target"
+fi
 # Keep the newest eight of the programs kept by commit; a run's own copy beside them is not one.
 ls -t "$KEEP" | grep -E '^magnesium(-window)?-[0-9a-f]{12}$' | awk 'NR > 8' | while read -r old; do rm -f "$KEEP/$old"; done
 echo "$BIN"
