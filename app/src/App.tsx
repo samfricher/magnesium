@@ -50,8 +50,8 @@ type Saved = {
 const HOME: HomeTab = { key: "home", kind: "home" };
 const SETTINGS: SettingsTab = { key: "settings", kind: "settings" };
 
-/** A session not begun yet is named by its workspace: "Intro Statistics, new". */
-const newTitle = (name: string) => `${displayName(name)}, new`;
+/** A session not begun yet, until the tutor names it. The page above it already says the course. */
+const NEW_TITLE = "New session";
 
 let counter = 0;
 const newKey = () => `s${Date.now().toString(36)}${(counter++).toString(36)}`;
@@ -228,8 +228,7 @@ export function App() {
         else if (pending?.kind === "checks") void handles.current[waiting.key]?.checks();
         return;
       }
-      const name = now.current.workspaces?.find((each) => each.folder === where)?.name ?? where.split("/").pop() ?? "";
-      addSession({ folder: where, session: null, title: newTitle(name), ...(pending ? { pending } : {}) });
+      addSession({ folder: where, session: null, title: NEW_TITLE, ...(pending ? { pending } : {}) });
       void loadWorkspaces();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -679,7 +678,7 @@ export function App() {
     const seen: Record<string, number> = {};
     const named: Record<string, string> = {};
     for (const tab of tabs) {
-      const title = tab.kind === "home" ? homeTabName : tab.kind === "settings" ? "Settings" : tab.title || newTitle(tab.folder.split("/").pop() ?? "");
+      const title = tab.kind === "home" ? homeTabName : tab.kind === "settings" ? "Settings" : tab.title || NEW_TITLE;
       seen[title] = (seen[title] ?? 0) + 1;
       named[tab.key] = seen[title] > 1 ? `${title} (${seen[title]})` : title;
     }
@@ -712,7 +711,7 @@ export function App() {
       tabs: tabs.map((tab) => ({ id: tab.key, title: tabTitles[tab.key] })),
       disabled,
       titles: {
-        plan: panel ? "Hide Panel" : "Show Panel",
+        plan: panel ? "Hide Plan" : "Show Plan",
         "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
         // A document that filled the session and stepped aside for the task is switched to as if the lesson were in front.
         "flip-panel":
@@ -721,7 +720,7 @@ export function App() {
               ? "Switch to the Lesson"
               : "Switch to the Page"
             : "Switch to the Document",
-        "look-back": page === "open" ? "Only the Task" : "The Lesson So Far",
+        "look-back": page === "open" ? "Hide the Lesson" : "Show the Lesson",
         ...(activeTab.kind === "settings" ? { "close-session": "Close Settings" } : {}),
       },
     };
