@@ -17,3 +17,4 @@ This branch holds only images that pull requests and issues show. It is not part
 Every image uses made-up data. If this branch is deleted, the images in those pull requests and issues stop loading.
 - `frosted-glass`: the real window with frosted glass chosen, before and after, the options at each fork, the reading check over five backdrops, and the solid fallbacks. Every desktop behind the window is a made-up picture.
 - `critique-1116-changes/<change>`: the seven changes from the design critique of 2026-11-16 (pull requests 107 to 113), before and after in the real window on made-up courses. `hand-*` are from hand tests of each branch's test build.
+- `quirks-1116`: the study window's line, the open task's copy and the tutor's mathematics, before and after the pull request that fixed them, in the real window on a made-up course. The `math-*` pictures are from live lessons on Sonnet 5.5; the rest use the stand-in tutor.
