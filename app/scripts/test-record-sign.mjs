@@ -54,16 +54,20 @@ const rows = [
 const work = rows.map((each) => ({ row: each, next: againOf(each, now) })).sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day));
 const exam = { target: "midterm-2", title: "Midterm 2", date: "2026-11-27", day: "Fri 27 Nov", days_left: 10 };
 const said = (days) => days.map((day) => `${day.label}: ${day.exam ?? day.items.map((item) => item.row.name).join(", ")}`);
-// Each day once, in order: today, tomorrow, each later day, the exam on its date among them, no day, proven.
+// Each day once, in order: today, those waiting for a repair, tomorrow, each later day, the exam on its date among
+// them, proven. Above the exam, every skill is today, dated before it, or waiting for a repair that may come any day.
 assert.deepEqual(said(agendaOf(work, exam, now)), [
   "Today: pooled variance, reading a confidence interval",
+  "To repair: a gap in a paper",
   "Tomorrow: degrees of freedom, t or normal",
   "Fri 20 Nov: margin of error",
   "Fri 27 Nov: Midterm 2",
   "Tue 1 Dec: after the exam",
-  "Later: a gap in a paper",
   "Proven: standard error of a mean",
 ]);
+// A skill waiting for its repair is never listed after the exam, even with nothing today.
+const dateless = [row("a gap in a paper", [0, 0, 0], false, null), row("after the exam", [2, 2, 0], false, "2026-12-01")].map((each) => ({ row: each, next: againOf(each, now) })).sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day));
+assert.deepEqual(said(agendaOf(dateless, exam, now)), ["To repair: a gap in a paper", "Fri 27 Nov: Midterm 2", "Tue 1 Dec: after the exam"]);
 const days = agendaOf(work, exam, now);
 assert.equal(days[0].today, true, "today is the only day drawn in the ink");
 assert.equal(days.filter((day) => day.today).length, 1);
@@ -73,7 +77,7 @@ assert.ok(said(agendaOf(work, { ...exam, date: "2026-11-17", days_left: 0 }, now
 assert.equal(said(agendaOf(work, { ...exam, date: "2026-11-16", days_left: -1 }, now)).some((line) => line.includes("Midterm")), false);
 assert.equal(said(agendaOf(work, { ...exam, date: null, days_left: null }, now)).some((line) => line.includes("Midterm")), false);
 // An exam on a day that holds skills comes after them; with no skills after it, it ends the dated days.
-assert.deepEqual(said(agendaOf(work, { ...exam, date: "2026-11-18", days_left: 1 }, now)).slice(1, 3), ["Tomorrow: degrees of freedom, t or normal", "Wed 18 Nov: Midterm 2"]);
+assert.deepEqual(said(agendaOf(work, { ...exam, date: "2026-11-18", days_left: 1 }, now)).slice(2, 4), ["Tomorrow: degrees of freedom, t or normal", "Wed 18 Nov: Midterm 2"]);
 assert.deepEqual(said(agendaOf(work.slice(0, 2), exam, now)), ["Today: pooled variance, reading a confidence interval", "Fri 27 Nov: Midterm 2"]);
 // No skills, no exam: nothing.
 assert.deepEqual(agendaOf([], null, now), []);

@@ -25,8 +25,8 @@ export type Day<T> = { key: string; label: string; today: boolean; proven: boole
 
 /**
  * The skills grouped by the day each can next count, in the order given (already ranked by `againOf`): "Today", then
- * "Tomorrow" and each later day ("Fri 20 Nov"), then "Later", then "Proven". The exam, while it is ahead, is a day
- * of its own on its date, after that date's skills.
+ * "To repair", then "Tomorrow" and each later day ("Fri 20 Nov"), then "Proven". The exam, while it is ahead, is a
+ * day of its own on its date, after that date's skills.
  */
 export function agendaOf<T extends { row: Row; next: Again }>(work: T[], exam: Exam | null, now = new Date()): Day<T>[] {
   const days: Day<T>[] = [];
@@ -39,7 +39,9 @@ export function agendaOf<T extends { row: Row; next: Again }>(work: T[], exam: E
     const { rank, day } = item.next;
     if (rank <= 1) add("0", "Today", item, { today: true });
     else if (rank === 2) add(`2-${day}`, fromToday(day, now) === "tomorrow" ? "Tomorrow" : shortDay(day), item);
-    else if (rank === 3) add("3", "Later", item);
+    // A skill with no day waits for its repair, which a lesson can give it any day: it could count well before the
+    // exam, so it is kept above the dated days rather than after them, where it would read as "not before the exam".
+    else if (rank === 3) add("1", "To repair", item);
     else add("4", "Proven", item, { proven: true });
   }
   days.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
