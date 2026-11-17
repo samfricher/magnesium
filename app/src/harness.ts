@@ -544,6 +544,7 @@ async function run(op: Op): Promise<Result> {
         const text = collapse(view.innerText);
         return { words: text.length, text, lines };
       };
+      const standsAt = (line: string) => line.slice(line.lastIndexOf(" @"));
       // Where two readings of the page's words part, with a little of each.
       const parted = (a: string, b: string) => {
         let at = 0;
@@ -570,8 +571,9 @@ async function run(op: Op): Promise<Result> {
         words: frame.words,
         lines: frame.lines,
         focus: frame.focus,
-        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving.
-        moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && line !== previous.lines[n]) || frame.lines.length !== previous.lines.length : false,
+        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving. A
+        // line whose words change where it stands (a row taking its ↩) is not a move; the words are in `text`.
+        moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && standsAt(line) !== standsAt(previous.lines[n])) || frame.lines.length !== previous.lines.length : false,
         ...(previous && previous.text !== frame.text ? { text: parted(previous.text, frame.text) } : {}),
       });
       // Frames whose lines stand as they did before the click: the window has not answered it yet, as when it keeps
