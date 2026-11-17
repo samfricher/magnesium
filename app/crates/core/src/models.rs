@@ -133,16 +133,23 @@ pub fn parse(reply: &Value) -> Option<Vec<ModelOption>> {
     // Current models are the ones an alias stands for, and the aliases come
     // first in the agent's own order. A list with no alias at all, such as
     // one from a provider that names every model in full, is not split.
+    //
+    // A full id among the aliases is current too. Claude Code 2.1.326,
+    // started with `--model claude-fable-5-2`, sends that id in place of the
+    // `fable` row it would otherwise send, at the same place in the list; a
+    // session on Fable 5.2 then showed it as an older model.
     let split = models.iter().any(ModelOption::is_alias);
+    let last_alias = models.iter().rposition(ModelOption::is_alias);
     let covered: Vec<String> = models
         .iter()
         .filter(|m| m.is_alias())
         .map(|m| m.id().to_owned())
         .collect();
-    for model in &mut models {
+    for (at, model) in models.iter_mut().enumerate() {
         model.current = !split
             || model.is_alias()
             || model.resolved.is_none()
+            || last_alias.is_some_and(|last| at < last)
             || covered.iter().any(|id| id == model.id());
     }
     Some(models)
@@ -448,6 +455,24 @@ pub(crate) mod tests {
             "claude-opus-4-6"
         );
         assert!(find(&models, "claude-fable-4").is_none());
+    }
+
+    #[test]
+    fn a_full_id_in_place_of_an_alias_stays_current() {
+        // What Claude Code 2.1.326 sends a session started with
+        // `--model claude-fable-5-2`: the full id where `fable` was.
+        let mut reply = fourteen();
+        reply["models"][2]["value"] = json!("claude-fable-5-2");
+        reply["models"][2]["displayName"] = json!("Fable 5.2");
+        let models = parse(&reply).unwrap();
+        let current: Vec<&str> = models
+            .iter()
+            .filter(|m| m.current)
+            .map(|m| m.value.as_str())
+            .collect();
+        assert_eq!(current, ["default", "opus", "claude-fable-5-2", "sonnet", "haiku"]);
+        assert_eq!(models.iter().filter(|m| !m.current).count(), 9);
+        assert_eq!(find(&models, EARLIER).unwrap().value, "claude-fable-5-2");
     }
 
     #[test]
