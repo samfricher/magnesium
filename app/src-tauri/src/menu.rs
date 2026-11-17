@@ -5,9 +5,14 @@
 //!
 //! The page tells the shell what the menu should hold as it changes (the
 //! workspaces for Go, the open tabs for Window, the learner's own keys, what
-//! is disabled now), and the menu is built again from that.
+//! is disabled now). The bar is built once, and each change after that is
+//! made to the items already on it. Putting a whole new bar in place
+//! (`set_menu`) takes the old one off first, in a separate turn of the main
+//! thread, and macOS drew the bar with no menus in between: its titles
+//! blinked out on every tab switch.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -41,18 +46,67 @@ pub struct Named {
     title: String,
 }
 
-/// What a custom item is for, kept as the menu is built.
+/// Where an item's key comes from.
+#[derive(Clone, Debug)]
+enum Key {
+    /// The learner's key for the item's command.
+    Learner,
+    /// ⌘1 to ⌘9, by the tab's place in the bar.
+    Tab(usize),
+    /// Its own, which never changes.
+    Fixed(Option<String>),
+}
+
+/// What an item shows on the bar.
+#[derive(Clone, Debug, PartialEq)]
+struct Shown {
+    text: String,
+    enabled: bool,
+    accelerator: Option<String>,
+}
+
+/// One of the window's own items: what it is for, and what it shows now.
 #[derive(Clone, Debug)]
 struct Entry {
     command: String,
     arg: Option<String>,
-    accelerator: Option<String>,
+    /// Its title when the page names none.
+    title: String,
+    key: Key,
+    shown: Shown,
+}
+
+impl Entry {
+    /// What the item should show for `spec`.
+    fn wanted(&self, id: &str, spec: &Spec) -> Shown {
+        Shown {
+            text: spec
+                .titles
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| self.title.clone()),
+            enabled: !spec
+                .disabled
+                .iter()
+                .any(|off| off == id || *off == self.command),
+            accelerator: match &self.key {
+                Key::Learner => MenuBar::key(spec, id),
+                Key::Tab(n) => tab_key(spec, *n),
+                Key::Fixed(key) => key.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Default)]
 pub struct MenuBar {
     spec: Mutex<Spec>,
     table: Mutex<HashMap<String, Entry>>,
+    /// One change at a time. A change waits on the main thread item by item,
+    /// so neither `spec` nor `table` is held while it does: a click on the
+    /// menu reads `table` on the main thread.
+    applying: Mutex<()>,
+    replaced: AtomicUsize,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -154,14 +208,99 @@ impl MenuBar {
         accelerator(&combo)
     }
 
-    /// Build the whole menu from the page's last word and put it on the app.
+    /// Bring the bar in step with the page's last word: build it the first
+    /// time, and after that change only the items that differ.
     pub fn apply<R: Runtime>(&self, app: &AppHandle<R>, spec: Spec) -> tauri::Result<()> {
+        let _one = lock(&self.applying);
+        // Until the bar is this one, it is the one Tauri puts on a Mac app by default.
+        let Some(menu) = app.menu().filter(|menu| menu.get(WINDOW).is_some()) else {
+            return self.replace(app, spec);
+        };
+        if self.spec() == spec {
+            return Ok(());
+        }
+        match self.change(app, &menu, &spec) {
+            Ok(()) => Ok(()),
+            // A change that stopped part way could leave the bar out of step with
+            // what is recorded of it: build it again instead.
+            Err(_) => self.replace(app, spec),
+        }
+    }
+
+    /// Build the whole bar and put it in place of the one there.
+    fn replace<R: Runtime>(&self, app: &AppHandle<R>, spec: Spec) -> tauri::Result<()> {
         let mut table = HashMap::new();
         let menu = build(app, &spec, &mut table)?;
         *lock(&self.table) = table;
         *lock(&self.spec) = spec;
         app.set_menu(menu)?;
+        self.replaced.fetch_add(1, Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Change the items on the bar to what `spec` says, item by item.
+    fn change<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        menu: &Menu<R>,
+        spec: &Spec,
+    ) -> tauri::Result<()> {
+        let before = self.spec();
+        let mut table = lock(&self.table).clone();
+        let mut make = Maker {
+            app,
+            spec,
+            table: &mut table,
+        };
+        for (list, id) in [(List::Go, GO), (List::Tabs, WINDOW)] {
+            if let Some(MenuItemKind::Submenu(sub)) = menu.get(id) {
+                relist(&mut make, &sub, list, list.named(&before).len())?;
+            }
+        }
+        let live = items_on(menu)?;
+        for (id, entry) in table.iter_mut() {
+            let wanted = entry.wanted(id, spec);
+            if wanted == entry.shown {
+                continue;
+            }
+            let Some((item, parent)) = live.get(id) else {
+                continue;
+            };
+            if wanted.text != entry.shown.text {
+                item.set_text(&wanted.text)?;
+            }
+            if wanted.enabled != entry.shown.enabled {
+                item.set_enabled(wanted.enabled)?;
+            }
+            if wanted.accelerator != entry.shown.accelerator {
+                match &wanted.accelerator {
+                    Some(key) => item.set_accelerator(Some(key))?,
+                    // muda cannot take a key off an item (set_accelerator(None)
+                    // leaves the old one): the item is made again without one.
+                    None => {
+                        let fresh =
+                            MenuItem::with_id(app, id, &wanted.text, wanted.enabled, None::<&str>)?;
+                        if let Some(at) = parent
+                            .items()?
+                            .iter()
+                            .position(|each| each.id() == item.id())
+                        {
+                            parent.remove_at(at)?;
+                            parent.insert(&fresh, at)?;
+                        }
+                    }
+                }
+            }
+            entry.shown = wanted;
+        }
+        *lock(&self.table) = table;
+        *lock(&self.spec) = spec.clone();
+        Ok(())
+    }
+
+    /// How many times the whole bar was put in place.
+    pub fn replaced(&self) -> usize {
+        self.replaced.load(Ordering::Relaxed)
     }
 
     pub fn spec(&self) -> Spec {
@@ -183,8 +322,183 @@ impl MenuBar {
     fn accelerator_of(&self, id: &str) -> Option<String> {
         lock(&self.table)
             .get(id)
-            .and_then(|entry| entry.accelerator.clone())
+            .and_then(|entry| entry.shown.accelerator.clone())
     }
+}
+
+/// The Go and Window menus, found again by these when the bar is changed.
+const GO: &str = "menu-go";
+const WINDOW: &str = "menu-window";
+/// What Window holds before its tabs: Minimize, Zoom, a line, Show Previous
+/// Tab and Show Next Tab. The tabs follow a line of their own.
+const WINDOW_FIXED: usize = 5;
+
+/// ⌘1 to ⌘9 pick the first nine tabs, unless the learner gave that key to
+/// another command.
+fn tab_key(spec: &Spec, n: usize) -> Option<String> {
+    let wanted = (n < 9).then(|| format!("Cmd+{}", n + 1))?;
+    let taken = MenuBar::key(spec, "home").as_ref() == Some(&wanted)
+        || DEFAULT_KEYS
+            .iter()
+            .any(|(name, _)| *name != "home" && MenuBar::key(spec, name).as_ref() == Some(&wanted));
+    (!taken).then_some(wanted)
+}
+
+/// A list the page names: the workspaces in Go, the open tabs in Window.
+#[derive(Clone, Copy)]
+enum List {
+    Go,
+    Tabs,
+}
+
+impl List {
+    fn named(self, spec: &Spec) -> &[Named] {
+        match self {
+            List::Go => &spec.workspaces[..spec.workspaces.len().min(40)],
+            List::Tabs => &spec.tabs[..spec.tabs.len().min(20)],
+        }
+    }
+
+    fn id(self, n: usize) -> String {
+        match self {
+            List::Go => format!("go-{n}"),
+            List::Tabs => format!("tab-{n}"),
+        }
+    }
+
+    /// Where its first item stands in its menu.
+    fn start(self) -> usize {
+        match self {
+            List::Go => 0,
+            List::Tabs => WINDOW_FIXED + 1,
+        }
+    }
+}
+
+/// Makes the window's own items, as `spec` says, and records each in `table`.
+struct Maker<'a, R: Runtime> {
+    app: &'a AppHandle<R>,
+    spec: &'a Spec,
+    table: &'a mut HashMap<String, Entry>,
+}
+
+impl<R: Runtime> Maker<'_, R> {
+    fn item(
+        &mut self,
+        id: &str,
+        command: &str,
+        arg: Option<&str>,
+        title: &str,
+        key: Key,
+    ) -> tauri::Result<MenuItem<R>> {
+        let mut entry = Entry {
+            command: command.to_owned(),
+            arg: arg.map(str::to_owned),
+            title: title.to_owned(),
+            key,
+            shown: Shown {
+                text: String::new(),
+                enabled: true,
+                accelerator: None,
+            },
+        };
+        entry.shown = entry.wanted(id, self.spec);
+        let item = MenuItem::with_id(
+            self.app,
+            id,
+            &entry.shown.text,
+            entry.shown.enabled,
+            entry.shown.accelerator.as_deref(),
+        )?;
+        self.table.insert(id.to_owned(), entry);
+        Ok(item)
+    }
+
+    /// An item for a command the page has, with the learner's key for it.
+    fn command(&mut self, id: &str, title: &str) -> tauri::Result<MenuItem<R>> {
+        self.item(id, id, None, title, Key::Learner)
+    }
+
+    /// The `n`th item of a list.
+    fn listed(&mut self, list: List, n: usize) -> tauri::Result<MenuItem<R>> {
+        let spec = self.spec;
+        let named = &list.named(spec)[n];
+        let (command, key) = match list {
+            List::Go => ("go", Key::Fixed(None)),
+            List::Tabs => ("tab", Key::Tab(n)),
+        };
+        self.item(&list.id(n), command, Some(&named.id), &named.title, key)
+    }
+}
+
+/// What Go shows with no workspaces.
+fn no_workspaces<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
+    MenuItem::with_id(app, "go-none", "No workspaces yet", false, None::<&str>)
+}
+
+/// Bring a list on the bar in step with `make.spec`, from the `had` items it
+/// holds. A place it had keeps its item, which takes the new name and folder
+/// or tab (the item's own text and key change with every other item's); a
+/// place added gets a new item, and a place gone loses its item.
+fn relist<R: Runtime>(
+    make: &mut Maker<'_, R>,
+    menu: &Submenu<R>,
+    list: List,
+    had: usize,
+) -> tauri::Result<()> {
+    let spec = make.spec;
+    let named = list.named(spec);
+    let now = named.len();
+    for (n, each) in named.iter().enumerate().take(had) {
+        if let Some(entry) = make.table.get_mut(&list.id(n)) {
+            entry.arg = Some(each.id.clone());
+            entry.title = each.title.clone();
+        }
+    }
+    // What stands before the list once it has items: Go's "No workspaces yet"
+    // goes, Window's line before the tabs comes.
+    if had == 0 && now > 0 {
+        match list {
+            List::Go => {
+                menu.remove_at(0)?;
+            }
+            List::Tabs => menu.insert(&PredefinedMenuItem::separator(make.app)?, WINDOW_FIXED)?,
+        }
+    }
+    for n in (now..had).rev() {
+        menu.remove_at(list.start() + n)?;
+        make.table.remove(&list.id(n));
+    }
+    for n in had..now {
+        let item = make.listed(list, n)?;
+        menu.insert(&item, list.start() + n)?;
+    }
+    if had > 0 && now == 0 {
+        match list {
+            List::Go => menu.insert(&no_workspaces(make.app)?, 0)?,
+            List::Tabs => {
+                menu.remove_at(WINDOW_FIXED)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The window's own items on the bar, by id, each with the menu it is in.
+type OnBar<R> = HashMap<String, (MenuItem<R>, Submenu<R>)>;
+
+fn items_on<R: Runtime>(menu: &Menu<R>) -> tauri::Result<OnBar<R>> {
+    let mut found = HashMap::new();
+    for top in menu.items()? {
+        if let MenuItemKind::Submenu(sub) = top {
+            for each in sub.items()? {
+                if let MenuItemKind::MenuItem(item) = each {
+                    found.insert(item.id().as_ref().to_owned(), (item, sub.clone()));
+                }
+            }
+        }
+    }
+    Ok(found)
 }
 
 fn build<R: Runtime>(
@@ -192,29 +506,7 @@ fn build<R: Runtime>(
     spec: &Spec,
     table: &mut HashMap<String, Entry>,
 ) -> tauri::Result<Menu<R>> {
-    let item = |table: &mut HashMap<String, Entry>,
-                id: &str,
-                command: &str,
-                arg: Option<&str>,
-                title: &str,
-                accelerator: Option<String>|
-     -> tauri::Result<MenuItem<R>> {
-        let title = spec.titles.get(id).map(String::as_str).unwrap_or(title);
-        let enabled = !spec.disabled.iter().any(|off| off == id || off == command);
-        table.insert(
-            id.to_owned(),
-            Entry {
-                command: command.to_owned(),
-                arg: arg.map(str::to_owned),
-                accelerator: accelerator.clone(),
-            },
-        );
-        MenuItem::with_id(app, id, title, enabled, accelerator)
-    };
-    let command = |table: &mut HashMap<String, Entry>, id: &str, title: &str| {
-        let accelerator = MenuBar::key(spec, id);
-        item(table, id, id, None, title, accelerator)
-    };
+    let mut make = Maker { app, spec, table };
     let separator = || PredefinedMenuItem::separator(app);
 
     let app_menu = Submenu::with_items(
@@ -222,9 +514,9 @@ fn build<R: Runtime>(
         "Magnesium",
         true,
         &[
-            &command(table, "about", "About Magnesium")?,
+            &make.command("about", "About Magnesium")?,
             &separator()?,
-            &command(table, "settings", "Settings…")?,
+            &make.command("settings", "Settings…")?,
             &separator()?,
             &PredefinedMenuItem::services(app, None)?,
             &separator()?,
@@ -240,17 +532,17 @@ fn build<R: Runtime>(
         "File",
         true,
         &[
-            &command(table, "new-session", "New Session")?,
-            &command(table, "just-checks", "Just the Quick Checks")?,
-            &command(table, "open-workspace", "Open a Folder…")?,
+            &make.command("new-session", "New Session")?,
+            &make.command("just-checks", "Just the Quick Checks")?,
+            &make.command("open-workspace", "Open a Folder…")?,
             &separator()?,
-            &command(table, "close-session", "Close Session")?,
+            &make.command("close-session", "Close Session")?,
             &separator()?,
-            &command(table, "open-document", "Open Document…")?,
-            &command(table, "close-document", "Close Document")?,
-            &command(table, "share-document", "Share Document…")?,
+            &make.command("open-document", "Open Document…")?,
+            &make.command("close-document", "Close Document")?,
+            &make.command("share-document", "Share Document…")?,
             &separator()?,
-            &command(table, "attach", "Attach a Photo or PDF…")?,
+            &make.command("attach", "Attach a Photo or PDF…")?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -272,44 +564,31 @@ fn build<R: Runtime>(
         "View",
         true,
         &[
-            &command(table, "home", "Home")?,
-            &command(table, "plan", "Show Plan")?,
-            &command(table, "expand-panel", "Expand Panel")?,
-            &command(table, "flip-panel", "Switch to the Document")?,
+            &make.command("home", "Home")?,
+            &make.command("plan", "Show Plan")?,
+            &make.command("expand-panel", "Expand Panel")?,
+            &make.command("flip-panel", "Switch to the Document")?,
             &separator()?,
-            &command(table, "zoom-in-document", "Zoom In on the Document")?,
-            &command(table, "zoom-out-document", "Zoom Out of the Document")?,
-            &command(table, "zoom-fit-document", "Fit the Document to the Panel")?,
+            &make.command("zoom-in-document", "Zoom In on the Document")?,
+            &make.command("zoom-out-document", "Zoom Out of the Document")?,
+            &make.command("zoom-fit-document", "Fit the Document to the Panel")?,
             &separator()?,
-            &command(table, "bigger", "Bigger Text")?,
-            &command(table, "smaller", "Smaller Text")?,
-            &command(table, "actual-size", "Actual Size")?,
+            &make.command("bigger", "Bigger Text")?,
+            &make.command("smaller", "Smaller Text")?,
+            &make.command("actual-size", "Actual Size")?,
             &separator()?,
-            &command(table, "commands", "Command Menu…")?,
+            &make.command("commands", "Command Menu…")?,
             &separator()?,
             &PredefinedMenuItem::fullscreen(app, None)?,
         ],
     )?;
 
-    let go = Submenu::new(app, "Go", true)?;
+    let go = Submenu::with_id(app, GO, "Go", true)?;
     if spec.workspaces.is_empty() {
-        go.append(&MenuItem::new(
-            app,
-            "No workspaces yet",
-            false,
-            None::<&str>,
-        )?)?;
+        go.append(&no_workspaces(app)?)?;
     }
-    for (n, workspace) in spec.workspaces.iter().enumerate().take(40) {
-        let id = format!("go-{n}");
-        go.append(&item(
-            table,
-            &id,
-            "go",
-            Some(&workspace.id),
-            &workspace.title,
-            None,
-        )?)?;
+    for n in 0..List::Go.named(spec).len() {
+        go.append(&make.listed(List::Go, n)?)?;
     }
 
     let session = Submenu::with_items(
@@ -317,70 +596,51 @@ fn build<R: Runtime>(
         "Session",
         true,
         &[
-            &command(table, "hint", "Hint")?,
-            &command(table, "lost", "I’m Lost")?,
-            &command(table, "unknown", "I Don’t Know")?,
+            &make.command("hint", "Hint")?,
+            &make.command("lost", "I’m Lost")?,
+            &make.command("unknown", "I Don’t Know")?,
             &separator()?,
-            &command(table, "look-back", "Show the Lesson")?,
+            &make.command("look-back", "Show the Lesson")?,
             &separator()?,
-            &command(table, "symbols", "Symbols")?,
-            &command(table, "model", "Model and Effort…")?,
+            &make.command("symbols", "Symbols")?,
+            &make.command("model", "Model and Effort…")?,
             &separator()?,
-            &command(table, "stop-reply", "Stop the Reply")?,
+            &make.command("stop-reply", "Stop the Reply")?,
         ],
     )?;
 
-    let window = Submenu::new(app, "Window", true)?;
+    let window = Submenu::with_id(app, WINDOW, "Window", true)?;
     window.append_items(&[
         &PredefinedMenuItem::minimize(app, None)?,
         &PredefinedMenuItem::maximize(app, None)?,
         &separator()?,
-        &item(
-            table,
+        &make.item(
             "previous-tab",
             "previous-tab",
             None,
             "Show Previous Tab",
-            Some("Cmd+Shift+BracketLeft".into()),
+            Key::Fixed(Some("Cmd+Shift+BracketLeft".into())),
         )?,
-        &item(
-            table,
+        &make.item(
             "next-tab",
             "next-tab",
             None,
             "Show Next Tab",
-            Some("Cmd+Shift+BracketRight".into()),
+            Key::Fixed(Some("Cmd+Shift+BracketRight".into())),
         )?,
     ])?;
     if !spec.tabs.is_empty() {
         window.append(&separator()?)?;
     }
-    let home_key = MenuBar::key(spec, "home");
-    for (n, tab) in spec.tabs.iter().enumerate().take(20) {
-        // ⌘1 to ⌘9 pick the first nine tabs, unless the learner gave one to another command.
-        let wanted = (n < 9).then(|| format!("Cmd+{}", n + 1));
-        let taken = wanted.as_ref().is_some_and(|key| {
-            Some(key) == home_key.as_ref()
-                || DEFAULT_KEYS.iter().any(|(name, _)| {
-                    *name != "home" && MenuBar::key(spec, name).as_ref() == Some(key)
-                })
-        });
-        let accelerator = if taken { None } else { wanted };
-        window.append(&item(
-            table,
-            &format!("tab-{n}"),
-            "tab",
-            Some(&tab.id),
-            &tab.title,
-            accelerator,
-        )?)?;
+    for n in 0..List::Tabs.named(spec).len() {
+        window.append(&make.listed(List::Tabs, n)?)?;
     }
 
     let help = Submenu::with_items(
         app,
         "Help",
         true,
-        &[&command(table, "keys-help", "Keys and Commands")?],
+        &[&make.command("keys-help", "Keys and Commands")?],
     )?;
 
     let menu = Menu::with_items(
