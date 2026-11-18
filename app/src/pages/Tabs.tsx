@@ -9,15 +9,24 @@
 // it. Showing a tab is by activation, not by focus, because showing one
 // notes when its session was opened and keeps how the window was left. The
 // close marks are for the pointer; the keyboard closes with Delete, ⌘W or
-// the menu. Any tab closes while another is open. A tab too far along to fit
-// is brought into view when it is shown or focused, and the Window menu
-// lists every tab.
+// the menu. Any tab closes, and closing the last one closes the window. A
+// tab too far along to fit is brought into view when it is shown or focused,
+// and the Window menu lists every tab.
 
 import { memo, useEffect, useRef } from "react";
 
 import { Line } from "../surface/Rich";
 
-export type TabView = { key: string; kind: "home" | "session" | "settings"; title: string; busy: boolean; asking: boolean; folder: string | null };
+export type TabView = {
+  key: string;
+  kind: "home" | "session" | "settings";
+  title: string;
+  /** The key that shows the tab, as its tooltip says it; empty when none does. */
+  keyName: string;
+  busy: boolean;
+  asking: boolean;
+  folder: string | null;
+};
 
 /** The id of a tab's button, which its panel is labelled by. */
 export const tabId = (key: string) => `tab-${key}`;
@@ -60,7 +69,6 @@ export const Tabs = memo(function Tabs(props: Props) {
     document.getElementById(tabId("settings"))?.focus();
   }, [props.active]);
 
-  const closable = props.tabs.length > 1;
   const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, at: number) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const all = buttons();
@@ -72,10 +80,10 @@ export const Tabs = memo(function Tabs(props: Props) {
     else if (event.key === "ArrowLeft") go(at - 1);
     else if (event.key === "Home") go(0);
     else if (event.key === "End") go(all.length - 1);
-    else if ((event.key === "Delete" || event.key === "Backspace") && closable) {
+    else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
-      // Focus stays in the bar: on the tab before the one closed.
-      all[Math.max(0, at - 1)]?.focus();
+      // Focus stays in the bar: on the tab before the one closed, or the one after when it was first.
+      all[at > 0 ? at - 1 : 1]?.focus();
       props.onClose(props.tabs[at].key);
     }
   };
@@ -90,7 +98,7 @@ export const Tabs = memo(function Tabs(props: Props) {
         {props.tabs.map((tab, at) => {
           const here = tab.key === props.active;
           return (
-            <span key={tab.key} className={`tab${here ? " here" : ""}${tab.kind === "home" ? " home" : ""}${closable ? " closable" : ""}`} data-kind={tab.kind}>
+            <span key={tab.key} className={`tab${here ? " here" : ""}${tab.kind === "home" ? " home" : ""}`} data-kind={tab.kind}>
               <button
                 type="button"
                 role="tab"
@@ -99,10 +107,10 @@ export const Tabs = memo(function Tabs(props: Props) {
                 tabIndex={here ? 0 : -1}
                 className="tab-button"
                 data-drive={`tab-${at + 1}`}
-                title={`${tab.title}${at < 9 ? `   ⌘${at + 1}` : ""}`}
+                title={`${tab.title}${tab.keyName ? `   ${tab.keyName}` : ""}`}
                 onClick={() => props.onPick(tab.key)}
                 onKeyDown={(event) => onKeyDown(event, at)}
-                onAuxClick={(event) => event.button === 1 && closable && props.onClose(tab.key)}
+                onAuxClick={(event) => event.button === 1 && props.onClose(tab.key)}
               >
                 {tab.asking ? <span className="ask-dot" aria-hidden="true" /> : tab.busy && <span className="live-dot" aria-hidden="true" />}
                 {tab.kind === "home" ? (
@@ -117,20 +125,10 @@ export const Tabs = memo(function Tabs(props: Props) {
                 )}
                 {tab.asking ? <span className="visually-hidden">, the tutor waits for you</span> : tab.busy && <span className="visually-hidden">, the tutor is writing</span>}
               </button>
-              {closable && (
-                // For the pointer only: a tablist holds tabs, so the keyboard closes a tab with Delete or ⌘W.
-                <button
-                  type="button"
-                  className="tab-close"
-                  data-drive={`close-tab-${at + 1}`}
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  title="Close   ⌘W"
-                  onClick={() => props.onClose(tab.key)}
-                >
-                  ×
-                </button>
-              )}
+              {/* For the pointer only: a tablist holds tabs, so the keyboard closes a tab with Delete or ⌘W. */}
+              <button type="button" className="tab-close" data-drive={`close-tab-${at + 1}`} aria-hidden="true" tabIndex={-1} title="Close   ⌘W" onClick={() => props.onClose(tab.key)}>
+                ×
+              </button>
             </span>
           );
         })}

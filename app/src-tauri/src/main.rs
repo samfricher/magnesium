@@ -146,6 +146,13 @@ fn set_window_state(shell: State<'_, Shell>, value: serde_json::Value) {
     shell.manager.set_window_state(value);
 }
 
+/// Close the window as its red button does: the page asks when the learner closes the last tab. Going through the
+/// window's own close keeps one way out: the lesson is shut down as the window goes, and the app quits with it.
+#[tauri::command]
+fn close_window(window: tauri::Window) {
+    let _ = window.close();
+}
+
 /// What the menu bar holds now: the workspaces, the tabs, the learner's keys.
 #[tauri::command(async)]
 fn set_menu(app: tauri::AppHandle, spec: menu::Spec) -> Reply<()> {
@@ -664,6 +671,7 @@ fn main() {
             share_file,
             window_state,
             set_window_state,
+            close_window,
             set_menu,
             set_up,
             upgrade_folder,

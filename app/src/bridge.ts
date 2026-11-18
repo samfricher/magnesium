@@ -55,6 +55,7 @@ async function tauriCore(): Promise<Core> {
     signIn: () => invoke("sign_in"),
     about: () => invoke("about"),
     showWindow: () => invoke("show_window"),
+    closeWindow: () => invoke("close_window"),
     turns: () => invoke("turns"),
     lessons: (folder) => invoke("lessons", { folder }),
     lessonTurns: (folder, session) => invoke("lesson_turns", { folder, session }),
