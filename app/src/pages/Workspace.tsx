@@ -1,24 +1,22 @@
-// A workspace: one study folder's page, in the Home tab. The plan's next item
-// as the page's one main action, the earlier sessions, the papers, the
-// material, where each skill stands in the record, and the folder itself
-// (take it off the list, upgrade it, set it up). File names are shown; paths
-// are not. While a timed paper runs there is no tutor and nothing to add, so
-// the page is that paper alone until it is handed in or ended; the rest comes
-// back as it was.
+// A workspace: one study folder's page, in the Home tab, set on the lesson's own column with each part's name in the
+// margin. Next: the plan's next item as the page's one main action. Then the sessions, where each skill stands in the
+// record by the day it can next count, the papers, the material, and the folder itself (take it off the list, upgrade
+// it, set it up). File names are shown; paths are not. While a timed paper runs there is no tutor and nothing to add,
+// so the page is that paper alone until it is handed in or ended; the rest comes back as it was.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { agendaOf, againOf, earned, type Again, type Day } from "../agenda";
-import { useHangs } from "../hangs";
+import { agendaOf, againOf, earned } from "../agenda";
 import { docsOf, keepDocs, withClosed, withOpened, workspaceDocsKey, type Docs } from "../docs";
-import { checksAlone, firstStep, namedSessions, nextOf, planDay } from "../next";
+import { checksAlone, dueWords, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay } from "../next";
 import { DISC_R, discFill, shareLeft } from "../paperTime";
 import type { DocHandle } from "../surface/DocView";
 import { Line } from "../surface/Rich";
 import { SidePanel } from "../surface/SidePanel";
 import { sourceRef } from "../sources";
 import type { Core, Exam, Home, LessonInfo, Mark, Materials, Paper, PaperSitting, Plan, Progress, Row } from "../types";
-import { displayName, goalName, materialKind, materialTitle, namedByItsWords, shortDay, whenOpened, withoutPaths } from "../words";
+import { displayName, goalName, longDay, materialKind, materialTitle, namedByItsWords, shortDay, withoutPaths } from "../words";
+import { Cue, More, Part, RepairRun, Row as PageRow, isCode, useMargin } from "./Margin";
 
 type Props = {
   api: Core;
@@ -103,24 +101,19 @@ export async function readWorkspace(api: Core, folder: string, visit = false): P
  */
 export const OPEN_WAIT_MS = 400;
 
-/** "Midterm 1, Tue 17 Nov · 5 days", or null for a plan with no date ahead. */
-function examLine(exam: Exam | null): string | null {
-  if (!exam?.day || exam.days_left === null || exam.days_left < 0) return null;
-  const left = exam.days_left === 0 ? "today" : exam.days_left === 1 ? "tomorrow" : `${exam.days_left} days`;
-  return `${exam.title}, ${exam.day} · ${left}`;
+/** "Midterm 2, Saturday 28 November, in 10 days.", or null for a plan with no date ahead. */
+function examWords(exam: Exam | null): string | null {
+  if (!exam || exam.days_left === null || exam.days_left < 0) return null;
+  const day = exam.date ? longDay(exam.date) : exam.day;
+  if (!day) return null;
+  const left = exam.days_left === 0 ? "today" : exam.days_left === 1 ? "tomorrow" : `in ${exam.days_left} days`;
+  return `${exam.title}, ${day}, ${left}.`;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** What is due, in one plain line, or null when nothing is. */
-function dueLine(home: Home): string | null {
-  const parts = [home.checks_due ? plural(home.checks_due, "quick check", "quick checks") : null, home.redos_due ? plural(home.redos_due, "paper redo", "paper redos") : null].filter(
-    (part): part is string => part !== null,
-  );
-  if (parts.length === 0) return null;
-  const count = (home.checks_due ?? 0) + home.redos_due;
-  return `${parts.join(" and ")} ${count === 1 ? "is" : "are"} due.`;
-}
+/** The sessions Sessions shows before "Show all". */
+const SESSIONS_SHOWN = 6;
 
 /** A skill's three days, filled for each the record counts now. A pass made before a later miss no longer counts, and is drawn empty. */
 function Days({ row }: { row: Row }) {
@@ -131,55 +124,6 @@ function Days({ row }: { row: Row }) {
         <span key={at} className={dot === 2 ? "work-day earned" : "work-day"} />
       ))}
     </span>
-  );
-}
-
-/**
- * Your work as an agenda: each day said once, beside the first skill it holds, in the margin left of the names while
- * the margin has room for it, else in a column of its own at the list's left. Each skill keeps its three days.
- */
-function Agenda({ days }: { days: Day<{ row: Row; next: Again }>[] }) {
-  const list = useRef<HTMLDivElement>(null);
-  // Measured as a pass's rings beside its mark are: the margin left of the column depends on the window, the text
-  // size, the line width set in Settings and a document open beside the page, and a day's words on its font.
-  const hung = useHangs(
-    list,
-    ".page-scroll",
-    (element) => {
-      const label = element.querySelector<HTMLElement>(".agenda-day");
-      const row = element.querySelector<HTMLElement>(".agenda-row");
-      if (!label || !row) return 0;
-      const widest = Math.max(label.offsetWidth, ...[...element.querySelectorAll<HTMLElement>(".agenda-day > span")].map((each) => each.offsetWidth));
-      // 24px from the window's edge in all, as the column keeps at its narrowest; the hook keeps 8 of them.
-      return widest + (parseFloat(getComputedStyle(row).columnGap) || 0) + 16;
-    },
-    [days],
-  );
-  return (
-    <div ref={list} className={hung ? "agenda hung" : "agenda"} role="list" data-role="agenda">
-      {days.map((day) =>
-        day.exam !== null ? (
-          <div key={day.key} role="listitem" className="agenda-row first agenda-exam">
-            <span className="agenda-day">
-              <span>{day.label}</span>
-            </span>
-            <span className="agenda-exam-name">
-              <Line text={day.exam} />
-            </span>
-          </div>
-        ) : (
-          day.items.map(({ row }, at) => (
-            <div key={row.name} role="listitem" className={`agenda-row${at === 0 ? " first" : ""}${day.proven ? " proven" : ""}`}>
-              <span className={day.today ? "agenda-day today" : "agenda-day"}>{at === 0 && <span>{day.label}</span>}</span>
-              <span className="row-name work-name">
-                <Line text={row.name} />
-              </span>
-              <Days row={row} />
-            </div>
-          ))
-        ),
-      )}
-    </div>
   );
 }
 
@@ -563,7 +507,7 @@ export function WorkspacePage(props: Props) {
   const mixed = materials !== null && materials !== "none" && new Set(materials.names.map(materialKind)).size > 1;
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
-  const exam = examLine(home?.exam ?? null);
+  const exam = examWords(home?.exam ?? null);
   const held = props.running ? "Close its running session first" : null;
   const { onPaper } = props;
   const paperRunning = sitting !== null;
@@ -571,37 +515,51 @@ export function WorkspacePage(props: Props) {
     onPaper?.(folder, paperRunning);
     return () => onPaper?.(folder, false);
   }, [onPaper, folder, paperRunning]);
+  const hung = useMargin(column, ".page-scroll", [withDocs, reading !== null]);
+  const [allSessions, setAllSessions] = useState(false);
 
-  // The plan's item in hand, by the rule Home's first row uses too (src/next.ts).
+  // The plan's item in hand, by the rule Home's step uses too (src/next.ts).
   const items = plan?.items ?? [];
   const named = namedSessions(sessions ?? [], home?.last?.goal ?? null);
   const next = nextOf(items, named);
   const current = next?.item ?? null;
   const carried = next?.carried ?? null;
-  const earlier = named.filter((each) => each !== carried);
   // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
   const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;
-  // What the session Next opens starts with, from the record's reading, said on its row. When the next message would
-  // not begin a sitting (one carries on, or the opener is off), what is due is said under the row instead, with no
-  // promise of when it comes.
-  const first = firstStep(home);
-  const due = home && !first ? dueLine(home) : null;
+  // What the session Next opens starts with, from the record's reading; when the next message would not begin a
+  // sitting (one carries on, or the opener is off), what is due, with no promise of when it comes.
+  const said = startsWithWords(home) ?? dueWords(home);
   // The quick checks due can be taken alone, in a session of their own.
   const alone = checksAlone(home);
   const checksDue = alone > 0;
+  const startNext = () => (carried ? props.onOpenSession(folder, carried.info.session, carried.title) : props.onStartSession(folder));
+  const step = current ? items.indexOf(current) + 1 : 0;
+  const planned = current ? planDay(current.day) : "";
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
   // Each skill the learner has answered on, with the runtime's count of its days, in the order it can count again:
   // today, then by its day, then those with no day, then the proven; the newest answer first within each.
   const marksById = new Map(record ? record.marks.map((mark) => [mark.id, mark]) : []);
-  const work =
-    record
-      ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
-          .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: againOf(row) }))
-          .filter(({ row, last }) => last !== null || earned(row) > 0)
-          .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""))
-      : [];
+  const rows = record ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested] : [];
+  const work = rows
+    .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: againOf(row) }))
+    .filter(({ row, last }) => last !== null || earned(row) > 0)
+    .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""));
+  const last = record ? latestSkill(rows, record.marks) : null;
+  // The days each skill can next count, in agendaOf's order: the skills waiting for a repair among them, the exam on
+  // its date, the proven last.
+  const days = work.length > 0 ? agendaOf(work, home?.exam ?? null) : [];
+  const repairs = days.some((day) => day.label === "To repair");
+  const skillName = (name: string) => (isCode(name) ? <span className="mg-code">{name}</span> : <Line text={name} />);
+  const workRow = (row: Row, quiet = false) => (
+    <div key={row.name} role="listitem" className={`mg-skill${quiet ? " quiet" : ""}`}>
+      <span className="mg-row-name">{skillName(row.name)}</span>
+      <Days row={row} />
+    </div>
+  );
+  const shownSessions = allSessions ? named : named.slice(0, SESSIONS_SHOWN);
+  const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
   return (
     <div
@@ -612,33 +570,33 @@ export function WorkspacePage(props: Props) {
       style={withDocs ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
     >
       <div className="page-scroll">
-      <div className="page-column" ref={column}>
-        <button className="back" data-drive="home" onClick={props.onBack}>
-          ‹ Home
-        </button>
-        <header className="page-head">
-          <h1 className="page-title">{name}</h1>
-          {exam && <p className="page-exam">{exam}</p>}
-          {home?.message && home.state !== "ready" && <p className="where">{withoutPaths(home.message)}</p>}
+      <div className={`page-column mg${hung ? "" : " stacked"}`} ref={column}>
+        <header className="mg-course-head">
+          <button className="back" data-drive="home" onClick={props.onBack}>
+            ‹ Home
+          </button>
+          <h1 className="page-title mg-title">{name}</h1>
+          {exam && <p className="mg-cue mg-exam">{exam}</p>}
+          {home?.message && home.state !== "ready" && <p className="mg-where">{withoutPaths(home.message)}</p>}
           {/* What the folder needs before study, under the words that ask for it, drawn as Home draws a step's choices. */}
           {home && ["not_set_up", "needs_upgrade", "no_runtime", "unreadable"].includes(home.state) && (
-            <div className="choices-rest" role="group">
+            <p className="mg-controls" role="group">
               {home.state === "not_set_up" && (
-                <button className="choice-rest" autoFocus={props.focus} disabled={busy} onClick={() => void setUp()}>
-                  Set it up for Magnesium
+                <button className="mg-start" autoFocus={props.focus} disabled={busy} onClick={() => void setUp()}>
+                  Set it up for Magnesium <span className="keys">↩</span>
                 </button>
               )}
               {home.state === "needs_upgrade" && (
-                <button className="choice-rest" autoFocus={props.focus} disabled={busy} onClick={() => void upgrade()}>
-                  Upgrade it
+                <button className="mg-start" autoFocus={props.focus} disabled={busy} onClick={() => void upgrade()}>
+                  Upgrade it <span className="keys">↩</span>
                 </button>
               )}
               {(home.state === "no_runtime" || home.state === "unreadable") && (
-                <button className="choice-rest" autoFocus={props.focus} onClick={() => void read()}>
-                  Check again
+                <button className="mg-start" autoFocus={props.focus} onClick={() => void read()}>
+                  Check again <span className="keys">↩</span>
                 </button>
               )}
-            </div>
+            </p>
           )}
         </header>
 
@@ -661,173 +619,183 @@ export function WorkspacePage(props: Props) {
         )}
 
         {showNext && (
-          <section aria-label="Next" className="next">
-            <p className="list-head">Next</p>
+          <Part head="Next" sub={planned && planned !== "today" ? capital(planned) : undefined} className="mg-now mg-next">
             {current ? (
-              <button
-                className="home-row first next-row"
-                data-drive="next"
-                autoFocus={props.focus}
-                onClick={() => (carried ? props.onOpenSession(folder, carried.info.session, carried.title) : props.onStartSession(folder))}
-              >
-                <span className="next-what">
-                  <span className="row-name next-name">
-                    <Line text={current.title} />
-                  </span>
-                  {first && <span className="next-first">{first}</span>}
-                  {current.note && (
-                    <span className="next-note">
-                      <Line text={current.note} />
-                    </span>
-                  )}
-                </span>
-                <span className="row-when">{planDay(current.day)}</span>
-                <span className="row-key" aria-hidden="true">
-                  ↩
-                </span>
+              <button className="mg-step next-row" data-drive="next" autoFocus={props.focus} onClick={startNext}>
+                <Line text={current.title} />
               </button>
             ) : (
-              <>
-                {items.length > 0 && <p className="page-note">Everything on the plan is done.</p>}
-                <button className="home-row first next-row" data-drive="new-session" autoFocus={props.focus} onClick={() => props.onNewSession(folder)}>
-                  <span className="next-what">
-                    <span className="row-name next-name">New session</span>
-                    {first && <span className="next-first">{first}</span>}
-                  </span>
-                  <span className="row-when" />
-                  <span className="row-key" aria-hidden="true">
-                    ↩
-                  </span>
-                </button>
-              </>
+              <button className="mg-step next-row" data-drive="new-session" autoFocus={props.focus} onClick={() => props.onNewSession(folder)}>
+                New session
+              </button>
             )}
-            {due && <p className="page-note next-due">{due}</p>}
-            {(current || checksDue) && (
-              <p className="page-acts next-acts">
-                {checksDue && (
-                  <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(folder)}>
-                    {alone === 1 ? "Just the quick check" : "Just the quick checks"}
-                  </button>
-                )}
-                {current && (
-                  <button className="quiet-act" data-drive="new-session" onClick={() => props.onNewSession(folder)}>
-                    Something else…
-                  </button>
-                )}
+            {current?.note && (
+              <p className="mg-note">
+                <Line text={current.note} />
               </p>
             )}
-          </section>
+            {(current || items.length > 0 || said) && (
+              <Cue lead={current ? `Step ${step} of ${items.length}.` : items.length > 0 ? "Everything on the plan is done." : ""} said={said} last={current ? last : null} />
+            )}
+            <p className="mg-controls">
+              <button className="mg-start" tabIndex={-1} onClick={current ? startNext : () => props.onNewSession(folder)}>
+                {carried ? "Carry on" : "Start"} <span className="keys">↩</span>
+              </button>
+              {checksDue && (
+                <button className="mg-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(folder)}>
+                  {alone === 1 ? "Just the quick check" : "Just the quick checks"}
+                </button>
+              )}
+              {current && (
+                <button className="mg-act" data-drive="new-session" onClick={() => props.onNewSession(folder)}>
+                  Something else…
+                </button>
+              )}
+            </p>
+          </Part>
         )}
 
-        {reading && !sitting && <section aria-label="Your work" className="your-work">
-          <p className="list-head">Your work</p>
-          {!record ? (
-            <p className="page-note">The record could not be read.</p>
-          ) : work.length === 0 ? (
-            <p className="page-note">
-              {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
-              {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
-                ? withoutPaths(record.progress.message)
-                : "Nothing marked yet. Each skill you answer on is kept here."}
-            </p>
-          ) : (
-            <>
-              <Agenda days={agendaOf(work, home?.exam ?? null)} />
-              <p className="page-note work-key">Each ring is a day you got it right on your own, from memory. Three prove a skill.</p>
-            </>
-          )}
-        </section>}
+        {reading && !sitting && (
+          <Part head="Sessions" className="mg-sessions">
+            {named.length === 0 ? (
+              <p className="mg-cue">No sessions yet. Start begins the first one.</p>
+            ) : (
+              <div role="list">
+                {shownSessions.map(({ info, title }) => (
+                  <PageRow key={info.session} name={<Line text={title} />} end={openedDay(info.opened_ms)} onClick={() => props.onOpenSession(folder, info.session, title)} />
+                ))}
+              </div>
+            )}
+            {named.length > SESSIONS_SHOWN && (
+              <p className="mg-controls mg-more-line">
+                <More open={allSessions} more={`Show all ${named.length} sessions`} onToggle={() => setAllSessions((open) => !open)} drive="show-sessions" />
+              </p>
+            )}
+          </Part>
+        )}
 
-        {earlier.length > 0 && !sitting && (
-          <section aria-label="Earlier sessions">
-            <p className="list-head">Earlier</p>
-            <div className="list" role="list">
-              {earlier.map(({ info, title }) => (
-                <button key={info.session} role="listitem" className="home-row" onClick={() => props.onOpenSession(folder, info.session, title)}>
-                  <span className="row-name">
-                    <Line text={title} />
-                  </span>
-                  <span className="row-when">{whenOpened(info.opened_ms)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+        {reading && !sitting && (
+          <>
+            <Part head="Your work" className="mg-work">
+              {!record ? (
+                <p className="mg-cue">The record could not be read.</p>
+              ) : work.length === 0 ? (
+                <p className="mg-cue">
+                  {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
+                  {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
+                    ? withoutPaths(record.progress.message)
+                    : "Nothing marked yet. Each skill you answer on is kept here."}
+                </p>
+              ) : (
+                <p className="mg-legend">
+                  A ring for each separate day right from memory; three prove it. The day at left is when each can next count.
+                  {repairs ? " A skill to repair counts again once it is repaired." : ""}
+                </p>
+              )}
+            </Part>
+            {days.map((day) =>
+              day.exam !== null ? (
+                <Part key={day.key} head={day.label} group className="mg-day mg-exam-day">
+                  <p className="mg-exam-name">
+                    <Line text={day.exam} />
+                  </p>
+                </Part>
+              ) : day.label === "To repair" ? (
+                <Part key={day.key} head={day.label} group className="mg-repair">
+                  <RepairRun names={day.items.map(({ row }) => row.name)} />
+                </Part>
+              ) : (
+                <Part key={day.key} head={day.label} group className={day.proven ? "mg-proven" : "mg-day"}>
+                  <div role="list">{day.items.map(({ row }) => workRow(row, day.proven))}</div>
+                </Part>
+              ),
+            )}
+          </>
         )}
 
         {home && home.papers.length > 0 && !sitting && (
-          <section aria-label="Papers">
-            <p className="list-head">Papers</p>
-            <div className="list" role="list">
+          <Part head="Papers" className="mg-papers">
+            <div role="list">
               {home.papers.map((paper) => (
-                <div key={paper.path} role="listitem" className="home-row static paper-row">
-                  {/* Its name opens it to read, beside the page; sitting it is its own action. */}
-                  <button
-                    type="button"
-                    className="row-name paper-open"
-                    data-drive={`read-${paper.name}`}
-                    aria-current={docs.shown === paper.path ? "true" : undefined}
-                    title="Read it beside the page"
-                    onClick={() => openMaterial(paper.path)}
-                  >
-                    {paper.name}
-                  </button>
-                  <span className="row-when">{paper.sat ? "sat before" : paper.minutes ? `${paper.minutes} minutes` : ""}</span>
-                  <button className="quiet-act" data-drive={`paper-${paper.name}`} disabled={busy || !ready} onClick={() => void sit(paper)}>
-                    Sit it
-                  </button>
+                <div key={paper.path} role="listitem" className="mg-row mg-paper">
+                  <span className="mg-row-name">
+                    {/* Its name opens it to read, beside the page; sitting it is its own action. */}
+                    <button
+                      type="button"
+                      className="mg-name-act"
+                      data-drive={`read-${paper.name}`}
+                      aria-current={docs.shown === paper.path ? "true" : undefined}
+                      title="Read it beside the page"
+                      onClick={() => openMaterial(paper.path)}
+                    >
+                      {paper.name}
+                    </button>
+                    {(paper.sat || paper.minutes) && <span className="mg-inline">{paper.sat ? "sat before" : `${paper.minutes} min`}</span>}
+                  </span>
+                  <span className="mg-row-end">
+                    <button className="mg-act" data-drive={`paper-${paper.name}`} disabled={busy || !ready} onClick={() => void sit(paper)}>
+                      Sit it
+                    </button>
+                  </span>
                 </div>
               ))}
             </div>
-          </section>
+          </Part>
         )}
 
-        {reading && !sitting && <section aria-label="Material">
-          {listed ? (
-            <button className="list-head fold" data-drive="material" aria-expanded={materialOpen} onClick={() => setMaterialOpen((open) => !open)}>
-              Material <span className="fold-count">{plural(listed.files, "file", "files")}</span>
-            </button>
-          ) : (
-            <p className="list-head">Material</p>
-          )}
-          {materials === "none" && <p className="page-note">The material folder could not be read.</p>}
-          {materials !== null && materials !== "none" && materials.files === 0 && <p className="page-note">Nothing here yet. Add notes, slides or past papers, or drop them on this page.</p>}
-          {listed && materialOpen && (
-            <div className="list" role="list">
-              {listed.names.map((file) => (
-                <button key={file} role="listitem" className="home-row file-row" aria-current={docs.shown === `Study/materials/${file}` ? "true" : undefined} onClick={() => openMaterial(`Study/materials/${file}`)}>
-                  <span className="row-name">{materialTitle(file)}</span>
-                  {mixed && <span className="row-when">{materialKind(file)}</span>}
-                </button>
-              ))}
-              {listed.files > listed.names.length && <p className="page-note">and {listed.files - listed.names.length} more, in the folder</p>}
-            </div>
-          )}
-          {(materialOpen || !listed) && materials !== null && materials !== "none" && (
-            <>
-              {materials.keys > 0 && <p className="page-note">{materials.keys === 1 ? "One answer key is" : `${materials.keys} answer keys are`} kept out of sight.</p>}
-              <p className="page-acts">
-                <button className="quiet-act" data-drive="add-material" disabled={!ready || busy} onClick={() => void addFiles()}>
+        {reading && !sitting && (
+          <Part head="Material" className="mg-material">
+            {materials === "none" && <p className="mg-cue">The material folder could not be read.</p>}
+            {materials !== null && materials !== "none" && materials.files === 0 && <p className="mg-cue">Nothing here yet. Add notes, slides or past papers, or drop them on this page.</p>}
+            {listed && (
+              <p className="mg-cue">
+                {plural(listed.files, "file", "files")} in this course’s folder
+                {materials !== null && materials !== "none" && materials.keys > 0 ? `, and ${materials.keys === 1 ? "one answer key" : `${materials.keys} answer keys`} kept out of sight` : ""}.{" "}
+                <More open={materialOpen} more="Show them" less="Hide them" onToggle={() => setMaterialOpen((open) => !open)} drive="material" />
+              </p>
+            )}
+            {listed && materialOpen && (
+              <div className="mg-files" role="list">
+                {listed.names.map((file) => (
+                  <PageRow
+                    key={file}
+                    className="file-row"
+                    nameClass="row-name"
+                    current={docs.shown === `Study/materials/${file}`}
+                    name={materialTitle(file)}
+                    end={mixed ? materialKind(file) : undefined}
+                    onClick={() => openMaterial(`Study/materials/${file}`)}
+                  />
+                ))}
+              </div>
+            )}
+            {listed && materialOpen && listed.files > listed.names.length && <p className="mg-cue">and {listed.files - listed.names.length} more, in the folder</p>}
+            {materials !== null && materials !== "none" && (
+              <p className="mg-controls mg-material-acts">
+                <button className="mg-act" data-drive="add-material" disabled={!ready || busy} onClick={() => void addFiles()}>
                   Add files…
                 </button>
-                <button className="quiet-act" disabled={!ready} onClick={() => props.onPaste(folder)}>
+                <button className="mg-act" disabled={!ready} onClick={() => props.onPaste(folder)}>
                   Paste text…
                 </button>
               </p>
-            </>
-          )}
-        </section>}
+            )}
+          </Part>
+        )}
 
         {/* Off the list, a running paper's clock would go on with nothing to show it or hand it in: the action waits
             for the paper, and is not drawn while it runs. */}
-        {reading && !sitting && <section aria-label="This folder" className="folder-acts">
-          <p className="page-acts">
-            <button className="quiet-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
-              Take this folder off the list
-            </button>
-          </p>
-          {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
-          {held && <p className="page-note">{held}.</p>}
-        </section>}
+        {reading && !sitting && (
+          <section aria-label="This folder" className="mg-forget">
+            <p className="mg-controls">
+              <button className="mg-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
+                Take this folder off the list
+              </button>
+            </p>
+            {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
+            {held && <p className="mg-cue">{held}.</p>}
+          </section>
+        )}
       </div>
       </div>
       {withDocs && (

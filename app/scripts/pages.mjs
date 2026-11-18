@@ -16,7 +16,8 @@
 // every step it can.
 //
 // PAGES_ONLY=work photographs only the workspace page over a record of
-// several skills (scripts/scratch-record.py), in a few minutes.
+// several skills (scripts/scratch-record.py), and over one whose skills a
+// paper left waiting for their repair, in a few minutes.
 // PAGES_ONLY=answer photographs only the page while a task is open (answer-*).
 // PAGES_ONLY=note photographs only Home with the note about which copy of the
 // program lessons use, under each kind of first row.
@@ -197,7 +198,7 @@ async function dueStates() {
   hoursAgo(4);
   const k = await recordWindow("due-check");
   // The record stores the check's next question (scripts/scratch-record.py): Home sets it first, with a line to answer it.
-  await says(k, "a check due, a new sitting", "A quick check · about a minute");
+  await says(k, "a check due, a new sitting", "A quick check, about a minute.");
   const shown = await k.op({ op: "text" });
   if (shown.ok && !String(shown.text).includes("pooled variance")) problem("a check due, a new sitting: Home does not show the check's question");
   if (shown.ok && String(shown.text).includes("6.5")) problem("a check due, a new sitting: Home shows the check's answer key");
@@ -205,7 +206,7 @@ async function dueStates() {
   await step(k, "write an answer on Home", { op: "focus", target: "home-answer", by: "drive" });
   await step(k, "type it", { op: "type", text: "(9·4 + 9·9)/18 = 6.5" });
   await settle(k, 300);
-  await shoot(k, "home-due-check-typed", "Home: an answer written under the question, its line ending in ↩ answer");
+  await shoot(k, "home-due-check-typed", "Home: an answer written under the question, its line ending in Check ↩");
   await step(k, "clear it", { op: "type", text: "", replace: true });
   await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await k.op({ op: "menu_click", path: ["View", "Bigger Text"] });
@@ -299,6 +300,56 @@ async function workRecord() {
   await shoot(k, "workspace-work-big-wide", "Workspace over six skills at 1040 by 720, the largest text");
   // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
+  await quit(k);
+}
+
+/**
+ * The workspace page over a record with skills a marked paper left waiting for their repair (scratch-record.py
+ * --repair): their names as one run that ends "and N more", opened and closed from the keyboard, which stays on the
+ * one control that does both; at 1040 by 720 and at 720 by 560.
+ */
+async function repairRecord() {
+  const dir = join(scratch, "repair");
+  mkdirSync(dir, { recursive: true });
+  execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), dir], { encoding: "utf8" });
+  execFileSync("python3", [join(APP, "scripts/scratch-record.py"), dir, "--repair"], { encoding: "utf8" });
+  const home = join(scratch, "window-repair");
+  mkdirSync(home, { recursive: true });
+  const listed = JSON.parse(readFileSync(join(dir, "window", "state.json"), "utf8"));
+  writeFileSync(join(home, "state.json"), JSON.stringify({ ...listed, folders: {} }, null, 2));
+  const k = await launch("repair", home, agent, { MAGNESIUM_APP_RUNTIME: join(dir, "magnesium") });
+  const says = async (label, pattern) => {
+    const read = await k.op({ op: "text" });
+    if (read.ok && !pattern.test(String(read.text))) problem(`${label}: ${pattern} is not on the page`);
+  };
+  // Where the keyboard is once the page has drawn what the key did: a key no control takes.
+  const keyboardOn = async (label, drive) => {
+    await settle(k, 300);
+    const now = await k.op({ op: "key", key: "Shift" });
+    if (!String(now.focused ?? "").includes(`data-drive=${drive}`)) problem(`${label}: the keyboard left the control: ${now.focused}`);
+  };
+  await step(k, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
+  await settle(k, 800);
+  await step(k, "to To repair", { op: "scroll", target: "To repair" });
+  await settle(k, 300);
+  await says("repair, closed", /and \d+ more/);
+  await shoot(k, "workspace-repair", "Workspace: skills a paper left waiting for their repair, one run of names ending in and N more");
+  await step(k, "the keyboard on and N more", { op: "focus", target: "show-repair", by: "drive" });
+  await step(k, "open the run with Return", { op: "key", key: "Enter" });
+  await keyboardOn("repair, opened", "show-repair");
+  await says("repair, opened", /Show fewer/);
+  await shoot(k, "workspace-repair-open", "Workspace: the run of skills to repair opened, the keyboard on Show fewer");
+  await step(k, "close it with Return", { op: "key", key: "Enter" });
+  await keyboardOn("repair, closed again", "show-repair");
+  await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
+  await settle(k, 400);
+  await step(k, "to To repair, small", { op: "scroll", target: "To repair" });
+  await settle(k, 300);
+  await shoot(k, "workspace-repair-narrow", "Workspace at 720 by 560: To repair leads its run of names, the keyboard on and N more");
+  await step(k, "open the run, small", { op: "key", key: "Enter" });
+  await settle(k, 300);
+  await shoot(k, "workspace-repair-narrow-open", "Workspace at 720 by 560: the run of skills to repair opened");
+  await step(k, "1040 by 720", { op: "frame", width: 1040, height: 720 });
   await quit(k);
 }
 
@@ -821,6 +872,7 @@ try {
 
   if (process.env.PAGES_ONLY === "work") {
     await workRecord();
+    await repairRecord();
     throw "only";
   }
   if (process.env.PAGES_ONLY === "answer") {
@@ -1225,6 +1277,7 @@ try {
 
   await answerPages();
   await workRecord();
+  await repairRecord();
 
   // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
   // here only answers --version; it is never chosen.

@@ -2,7 +2,7 @@
 """Give a scratch course (scripts/scratch-course.sh) a record of several
 skills, answered over ten days, so a photograph can show where each stands.
 
-    python3 scripts/scratch-record.py <dir> [--new-sitting]
+    python3 scripts/scratch-record.py <dir> [--new-sitting] [--repair]
 
 <dir> is the one given to scratch-course.sh. The answers go in as Claude
 Code's would, through the runtime's own hooks and MCP tool, one lesson a
@@ -20,6 +20,12 @@ Each wrong answer stores the check's next question with its key, as the
 tutor's does (attempt.next). With --new-sitting the runtime's note of the
 learner's last message is moved four hours back, so the next message begins
 a sitting, which opens with the check that is due.
+
+With --repair, before the first lesson the gap log gets a row for each of
+the made-up skills in REPAIR, as a marked paper leaves them: no repair done
+and no redo set. Each is answered right once in the first lesson, so it is a
+skill the learner has worked on, and the runtime says it waits for its
+repair.
 """
 
 import asyncio
@@ -54,11 +60,29 @@ DAYS = [
     (0, [("margin of error", "right", True), ("degrees of freedom of a t statistic", "wrong", False), (LONG, "right", True)]),
 ]
 
+# Skills a marked paper left waiting for their repair (--repair), named by codes as a gap log's tags often are: more
+# than the course page shows before "and N more".
+REPAIR = ["VAR-RATIO", "TCRIT", "CLT-N", "CI-WIDTH", "DF-WELCH", "P-VALUE", "Z-SCORE", "BOXPLOT", "SE-PROP", "CHISQ",
+          "ANOVA-1", "F-RATIO", "LEVENE", "BONF", "TUKEY", "R-SQ", "SLOPE-CI", "RESID", "LOGIT", "ODDS", "MLE", "SIMPSON",
+          "POWER", "TYPE-II", "EFFECT-D", "WILCOX"]
 
-def main(root: Path, new_sitting: bool = False):
+
+def write_gaps(course: Path):
+    import datetime
+    day = (datetime.date.today() - datetime.timedelta(days=12)).isoformat()
+    head = "| # | Date | Paper | Q | Tag | What went wrong | Type | Repair done | Passes | Next redo | Status |\n" + "|---|" * 11 + "\n"
+    rows = "".join(f"| {n} | {day} | Midterm 2023 | Q{n} | {tag} | lost the mark on it | A |  |  |  | open |\n" for n, tag in enumerate(REPAIR, start=1))
+    (course / "Study" / "midterm-2" / "gap-log.md").write_text("## Gaps\n\n" + head.replace("||", "|") + rows)
+
+
+def main(root: Path, new_sitting: bool = False, repair: bool = False):
     course = root / "Intro-Statistics"
     runtime = root / "magnesium"
-    for day, (gap, answers) in enumerate(DAYS):
+    days = DAYS
+    if repair:
+        write_gaps(course)
+        days = [(DAYS[0][0], DAYS[0][1] + [(tag, "right", True) for tag in REPAIR]), *DAYS[1:]]
+    for day, (gap, answers) in enumerate(days):
         asyncio.run(lesson(course, runtime, f"scratch-day-{day}", answers))
         if gap:
             subprocess.run(["sh", str(APP / "scripts/scratch-course.sh"), str(root), "--days-ago", str(gap)], check=True, stdout=subprocess.DEVNULL)
@@ -131,7 +155,7 @@ async def call(client, tool: str, arguments: dict):
 
 
 if __name__ == "__main__":
-    args = [arg for arg in sys.argv[1:] if arg != "--new-sitting"]
+    args = [arg for arg in sys.argv[1:] if arg not in ("--new-sitting", "--repair")]
     if len(args) != 1:
-        raise SystemExit("usage: python3 scripts/scratch-record.py <dir> [--new-sitting]")
-    main(Path(args[0]).resolve(), "--new-sitting" in sys.argv[1:])
+        raise SystemExit("usage: python3 scripts/scratch-record.py <dir> [--new-sitting] [--repair]")
+    main(Path(args[0]).resolve(), "--new-sitting" in sys.argv[1:], "--repair" in sys.argv[1:])
