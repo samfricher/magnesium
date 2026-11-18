@@ -134,11 +134,17 @@ export function openedDay(ms: number | null | undefined, now = new Date()): stri
 
 /**
  * The one fact a course's row on Home says, from what the record says of its day. The course whose step Home is
- * offering leaves out its quick checks, which the cue above already says; any other course leads with them. Then an
- * exam within two weeks, the skills that can count today, the day it was last studied, or that it never was.
+ * offering leaves out its quick checks, which the cue above already says; any other course leads with them, unless a
+ * timed paper runs there and nothing can be taken until it is handed in. Then an exam within two weeks, the skills
+ * that can count today, the day it was last studied, or that it never was.
  */
-export function courseFact(home: Pick<Home, "checks_due" | "exam" | "can_count_today"> | null, openedMs: number | null | undefined, offered: boolean, now = new Date()): string {
-  const checks = home?.checks_due ?? 0;
+export function courseFact(
+  home: Pick<Home, "checks_due" | "exam" | "can_count_today"> & Partial<Pick<Home, "sitting">> | null,
+  openedMs: number | null | undefined,
+  offered: boolean,
+  now = new Date(),
+): string {
+  const checks = home?.sitting ? 0 : (home?.checks_due ?? 0);
   if (!offered && checks > 0) return `${checks} ${checks === 1 ? "quick check" : "quick checks"} due`;
   const left = home?.exam?.days_left ?? null;
   if (home?.exam && left !== null && left >= 0 && left <= 14) return `${home.exam.title} ${left === 0 ? "today" : left === 1 ? "tomorrow" : `in ${left} days`}`;

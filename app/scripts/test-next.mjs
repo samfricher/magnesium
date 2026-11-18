@@ -137,6 +137,7 @@ assert.equal(openedDay(at(1), day), "yesterday");
 const course = (checks_due, days, can) => ({ checks_due, exam: days === null ? null : exam(days), can_count_today: can });
 assert.equal(courseFact(course(2, 10, 1), at(1), false, day), "2 quick checks due", "another course leads with its checks");
 assert.equal(courseFact(course(2, 10, 1), at(1), true, day), "Midterm 2 in 10 days", "the offered course leaves its checks to the cue");
+assert.equal(courseFact({ ...course(2, 10, 1), sitting: { name: "Midterm 2023" } }, at(1), false, day), "Midterm 2 in 10 days", "no checks are said due while a paper runs there");
 assert.equal(courseFact(course(0, 20, 3), at(1), false, day), "3 can count today", "an exam past two weeks gives way");
 assert.equal(courseFact(course(0, null, 0), at(1), false, day), "studied yesterday");
 assert.equal(courseFact(course(0, null, 0), null, false, day), "not studied yet");

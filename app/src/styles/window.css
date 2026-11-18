@@ -326,6 +326,10 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .mg-exam-name { margin: 0; padding: 4px 0; font: italic 400 1rem/1.45 var(--read); color: var(--text); }
 .mg-run { margin: 0; padding: 4px 0; font: 400 0.882rem/1.5 var(--read); color: var(--quiet); text-wrap: pretty; }
 .mg-run .mg-code { line-height: 1.5; white-space: nowrap; }
+/* Its toggle comes a space after the last name: it pulls back nothing, and its ring sits close, so the ring clears
+   the name's last letter. */
+.mg-run .mg-more { padding: 2px 4px; margin: -2px 0 -2px 2px; }
+:root[data-input="key"] .mg-run .mg-more:focus { outline-offset: 1px; }
 .mg-files { margin-top: 0.3rem; }
 
 /* The gaps between parts. Your work's are set so the baselines fall 35px apart inside a day, 48px from one day to
@@ -365,7 +369,11 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .mg.stacked .mg-now + .mg-then-part { margin-top: 1.176rem; }
 .mg.stacked .mg-group-part { display: flow-root; }
 .mg.stacked .mg-group-part .mg-head { float: left; margin: 0 1em 0 0; padding-top: 0.15rem; }
-.mg.stacked .mg-repair .mg-head { padding-top: 0.12rem; }
+/* "To repair" starts its run of names, which wraps to the column's edge: text, not a float the lines wrap around. */
+.mg.stacked .mg-repair { padding: 4px 0; font: 400 0.882rem/1.5 var(--read); }
+.mg.stacked .mg-repair .mg-head { float: none; display: inline; margin: 0 1em 0 0; padding: 0; }
+.mg.stacked .mg-repair .mg-body,
+.mg.stacked .mg-repair .mg-run { display: inline; padding: 0; }
 
 /* A short window: smaller gaps around the step, and the cue's second line goes. */
 @media (max-height: 640px) {
