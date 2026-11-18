@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { checkKicker, checksAlone, checksDueWords, courseFact, dueWords, firstQuestion, firstStep, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay } = await import("../src/next.ts");
+const { checkKicker, checksAlone, checksDueWords, courseFact, dueWords, firstQuestion, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay } = await import("../src/next.ts");
 
 const item = (id, title, status, day = null, note = null) => ({ id, title, status, day, note });
 const session = (session, title, more = {}) => ({ session, title, opening: "", first_ms: 1, last_ms: 1, turns: 2, current: false, opened_ms: 1, ...more });
@@ -51,23 +51,14 @@ assert.equal(planDay(null, now), "");
 
 // What the session opens with, from the record's reading: nothing unless the next message begins a sitting.
 const opens = (checks, redos, sitting = null) => ({ opening: { checks, redos }, sitting });
-assert.equal(firstStep(opens(1, 0)), "Starts with 1 quick check · about a minute");
-assert.equal(firstStep(opens(3, 0)), "Starts with 3 quick checks · about 3 minutes");
-assert.equal(firstStep(opens(0, 2)), "Starts with 2 paper redos");
-assert.equal(firstStep(opens(1, 1)), "Starts with 1 quick check and 1 paper redo");
-assert.equal(firstStep(opens(0, 0)), null);
-assert.equal(firstStep({ opening: null, sitting: null }), null, "a sitting carried on opens with nothing");
-assert.equal(firstStep(opens(1, 0, { name: "Midterm 2023" })), null, "no tutor while a paper runs");
-assert.equal(firstStep(null), null);
-
-// The same, as the cue's sentence: a time only when no paper redo is in it, and never where firstStep has nothing.
+// As the cue's sentence: a time only when no paper redo is in it.
 assert.equal(startsWithWords(opens(1, 0)), "Starts with 1 quick check, about a minute.");
 assert.equal(startsWithWords(opens(3, 0)), "Starts with 3 quick checks, about 3 minutes.");
 assert.equal(startsWithWords(opens(0, 2)), "Starts with 2 paper redos.");
 assert.equal(startsWithWords(opens(1, 1)), "Starts with 1 quick check and 1 paper redo.");
 assert.equal(startsWithWords(opens(0, 0)), null);
-assert.equal(startsWithWords({ opening: null, sitting: null }), null);
-assert.equal(startsWithWords(opens(1, 0, { name: "Midterm 2023" })), null);
+assert.equal(startsWithWords({ opening: null, sitting: null }), null, "a sitting carried on opens with nothing");
+assert.equal(startsWithWords(opens(1, 0, { name: "Midterm 2023" })), null, "no tutor while a paper runs");
 assert.equal(startsWithWords(null), null);
 assert.equal(checksDueWords(1), "1 quick check due, about a minute.");
 assert.equal(checksDueWords(2), "2 quick checks due, about 2 minutes.");
@@ -131,7 +122,6 @@ assert.equal(heldAnswerGoes(held(), after({ task: "What is b in 2x² − 7x − 
 assert.equal(heldAnswerGoes(held(), after({ taskUnseen: true, reply: `Quick check 1: ${Q}` })), "unmarked", "the engine has not said; the reply posed Home's question");
 assert.equal(heldAnswerGoes(held(), after({ taskUnseen: false, reply: `Quick check 1: ${Q}` })), "line", "the engine says no task is open");
 
-console.log("next checks passed");
 
 // The skill of the latest marked answer, joined through each row's newest answer; none without a marked answer.
 const row = (name, last) => ({ dots: [0, 0, 0], name, what: "", note: "", due: false, next_day: null, last_answer: last });
@@ -157,3 +147,6 @@ assert.equal(dueWords({ checks_due: 2, redos_due: 0 }), "2 quick checks due, abo
 assert.equal(dueWords({ checks_due: 1, redos_due: 1 }), "1 quick check and 1 paper redo due.");
 assert.equal(dueWords({ checks_due: null, redos_due: 2 }), "2 paper redos due.");
 assert.equal(dueWords({ checks_due: 0, redos_due: 0 }), null);
+assert.equal(dueWords({ checks_due: 1, redos_due: 0, sitting: { name: "Midterm 2023" } }), null, "nothing is said due while a paper runs");
+
+console.log("next checks passed");

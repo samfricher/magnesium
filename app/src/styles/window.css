@@ -158,8 +158,6 @@
   color: var(--text);
   text-wrap: balance;
 }
-/* The gap under a step is the one a workspace's page leaves under its own step. */
-.step { margin-bottom: 1.8rem; }
 .page-text { margin: 0.2rem 0 0.6rem; font: 400 0.882rem/1.55 var(--app); color: var(--text); max-width: 34em; }
 .page-note { margin: 0.35rem 0 0.4rem; font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
 .page-notes { position: absolute; left: 50%; bottom: 1.2rem; transform: translateX(-50%); width: min(34rem, calc(100% - 80px)); }
@@ -331,7 +329,8 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .mg-files { margin-top: 0.3rem; }
 
 /* The gaps between parts. Your work's are set so the baselines fall 35px apart inside a day, 48px from one day to
-   the next and 80px from the exam to what waits for a repair, the widest break inside it. */
+   the next (skills to repair among them), and 80px from the exam, or the last day, to what comes after it: the widest
+   break inside it. */
 .mg-now + .mg-then-part { margin-top: 1.176rem; }
 .mg-part + .mg-courses { margin-top: 3.765rem; }
 .mg-folder-acts { margin-top: 2.588rem; }
@@ -343,7 +342,10 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .mg-sessions:has(.mg-more-line) + .mg-work { margin-top: 4.235rem; }
 .mg-work + .mg-part { margin-top: 0.647rem; }
 .mg-day + .mg-day { margin-top: 0.903rem; }
-.mg-day + .mg-repair { margin-top: 2.89rem; }
+.mg-day + .mg-repair { margin-top: 1rem; }
+.mg-repair + .mg-day { margin-top: 0.93rem; }
+.mg-exam-day + .mg-part { margin-top: 2.79rem; }
+.mg-exam-day + .mg-repair { margin-top: 2.89rem; }
 .mg-day + .mg-proven { margin-top: 2.79rem; }
 .mg-repair + .mg-proven { margin-top: 1.165rem; }
 .mg-part + .mg-papers { margin-top: 3.73rem; }
@@ -790,8 +792,6 @@ dialog.layer::backdrop { background: transparent; }
 
 .setting:has(.colour-field) { align-items: start; }
 .setting:has(.colour-field) .setting-name { padding-top: 0.1rem; }
-
-/* A row with no action of its own: its date ends at the column's edge, as every row's does. A skill's row ends in its days. */
 
 
 /* The paste sheet is one field: no rules boxing it. */

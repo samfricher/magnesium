@@ -547,11 +547,10 @@ export function WorkspacePage(props: Props) {
     .filter(({ row, last }) => last !== null || earned(row) > 0)
     .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""));
   const last = record ? latestSkill(rows, record.marks) : null;
-  // The days each skill can next count, the exam among them; then the skills waiting for a repair, then the proven.
+  // The days each skill can next count, in agendaOf's order: the skills waiting for a repair among them, the exam on
+  // its date, the proven last.
   const days = work.length > 0 ? agendaOf(work, home?.exam ?? null) : [];
-  const dated = days.filter((day) => day.label !== "To repair" && !day.proven);
-  const repair = days.find((day) => day.label === "To repair")?.items ?? [];
-  const proven = days.find((day) => day.proven)?.items ?? [];
+  const repairs = days.some((day) => day.label === "To repair");
   const skillName = (name: string) => (isCode(name) ? <span className="mg-code">{name}</span> : <Line text={name} />);
   const workRow = (row: Row, quiet = false) => (
     <div key={row.name} role="listitem" className={`mg-skill${quiet ? " quiet" : ""}`}>
@@ -690,32 +689,26 @@ export function WorkspacePage(props: Props) {
               ) : (
                 <p className="mg-legend">
                   A ring for each separate day right from memory; three prove it. The day at left is when each can next count.
-                  {repair.length > 0 ? " A skill to repair counts again once it is repaired." : ""}
+                  {repairs ? " A skill to repair counts again once it is repaired." : ""}
                 </p>
               )}
             </Part>
-            {dated.map((day) =>
+            {days.map((day) =>
               day.exam !== null ? (
                 <Part key={day.key} head={day.label} group className="mg-day mg-exam-day">
                   <p className="mg-exam-name">
                     <Line text={day.exam} />
                   </p>
                 </Part>
+              ) : day.label === "To repair" ? (
+                <Part key={day.key} head={day.label} group className="mg-repair">
+                  <RepairRun names={day.items.map(({ row }) => row.name)} />
+                </Part>
               ) : (
-                <Part key={day.key} head={day.label} group className="mg-day">
-                  <div role="list">{day.items.map(({ row }) => workRow(row))}</div>
+                <Part key={day.key} head={day.label} group className={day.proven ? "mg-proven" : "mg-day"}>
+                  <div role="list">{day.items.map(({ row }) => workRow(row, day.proven))}</div>
                 </Part>
               ),
-            )}
-            {repair.length > 0 && (
-              <Part head="To repair" group className="mg-repair">
-                <RepairRun names={repair.map(({ row }) => row.name)} />
-              </Part>
-            )}
-            {proven.length > 0 && (
-              <Part head="Proven" group className="mg-proven">
-                <div role="list">{proven.map(({ row }) => workRow(row, true))}</div>
-              </Part>
             )}
           </>
         )}
@@ -774,9 +767,9 @@ export function WorkspacePage(props: Props) {
                     onClick={() => openMaterial(`Study/materials/${file}`)}
                   />
                 ))}
-                {listed.files > listed.names.length && <p className="mg-cue">and {listed.files - listed.names.length} more, in the folder</p>}
               </div>
             )}
+            {listed && materialOpen && listed.files > listed.names.length && <p className="mg-cue">and {listed.files - listed.names.length} more, in the folder</p>}
             {materials !== null && materials !== "none" && (
               <p className="mg-controls mg-material-acts">
                 <button className="mg-act" data-drive="add-material" disabled={!ready || busy} onClick={() => void addFiles()}>

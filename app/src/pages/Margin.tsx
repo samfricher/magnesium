@@ -73,10 +73,13 @@ export function Row(props: { name: ReactNode; end?: ReactNode; quiet?: boolean; 
     </>
   );
   const className = `mg-row${props.quiet ? " quiet" : ""}${props.className ? ` ${props.className}` : ""}`;
+  // A list holds list items: a row that is a button sits in one, so it keeps its button role.
   return props.onClick ? (
-    <button className={`${className} mg-hit`} data-drive={props.drive} data-row="" aria-current={props.current ? "true" : undefined} onClick={props.onClick}>
-      {body}
-    </button>
+    <div role="listitem">
+      <button className={`${className} mg-hit`} data-drive={props.drive} data-row="" aria-current={props.current ? "true" : undefined} onClick={props.onClick}>
+        {body}
+      </button>
+    </div>
   ) : (
     <div className={className} role="listitem">
       {body}
@@ -144,19 +147,19 @@ export function RepairRun({ names }: { names: string[] }) {
   fit = Math.max(1, fit);
   const shown = open ? names : names.slice(0, fit);
   const more = names.length - shown.length;
+  // One control, at the run's end, both opens and closes it, so the keyboard stays on it either way.
   return (
     <p className="mg-run">
       {shown.map((name, at) => (
         <Fragment key={name}>
           <span className={isCode(name) ? "mg-code" : "mg-run-name"}>{name}</span>
-          {at < shown.length - 1 ? ", " : more > 0 ? " " : ""}
+          {at < shown.length - 1 ? ", " : ""}
         </Fragment>
       ))}
-      {more > 0 && <More open={false} more={`and ${more} more`} onToggle={() => setOpen(true)} drive="show-repair" />}
-      {open && fit < names.length && (
+      {fit < names.length && (
         <>
           {" "}
-          <More open more="" onToggle={() => setOpen(false)} drive="show-repair" />
+          <More open={open} more={`and ${more} more`} onToggle={() => setOpen((was) => !was)} drive="show-repair" />
         </>
       )}
     </p>

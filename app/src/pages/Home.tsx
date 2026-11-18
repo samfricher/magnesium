@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
 import { homeDraftFor, keepHomeDraft } from "../homeDraft";
-import { checksAlone, courseFact, dueWords, firstQuestion, firstStep, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay, type Next } from "../next";
+import { checksAlone, courseFact, dueWords, firstQuestion, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
 import { Cue, Part, Row, useMargin } from "./Margin";
 import { useClaimKeyboard } from "./TabPage";
@@ -153,18 +153,17 @@ export function leadOf(workspaces: Workspace[]): Workspace | null {
 }
 
 /** What a course's row says of its day comes from these, as the record reads them. */
-type Facts = Pick<Home, "checks_due" | "redos_due" | "exam" | "can_count_today">;
-const factsOf = (home: Home | null): Facts | null => (home ? { checks_due: home.checks_due, redos_due: home.redos_due, exam: home.exam, can_count_today: home.can_count_today } : null);
+type Facts = Pick<Home, "checks_due" | "redos_due" | "sitting" | "exam" | "can_count_today">;
+const factsOf = (home: Home | null): Facts | null => (home ? { checks_due: home.checks_due, redos_due: home.redos_due, sitting: home.sitting, exam: home.exam, can_count_today: home.can_count_today } : null);
 
 /**
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
- * the session Return opens starts with (src/next.ts, firstStep, and the same as a sentence), where the plan's item
+ * the session Return opens starts with (src/next.ts), where the plan's item
  * stands in the plan, the skill of the record's latest marked answer, and when it was read.
  */
 type Read = {
   next: Next | null;
   goal: string | null;
-  first: string | null;
   opening: string | null;
   steps: { at: number; of: number } | null;
   checks: number;
@@ -211,7 +210,6 @@ async function readNext(api: Core, folder: string): Promise<Read> {
   return {
     next,
     goal,
-    first: firstStep(home),
     opening: startsWithWords(home),
     steps: next ? { at: items.indexOf(next.item) + 1, of: items.length } : null,
     checks: checksAlone(home),
@@ -288,7 +286,7 @@ export function HomePage(props: Props) {
     };
   }, [lead?.folder, props.api, props.workspaces]);
   const fallback: Read | null =
-    lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, opening: null, steps: null, checks: 0, question: null, redos: 0, facts: null, last: null, at: 0 } : null;
+    lead && gaveUp === lead.folder ? { next: null, goal: null, opening: null, steps: null, checks: 0, question: null, redos: 0, facts: null, last: null, at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
@@ -482,7 +480,7 @@ export function HomePage(props: Props) {
   const where = next
     ? `${course}${steps && steps.at > 0 ? `, step ${steps.at} of ${steps.of}` : ""}${planned && planned !== "today" ? `, planned for ${planned}` : ""}.`
     : recent?.latest
-      ? `${course}, last opened ${openedDay(recent.latest.last_ms)}.`
+      ? `${course}, last opened ${openedDay(recent.latest.opened_ms)}.`
       : `${course}.`;
   const startLabel = carries ? "Carry on" : "Start";
 

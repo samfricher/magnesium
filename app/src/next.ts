@@ -30,32 +30,14 @@ export function nextOf(items: PlanItem[], named: Named[]): Next | null {
   return { item, carried: named.find((each) => each.title.trim() === item.title.trim()) ?? null };
 }
 
-/**
- * What the session Next starts or carries on opens with, from the record's reading, as the row says it: "Starts with
- * 1 quick check · about a minute". A quick check is a one-minute question; a paper redo has no set length, so none is
- * said with one. Null when the next message opens with nothing: it carries a sitting on, the opener is off, nothing is
- * due, or a timed paper is running.
- */
-export function firstStep(home: Pick<Home, "opening" | "sitting"> | null): string | null {
-  const opening = home?.opening;
-  if (!opening || home.sitting) return null;
-  const { checks, redos } = opening;
-  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const parts = [checks > 0 ? count(checks, "quick check", "quick checks") : null, redos > 0 ? count(redos, "paper redo", "paper redos") : null].filter(
-    (part): part is string => part !== null,
-  );
-  if (parts.length === 0) return null;
-  const time = redos === 0 ? ` · about ${checks === 1 ? "a minute" : `${checks} minutes`}` : "";
-  return `Starts with ${parts.join(" and ")}${time}`;
-}
-
 /** "a minute", "3 minutes": how long a run of quick checks takes, a minute each. */
 const checkMinutes = (checks: number) => (checks === 1 ? "a minute" : `${checks} minutes`);
 
 /**
- * What the next session opens with, as a sentence of the cue under the next step: "Starts with 1 quick check, about a
- * minute." Null whenever firstStep is: the next message carries a sitting on, the opener is off, nothing is due, or a
- * timed paper runs. A paper redo has no set length, so a sitting with one gives no time.
+ * What the session the step starts or carries on opens with, from the record's reading, as a sentence of the cue under
+ * it: "Starts with 1 quick check, about a minute." A quick check is a one-minute question; a paper redo has no set
+ * length, so a sitting with one gives no time. Null when the next message opens with nothing: it carries a sitting on,
+ * the opener is off, nothing is due, or a timed paper runs.
  */
 export function startsWithWords(home: Pick<Home, "opening" | "sitting"> | null): string | null {
   const opening = home?.opening;
@@ -77,9 +59,11 @@ export function checksDueWords(checks: number): string | null {
 
 /**
  * What is due, as a sentence of the cue, when the next message carries a sitting on and so opens with nothing: "2 quick
- * checks due, about 2 minutes." or "1 quick check and 1 paper redo due." Null when nothing is.
+ * checks due, about 2 minutes." or "1 quick check and 1 paper redo due." Null when nothing is, and while a timed paper
+ * runs: there is no tutor to take them until it is handed in.
  */
-export function dueWords(home: Pick<Home, "checks_due" | "redos_due"> | null): string | null {
+export function dueWords(home: Pick<Home, "checks_due" | "redos_due" | "sitting"> | null): string | null {
+  if (home?.sitting) return null;
   const checks = home?.checks_due ?? 0;
   const redos = home?.redos_due ?? 0;
   if (redos === 0) return checksDueWords(checks);
@@ -123,16 +107,6 @@ export function firstQuestion(
   const text = home?.first_check?.trim() ?? "";
   if (checks === 0 || text === "" || !home?.opening?.checks) return null;
   return { text, meta: checkKicker(checks), id: home?.first_check_id ?? null };
-}
-
-/** What a workspace's row on Home says of it: "2 can count today · Midterm 2 in 10 days", each part only when it applies. */
-export function dayFacts(home: Pick<Home, "can_count_today" | "exam"> | null): string {
-  if (!home) return "";
-  const count = home.can_count_today ?? 0;
-  const left = home.exam?.days_left ?? null;
-  const exam =
-    home.exam && left !== null && left >= 0 ? `${home.exam.title} ${left === 0 ? "today" : left === 1 ? "tomorrow" : `in ${left} days`}` : null;
-  return [count > 0 ? `${count} can count today` : null, exam].filter(Boolean).join(" · ");
 }
 
 /**
