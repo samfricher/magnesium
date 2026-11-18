@@ -203,7 +203,7 @@ function home(folder: string | null = open): Home {
     message: !upgraded
       ? "This space’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
       : notSetUp
-        ? "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+        ? "This space isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
         : null,
     exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
     last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,

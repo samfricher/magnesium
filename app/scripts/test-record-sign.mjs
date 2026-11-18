@@ -18,7 +18,7 @@ registerHooks({
     }
   },
 });
-const { passDay } = await import("../src/words.ts");
+const { passDay, passDaySpoken, passWords } = await import("../src/words.ts");
 const { agendaOf, againOf } = await import("../src/agenda.ts");
 
 const mark = (more = {}) => ({ id: "a-1", at: "2026-11-17 10:00", label: "standard error of a mean", mark: "right", help: "none", cold: true, paper: null, ...more });
@@ -37,6 +37,19 @@ assert.equal(passDay(mark({ mark: "declined", pass: 1 })), null);
 // A count the window cannot draw as three days is not drawn.
 assert.equal(passDay(mark({ pass: 4 })), null);
 assert.equal(passDay(mark({ pass: 0 })), null);
+
+// The line under a pass says when the next day can count; the day itself is in the rings, and said to a screen
+// reader, which does not see them. A day with no next says which it was, on screen and to a screen reader alike.
+const today = new Date(2026, 10, 17, 12);
+assert.equal(passWords(mark({ pass: 1, next_day: "2026-11-18" }), today), "The second day can count from tomorrow.");
+assert.equal(passDaySpoken(mark({ pass: 1, next_day: "2026-11-18" })), "First of three days.");
+assert.equal(passWords(mark({ pass: 2, next_day: "2026-11-20" }), today), "The third day can count from Fri 20 Nov.");
+assert.equal(passDaySpoken(mark({ pass: 2, next_day: "2026-11-20" })), "Second of three days.");
+assert.equal(passWords(mark({ pass: 3 }), today), "Third of three days.");
+assert.equal(passDaySpoken(mark({ pass: 3 })), null, "the third day is said once");
+assert.equal(passWords(mark({ pass: 1 }), today), "First of three days.", "a pass with no next day says which it was");
+assert.equal(passDaySpoken(mark({ pass: 1 })), null);
+assert.equal(passDaySpoken(mark({ help: "hint", pass: 1, next_day: "2026-11-18" })), null, "no day earned, nothing said");
 
 // Your work as the days each skill can next count, on Tue 17 Nov 2026.
 const now = new Date(2026, 10, 17, 10);

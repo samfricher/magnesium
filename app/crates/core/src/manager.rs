@@ -833,7 +833,7 @@ impl Manager {
     pub fn set_up_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
         let folder = self.at(folder)?;
         runtime::init(&folder)
-            .map_err(|e| AgentError(format!("Magnesium could not set this folder up: {e}.")))?;
+            .map_err(|e| AgentError(format!("Magnesium could not set this space up: {e}.")))?;
         Ok(study::home(&folder, &self.store))
     }
 

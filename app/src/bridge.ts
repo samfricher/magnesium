@@ -32,7 +32,7 @@ async function tauriCore(): Promise<Core> {
         }),
       ),
     pickMaterial: async () => list(await dialog.open({ multiple: true, title: "Add material" })),
-    pickNewFolder: async () => (await dialog.save({ title: "Make a new folder" })) ?? null,
+    pickNewFolder: async () => (await dialog.save({ title: "Make a new folder", defaultPath: "My space" })) ?? null,
     openFolder: (path) => invoke("open_folder", { path }),
     visitFolder: (path) => invoke("visit_folder", { path }),
     newFolder: (path) => invoke("new_folder", { path }),

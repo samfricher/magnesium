@@ -399,7 +399,7 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         home.state = HomeState::NotSetUp;
         // `magnesium init` writes only inside `.magnesium/`.
         home.message = Some(
-            "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+            "This space isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
                 .into(),
         );
         return;

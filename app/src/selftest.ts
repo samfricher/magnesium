@@ -49,11 +49,26 @@ function noRawFiles(where: string): void {
   if (found) throw new Error(`${where} shows a path or file text (${found}): ${text.slice(0, 200)}`);
 }
 
-/** What the window shows as interface calls a study folder a space: none of the names it had before. */
+/** What the window shows as interface calls a study folder a space: none of the names it had before. The tutor's words
+ * and the learner's are theirs, and are left out. */
 function noRetiredNames(where: string): void {
-  const text = document.body.innerText;
+  // Every piece of text, each apart, so two pieces drawn side by side are not read as one word. Hidden text counts:
+  // a screen reader reads it.
+  const pieces: string[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.parentElement?.closest(".tutor, .you, .said-quote, .question, script, style")) pieces.push(node.textContent ?? "");
+  }
+  // And the words an element carries for a screen reader, a pointer or an empty line.
+  for (const element of Array.from(document.body.querySelectorAll<HTMLElement>("[placeholder], [aria-label], [title]"))) {
+    if (element.closest(".tutor, .you, .said-quote, .question")) continue;
+    for (const name of ["placeholder", "aria-label", "title"]) pieces.push(element.getAttribute(name) ?? "");
+  }
+  const text = pieces.join(" ");
   const found = [/\bworkspaces?\b/i, /\bstudy folders?\b/i, /\bcourse material\b/i, /\bthis course\b/i, /\bcourse page\b/i, /\bthis folder\b/i, /\bCourses\b/].find((pattern) => pattern.test(text));
-  if (found) throw new Error(`${where} names a space by an old name (${found}): ${text.slice(0, 200)}`);
+  if (!found) return;
+  const at = text.search(found);
+  throw new Error(`${where} names a space by an old name (${found}): …${text.slice(Math.max(0, at - 80), at + 80)}…`);
 }
 
 export async function run(api: Core, actions: Actions): Promise<void> {
@@ -116,6 +131,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     await until("the command menu", () => document.querySelector('[data-layer="Commands"]') !== null, 3000);
     const commands = Array.from(document.querySelectorAll('[data-layer="Commands"] .row-label')).map((row) => row.textContent);
     steps.commands = commands;
+    noRetiredNames("⌘K");
     if (commands.length > 6 || !commands.includes("Home") || !commands.includes("Settings") || !commands.includes("New session")) throw new Error(`⌘K holds other things: ${commands.join(", ")}`);
     press("Escape");
     await until("the command menu to go", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
@@ -305,8 +321,11 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!kept.startsWith("Study/handed-in/attached/")) throw new Error(`a pasted image was not handed in: ${kept}`);
     const asWork = attachedWords([kept], true);
     const toRead = attachedWords([kept], false);
-    if (!asWork.startsWith("Photo of my working: ") || !/may be my working or course material/.test(toRead)) throw new Error(`a file was not named in plain words: ${asWork} / ${toRead}`);
+    if (!asWork.startsWith("Photo of my working: ") || !/may be my working or material I’m learning from/.test(toRead)) throw new Error(`a file was not named in plain words: ${asWork} / ${toRead}`);
     if (splitAttached(`b = 5\n\n${toRead}`).files[0] !== kept || splitAttached(`b = 5\n\n${toRead}`).text !== "b = 5") throw new Error("a file named in a message was not read back");
+    // A message sent before the words changed is read back the same way, so a session opened again shows its files.
+    const before = `b = 5\n\nA file for you to read: ${kept}. It may be my working or course material.`;
+    if (splitAttached(before).files[0] !== kept || splitAttached(before).text !== "b = 5") throw new Error("a file named in an older message was not read back");
 
     // The library, the plan and the folder's sessions, through the shell.
     const listed = await api.workspaces();
@@ -336,6 +355,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const newTab = document.querySelector('[role="tab"][aria-selected="true"] .tab-name')?.textContent?.trim() ?? null;
     steps.newSessionTab = newTab;
     if (newTab !== "New session") throw new Error(`a new session's tab is not named New session: ${JSON.stringify(newTab)}`);
+    noRetiredNames("a new session");
     const noStuck = front('[data-line="rest"] [data-drive="stuck"]') === null;
     actions.run("hint");
     await wait(300);
@@ -493,6 +513,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.cardWords = card;
     if (card.head !== "The tutor asks to run a command" || card.what !== "Build the paper as a PDF" || card.exact !== "tectonic paper.tex" || card.always !== "or always allow tectonic commands")
       throw new Error(`the permission card is not in the learner's words: ${JSON.stringify(card)}`);
+    noRetiredNames("a permission card");
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 

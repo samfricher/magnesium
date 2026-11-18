@@ -487,11 +487,11 @@ export function attachedWords(paths: string[], working: boolean): string {
   const photos = paths.every((path) => !/\.pdf$/i.test(path));
   if (working) return `${paths.length === 1 ? (photos ? "Photo" : "File") : photos ? "Photos" : "Files"} of my working: ${list}`;
   return paths.length === 1
-    ? `A file for you to read: ${list}. It may be my working or course material.`
-    : `Files for you to read: ${list}. They may be my working or course material.`;
+    ? `A file for you to read: ${list}. It may be my working or material I’m learning from.`
+    : `Files for you to read: ${list}. They may be my working or material I’m learning from.`;
 }
 
-const ATTACHED = /(?:^|\n\n)(?:(?:Photos?|Files?) of my working: (.+)|(?:A file|Files) for you to read: (.+?)\. (?:It|They) may be my working or course material\.)\s*$/;
+const ATTACHED = /(?:^|\n\n)(?:(?:Photos?|Files?) of my working: (.+)|(?:A file|Files) for you to read: (.+?)\. (?:It|They) may be my working or (?:course material|material I’m learning from)\.)\s*$/;
 
 /** What the learner said, apart from the files that went with it, which the lesson names by their file names alone. */
 export function splitAttached(text: string): { text: string; files: string[]; working: boolean } {
