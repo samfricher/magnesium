@@ -6,6 +6,8 @@ Magnesium helps your usual assistant teach understanding you can use independent
 
 [The install guide](install.md) tells your coding agent how to build Magnesium and set up a study folder. To set up another, run `magnesium init /path/to/your/course`, or run `magnesium init` from that folder. Initialization creates private `.magnesium` state and installs the packaged teaching instructions; in an existing Git repository, it adds `.magnesium` to local exclusions. Your study materials stay in place. Subfolders share its memory unless you initialize a separate workspace inside one. Incompatible learner data is preserved and rejected without migration.
 
+The study window calls a study folder a **space**. Home lists your spaces, and each space has its own page with its sessions, your work, its papers and its material.
+
 Magnesium is built and tested for Claude Code. Its learner record, files and tools are open to any agent, but the lesson hooks, the skills and the plan templates work only in Claude Code. An adapter for another agent is separate work.
 
 - **Claude Code:** initialization sets up Magnesium's Claude plugin for this folder only. The CLI and the desktop app read the same files.

@@ -49,6 +49,13 @@ function noRawFiles(where: string): void {
   if (found) throw new Error(`${where} shows a path or file text (${found}): ${text.slice(0, 200)}`);
 }
 
+/** What the window shows as interface calls a study folder a space: none of the names it had before. */
+function noRetiredNames(where: string): void {
+  const text = document.body.innerText;
+  const found = [/\bworkspaces?\b/i, /\bstudy folders?\b/i, /\bcourse material\b/i, /\bthis course\b/i, /\bcourse page\b/i, /\bthis folder\b/i, /\bCourses\b/].find((pattern) => pattern.test(text));
+  if (found) throw new Error(`${where} names a space by an old name (${found}): ${text.slice(0, 200)}`);
+}
+
 export async function run(api: Core, actions: Actions): Promise<void> {
   const steps: Record<string, unknown> = {};
   let failure: string | null = null;
@@ -78,6 +85,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The folder named at the start opens its page in the Home tab: a visible New session, and no path.
     await until("the workspace's page", () => document.querySelector('[data-page="workspace"] [data-drive="new-session"]') !== null, 10_000);
     noRawFiles("the workspace's page");
+    noRetiredNames("the workspace's page");
     steps.workspace = { title: document.querySelector(".page-title")?.textContent ?? null };
 
     // Home: every workspace, and a first row Return starts from.
@@ -87,6 +95,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.homePage = { rows: document.querySelectorAll('[data-page="home"] [data-row]').length, first: document.querySelector('[data-drive="start"]')?.textContent ?? null };
     if (document.activeElement?.getAttribute("data-drive") !== "start") throw new Error("Home's first row does not have the focus");
     noRawFiles("Home");
+    noRetiredNames("Home");
 
     // Settings: a page in its own tab, with its sections, no file and no path.
     press(",", { meta: true });
@@ -98,6 +107,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     for (const wanted of ["Reading", "Appearance", "Keys", "Lessons", "About"]) if (!sections.includes(wanted)) throw new Error(`Settings has no ${wanted} section`);
     if (document.querySelectorAll('[data-page="settings"] textarea').length > 0) throw new Error("Settings shows a text to edit");
     noRawFiles("Settings");
+    noRetiredNames("Settings");
     press("w", { meta: true });
     await until("Settings to close", () => document.querySelector('[data-page="settings"]') === null, 3000);
 

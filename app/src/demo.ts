@@ -201,7 +201,7 @@ function home(folder: string | null = open): Home {
     name: "Biochemistry",
     state: !upgraded ? "needs_upgrade" : notSetUp ? "not_set_up" : "ready",
     message: !upgraded
-      ? "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
+      ? "This space’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
       : notSetUp
         ? "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
         : null,

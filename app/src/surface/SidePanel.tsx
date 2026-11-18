@@ -152,7 +152,7 @@ export const SidePanel = memo(function SidePanel(props: Props) {
       <Layer
         name="Open a document"
         mode="filter"
-        placeholder={openable === null ? "Reading the folder…" : openable.length === 0 ? "Nothing to open in this folder yet" : "A paper or a note"}
+        placeholder={openable === null ? "Reading the space…" : openable.length === 0 ? "Nothing to open in this space yet" : "A paper or a note"}
         rows={openRows}
         keys=""
         onClose={() => props.onPicking(false)}

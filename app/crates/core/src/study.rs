@@ -391,7 +391,7 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         Ok(digest) => digest,
         Err(error) => {
             home.state = HomeState::Unreadable;
-            home.message = Some(format!("Magnesium could not read this folder: {error}."));
+            home.message = Some(format!("Magnesium could not read this space: {error}."));
             return;
         }
     };
@@ -407,7 +407,7 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
     if upgrade_needed(&digest) {
         home.state = HomeState::NeedsUpgrade;
         home.message = Some(
-            "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
+            "This space’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
                 .into(),
         );
         return;
@@ -1055,7 +1055,7 @@ pub fn progress(folder: &Path, target: Option<&str>) -> Progress {
     let mut progress = Progress::default();
     let digest = match runtime::digest(folder) {
         Ok(digest) if upgrade_needed(&digest) => {
-            progress.message = Some("An earlier version of Magnesium set this folder up. Upgrade it from the course page to see your progress.".into());
+            progress.message = Some("An earlier version of Magnesium set this space up. Upgrade it from the space’s page to see your progress.".into());
             return progress;
         }
         Ok(digest) if digest["active"].as_bool() == Some(true) => digest,
@@ -1064,7 +1064,7 @@ pub fn progress(folder: &Path, target: Option<&str>) -> Progress {
             return progress;
         }
         Err(error) => {
-            progress.message = Some(format!("Magnesium could not read this folder: {error}."));
+            progress.message = Some(format!("Magnesium could not read this space: {error}."));
             return progress;
         }
     };

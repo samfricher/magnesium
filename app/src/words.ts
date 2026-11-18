@@ -83,6 +83,18 @@ export function passWords(mark: Mark, now = new Date()): string | null {
   return `The ${next} day can count ${when}.`;
 }
 
+/**
+ * The day the rings show, for a screen reader, which does not see them: "First of three days.", or null when the line
+ * already says it (the third day) or no day was earned.
+ */
+export function passDaySpoken(mark: Mark, now = new Date()): string | null {
+  const words = passWords(mark, now);
+  const day = passDay(mark);
+  if (!words || day === null) return null;
+  const said = `${PASS_WORDS[day - 1]} of three days.`;
+  return words === said ? null : said;
+}
+
 /** Which of its skill's three days an answer earned, 1 to 3, when its line says it earned one; null otherwise. */
 export function passDay(mark: Mark): number | null {
   if (!passWords(mark)) return null;

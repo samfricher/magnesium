@@ -220,7 +220,7 @@ pub const INSTALL_GUIDE: &str = "the install guide, docs/install.md in the Magne
 
 fn kept_message(installed: &Program) -> String {
     format!(
-        "Lessons use the Magnesium already on this Mac, version {}. They teach with that version's rules, and it cannot open a folder that a newer Magnesium has upgraded.",
+        "Lessons use the Magnesium already on this Mac, version {}. They teach with that version's rules, and it cannot open a space that a newer Magnesium has upgraded.",
         installed.number()
     )
 }

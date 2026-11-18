@@ -12,7 +12,7 @@ import { useHangs } from "../hangs";
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, passDay, passWords, withoutPaths, type PlanDiff } from "../words";
+import { firstWords, markWords, passDay, passDaySpoken, passWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
@@ -80,6 +80,8 @@ function Marks({ marks }: { marks: Mark[] }) {
         <p key={mark.id} className="record mark" data-mark={mark.mark}>
           {passDay(mark) !== null && <PassDays mark={mark} day={passDay(mark)!} />}
           {markWords(mark)}
+          {/* The rings are hidden from a screen reader, so the day they show is said to it in words. */}
+          {passDaySpoken(mark) && <span className="visually-hidden"> {passDaySpoken(mark)}</span>}
           {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
           {passWords(mark) && mark.receipt && (
             <span className="record-receipt" data-role="receipt">

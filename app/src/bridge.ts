@@ -20,7 +20,7 @@ async function tauriCore(): Promise<Core> {
     forgetFolder: (path) => invoke("forget_folder", { path }),
     findFolders: () => invoke("find_folders"),
     activity: () => invoke("activity"),
-    pickFolder: async () => list(await dialog.open({ directory: true, title: "Open a folder as a space" }))[0] ?? null,
+    pickFolder: async () => list(await dialog.open({ directory: true, title: "Open a folder" }))[0] ?? null,
     pickFiles: async () =>
       list(
         await dialog.open({
@@ -32,7 +32,7 @@ async function tauriCore(): Promise<Core> {
         }),
       ),
     pickMaterial: async () => list(await dialog.open({ multiple: true, title: "Add material" })),
-    pickNewFolder: async () => (await dialog.save({ title: "Make a new space", defaultPath: "My space" })) ?? null,
+    pickNewFolder: async () => (await dialog.save({ title: "Make a new folder" })) ?? null,
     openFolder: (path) => invoke("open_folder", { path }),
     visitFolder: (path) => invoke("visit_folder", { path }),
     newFolder: (path) => invoke("new_folder", { path }),
