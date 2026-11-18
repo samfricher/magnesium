@@ -16,6 +16,7 @@ export type Scheme = "system" | "light" | "dark";
 export type KeyAction =
   | "home"
   | "commands"
+  | "new-tab"
   | "new-session"
   | "just-checks"
   | "open-workspace"
@@ -76,6 +77,7 @@ export const LINE_LOOKS: LineLook[] = ["bare", "ruled", "soft"];
 
 export const KEY_ACTIONS: [KeyAction, string][] = [
   ["home", "Home"],
+  ["new-tab", "New tab"],
   ["new-session", "New session"],
   ["just-checks", "Just the quick checks"],
   ["open-workspace", "Open a folder"],
@@ -122,6 +124,7 @@ export const DEFAULTS: Prefs = {
   keys: {
     home: "cmd+1",
     commands: "cmd+k",
+    "new-tab": "cmd+t",
     "new-session": "cmd+n",
     "just-checks": "cmd+shift+n",
     "open-workspace": "cmd+o",

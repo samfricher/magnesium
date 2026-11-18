@@ -626,7 +626,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.drift = drift;
 
     // The quiet controls, and the plan beside the lesson, shown and hidden.
-    steps.controls = ["more", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-session"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
+    steps.controls = ["more", "plan-toggle", "settings", "tab-1", "tab-2", "home", "new-tab"].filter((name) => document.querySelector(`[data-drive="${name}"]`) !== null);
     if ((steps.controls as string[]).length !== 7) throw new Error(`a visible control is missing: ${JSON.stringify(steps.controls)}`);
     const planWord = document.querySelector('[data-drive="plan-toggle"]')?.textContent ?? null;
     if (planWord !== "Plan") throw new Error(`the tab bar's switch for the plan says ${JSON.stringify(planWord)}`);

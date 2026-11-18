@@ -147,7 +147,7 @@ async function look({ binary, runtimeProgram }, tag, lineName) {
   } else if (options.at !== "home") {
     await to("open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" }, 800);
     if (options.at !== "workspace") {
-      await to("a new session", { op: "click", target: "new-session", by: "drive" }, 800);
+      await to("a new session", { op: "key", key: "n", meta: true }, 800);
       if (options.at !== "session") {
         await step(w, "focus the line", { op: "focus", target: "composer", by: "drive" });
         await step(w, "start", { op: "key", key: "Enter" });

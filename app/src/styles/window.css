@@ -49,8 +49,9 @@
   flex: 0 1 auto;
   border-radius: 6px;
 }
-/* A tab that can close keeps room for its mark, shown or not, so every gap in the row is the same. */
-.tab:not(.home) .tab-button { padding-right: 22px; }
+/* While tabs can close (two or more are open), each keeps room for its mark, shown or not, so every gap in the row
+   is the same. */
+.tab.closable .tab-button { padding-right: 22px; }
 .tab.home,
 .tab.here { flex-shrink: 0; }
 .tab.home { min-width: 0; }
