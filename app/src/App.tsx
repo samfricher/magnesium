@@ -1211,6 +1211,7 @@ export function App() {
                 front={front}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}
                 onStartIn={(folder) => newSession(folder, { kind: "start" })}
+                onNewSession={(folder) => newSession(folder)}
                 onChecks={(folder, answer) => newSession(folder, { kind: "checks", ...(answer ? { answer } : {}) })}
                 onChecksDue={onChecksDue}
                 checksKey={k("just-checks")}

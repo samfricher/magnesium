@@ -84,7 +84,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     actions.goWorkspace(null);
     await until("Home", () => document.querySelector('[data-page="home"] [data-drive="start"]') !== null, 10_000);
     await wait(100);
-    steps.homePage = { rows: document.querySelectorAll('[data-page="home"] .home-row').length, first: document.querySelector('[data-drive="start"]')?.textContent ?? null };
+    steps.homePage = { rows: document.querySelectorAll('[data-page="home"] [data-row]').length, first: document.querySelector('[data-drive="start"]')?.textContent ?? null };
     if (document.activeElement?.getAttribute("data-drive") !== "start") throw new Error("Home's first row does not have the focus");
     noRawFiles("Home");
 
@@ -833,8 +833,8 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     };
     const lessonTab = actions.active();
     actions.run("home");
-    await until("Home to ask for the sign-in", () => document.querySelector('[data-page="home"] .page-next')?.textContent?.includes("Sign in") === true, 10_000).catch(() => {});
-    signedOut.home = document.querySelector('[data-page="home"] .page-next')?.textContent ?? "";
+    await until("Home to ask for the sign-in", () => document.querySelector('[data-page="home"] h1')?.textContent?.includes("Sign in") === true, 10_000).catch(() => {});
+    signedOut.home = document.querySelector('[data-page="home"] h1')?.textContent ?? "";
     actions.run("tab", lessonTab);
     await until("the session in front again", () => actions.active() === lessonTab, 3000);
     steps.signedOut = signedOut;

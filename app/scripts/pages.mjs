@@ -197,7 +197,7 @@ async function dueStates() {
   hoursAgo(4);
   const k = await recordWindow("due-check");
   // The record stores the check's next question (scripts/scratch-record.py): Home sets it first, with a line to answer it.
-  await says(k, "a check due, a new sitting", "A quick check · about a minute");
+  await says(k, "a check due, a new sitting", "A quick check, about a minute.");
   const shown = await k.op({ op: "text" });
   if (shown.ok && !String(shown.text).includes("pooled variance")) problem("a check due, a new sitting: Home does not show the check's question");
   if (shown.ok && String(shown.text).includes("6.5")) problem("a check due, a new sitting: Home shows the check's answer key");
@@ -205,7 +205,7 @@ async function dueStates() {
   await step(k, "write an answer on Home", { op: "focus", target: "home-answer", by: "drive" });
   await step(k, "type it", { op: "type", text: "(9·4 + 9·9)/18 = 6.5" });
   await settle(k, 300);
-  await shoot(k, "home-due-check-typed", "Home: an answer written under the question, its line ending in ↩ answer");
+  await shoot(k, "home-due-check-typed", "Home: an answer written under the question, its line ending in Check ↩");
   await step(k, "clear it", { op: "type", text: "", replace: true });
   await step(k, "720 by 560", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await k.op({ op: "menu_click", path: ["View", "Bigger Text"] });

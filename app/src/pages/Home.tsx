@@ -1,27 +1,25 @@
-// Home: what the window opens on, headed by the day. Its first row is what to
-// study next, in the workspace studied in most recently, by the rule that
-// workspace's own page uses (src/next.ts): the plan's item in hand, which
-// Return starts or carries on. With no plan, one that cannot be read, or every
-// item done, the first row carries on the most recent session, else starts a
-// new one. When the next sitting there opens with a quick check whose question
-// the record stores, that question comes first, with a line to answer it on,
-// and the row follows it. Under it, every workspace in the library, most
-// recently opened first, with what the record says of its day.
+// Home: what the window opens on, set on the lesson's own column with each part's name in the margin. Today: what
+// to study next, in the workspace studied in most recently, by the rule that workspace's own page uses (src/next.ts):
+// the plan's item in hand, which Return starts or carries on. With no plan, one that cannot be read, or every item
+// done, it carries on the most recent session, else starts a new one. When the next sitting there opens with a quick
+// check whose question the record stores, that question takes Today, with a line to answer it on, and the step
+// follows it under Then. Under it, Courses: every workspace in the library, most recently opened first, each with the
+// one thing the record says of its day.
 //
-// A step this Mac needs before any lesson can run takes the first row's
-// place. A choice that leaves lessons running (which copy of the program to
-// keep) is a note at the foot of the page instead, under the workspaces and
-// the folder actions: it never takes Return, and lessons do not wait on it.
+// A step this Mac needs before any lesson can run takes Today's place. A choice that leaves lessons running (which
+// copy of the program to keep) is a note at the foot of the page instead, under the courses and the folder actions:
+// it never takes Return, and lessons do not wait on it.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
 import { homeDraftFor, keepHomeDraft } from "../homeDraft";
-import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
+import { checksAlone, courseFact, dueWords, firstQuestion, firstStep, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
+import { Cue, Part, Row, useMargin } from "./Margin";
 import { useClaimKeyboard } from "./TabPage";
-import type { Core, Setup, Workspace } from "../types";
-import { displayName, longDay, sessionName, whenOpened } from "../words";
+import type { Core, Home, Setup, Workspace } from "../types";
+import { displayName, sessionName, shortDay } from "../words";
 
 /**
  * Which of two programs' versions is later: 1 when `a` is, -1 when `b` is, 0 when the numbers are the same or
@@ -119,13 +117,15 @@ type Props = {
   step: Step | null;
   /** A choice about this Mac that lessons do not wait on, if any. */
   note: Note | null;
-  /** Home is in front, with nothing over it: the first row takes the focus. */
+  /** Home is in front, with nothing over it: the step takes the focus. */
   focus: boolean;
   /** Home's tab is in front. Behind another tab Home stays on the page, read again as the library changes. */
   front: boolean;
   notes: string[];
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
+  /** A new session in a folder, away from the plan's item: "Something else…". */
+  onNewSession: (folder: string) => void;
   /** Just the quick checks due in a folder, in a session of their own; `answer`, words written for the first. */
   onChecks: (folder: string, answer?: { words: string; question: string; id: string | null }) => void;
   /** How many quick checks are due in a folder, as Home read it. */
@@ -136,7 +136,7 @@ type Props = {
   onPickFolder: () => void;
   onNewFolder: () => void;
   onFindFolders: () => void;
-  /** Home's column is drawn with its first row: the first screen is ready. */
+  /** Home's column is drawn with its step: the first screen is ready. */
   onShown?: () => void;
 };
 
@@ -147,32 +147,49 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
   return best;
 }
 
-/** The workspace Home's first row is about: the one studied in most recently; in a library with no session yet, the one opened most recently. */
+/** The workspace Home's step is about: the one studied in most recently; in a library with no session yet, the one opened most recently. */
 export function leadOf(workspaces: Workspace[]): Workspace | null {
   return mostRecent(workspaces) ?? workspaces[0] ?? null;
 }
 
-/**
- * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
- * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
- */
-type Read = { next: Next | null; goal: string | null; first: string | null; checks: number; question: { text: string; meta: string; id: string | null } | null; redos: number; facts: string; at: number };
+/** What a course's row says of its day comes from these, as the record reads them. */
+type Facts = Pick<Home, "checks_due" | "redos_due" | "exam" | "can_count_today">;
+const factsOf = (home: Home | null): Facts | null => (home ? { checks_due: home.checks_due, redos_due: home.redos_due, exam: home.exam, can_count_today: home.can_count_today } : null);
 
 /**
- * How long Home waits for the lead workspace's plan before it draws the first row without it. The plan is read
- * through `magnesium digest`, which the core gives ten seconds; past this, Home draws the row it drew before the plan
- * led (the last session, else New session), keeps it for this visit, and keeps the plan read for the next one.
+ * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
+ * the session Return opens starts with (src/next.ts, firstStep, and the same as a sentence), where the plan's item
+ * stands in the plan, the skill of the record's latest marked answer, and when it was read.
+ */
+type Read = {
+  next: Next | null;
+  goal: string | null;
+  first: string | null;
+  opening: string | null;
+  steps: { at: number; of: number } | null;
+  checks: number;
+  question: { text: string; meta: string; id: string | null } | null;
+  redos: number;
+  facts: Facts | null;
+  last: string | null;
+  at: number;
+};
+
+/**
+ * How long Home waits for the lead workspace's plan before it draws the step without it. The plan is read through
+ * `magnesium digest`, which the core gives ten seconds; past this, Home draws the step it drew before the plan led
+ * (the last session, else New session), keeps it for this visit, and keeps the plan read for the next one.
  */
 export const PLAN_WAIT_MS = 400;
 
-// What Home read last, by folder, so that coming back to Home draws the first row at once while it reads again.
+// What Home read last, by folder, so that coming back to Home draws the step at once while it reads again.
 const known = new Map<string, Read>();
-// What each workspace's row last said of its day, by folder: drawn at once on the next visit while it is read again.
-const factsKnown = new Map<string, string>();
+// What each workspace's row last read of its day, by folder: drawn at once on the next visit while it is read again.
+const factsKnown = new Map<string, Facts | null>();
 
 /**
- * Reads what Home's first row says of a folder, for the window to wait on before it shows Home's list, or null when
- * Home knows it from an earlier visit and can draw the row at once.
+ * Reads what Home's step says of a folder, for the window to wait on before it shows Home, or null when Home knows it
+ * from an earlier visit and can draw the step at once.
  */
 export function readAhead(api: Core, folder: string): Promise<void> | null {
   if (known.has(folder)) return null;
@@ -181,16 +198,27 @@ export function readAhead(api: Core, folder: string): Promise<void> | null {
 
 async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
-  const [plan, sessions, home] = await Promise.all([api.plan(folder).catch(() => null), api.lessons(folder).catch(() => []), api.home(folder).catch(() => null)]);
+  const [plan, sessions, home, record] = await Promise.all([
+    api.plan(folder).catch(() => null),
+    api.lessons(folder).catch(() => []),
+    api.home(folder).catch(() => null),
+    Promise.all([api.progress(null, folder), api.marks(folder).catch(() => null)]).catch(() => null),
+  ]);
   const goal = sessions.some((info) => !info.title) ? (home?.last?.goal ?? null) : null;
+  const items = plan?.items ?? [];
+  const next = nextOf(items, namedSessions(sessions, goal));
+  const rows = record ? [...record[0].in_progress, ...record[0].confirmed, ...record[0].untested] : [];
   return {
-    next: nextOf(plan?.items ?? [], namedSessions(sessions, goal)),
+    next,
     goal,
     first: firstStep(home),
+    opening: startsWithWords(home),
+    steps: next ? { at: items.indexOf(next.item) + 1, of: items.length } : null,
     checks: checksAlone(home),
     question: firstQuestion(home),
     redos: home?.sitting ? 0 : (home?.opening?.redos ?? 0),
-    facts: dayFacts(home),
+    facts: factsOf(home),
+    last: record ? latestSkill(rows, record[1] ?? []) : null,
     at,
   };
 }
@@ -217,6 +245,16 @@ function NoteBlock({ note }: { note: Note }) {
   );
 }
 
+/** A control the step's own Return also takes, as "Start ↩" says: the one word on the page in the ink. */
+function Start({ label, run, focus, drive }: { label: string; run: () => void; focus?: boolean; drive?: string }) {
+  return (
+    // Return on the step already does this, so the keyboard passes over it unless it is the page's first control.
+    <button className="mg-start" data-drive={drive} tabIndex={focus ? undefined : -1} autoFocus={focus} onClick={run}>
+      {label} <span className="keys">↩</span>
+    </button>
+  );
+}
+
 export function HomePage(props: Props) {
   const list = useRef<HTMLDivElement>(null);
   const workspaces = props.workspaces ?? [];
@@ -227,7 +265,7 @@ export function HomePage(props: Props) {
     const kept = lead ? known.get(lead.folder) : undefined;
     return lead && kept ? { folder: lead.folder, read: kept, here: false } : null;
   });
-  // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its first row is drawn without it.
+  // The lead workspace whose plan took longer than PLAN_WAIT_MS: for this visit its step is drawn without it.
   const [gaveUp, setGaveUp] = useState<string | null>(null);
   const gaveUpOn = useRef<string | null>(null);
   useEffect(() => {
@@ -241,7 +279,7 @@ export function HomePage(props: Props) {
     }, PLAN_WAIT_MS);
     void readNext(props.api, folder).then((fresh) => {
       known.set(folder, fresh);
-      // A row already drawn without the plan stays as it is, rather than changing under the learner.
+      // A step already drawn without the plan stays as it is, rather than changing under the learner.
       if (live && gaveUpOn.current !== folder) setRead({ folder, read: fresh, here: true });
     });
     return () => {
@@ -249,50 +287,45 @@ export function HomePage(props: Props) {
       window.clearTimeout(limit);
     };
   }, [lead?.folder, props.api, props.workspaces]);
-  const fallback: Read | null = lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, checks: 0, question: null, redos: 0, facts: "", at: 0 } : null;
+  const fallback: Read | null =
+    lead && gaveUp === lead.folder ? { next: null, goal: null, first: null, opening: null, steps: null, checks: 0, question: null, redos: 0, facts: null, last: null, at: 0 } : null;
   const now = (lead && read?.folder === lead.folder ? read.read : null) ?? fallback;
   const next = now?.next ?? null;
 
-  // What the session Return opens starts with. A read kept from an earlier visit is not trusted for it once a lesson
-  // in that folder has moved since (its first message may have begun the sitting, and its checks been answered). The
-  // line is drawn only with the row's first drawing on this visit: a later read may take it away, never put it there.
+  // What the session Return opens starts with, or the quick checks due when it carries a sitting on. A read kept from
+  // an earlier visit is not trusted for it once a lesson in that folder has moved since (its first message may have
+  // begun the sitting, and its checks been answered). The words are drawn only with the step's first drawing on this
+  // visit: a later read may take them away, never put them there.
   const trusted = read !== null && read.read === now && (read.here || !lead?.latest || lead.latest.last_ms <= read.read.at);
-  const firstNow = trusted ? (now?.first ?? null) : null;
+  const saidNow = trusted ? (now?.opening ?? dueWords(now?.facts ?? null)) : null;
   const firstDrawn = useRef<{ folder: string; line: boolean; question: boolean } | null>(null);
-  // Behind another tab nobody sees the row, so a read then may still set the question over it: what Home holds when it
-  // comes to the front is what it is first drawn with.
+  // Behind another tab nobody sees the step, so a read then may still set the question over it: what Home holds when
+  // it comes to the front is what it is first drawn with.
   if (!props.front) firstDrawn.current = null;
 
   const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
-  // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
-  // for PLAN_WAIT_MS at most, rather than drawing one row and putting another in its place.
+  // Until the lead workspace's plan is read the step is not known: the page waits for it, the first time only and
+  // for PLAN_WAIT_MS at most, rather than drawing one step and putting another in its place.
   const waiting = lead !== null && now === null && !props.step;
   const questionNow = trusted && !props.step ? (now?.question ?? null) : null;
   if (lead && !waiting && props.workspaces !== null && firstDrawn.current?.folder !== lead.folder)
-    firstDrawn.current = { folder: lead.folder, line: firstNow !== null, question: questionNow !== null };
+    firstDrawn.current = { folder: lead.folder, line: saidNow !== null, question: questionNow !== null };
   const drawnFirst = lead && firstDrawn.current?.folder === lead.folder ? firstDrawn.current : null;
-  // The first check's question is set over the row only if it was there when the row was first drawn: coming later,
-  // it would push the row down and take the keyboard from under the learner. A later read may take it away.
+  // The first check's question takes Today only if it was there when the step was first drawn: coming later, it would
+  // push the step down and take the keyboard from under the learner. A later read may take it away.
   const question = drawnFirst?.question ? questionNow : null;
-  // Under the question, the row's line about what its session starts with stays only for paper redos, which the
-  // question's sitting of checks alone does not take.
-  const first = drawnFirst?.line && !(question && (now?.redos ?? 0) === 0) ? firstNow : null;
-  const firstLine = first ? <span className="next-first">{first}</span> : null;
-  // Quick checks due in the lead workspace can be taken alone, in a few minutes, instead of the row above. Shown only
-  // from a read the row's own line trusts: a kept one may count checks a lesson has answered since.
+  const said = drawnFirst?.line && !question ? saidNow : null;
+  // Under the question, what the step's session starts with is said only for paper redos, which the question's
+  // sitting of checks alone does not take.
+  const thenSaid = drawnFirst?.line && question && (now?.redos ?? 0) > 0 ? saidNow : null;
+  // Quick checks due in the lead workspace can be taken alone, in a few minutes, instead of the step. Offered only
+  // from a read the cue trusts: a kept one may count checks a lesson has answered since.
   const checks = lead && trusted && !question && (now?.checks ?? 0) > 0 ? lead.folder : null;
   const { onChecksDue } = props;
   useEffect(() => {
     if (read?.here) onChecksDue?.(read.folder, read.read.checks);
   }, [read, onChecksDue]);
-  const checksAct = checks ? (
-    <p className="page-acts next-acts">
-      <button className="quiet-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(checks)}>
-        {(now?.checks ?? 0) === 1 ? "Just the quick check" : "Just the quick checks"}
-      </button>
-    </p>
-  ) : null;
-  // The day at the head of the page, which moves on at midnight when Home is left open.
+  // The day in Today's margin, which moves on at midnight when Home is left open.
   const [day, setDay] = useState(isoToday);
   useEffect(() => {
     const now = new Date();
@@ -300,12 +333,13 @@ export function HomePage(props: Props) {
     const timer = window.setTimeout(() => setDay(isoToday()), Math.max(1000, midnight - now.getTime()));
     return () => window.clearTimeout(timer);
   }, [day]);
+  const hung = useMargin(list, ".page", [workspaces.length, props.step]);
 
-  // The answer line, when a question is set, then the rows: ↑↓ move between them.
-  const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
+  // The answer line, when a question is set, then the step and the courses: ↑↓ move between them.
+  const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("[data-row]") ?? []);
   const asked = question !== null;
-  // Whether a question was drawn over the first row while Home was last in front. Not what the render that sends
-  // Home behind computes: that render may already hold a question Home read but did not draw (its row was drawn).
+  // Whether a question was set in Today while Home was last in front. Not what the render that sends Home behind
+  // computes: that render may already hold a question Home read but did not draw (its step was drawn).
   const askedShown = useRef(false);
   useEffect(() => {
     if (props.front) askedShown.current = asked;
@@ -318,7 +352,7 @@ export function HomePage(props: Props) {
   const claimKeyboard = useClaimKeyboard();
   useEffect(() => {
     if (!props.focus || props.step) return;
-    // A question set while Home was behind takes the keyboard as Home comes back, over the row that had it: typing
+    // A question set while Home was behind takes the keyboard as Home comes back, over the step that had it: typing
     // then writes the answer, and Return starts the checks with it.
     const newQuestion = asked && askedAsLeft.current === false;
     askedAsLeft.current = null;
@@ -357,17 +391,18 @@ export function HomePage(props: Props) {
     onShown?.();
   }, [shown, onShown]);
 
-  // What each workspace's row says of its day. Each is read through the runtime, so the rows are drawn first, with
-  // what was read on an earlier visit, and each is filled in when read: the lead workspace's from Home's own read, the
+  // What each course's row says of its day. Each is read through the runtime, so the rows are drawn first, with what
+  // was read on an earlier visit, and each is filled in when read: the lead workspace's from Home's own read, the
   // others one after another once the page is up, so they never hold up its first drawing.
-  const [facts, setFacts] = useState<Record<string, string>>(() => Object.fromEntries(factsKnown));
+  const [facts, setFacts] = useState<Record<string, Facts | null>>(() => Object.fromEntries(factsKnown));
   const leadFacts = read?.here ? { folder: read.folder, said: read.read.facts } : null;
   useEffect(() => {
     if (!leadFacts) return;
     factsKnown.set(leadFacts.folder, leadFacts.said);
     setFacts((old) => (old[leadFacts.folder] === leadFacts.said ? old : { ...old, [leadFacts.folder]: leadFacts.said }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadFacts?.folder, leadFacts?.said]);
-  // A row's line changes with its workspace's record and the day, so behind other tabs a row reads again only when its
+  // A row's fact changes with its workspace's record and the day, so behind other tabs a row reads again only when its
   // workspace was studied since or the day moved on: each read runs the runtime twice, and the library is read again
   // after every turn of a lesson. Each time Home's tab comes to the front every row reads again, for what changed
   // where the window does not hear of it (a lesson in a terminal).
@@ -388,9 +423,9 @@ export function HomePage(props: Props) {
         const home = await api.home(workspace.folder).catch(() => null);
         if (!live) return;
         factsRead.current.set(workspace.folder, as);
-        const said = dayFacts(home);
+        const said = factsOf(home);
         factsKnown.set(workspace.folder, said);
-        setFacts((old) => (old[workspace.folder] === said ? old : { ...old, [workspace.folder]: said }));
+        setFacts((old) => (JSON.stringify(old[workspace.folder]) === JSON.stringify(said) ? old : { ...old, [workspace.folder]: said }));
       }
     })();
     return () => {
@@ -421,154 +456,177 @@ export function HomePage(props: Props) {
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [answer, asked]);
-  const onAnswerKey = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
+  const sendAnswer = () => {
     if (!lead) return;
     const words = answer.trim();
     props.onChecks(lead.folder, words === "" || !question ? undefined : { words, question: question.text, id: question.id });
   };
+  const onAnswerKey = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    sendAnswer();
+  };
 
+  // The step: the plan's item, else the most recent session carried on, else a new session.
+  const course = lead ? displayName(lead.name) : "";
+  const carries = next ? next.carried !== null : recent?.latest !== undefined && recent?.latest !== null;
+  const start = () => {
+    if (!lead) return;
+    if (next) next.carried ? props.onContinue(lead.folder, next.carried.info.session, next.carried.title) : props.onStartIn(lead.folder);
+    else if (recent?.latest) props.onContinue(recent.folder, recent.latest.session, name ?? "");
+    else props.onStartIn(lead.folder);
+  };
+  const title = next ? next.item.title : recent?.latest ? (name ?? "") : "New session";
+  const planned = next ? planDay(next.item.day) : "";
+  const steps = next ? now?.steps : null;
+  const where = next
+    ? `${course}${steps && steps.at > 0 ? `, step ${steps.at} of ${steps.of}` : ""}${planned && planned !== "today" ? `, planned for ${planned}` : ""}.`
+    : recent?.latest
+      ? `${course}, last opened ${openedDay(recent.latest.last_ms)}.`
+      : `${course}.`;
+  const startLabel = carries ? "Carry on" : "Start";
+
+  const nowBlock = lead && (
+    <>
+      <button className="mg-step" data-drive="start" data-row="" onClick={start}>
+        <Line text={title} />
+      </button>
+      {next?.item.note && (
+        <p className="mg-note">
+          <Line text={next.item.note} />
+        </p>
+      )}
+      <Cue lead={where} said={said} last={now?.last ?? null} />
+      <p className="mg-controls">
+        <Start label={startLabel} run={start} />
+        {checks && (
+          <button className="mg-act" data-drive="just-checks" title={props.checksKey ? `Just the quick checks, ${props.checksKey}` : undefined} onClick={() => props.onChecks(checks)}>
+            {(now?.checks ?? 0) === 1 ? "Just the quick check" : "Just the quick checks"}
+          </button>
+        )}
+        {(next || recent?.latest) && (
+          <button className="mg-act" data-drive="something-else" onClick={() => props.onNewSession(lead.folder)}>
+            Something else…
+          </button>
+        )}
+      </p>
+    </>
+  );
+
+  const asking = lead && question && (
+    <>
+      <p className="mg-cue mg-kicker">{question.meta}</p>
+      {/* Set as the open task is on a lesson's folded page. Its links stay shut, as they are there. */}
+      <div className="answer-task home-task" onClick={() => answerBox.current?.focus()}>
+        <Rich text={question.text} final linksOpen={false} />
+      </div>
+      <div className="foot home-foot">
+        <div className={`line lesson first${answer.trim() !== "" ? " typed" : ""}`}>
+          <div className="field-row">
+            <textarea
+              ref={answerBox}
+              className="field home-answer"
+              data-drive="home-answer"
+              data-row=""
+              aria-label="Your answer"
+              rows={1}
+              spellCheck
+              placeholder="Your answer"
+              value={answer}
+              onChange={(event) => setAnswer(event.target.value)}
+              onKeyDown={onAnswerKey}
+            />
+            <span className="line-tools">
+              {/* Return on the line does this; the words say so in every look of the line. */}
+              <button className="quiet-act mg-check" tabIndex={-1} onClick={sendAnswer}>
+                Check <span className="keys">↩</span>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  const today = shortDay(day);
   return (
     <div className="page home-page" data-page="home">
-      <div className="page-column" ref={list} onKeyDown={onKeyDown} style={waiting ? { visibility: "hidden" } : undefined}>
-        {workspaces.length > 0 && <p className="home-day">{longDay(day)}</p>}
+      <div className={`page-column mg${hung ? "" : " stacked"}`} ref={list} onKeyDown={onKeyDown} style={waiting ? { visibility: "hidden" } : undefined}>
         {props.step && (
-          <section className="step" aria-label="This Mac">
-            <h1 className="page-next">{props.step.next}</h1>
-            {props.step.where && <p className="where">{props.step.where}</p>}
-            <div className="choices-rest" role="group">
-              {props.step.choices.map((choice, at) => (
-                <button key={choice.label} className="choice-rest" autoFocus={at === 0 && props.focus} onClick={choice.run}>
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-          </section>
+          <Part head="Today" sub={today} className="mg-now" label="This Mac">
+            <h1 className="mg-step-text">{props.step.next}</h1>
+            {props.step.where && <p className="mg-where">{props.step.where}</p>}
+            <p className="mg-controls" role="group">
+              {props.step.choices.map((choice, at) =>
+                at === 0 ? (
+                  <Start key={choice.label} label={choice.label} run={choice.run} focus={props.focus} />
+                ) : (
+                  <button key={choice.label} className="mg-act" onClick={choice.run}>
+                    {choice.label}
+                  </button>
+                ),
+              )}
+            </p>
+          </Part>
         )}
         {props.workspaces === null ? null : workspaces.length === 0 ? (
           !props.step && (
-            <section className="step">
-              <h1 className="page-next">Open the folder your course is in</h1>
-              <p className="where">Your notes, slides and past papers can be in it already, or be added later.</p>
-              <div className="choices-rest" role="group">
-                <button className="choice-rest home-row-choice" data-drive="open-folder" autoFocus={props.focus} onClick={props.onPickFolder}>
-                  Open a folder…
-                </button>
-                <button className="choice-rest" onClick={props.onNewFolder}>
+            <Part head="Today" sub={today} className="mg-now">
+              <h1 className="mg-step-text">Open a folder of your course material</h1>
+              <p className="mg-controls">
+                <Start label="Open a folder…" run={props.onPickFolder} focus={props.focus} drive="open-folder" />
+                <button className="mg-act" onClick={props.onNewFolder}>
                   Make a new folder…
                 </button>
-                <button className="choice-rest" onClick={props.onFindFolders}>
+                <button className="mg-act" onClick={props.onFindFolders}>
                   Find folders on this Mac
                 </button>
-              </div>
-            </section>
+              </p>
+            </Part>
           )
         ) : (
           <>
-            {lead && question && (
-              <section className="home-question" aria-label="A quick check">
-                <p className="home-question-meta">{question.meta}</p>
-                {/* Set as the open task is on a lesson's folded page. Its links stay shut, as they are there. */}
-                <div className="answer-task home-task" onClick={() => answerBox.current?.focus()}>
-                  <Rich text={question.text} final linksOpen={false} />
-                </div>
-                <div className="foot home-foot">
-                  <div className={`line lesson first${answer.trim() !== "" ? " typed" : ""}`}>
-                    <div className="field-row">
-                      <textarea
-                        ref={answerBox}
-                        className="field home-answer"
-                        data-drive="home-answer"
-                        aria-label="Your answer"
-                        rows={1}
-                        spellCheck
-                        placeholder="Your answer"
-                        value={answer}
-                        onChange={(event) => setAnswer(event.target.value)}
-                        onKeyDown={onAnswerKey}
-                      />
-                      <span className="line-tools">
-                        {answer.trim() !== "" && (
-                          <span className="line-end" aria-hidden="true">
-                            <span className="keys">↩</span> answer
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </section>
+            {lead && !props.step && (
+              <Part head="Today" sub={today} className={`mg-now${question ? " asking" : ""}`}>
+                {question ? asking : nowBlock}
+              </Part>
             )}
-            {lead && !props.step && next && (
-              <section className={`home-first next${question ? " then" : ""}`} aria-label={question ? "Then" : "Next"}>
-                <p className="list-head">{question ? "Then" : "Next"}</p>
-                <button
-                  className="home-row first next-row"
-                  data-drive="start"
-                  onClick={() => (next.carried ? props.onContinue(lead.folder, next.carried.info.session, next.carried.title) : props.onStartIn(lead.folder))}
-                >
-                  <span className="next-what">
-                    <span className="row-name next-name">
-                      <Line text={next.item.title} />
-                    </span>
-                    {firstLine}
-                    {next.item.note && (
-                      <span className="next-note">
-                        <Line text={next.item.note} />
-                      </span>
-                    )}
+            {lead && !props.step && question && (
+              <Part head="Then" className="mg-then-part">
+                <p className="mg-then">
+                  <span>
+                    <Line text={title} />, in {course}.{thenSaid ? ` ${thenSaid}` : ""}
                   </span>
-                  <span className="row-when">{[displayName(lead.name), planDay(next.item.day)].filter(Boolean).join(" · ")}</span>
-                  <span className="row-key" aria-hidden="true">
-                    ↩
-                  </span>
-                </button>
-                {checksAct}
-              </section>
+                  <button className="mg-act" data-drive="start" data-row="" onClick={start}>
+                    {carries ? "Carry on instead" : "Start it instead"}
+                  </button>
+                </p>
+              </Part>
             )}
-            {lead && !props.step && !next && (
-              <section className={`home-first${question ? " then" : ""}`} aria-label={question ? "Then" : "Carry on"}>
-                {(recent || question) && <p className="list-head">{question ? "Then" : "Carry on"}</p>}
-                <button
-                  className="home-row first"
-                  data-drive="start"
-                  onClick={() => (recent?.latest ? props.onContinue(recent.folder, recent.latest.session, name ?? "") : props.onStartIn(lead.folder))}
-                >
-                  <span className="next-what">
-                    <span className="row-name next-name">{recent?.latest ? <Line text={name ?? ""} /> : "New session"}</span>
-                    {firstLine}
-                  </span>
-                  <span className="row-when">
-                    {displayName(lead.name)}
-                    {recent?.latest ? `, ${whenOpened(recent.latest.opened_ms)}` : ""}
-                  </span>
-                  <span className="row-key" aria-hidden="true">
-                    ↩
-                  </span>
-                </button>
-                {checksAct}
-              </section>
-            )}
-            <section className="home-list" aria-label="Workspaces">
-              {workspaces.map((workspace) => (
-                <button key={workspace.folder} className="home-row" data-drive={`workspace-${displayName(workspace.name)}`} onClick={() => props.onWorkspace(workspace.folder)}>
-                  <span className="row-name">{displayName(workspace.name)}</span>
-                  <span className="row-when">{facts[workspace.folder] ?? ""}</span>
-                </button>
-              ))}
-            </section>
+            <Part head="Courses" className="mg-courses">
+              <div role="list">
+                {workspaces.map((workspace) => (
+                  <Row
+                    key={workspace.folder}
+                    drive={`workspace-${displayName(workspace.name)}`}
+                    onClick={() => props.onWorkspace(workspace.folder)}
+                    name={displayName(workspace.name)}
+                    end={workspace.folder in facts || workspace.latest ? courseFact(facts[workspace.folder] ?? null, workspace.latest?.last_ms, !props.step && workspace.folder === lead?.folder) : ""}
+                  />
+                ))}
+              </div>
+            </Part>
           </>
         )}
         {workspaces.length > 0 && (
-          <p className="page-acts">
-            <button className="quiet-act" data-drive="open-folder" onClick={props.onPickFolder}>
+          <p className="mg-controls mg-folder-acts">
+            <button className="mg-act" data-drive="open-folder" onClick={props.onPickFolder}>
               Open a folder…
             </button>
-            <button className="quiet-act" onClick={props.onNewFolder}>
+            <button className="mg-act" onClick={props.onNewFolder}>
               Make a new folder…
             </button>
-            <button className="quiet-act" onClick={props.onFindFolders}>
+            <button className="mg-act" onClick={props.onFindFolders}>
               Find folders on this Mac
             </button>
           </p>

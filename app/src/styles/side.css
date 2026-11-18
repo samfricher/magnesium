@@ -194,7 +194,6 @@
 .workspace-page.with-docs.expanded > .page-scroll { visibility: hidden; }
 .workspace-page.with-docs.expanded.lesson-front > .page-scroll { visibility: inherit; right: 0; }
 .workspace-page.with-docs.expanded.lesson-front > .panel.side { display: none; }
-.home-row[aria-current="true"] .row-name { color: var(--ink); }
 .side-open { flex: none; padding: 3px 8px; border-radius: 6px; font: 400 12.5px/1.3 var(--app); color: var(--hint); }
 .side-open:hover { color: var(--text); }
 /* Named in the reply that sets the open task: its title, as plain words, until the task is answered. */
@@ -208,11 +207,6 @@
   margin-right: auto;
 }
 
-/* A paper's name on a workspace's page opens it to read: a row name that is a button. */
-.paper-row .paper-open { text-align: left; cursor: pointer; }
-.paper-row .paper-open:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
-.paper-row .paper-open[aria-current="true"] { color: var(--ink); }
-:root[data-input="key"] .paper-row .paper-open:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 
 /* In the dark, the white page is dimmed so it does not glare beside the lesson. */
 @media (prefers-color-scheme: dark) {

@@ -158,19 +158,6 @@
   color: var(--text);
   text-wrap: balance;
 }
-.page-next {
-  margin: 0;
-  font: 400 1.235rem/1.3 var(--read);
-  color: var(--text);
-  text-wrap: balance;
-}
-.page-head .where,
-.page-column .where {
-  margin: 0.45rem 0 0;
-  font-size: 1rem;
-  line-height: 1.5;
-  color: var(--quiet);
-}
 /* The gap under a step is the one a workspace's page leaves under its own step. */
 .step { margin-bottom: 1.8rem; }
 .page-text { margin: 0.2rem 0 0.6rem; font: 400 0.882rem/1.55 var(--app); color: var(--text); max-width: 34em; }
@@ -183,25 +170,8 @@
   color: var(--hint);
   letter-spacing: 0.01em;
 }
-section:first-child > .list-head,
-.home-first .list-head { margin-top: 0; }
 
-/* A row of a plain list: a name, and when. */
-.home-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  align-items: baseline;
-  column-gap: 1.2rem;
-  width: calc(100% + var(--hang));
-  margin-left: calc(-1 * var(--hang));
-  padding: 0.38rem 0 0.38rem var(--hang);
-  border-radius: 4px;
-}
-button.home-row:hover { background: var(--tint); }
-button.home-row:focus { box-shadow: inset 2px 0 0 var(--ink); border-radius: 0 4px 4px 0; }
-button.home-row:focus:hover { background: var(--tint); }
-:root[data-input="key"] button.home-row:focus-visible { outline: none; }
-.home-row.static { grid-template-columns: minmax(0, 1fr) max-content max-content; cursor: default; }
+/* A file's name, in a list opened in place. */
 .row-name {
   min-width: 0;
   overflow: hidden;
@@ -210,23 +180,6 @@ button.home-row:focus:hover { background: var(--tint); }
   font: 400 1rem/1.45 var(--read);
   color: var(--text);
 }
-.row-when { font: 400 0.765rem/1.5 var(--app); color: var(--quiet); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.home-row.static .quiet-act { margin-left: 0.4rem; }
-
-/* Home's first row: the most recent session, Return away. */
-.home-first { margin-bottom: 1.6rem; }
-.home-row.first {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  padding-top: 0.55rem;
-  padding-bottom: 0.55rem;
-}
-.home-row.first .next-name { font-size: 1.235rem; line-height: 1.35; white-space: normal; }
-/* The ↩ hangs past the column, as the learner's "›" hangs before it, so this row's date ends on the edge the
-   dates under it end on. Set on the first line's baseline. */
-.home-row.first .row-key { position: absolute; left: calc(100% + 0.55rem); top: 1.2rem; font: 400 0.824rem/1 var(--app); color: var(--quiet); visibility: hidden; }
-/* Return carries on from the row that has the focus: its mark goes with the focus. */
-.home-row.first:focus .row-key { visibility: visible; }
 
 .page-acts { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; margin: 0.8rem 0 0; }
 .home-page .page-acts { margin-top: 2.2rem; }
@@ -253,35 +206,12 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 }
 .back:hover { color: var(--text); }
 
-/* The exam the plan is for, under the workspace's name. */
-.page-exam { margin: 0.3rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); font-variant-numeric: tabular-nums; }
 
-/* The plan's item in hand, drawn as Home's first row: its name, and the plan's words about it under it. */
-.next-row { text-align: left; }
-.next-what { display: flex; flex-direction: column; min-width: 0; }
-.next-note { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
-/* What the session starts with, from the record, between the item's name and the plan's words about it. */
-.next-first { margin-top: 0.1rem; font: 400 0.765rem/1.5 var(--app); color: var(--text); }
-.next .next-due { margin-top: 0.5rem; }
-.next .next-acts, .home-first .next-acts { margin-top: 0.5rem; }
-/* The day, at the head of Home, in the window's small quiet type. */
-.home-day {
-  margin: 0 0 2.6rem;
-  font: 400 0.765rem/1.5 var(--app);
-  color: var(--quiet);
-  letter-spacing: 0.01em;
-}
-/* The first quick check's question: the words over it, then the question set as a lesson sets its open task on the
-   folded page, then the lesson's own line under it. */
-.home-question-meta { margin: 0 0 0.45rem; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
+/* The first quick check's question on Home: set as a lesson sets its open task on the folded page, with the lesson's
+   own line under it. */
 .answer-task.home-task { margin: 0 0 0 calc(-1 * var(--hang)); animation: none; }
 .foot.home-foot,
-:root:not([data-field="soft"]) .foot.home-foot:not(.asking) { margin-top: 1.2rem; padding-bottom: 0; }
-/* What follows the question: the plan's item, at a list row's size. */
-.home-first.then { margin-top: 3rem; margin-bottom: 2.2rem; }
-.then .home-row.first { padding-top: 0.38rem; padding-bottom: 0.38rem; }
-.then .home-row.first .next-name { font-size: 1rem; line-height: 1.45; }
-.then .home-row.first .row-key { top: 0.72rem; }
+:root:not([data-field="soft"]) .foot.home-foot:not(.asking) { margin-top: 0.941rem; padding-bottom: 0; }
 
 /* A choice about this Mac that lessons do not wait on, at the foot of Home: as far under the folder actions as they
    are under the list. */
@@ -289,45 +219,174 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .home-note .page-note { margin: 0; max-width: 34em; }
 .home-page .home-note .page-acts { margin-top: 0.3rem; }
 
-/* A list folded to its name and count, opened in place. */
-.list-head.fold { display: block; padding: 0; text-align: left; cursor: pointer; color: var(--quiet); }
-.list-head.fold:hover { color: var(--text); }
-.list-head.fold::after { content: " ›"; color: var(--hint); }
-.list-head.fold[aria-expanded="true"]::after { content: " ⌄"; }
-.fold-count { margin-left: 0.35rem; color: var(--hint); }
+/* ------------------------------------------------------------------ */
+/* Home and a course's page: the lesson's column, each part's name in */
+/* the margin left of it (src/pages/Margin.tsx). Sizes at the 17px    */
+/* text: 26 / 22 / 19 / 17 / 15 / 13 px in the reading face, 15 and   */
+/* 13 px in the window's own.                                          */
 
-/* Your work as the days each skill can next count. Each row is a grid of its own (the day, the name, its rings), so
-   each stays a list item to assistive tech; the day column has one width, so the rows line up as one table. Hung, the
-   day sits in the margin and the names keep the page's left edge. */
-.agenda { --agenda-day: 5.4rem; --agenda-gap: 1.1rem; }
-.agenda-row {
-  display: grid;
-  grid-template-columns: var(--agenda-day) minmax(0, 1fr) max-content;
-  column-gap: var(--agenda-gap);
-  align-items: baseline;
-  padding: 0.3rem 0;
+.mg {
+  /* Sub-lines, day names and the legend: 62% of the text, the lightest grey that keeps 4.5:1 on the light ground. */
+  --label: color-mix(in srgb, var(--text) 62%, var(--ground));
+  --mg-w: 7rem;
+  --mg-gap: 2.588rem;
+  /* The right edge's track (a course's fact, a session's day, Sit it) and the rings'. */
+  --track: 5.8em;
+  --rings: 3.2em;
 }
-.agenda.hung .agenda-row { margin-left: calc(-1 * (var(--agenda-day) + var(--agenda-gap))); }
-.agenda-row.first:not(:first-child) { margin-top: 0.75rem; }
-.agenda-day {
-  grid-column: 1;
-  font: 400 0.765rem/1.5 var(--app);
-  color: var(--quiet);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+.mg-part { display: grid; grid-template-columns: var(--mg-w) minmax(0, 1fr); column-gap: var(--mg-gap); align-items: baseline; margin-left: calc(-1 * (var(--mg-w) + var(--mg-gap))); }
+.mg-head { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; text-align: right; }
+.mg-body { min-width: 0; }
+.mg-name { font: italic 400 1rem/1.45 var(--read); color: var(--quiet); white-space: nowrap; }
+.mg-sub,
+.mg-group { font: 400 0.882rem/1.4 var(--read); color: var(--label); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* The step in hand: 26px on Home, 22px on a course's page. A button, so it pads 8px each side and pulls back 8px:
+   its words stay on the column's edge and the keyboard's ring clears them. */
+.mg-step,
+.mg-step-text {
+  display: block;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font: 400 1.529rem/1.15 var(--read);
+  color: var(--text);
+  text-align: left;
+  text-wrap: balance;
 }
-.agenda.hung .agenda-day { text-align: right; }
-.agenda-day.today { color: var(--ink); }
-.agenda .work-name { grid-column: 2; white-space: normal; overflow: visible; text-wrap: pretty; }
-.agenda-row.proven .work-name { color: var(--quiet); }
-.agenda-exam > .agenda-day { color: var(--text); }
-.agenda-exam-name { grid-column: 2 / span 2; font: italic 400 1rem/1.45 var(--read); color: var(--text); }
+.workspace-page .mg-step { font-size: 1.294rem; line-height: 1.2; }
+.mg-title { margin: 0; font: 400 1.529rem/1.15 var(--read); letter-spacing: -0.006em; text-wrap: balance; }
+.mg-note { margin: 0.353rem 0 0; font: italic 400 1rem/1.45 var(--read); color: var(--quiet); text-wrap: pretty; }
+.mg-where { margin: 0.353rem 0 0; font: 400 1rem/1.5 var(--read); color: var(--quiet); text-wrap: pretty; }
+.mg-cue-block { position: relative; margin-top: 0.47rem; }
+.mg-cue { margin: 0; font: 400 0.882rem/1.4 var(--read); color: var(--quiet); text-wrap: pretty; }
+.mg-cue-probe { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; pointer-events: none; }
+.mg-kicker { margin-bottom: 0.588rem; }
+.mg-exam { margin-top: 0.353rem; font-variant-numeric: tabular-nums; }
+
+/* Controls, in the window's own face. Start is the one word in the ink; the rest are quiet until pointed at. Each
+   pads 8px each side and pulls back 8px, so the words keep their places and the keyboard's ring clears them. */
+.mg-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 1.176rem; margin: 0.824rem 0 0; }
+.mg-act,
+.mg-start { padding: 2px 8px; margin: -2px -8px; border-radius: 4px; }
+.mg-act { font: 400 0.765rem/1.6 var(--app); color: var(--quiet); }
+.mg-start { font: 500 0.882rem/1.5 var(--app); color: var(--ink); }
+/* 28px from Start's ↩ to the next control. */
+.mg-start + * { margin-left: calc(0.47rem - 8px); }
+.mg-act .keys,
+.mg-start .keys { margin-left: 0.15em; }
+.mg-act:hover:not(:disabled) { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.mg-start:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.mg-act:disabled,
+.mg-start:disabled { color: var(--off); cursor: default; }
+.mg-more { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mg-chev { flex: none; color: var(--quiet); }
+.mg-chev.open { transform: rotate(180deg); }
+.mg-check { white-space: nowrap; }
+
+/* A row on the column's two edges: a name at the left, one fact at the right edge. A fact that would come within
+   32px of the name drops under it. */
+.mg-row { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 32px; width: calc(100% + 16px); margin: 0 -8px; padding: 4px 8px; border-radius: 4px; text-align: left; }
+.mg-row-name { min-width: 0; font: 400 1rem/1.45 var(--read); color: var(--text); text-wrap: pretty; }
+.mg-row.quiet .mg-row-name { color: var(--quiet); }
+.mg-row-end { margin-left: auto; min-width: var(--track); text-align: right; font: 400 0.882rem/1.4 var(--read); color: var(--quiet); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mg-row[aria-current="true"] .mg-row-name,
+.mg-name-act[aria-current="true"] { color: var(--ink); }
+.mg-name-act { padding: 0; font: inherit; color: inherit; text-align: left; }
+.mg-inline { margin-left: 12px; font: 400 0.882rem/1.4 var(--read); color: var(--quiet); white-space: nowrap; }
+.mg-step .katex,
+.mg-row-name .katex { font-size: 1em; }
+/* Pointing at a row underlines its name; nothing is washed. */
+.mg-hit .mg-row-name,
+.mg-step,
+.mg-name-act { text-decoration: underline transparent; text-decoration-thickness: 1px; text-underline-offset: 3px; transition: text-decoration-color 60ms linear; }
+.mg-hit:hover .mg-row-name,
+.mg-step:hover,
+.mg-name-act:hover { text-decoration-color: color-mix(in srgb, var(--text) 40%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .mg-hit .mg-row-name, .mg-step, .mg-name-act { transition: none; }
+}
+
+/* The keyboard's place: an ink ring, drawn once the learner uses the keyboard (the window sets data-input). */
+.mg-step:focus, .mg-hit:focus, .mg-act:focus, .mg-start:focus, .mg-name-act:focus { outline: none; }
+:root[data-input="key"] .mg-step:focus,
+:root[data-input="key"] .mg-hit:focus { outline: 2px solid var(--ink); outline-offset: 0; }
+:root[data-input="key"] .mg-act:focus,
+:root[data-input="key"] .mg-start:focus,
+:root[data-input="key"] .mg-name-act:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* Home's quick check: what follows it, on one line with the control that starts it instead. */
+.mg-then { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 16px; margin: 0; font: 400 0.882rem/1.4 var(--read); color: var(--quiet); }
+
+/* Your work: a skill's name and its rings, the days it can next count down the margin, the exam among them. */
+.mg-skill { display: grid; grid-template-columns: minmax(0, 1fr) var(--rings); column-gap: 12px; align-items: baseline; padding: 4px 0; }
+.mg-skill.quiet .mg-row-name { color: var(--quiet); }
+.mg-skill + .mg-skill { margin-top: 0.138rem; }
+.mg-code { font: 400 0.882rem/1.45 var(--read); letter-spacing: 0.04em; color: var(--quiet); }
+.mg-legend { margin: 0; max-width: calc(100% - var(--rings) - 12px); font: italic 400 0.765rem/1.45 var(--read); color: var(--label); text-wrap: pretty; }
+.mg-exam-name { margin: 0; padding: 4px 0; font: italic 400 1rem/1.45 var(--read); color: var(--text); }
+.mg-run { margin: 0; padding: 4px 0; font: 400 0.882rem/1.5 var(--read); color: var(--quiet); text-wrap: pretty; }
+.mg-run .mg-code { line-height: 1.5; white-space: nowrap; }
+.mg-files { margin-top: 0.3rem; }
+
+/* The gaps between parts. Your work's are set so the baselines fall 35px apart inside a day, 48px from one day to
+   the next and 80px from the exam to what waits for a repair, the widest break inside it. */
+.mg-now + .mg-then-part { margin-top: 1.176rem; }
+.mg-part + .mg-courses { margin-top: 3.765rem; }
+.mg-folder-acts { margin-top: 2.588rem; }
+.mg-course-head { margin-bottom: 2.588rem; }
+.mg-course-head .back { margin-bottom: 1.176rem; }
+.mg-next + .mg-sessions { margin-top: 4.235rem; }
+.mg-more-line { margin-top: 0.47rem; }
+.mg-sessions + .mg-work { margin-top: 3.96rem; }
+.mg-sessions:has(.mg-more-line) + .mg-work { margin-top: 4.235rem; }
+.mg-work + .mg-part { margin-top: 0.647rem; }
+.mg-day + .mg-day { margin-top: 0.903rem; }
+.mg-day + .mg-repair { margin-top: 2.89rem; }
+.mg-day + .mg-proven { margin-top: 2.79rem; }
+.mg-repair + .mg-proven { margin-top: 1.165rem; }
+.mg-part + .mg-papers { margin-top: 3.73rem; }
+.mg-part + .mg-material { margin-top: 3.96rem; }
+.mg-material-acts { margin-top: 0.824rem; }
+.mg-forget { margin-top: 3.294rem; }
+
+/* A narrow window: each part's name on a line of its own above it, 22px over its first baseline, a sub-line after
+   it; a day of Your work leads its first row. */
+.mg.stacked .mg-part { display: block; margin-left: 0; }
+.mg.stacked .mg-head { display: block; margin-bottom: -0.17rem; text-align: left; }
+.mg.stacked .mg-head:empty { display: none; }
+.mg.stacked .mg-name { line-height: 1; }
+.mg.stacked .mg-sub { line-height: 1; }
+.mg.stacked .mg-sub::before { content: "\2003"; }
+.mg.stacked .mg-part + .mg-part:not(.mg-group-part) { margin-top: 2.3rem; }
+.mg.stacked .mg-now + .mg-then-part { margin-top: 1.176rem; }
+.mg.stacked .mg-group-part { display: flow-root; }
+.mg.stacked .mg-group-part .mg-head { float: left; margin: 0 1em 0 0; padding-top: 0.15rem; }
+.mg.stacked .mg-repair .mg-head { padding-top: 0.12rem; }
+
+/* A short window: smaller gaps around the step, and the cue's second line goes. */
+@media (max-height: 640px) {
+  .mg .mg-last { display: none; }
+  .mg-part + .mg-courses { margin-top: 2.353rem; }
+  .mg-course-head { margin-bottom: 1.647rem; }
+  .mg-course-head .back { margin-bottom: 0.706rem; }
+  .mg-next + .mg-sessions { margin-top: 1.882rem; }
+  .mg-sessions + .mg-work,
+  .mg-sessions:has(.mg-more-line) + .mg-work,
+  .mg-part + .mg-papers,
+  .mg-part + .mg-material { margin-top: 2.588rem; }
+}
+
 /* Each skill's days, as the record counts them: one ring for each of the three, filled for each earned. The rings sit
    in a box one name line high, so they are centred on that line at any text size. */
-.work-days { grid-column: 3; display: inline-flex; align-items: center; gap: 0.24rem; align-self: start; height: 1.45rem; }
+.work-days { display: inline-flex; align-items: center; justify-self: end; gap: 0.24rem; align-self: start; height: 1.45rem; }
 .work-day { width: 0.42rem; height: 0.42rem; border: 1px solid var(--hint); border-radius: 50%; }
 .work-day.earned { background: var(--ink); border-color: var(--ink); }
-.your-work .work-key { margin-top: 0.5rem; max-width: 34em; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) .work-day { border-width: 1.25px; }
+}
+:root[data-scheme="dark"] .work-day { border-width: 1.25px; }
 
 /* A timed paper while it runs: the time, the paper's name and its clock inside the ink rule a card has; its actions,
    the rule of the sitting and its two marks under it. */
@@ -733,7 +792,6 @@ dialog.layer::backdrop { background: transparent; }
 .setting:has(.colour-field) .setting-name { padding-top: 0.1rem; }
 
 /* A row with no action of its own: its date ends at the column's edge, as every row's does. A skill's row ends in its days. */
-.home-row.static:not(:has(.quiet-act, .work-days)) { grid-template-columns: minmax(0, 1fr) max-content; }
 
 
 /* The paste sheet is one field: no rules boxing it. */
@@ -765,15 +823,11 @@ dialog.layer::backdrop { background: transparent; }
 /* A layer takes the focus to hold the keyboard, not to be outlined. */
 :root[data-input="key"] .layer[tabindex]:focus-visible { outline: none; }
 /* A short paragraph does not end on one word alone. */
-.page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
+.page-note, .setting-note, .page-text { text-wrap: pretty; }
 
-/* A folded list's name shows the keyboard's place as the other quiet actions do. */
-:root[data-input="key"] .list-head.fold:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 
 /* A card's label beside its ink rule: the rule marks the card, the label is quiet. */
 .card .record-head { color: var(--quiet); }
-/* The folder's own action stands apart from the sections above it. */
-.folder-acts { margin-top: 2.6rem; }
 
 /* Small controls show the keyboard's place one way: an ink underline, no ring. */
 :root[data-input="key"] .plain:focus-visible,
