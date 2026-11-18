@@ -221,8 +221,8 @@ fn magnesium_tool(tool: &str) -> Option<&'static str> {
     Some(match name {
         "context" | "memory" => "Reading your record",
         "learning_step" => "Saving your work",
-        "search_sources" => "Searching your course material",
-        "sources" => "Reading your course material",
+        "search_sources" => "Searching your material",
+        "sources" => "Reading your material",
         _ => "",
     })
     .filter(|words| !words.is_empty())

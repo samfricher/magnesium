@@ -71,7 +71,7 @@ export function fromToday(day: string, now = new Date()): "past" | "tomorrow" | 
 
 /**
  * Which day of its skill's three this answer was, as the runtime counts it, and on its latest pass when the next can
- * count: "First of three days. The second can count from tomorrow.", or null.
+ * count: "The second day can count from tomorrow.", or "Third of three days." on the last, or null.
  */
 export function passWords(mark: Mark, now = new Date()): string | null {
   const said = mark.mark === "right" && mark.help === "none" && mark.pass ? PASS_WORDS[mark.pass - 1] : undefined;
@@ -80,7 +80,7 @@ export function passWords(mark: Mark, now = new Date()): string | null {
   if (!next || !mark.next_day) return `${said} of three days.`;
   const from = fromToday(mark.next_day, now);
   const when = from === "past" ? "today" : from === "tomorrow" ? "from tomorrow" : `from ${shortDay(mark.next_day)}`;
-  return `${said} of three days. The ${next} can count ${when}.`;
+  return `The ${next} day can count ${when}.`;
 }
 
 /** Which of its skill's three days an answer earned, 1 to 3, when its line says it earned one; null otherwise. */
@@ -265,13 +265,13 @@ const IN_FOLDER = new RegExp(String.raw`(?:\.\./)*\b(?:Study|\.magnesium)(?:/${S
 
 /**
  * The window's and the core's words with no path in them: a path is said by
- * its file's own name, the material folder as "the course material", and
+ * its file's own name, the material folder as "the material", and
  * the record's backups in words. The tutor's own words are not changed.
  */
 export function withoutPaths(text: string): string {
   return text
     .replace(/\bin \.magnesium\/backups\b/g, "as a backup")
-    .replace(/\b(?:in|to) Study\/materials(?=[.\s]|$)/g, (found) => `${found.split(" ")[0]} the course material`)
+    .replace(/\b(?:in|to) Study\/materials(?=[.\s]|$)/g, (found) => `${found.split(" ")[0]} the material`)
     .replace(ABSOLUTE, (path) => path.split("/").pop() ?? path)
     .replace(IN_FOLDER, (path) => path.split("/").pop() ?? path);
 }

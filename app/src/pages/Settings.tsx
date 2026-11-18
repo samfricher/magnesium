@@ -492,7 +492,7 @@ export function SettingsPage(props: Props) {
             {props.engine ? (
               <Choice name="Lessons run on" options={(["plugin", "direct"] as Engine[]).map((value) => [value, ENGINE_NAMES[value]] as [Engine, string])} value={props.engine.chosen} onPick={props.onEngine} disabled={props.lessonOpen} />
             ) : (
-              <span className="setting-note">Open a workspace to choose.</span>
+              <span className="setting-note">Open a space to choose.</span>
             )}
             <span className="setting-note">
               {props.lessonOpen
@@ -592,7 +592,7 @@ export function SettingsPage(props: Props) {
             Magnesium {built}
             {runtime?.installed ? `. Lessons use the magnesium program ${runtime.installed.version.split("+")[0]}.` : runtime ? ". The magnesium program is not found." : ""}
           </p>
-          <p className="setting-note wide">Your study folders stay on this Mac. The window makes no network request, and lessons use your own Claude Code.</p>
+          <p className="setting-note wide">Your spaces stay on this Mac. The window makes no network request, and lessons use your own Claude Code.</p>
         </section>
       </div>
     </div>

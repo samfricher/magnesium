@@ -308,7 +308,7 @@ export function App() {
       const where = folder ?? folderInFront();
       if (!where) {
         goWorkspace(null);
-        note("Open a workspace first: a folder your course is in.");
+        note("Open a space first.");
         return;
       }
       // A workspace has one session not begun at a time: New session goes to it.
@@ -434,7 +434,7 @@ export function App() {
     if (!api) return;
     try {
       const added = await api.findFolders();
-      note(added === 0 ? "No other study folder was found on this Mac." : `${added} ${added === 1 ? "folder" : "folders"} added.`);
+      note(added === 0 ? "No other space was found on this Mac." : `${added} ${added === 1 ? "space" : "spaces"} added.`);
       await loadWorkspaces();
     } catch (problem) {
       note(String(problem));
@@ -444,7 +444,7 @@ export function App() {
   /** Just the quick checks due in a folder, in a session of their own; read again first, so a stale count starts nothing. */
   const justChecks = async (folder: string | null) => {
     const { api, workspaces } = now.current;
-    if (!api || !folder) return note("Open a workspace first: a folder your course is in.");
+    if (!api || !folder) return note("Open a space first.");
     const home = await api.home(folder).catch(() => null);
     const due = checksAlone(home);
     onChecksDue(folder, due);
@@ -1062,7 +1062,7 @@ export function App() {
         },
         (problem) => note(String(problem)),
       );
-    } else note("Open a workspace, then drop its files on its page.");
+    } else note("Open a space, then drop its files on its page.");
   };
   useEffect(() => {
     if (!api) return;

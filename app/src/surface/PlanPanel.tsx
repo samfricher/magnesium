@@ -87,7 +87,7 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan
           )}
           {/* A session whose steps belong to no item of the plan: they stand on their own. */}
           {steps.length > 0 && (plan.items.length === 0 || current === undefined) && <Steps steps={steps} />}
-          {empty && <p className="panel-note">No plan yet. Tell the tutor what this course is for, and it writes one.</p>}
+          {empty && <p className="panel-note">No plan yet. Tell the tutor what this space is for, and it writes one.</p>}
         </>
       )}
     </div>

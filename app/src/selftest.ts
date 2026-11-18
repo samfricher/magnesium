@@ -118,7 +118,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The core's own words reach the screen with no path in them.
     const plain = [withoutPaths("Added 5 files to Study/materials."), withoutPaths("Change Study/midterm-1/plan.md"), withoutPaths("in .magnesium/backups"), withoutPaths("1/v in s/µM")];
     steps.withoutPaths = plain;
-    if (plain.join("|") !== "Added 5 files to the course material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
+    if (plain.join("|") !== "Added 5 files to the material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
 
     // A reopened session shows each of the record's marks under the answer it
     // was shown on live, by the record's id, also when several answers fall in

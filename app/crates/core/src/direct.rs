@@ -954,7 +954,7 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
     if value.get("mcp_servers").is_some() && !searching {
         shared.emit(AgentEvent::Notice {
             kind: NoticeKind::Other,
-            text: "Magnesium's search did not start, so the tutor cannot search your course material. In a terminal, run: magnesium info".into(),
+            text: "Magnesium's search did not start, so the tutor cannot search your material. In a terminal, run: magnesium info".into(),
         });
     }
     shared.ready(claude::runs_on(value));
