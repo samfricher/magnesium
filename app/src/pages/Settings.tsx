@@ -302,6 +302,8 @@ type Props = {
   lessonOpen: boolean;
   blockMinutes: number;
   section: string | null;
+  /** How many times a section was asked for: asked again, it comes into view again. */
+  sectionAsked: number;
   onEngine: (engine: Engine) => void;
   onPayment: (payment: Payment) => void;
   onPermissions: (permissions: Permissions) => void;
@@ -322,7 +324,7 @@ export function SettingsPage(props: Props) {
   useEffect(() => {
     if (!props.section) return;
     page.current?.querySelector(`#settings-${props.section}`)?.scrollIntoView({ block: "start" });
-  }, [props.section]);
+  }, [props.section, props.sectionAsked]);
   const macFaces = useMemo(() => MAC_FACES.filter(installed), []);
   const taken = (combo: string) => (KEY_ACTIONS.find(([action]) => prefs.keys[action] === combo)?.[0] ?? null);
   const setKey = (action: KeyAction, combo: string) => {

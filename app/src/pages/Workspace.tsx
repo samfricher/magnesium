@@ -25,6 +25,8 @@ type Props = {
   folder: string;
   /** The page is in front, with nothing over it. */
   focus: boolean;
+  /** Home's tab, which holds the page, is in front. Behind another tab the page stays as it was, read again by `refresh`. */
+  front: boolean;
   /** A session in this folder is running, so the folder cannot be taken off the list now. */
   running: boolean;
   onBack: () => void;
@@ -55,7 +57,7 @@ type Props = {
   /** Whether a timed paper runs in this folder, as the page shows it: a file dropped then is not added as material. */
   onPaper?: (folder: string, running: boolean) => void;
   onNote: (text: string) => void;
-  /** Bumped when the material changes from outside the page, as by a drop. */
+  /** Bumped when what the page shows may have changed from outside it: a drop, a lesson's marks, Home's tab back in front. */
   refresh: number;
 };
 
@@ -391,12 +393,31 @@ export function WorkspacePage(props: Props) {
     registerPanel((command) => panelRun.current(command));
     return () => registerPanel(null);
   }, [registerPanel]);
+  // Back in front with the keyboard outside the page, it goes to what leads the page, as when the page was first
+  // drawn. The tab's page then gives it back to whatever in the page had it last, if anything did.
+  const { front } = props;
+  const wasFront = useRef(front);
+  useEffect(() => {
+    const back = front && !wasFront.current;
+    wasFront.current = front;
+    // The read Home's tab makes as it comes back (src/App.tsx) notes the visit.
+    if (back) visitDue.current = true;
+    if (back && props.focus && !pageRef.current?.contains(document.activeElement))
+      column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [front]);
   // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 
+  // Noting a visit moves the folder to the top of the library (and Go). It is noted when the learner comes to the page:
+  // when the page is made in front, and each time Home's tab, holding it, comes back. A read for any other reason (a
+  // lesson's marks, an action on the page) only reads.
+  const visitDue = useRef(props.front);
   const read = useCallback(async () => {
+    const visit = visitDue.current;
+    visitDue.current = false;
     const [opened, listed, held, planned] = await Promise.all([
-      api.visitFolder(folder).catch(() => null),
+      (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
       api.lessons(folder).catch(() => [] as LessonInfo[]),
       api.materialList(folder).catch(() => "none" as const),
       api.plan(folder).catch(() => null),

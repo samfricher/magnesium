@@ -19,6 +19,7 @@ import { mark } from "../harness";
 import { homeDraftFor, keepHomeDraft } from "../homeDraft";
 import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
+import { useClaimKeyboard } from "./TabPage";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, longDay, sessionName, whenOpened } from "../words";
 
@@ -120,6 +121,8 @@ type Props = {
   note: Note | null;
   /** Home is in front, with nothing over it: the first row takes the focus. */
   focus: boolean;
+  /** Home's tab is in front. Behind another tab Home stays on the page, read again as the library changes. */
+  front: boolean;
   notes: string[];
   onContinue: (folder: string, session: string, title: string) => void;
   onStartIn: (folder: string) => void;
@@ -243,6 +246,9 @@ export function HomePage(props: Props) {
   const trusted = read !== null && read.read === now && (read.here || !lead?.latest || lead.latest.last_ms <= read.read.at);
   const firstNow = trusted ? (now?.first ?? null) : null;
   const firstDrawn = useRef<{ folder: string; line: boolean; question: boolean } | null>(null);
+  // Behind another tab nobody sees the row, so a read then may still set the question over it: what Home holds when it
+  // comes to the front is what it is first drawn with.
+  if (!props.front) firstDrawn.current = null;
 
   const name = recent?.latest ? sessionName(recent.latest, now?.goal ?? null) : null;
   // Until the lead workspace's plan is read the first row is not known: the page waits for it, the first time only and
@@ -285,9 +291,32 @@ export function HomePage(props: Props) {
   // The answer line, when a question is set, then the rows: ↑↓ move between them.
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
   const asked = question !== null;
+  // Whether a question was drawn over the first row while Home was last in front. Not what the render that sends
+  // Home behind computes: that render may already hold a question Home read but did not draw (its row was drawn).
+  const askedShown = useRef(false);
   useEffect(() => {
-    if (props.focus && !props.step) rows()[0]?.focus({ preventScroll: true });
-    // The answer line keeps the keyboard once the learner is in it: a fresh read must not move it.
+    if (props.front) askedShown.current = asked;
+  }, [props.front, asked]);
+  // The same, kept as Home went behind another tab: null while Home is in front.
+  const askedAsLeft = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!props.front) askedAsLeft.current = askedShown.current;
+  }, [props.front]);
+  const claimKeyboard = useClaimKeyboard();
+  useEffect(() => {
+    if (!props.focus || props.step) return;
+    // A question set while Home was behind takes the keyboard as Home comes back, over the row that had it: typing
+    // then writes the answer, and Return starts the checks with it.
+    const newQuestion = asked && askedAsLeft.current === false;
+    askedAsLeft.current = null;
+    if (newQuestion) {
+      rows()[0]?.focus({ preventScroll: true });
+      claimKeyboard();
+      return;
+    }
+    // Otherwise a fresh read never takes the keyboard off a row or the answer line the learner is on: Home stays on
+    // the page behind other tabs and reads again as the library changes, and its tab gives the keyboard back.
+    if (!list.current?.contains(document.activeElement)) rows()[0]?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.focus, props.step, props.workspaces, asked ? null : now, asked]);
 
@@ -325,6 +354,15 @@ export function HomePage(props: Props) {
     factsKnown.set(leadFacts.folder, leadFacts.said);
     setFacts((old) => (old[leadFacts.folder] === leadFacts.said ? old : { ...old, [leadFacts.folder]: leadFacts.said }));
   }, [leadFacts?.folder, leadFacts?.said]);
+  // A row's line changes with its workspace's record and the day, so behind other tabs a row reads again only when its
+  // workspace was studied since or the day moved on: each read runs the runtime twice, and the library is read again
+  // after every turn of a lesson. Each time Home's tab comes to the front every row reads again, for what changed
+  // where the window does not hear of it (a lesson in a terminal).
+  const [visit, setVisit] = useState(0);
+  useEffect(() => {
+    if (props.front) setVisit((n) => n + 1);
+  }, [props.front]);
+  const factsRead = useRef(new Map<string, string>());
   useEffect(() => {
     if (!shown || !props.api) return;
     const api = props.api;
@@ -332,8 +370,11 @@ export function HomePage(props: Props) {
     const others = workspaces.filter((workspace) => workspace.folder !== lead?.folder);
     void (async () => {
       for (const workspace of others) {
+        const as = `${workspace.latest?.last_ms ?? 0} ${day} ${visit}`;
+        if (factsRead.current.get(workspace.folder) === as) continue;
         const home = await api.home(workspace.folder).catch(() => null);
         if (!live) return;
+        factsRead.current.set(workspace.folder, as);
         const said = dayFacts(home);
         factsKnown.set(workspace.folder, said);
         setFacts((old) => (old[workspace.folder] === said ? old : { ...old, [workspace.folder]: said }));
@@ -342,13 +383,15 @@ export function HomePage(props: Props) {
     return () => {
       live = false;
     };
-    // Read again when the library changes, not on every drawing.
+    // Read again when the library changes, the day moves on or Home comes to the front, not on every drawing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, props.api, props.workspaces]);
+  }, [shown, props.api, props.workspaces, day, visit]);
 
   // The answer to the first check, as typed on Home. Return starts a sitting of the due checks alone and gives it
   // these words, which go as the answer once the tutor has posed that check.
-  // Kept apart from the page (src/homeDraft.ts) until the words are sent: Home is drawn again when it comes back.
+  // Kept apart from the page (src/homeDraft.ts) until the words are sent, by the session that takes them. The line
+  // reads them from there again when the question changes and when Home comes to the front, so words sent since are
+  // gone from it, and words for one check never stand under another.
   const [answer, setAnswerState] = useState(() => (lead && question ? homeDraftFor(lead.folder, question.text) : ""));
   const setAnswer = (words: string) => {
     setAnswerState(words);
@@ -356,8 +399,8 @@ export function HomePage(props: Props) {
   };
   const questionText = question?.text ?? null;
   useEffect(() => {
-    if (lead && questionText) setAnswerState((old) => old || homeDraftFor(lead.folder, questionText));
-  }, [lead?.folder, questionText]);
+    if (lead && questionText) setAnswerState(homeDraftFor(lead.folder, questionText));
+  }, [lead?.folder, questionText, props.front]);
   const answerBox = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = answerBox.current;

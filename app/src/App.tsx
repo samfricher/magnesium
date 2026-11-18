@@ -20,6 +20,7 @@ import { whenDrawn } from "./reveal";
 import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
 import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
+import { TabPage } from "./pages/TabPage";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
 import { WorkspacePage } from "./pages/Workspace";
 import { wantGlass } from "./glass";
@@ -53,6 +54,8 @@ const SETTINGS: SettingsTab = { key: "settings", kind: "settings" };
 
 /** A session not begun yet, until the tutor names it. The page above it already says the course. */
 const NEW_TITLE = "New session";
+/** How long a lesson is quiet before the pages behind it read the record again. */
+const PAGES_QUIET_MS = 1500;
 
 let counter = 0;
 const newKey = () => `s${Date.now().toString(36)}${(counter++).toString(36)}`;
@@ -110,9 +113,12 @@ export function App() {
   // Home holds its column back until its first row is known (PLAN_WAIT_MS at most): the first screen waits for it.
   const [homeShown, setHomeShown] = useState(false);
   const onHomeShown = useCallback(() => setHomeShown(true), []);
-  const [settingsSection, setSettingsSection] = useState<string | null>(null);
+  // The section of Settings asked for last, and how many times one was asked for: asked again, it comes into view
+  // again, though Settings stayed open at another place in between.
+  const [settingsSection, setSettingsSection] = useState<{ name: string | null; asked: number }>({ name: null, asked: 0 });
   const [blockMinutes, setBlockMinutes] = useState(50);
-  const [materialChanged, setMaterialChanged] = useState(0);
+  // Counts the times the pages kept behind other tabs (a workspace's page, Home) should read the record again.
+  const [readAgain, setReadAgain] = useState(0);
   // The quick checks due in each folder, as Home and a workspace's page last read them: the menu offers Just the
   // Quick Checks where some are.
   const [checksDue, setChecksDue] = useState<Record<string, number>>({});
@@ -272,7 +278,7 @@ export function App() {
 
   const openSettings = useCallback((section: string | null = null) => {
     setTabs((old) => (old.some((each) => each.kind === "settings") ? old : [...old, SETTINGS]));
-    setSettingsSection(section);
+    setSettingsSection((old) => ({ name: section, asked: old.asked + 1 }));
     setOverlay(null);
     setActive("settings");
   }, []);
@@ -498,6 +504,7 @@ export function App() {
   // the shell keeps see-through until now so it never shows a page half
   // drawn, and tell the harness.
   const shown = useRef(false);
+  const [firstScreen, setFirstScreen] = useState(false);
   useEffect(() => {
     const homeWaits = active === "home" && homeFolder === null && !homeShown;
     if (!restored || workspaces === null || homeWaits || shown.current) return;
@@ -505,6 +512,7 @@ export function App() {
     void whenDrawn().then(() => {
       ready();
       void now.current.api?.showWindow().catch(() => {});
+      setFirstScreen(true);
     });
   }, [restored, workspaces, active, homeFolder, homeShown]);
 
@@ -590,10 +598,54 @@ export function App() {
   // ---------------------------------------------------------------------------
   // The tutor's events go to the session that holds its program
 
+  // Home and a workspace's page stay behind the tab in front. What a lesson changes in the record (a mark, the plan,
+  // a turn ended) is read into them while they are behind, so they come back current and do not move as they are
+  // shown. The reads wait until the lesson has been quiet a moment: a turn's mark and plan come just after it ends.
+  // The library is read again (Home reads the rows that changed); a workspace's page reads again only when the lesson
+  // was in its folder. `folder` null: whatever changed, read everything.
+  const pagesTimer = useRef<number | null>(null);
+  const pagesFolder = useRef<string | null | undefined>(undefined);
+  const readPagesAgain = useCallback(
+    (folder: string | null = null) => {
+      if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
+      pagesTimer.current = null;
+      pagesFolder.current = undefined;
+      void loadWorkspaces();
+      if (folder === null || folder === now.current.homeFolder) setReadAgain((n) => n + 1);
+    },
+    [loadWorkspaces],
+  );
+  const readPagesSoon = useCallback(
+    (folder: string | null) => {
+      if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
+      // Two folders waiting at once: both are read, as everything.
+      const waiting = pagesFolder.current === undefined || pagesFolder.current === folder ? folder : null;
+      pagesFolder.current = waiting;
+      pagesTimer.current = window.setTimeout(() => readPagesAgain(waiting), PAGES_QUIET_MS);
+    },
+    [readPagesAgain],
+  );
+
+  // Back in front, Home's tab reads again too, for what changed where the window does not hear of it (a lesson in
+  // a terminal). Usually nothing has, and nothing moves.
+  const lastActive = useRef(active);
+  useEffect(() => {
+    const was = lastActive.current;
+    lastActive.current = active;
+    if (active === "home" && was !== "home") readPagesAgain();
+  }, [active, readPagesAgain]);
+  useEffect(() => () => {
+    if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
+  }, []);
+
   const onEventRef = useRef<(event: AgentEvent) => void>(() => {});
   onEventRef.current = (event: AgentEvent) => {
     const key = now.current.liveKey;
     if (key) handles.current[key]?.event(event);
+    if (["turn_ended", "marked", "plan_changed", "closing", "exited"].includes(event.type)) {
+      const tab = now.current.tabs.find((each) => each.key === key);
+      readPagesSoon(tab?.kind === "session" ? tab.folder : null);
+    }
     // Claude Code was asked whether it is signed in when the window opened. A lesson that says it is signed out
     // knows better: ask again, so Home and Settings stop saying it is signed in.
     if (event.type === "notice" && event.kind === "sign_in") {
@@ -680,6 +732,13 @@ export function App() {
 
   const activeTab = tabs.find((each) => each.key === active) ?? HOME;
   const inSession = activeTab.kind === "session";
+  // Home's and Settings' pages, each made the first time its tab comes to the front and kept until the tab closes.
+  // Home's is made behind the tab in front once the first screen is drawn, so its first showing is drawn already,
+  // and its reading never holds up the first screen of a window that opens on a session.
+  const opened = useRef(new Set<"home" | "settings">()).current;
+  if (activeTab.kind === "home" || activeTab.kind === "settings") opened.add(activeTab.kind);
+  if (firstScreen) opened.add("home");
+  if (!tabs.some((tab) => tab.kind === "settings")) opened.delete("settings");
   // Each tab's name; two sessions with one name are told apart by a number, in the bar and the Window menu.
   // The Home tab showing a workspace's page is named by that workspace.
   const homeTabName = homeFolder ? displayName(workspaces?.find((each) => each.folder === homeFolder)?.name ?? homeFolder.split("/").pop() ?? "") : "Home";
@@ -860,7 +919,7 @@ export function App() {
       void api.addMaterial(paths, homeFolder).then(
         (added) => {
           added.lines.forEach(note);
-          setMaterialChanged((n) => n + 1);
+          setReadAgain((n) => n + 1);
         },
         (problem) => note(String(problem)),
       );
@@ -956,16 +1015,17 @@ export function App() {
         onSettings={() => openSettings()}
       />
       <div className="views" aria-hidden={covered ? true : undefined}>
-        {activeTab.kind === "home" && api && (
-          <div className="view" role="tabpanel" aria-labelledby={tabId("home")}>
+        {api && opened.has("home") && (
+          <TabPage front={activeTab.kind === "home"} labelledBy={tabId("home")}>
             {homeFolder ? (
               <WorkspacePage
                 key={homeFolder}
                 api={api}
                 folder={homeFolder}
-                focus={!covered}
+                front={activeTab.kind === "home"}
+                focus={!covered && activeTab.kind === "home"}
                 running={sessionRunning(homeFolder)}
-                refresh={materialChanged}
+                refresh={readAgain}
                 onBack={() => goWorkspace(null)}
                 onNewSession={(folder) => newSession(folder)}
                 onStartSession={(folder) => newSession(folder, { kind: "start" })}
@@ -999,8 +1059,9 @@ export function App() {
                 workspaces={workspaces}
                 step={step_}
                 note={note_}
-                focus={!covered && restored}
+                focus={!covered && restored && activeTab.kind === "home"}
                 notes={notes}
+                front={activeTab.kind === "home"}
                 onContinue={(folder, session, title) => openSession(folder, session, title)}
                 onStartIn={(folder) => newSession(folder, { kind: "start" })}
                 onChecks={(folder, answer) => newSession(folder, { kind: "checks", ...(answer ? { answer } : {}) })}
@@ -1025,10 +1086,10 @@ export function App() {
                 ))}
               </div>
             )}
-          </div>
+          </TabPage>
         )}
-        {activeTab.kind === "settings" && (
-          <div className="view" role="tabpanel" aria-labelledby={tabId("settings")}>
+        {tabs.some((tab) => tab.kind === "settings") && opened.has("settings") && (
+          <TabPage front={activeTab.kind === "settings"} labelledBy={tabId("settings")}>
             <SettingsPage
               prefs={prefs}
               change={changePrefs}
@@ -1037,7 +1098,8 @@ export function App() {
               about={about}
               lessonOpen={lessonOpen()}
               blockMinutes={blockMinutes}
-              section={settingsSection}
+              section={settingsSection.name}
+              sectionAsked={settingsSection.asked}
               onEngine={(chosen) => void chooseEngine(chosen)}
               onPayment={(payment) => void choosePayment(payment)}
               onPermissions={(permissions) => void choosePermissions(permissions)}
@@ -1046,7 +1108,7 @@ export function App() {
               onCheckAgain={() => void checkAgain()}
               onReplaceRuntime={() => void answerRuntime((api) => api.replaceRuntime())}
             />
-          </div>
+          </TabPage>
         )}
         {api &&
           tabs.map((tab) =>
@@ -1106,7 +1168,7 @@ export function App() {
             void api?.addPastedText(text, folder).then(
               (added) => {
                 added.lines.forEach(note);
-                setMaterialChanged((n) => n + 1);
+                setReadAgain((n) => n + 1);
               },
               (problem) => note(String(problem)),
             );

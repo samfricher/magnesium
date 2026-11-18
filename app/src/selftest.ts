@@ -96,7 +96,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const sections = Array.from(document.querySelectorAll(".settings-page .section-head")).map((head) => head.textContent);
     steps.settings = { sections, keys: document.querySelectorAll(".key-row").length, colours: document.querySelectorAll('input[type="color"]').length };
     for (const wanted of ["Reading", "Appearance", "Keys", "Lessons", "About"]) if (!sections.includes(wanted)) throw new Error(`Settings has no ${wanted} section`);
-    if (document.querySelectorAll("textarea").length > 0) throw new Error("Settings shows a text to edit");
+    if (document.querySelectorAll('[data-page="settings"] textarea').length > 0) throw new Error("Settings shows a text to edit");
     noRawFiles("Settings");
     press("w", { meta: true });
     await until("Settings to close", () => document.querySelector('[data-page="settings"]') === null, 3000);

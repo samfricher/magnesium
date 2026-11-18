@@ -115,6 +115,8 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* Home's and Settings' pages stay behind the tab in front too, as they were left (src/pages/TabPage.tsx). */
+.views > .view:not(.in-front) { visibility: hidden; }
 /* Every session stays as it was left behind the one in front: its scroll, its draft, its reply still coming. */
 .session {
   position: absolute;
