@@ -12,7 +12,7 @@ import { useHangs } from "../hangs";
 import { renderPlain } from "../render";
 import type { SourceRef } from "../sources";
 import type { Answer, Decision, Mark } from "../types";
-import { firstWords, markWords, passDay, passWords, withoutPaths, type PlanDiff } from "../words";
+import { firstWords, markWords, passDay, passDaySpoken, passWords, withoutPaths, type PlanDiff } from "../words";
 import { Line, Rich } from "./Rich";
 
 function Said({ text, className }: { text: string; className: string }) {
@@ -76,19 +76,26 @@ function PassDays({ mark, day }: { mark: Mark; day: number }) {
 function Marks({ marks }: { marks: Mark[] }) {
   return (
     <>
-      {marks.map((mark) => (
-        <p key={mark.id} className="record mark" data-mark={mark.mark}>
-          {passDay(mark) !== null && <PassDays mark={mark} day={passDay(mark)!} />}
-          {markWords(mark)}
-          {passWords(mark) && <span className="record-pass"> {passWords(mark)}</span>}
-          {passWords(mark) && mark.receipt && (
-            <span className="record-receipt" data-role="receipt">
-              {" "}
-              <Line text={mark.receipt} />
-            </span>
-          )}
-        </p>
-      ))}
+      {marks.map((mark) => {
+        const day = passDay(mark);
+        const spoken = passDaySpoken(mark);
+        const pass = passWords(mark);
+        return (
+          <p key={mark.id} className="record mark" data-mark={mark.mark}>
+            {day !== null && <PassDays mark={mark} day={day} />}
+            {markWords(mark)}
+            {/* The rings are hidden from a screen reader, so the day they show is said to it in words. */}
+            {spoken && <span className="visually-hidden"> {spoken}</span>}
+            {pass && <span className="record-pass"> {pass}</span>}
+            {pass && mark.receipt && (
+              <span className="record-receipt" data-role="receipt">
+                {" "}
+                <Line text={mark.receipt} />
+              </span>
+            )}
+          </p>
+        );
+      })}
     </>
   );
 }

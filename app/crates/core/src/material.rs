@@ -120,7 +120,7 @@ fn make_dir(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut path = root.to_path_buf();
     for part in relative.components() {
         let Component::Normal(name) = part else {
-            return Err("That place is not inside the study folder.".into());
+            return Err("That place is not inside this space.".into());
         };
         path.push(name);
         match fs::symlink_metadata(&path) {
@@ -138,7 +138,7 @@ fn make_dir(root: &Path, relative: &Path) -> Result<PathBuf, String> {
             }
             Ok(_) => {}
             Err(_) => fs::create_dir(&path)
-                .map_err(|e| format!("The study folder could not be written to: {e}."))?,
+                .map_err(|e| format!("This space could not be written to: {e}."))?,
         }
     }
     Ok(path)

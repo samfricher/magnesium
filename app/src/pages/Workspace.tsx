@@ -498,7 +498,7 @@ export function WorkspacePage(props: Props) {
   const upgrade = () =>
     act(async () => {
       withHome(await api.upgradeFolder(folder));
-      props.onNote("This folder is upgraded. Magnesium kept a copy of its record from before.");
+      props.onNote("This space is upgraded. Magnesium kept a copy of its record from before.");
     });
   const setUp = () => act(async () => withHome(await api.setUp(folder)));
 
@@ -658,7 +658,7 @@ export function WorkspacePage(props: Props) {
         {reading && !sitting && (
           <Part head="Sessions" className="mg-sessions">
             {named.length === 0 ? (
-              <p className="mg-cue">No sessions yet. Start begins the first one.</p>
+              <p className="mg-cue">No sessions yet.</p>
             ) : (
               <div role="list">
                 {shownSessions.map(({ info, title }) => (
@@ -684,11 +684,11 @@ export function WorkspacePage(props: Props) {
                   {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
                   {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
                     ? withoutPaths(record.progress.message)
-                    : "Nothing marked yet. Each skill you answer on is kept here."}
+                    : "Nothing marked yet."}
                 </p>
               ) : (
                 <p className="mg-legend">
-                  A ring for each separate day right from memory; three prove it. The day at left is when each can next count.
+                  Three separate days right from memory prove a skill.
                   {repairs ? " A skill to repair counts again once it is repaired." : ""}
                 </p>
               )}
@@ -746,12 +746,12 @@ export function WorkspacePage(props: Props) {
         {reading && !sitting && (
           <Part head="Material" className="mg-material">
             {materials === "none" && <p className="mg-cue">The material folder could not be read.</p>}
-            {materials !== null && materials !== "none" && materials.files === 0 && <p className="mg-cue">Nothing here yet. Add notes, slides or past papers, or drop them on this page.</p>}
+            {materials !== null && materials !== "none" && materials.files === 0 && <p className="mg-cue">Nothing here yet. Add anything you want to learn from to this page.</p>}
             {listed && (
               <p className="mg-cue">
-                {plural(listed.files, "file", "files")} in this course’s folder
+                {plural(listed.files, "file", "files")}
                 {materials !== null && materials !== "none" && materials.keys > 0 ? `, and ${materials.keys === 1 ? "one answer key" : `${materials.keys} answer keys`} kept out of sight` : ""}.{" "}
-                <More open={materialOpen} more="Show them" less="Hide them" onToggle={() => setMaterialOpen((open) => !open)} drive="material" />
+                <More open={materialOpen} more={listed.files === 1 ? "Show it" : "Show them"} less={listed.files === 1 ? "Hide it" : "Hide them"} onToggle={() => setMaterialOpen((open) => !open)} drive="material" />
               </p>
             )}
             {listed && materialOpen && (
@@ -786,10 +786,10 @@ export function WorkspacePage(props: Props) {
         {/* Off the list, a running paper's clock would go on with nothing to show it or hand it in: the action waits
             for the paper, and is not drawn while it runs. */}
         {reading && !sitting && (
-          <section aria-label="This folder" className="mg-forget">
+          <section aria-label="This space" className="mg-forget">
             <p className="mg-controls">
-              <button className="mg-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
-                Take this folder off the list
+              <button className="mg-act" disabled={held !== null} title={held ?? "Its folder and sessions stay as they are"} onClick={() => props.onForget(folder)}>
+                Take this space off the list
               </button>
             </p>
             {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}

@@ -1357,8 +1357,8 @@ pub fn doing(tool: &str, input: &Value, folder: &Path) -> Option<String> {
                 return None;
             }
         }
-        _ if magnesium("search_sources") => "searching your course material".into(),
-        _ if magnesium("sources") => "reading your course material".into(),
+        _ if magnesium("search_sources") => "searching your material".into(),
+        _ if magnesium("sources") => "reading your material".into(),
         _ if magnesium("context") || magnesium("memory") => "reading your record".into(),
         _ if magnesium("learning_step") => "saving your work".into(),
         _ => return None,
@@ -2424,7 +2424,7 @@ mod tests {
         );
         assert_eq!(
             line("mcp__plugin_magnesium_magnesium__search_sources", json!({})).as_deref(),
-            Some("searching your course material")
+            Some("searching your material")
         );
         assert_eq!(line("mcp__other__thing", json!({})), None);
         for tool in [

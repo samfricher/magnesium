@@ -55,7 +55,7 @@ const { run, problem, save, scratch, runtime, agent, pluginAgent, photo, launch,
 async function paperStates() {
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
   // While a paper runs the page is that paper: none of what the folder holds is drawn, and all of it is back after.
-  const rest = ["Your work", "Material", "Take this folder off the list"];
+  const rest = ["Your work", "Material", "Take this space off the list"];
   const pageShows = async (window, label, running) => {
     const read = await window.op({ op: "text" });
     const text = String(read.text ?? "");

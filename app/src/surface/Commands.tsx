@@ -36,11 +36,11 @@ export function Commands(props: Props) {
       run: act("go", workspace.folder),
     }));
     rows.push({ id: "open", label: "Open a folder…", text: "open folder choose another", hint: props.keys.openWorkspace, run: act("open-workspace") });
-    return <Layer key="switch" name="Switch workspace" mode="filter" placeholder="A workspace" rows={rows} keys="" onClose={props.onClose} />;
+    return <Layer key="switch" name="Switch space" mode="filter" placeholder="A space" rows={rows} keys="" onClose={props.onClose} />;
   }
   const rows: Row[] = [
-    { id: "home", label: "Home", text: "home start workspaces library", hint: props.keys.home, drive: "command-home", run: act("home") },
-    { id: "switch", label: "Switch workspace…", text: "switch workspace course folder open another go", drive: "command-switch", run: () => setSwitching(true) },
+    { id: "home", label: "Home", text: "home start spaces workspaces library", hint: props.keys.home, drive: "command-home", run: act("home") },
+    { id: "switch", label: "Switch space…", text: "switch space workspace course folder open another go", drive: "command-switch", run: () => setSwitching(true) },
     { id: "tab", label: "New tab", text: "new tab home", hint: props.keys.newTab, drive: "command-new-tab", run: act("new-tab") },
     { id: "new", label: "New session", text: "new session lesson start", hint: props.keys.newSession, drive: "command-new-session", run: act("new-session") },
     ...(props.inSession

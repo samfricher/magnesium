@@ -49,6 +49,30 @@ function noRawFiles(where: string): void {
   if (found) throw new Error(`${where} shows a path or file text (${found}): ${text.slice(0, 200)}`);
 }
 
+/** Where the window draws words it did not write: the tutor's and the learner's, and the names a space, its plan and
+ * its record hold (a space's name, a plan item, a skill, a session, a file, a paper). Any of them may say "course". */
+const NOT_THE_WINDOWS = '.tutor, .you, .said-quote, .question, .line, .course, .page-title, [role="tab"], [role="listitem"], script, style';
+const RETIRED = [/\bworkspaces?\b/i, /\bstudy folders?\b/i, /\bcourse material\b/i, /\bthis course\b/i, /\bcourse page\b/i, /\bthis folder\b/i, /\bCourses\b/];
+
+/** What the window shows as interface calls a study folder a space: none of the names it had before. Each piece of
+ * text is tested on its own, so two pieces drawn side by side are never read as one phrase. Hidden text counts, as a
+ * screen reader reads it, and so do the words an element carries for a screen reader, a pointer or an empty line. */
+function noRetiredNames(where: string): void {
+  const pieces: string[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.parentElement?.closest(NOT_THE_WINDOWS)) pieces.push(node.textContent ?? "");
+  }
+  for (const element of Array.from(document.body.querySelectorAll<HTMLElement>("[placeholder], [aria-label], [title]"))) {
+    if (element.closest(NOT_THE_WINDOWS)) continue;
+    for (const name of ["placeholder", "aria-label", "title"]) pieces.push(element.getAttribute(name) ?? "");
+  }
+  for (const piece of pieces) {
+    const found = RETIRED.find((pattern) => pattern.test(piece));
+    if (found) throw new Error(`${where} names a space by an old name (${found}): ${JSON.stringify(piece.trim().slice(0, 160))}`);
+  }
+}
+
 export async function run(api: Core, actions: Actions): Promise<void> {
   const steps: Record<string, unknown> = {};
   let failure: string | null = null;
@@ -78,6 +102,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The folder named at the start opens its page in the Home tab: a visible New session, and no path.
     await until("the workspace's page", () => document.querySelector('[data-page="workspace"] [data-drive="new-session"]') !== null, 10_000);
     noRawFiles("the workspace's page");
+    noRetiredNames("the workspace's page");
     steps.workspace = { title: document.querySelector(".page-title")?.textContent ?? null };
 
     // Home: every workspace, and a first row Return starts from.
@@ -87,6 +112,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.homePage = { rows: document.querySelectorAll('[data-page="home"] [data-row]').length, first: document.querySelector('[data-drive="start"]')?.textContent ?? null };
     if (document.activeElement?.getAttribute("data-drive") !== "start") throw new Error("Home's first row does not have the focus");
     noRawFiles("Home");
+    noRetiredNames("Home");
 
     // Settings: a page in its own tab, with its sections, no file and no path.
     press(",", { meta: true });
@@ -98,6 +124,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     for (const wanted of ["Reading", "Appearance", "Keys", "Lessons", "About"]) if (!sections.includes(wanted)) throw new Error(`Settings has no ${wanted} section`);
     if (document.querySelectorAll('[data-page="settings"] textarea').length > 0) throw new Error("Settings shows a text to edit");
     noRawFiles("Settings");
+    noRetiredNames("Settings");
     press("w", { meta: true });
     await until("Settings to close", () => document.querySelector('[data-page="settings"]') === null, 3000);
 
@@ -106,6 +133,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     await until("the command menu", () => document.querySelector('[data-layer="Commands"]') !== null, 3000);
     const commands = Array.from(document.querySelectorAll('[data-layer="Commands"] .row-label')).map((row) => row.textContent);
     steps.commands = commands;
+    noRetiredNames("⌘K");
     if (commands.length > 6 || !commands.includes("Home") || !commands.includes("Settings") || !commands.includes("New session")) throw new Error(`⌘K holds other things: ${commands.join(", ")}`);
     press("Escape");
     await until("the command menu to go", () => document.querySelector('[data-layer="Commands"]') === null, 3000);
@@ -118,7 +146,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     // The core's own words reach the screen with no path in them.
     const plain = [withoutPaths("Added 5 files to Study/materials."), withoutPaths("Change Study/midterm-1/plan.md"), withoutPaths("in .magnesium/backups"), withoutPaths("1/v in s/µM")];
     steps.withoutPaths = plain;
-    if (plain.join("|") !== "Added 5 files to the course material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
+    if (plain.join("|") !== "Added 5 files to the material.|Change plan.md|as a backup|1/v in s/µM") throw new Error(`a path reached the screen: ${plain.join(" | ")}`);
 
     // A reopened session shows each of the record's marks under the answer it
     // was shown on live, by the record's id, also when several answers fall in
@@ -295,8 +323,11 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     if (!kept.startsWith("Study/handed-in/attached/")) throw new Error(`a pasted image was not handed in: ${kept}`);
     const asWork = attachedWords([kept], true);
     const toRead = attachedWords([kept], false);
-    if (!asWork.startsWith("Photo of my working: ") || !/may be my working or course material/.test(toRead)) throw new Error(`a file was not named in plain words: ${asWork} / ${toRead}`);
+    if (!asWork.startsWith("Photo of my working: ") || !/may be my working or material I’m learning from/.test(toRead)) throw new Error(`a file was not named in plain words: ${asWork} / ${toRead}`);
     if (splitAttached(`b = 5\n\n${toRead}`).files[0] !== kept || splitAttached(`b = 5\n\n${toRead}`).text !== "b = 5") throw new Error("a file named in a message was not read back");
+    // A message sent before the words changed is read back the same way, so a session opened again shows its files.
+    const before = `b = 5\n\nA file for you to read: ${kept}. It may be my working or course material.`;
+    if (splitAttached(before).files[0] !== kept || splitAttached(before).text !== "b = 5") throw new Error("a file named in an older message was not read back");
 
     // The library, the plan and the folder's sessions, through the shell.
     const listed = await api.workspaces();
@@ -326,6 +357,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const newTab = document.querySelector('[role="tab"][aria-selected="true"] .tab-name')?.textContent?.trim() ?? null;
     steps.newSessionTab = newTab;
     if (newTab !== "New session") throw new Error(`a new session's tab is not named New session: ${JSON.stringify(newTab)}`);
+    noRetiredNames("a new session");
     const noStuck = front('[data-line="rest"] [data-drive="stuck"]') === null;
     actions.run("hint");
     await wait(300);
@@ -483,6 +515,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     steps.cardWords = card;
     if (card.head !== "The tutor asks to run a command" || card.what !== "Build the paper as a PDF" || card.exact !== "tectonic paper.tex" || card.always !== "or always allow tectonic commands")
       throw new Error(`the permission card is not in the learner's words: ${JSON.stringify(card)}`);
+    noRetiredNames("a permission card");
     await api.decide(session().cards[0].id, "allow_once");
     await until("the reply after the permission", () => session().cards.length === 0 && idle());
 

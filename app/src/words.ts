@@ -69,23 +69,38 @@ export function fromToday(day: string, now = new Date()): "past" | "tomorrow" | 
   return day === isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) ? "tomorrow" : "later";
 }
 
-/**
- * Which day of its skill's three this answer was, as the runtime counts it, and on its latest pass when the next can
- * count: "First of three days. The second can count from tomorrow.", or null.
- */
-export function passWords(mark: Mark, now = new Date()): string | null {
+/** Which of three days an answer earned, in words ("First"), and the next day it names ("second"), from the record. */
+function passStep(mark: Mark): { said: string; next: string | null } | null {
   const said = mark.mark === "right" && mark.help === "none" && mark.pass ? PASS_WORDS[mark.pass - 1] : undefined;
   if (!said) return null;
-  const next = mark.pass && mark.pass < 3 && mark.next_day ? PASS_WORDS[mark.pass].toLowerCase() : null;
-  if (!next || !mark.next_day) return `${said} of three days.`;
+  return { said, next: mark.pass && mark.pass < 3 && mark.next_day ? PASS_WORDS[mark.pass].toLowerCase() : null };
+}
+
+/**
+ * The line under a mark that earned a day: when the next can count ("The second day can count from tomorrow."), or
+ * which day it was when there is no next ("Third of three days."), or null. The rings beside it show the day.
+ */
+export function passWords(mark: Mark, now = new Date()): string | null {
+  const step = passStep(mark);
+  if (!step) return null;
+  if (!step.next || !mark.next_day) return `${step.said} of three days.`;
   const from = fromToday(mark.next_day, now);
   const when = from === "past" ? "today" : from === "tomorrow" ? "from tomorrow" : `from ${shortDay(mark.next_day)}`;
-  return `${said} of three days. The ${next} can count ${when}.`;
+  return `The ${step.next} day can count ${when}.`;
+}
+
+/**
+ * The day the rings show, for a screen reader, which does not see them: "First of three days." when the line says the
+ * next day instead, and null when the line already says which day it was, or no day was earned.
+ */
+export function passDaySpoken(mark: Mark): string | null {
+  const step = passStep(mark);
+  return step && step.next && mark.next_day ? `${step.said} of three days.` : null;
 }
 
 /** Which of its skill's three days an answer earned, 1 to 3, when its line says it earned one; null otherwise. */
 export function passDay(mark: Mark): number | null {
-  if (!passWords(mark)) return null;
+  if (!passStep(mark)) return null;
   return mark.pass && mark.pass >= 1 && mark.pass <= 3 ? mark.pass : null;
 }
 
@@ -265,13 +280,13 @@ const IN_FOLDER = new RegExp(String.raw`(?:\.\./)*\b(?:Study|\.magnesium)(?:/${S
 
 /**
  * The window's and the core's words with no path in them: a path is said by
- * its file's own name, the material folder as "the course material", and
+ * its file's own name, the material folder as "the material", and
  * the record's backups in words. The tutor's own words are not changed.
  */
 export function withoutPaths(text: string): string {
   return text
     .replace(/\bin \.magnesium\/backups\b/g, "as a backup")
-    .replace(/\b(?:in|to) Study\/materials(?=[.\s]|$)/g, (found) => `${found.split(" ")[0]} the course material`)
+    .replace(/\b(?:in|to) Study\/materials(?=[.\s]|$)/g, (found) => `${found.split(" ")[0]} the material`)
     .replace(ABSOLUTE, (path) => path.split("/").pop() ?? path)
     .replace(IN_FOLDER, (path) => path.split("/").pop() ?? path);
 }

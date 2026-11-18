@@ -11,8 +11,8 @@ export function PasteSheet(props: { initial: string; saving: boolean; onSave: (t
   return (
     <>
       <div className="scrim" onMouseDown={props.onClose} />
-      <div className="layer sheet paste" role="dialog" aria-modal="true" aria-label="Paste text as course material">
-        <p className="sheet-name">Text to keep with the course material</p>
+      <div className="layer sheet paste" role="dialog" aria-modal="true" aria-label="Paste text as material">
+        <p className="sheet-name">Text to keep with the material</p>
         <textarea
           ref={field}
           className="paste-field"

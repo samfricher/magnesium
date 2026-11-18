@@ -211,7 +211,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn none_open() -> AgentError {
-    AgentError("Open a study folder first.".into())
+    AgentError("Open a space first.".into())
 }
 
 impl Manager {
@@ -833,7 +833,7 @@ impl Manager {
     pub fn set_up_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
         let folder = self.at(folder)?;
         runtime::init(&folder)
-            .map_err(|e| AgentError(format!("Magnesium could not set this folder up: {e}.")))?;
+            .map_err(|e| AgentError(format!("Magnesium could not set this space up: {e}.")))?;
         Ok(study::home(&folder, &self.store))
     }
 
@@ -846,7 +846,7 @@ impl Manager {
     pub fn upgrade_folder_at(&self, folder: Option<&Path>) -> AgentResult<Home> {
         let folder = self.at(folder)?;
         runtime::upgrade(&study::root(&folder))
-            .map_err(|e| AgentError(format!("Magnesium could not upgrade this folder: {e}.")))?;
+            .map_err(|e| AgentError(format!("Magnesium could not upgrade this space: {e}.")))?;
         Ok(study::home(&folder, &self.store))
     }
 
@@ -1218,7 +1218,7 @@ impl Manager {
         // record would be upgraded without the learner's yes.
         if study::needs_upgrade(&folder) {
             return Err(AgentError(
-                "An earlier Magnesium set this folder up. Upgrade it from the start screen first."
+                "An earlier Magnesium set this space up. Upgrade it from the space’s page first."
                     .into(),
             ));
         }

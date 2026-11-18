@@ -23,7 +23,7 @@ import { sentHomeDraft } from "../homeDraft";
 import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
 import type { AgentEvent, Answer, Core, Decision, Home, Mark, Plan, Setup, Turn as SavedTurn } from "../types";
-import { displayName, firstWords, goalName, markWords, namedByItsWords, passWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
+import { displayName, firstWords, goalName, markWords, namedByItsWords, passDaySpoken, passWords, planDiff, shortDay, withoutPaths, type PlanDiff } from "../words";
 import { Composer, type ComposerHandle, type Sending } from "./Composer";
 import { Cards, markArrived, Notices, Turn, Working } from "./Conversation";
 import { tabId } from "../pages/Tabs";
@@ -581,7 +581,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       const since = now.current.session.live?.since ?? 0;
       setFact({ kind: "mark", text: markWords(event.mark), since });
       markArrived(event.mark.id);
-      const words = [markWords(event.mark), passWords(event.mark)].filter(Boolean).join(" ");
+      const words = [markWords(event.mark), passDaySpoken(event.mark), passWords(event.mark)].filter(Boolean).join(" ");
       // Two marks on one answer are both said: the second is added to the first, and only what was added is read.
       setMarkSaid((said) => (said ? `${said} ${words}` : words));
     }
@@ -1342,7 +1342,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     if (phase !== "rest") return null;
     const course = home ? displayName(home.name) : null;
     const base = { course, line: false, start: null, choices: [], keys: "", skip: null };
-    if (!home) return { ...base, next: "Reading this workspace…", where: null };
+    if (!home) return { ...base, next: "Reading this space…", where: null };
     if (home.sitting) {
       const startedAt = new Date(home.sitting.started_ms);
       const clock = (when: Date) => `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
@@ -1350,10 +1350,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       return {
         ...base,
         next: home.sitting.name,
-        where: `Started at ${clock(startedAt)}, for ${home.sitting.minutes} minutes, until ${clock(ends)}. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the workspace’s page.`,
+        where: `Started at ${clock(startedAt)}, for ${home.sitting.minutes} minutes, until ${clock(ends)}. Write ? where you are stuck, and S, U or G after each answer for sure, unsure or a guess. Hand it in from the space’s page.`,
       };
     }
-    if (home.state === "needs_upgrade") return { ...base, next: "This folder needs an upgrade", where: withoutPaths(`${home.message ?? ""} Its page on Home has the upgrade.`.trim()) };
+    if (home.state === "needs_upgrade") return { ...base, next: "This space needs an upgrade", where: withoutPaths(`${home.message ?? ""} Its page on Home has the upgrade.`.trim()) };
     if (home.state === "no_runtime" || home.state === "unreadable") {
       return { ...base, next: displayName(home.name), where: home.message ? withoutPaths(home.message) : null, choices: [{ label: "Check again", run: () => void refreshHome() }], keys: "" };
     }
@@ -1376,7 +1376,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return {
       ...base,
       next: "A new session",
-      where: "Say what it is about. The tutor takes it as the goal, or drop your notes and slides on this window.",
+      where: "Say what it is about. The tutor takes it as the goal, or drop files on this window.",
       line: true,
       keys: "↩ start",
       skip,

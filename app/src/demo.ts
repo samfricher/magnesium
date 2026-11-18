@@ -201,9 +201,9 @@ function home(folder: string | null = open): Home {
     name: "Biochemistry",
     state: !upgraded ? "needs_upgrade" : notSetUp ? "not_set_up" : "ready",
     message: !upgraded
-      ? "This folder’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
+      ? "This space’s record is in an older form. Upgrade it to study here. Magnesium keeps a copy of your record before it changes it."
       : notSetUp
-        ? "This folder isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
+        ? "This space isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
         : null,
     exam: plan.exam_date ? { target: "midterm-1", title: "Midterm 1", date: plan.exam_date, day: day(plan.exam_date), days_left: 5 } : null,
     last: upgraded ? { days_ago: week ? 7 : has("reopen") ? 0 : 2, goal: GOAL, stopped_at: stoppedAt, next_action: "Find $V_{max}$ from the intercept 0.25." } : null,
@@ -331,7 +331,7 @@ async function reply(text: string, after?: () => void, hold = false) {
   emit({ type: "turn_started" });
   await wait(has("working") ? 400 : 160);
   if (has("working")) {
-    emit({ type: "working", doing: "searching your course material" });
+    emit({ type: "working", doing: "searching your material" });
     await new Promise<void>(() => {});
   }
   let shown = "";
@@ -621,9 +621,9 @@ export function demoCore(): Core {
     addMaterial: async (paths): Promise<Added> => {
       const names = paths.map((path) => path.split("/").pop() ?? path);
       materialNames = [...names, ...materialNames];
-      return { saved: names.map((name) => `Study/materials/${name}`), keys: 0, lines: [`Added ${names.join(", ")} to the course material. The tutor's search can read it.`] };
+      return { saved: names.map((name) => `Study/materials/${name}`), keys: 0, lines: [`Added ${names.join(", ")} to the material. The tutor's search can read it.`] };
     },
-    addPastedText: async (): Promise<Added> => ({ saved: ["Study/materials/Pasted text 10.41.txt"], keys: 0, lines: ["Kept the pasted text with the course material."] }),
+    addPastedText: async (): Promise<Added> => ({ saved: ["Study/materials/Pasted text 10.41.txt"], keys: 0, lines: ["Kept the pasted text with the material."] }),
     materialList: async () => ({ names: materialNames, files: materialNames.length + 4, keys: 1 }),
     marks: async () => [...keptMarks(), ...marks],
     onDrop: async () => () => {},

@@ -82,8 +82,7 @@ pub fn hand_in(root: &Path, group: &str, source: &Path) -> Result<String, String
         .join(safe_name(group))
         .join(day);
     let dir = root.join(&relative);
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("The study folder could not be written to: {e}."))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("This space could not be written to: {e}."))?;
     let stem = safe_name(
         &source
             .file_stem()
@@ -188,7 +187,7 @@ pub fn inside(root: &Path, path: &str) -> Result<PathBuf, String> {
         .map_err(|_| "That file does not exist.".to_owned())?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !resolved.starts_with(&root) {
-        return Err("That file is outside the study folder.".into());
+        return Err("That file is outside this space.".into());
     }
     Ok(resolved)
 }

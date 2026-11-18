@@ -53,12 +53,12 @@ export function programNote(setup: Setup | null, act: { replace: () => void; kee
   const newer = later(runtime.bundled.version, runtime.installed.version);
   if (newer > 0)
     return {
-      text: "Lessons use the version of Magnesium already on this Mac. This app comes with a newer one, which updates each workspace’s record the first time it opens it, after keeping a copy.",
+      text: "Lessons use the version of Magnesium already on this Mac. This app comes with a newer one, which updates each space’s record the first time it opens it, after keeping a copy.",
       choices: [{ label: "Use the newer version", run: act.replace }, keep],
     };
   if (newer < 0)
     return {
-      text: "Lessons use the version of Magnesium already on this Mac, which is newer than the one this app comes with. Switching would put the older one in its place for every workspace.",
+      text: "Lessons use the version of Magnesium already on this Mac, which is newer than the one this app comes with. Switching would put the older one in its place for every space.",
       choices: [keep, { label: "Use this app’s older version", run: act.replace }],
     };
   return {
@@ -570,14 +570,14 @@ export function HomePage(props: Props) {
         {props.workspaces === null ? null : workspaces.length === 0 ? (
           !props.step && (
             <Part head="Today" sub={today} className="mg-now">
-              <h1 className="mg-step-text">Open a folder of your course material</h1>
+              <h1 className="mg-step-text">Create a space to start learning</h1>
               <p className="mg-controls">
                 <Start label="Open a folder…" run={props.onPickFolder} focus={props.focus} drive="open-folder" />
                 <button className="mg-act" onClick={props.onNewFolder}>
                   Make a new folder…
                 </button>
                 <button className="mg-act" onClick={props.onFindFolders}>
-                  Find folders on this Mac
+                  Find spaces on this Mac
                 </button>
               </p>
             </Part>
@@ -601,7 +601,7 @@ export function HomePage(props: Props) {
                 </p>
               </Part>
             )}
-            <Part head="Courses" className="mg-courses">
+            <Part head="Spaces" className="mg-courses">
               <div role="list">
                 {workspaces.map((workspace) => (
                   <Row
@@ -625,7 +625,7 @@ export function HomePage(props: Props) {
               Make a new folder…
             </button>
             <button className="mg-act" onClick={props.onFindFolders}>
-              Find folders on this Mac
+              Find spaces on this Mac
             </button>
           </p>
         )}

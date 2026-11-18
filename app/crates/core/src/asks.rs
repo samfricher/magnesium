@@ -221,8 +221,8 @@ fn magnesium_tool(tool: &str) -> Option<&'static str> {
     Some(match name {
         "context" | "memory" => "Reading your record",
         "learning_step" => "Saving your work",
-        "search_sources" => "Searching your course material",
-        "sources" => "Reading your course material",
+        "search_sources" => "Searching your material",
+        "sources" => "Reading your material",
         _ => "",
     })
     .filter(|words| !words.is_empty())
@@ -239,23 +239,23 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
             let new = tool == "Write" && !path.is_empty() && !folder.join(&path).exists();
             match place(&path, folder) {
                 Place::Plan(plan) => ask("change your plan", plan),
-                Place::Course(name) if new => ask("add a file to this course", name),
-                Place::Course(name) => ask("change a file in this course", name),
+                Place::Course(name) if new => ask("add a file to this space", name),
+                Place::Course(name) => ask("change a file in this space", name),
                 // Outside the course the path is shown whole: "config, in .ssh"
                 // alone does not say which one.
                 Place::Outside(name, path) if new => {
-                    with_exact(ask("add a file outside this course", name), path)
+                    with_exact(ask("add a file outside this space", name), path)
                 }
                 Place::Outside(name, path) => {
-                    with_exact(ask("change a file outside this course", name), path)
+                    with_exact(ask("change a file outside this space", name), path)
                 }
             }
         }
         "Read" => match place(&file(), folder) {
             Place::Plan(plan) => ask("read your plan", plan),
-            Place::Course(name) => ask("read a file in this course", name),
+            Place::Course(name) => ask("read a file in this space", name),
             Place::Outside(name, path) => {
-                with_exact(ask("read a file outside this course", name), path)
+                with_exact(ask("read a file outside this space", name), path)
             }
         },
         "Grep" | "Glob" => {
@@ -271,7 +271,7 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                     Some(_) => ask(&format!("{looks} your files"), pattern),
                     None => with_exact(
                         ask(
-                            &format!("{looks} files outside this course"),
+                            &format!("{looks} files outside this space"),
                             format!("{pattern}, in {}", name_of(Path::new(path))),
                         ),
                         clip(path, 400),
@@ -341,7 +341,7 @@ fn rule_words(rule: &Value, folder: &Path) -> Option<String> {
         let dir = rule_folder(glob, folder)?;
         let relative = inside(&dir, folder)?;
         Some(if relative.as_os_str().is_empty() {
-            "this course".to_owned()
+            "this space".to_owned()
         } else {
             name_of(&relative)
         })
@@ -476,11 +476,11 @@ mod tests {
                 "Write",
                 json!({"file_path": at("Study/materials/summary.md"), "content": "hi"})
             ),
-            words("The tutor asks to add a file to this course", "summary.md")
+            words("The tutor asks to add a file to this space", "summary.md")
         );
         assert_eq!(
             said("Edit", json!({"file_path": at("notes.md")})),
-            words("The tutor asks to change a file in this course", "notes.md")
+            words("The tutor asks to change a file in this space", "notes.md")
         );
         // Outside the course, and for a web page, the exact place is shown too.
         let exact = |title: &str, detail: &str, exact: &str| {
@@ -492,7 +492,7 @@ mod tests {
                 json!({"file_path": "/Users/someone/Downloads/other.txt"})
             ),
             exact(
-                "The tutor asks to read a file outside this course",
+                "The tutor asks to read a file outside this space",
                 "other.txt, in Downloads",
                 "/Users/someone/Downloads/other.txt"
             )
@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(
             said("Edit", json!({"file_path": "/Users/someone/.ssh/config"})),
             exact(
-                "The tutor asks to change a file outside this course",
+                "The tutor asks to change a file outside this space",
                 "config, in .ssh",
                 "/Users/someone/.ssh/config"
             )
@@ -511,7 +511,7 @@ mod tests {
                 json!({"pattern": "secret", "path": "/Users/someone/Downloads"})
             ),
             exact(
-                "The tutor asks to search files outside this course",
+                "The tutor asks to search files outside this space",
                 "“secret”, in Downloads",
                 "/Users/someone/Downloads"
             )
@@ -583,7 +583,7 @@ mod tests {
         );
         assert_eq!(
             read.title,
-            "The tutor asks to read a file outside this course"
+            "The tutor asks to read a file outside this space"
         );
         // Named, and shown, where the link points.
         assert_eq!(
@@ -603,7 +603,7 @@ mod tests {
         );
         assert_eq!(
             plan.title,
-            "The tutor asks to change a file outside this course"
+            "The tutor asks to change a file outside this space"
         );
         // A new file under a linked folder is found by the folder's real place.
         let new = describe(
@@ -612,10 +612,7 @@ mod tests {
             &json!({}),
             folder,
         );
-        assert_eq!(
-            new.title,
-            "The tutor asks to add a file outside this course"
-        );
+        assert_eq!(new.title, "The tutor asks to add a file outside this space");
         // Inside, the real file in the course is in the course.
         let inside = describe(
             "Edit",
@@ -625,7 +622,7 @@ mod tests {
         );
         assert_eq!(
             (inside.title.as_str(), inside.exact),
-            ("The tutor asks to change a file in this course", None)
+            ("The tutor asks to change a file in this space", None)
         );
     }
 
@@ -724,7 +721,7 @@ mod tests {
                 "rules": [{"toolName": "Edit", "ruleContent": format!("/{}/**", real.display())}]}])
             )
             .as_deref(),
-            Some("Allow changes to files in this course this session")
+            Some("Allow changes to files in this space this session")
         );
         // A command, and the study folder the agent works in already.
         assert_eq!(

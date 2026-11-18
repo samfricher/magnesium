@@ -434,7 +434,7 @@ impl<R: Runtime> Maker<'_, R> {
 
 /// What Go shows with no workspaces.
 fn no_workspaces<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
-    MenuItem::with_id(app, "go-none", "No workspaces yet", false, None::<&str>)
+    MenuItem::with_id(app, "go-none", "No spaces yet", false, None::<&str>)
 }
 
 /// Bring a list on the bar in step with `make.spec`, from the `had` items it
@@ -456,7 +456,7 @@ fn relist<R: Runtime>(
             entry.title = each.title.clone();
         }
     }
-    // What stands before the list once it has items: Go's "No workspaces yet"
+    // What stands before the list once it has items: Go's "No spaces yet"
     // goes, Window's line before the tabs comes.
     if had == 0 && now > 0 {
         match list {
