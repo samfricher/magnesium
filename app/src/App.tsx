@@ -17,12 +17,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { core, isDemo } from "./bridge";
 import { harnessOn, mark, ready, setProbe } from "./harness";
 import { whenDrawn } from "./reveal";
-import { HomePage, mostRecent, programNote, setupStep } from "./pages/Home";
+import { HomePage, leadOf, mostRecent, programNote, readAhead, setupStep } from "./pages/Home";
 import { checksAlone } from "./next";
 import { SettingsPage } from "./pages/Settings";
 import { TabPage } from "./pages/TabPage";
 import { Tabs, tabId, type TabView } from "./pages/Tabs";
-import { WorkspacePage } from "./pages/Workspace";
+import { OPEN_WAIT_MS, readWorkspace, WorkspacePage, type Reading } from "./pages/Workspace";
 import { wantGlass } from "./glass";
 import { actionOf, applyPrefs, flushPlaces, keepPanelWidth, keyName, loadPrefs, panelWidthKept, savePrefs, SITTING_GAP_MS, type KeyAction, type Prefs } from "./prefs";
 import { docsOf, fitPanelWidth, workspaceDocsKey } from "./docs";
@@ -86,6 +86,8 @@ export function App() {
   const [tabs, setTabs] = useState<Tab[]>([HOME]);
   const [active, setActive] = useState<string>("home");
   const [homeFolder, setHomeFolder] = useState<string | null>(null);
+  // The first reading of the folder's page in the Home tab, made before the page was opened.
+  const [homeFirst, setHomeFirst] = useState<{ folder: string; first: Reading | Promise<Reading> } | null>(null);
   const [panel, setPanel] = useState(false);
   // The panel's width as the learner left it, and the window's: the panel is drawn at the first fitted to the
   // second, so a window made narrow for a moment does not shrink the panel for good.
@@ -184,11 +186,50 @@ export function App() {
     if (tab?.kind === "session" && tab.session) void now.current.api?.touchSession(tab.folder, tab.session).catch(() => {});
   }, []);
 
+  // A page in the Home tab is put in front once it can be drawn whole: a folder's page once it is read, Home's list
+  // once its first row is known. Until then (OPEN_WAIT_MS at most) the page in front stays as it is. Opened at once,
+  // a folder's page drew its head and a placeholder, and then its parts came in over the next frames, each pushing
+  // the ones under it down; Home's list drew nothing until its first row was known.
+  const opening = useRef<{ asked: number; folder: string | null } | null>(null);
+  const asks = useRef(0);
+  const justRead = useRef(false);
   const goWorkspace = useCallback(
     (folder: string | null) => {
-      setHomeFolder(folder);
-      activate("home");
-      if (folder) void now.current.api?.visitFolder(folder).then(() => loadWorkspaces(), () => {});
+      // Asked again while it is read, as by a second click on its row: the reading under way is waited for.
+      if (opening.current?.folder === folder) return;
+      const asked = ++asks.current;
+      opening.current = null;
+      const { api, homeFolder, active, workspaces } = now.current;
+      const show = (first?: Reading | Promise<Reading>) => {
+        // The page comes in front just read: Home's tab coming back does not read it again.
+        justRead.current = first !== undefined && now.current.active !== "home";
+        setHomeFirst(folder && first ? { folder, first } : null);
+        setHomeFolder(folder);
+        activate("home");
+      };
+      // The page already in the Home tab is read again while it is behind.
+      if (!api || folder === homeFolder) return show();
+      let read: Reading | null = null;
+      let reading: Promise<Reading> | null = null;
+      let ready: Promise<unknown> | null;
+      if (folder) {
+        // Opening the page notes the visit, which puts the folder first in the library. The library is read again once
+        // the page is read, so Home's list does not change order while it is still on screen.
+        reading = readWorkspace(api, folder, true).then((done) => (read = done));
+        void reading.then(() => loadWorkspaces());
+        ready = reading;
+      } else {
+        const lead = workspaces ? leadOf(workspaces) : null;
+        ready = lead ? readAhead(api, lead.folder) : null;
+      }
+      if (!ready) return show();
+      opening.current = { asked, folder };
+      void Promise.race([ready, new Promise((done) => window.setTimeout(done, OPEN_WAIT_MS))]).then(() => {
+        // Another page asked for since, or another tab put in front: the learner has moved on from this one.
+        if (asked !== asks.current) return;
+        opening.current = null;
+        if (now.current.active === active) show(read ?? reading ?? undefined);
+      });
     },
     [activate, loadWorkspaces],
   );
@@ -632,7 +673,10 @@ export function App() {
   useEffect(() => {
     const was = lastActive.current;
     lastActive.current = active;
-    if (active === "home" && was !== "home") readPagesAgain();
+    if (active === "home" && was !== "home") {
+      if (justRead.current) justRead.current = false;
+      else readPagesAgain();
+    }
   }, [active, readPagesAgain]);
   useEffect(() => () => {
     if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
@@ -1022,6 +1066,7 @@ export function App() {
                 key={homeFolder}
                 api={api}
                 folder={homeFolder}
+                first={homeFirst?.folder === homeFolder ? homeFirst.first : undefined}
                 front={activeTab.kind === "home"}
                 focus={!covered && activeTab.kind === "home"}
                 running={sessionRunning(homeFolder)}

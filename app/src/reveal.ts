@@ -30,7 +30,7 @@ const KEY_FRAMES = 30;
  * window anyway 1.5 s after its setup (SHOW_ANYWAY in src-tauri/src/reveal.rs),
  * and the page's clock starts after that setup, so this ends at the same moment
  * or just after. A page whose content never comes (a runtime that never
- * answers leaves a folder's page "Reading the record…" for good) still gets
+ * answers leaves a folder's page with its head alone for good) still gets
  * its startup timed, and the watching stops: a frame loop left running keeps
  * the display awake. A folder moved away is not such a page: the window drops
  * it and opens on Home.

@@ -147,6 +147,11 @@ export function mostRecent(workspaces: Workspace[]): Workspace | null {
   return best;
 }
 
+/** The workspace Home's first row is about: the one studied in most recently; in a library with no session yet, the one opened most recently. */
+export function leadOf(workspaces: Workspace[]): Workspace | null {
+  return mostRecent(workspaces) ?? workspaces[0] ?? null;
+}
+
 /**
  * What Home last read of a workspace: its Next, its last goal (the name of a session an earlier window kept), what
  * the session Return opens starts with (src/next.ts, firstStep), and when it was read.
@@ -164,6 +169,15 @@ export const PLAN_WAIT_MS = 400;
 const known = new Map<string, Read>();
 // What each workspace's row last said of its day, by folder: drawn at once on the next visit while it is read again.
 const factsKnown = new Map<string, string>();
+
+/**
+ * Reads what Home's first row says of a folder, for the window to wait on before it shows Home's list, or null when
+ * Home knows it from an earlier visit and can draw the row at once.
+ */
+export function readAhead(api: Core, folder: string): Promise<void> | null {
+  if (known.has(folder)) return null;
+  return readNext(api, folder).then((fresh) => void known.set(folder, fresh));
+}
 
 async function readNext(api: Core, folder: string): Promise<Read> {
   const at = Date.now();
@@ -207,8 +221,7 @@ export function HomePage(props: Props) {
   const list = useRef<HTMLDivElement>(null);
   const workspaces = props.workspaces ?? [];
   const recent = mostRecent(workspaces);
-  // The workspace studied in most recently; in a library with no session yet, the one opened most recently.
-  const lead = recent ?? workspaces[0] ?? null;
+  const lead = leadOf(workspaces);
   // `here`: read on this visit, rather than kept from an earlier one.
   const [read, setRead] = useState<{ folder: string; read: Read; here: boolean } | null>(() => {
     const kept = lead ? known.get(lead.folder) : undefined;

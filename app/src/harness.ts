@@ -544,6 +544,7 @@ async function run(op: Op): Promise<Result> {
         const text = collapse(view.innerText);
         return { words: text.length, text, lines };
       };
+      const standsAt = (line: string) => line.slice(line.lastIndexOf(" @"));
       // Where two readings of the page's words part, with a little of each.
       const parted = (a: string, b: string) => {
         let at = 0;
@@ -570,15 +571,23 @@ async function run(op: Op): Promise<Result> {
         words: frame.words,
         lines: frame.lines,
         focus: frame.focus,
-        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving.
-        moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && line !== previous.lines[n]) || frame.lines.length !== previous.lines.length : false,
+        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving. A
+        // line whose words change where it stands (a row taking its ↩) is not a move; the words are in `text`.
+        moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && standsAt(line) !== standsAt(previous.lines[n])) || frame.lines.length !== previous.lines.length : false,
         ...(previous && previous.text !== frame.text ? { text: parted(previous.text, frame.text) } : {}),
       });
+      // Frames whose lines stand as they did before the click: the window has not answered it yet, as when it keeps
+      // the page in front until the page asked for is read. They are timed, not counted as the first drawing. Their
+      // words may differ: the row clicked takes the keyboard, and draws its ↩.
+      const unchanged = (frame: (typeof frames)[number]) => frame.lines.join("|") === before.lines.join("|");
+      const answered = frames.findIndex((frame) => !unchanged(frame));
+      const shown = answered === -1 ? frames : frames.slice(answered);
       return {
         ok: true,
         before: before.lines.slice(0, 3),
-        first: frames[0] ? brief(frames[0]) : null,
-        changes_after_first: frames.slice(1).map((frame, n) => brief(frame, frames[n])),
+        answered_at: answered === -1 ? null : frames[answered].at,
+        first: shown[0] ? brief(shown[0]) : null,
+        changes_after_first: shown.slice(1).map((frame, n) => brief(frame, shown[n])),
         focused: describe(document.activeElement),
       };
     }

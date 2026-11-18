@@ -59,7 +59,49 @@ type Props = {
   onNote: (text: string) => void;
   /** Bumped when what the page shows may have changed from outside it: a drop, a lesson's marks, Home's tab back in front. */
   refresh: number;
+  /** The page's first reading, made before the window opened it, or still being made when the window stopped waiting for it. */
+  first?: Reading | Promise<Reading>;
 };
+
+/**
+ * All the page shows of its folder, read at once. The page is drawn from one reading, so its parts never come in
+ * one after another, each pushing the ones under it down.
+ */
+export type Reading = {
+  home: Home | null;
+  sessions: LessonInfo[];
+  /** "none" when the material folder could not be read. */
+  materials: Materials | "none";
+  /** null when it could not be read, which the page treats as no plan. */
+  plan: Plan | null;
+  /** null when it could not be read. */
+  record: { progress: Progress; marks: Mark[] } | null;
+};
+
+/**
+ * Reads a folder's page. With `visit`, it also notes the folder as opened, which puts it first in the library: for
+ * the reading made as the page is opened, not for the readings made while it stays in Home's tab.
+ */
+export async function readWorkspace(api: Core, folder: string, visit = false): Promise<Reading> {
+  const [home, sessions, materials, plan, record] = await Promise.all([
+    (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
+    api.lessons(folder).catch(() => [] as LessonInfo[]),
+    api.materialList(folder).catch(() => "none" as const),
+    api.plan(folder).catch(() => null),
+    Promise.all([api.progress(null, folder), api.marks(folder).catch(() => null)]).then(
+      ([progress, marks]) => ({ progress, marks: marks ?? [] }),
+      () => null,
+    ),
+  ]);
+  return { home, sessions, materials, plan, record };
+}
+
+/**
+ * How long the window keeps the page in front as it is while a folder's page it was asked to open is read. Past it,
+ * the folder's page opens with its head alone and the rest comes in at once when read. On a made-up course the
+ * reading took 50 to 100 ms.
+ */
+export const OPEN_WAIT_MS = 400;
 
 /** "Midterm 1, Tue 17 Nov · 5 days", or null for a plan with no date ahead. */
 function examLine(exam: Exam | null): string | null {
@@ -301,12 +343,13 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
 
 export function WorkspacePage(props: Props) {
   const { api, folder } = props;
-  const [home, setHome] = useState<Home | null>(null);
-  const [sessions, setSessions] = useState<LessonInfo[] | null>(null);
-  const [materials, setMaterials] = useState<Materials | null | "none">(null);
-  /** undefined until read; null when it could not be read, which the page treats as no plan. */
-  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
-  const [record, setRecord] = useState<{ progress: Progress; marks: Mark[] } | null | "unread">("unread");
+  // null until the first reading is in. Until then the page draws its head alone.
+  const [reading, setReading] = useState<Reading | null>(() => (props.first && !(props.first instanceof Promise) ? props.first : null));
+  const home = reading?.home ?? null;
+  const sessions = reading?.sessions ?? null;
+  const materials = reading?.materials ?? null;
+  const plan = reading?.plan;
+  const record = reading?.record;
   const [materialOpen, setMaterialOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -409,44 +452,39 @@ export function WorkspacePage(props: Props) {
   // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 
+  // Each reading is numbered: one that comes back after a later one was drawn is not drawn over it.
+  const begun = useRef(0);
+  const drawn = useRef(0);
+  const take = useCallback(async (pending: Promise<Reading>) => {
+    const at = ++begun.current;
+    const fresh = await pending;
+    if (at < drawn.current) return;
+    drawn.current = at;
+    setReading(fresh);
+  }, []);
   // Noting a visit moves the folder to the top of the library (and Go). It is noted when the learner comes to the page:
   // when the page is made in front, and each time Home's tab, holding it, comes back. A read for any other reason (a
-  // lesson's marks, an action on the page) only reads.
-  const visitDue = useRef(props.front);
-  const read = useCallback(async () => {
+  // lesson's marks, an action on the page) only reads. A page handed its first reading was opened by the window,
+  // whose reading noted the visit.
+  const visitDue = useRef(props.front && props.first === undefined);
+  const read = useCallback(() => {
     const visit = visitDue.current;
     visitDue.current = false;
-    const [opened, listed, held, planned] = await Promise.all([
-      (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
-      api.lessons(folder).catch(() => [] as LessonInfo[]),
-      api.materialList(folder).catch(() => "none" as const),
-      api.plan(folder).catch(() => null),
-    ]);
-    setHome(opened);
-    setSessions(listed);
-    setMaterials(held);
-    setPlan(planned);
-  }, [api, folder]);
+    return take(readWorkspace(api, folder, visit));
+  }, [take, api, folder]);
 
+  // The window hands the page its first reading: read again only when something changes after it.
+  const handed = useRef(props.first);
   useEffect(() => {
-    void read();
-  }, [read, props.refresh]);
+    const first = handed.current;
+    handed.current = undefined;
+    if (first instanceof Promise) void take(first);
+    else if (!first) void read();
+  }, [take, read, props.refresh]);
   const { onChecksDue } = props;
   useEffect(() => {
     if (home) onChecksDue?.(folder, checksAlone(home));
   }, [home, folder, onChecksDue]);
-
-  // The record is read apart from the rest, so the page does not wait on it.
-  useEffect(() => {
-    let live = true;
-    void Promise.all([api.progress(null, folder), api.marks(folder).catch(() => null)]).then(
-      ([progress, marks]) => live && setRecord({ progress, marks: marks ?? [] }),
-      () => live && setRecord(null),
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, folder, props.refresh]);
 
   // A session still named by the words it was started with ("Continue") takes its own lesson's goal, as a new
   // one does: the goal the record binds to that conversation, never the folder's last goal, which a lesson in a
@@ -511,12 +549,13 @@ export function WorkspacePage(props: Props) {
     // The block the keyboard was in is gone: the keyboard goes to what leads the page now.
     window.requestAnimationFrame(() => column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus());
   };
+  const withHome = (fresh: Home) => setReading((old) => old && { ...old, home: fresh });
   const upgrade = () =>
     act(async () => {
-      setHome(await api.upgradeFolder(folder));
+      withHome(await api.upgradeFolder(folder));
       props.onNote("This folder is upgraded. Magnesium kept a copy of its record from before.");
     });
-  const setUp = () => act(async () => setHome(await api.setUp(folder)));
+  const setUp = () => act(async () => withHome(await api.setUp(folder)));
 
   const name = home ? displayName(home.name) : displayName(folder.split("/").pop() ?? "");
   // A kind beside each file only says something when the files are not all of one kind.
@@ -554,9 +593,9 @@ export function WorkspacePage(props: Props) {
 
   // Each skill the learner has answered on, with the runtime's count of its days, in the order it can count again:
   // today, then by its day, then those with no day, then the proven; the newest answer first within each.
-  const marksById = new Map(record !== "unread" && record ? record.marks.map((mark) => [mark.id, mark]) : []);
+  const marksById = new Map(record ? record.marks.map((mark) => [mark.id, mark]) : []);
   const work =
-    record !== "unread" && record
+    record
       ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested]
           .map((row) => ({ row, last: row.last_answer ? (marksById.get(row.last_answer) ?? null) : null, next: againOf(row) }))
           .filter(({ row, last }) => last !== null || earned(row) > 0)
@@ -568,7 +607,7 @@ export function WorkspacePage(props: Props) {
       ref={pageRef}
       className={`page workspace-page${withDocs ? " with-docs" : ""}${withDocs && docs.expanded ? " expanded" : ""}${withDocs && docs.expanded && docs.lessonFront ? " lesson-front" : ""}`}
       data-page="workspace"
-      data-read={home !== null && sessions !== null && plan !== undefined && record !== "unread" ? "" : undefined}
+      data-read={reading ? "" : undefined}
       style={withDocs ? ({ "--side-w": `${props.panelWidth}px` } as React.CSSProperties) : undefined}
     >
       <div className="page-scroll">
@@ -679,11 +718,9 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
-        {!sitting && <section aria-label="Your work" className="your-work">
+        {reading && !sitting && <section aria-label="Your work" className="your-work">
           <p className="list-head">Your work</p>
-          {record === "unread" ? (
-            <p className="page-note">Reading the record…</p>
-          ) : record === null ? (
+          {!record ? (
             <p className="page-note">The record could not be read.</p>
           ) : work.length === 0 ? (
             <p className="page-note">
@@ -743,7 +780,7 @@ export function WorkspacePage(props: Props) {
           </section>
         )}
 
-        {!sitting && <section aria-label="Material">
+        {reading && !sitting && <section aria-label="Material">
           {listed ? (
             <button className="list-head fold" data-drive="material" aria-expanded={materialOpen} onClick={() => setMaterialOpen((open) => !open)}>
               Material <span className="fold-count">{plural(listed.files, "file", "files")}</span>
@@ -781,7 +818,7 @@ export function WorkspacePage(props: Props) {
 
         {/* Off the list, a running paper's clock would go on with nothing to show it or hand it in: the action waits
             for the paper, and is not drawn while it runs. */}
-        {!sitting && <section aria-label="This folder" className="folder-acts">
+        {reading && !sitting && <section aria-label="This folder" className="folder-acts">
           <p className="page-acts">
             <button className="quiet-act" disabled={held !== null} title={held ?? "The folder and its sessions stay as they are"} onClick={() => props.onForget(folder)}>
               Take this folder off the list

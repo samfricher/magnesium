@@ -5,7 +5,8 @@
 //   node scripts/tab-switch.mjs <app-binary> <out-dir>
 //
 // Works in a scratch course (scripts/scratch-course.sh) with a scratch window
-// home. The Home tab shows a course's page, Settings has a tab beside it, and
+// home. Each course's page is opened from Home's list and left for it again,
+// twice. Then the Home tab shows a course's page, Settings has a tab beside it, and
 // the window switches between them, to Home's list and back, and to a
 // session's tab and back; then a key is changed in Settings, which the menu
 // must follow; and the course's page, scrolled, must keep its place across a
@@ -85,6 +86,13 @@ try {
   }
   await step("settle", { op: "wait_idle", timeout_ms: 60_000 });
   await step("light", { op: "scheme", scheme: "light" });
+  // Each course's page opened from Home's list, and Home's list again from it: the first time a page is opened in
+  // the window, and again.
+  for (let n = 1; n <= 2; n++)
+    for (const course of ["Intro Statistics", "Linear Algebra", "Organic Chemistry"]) {
+      await change(`${n}: open ${course} from Home's list`, `workspace-${course}`);
+      await change(`${n}: back to Home's list from ${course}`, "home");
+    }
   await step("open the course's page", { op: "click", target: "workspace-Intro Statistics" });
   await sleep(1500);
   shoot("course-page");
@@ -167,6 +175,7 @@ try {
   if (!report.place.kept) report.problems.push(`the course's page lost its place: left ${left.from_foot} px from its foot, found ${found.from_foot}`);
   if (menuEnd.replaced !== menuBefore.replaced) report.problems.push(`the menu bar was put in place ${menuEnd.replaced - menuBefore.replaced} more times during ${report.switches.length} switches and the key changes`);
   for (const each of report.switches) {
+    if (each.answered_at === null) report.problems.push(`${each.label}: the window never answered the click`);
     const moved = (each.changes_after_first ?? []).filter((frame) => frame.moved);
     if (moved.length > 0) report.problems.push(`${each.label}: the page moved in ${moved.length} frames after the first`);
   }
@@ -182,7 +191,8 @@ try {
 const summary = report.switches.map((each) => {
   const later = each.changes_after_first ?? [];
   const moved = later.filter((frame) => frame.moved).length;
-  return `${each.label}: ${moved} frames moved, ${later.length - moved} changed words only`;
+  const answered = each.answered_at === undefined ? "" : each.answered_at === null ? ", never answered" : `, answered at ${each.answered_at} ms`;
+  return `${each.label}${answered}: ${moved} frames moved, ${later.length - moved} changed words only`;
 });
 console.log(summary.join("\n"));
 console.log(`menu bar put in place: ${JSON.stringify(report.menu_replaced ?? null)}`);
