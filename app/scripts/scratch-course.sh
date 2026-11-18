@@ -25,8 +25,10 @@
 # the runtime's record here except by `magnesium init`. Every name, number and
 # note is made up.
 #
-# The runtime is the one built at the root of this checkout when there is
-# one, else the installed `magnesium`. Prints the course folder.
+# The runtime is the one MAGNESIUM_TEST_BINARY names (as for the window's core
+# tests), else the one built at the root of this checkout when there is one,
+# which may be older than the checkout, else the installed `magnesium`.
+# Prints the course folder.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIR=${1:?usage: scratch-course.sh <dir> [--days-ago N]}
@@ -144,7 +146,9 @@ if [ -n "$DAYS" ] && [ -d "$COURSE/.magnesium" ]; then
 fi
 
 RUNTIME=""
-if [ -x "$ROOT/../target/release/magnesium" ]; then
+if [ -n "${MAGNESIUM_TEST_BINARY:-}" ]; then
+  RUNTIME=$MAGNESIUM_TEST_BINARY
+elif [ -x "$ROOT/../target/release/magnesium" ]; then
   RUNTIME="$ROOT/../target/release/magnesium"
 else
   RUNTIME=$(command -v magnesium || true)

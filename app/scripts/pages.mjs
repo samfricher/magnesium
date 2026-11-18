@@ -26,15 +26,12 @@
 // to its second (steps-*): the heads where each began, the top edge, and the
 // session opened again.
 
-import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
-import { drive } from "./drive.mjs";
+import { APP, openRun, sleep } from "./window.mjs";
 
-const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [binary, outArg] = process.argv.slice(2);
 if (!binary || !outArg) {
   console.error("usage: node scripts/pages.mjs <app-binary> <out-dir>");
@@ -45,93 +42,12 @@ if (!existsSync(binary)) {
   process.exit(66);
 }
 const out = resolve(outArg);
-mkdirSync(out, { recursive: true });
 
 const TURN_MS = 60_000;
 const ANSWER = "The standard error is s/√n = 10/√25 = 2 minutes.";
 const CHANGE = "I skipped three days and the midterm moved, change the plan";
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-const run = { started: new Date().toISOString(), binary, steps: [], problems: [], shots: [] };
-const problem = (what) => {
-  run.problems.push(what);
-  console.error(`pages: ${what}`);
-};
-const save = () => writeFileSync(join(out, "run.json"), JSON.stringify(run, null, 2));
-
-const scratch = mkdtempSync(join(tmpdir(), "mg-pages-"));
-run.scratch = scratch;
-execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8" });
-const runtime = join(scratch, "magnesium");
-const agent = join(scratch, "claude");
-// A photo of working, to put on the line.
-const photo = join(scratch, "working-photo.png");
-execFileSync("cp", [join(APP, "src-tauri/app-icon.png"), photo]);
-writeFileSync(agent, `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "model.log")}'\nexec python3 '${join(APP, "crates/core/tests/stand_in_model.py")}' "$@"\n`, { mode: 0o755 });
-
-const pluginAgent = join(scratch, "claude-plugin");
-mkdirSync(join(scratch, "agent"), { recursive: true });
-writeFileSync(
-  pluginAgent,
-  `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "agent.log")}'\nexport STAND_IN_STATE='${join(scratch, "agent")}'\nexec python3 '${join(APP, "crates/core/tests/stand_in_agent.py")}' "$@"\n`,
-  { mode: 0o755 },
-);
-
-async function launch(name, home, withAgent = agent, more = {}) {
-  const driveDir = join(scratch, "drive", name);
-  mkdirSync(driveDir, { recursive: true });
-  const env = { ...process.env, MAGNESIUM_APP_HOME: home, MAGNESIUM_APP_RUNTIME: runtime, MAGNESIUM_APP_DRIVE: driveDir, MAGNESIUM_APP_AGENT: withAgent, ...more };
-  delete env.MAGNESIUM_APP_SELFTEST;
-  delete env.MAGNESIUM_APP_FOLDER;
-  const log = openSync(join(out, `window-${name}.log`), "w");
-  const child = spawn(binary, [], { env, stdio: ["ignore", log, log] });
-  const exited = new Promise((done) => child.on("exit", (code) => done(code)));
-  const window = { name, child, exited, op: (op, options) => drive(driveDir, op, options) };
-  const start = Date.now();
-  for (;;) {
-    const answer = await window.op({ op: "ready" }, { timeoutMs: 5_000 });
-    if (answer.ok && answer.ready) break;
-    if (Date.now() - start > 60_000) {
-      problem(`${name}: the window never called ready()`);
-      break;
-    }
-    await sleep(250);
-  }
-  await step(window, `${name}: settle`, { op: "wait_idle", timeout_ms: 60_000 });
-  return window;
-}
-
-async function step(window, label, op) {
-  const answer = await window.op(op);
-  run.steps.push({ label, op, answer: op.op === "text" ? "(kept apart)" : answer });
-  if (!answer.ok) problem(`${label}: ${answer.error ?? "not ok"}`);
-  save();
-  return answer;
-}
-
-async function shoot(window, stem, what) {
-  for (const scheme of ["dark", "light"]) {
-    await window.op({ op: "scheme", scheme });
-    await sleep(150);
-    const file = join(out, `${stem}-${scheme}.png`);
-    try {
-      execFileSync("sh", [join(APP, "scripts/capture.sh"), String(window.child.pid), file], { stdio: ["ignore", "ignore", "pipe"] });
-    } catch (error) {
-      problem(`photo ${stem}-${scheme}: ${String(error.stderr ?? error).trim()}`);
-    }
-  }
-  await window.op({ op: "scheme", scheme: "system" });
-  run.shots.push({ stem, what });
-  save();
-}
-
-async function quit(window) {
-  await window.op({ op: "quit" }, { timeoutMs: 10_000 });
-  const code = await Promise.race([window.exited, sleep(15_000).then(() => "timeout")]);
-  if (code === "timeout") window.child.kill("SIGKILL");
-}
-
-const settle = (window, ms = 500) => window.op({ op: "wait", ms });
+const { run, problem, save, scratch, runtime, agent, pluginAgent, photo, launch, step, shoot, quit, settle, lineLook } = openRun({ binary, out });
 
 /** A timed paper running, in each of its states, with the page as the paper alone until it is handed in or ended.
  * PAGES_ONLY=paper photographs only these. */
@@ -395,16 +311,6 @@ async function ownWindow(name, withAgent = agent, engine = "direct") {
   const { window: _tabs, ...kept } = listed;
   writeFileSync(join(home, "state.json"), JSON.stringify({ ...kept, folders: {}, engine }, null, 2));
   return { home, window: await launch(name, home, withAgent) };
-}
-
-/** The line's look, chosen in Settings as a learner chooses it: from the bar's Settings, or Settings' own tab once it has one. */
-async function lineLook(w, look) {
-  const bar = await w.op({ op: "click", target: "settings", by: "drive" });
-  if (!bar.ok) await step(w, `settings for the ${look}`, { op: "click", target: "Settings" });
-  await step(w, `your line: ${look}`, { op: "click", target: look });
-  // Settings closed again, so a session is always the second tab.
-  await step(w, `close Settings after the ${look}`, { op: "key", key: "w", meta: true });
-  await settle(w, 300);
 }
 
 /** The page while a task is open (the blank page): the bare line first, then the soft field and the ruled line; each in light and dark. */

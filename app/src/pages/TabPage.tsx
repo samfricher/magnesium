@@ -3,7 +3,13 @@
 // and read, with nothing read again before it is drawn. When these pages were taken off and made again on each
 // switch, a workspace's page drew half of itself and then moved down as its reading came in.
 
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+
+// A page that put the keyboard somewhere of its own as its tab came back (Home on a question it set while it was
+// behind) says so, and the tab leaves it there instead of giving it back where it was.
+const Claim = createContext<() => void>(() => {});
+/** Call while coming back to the front, after putting the keyboard where the page wants it now. */
+export const useClaimKeyboard = () => useContext(Claim);
 
 type Props = {
   front: boolean;
@@ -19,6 +25,10 @@ export function TabPage({ front, labelledBy, children }: Props) {
   // What `kept` was as the page went behind: the page's own effects may focus something else as it comes back (Home
   // puts the keyboard on its first row), which `kept` then follows.
   const leftOn = useRef<HTMLElement | null>(null);
+  const claimed = useRef(false);
+  const claim = useCallback(() => {
+    claimed.current = true;
+  }, []);
 
   // Behind, the page is out of reach of the keyboard and of a screen reader. Set before any effect runs, so a page
   // brought to the front can take the focus.
@@ -27,6 +37,7 @@ export function TabPage({ front, labelledBy, children }: Props) {
     if (!page) return;
     if (!front) {
       leftOn.current = kept.current;
+      claimed.current = false;
       // Hidden, a focused row would still draw what its :focus shows (visibility: visible); it lets go.
       const at = document.activeElement;
       if (at instanceof HTMLElement && page.contains(at)) at.blur();
@@ -34,12 +45,15 @@ export function TabPage({ front, labelledBy, children }: Props) {
     page.toggleAttribute("inert", !front);
   }, [front]);
 
-  // Back in front, the keyboard goes back where it was, after the page's own effects have run.
+  // Back in front, the keyboard goes back where it was, after the page's own effects have run, unless the page
+  // claimed it for something new.
   useEffect(() => {
     if (!front) return;
     const at = leftOn.current;
     leftOn.current = null;
-    if (at && at.isConnected && box.current?.contains(at) && document.activeElement !== at) at.focus({ preventScroll: true });
+    const own = claimed.current;
+    claimed.current = false;
+    if (!own && at && at.isConnected && box.current?.contains(at) && document.activeElement !== at) at.focus({ preventScroll: true });
   }, [front]);
 
   return (
@@ -52,7 +66,7 @@ export function TabPage({ front, labelledBy, children }: Props) {
         if (event.target instanceof HTMLElement) kept.current = event.target;
       }}
     >
-      {children}
+      <Claim.Provider value={claim}>{children}</Claim.Provider>
     </div>
   );
 }

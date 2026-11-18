@@ -19,6 +19,7 @@ import { mark } from "../harness";
 import { homeDraftFor, keepHomeDraft } from "../homeDraft";
 import { checksAlone, dayFacts, firstQuestion, firstStep, namedSessions, nextOf, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
+import { useClaimKeyboard } from "./TabPage";
 import type { Core, Setup, Workspace } from "../types";
 import { displayName, longDay, sessionName, whenOpened } from "../words";
 
@@ -303,10 +304,32 @@ export function HomePage(props: Props) {
   // The answer line, when a question is set, then the rows: ↑↓ move between them.
   const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>("textarea.home-answer, button.home-row") ?? []);
   const asked = question !== null;
+  // Whether a question was drawn over the first row while Home was last in front. Not what the render that sends
+  // Home behind computes: that render may already hold a question Home read but did not draw (its row was drawn).
+  const askedShown = useRef(false);
   useEffect(() => {
-    // A fresh read never takes the keyboard off a row or the answer line the learner is on: Home stays on the page
-    // behind other tabs and reads again as the library changes, and its tab gives the keyboard back where it was.
-    if (props.focus && !props.step && !list.current?.contains(document.activeElement)) rows()[0]?.focus({ preventScroll: true });
+    if (props.front) askedShown.current = asked;
+  }, [props.front, asked]);
+  // The same, kept as Home went behind another tab: null while Home is in front.
+  const askedAsLeft = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!props.front) askedAsLeft.current = askedShown.current;
+  }, [props.front]);
+  const claimKeyboard = useClaimKeyboard();
+  useEffect(() => {
+    if (!props.focus || props.step) return;
+    // A question set while Home was behind takes the keyboard as Home comes back, over the row that had it: typing
+    // then writes the answer, and Return starts the checks with it.
+    const newQuestion = asked && askedAsLeft.current === false;
+    askedAsLeft.current = null;
+    if (newQuestion) {
+      rows()[0]?.focus({ preventScroll: true });
+      claimKeyboard();
+      return;
+    }
+    // Otherwise a fresh read never takes the keyboard off a row or the answer line the learner is on: Home stays on
+    // the page behind other tabs and reads again as the library changes, and its tab gives the keyboard back.
+    if (!list.current?.contains(document.activeElement)) rows()[0]?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.focus, props.step, props.workspaces, asked ? null : now, asked]);
 
