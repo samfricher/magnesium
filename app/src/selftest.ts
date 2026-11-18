@@ -49,26 +49,28 @@ function noRawFiles(where: string): void {
   if (found) throw new Error(`${where} shows a path or file text (${found}): ${text.slice(0, 200)}`);
 }
 
-/** What the window shows as interface calls a study folder a space: none of the names it had before. The tutor's words
- * and the learner's are theirs, and are left out. */
+/** Where the window draws words it did not write: the tutor's and the learner's, and the names a space, its plan and
+ * its record hold (a space's name, a plan item, a skill, a session, a file, a paper). Any of them may say "course". */
+const NOT_THE_WINDOWS = '.tutor, .you, .said-quote, .question, .line, .course, .page-title, [role="tab"], [role="listitem"], script, style';
+const RETIRED = [/\bworkspaces?\b/i, /\bstudy folders?\b/i, /\bcourse material\b/i, /\bthis course\b/i, /\bcourse page\b/i, /\bthis folder\b/i, /\bCourses\b/];
+
+/** What the window shows as interface calls a study folder a space: none of the names it had before. Each piece of
+ * text is tested on its own, so two pieces drawn side by side are never read as one phrase. Hidden text counts, as a
+ * screen reader reads it, and so do the words an element carries for a screen reader, a pointer or an empty line. */
 function noRetiredNames(where: string): void {
-  // Every piece of text, each apart, so two pieces drawn side by side are not read as one word. Hidden text counts:
-  // a screen reader reads it.
   const pieces: string[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (!node.parentElement?.closest(".tutor, .you, .said-quote, .question, script, style")) pieces.push(node.textContent ?? "");
+    if (!node.parentElement?.closest(NOT_THE_WINDOWS)) pieces.push(node.textContent ?? "");
   }
-  // And the words an element carries for a screen reader, a pointer or an empty line.
   for (const element of Array.from(document.body.querySelectorAll<HTMLElement>("[placeholder], [aria-label], [title]"))) {
-    if (element.closest(".tutor, .you, .said-quote, .question")) continue;
+    if (element.closest(NOT_THE_WINDOWS)) continue;
     for (const name of ["placeholder", "aria-label", "title"]) pieces.push(element.getAttribute(name) ?? "");
   }
-  const text = pieces.join(" ");
-  const found = [/\bworkspaces?\b/i, /\bstudy folders?\b/i, /\bcourse material\b/i, /\bthis course\b/i, /\bcourse page\b/i, /\bthis folder\b/i, /\bCourses\b/].find((pattern) => pattern.test(text));
-  if (!found) return;
-  const at = text.search(found);
-  throw new Error(`${where} names a space by an old name (${found}): …${text.slice(Math.max(0, at - 80), at + 80)}…`);
+  for (const piece of pieces) {
+    const found = RETIRED.find((pattern) => pattern.test(piece));
+    if (found) throw new Error(`${where} names a space by an old name (${found}): ${JSON.stringify(piece.trim().slice(0, 160))}`);
+  }
 }
 
 export async function run(api: Core, actions: Actions): Promise<void> {
