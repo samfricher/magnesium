@@ -25,7 +25,7 @@ type Props = {
   folder: string;
   /** The page is in front, with nothing over it. */
   focus: boolean;
-  /** Home's tab, which holds the page, is in front. Behind another tab the page stays as it was, read again by `refresh`. */
+  /** The Home tab that holds the page is in front. Behind another tab the page stays as it was, read again by `refresh`. */
   front: boolean;
   /** A session in this folder is running, so the folder cannot be taken off the list now. */
   running: boolean;
@@ -431,14 +431,15 @@ export function WorkspacePage(props: Props) {
     }
     return false;
   };
-  const { registerPanel } = props;
+  // Several tabs may each hold a workspace's page: the one in front takes the commands.
+  const { registerPanel, front } = props;
   useEffect(() => {
+    if (!front) return;
     registerPanel((command) => panelRun.current(command));
     return () => registerPanel(null);
-  }, [registerPanel]);
+  }, [registerPanel, front]);
   // Back in front with the keyboard outside the page, it goes to what leads the page, as when the page was first
   // drawn. The tab's page then gives it back to whatever in the page had it last, if anything did.
-  const { front } = props;
   const wasFront = useRef(front);
   useEffect(() => {
     const back = front && !wasFront.current;

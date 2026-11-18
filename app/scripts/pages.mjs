@@ -332,7 +332,7 @@ async function answerPages() {
   await step(a, "the workspace", { op: "click", target: "tab-1", by: "drive" });
   await step(a, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(a, 800);
-  await step(a, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await step(a, "a new session", { op: "key", key: "n", meta: true });
   await settle(a, 800);
   await step(a, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(a, "start", { op: "key", key: "Enter" });
@@ -522,7 +522,7 @@ async function answerPages() {
   await step(p, "the workspace", { op: "click", target: "tab-1", by: "drive" });
   await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(p, 800);
-  await step(p, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await step(p, "a new session", { op: "key", key: "n", meta: true });
   await settle(p, 800);
   await step(p, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(p, "a task the record does not name", { op: "type", text: "A task, please.\n\n**Task.** A sample of 49 has s = 14. What is the standard error of the mean?" });
@@ -622,7 +622,7 @@ async function modelPick() {
   await lineLook(m, "Bare line");
   await step(m, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(m, 800);
-  await step(m, "new session", { op: "click", target: "new-session", by: "drive" });
+  await step(m, "new session", { op: "key", key: "n", meta: true });
   await settle(m, 800);
   await step(m, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(m, "start on Fable 5.2", { op: "key", key: "Enter" });
@@ -643,7 +643,7 @@ async function modelPick() {
   await step(m, "close the list", { op: "key", key: "Escape" });
   await step(m, "close the session", { op: "key", key: "w", meta: true });
   await settle(m, 800);
-  await step(m, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await step(m, "a new session", { op: "key", key: "n", meta: true });
   await settle(m, 800);
   await listShows("in the next session", "model-next-session", "The model list in the session after one on Fable 5.2");
   await step(m, "older models", { op: "click", target: "model-older", by: "drive" });
@@ -678,7 +678,7 @@ async function stepHeads() {
   await step(s, "the workspace", { op: "click", target: "tab-1", by: "drive" });
   await step(s, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(s, 800);
-  await step(s, "a new session", { op: "click", target: "new-session", by: "drive" });
+  await step(s, "a new session", { op: "key", key: "n", meta: true });
   await settle(s, 800);
   // A step's head never moves anything in view: the reply that began a step stands still on screen from its end
   // through the window hearing of the step (`still` reads it every frame). A head for a reply in view waits for
@@ -865,7 +865,7 @@ try {
   await step(w, "close the paste sheet", { op: "key", key: "Escape" });
 
   // A new session: at rest, then the tutor's first task, then a marked answer.
-  await step(w, "new session", { op: "click", target: "new-session", by: "drive" });
+  await step(w, "new session", { op: "key", key: "n", meta: true });
   await settle(w, 800);
   await shoot(w, "session-rest", "Session: a new session before it starts");
   await step(w, "focus the line", { op: "focus", target: "composer", by: "drive" });
@@ -1025,7 +1025,7 @@ try {
   await step(w, "the text back to its own size, bare", { op: "menu_click", path: ["View", "Actual Size"] });
   if (wide.ok) await step(w, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
   // Before a lesson the line ends in More alone.
-  await step(w, "a new session on the bare line", { op: "click", target: "new-session", by: "drive" });
+  await step(w, "a new session on the bare line", { op: "key", key: "n", meta: true });
   await settle(w, 800);
   await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
   await step(w, "close the new session", { op: "key", key: "w", meta: true });
@@ -1066,7 +1066,7 @@ try {
   await step(w, "clear the small ruled line", { op: "type", text: "", replace: true });
   await step(w, "the text back to its own size, ruled", { op: "menu_click", path: ["View", "Actual Size"] });
   if (ruledWide.ok) await step(w, "the window's size again, ruled", { op: "frame", width: ruledWide.frame.width, height: ruledWide.frame.height });
-  await step(w, "a new session on the ruled line", { op: "click", target: "new-session", by: "drive" });
+  await step(w, "a new session on the ruled line", { op: "key", key: "n", meta: true });
   await settle(w, 800);
   await shoot(w, "session-rest-ruled", "Session: a new session before it starts, the line ruled");
   await step(w, "close the ruled new session", { op: "key", key: "w", meta: true });
@@ -1134,7 +1134,7 @@ try {
   const p = await launch("plugin", pluginHome, pluginAgent);
   await step(p, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(p, 800);
-  await step(p, "new session", { op: "click", target: "new-session", by: "drive" });
+  await step(p, "new session", { op: "key", key: "n", meta: true });
   await settle(p, 800);
   await step(p, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
@@ -1239,7 +1239,7 @@ try {
   // Before the learner chooses, a lesson runs on the copy already on this Mac, as Home says.
   await step(n, "open the workspace before choosing", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(n, 800);
-  await step(n, "a new session before choosing", { op: "click", target: "new-session", by: "drive" });
+  await step(n, "a new session before choosing", { op: "key", key: "n", meta: true });
   await settle(n, 800);
   await step(n, "focus the line", { op: "focus", target: "composer", by: "drive" });
   await step(n, "start the lesson", { op: "key", key: "Enter" });

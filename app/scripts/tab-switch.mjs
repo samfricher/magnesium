@@ -114,7 +114,7 @@ try {
     await change(`${n}: to Home's list`, "home");
   }
   // A session beside them: it goes before Settings, so it is tab-2 and Settings tab-3.
-  await step("open a session", { op: "click", target: "new-session", by: "drive" });
+  await step("open a session", { op: "key", key: "n", meta: true });
   await step("let it start", { op: "wait_idle", timeout_ms: 60_000 });
   await sleep(1000);
   for (let n = 1; n <= 2; n++) {

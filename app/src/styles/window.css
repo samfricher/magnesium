@@ -49,8 +49,8 @@
   flex: 0 1 auto;
   border-radius: 6px;
 }
-/* A tab that can close keeps room for its mark, shown or not, so every gap in the row is the same. */
-.tab:not(.home) .tab-button { padding-right: 22px; }
+/* A tab keeps room for its close mark, shown or not, so every gap in the row is the same. */
+.tab .tab-button { padding-right: 22px; }
 .tab.home,
 .tab.here { flex-shrink: 0; }
 .tab.home { min-width: 0; }
@@ -766,15 +766,12 @@ dialog.layer::backdrop { background: transparent; }
 :root[data-input="key"] .layer[tabindex]:focus-visible { outline: none; }
 /* A short paragraph does not end on one word alone. */
 .page-note, .setting-note, .where, .page-text { text-wrap: pretty; }
-.tab-new:disabled { color: var(--off); cursor: default; background: none; }
 
 /* A folded list's name shows the keyboard's place as the other quiet actions do. */
 :root[data-input="key"] .list-head.fold:focus-visible { outline: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--ink); text-underline-offset: 3px; }
 
 /* A card's label beside its ink rule: the rule marks the card, the label is quiet. */
 .card .record-head { color: var(--quiet); }
-/* The "+" waits out of sight until there is a workspace to start in. */
-.tab-new:disabled { visibility: hidden; }
 /* The folder's own action stands apart from the sections above it. */
 .folder-acts { margin-top: 2.6rem; }
 

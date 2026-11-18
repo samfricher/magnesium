@@ -496,6 +496,8 @@ export interface Core {
   about(): Promise<About>;
   /** Put the window on screen: its first screen is drawn. */
   showWindow(): Promise<void>;
+  /** Close the window, as its red button does. */
+  closeWindow(): Promise<void>;
   /** The open folder's saved conversation, as the window showed it, read without starting it. */
   turns(): Promise<Turn[]>;
   /** A folder's sessions, newest opened first. */
