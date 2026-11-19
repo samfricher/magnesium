@@ -481,8 +481,34 @@ async function run(op: Op): Promise<Result> {
     case "click": {
       const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
+      if (!op.timed) {
+        click(element);
+        return { ok: true, clicked: describe(element) };
+      }
+      await nextPaint();
+      const started = performance.now();
       click(element);
-      return { ok: true, clicked: describe(element) };
+      const painted = await nextPaint();
+      const gaps: { at: number; ms: number }[] = [];
+      await new Promise<void>((done) => {
+        let last = painted;
+        const tick = (now: number) => {
+          gaps.push({ at: now, ms: now - last });
+          last = now;
+          if (now - started < Number(op.timed)) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const slow = gaps.filter((gap) => gap.ms > 50);
+      return {
+        ok: true,
+        clicked: describe(element),
+        paint_ms: Math.round(painted - started),
+        longest_gap_ms: Math.round(Math.max(0, ...gaps.map((gap) => gap.ms))),
+        slow_frames: slow.map((gap) => Math.round(gap.ms)),
+        settled_ms: Math.round((slow.length > 0 ? slow[slow.length - 1].at : painted) - started),
+      };
     }
     case "focus": {
       const element = find(String(op.target ?? ""), op.by === "drive");
