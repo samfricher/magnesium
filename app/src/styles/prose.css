@@ -109,7 +109,7 @@
   margin-left: calc(-1 * var(--hang));
   padding-left: var(--hang);
 }
-:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
+:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type):not([data-sizing]) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child,
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child,
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child > :last-child {

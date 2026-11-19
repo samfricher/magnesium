@@ -167,7 +167,7 @@
 .prose a.source:hover { text-decoration-color: var(--ink); }
 
 .workspace-page.with-docs { position: absolute; inset: 0; }
-.workspace-page.with-docs > .page-scroll { position: absolute; inset: 0 var(--side-w) 0 0; overflow-y: auto; overflow-x: hidden; }
+.workspace-page.with-docs > .page-scroll { --side-w: inherit; position: absolute; inset: 0 var(--side-w) 0 0; overflow-y: auto; overflow-x: hidden; }
 .workspace-page.with-docs.expanded > .page-scroll { visibility: hidden; }
 .workspace-page.with-docs.expanded.lesson-front > .page-scroll { visibility: inherit; right: 0; }
 .workspace-page.with-docs.expanded.lesson-front > .panel.side { display: none; }

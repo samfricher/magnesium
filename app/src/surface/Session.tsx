@@ -196,6 +196,8 @@ function liveTurn(session: SessionState): LessonTurn | null {
   };
 }
 
+const SIZING_MS = 6;
+
 export const Session = forwardRef<HTMLDivElement, Props>(function Session(props, outer) {
   const { tab, api } = props;
   const folder = tab.folder;
@@ -235,6 +237,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
   const picker = useModelPicker({ api, at: modelAt, onClose: () => lineRef.current?.focus() });
   const spot = useRef(readingSpot(() => surface.current, () => nowRef.current)).current;
+  const inFront = useRef(props.active);
+  inFront.current = props.active;
   const restoring = useRef<number | null>(null);
   const started = useRef(false);
   const [homeAnswer, setHomeAnswerState] = useState<
@@ -805,7 +809,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   }, [tab.key]);
 
   useLayoutEffect(() => {
-    box.current?.toggleAttribute("inert", !props.active);
+    const at = document.activeElement;
+    if (!props.active && at instanceof HTMLElement && box.current?.contains(at)) at.blur();
   }, [props.active]);
 
   useLayoutEffect(() => {
@@ -827,6 +832,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const section = nowRef.current;
     if (!el || !section || phase !== "lesson") return;
     const settle = () => {
+      if (!inFront.current) return;
       spot.settle();
       keepLineInView();
     };
@@ -838,7 +844,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   }, [phase]);
 
   useLayoutEffect(() => {
-    if (phase !== "lesson") return;
+    if (phase !== "lesson" || !props.active) return;
     spot.settle();
     keepLineInView();
   });
@@ -975,43 +981,109 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return hidden || questionInView() ? null : task.text;
   };
   useLayoutEffect(() => {
-    if (!streaming && decided.current === moment) return;
+    if (!props.active || (!streaming && decided.current === moment)) return;
     decided.current = moment;
     setCopy(wantedCopy.current());
   });
   const copySpent = copy !== null && (task === null || (copy !== task.text && Math.min(coverage(copy, task.text), coverage(task.text, copy)) < 0.8));
   const turnsDrawn = !folded && turns.length > 0;
+  const wake = useRef<() => void>(() => {});
   useEffect(() => {
     const section = nowRef.current;
     if (!section) return;
     let frame = 0;
-    const measure = () => {
+    let waiting: HTMLElement[] = [];
+    let sizing: HTMLElement[] = [];
+    let owed: "all" | "away" | null = null;
+    let unchecked = false;
+    const halt = () => {
       cancelAnimationFrame(frame);
-      delete section.dataset.measured;
+      frame = 0;
+      for (const turn of sizing) delete turn.dataset.sizing;
+      sizing = [];
+      waiting = [];
+    };
+    const sizeNext = () => {
+      for (const turn of sizing) delete turn.dataset.sizing;
+      sizing = [];
+      frame = 0;
+      if (!inFront.current) {
+        waiting = [];
+        owed = owed ?? "away";
+        return;
+      }
+      const until = performance.now() + SIZING_MS;
+      while (waiting.length > 0 && (sizing.length === 0 || performance.now() < until)) {
+        const turn = waiting.shift()!;
+        turn.dataset.sizing = "";
+        void turn.offsetHeight;
+        sizing.push(turn);
+      }
+      frame = sizing.length > 0 ? requestAnimationFrame(sizeNext) : 0;
+    };
+    const sizeAway = () => {
+      const view = surface.current?.getBoundingClientRect();
+      if (!view) return;
+      const turns = Array.from(section.querySelectorAll<HTMLElement>(":scope > article.turn"));
+      const boxes = turns.map((turn) => turn.getBoundingClientRect());
+      const reading = Math.max(0, boxes.findIndex((box) => box.bottom > view.top));
+      waiting = turns
+        .map((turn, n) => ({ turn, n, shown: boxes[n].bottom > view.top && boxes[n].top < view.bottom }))
+        .filter((each) => !each.shown)
+        .sort((a, b) => Math.abs(a.n - reading) - Math.abs(b.n - reading))
+        .map((each) => each.turn);
+      frame = requestAnimationFrame(sizeNext);
+    };
+    const measure = () => {
+      if (owed === null) return;
+      const whole = owed === "all" || !("measured" in section.dataset);
+      if (!inFront.current && !whole) return;
+      owed = null;
+      halt();
       if (!turnsDrawn) return;
+      if (!whole) return sizeAway();
+      delete section.dataset.measured;
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => (section.dataset.measured = ""));
       });
     };
     const at = () => `${section.clientWidth} ${getComputedStyle(section).fontSize} ${document.documentElement.style.cssText}`;
-    let measuredAt = at();
+    let measuredAt = inFront.current ? at() : "";
+    unchecked = !inFront.current;
     const check = () => {
+      if (!inFront.current) {
+        unchecked = true;
+        return;
+      }
       const now = at();
       if (now === measuredAt) return;
       measuredAt = now;
+      owed = owed ?? "away";
+      measure();
+    };
+    wake.current = () => {
+      if (unchecked) {
+        unchecked = false;
+        check();
+      }
       measure();
     };
     const sized = new ResizeObserver(check);
     sized.observe(section);
     const styled = new MutationObserver(check);
     styled.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    delete section.dataset.measured;
+    owed = "all";
     measure();
     return () => {
-      cancelAnimationFrame(frame);
+      halt();
       sized.disconnect();
       styled.disconnect();
     };
   }, [turnsDrawn]);
+  useEffect(() => {
+    if (props.active) wake.current();
+  }, [props.active]);
   useEffect(() => {
     props.onAnswerPage(tab.key, page);
   }, [page]);

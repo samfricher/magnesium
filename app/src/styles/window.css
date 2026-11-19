@@ -1,3 +1,6 @@
+@property --side-w { syntax: "*"; inherits: false; }
+@property --left { syntax: "*"; inherits: false; }
+
 :root {
   --tabs-h: 38px;
   --panel-w: 15.5rem;
@@ -101,9 +104,13 @@
 .session {
   position: absolute;
   inset: 0;
-  visibility: hidden;
 }
-.session.in-front { visibility: visible; }
+.session:not(.in-front) { content-visibility: hidden; z-index: -1; }
+.session:not(.in-front):has(> .surface > .column > .now:not([data-measured])) { content-visibility: visible; visibility: hidden; }
+.session.with-panel > .surface,
+.session.with-panel > .top-edge,
+.session.with-panel > .surface > .column,
+.session.with-panel > .top-edge > .inner { --side-w: inherit; }
 .session.with-panel .surface,
 .session.with-panel .top-edge { right: var(--side-w, var(--panel-w)); }
 .session.with-panel .column,
