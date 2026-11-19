@@ -768,22 +768,34 @@ async function run(op: Op): Promise<Result> {
       };
     }
     case "select": {
-      if (op.read) return { ok: true, selected: collapse(window.getSelection()?.toString() ?? "").slice(0, 80), focused: describe(document.activeElement) };
+      const selection = window.getSelection()!;
+      const read = () => {
+        const text = collapse(selection.toString());
+        const holds = op.holds === undefined ? undefined : String(op.holds).split("|").map((words) => text.includes(words));
+        return { selected: text.slice(0, 80), chars: text.length, holds };
+      };
+      if (op.read) return { ok: true, ...read(), focused: describe(document.activeElement) };
+      if (op.clear) {
+        const started = performance.now();
+        selection.removeAllRanges();
+        return { ok: true, paint_ms: Math.round((await nextPaint()) - started) };
+      }
       const blocks = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .prose > *, .session.in-front .prose li"));
-      const holding = (words: string) => blocks.find((block) => collapse(block.innerText ?? "").includes(words)) ?? null;
+      const holding = (words: string) => blocks.find((block) => collapse(block.textContent ?? "").includes(words)) ?? null;
       const first = holding(String(op.from ?? ""));
       const last = op.to === undefined ? first : holding(String(op.to));
       if (!first || !last) return { ok: false, error: `no passage holds ${JSON.stringify(first ? op.to : op.from)}` };
-      first.scrollIntoView({ block: "center" });
+      if (!op.in_place) first.scrollIntoView({ block: "center" });
       const range = document.createRange();
       range.setStartBefore(first.firstChild ?? first);
       range.setEndAfter(last.lastChild ?? last);
       (document.activeElement as HTMLElement | null)?.blur();
-      const selection = window.getSelection()!;
       selection.removeAllRanges();
-      selection.addRange(range);
       await nextPaint();
-      return { ok: true, selected: collapse(selection.toString()).slice(0, 80) };
+      const started = performance.now();
+      selection.addRange(range);
+      const painted = await nextPaint();
+      return { ok: true, ...read(), paint_ms: Math.round(painted - started) };
     }
     case "caret": {
       const line = composer();
