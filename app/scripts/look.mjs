@@ -13,7 +13,9 @@ function usage(problem) {
   if (problem) console.error(`look: ${problem}`);
   console.error("usage: node scripts/look.mjs [--at <place>] [--line bare|soft|ruled|all] [--size WxH] [--big] [--scheme light|dark|both]");
   console.error("                             [--name <stem>] [--out <dir>] [--base <ref>] [--bin <path>] [--keep] [step ...]");
-  console.error("       the top of scripts/look.mjs says what each does");
+  console.error(`       places: ${PLACES.join(", ")}`);
+  console.error("       steps, done in order once the place is reached: click:<target> focus:<target> type:<text>");
+  console.error("              key:<Key> (key:meta+ArrowUp) wait:<ms> idle shot:<stem> <op name> '<op json>'");
   process.exit(64);
 }
 
