@@ -20,6 +20,7 @@ if [ "$PART" != "--rust" ]; then
   node scripts/test-step-head.mjs
   node scripts/test-words-batch.mjs
   node scripts/test-reveal.mjs
+  node scripts/test-quote.mjs
   node scripts/test-prove.mjs
 fi
 if [ "$PART" != "--pages" ]; then

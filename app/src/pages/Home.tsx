@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { mark } from "../harness";
+import { selecting } from "../selection";
 import { homeDraftFor, keepHomeDraft } from "../homeDraft";
 import { checksAlone, courseFact, dueWords, firstQuestion, latestSkill, namedSessions, nextOf, openedDay, startsWithWords, planDay, type Next } from "../next";
 import { Line, Rich } from "../surface/Rich";
@@ -414,7 +415,7 @@ export function HomePage(props: Props) {
   const asking = lead && question && (
     <>
       <p className="mg-cue mg-kicker">{question.meta}</p>
-      <div className="answer-task home-task" onClick={() => answerBox.current?.focus()}>
+      <div className="answer-task home-task" onClick={() => !selecting() && answerBox.current?.focus()}>
         <Rich text={question.text} final linksOpen={false} />
       </div>
       <div className="foot home-foot">

@@ -306,7 +306,11 @@ const transcript: Entry[] = [];
 let replyBlocks: string[] = [];
 let replyStreaming = "";
 
+const heard: { type: string; at: number; doing?: string | null }[] = [];
+
 function note(event: AgentEvent): void {
+  if (event.type !== "text_delta") heard.push({ type: event.type, at: performance.now(), ...(event.type === "working" ? { doing: event.doing } : {}) });
+  if (heard.length > 400) heard.splice(0, heard.length - 400);
   const at = new Date().toISOString();
   switch (event.type) {
     case "turn_started":
@@ -684,6 +688,102 @@ async function run(op: Op): Promise<Result> {
         scrollable: surface ? surface.scrollHeight > surface.clientHeight : null,
         scrolled_past: scrolledPast,
       };
+    }
+    case "drift": {
+      if (op.send) press("Enter", { alt: Boolean(op.alt) });
+      const ms = Number(op.ms ?? 8000);
+      const upAt = op.up_at === undefined ? null : Number(op.up_at);
+      const upBy = Number(op.up_by ?? 300);
+      const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
+      if (!surface) return { ok: false, error: "no lesson in front" };
+      const started = performance.now();
+      const at = (now: number) => Math.round(now - started);
+      const pick = (): HTMLElement | null => {
+        const box = surface.getBoundingClientRect();
+        const column = surface.querySelector<HTMLElement>(".column")?.getBoundingClientRect();
+        const x = column ? column.left + column.width / 2 : box.left + box.width / 2;
+        for (const y of [0.35, 0.5, 0.25, 0.65]) {
+          const hit = document.elementFromPoint(x, box.top + box.height * y);
+          const block = hit?.closest<HTMLElement>(".prose > *, .you, .record, .working, .step-head, article.turn > *");
+          if (block && surface.contains(block) && !block.closest(".foot")) return block;
+        }
+        return null;
+      };
+      const blocks = (turn: Element) => Array.from(turn.children).flatMap((child) => (child.classList.contains("tutor") ? Array.from(child.querySelector(".prose")?.children ?? []) : [child]));
+      const pathOf = (el: HTMLElement | null) => {
+        const turn = el?.closest("article.turn");
+        return turn && el ? { ms: turn.getAttribute("data-ms"), at: blocks(turn).indexOf(el) } : null;
+      };
+      const byPath = (path: { ms: string | null; at: number } | null) => {
+        const turn = path ? surface.querySelector(`article.turn[data-ms="${path.ms}"]`) : null;
+        const found = turn && path && path.at >= 0 ? blocks(turn)[path.at] : null;
+        return found instanceof HTMLElement ? found : null;
+      };
+      let anchor = pick();
+      let path = pathOf(anchor);
+      let lastTop = anchor ? anchor.getBoundingClientRect().top : null;
+      let scrolledUp = false;
+      const moves: { at: number; by: number; from_foot: number; working: string | null; replaced?: boolean }[] = [];
+      const words = (el: HTMLElement | null) => (el ? collapse(el.innerText ?? "").slice(0, 50) : null);
+      const anchors: { at: number; words: string | null }[] = [{ at: 0, words: words(anchor) }];
+      await new Promise<void>((done) => {
+        const tick = (now: number) => {
+          if (upAt !== null && !scrolledUp && now - started >= upAt) {
+            scrolledUp = true;
+            surface.scrollTop -= upBy;
+            requestAnimationFrame(() => {
+              anchor = pick();
+              path = pathOf(anchor);
+              lastTop = anchor ? anchor.getBoundingClientRect().top : null;
+              anchors.push({ at: at(performance.now()), words: words(anchor) });
+              requestAnimationFrame(tick);
+            });
+            return;
+          }
+          const working = document.querySelector<HTMLElement>(".session.in-front .working");
+          const fromFoot = Math.round(surface.scrollHeight - surface.clientHeight - surface.scrollTop);
+          if (anchor && !anchor.isConnected) {
+            const again = byPath(path);
+            const by = again && lastTop !== null ? Math.round(again.getBoundingClientRect().top - lastTop) : 0;
+            if (!again || by !== 0) moves.push({ at: at(now), by, from_foot: fromFoot, working: working ? collapse(working.innerText) || "(cursor)" : null, replaced: true });
+            anchor = again ?? pick();
+            path = pathOf(anchor);
+            lastTop = anchor ? anchor.getBoundingClientRect().top : null;
+            if (!again) anchors.push({ at: at(now), words: words(anchor) });
+          } else if (anchor && lastTop !== null) {
+            const top = anchor.getBoundingClientRect().top;
+            if (Math.abs(top - lastTop) > 0.5) moves.push({ at: at(now), by: Math.round(top - lastTop), from_foot: fromFoot, working: working ? collapse(working.innerText) || "(cursor)" : null });
+            lastTop = top;
+          }
+          if (now - started < ms) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      return {
+        ok: true,
+        moves,
+        anchors,
+        events: heard.filter((each) => each.at >= started).map((each) => ({ type: each.type, at: Math.round(each.at - started), ...(each.doing !== undefined ? { doing: each.doing } : {}) })),
+      };
+    }
+    case "select": {
+      if (op.read) return { ok: true, selected: collapse(window.getSelection()?.toString() ?? "").slice(0, 80), focused: describe(document.activeElement) };
+      const blocks = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .prose > *, .session.in-front .prose li"));
+      const holding = (words: string) => blocks.find((block) => collapse(block.innerText ?? "").includes(words)) ?? null;
+      const first = holding(String(op.from ?? ""));
+      const last = op.to === undefined ? first : holding(String(op.to));
+      if (!first || !last) return { ok: false, error: `no passage holds ${JSON.stringify(first ? op.to : op.from)}` };
+      first.scrollIntoView({ block: "center" });
+      const range = document.createRange();
+      range.setStartBefore(first.firstChild ?? first);
+      range.setEndAfter(last.lastChild ?? last);
+      (document.activeElement as HTMLElement | null)?.blur();
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      await nextPaint();
+      return { ok: true, selected: collapse(selection.toString()).slice(0, 80) };
     }
     case "caret": {
       const line = composer();

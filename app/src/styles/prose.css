@@ -80,8 +80,6 @@
 }
 .prose div.task > :last-child { margin-bottom: 0; }
 .turn.open .prose div.task { border-left-color: color-mix(in srgb, var(--ink) 45%, var(--faint)); }
-.turn.held .prose div.task { border-left-color: var(--ink); }
-.turn.open:not(.held) .prose div.task { cursor: text; }
 .prose p.task > strong:first-child { font-weight: 600; }
 .prose p.task > strong:first-child::after { content: "."; }
 
@@ -97,7 +95,6 @@
   pointer-events: none;
 }
 .turn.open .prose.has-task-rule::before { background: color-mix(in srgb, var(--ink) 45%, var(--faint)); }
-.turn.held .prose.has-task-rule::before { background: var(--ink); }
 
 .turn.open .tutor { margin-bottom: 0; }
 .turn.open .prose div.task { padding-bottom: 0.2rem; }
@@ -107,8 +104,8 @@
 .now > article.turn:not(.open):not(:last-of-type) > .tutor {
   margin-bottom: 0.85rem;
 }
+.now > article.turn > .tutor > .prose { contain-intrinsic-block-size: auto 300px; }
 .now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose {
-  contain-intrinsic-block-size: auto 300px;
   margin-left: calc(-1 * var(--hang));
   padding-left: var(--hang);
 }

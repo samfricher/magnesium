@@ -21,6 +21,8 @@ import { Line, Rich } from "./Rich";
 import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 import { pageClock, wordsBatch, type WordsBatch } from "../wordsBatch";
+import { inTask, selectedWords, selecting } from "../selection";
+import { readingSpot } from "../reading";
 
 export type Pending =
   | { kind: "start" }
@@ -220,15 +222,13 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [settling, setSettling] = useState(false);
   const surface = useRef<HTMLElement>(null);
   const [heldStep, setHeldStep] = useState<number | null>(null);
-  const keepReply = useRef<{ ms: number; top: number } | null>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
   const fromLine = useRef<string | null>(null);
   const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
   const picker = useModelPicker({ api, at: modelAt, onClose: () => lineRef.current?.focus() });
-  const stuck = useRef(true);
-  const lastTop = useRef(0);
+  const spot = useRef(readingSpot(() => surface.current, () => nowRef.current)).current;
   const restoring = useRef<number | null>(null);
   const started = useRef(false);
   const [homeAnswer, setHomeAnswerState] = useState<
@@ -378,11 +378,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const reply = replyOf(ms);
     const view = surface.current;
     const place = { folded: now.current.page === "folded", shown: now.current.props.active && view !== null && view.clientHeight > 0, replyTop: reply ? reply.getBoundingClientRect().top : null, viewTop: view ? view.getBoundingClientRect().top : 0 };
-    if (!drawHeadNow(place)) {
-      setHeldStep(ms);
-      return;
-    }
-    keepReply.current = reply && place.shown && !place.folded ? { ms, top: reply.getBoundingClientRect().top } : null;
+    if (!drawHeadNow(place)) setHeldStep(ms);
   };
   const replyOf = (ms: number) => surface.current?.querySelector<HTMLElement>(`article.turn[data-ms="${ms}"] .tutor`) ?? null;
 
@@ -458,7 +454,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     setSittingTitle(title);
     props.onTitle(props.tab.key, title);
     setChanged(null);
-    stuck.current = true;
+    spot.follow();
     setPhase("lesson");
     keepPlace(now.current.place, { inLesson: true });
     props.claim(props.tab.key);
@@ -529,7 +525,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         dispatch({ type: "reopened" });
         props.onEngine();
       }
-      stuck.current = true;
+      spot.follow();
       setFact(null);
       dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
@@ -633,7 +629,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       setReading(false);
     }
     setRaised(false);
-    stuck.current = true;
+    spot.follow();
     requestAnimationFrame(() => {
       lineRef.current?.focus();
       requestAnimationFrame(() => measureQuestion.current());
@@ -812,9 +808,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       return;
     }
     if (restoring.current !== null) {
-      el.scrollTop = el.scrollHeight - el.clientHeight - restoring.current;
-      stuck.current = restoring.current < 6;
-      lastTop.current = el.scrollTop;
+      spot.restore(restoring.current);
       restoring.current = null;
     }
   }, [phase, painted]);
@@ -823,25 +817,21 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const el = surface.current;
     const section = nowRef.current;
     if (!el || !section || phase !== "lesson") return;
-    const pin = () => {
-      if (stuck.current) {
-        el.scrollTop = el.scrollHeight;
-        lastTop.current = el.scrollTop;
-      }
+    const settle = () => {
+      spot.settle();
+      keepLineInView();
     };
-    const watch = new ResizeObserver(pin);
+    const watch = new ResizeObserver(settle);
     watch.observe(section);
     watch.observe(el);
-    pin();
+    settle();
     return () => watch.disconnect();
   }, [phase]);
 
   useLayoutEffect(() => {
-    const el = surface.current;
-    if (!el || phase !== "lesson" || !stuck.current || el.clientHeight === 0) return;
-    if (el.scrollTop < Math.min(lastTop.current, el.scrollHeight - el.clientHeight) - 1) return;
-    el.scrollTop = el.scrollHeight;
-    lastTop.current = el.scrollTop;
+    if (phase !== "lesson") return;
+    spot.settle();
+    keepLineInView();
   });
 
   useEffect(() => {
@@ -873,10 +863,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
-    const up = el.scrollTop < lastTop.current - 1;
-    lastTop.current = el.scrollTop;
-    if (up) stuck.current = fromFoot < 6;
-    else if (fromFoot < 6) stuck.current = true;
+    spot.scrolled();
     const end = measureEnd();
     if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
       (document.activeElement as HTMLElement).blur();
@@ -887,13 +874,16 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const measureEnd = (): boolean | null => {
     const el = surface.current;
     if (!el || el.clientHeight === 0 || now.current.phase !== "lesson") return null;
-    const line = nowRef.current?.querySelector<HTMLElement>(".foot");
-    const end = !line || line.getBoundingClientRect().top < el.getBoundingClientRect().bottom - 8;
+    const field = nowRef.current?.querySelector<HTMLElement>(".foot .field-row");
+    const end = !field || field.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom;
     if (end !== now.current.atEnd) {
       now.current.atEnd = end;
       setAtEnd(end);
     }
     return end;
+  };
+  const keepLineInView = () => {
+    if (measureEnd() === false && lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) raise();
   };
   useEffect(() => {
     if (!props.active) return;
@@ -1031,15 +1021,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useLayoutEffect(() => {
     if (heldStep !== null && !holdingStep) setHeldStep(null);
   }, [heldStep, holdingStep]);
-  useLayoutEffect(() => {
-    const kept = keepReply.current;
-    const view = surface.current;
-    if (!kept || !view) return;
-    keepReply.current = null;
-    if (stuck.current) return;
-    const reply = replyOf(kept.ms);
-    if (reply) view.scrollTop += Math.round(reply.getBoundingClientRect().top - kept.top);
-  });
   const stepAt = plan?.steps.findIndex((step) => step.status === "doing") ?? -1;
   const currentStep = stepAt >= 0 ? plan!.steps[stepAt].step : null;
   const restVerb = rest?.start ? (/^↩ ([a-z]+(?: on)?)/.exec(rest.keys)?.[1] ?? "start") : null;
@@ -1108,30 +1089,29 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (enter && target?.closest("button, a, summary, [role='button'], [role='option']")) return;
       if (actionOf(event, current.prefs.keys)) return;
       const selection = window.getSelection();
-      const selected = selection && !selection.isCollapsed && selection.anchorNode && box.current?.contains(selection.anchorNode) ? selection.toString() : "";
+      const range = selection && !selection.isCollapsed && selection.rangeCount > 0 && box.current?.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
+      const selected = range ? selectedWords(range) : "";
+      const open = now.current.task;
+      const fromTask = range !== null && selected !== "" && open !== null && inTask(range, open.text);
       event.preventDefault();
       raise();
-      lineRef.current?.write(char ? event.key : "", selected);
+      lineRef.current?.write(char ? event.key : "", selected ? { text: selected, fromTask } : undefined);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [props.active, phase, raise]);
 
-  const onWrite = useCallback(() => {
+  const onWrite = useCallback((answering: boolean) => {
     const { page, lookedBack } = now.current;
-    if (page !== null && !lookedBack) {
+    if (page !== null && !lookedBack && answering) {
       setReading(false);
       setRaised(false);
-      stuck.current = true;
+      spot.follow();
       return;
     }
     raise();
   }, [raise, setRaised]);
 
-  const onHold = useCallback(() => {
-    raise();
-    lineRef.current?.focus();
-  }, [raise]);
   const onDismiss = useCallback((text: string) => dispatch({ type: "dismiss", text }), []);
   const again = useRef({ turns, sittingStart, sittingTitle });
   again.current = { turns, sittingStart, sittingTitle };
@@ -1367,7 +1347,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 </header>
                 {shownFrom > 0 && <p className="record quiet earlier-note">Earlier turns of this session are kept, and not drawn here.</p>}
                 {folded && task && (
-                  <div className="answer-task" data-role="answer-task" onClick={(event) => !(event.target as HTMLElement).closest("a, button") && lineRef.current?.focus()}>
+                  <div className="answer-task" data-role="answer-task" onClick={(event) => !(event.target as HTMLElement).closest("a, button") && !selecting() && lineRef.current?.focus()}>
                     <Rich text={task.text} final linksOpen={false} opensNow={isPaper} onSource={onSource} onNote={note} />
                   </div>
                 )}
@@ -1383,7 +1363,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       key={`${turn.ms}-${index}`}
                       turn={holdingStep && turn.step && turn.ms === heldStep ? { ...turn, step: undefined } : turn}
                       open={index === openAt}
-                      held={false}
                       linksOpen={index !== openAt}
                       opensNow={isPaper}
                       writing={live && session.live!.status !== "idle"}
@@ -1394,7 +1373,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       planKey={props.panel ? null : keyName(props.prefs.keys.plan) || null}
                       onSource={onSource}
                       onNote={note}
-                      onHold={onHold}
                       waiting={homeAnswer !== null && !homeAnswerSent && turn.ms === homeAnswer.ms}
                     />
                   );
@@ -1404,7 +1382,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     Your answer from Home was not sent: this may not be the check Home asked. It is on the line, to send for this one or to change.
                   </p>
                 )}
-                {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 <p className="visually-hidden" role="status" aria-live="polite" data-role="mark-said">
                   {markSaid}
                 </p>
@@ -1413,6 +1390,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
+                    {session.live && session.cards.length === 0 && <Working live={session.live} />}
                     {task && !raised && !questionInView && !folded && !ownBusy && !settling && (
                       <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={task.text} />
